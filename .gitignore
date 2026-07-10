@@ -1,0 +1,59 @@
+# Node and frontend artifacts
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.pnpm-store/
+pnpm-debug.log*
+
+# Rust artifacts
+target/
+Cargo.lock.bak
+
+# Logs and temp files
+*.log
+.DS_Store
+tmp/
+temp/
+*.tmp
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+
+# IDE and tooling state
+.idea/
+.vscode/
+.zed/
+
+# Test artifacts
+playwright-report/
+coverage/
+test-results/
+
+# Desktop and app state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.trace
+*.profraw
+*.profdata
+
+# Tauri and bundler output
+src-tauri/target/
+apps/**/dist/
+apps/**/.vite/
+
+# Graphify generated assets
+docs/foundation/graphify/rendered/
+
+# Claude Code session exports (date-time prefixed transcripts)
+**/????-??-??-??????-*.txt

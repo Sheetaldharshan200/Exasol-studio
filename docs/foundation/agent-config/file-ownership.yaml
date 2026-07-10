@@ -1,0 +1,27 @@
+version: 1
+ownership:
+  requirements.md: documentation-agent
+  design.md: architecture-agent
+  architecture.md: architecture-agent
+  tasks.md: project-agent
+  agent.md: documentation-agent
+  llm-wiki.md: documentation-agent
+  research-notes.md: exasol-integration-agent
+  adr/*: architecture-agent
+  graphify/*: documentation-agent
+  agent-config/window-topology.yaml: documentation-agent
+
+reviewers:
+  architecture-agent:
+    - architecture.md
+    - design.md
+    - adr/*
+  qa-safety-agent:
+    - agent.md
+    - architecture.md
+    - tasks.md
+  exasol-integration-agent:
+    - llm-wiki.md
+    - research-notes.md
+    - design.md
+

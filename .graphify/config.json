@@ -1,0 +1,12 @@
+{
+  "name": "exasol-studio-graphify",
+  "sourceDir": "docs/foundation/graphify",
+  "renderedDir": "docs/foundation/graphify/rendered",
+  "siteDir": "docs/foundation/graphify/site",
+  "siteEntry": "index.html",
+  "commands": {
+    "check": "node ./tools/scripts/check-graphify.mjs",
+    "render": "node ./tools/scripts/render-graphify.mjs",
+    "html": "node ./tools/scripts/build-graphify-html.mjs"
+  }
+}

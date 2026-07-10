@@ -1,0 +1,40 @@
+version: 1
+windows:
+  - id: primary-window
+    purpose: user communication, intake, merge, and final state ownership
+    default_owner: project-agent
+  - id: architecture-window
+    purpose: architecture review, ADR drafting, and boundary analysis
+    default_owner: architecture-agent
+  - id: integration-window
+    purpose: Exasol source validation and support classification
+    default_owner: exasol-integration-agent
+  - id: implementation-window
+    purpose: focused code or config delivery
+    default_owner: project-agent
+  - id: validation-window
+    purpose: tests, regression review, and safety checks
+    default_owner: qa-safety-agent
+  - id: documentation-window
+    purpose: docs sync, graph refresh, and traceability updates
+    default_owner: documentation-agent
+
+rules:
+  open_new_window_when:
+    - long_running_validation_would_block_primary
+    - architecture_review_needs_isolation
+    - research_requires_specialist_context
+    - documentation_sync_is_large_enough_to_deserve_separation
+  do_not_open_when:
+    - task_is_single_file_and_low_risk
+    - split_would_create_more_handoff_cost_than_value
+  required_handoff_fields:
+    - task
+    - scope
+    - files
+    - requirements
+    - adrs
+    - risks
+    - expected_output
+    - validation
+

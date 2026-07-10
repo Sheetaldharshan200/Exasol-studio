@@ -1,0 +1,401 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/figtree";
+@import "@fontsource-variable/inter";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-panel: var(--panel);
+  --color-panel-foreground: var(--panel-foreground);
+  --color-activitybar: var(--activitybar);
+  --color-editor: var(--editor);
+  --color-titlebar: var(--titlebar);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-tab-active: var(--tab-active);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-teal: var(--teal);
+  --color-syntax-keyword: var(--syntax-keyword);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-comment: var(--syntax-comment);
+  --color-syntax-function: var(--syntax-function);
+  --color-syntax-type: var(--syntax-type);
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: "Figtree Variable", "Figtree", "Inter Variable", system-ui, sans-serif;
+}
+
+/* Light theme - Exasol "mist" scale */
+:root {
+  --radius: 0.5rem;
+  --background: #f4f7fb;
+  --foreground: #0b1730;
+  --titlebar: #ffffff;
+  --activitybar: #eaeff6;
+  --panel: #ffffff;
+  --panel-foreground: #0b1730;
+  --editor: #ffffff;
+  --tab-active: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #0b1730;
+  --popover: #ffffff;
+  --popover-foreground: #0b1730;
+  --primary: #4fa823;
+  --primary-foreground: #ffffff;
+  --secondary: #eaeff6;
+  --secondary-foreground: #0b1730;
+  --muted: #eaeff6;
+  --muted-foreground: #566481;
+  --accent: #eef2f7;
+  --accent-foreground: #0b1730;
+  --signal: #5fc33b;
+  --signal-foreground: #050a1c;
+  --destructive: #d13b32;
+  --destructive-foreground: #ffffff;
+  --border: #dce3ee;
+  --input: #dce3ee;
+  --ring: #4fa823;
+  --info: #3f6fbf;
+  --warning: #b45309;
+  --teal: #1fa08b;
+  --chart-1: #5fc33b;
+  --chart-2: #3f6fbf;
+  --chart-3: #f59e0b;
+  --chart-4: #1fa08b;
+  --chart-5: #7c5cd6;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1730;
+  --sidebar-primary: #4fa823;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eaeff6;
+  --sidebar-accent-foreground: #0b1730;
+  --sidebar-border: #dce3ee;
+  --sidebar-ring: #4fa823;
+  --syntax-keyword: #157f3c;
+  --syntax-string: #a7681c;
+  --syntax-number: #0b73a2;
+  --syntax-comment: #6b7280;
+  --syntax-function: #5b45c7;
+  --syntax-type: #167ea6;
+}
+
+/* Dark theme - black foundation with the Exasol green accent (brand default) */
+.dark {
+  --background: #0a0a0b;
+  --foreground: #f4f4f5;
+  --titlebar: #060607;
+  --activitybar: #060607;
+  --panel: #111113;
+  --panel-foreground: #ededee;
+  --editor: #0a0a0b;
+  --tab-active: #1b1b1e;
+  --card: #111113;
+  --card-foreground: #f4f4f5;
+  --popover: #161618;
+  --popover-foreground: #f4f4f5;
+  --primary: #5fc33b;
+  --primary-foreground: #06120a;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #ededee;
+  --muted: #111113;
+  --muted-foreground: #8a8a90;
+  --accent: #1c1c1f;
+  --accent-foreground: #f4f4f5;
+  --destructive: #f0625a;
+  --destructive-foreground: #fff7f6;
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #5fc33b;
+  --info: #6f8fd6;
+  --warning: #eab54f;
+  --teal: #4ed3b8;
+  --chart-1: #5fc33b;
+  --chart-2: #6f8fd6;
+  --chart-3: #eab54f;
+  --chart-4: #4ed3b8;
+  --chart-5: #b79cf5;
+  --sidebar: #111113;
+  --sidebar-foreground: #ededee;
+  --sidebar-primary: #5fc33b;
+  --sidebar-primary-foreground: #06120a;
+  --sidebar-accent: #1c1c1f;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+  --sidebar-ring: #5fc33b;
+  --syntax-keyword: #82dd4b;
+  --syntax-string: #e9a94f;
+  --syntax-number: #5fd0c0;
+  --syntax-comment: #6a6a70;
+  --syntax-function: #b79cf5;
+  --syntax-type: #4ed3b8;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+    box-sizing: border-box;
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    @apply bg-background text-foreground;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+}
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+@layer components {
+  /* Green CTA glow — resting halo, intensifies on hover */
+  .cta-glow {
+    box-shadow: 0 8px 30px -10px color-mix(in oklch, var(--primary), transparent 35%);
+    transition:
+      box-shadow 0.3s ease,
+      transform 0.15s ease;
+  }
+  .cta-glow:hover {
+    box-shadow:
+      0 10px 38px -8px color-mix(in oklch, var(--primary), transparent 20%),
+      0 0 0 1px color-mix(in oklch, var(--primary), transparent 55%);
+  }
+  .cta-glow:active {
+    transform: translateY(1px);
+  }
+
+  /* Full-surface shine sweep across the entire button (not just text) */
+  .btn-shine {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .btn-shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(
+      110deg,
+      transparent 25%,
+      rgba(255, 255, 255, 0.55) 48%,
+      rgba(255, 255, 255, 0.7) 50%,
+      rgba(255, 255, 255, 0.55) 52%,
+      transparent 75%
+    );
+    transform: translateX(-130%);
+    animation: btn-shine 2.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    pointer-events: none;
+  }
+  @keyframes btn-shine {
+    0% {
+      transform: translateX(-130%);
+    }
+    55%,
+    100% {
+      transform: translateX(130%);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-shine::after {
+    animation: none;
+  }
+}
+
+::view-transition-old(root), ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}

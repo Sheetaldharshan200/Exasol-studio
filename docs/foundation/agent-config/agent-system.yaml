@@ -1,0 +1,62 @@
+version: 1
+project: exasol-studio
+mode: governed
+default_agent: project-agent
+default_window: primary-window
+
+agents:
+  - id: project-agent
+    role: coordinator
+    responsibilities:
+      - plan work
+      - merge outputs
+      - maintain cross-document consistency
+  - id: architecture-agent
+    role: architect
+    responsibilities:
+      - validate boundaries
+      - update adrs
+      - review technology decisions
+  - id: exasol-integration-agent
+    role: domain-specialist
+    responsibilities:
+      - verify Exasol ecosystem references
+      - classify official versus labs integrations
+      - track source freshness risks
+  - id: qa-safety-agent
+    role: reviewer
+    responsibilities:
+      - review tests
+      - enforce security and policy checks
+      - validate AI safety flows
+  - id: documentation-agent
+    role: documentation
+    responsibilities:
+      - maintain docs
+      - update wiki and tasks
+      - preserve traceability
+
+policies:
+  require_human_approval_for:
+    - ddl
+    - destructive_dml
+    - privilege_changes
+    - production_exports
+    - external_ai_data_send
+  prohibited:
+    - storing_plaintext_secrets
+    - treating_labs_as_official_without_label
+    - bypassing_adrs_for_major_architecture_changes
+    - opening_unscoped_new_windows
+
+window_rules:
+  require_handoff_bundle: true
+  primary_window_owns_user_updates: true
+  specialist_windows_must_return_merge_summary: true
+  allowed_window_types:
+    - primary-window
+    - architecture-window
+    - integration-window
+    - implementation-window
+    - validation-window
+    - documentation-window

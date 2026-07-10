@@ -1,0 +1,25 @@
+:root {
+  --bg-app: #07161d;
+  --bg-shell: #0d2028;
+  --bg-panel: #112b35;
+  --bg-panel-alt: #163541;
+  --bg-editor: #0c1f28;
+  --bg-rail: #08141a;
+  --bg-accent: #e8f6ef;
+  --text-strong: #eff7f9;
+  --text-body: #c4d8dd;
+  --text-muted: #8ea8b2;
+  --line-subtle: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --brand-primary: #002e40;
+  --brand-secondary: #5fc33b;
+  --brand-secondary-soft: rgba(95, 195, 59, 0.14);
+  --warning: #f0b429;
+  --danger: #d85a5a;
+  --shadow-shell: 0 18px 60px rgba(0, 0, 0, 0.28);
+  --radius-panel: 12px;
+  --radius-control: 10px;
+  --font-ui: "Inter", "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono", "SFMono-Regular", monospace;
+}
+
