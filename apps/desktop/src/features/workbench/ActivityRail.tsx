@@ -1,4 +1,4 @@
-import { Database, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -6,12 +6,13 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type ActivityId = "databases" | "files" | "favorites" | "git" | "marketplace";
+export type ActivityId = "databases" | "files" | "favorites" | "visualizer" | "git" | "marketplace";
 
 export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
   { id: "databases", label: "Databases", icon: Database },
   { id: "files", label: "Files", icon: FileCode2 },
   { id: "favorites", label: "Favorites", icon: Star },
+  { id: "visualizer", label: "Visualizer", icon: Eye },
   { id: "git", label: "Git", icon: GitBranch },
   { id: "marketplace", label: "Marketplace", icon: Store },
 ];
@@ -20,25 +21,36 @@ export function ActivityRail({
   active,
   sidebarOpen,
   aiOpen,
+  visualizerActive,
+  visualizerCount,
   onSelect,
   onToggleAi,
 }: {
   active: ActivityId;
   sidebarOpen: boolean;
   aiOpen: boolean;
+  /** True when the focused workspace tab is a Visualizer. */
+  visualizerActive: boolean;
+  /** Number of open Visualizer tabs, shown as a badge. */
+  visualizerCount: number;
   onSelect: (id: ActivityId) => void;
   onToggleAi: () => void;
 }) {
   return (
-    <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-border bg-activitybar py-2">
+    <aside
+      data-tour="rail"
+      className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-border bg-activitybar py-2"
+    >
       <div className="flex flex-col items-center gap-1">
         {ACTIVITIES.map((item) => {
           const Icon = item.icon;
-          const selected = active === item.id && sidebarOpen;
+          const isViz = item.id === "visualizer";
+          const selected = (active === item.id && sidebarOpen) || (isViz && visualizerActive);
           return (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
                 <button
+                  data-tour={isViz ? "visualizer" : undefined}
                   aria-label={item.label}
                   onClick={() => onSelect(item.id)}
                   className={cn(
@@ -50,6 +62,11 @@ export function ActivityRail({
                     <span className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
                   ) : null}
                   <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  {isViz && visualizerCount > 0 ? (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-mono text-[9px] font-semibold text-primary-foreground">
+                      {visualizerCount}
+                    </span>
+                  ) : null}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">{item.label}</TooltipContent>

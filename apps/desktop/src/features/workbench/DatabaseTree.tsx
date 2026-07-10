@@ -140,7 +140,7 @@ export function DatabaseTree({
   walk(roots, []);
 
   return (
-    <div className="overflow-x-auto overflow-y-hidden py-0.5">
+    <div className="overflow-x-auto overflow-y-hidden py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="w-max min-w-full">{rows}</div>
     </div>
   );

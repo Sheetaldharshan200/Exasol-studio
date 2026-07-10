@@ -1,0 +1,88 @@
+-- ─────────────────────────────────────────────────────────────────────────
+-- Exasol Studio — Visualizer demo schema
+-- A small TPC-H-style model with primary keys and foreign keys so the
+-- Visualizer draws the relationships as animated beams.
+-- Run the whole script (Run entire script / Ctrl+Shift+Enter), then open the
+-- Visualizer (eye icon) and pick the VIZ_DEMO schema.
+-- ─────────────────────────────────────────────────────────────────────────
+
+CREATE SCHEMA IF NOT EXISTS VIZ_DEMO;
+OPEN SCHEMA VIZ_DEMO;
+
+-- Reference / lookup tables ------------------------------------------------
+CREATE OR REPLACE TABLE REGION (
+    R_REGIONKEY  DECIMAL(18,0) PRIMARY KEY,
+    R_NAME       VARCHAR(50)
+);
+
+CREATE OR REPLACE TABLE NATION (
+    N_NATIONKEY  DECIMAL(18,0) PRIMARY KEY,
+    N_NAME       VARCHAR(50),
+    N_REGIONKEY  DECIMAL(18,0),
+    FOREIGN KEY (N_REGIONKEY) REFERENCES REGION (R_REGIONKEY)
+);
+
+-- Master data --------------------------------------------------------------
+CREATE OR REPLACE TABLE CUSTOMER (
+    C_CUSTKEY    DECIMAL(18,0) PRIMARY KEY,
+    C_NAME       VARCHAR(50),
+    C_NATIONKEY  DECIMAL(18,0),
+    C_ACCTBAL    DECIMAL(12,2),
+    FOREIGN KEY (C_NATIONKEY) REFERENCES NATION (N_NATIONKEY)
+);
+
+CREATE OR REPLACE TABLE SUPPLIER (
+    S_SUPPKEY    DECIMAL(18,0) PRIMARY KEY,
+    S_NAME       VARCHAR(50),
+    S_NATIONKEY  DECIMAL(18,0),
+    FOREIGN KEY (S_NATIONKEY) REFERENCES NATION (N_NATIONKEY)
+);
+
+CREATE OR REPLACE TABLE PART (
+    P_PARTKEY    DECIMAL(18,0) PRIMARY KEY,
+    P_NAME       VARCHAR(80),
+    P_RETAILPRICE DECIMAL(12,2)
+);
+
+-- Bridge / fact tables -----------------------------------------------------
+CREATE OR REPLACE TABLE PARTSUPP (
+    PS_PARTKEY   DECIMAL(18,0),
+    PS_SUPPKEY   DECIMAL(18,0),
+    PS_AVAILQTY  DECIMAL(18,0),
+    PS_SUPPLYCOST DECIMAL(12,2),
+    PRIMARY KEY (PS_PARTKEY, PS_SUPPKEY),
+    FOREIGN KEY (PS_PARTKEY) REFERENCES PART (P_PARTKEY),
+    FOREIGN KEY (PS_SUPPKEY) REFERENCES SUPPLIER (S_SUPPKEY)
+);
+
+CREATE OR REPLACE TABLE ORDERS (
+    O_ORDERKEY   DECIMAL(18,0) PRIMARY KEY,
+    O_CUSTKEY    DECIMAL(18,0),
+    O_TOTALPRICE DECIMAL(12,2),
+    O_ORDERDATE  DATE,
+    FOREIGN KEY (O_CUSTKEY) REFERENCES CUSTOMER (C_CUSTKEY)
+);
+
+CREATE OR REPLACE TABLE LINEITEM (
+    L_ORDERKEY   DECIMAL(18,0),
+    L_LINENUMBER DECIMAL(18,0),
+    L_PARTKEY    DECIMAL(18,0),
+    L_SUPPKEY    DECIMAL(18,0),
+    L_QUANTITY   DECIMAL(12,2),
+    PRIMARY KEY (L_ORDERKEY, L_LINENUMBER),
+    FOREIGN KEY (L_ORDERKEY) REFERENCES ORDERS (O_ORDERKEY),
+    FOREIGN KEY (L_PARTKEY)  REFERENCES PART (P_PARTKEY),
+    FOREIGN KEY (L_SUPPKEY)  REFERENCES SUPPLIER (S_SUPPKEY)
+);
+
+-- A little sample data so SELECTs return rows too --------------------------
+INSERT INTO REGION VALUES (1, 'EUROPE'), (2, 'ASIA');
+INSERT INTO NATION VALUES (1, 'GERMANY', 1), (2, 'INDIA', 2), (3, 'FRANCE', 1);
+INSERT INTO CUSTOMER VALUES (1, 'Acme GmbH', 1, 7211.50), (2, 'Globex', 2, 120.00);
+INSERT INTO SUPPLIER VALUES (10, 'Supplier North', 1), (11, 'Supplier East', 2);
+INSERT INTO PART VALUES (100, 'Widget', 9.99), (101, 'Gadget', 19.50);
+INSERT INTO PARTSUPP VALUES (100, 10, 500, 4.20), (101, 11, 200, 8.10);
+INSERT INTO ORDERS VALUES (1000, 1, 210.49, DATE '2026-01-15'), (1001, 2, 39.00, DATE '2026-02-01');
+INSERT INTO LINEITEM VALUES (1000, 1, 100, 10, 5), (1000, 2, 101, 11, 2), (1001, 1, 100, 10, 3);
+
+COMMIT;

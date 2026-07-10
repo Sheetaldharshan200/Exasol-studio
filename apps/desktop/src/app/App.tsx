@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { ExasolStudio } from "@/components/studio/ExasolStudio";
 import { Onboarding } from "@/features/onboarding/Onboarding";
+import { Tour, STUDIO_TOUR } from "@/features/onboarding/Tour";
 import { ConnectRunWindow } from "@/features/connection/ConnectRunWindow";
 import { useConnections } from "@/state/useConnections";
 import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
 import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
+const TOURED_KEY = "exasol-studio-toured";
 
 export function App() {
   // The dedicated native connect window renders only the run flow.
@@ -22,6 +24,20 @@ function MainApp() {
   const [onboarded, setOnboarded] = useState(
     () => window.localStorage.getItem(ONBOARDED_KEY) === "1",
   );
+  const [showTour, setShowTour] = useState(false);
+
+  // Kick off the guided tour once, shortly after the studio first mounts.
+  useEffect(() => {
+    if (!onboarded) return;
+    if (window.localStorage.getItem(TOURED_KEY) === "1") return;
+    const t = setTimeout(() => setShowTour(true), 600);
+    return () => clearTimeout(t);
+  }, [onboarded]);
+
+  const endTour = () => {
+    window.localStorage.setItem(TOURED_KEY, "1");
+    setShowTour(false);
+  };
 
   // When the separate connect window succeeds, it emits the result here.
   useEffect(() => {
@@ -52,15 +68,18 @@ function MainApp() {
   }
 
   return (
-    <ExasolStudio
-      connection={active}
-      connections={connections}
-      drivers={drivers}
-      profiles={profiles}
-      onConnected={(profile, server) => adopt({ profile, server })}
-      onFocusConnection={focus}
-      onDisconnect={disconnect}
-      onSaved={refresh}
-    />
+    <>
+      <ExasolStudio
+        connection={active}
+        connections={connections}
+        drivers={drivers}
+        profiles={profiles}
+        onConnected={(profile, server) => adopt({ profile, server })}
+        onFocusConnection={focus}
+        onDisconnect={disconnect}
+        onSaved={refresh}
+      />
+      {showTour ? <Tour steps={STUDIO_TOUR} onClose={endTour} /> : null}
+    </>
   );
 }

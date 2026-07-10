@@ -169,6 +169,32 @@ export type SearchHit = {
   selectable: boolean;
 };
 
+export type GraphColumn = { name: string; dataType: string; pk: boolean };
+export type GraphTable = { name: string; columns: GraphColumn[] };
+export type GraphLink = {
+  source: string;
+  sourceColumn: string;
+  target: string;
+  targetColumn: string;
+};
+export type SchemaGraph = { tables: GraphTable[]; links: GraphLink[] };
+
+export type FsEntry = {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modified: string | null;
+  ext: string | null;
+};
+
+export type TablePreview = {
+  columns: string[];
+  rows: string[][];
+  truncated: boolean;
+  format: string;
+};
+
 export type ColumnMeta = { name: string; typeName: string };
 
 export type StatementResult = {
@@ -254,6 +280,15 @@ export const ipc = {
     call<{ types: DataType[] }>("list_data_types", { profileId }),
   searchObjects: (profileId: string, query: string, limit?: number) =>
     call<{ results: SearchHit[] }>("search_objects", { profileId, query, limit }),
+  getSchemaGraph: (profileId: string, schema: string) =>
+    call<SchemaGraph>("get_schema_graph", { profileId, schema }),
+  fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
+  fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
+  fsReadText: (path: string) => call<string>("fs_read_text", { path }),
+  fsReadTable: (path: string, limit?: number) =>
+    call<TablePreview>("fs_read_table", { path, limit }),
+  fsSearch: (root: string, query: string, limit?: number) =>
+    call<FsEntry[]>("fs_search", { root, query, limit }),
   executeSql: (profileId: string, connectionName: string, sql: string, maxRows: number) =>
     call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),

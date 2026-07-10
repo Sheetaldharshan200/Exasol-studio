@@ -182,6 +182,23 @@ fn is_result_set_statement(statement: &str) -> bool {
     )
 }
 
+/// Column metadata for a statement without reading any rows (used when a query
+/// returns zero rows, so the results grid can still show the header).
+async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
+    use sqlx_exasol::{Executor, SqlSafeStr};
+    match pool.describe(AssertSqlSafe(statement.to_string()).into_sql_str()).await {
+        Ok(desc) => desc
+            .columns()
+            .iter()
+            .map(|c| ColumnMeta {
+                name: c.name().to_string(),
+                type_name: c.type_info().name().to_string(),
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 async fn run_statement(pool: &ExaPool, statement: &str, max_rows: usize) -> StatementResult {
     let started = std::time::Instant::now();
 
@@ -210,6 +227,12 @@ async fn run_statement(pool: &ExaPool, statement: &str, max_rows: usize) -> Stat
                     break;
                 }
             }
+        }
+
+        // A result set with zero rows has no row to read column metadata from —
+        // ask the server to describe the statement so the header still shows.
+        if columns.is_empty() && error.is_none() {
+            columns = describe_columns(pool, statement).await;
         }
 
         let row_count = rows.len() as u64;

@@ -6,6 +6,7 @@ import {
   ChevronsDownUp,
   CircleSlash2,
   Database,
+  Eye,
   FileCode2,
   GitBranch,
   History,
@@ -13,6 +14,8 @@ import {
   ListChecks,
   Loader2,
   PanelLeftClose,
+  PanelRight,
+  Pin,
   Play,
   Plug,
   PlugZap,
@@ -59,6 +62,9 @@ import { buildConnectionNodes } from "@/features/workbench/tree-model";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
+import { FileExplorer } from "@/features/workbench/FileExplorer";
+import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
+import { Visualizer } from "@/features/workbench/Visualizer";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
@@ -80,7 +86,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview";
 
 type SqlTab = {
   id: string;
@@ -89,6 +95,9 @@ type SqlTab = {
   sql: string;
   response: ExecuteResponse | null;
   execError: string | null;
+  pinned?: boolean;
+  /** For filePreview tabs — the local file path being previewed. */
+  filePath?: string;
 };
 
 function newTab(index: number): SqlTab {
@@ -110,6 +119,8 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   dbInfo: Info,
   dataTypes: Shapes,
   connect: Plug,
+  visualizer: Eye,
+  filePreview: Table2,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -172,16 +183,73 @@ function defineMonacoThemes(monaco: Monaco) {
   });
 }
 
-/** Statement under a character offset (split on top-level semicolons). */
-function statementAtOffset(sql: string, offset: number): string {
+type Stmt = { text: string; start: number; end: number };
+
+/**
+ * Split SQL into statements on top-level semicolons, ignoring semicolons inside
+ * single/double quotes, line comments (--), and block comments. Mirrors the
+ * backend splitter so "Run" sends exactly what the server will execute.
+ */
+function splitStatements(sql: string): Stmt[] {
+  const out: Stmt[] = [];
   let start = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inLine = false;
+  let inBlock = false;
   for (let i = 0; i < sql.length; i++) {
-    if (sql[i] === ";") {
-      if (offset <= i) return sql.slice(start, i).trim();
+    const c = sql[i];
+    const n = sql[i + 1];
+    if (inLine) {
+      if (c === "\n") inLine = false;
+      continue;
+    }
+    if (inBlock) {
+      if (c === "*" && n === "/") {
+        inBlock = false;
+        i++;
+      }
+      continue;
+    }
+    if (inSingle) {
+      if (c === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (c === '"') inDouble = false;
+      continue;
+    }
+    if (c === "'") inSingle = true;
+    else if (c === '"') inDouble = true;
+    else if (c === "-" && n === "-") {
+      inLine = true;
+      i++;
+    } else if (c === "/" && n === "*") {
+      inBlock = true;
+      i++;
+    } else if (c === ";") {
+      const text = sql.slice(start, i).trim();
+      if (text) out.push({ text, start, end: i });
       start = i + 1;
     }
   }
-  return sql.slice(start).trim();
+  const tail = sql.slice(start).trim();
+  if (tail) out.push({ text: tail, start, end: sql.length });
+  return out;
+}
+
+/**
+ * The statement the cursor is in — or the nearest one before it (so a cursor
+ * resting after a trailing ";" still runs the query you just wrote), or the
+ * whole input if it is a single unterminated statement.
+ */
+function statementAtOffset(sql: string, offset: number): string {
+  const stmts = splitStatements(sql);
+  if (stmts.length === 0) return sql.trim();
+  for (const s of stmts) {
+    if (offset <= s.end) return s.text;
+  }
+  return stmts[stmts.length - 1].text;
 }
 
 function IconButton({
@@ -286,8 +354,9 @@ function TitleBar({
   );
 }
 
-const PLACEHOLDERS: Record<Exclude<ActivityId, "databases">, { icon: typeof Star; title: string; body: string }> = {
-  files: { icon: FileCode2, title: "SQL files", body: "Local .sql scripts you open will appear here." },
+// Activities with a simple placeholder panel (databases/files/visualizer have
+// their own dedicated panels).
+const PLACEHOLDERS: Record<"favorites" | "git" | "marketplace", { icon: typeof Star; title: string; body: string }> = {
   favorites: { icon: Star, title: "Favorites", body: "Star tables, queries, and connections for quick access." },
   git: { icon: GitBranch, title: "Git", body: "Version your saved SQL scripts alongside your project." },
   marketplace: { icon: Store, title: "Marketplace", body: "Browse virtual-schema adapters, drivers, and extensions." },
@@ -392,6 +461,97 @@ function ConnectionSection({
   );
 }
 
+/** Sidebar panel for the Visualizer activity: lists open diagram tabs and
+ * opens more. */
+function VisualizerPanel({
+  tabs,
+  activeTabId,
+  hasConnection,
+  onOpenNew,
+  onFocus,
+  onClose,
+  onConnect,
+}: {
+  tabs: { id: string; title: string }[];
+  activeTabId: string;
+  hasConnection: boolean;
+  onOpenNew: () => void;
+  onFocus: (id: string) => void;
+  onClose: (id: string) => void;
+  onConnect: () => void;
+}) {
+  if (!hasConnection) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
+          <Eye className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-foreground">Nothing to visualize yet</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Connect to a database, then open a visualizer to see its tables and foreign keys.
+          </p>
+        </div>
+        <button
+          onClick={onConnect}
+          className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
+        >
+          <PlugZap className="h-3.5 w-3.5" />
+          Connect
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="p-2">
+        <button
+          onClick={onOpenNew}
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New visualizer
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-1">
+        {tabs.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            No diagrams open yet.
+          </p>
+        ) : (
+          tabs.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => onFocus(t.id)}
+              className={cn(
+                "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition-colors",
+                t.id === activeTabId
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+              )}
+            >
+              <Eye className="h-3.5 w-3.5 shrink-0 text-[#a78bfa]" />
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label="Close visualizer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(t.id);
+                }}
+                className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Sidebar({
   activity,
   connections,
@@ -404,6 +564,13 @@ function Sidebar({
   onRefreshConnection,
   onOpenView,
   onCollapse,
+  onOpenFile,
+  onOpenData,
+  visualizerTabs,
+  activeTabId,
+  onOpenNewVisualizer,
+  onFocusTab,
+  onCloseTab,
 }: {
   activity: ActivityId;
   connections: ActiveConnection[];
@@ -416,13 +583,27 @@ function Sidebar({
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
   onCollapse: () => void;
+  onOpenFile: (name: string, content: string) => void;
+  onOpenData: (name: string, path: string) => void;
+  visualizerTabs: { id: string; title: string }[];
+  activeTabId: string;
+  onOpenNewVisualizer: () => void;
+  onFocusTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const hasConnections = connections.length > 0;
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
 
-  const title = activity === "databases" ? "Database" : PLACEHOLDERS[activity].title;
+  const title =
+    activity === "databases"
+      ? "Database"
+      : activity === "files"
+        ? "Files"
+        : activity === "visualizer"
+          ? "Visualizer"
+          : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
 
   if (activity !== "databases") {
     return (
@@ -433,23 +614,37 @@ function Sidebar({
             <PanelLeftClose className="h-3.5 w-3.5" />
           </IconButton>
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          {(() => {
-            const P = PLACEHOLDERS[activity];
-            const Icon = P.icon;
-            return (
-              <>
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{P.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{P.body}</p>
-                </div>
-              </>
-            );
-          })()}
-        </div>
+        {activity === "files" ? (
+          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} />
+        ) : activity === "visualizer" ? (
+          <VisualizerPanel
+            tabs={visualizerTabs}
+            activeTabId={activeTabId}
+            hasConnection={hasConnections}
+            onOpenNew={onOpenNewVisualizer}
+            onFocus={onFocusTab}
+            onClose={onCloseTab}
+            onConnect={onConnect}
+          />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            {(() => {
+              const P = PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"];
+              const Icon = P.icon;
+              return (
+                <>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{P.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{P.body}</p>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </aside>
     );
   }
@@ -458,7 +653,7 @@ function Sidebar({
     <aside className="flex h-full min-w-0 flex-col bg-panel">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pr-1 pl-3">
         <span className="eyebrow-muted">{title}</span>
-        <div className="flex items-center gap-0.5">
+        <div data-tour="add-connection" className="flex items-center gap-0.5">
           <IconButton label="Add connection" onClick={onConnect}>
             <Plus className="h-3.5 w-3.5" />
           </IconButton>
@@ -764,6 +959,9 @@ export function ExasolStudio({
   const activeTabId = activeIdByConn[connKey] ?? tabs[0].id;
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
   const isSpecialTab = activeTab.view !== "sql";
+  const visualizerTabs = tabs
+    .filter((t) => t.view === "visualizer")
+    .map((t) => ({ id: t.id, title: t.title }));
   const { theme } = useTheme();
   const editorTheme = theme === "dark" ? "exasol-dark" : "exasol-light";
 
@@ -771,6 +969,15 @@ export function ExasolStudio({
     (id: string) => setActiveIdByConn((a) => ({ ...a, [connKey]: id })),
     [connKey],
   );
+
+  const toggleAi = useCallback(() => {
+    setAiOpen((o) => {
+      const next = !o;
+      if (next) aiPanelRef.current?.expand();
+      else aiPanelRef.current?.collapse();
+      return next;
+    });
+  }, []);
 
   const loadHistory = useCallback(() => {
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
@@ -827,12 +1034,47 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open a local file's contents as a new query tab in the current workspace.
+  function openFile(name: string, content: string) {
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-file-${Date.now()}-${tabCounter.current}`,
+      title: name,
+      view: "sql",
+      sql: content,
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
+  }
+
   function closeTab(id: string) {
     const list = tabsFor(connKey);
     if (list.length <= 1) return;
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
     if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
+  }
+
+  function togglePin(id: string) {
+    updateTabs(connKey, (list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
+  }
+
+  // Open a tabular file (CSV / TSV / Parquet) as a read-only preview tab.
+  function openData(name: string, path: string) {
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-data-${Date.now()}-${tabCounter.current}`,
+      title: name,
+      view: "filePreview",
+      sql: "",
+      response: null,
+      execError: null,
+      filePath: path,
+    };
+    updateTabs(connKey, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
   }
 
   // Open (or focus) the connect-to-database flow as a tab, so adding a
@@ -881,6 +1123,44 @@ export function ExasolStudio({
 
   function refreshConnection(profileId: string) {
     setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
+  }
+
+  // Open a brand-new Visualizer tab (multiple diagrams are allowed).
+  function newVisualizer() {
+    if (!connection) {
+      openConnect();
+      return;
+    }
+    const key = connection.profile.id;
+    const list = tabsByConn[key] ?? tabsFor(key);
+    const n = list.filter((t) => t.view === "visualizer").length + 1;
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-viz-${Date.now()}-${tabCounter.current}`,
+      title: n === 1 ? "Visualizer" : `Visualizer ${n}`,
+      view: "visualizer",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    setTabsByConn((prev) => ({ ...prev, [key]: [...(prev[key] ?? tabsFor(key)), tab] }));
+    setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
+  }
+
+  // Focus an existing Visualizer tab, or open one if none exist yet.
+  function openVisualizer() {
+    if (!connection) {
+      openConnect();
+      return;
+    }
+    const key = connection.profile.id;
+    const list = tabsByConn[key] ?? tabsFor(key);
+    const existing = [...list].reverse().find((t) => t.view === "visualizer");
+    if (existing) {
+      setActiveIdByConn((a) => ({ ...a, [key]: existing.id }));
+      return;
+    }
+    newVisualizer();
   }
 
   function startRename(id: string, current: string) {
@@ -1010,6 +1290,8 @@ export function ExasolStudio({
           active={activity}
           sidebarOpen={sidebarOpen}
           aiOpen={aiOpen}
+          visualizerActive={activeTab.view === "visualizer"}
+          visualizerCount={visualizerTabs.length}
           onSelect={(id) => {
             if (id === activity && sidebarOpen) {
               sidebarPanelRef.current?.collapse();
@@ -1018,16 +1300,13 @@ export function ExasolStudio({
               setActivity(id);
               setSidebarOpen(true);
               sidebarPanelRef.current?.expand();
+              if (id === "visualizer" && connection) {
+                const list = tabsByConn[connection.profile.id] ?? tabsFor(connection.profile.id);
+                if (!list.some((t) => t.view === "visualizer")) openVisualizer();
+              }
             }
           }}
-          onToggleAi={() =>
-            setAiOpen((o) => {
-              const next = !o;
-              if (next) aiPanelRef.current?.expand();
-              else aiPanelRef.current?.collapse();
-              return next;
-            })
-          }
+          onToggleAi={toggleAi}
         />
 
         <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
@@ -1057,6 +1336,13 @@ export function ExasolStudio({
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
               }}
+              onOpenFile={openFile}
+              onOpenData={openData}
+              visualizerTabs={visualizerTabs}
+              activeTabId={activeTabId}
+              onOpenNewVisualizer={newVisualizer}
+              onFocusTab={setActiveTabId}
+              onCloseTab={closeTab}
             />
           </ResizablePanel>
           <ResizableHandle groupDirection="horizontal" />
@@ -1066,9 +1352,11 @@ export function ExasolStudio({
             <div className="relative flex h-full min-w-0 flex-col bg-editor">
           <>
           {/* Tab strip */}
-          <div className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
-            <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
-              {tabs.map((tab) => {
+          <div data-tour="tabbar" className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
+            <div className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {[...tabs]
+                .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+                .map((tab) => {
                 const TabIcon = TAB_ICON[tab.view];
                 const isEditing = renaming?.id === tab.id;
                 return (
@@ -1103,18 +1391,53 @@ export function ExasolStudio({
                     ) : (
                       <span className="max-w-[140px] truncate">{tab.title}</span>
                     )}
-                    {tabs.length > 1 && !isEditing ? (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        aria-label="Close tab"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closeTab(tab.id);
-                        }}
-                        className="ml-1 rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
-                      >
-                        <X className="h-3 w-3" />
+                    {!isEditing ? (
+                      <span className="ml-1 flex items-center">
+                        {tab.pinned ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label="Unpin tab"
+                            title="Unpin tab"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePin(tab.id);
+                            }}
+                            className="rounded p-0.5 text-primary hover:bg-secondary"
+                          >
+                            <Pin className="h-3 w-3 fill-current" />
+                          </span>
+                        ) : (
+                          <>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              aria-label="Pin tab"
+                              title="Pin tab"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePin(tab.id);
+                              }}
+                              className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
+                            >
+                              <Pin className="h-3 w-3" />
+                            </span>
+                            {tabs.length > 1 ? (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                aria-label="Close tab"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  closeTab(tab.id);
+                                }}
+                                className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
+                              >
+                                <X className="h-3 w-3" />
+                              </span>
+                            ) : null}
+                          </>
+                        )}
                       </span>
                     ) : null}
                   </div>
@@ -1129,10 +1452,25 @@ export function ExasolStudio({
                 <Plus className="h-4 w-4" />
               </button>
             </div>
+            {/* Right (AI) sidebar toggle, pinned to the end of the tab bar */}
+            <button
+              data-tour="ai-toggle"
+              onClick={toggleAi}
+              aria-label={aiOpen ? "Hide AI panel" : "Show AI panel"}
+              title={aiOpen ? "Hide AI panel" : "Show AI panel"}
+              className={cn(
+                "mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+                aiOpen ? "bg-secondary text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Toolbar — hidden on the connect tab (it has its own header) */}
-          {activeTab.view !== "connect" ? (
+          {/* Toolbar — hidden on tabs that carry their own header */}
+          {activeTab.view !== "connect" &&
+          activeTab.view !== "visualizer" &&
+          activeTab.view !== "filePreview" ? (
           <div className="flex h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2">
             {!isSpecialTab ? (
               <>
@@ -1203,7 +1541,7 @@ export function ExasolStudio({
           </div>
           ) : null}
 
-          {/* Connect flow, catalog surface, or the SQL editor + results */}
+          {/* Connect flow, catalog surface, file preview, or SQL editor */}
           {activeTab.view === "connect" ? (
             <div className="min-h-0 flex-1">
               <ConnectView
@@ -1213,6 +1551,10 @@ export function ExasolStudio({
                 onConnected={onConnected}
               />
             </div>
+          ) : activeTab.view === "filePreview" ? (
+            <div className="min-h-0 flex-1">
+              <FilePreviewPanel name={activeTab.title} path={activeTab.filePath ?? ""} />
+            </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
               {activeTab.view === "dbInfo" ? (
@@ -1220,8 +1562,13 @@ export function ExasolStudio({
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
                 />
-              ) : (
+              ) : activeTab.view === "dataTypes" ? (
                 <DataTypesPanel
+                  profileId={connection.profile.id}
+                  connectionName={connection.profile.name}
+                />
+              ) : (
+                <Visualizer
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
                 />
@@ -1312,14 +1659,7 @@ export function ExasolStudio({
             onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
             className="min-w-0"
           >
-            <AssistantPanel
-              contextSummary={contextSummary}
-              editorSql={activeTab.sql}
-              onCollapse={() => {
-                aiPanelRef.current?.collapse();
-                setAiOpen(false);
-              }}
-            />
+            <AssistantPanel contextSummary={contextSummary} editorSql={activeTab.sql} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>

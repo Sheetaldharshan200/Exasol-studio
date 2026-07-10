@@ -399,3 +399,55 @@
     animation: none;
     mix-blend-mode: normal;
 }
+
+/* React Flow — theme the controls / minimap so they're visible in dark mode */
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
+}
+.react-flow__controls-button {
+  background: var(--popover);
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  width: 26px;
+  height: 26px;
+}
+.react-flow__controls-button:hover {
+  background: var(--secondary);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
+}
+.react-flow__minimap {
+  background-color: var(--popover) !important;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.react-flow__attribution {
+  display: none;
+}
+
+/* MagicUI ShineBorder animation */
+@keyframes shine {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+.animate-shine {
+  animation: shine var(--duration, 14s) infinite linear;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .motion-safe\:animate-shine {
+    animation: shine var(--duration, 14s) infinite linear;
+  }
+}

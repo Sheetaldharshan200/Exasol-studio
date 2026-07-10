@@ -4,6 +4,7 @@ mod connection;
 mod drivers;
 mod error;
 mod files;
+mod fs;
 mod history;
 mod metadata;
 mod profiles;
@@ -46,7 +47,13 @@ pub fn run() {
             catalog::get_database_info,
             catalog::list_data_types,
             catalog::search_objects,
+            catalog::get_schema_graph,
             files::write_text_file,
+            fs::fs_list_dir,
+            fs::fs_read_text,
+            fs::fs_read_table,
+            fs::fs_home_roots,
+            fs::fs_search,
             query::execute_sql,
             history::sql_history_list,
             history::sql_history_clear,

@@ -443,6 +443,102 @@ export async function mockInvoke(
       return { results };
     }
 
+    case "get_schema_graph":
+      return {
+        tables: [
+          {
+            name: "CUSTOMER",
+            columns: [
+              { name: "C_CUSTKEY", dataType: "DECIMAL(18,0)", pk: true },
+              { name: "C_NAME", dataType: "VARCHAR(25)", pk: false },
+              { name: "C_NATIONKEY", dataType: "DECIMAL(18,0)", pk: false },
+              { name: "C_ACCTBAL", dataType: "DECIMAL(12,2)", pk: false },
+            ],
+          },
+          {
+            name: "ORDERS",
+            columns: [
+              { name: "O_ORDERKEY", dataType: "DECIMAL(18,0)", pk: true },
+              { name: "O_CUSTKEY", dataType: "DECIMAL(18,0)", pk: false },
+              { name: "O_TOTALPRICE", dataType: "DECIMAL(12,2)", pk: false },
+            ],
+          },
+          {
+            name: "LINEITEM",
+            columns: [
+              { name: "L_ORDERKEY", dataType: "DECIMAL(18,0)", pk: true },
+              { name: "L_PARTKEY", dataType: "DECIMAL(18,0)", pk: false },
+              { name: "L_QUANTITY", dataType: "DECIMAL(12,2)", pk: false },
+            ],
+          },
+          {
+            name: "NATION",
+            columns: [
+              { name: "N_NATIONKEY", dataType: "DECIMAL(18,0)", pk: true },
+              { name: "N_NAME", dataType: "VARCHAR(25)", pk: false },
+            ],
+          },
+        ],
+        links: [
+          { source: "CUSTOMER", sourceColumn: "C_NATIONKEY", target: "NATION", targetColumn: "N_NATIONKEY" },
+          { source: "ORDERS", sourceColumn: "O_CUSTKEY", target: "CUSTOMER", targetColumn: "C_CUSTKEY" },
+          { source: "LINEITEM", sourceColumn: "L_ORDERKEY", target: "ORDERS", targetColumn: "O_ORDERKEY" },
+        ],
+      };
+
+    case "fs_home_roots":
+      return [{ name: "Home", path: "/Users/you", isDir: true, size: 0, modified: null, ext: null }];
+
+    case "fs_list_dir": {
+      const path = String(args?.path ?? "");
+      const mk = (name: string, isDir: boolean, ext: string | null = null) => ({
+        name,
+        path: `${path}/${name}`,
+        isDir,
+        size: isDir ? 0 : 2048,
+        modified: "2026-07-09T12:00:00Z",
+        ext,
+      });
+      return [
+        mk("queries", true),
+        mk("exports", true),
+        mk("customers.sql", false, "sql"),
+        mk("daily_load.sql", false, "sql"),
+        mk("notes.md", false, "md"),
+        mk("report.csv", false, "csv"),
+        mk("schema.json", false, "json"),
+      ];
+    }
+
+    case "fs_read_text":
+      return "-- Loaded from a local file (design preview)\nSELECT * FROM STARTER_KIT.CUSTOMER LIMIT 100;\n";
+
+    case "fs_read_table": {
+      const p = String(args?.path ?? "");
+      const fmt = p.endsWith(".parquet") ? "Parquet" : p.endsWith(".tsv") ? "TSV" : "CSV";
+      return {
+        columns: ["C_CUSTKEY", "C_NAME", "C_NATIONKEY", "C_ACCTBAL"],
+        rows: [
+          ["1", "Acme GmbH", "1", "7211.50"],
+          ["2", "Globex", "2", "120.00"],
+          ["3", "Initech", "1", "980.25"],
+        ],
+        truncated: false,
+        format: fmt,
+      };
+    }
+
+    case "fs_search": {
+      const q = String(args?.query ?? "").trim().toLowerCase();
+      if (!q) return [];
+      const all = [
+        { name: "customers.sql", path: "/Users/you/queries/customers.sql", isDir: false, size: 2048, modified: null, ext: "sql" },
+        { name: "daily_load.sql", path: "/Users/you/queries/daily_load.sql", isDir: false, size: 2048, modified: null, ext: "sql" },
+        { name: "customer_report.csv", path: "/Users/you/exports/customer_report.csv", isDir: false, size: 9000, modified: null, ext: "csv" },
+      ];
+      return all.filter((e) => e.name.toLowerCase().includes(q));
+    }
+
     case "execute_sql": {
       await delay(350);
       const sql = String(args?.sql ?? "");

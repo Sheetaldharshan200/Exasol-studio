@@ -71,6 +71,98 @@ pub async fn list_data_types(state: State<'_, AppState>, profile_id: String) -> 
     }))
 }
 
+/// Schema graph for the visualizer: tables with their columns (primary-key
+/// flagged) and the foreign-key links between them.
+#[tauri::command]
+pub async fn get_schema_graph(
+    state: State<'_, AppState>,
+    profile_id: String,
+    schema: String,
+) -> AppResult<Value> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let lit = schema.replace('\'', "''");
+
+    let columns = fetch_all_rows(
+        &pool,
+        &format!(
+            "SELECT COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE \
+             FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA = '{lit}' \
+             ORDER BY COLUMN_TABLE, COLUMN_ORDINAL_POSITION"
+        ),
+    )
+    .await
+    .unwrap_or_default();
+
+    let pks = fetch_all_rows(
+        &pool,
+        &format!(
+            "SELECT cc.CONSTRAINT_TABLE, cc.COLUMN_NAME \
+             FROM SYS.EXA_ALL_CONSTRAINT_COLUMNS cc \
+             JOIN SYS.EXA_ALL_CONSTRAINTS c \
+               ON c.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA \
+              AND c.CONSTRAINT_TABLE = cc.CONSTRAINT_TABLE \
+              AND c.CONSTRAINT_NAME = cc.CONSTRAINT_NAME \
+             WHERE cc.CONSTRAINT_SCHEMA = '{lit}' AND c.CONSTRAINT_TYPE = 'PRIMARY KEY'"
+        ),
+    )
+    .await
+    .unwrap_or_default();
+
+    let fks = fetch_all_rows(
+        &pool,
+        &format!(
+            "SELECT CONSTRAINT_TABLE, COLUMN_NAME, REFERENCED_TABLE, REFERENCED_COLUMN \
+             FROM SYS.EXA_ALL_CONSTRAINT_COLUMNS \
+             WHERE CONSTRAINT_SCHEMA = '{lit}' AND REFERENCED_TABLE IS NOT NULL"
+        ),
+    )
+    .await
+    .unwrap_or_default();
+
+    let is_pk = |table: &str, col: &str| -> bool {
+        pks.iter().any(|r| {
+            r.first().and_then(|v| v.as_str()) == Some(table)
+                && r.get(1).and_then(|v| v.as_str()) == Some(col)
+        })
+    };
+
+    // Group columns by table, preserving order.
+    let mut tables: Vec<(String, Vec<Value>)> = Vec::new();
+    for row in &columns {
+        let table = cell(row, 0).as_str().unwrap_or_default().to_string();
+        let col_name = cell(row, 1);
+        let col_name_str = col_name.as_str().unwrap_or_default().to_string();
+        let entry = obj(vec![
+            ("name", col_name),
+            ("dataType", cell(row, 2)),
+            ("pk", Value::Bool(is_pk(&table, &col_name_str))),
+        ]);
+        match tables.iter_mut().find(|(t, _)| t == &table) {
+            Some((_, cols)) => cols.push(entry),
+            None => tables.push((table, vec![entry])),
+        }
+    }
+
+    let table_list: Vec<Value> = tables
+        .into_iter()
+        .map(|(name, cols)| obj(vec![("name", Value::String(name)), ("columns", Value::Array(cols))]))
+        .collect();
+
+    let link_list: Vec<Value> = fks
+        .iter()
+        .map(|r| {
+            obj(vec![
+                ("source", cell(r, 0)),
+                ("sourceColumn", cell(r, 1)),
+                ("target", cell(r, 2)),
+                ("targetColumn", cell(r, 3)),
+            ])
+        })
+        .collect();
+
+    Ok(json!({ "tables": table_list, "links": link_list }))
+}
+
 /// Escape a user string for use inside a single-quoted SQL literal, and also
 /// neutralise LIKE wildcards so the term is matched literally.
 fn like_literal(raw: &str) -> String {
