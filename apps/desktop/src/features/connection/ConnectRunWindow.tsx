@@ -17,12 +17,18 @@ import {
  */
 export function ConnectRunWindow() {
   const [req, setReq] = useState<ConnectRequest | null>(null);
+  // Bumped on every incoming request so the overlay remounts and re-runs its
+  // flow — critical when the window is reused (e.g. Test, then Connect).
+  const [runId, setRunId] = useState(0);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       const { emit, listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen<ConnectRequest>(EV_REQUEST, (e) => setReq(e.payload));
+      unlisten = await listen<ConnectRequest>(EV_REQUEST, (e) => {
+        setReq(e.payload);
+        setRunId((n) => n + 1);
+      });
       // Announce readiness so the opener sends the request.
       await emit(EV_READY, {});
     })();
@@ -47,6 +53,7 @@ export function ConnectRunWindow() {
 
   return (
     <ConnectRunOverlay
+      key={runId}
       open
       variant="page"
       mode={req.mode}

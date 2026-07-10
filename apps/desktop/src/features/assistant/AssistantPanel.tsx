@@ -4,6 +4,7 @@ import {
   Bot,
   KeyRound,
   Loader2,
+  PanelRightClose,
   Send,
   Slash,
   Sparkles,
@@ -44,9 +45,11 @@ const MENTIONS: { at: string; desc: string }[] = [
 export function AssistantPanel({
   contextSummary,
   editorSql,
+  onCollapse,
 }: {
   contextSummary: string;
   editorSql: string;
+  onCollapse?: () => void;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -225,6 +228,16 @@ export function AssistantPanel({
           >
             <KeyRound className="h-3.5 w-3.5" />
           </button>
+          {onCollapse ? (
+            <button
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+              onClick={onCollapse}
+              aria-label="Collapse assistant panel"
+              title="Collapse panel"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       </div>
 

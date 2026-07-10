@@ -3,6 +3,7 @@ mod catalog;
 mod connection;
 mod drivers;
 mod error;
+mod files;
 mod history;
 mod metadata;
 mod profiles;
@@ -16,6 +17,7 @@ use crate::state::AppState;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -44,6 +46,7 @@ pub fn run() {
             catalog::get_database_info,
             catalog::list_data_types,
             catalog::search_objects,
+            files::write_text_file,
             query::execute_sql,
             history::sql_history_list,
             history::sql_history_clear,

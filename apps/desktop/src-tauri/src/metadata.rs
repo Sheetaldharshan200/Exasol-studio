@@ -39,24 +39,51 @@ pub async fn get_database_overview(
 
     let schemas = fetch_all_rows(
         &pool,
-        "SELECT s.SCHEMA_NAME, s.SCHEMA_OWNER, s.SCHEMA_COMMENT, \
-                CASE WHEN v.SCHEMA_NAME IS NULL THEN FALSE ELSE TRUE END AS IS_VIRTUAL, \
-                v.ADAPTER_SCRIPT \
-         FROM SYS.EXA_ALL_SCHEMAS s \
-         LEFT JOIN SYS.EXA_ALL_VIRTUAL_SCHEMAS v ON v.SCHEMA_NAME = s.SCHEMA_NAME \
-         ORDER BY s.SCHEMA_NAME",
+        "SELECT SCHEMA_NAME, SCHEMA_OWNER, SCHEMA_COMMENT \
+         FROM SYS.EXA_ALL_SCHEMAS ORDER BY SCHEMA_NAME",
     )
     .await?;
+
+    // Virtual schemas are listed in a separate view whose adapter-script column
+    // differs across Exasol versions (ADAPTER_SCRIPT vs. ADAPTER_SCRIPT_SCHEMA +
+    // ADAPTER_SCRIPT_NAME). Try each shape, then fall back to name-only.
+    let virtual_rows = fetch_first_ok(
+        &pool,
+        &[
+            "SELECT SCHEMA_NAME, ADAPTER_SCRIPT_SCHEMA || '.' || ADAPTER_SCRIPT_NAME AS ADAPTER \
+             FROM SYS.EXA_ALL_VIRTUAL_SCHEMAS ORDER BY SCHEMA_NAME",
+            "SELECT SCHEMA_NAME, ADAPTER_SCRIPT AS ADAPTER \
+             FROM SYS.EXA_ALL_VIRTUAL_SCHEMAS ORDER BY SCHEMA_NAME",
+            "SELECT SCHEMA_NAME, CAST(NULL AS VARCHAR(200)) AS ADAPTER \
+             FROM SYS.EXA_ALL_VIRTUAL_SCHEMAS ORDER BY SCHEMA_NAME",
+        ],
+    )
+    .await;
+
+    let adapter_for = |name: &str| -> Value {
+        virtual_rows
+            .iter()
+            .find(|r| r.first().and_then(|v| v.as_str()) == Some(name))
+            .map(|r| cell(r, 1))
+            .unwrap_or(Value::Null)
+    };
+    let is_virtual = |name: &str| -> bool {
+        virtual_rows
+            .iter()
+            .any(|r| r.first().and_then(|v| v.as_str()) == Some(name))
+    };
 
     let schema_list: Vec<Value> = schemas
         .iter()
         .map(|row| {
+            let name = cell(row, 0);
+            let name_str = name.as_str().unwrap_or_default().to_string();
             obj(vec![
-                ("name", cell(row, 0)),
+                ("name", name),
                 ("owner", cell(row, 1)),
                 ("comment", cell(row, 2)),
-                ("isVirtual", cell(row, 3)),
-                ("adapterScript", cell(row, 4)),
+                ("isVirtual", Value::Bool(is_virtual(&name_str))),
+                ("adapterScript", adapter_for(&name_str)),
             ])
         })
         .collect();

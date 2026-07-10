@@ -117,9 +117,10 @@ export function ConnectView({
   const [recentHidden, setRecentHidden] = useState(
     () => window.localStorage.getItem("exasol-recent-hidden") === "1",
   );
-  const [overlay, setOverlay] = useState<{ open: boolean; mode: "test" | "connect" }>({
+  const [overlay, setOverlay] = useState<{ open: boolean; mode: "test" | "connect"; runId: number }>({
     open: false,
     mode: "test",
+    runId: 0,
   });
   // Last test outcome, so the Test button can show a ✓ / ✗.
   const [testing, setTesting] = useState(false);
@@ -177,7 +178,7 @@ export function ConnectView({
       setTestedOk(null);
     }
     const opened = await openConnectWindow({ draft, mode });
-    if (!opened) setOverlay({ open: true, mode });
+    if (!opened) setOverlay((o) => ({ open: true, mode, runId: o.runId + 1 }));
   }
 
   return (
@@ -445,6 +446,7 @@ export function ConnectView({
       </ResizablePanelGroup>
 
       <ConnectRunOverlay
+        key={overlay.runId}
         open={overlay.open}
         mode={overlay.mode}
         draft={draft}

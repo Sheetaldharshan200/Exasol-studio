@@ -3,6 +3,7 @@ import Editor, { type Monaco } from "@monaco-editor/react";
 import {
   Activity,
   ChevronRight,
+  ChevronsDownUp,
   CircleSlash2,
   Database,
   FileCode2,
@@ -11,7 +12,9 @@ import {
   Info,
   ListChecks,
   Loader2,
+  PanelLeftClose,
   Play,
+  Plug,
   PlugZap,
   Plus,
   RefreshCcw,
@@ -43,6 +46,7 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
+  type PanelImperativeHandle,
 } from "@/components/ui/resizable";
 import {
   Tooltip,
@@ -62,6 +66,7 @@ import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
   errorMessage,
   ipc,
+  isTauri,
   type ConnectionProfile,
   type DriverInfo,
   type ExecuteResponse,
@@ -73,8 +78,9 @@ import type { ActiveConnection } from "@/state/useConnections";
 
 const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
-/** A workspace tab is either a SQL editor or a read-only catalog surface. */
-type TabView = "sql" | "dbInfo" | "dataTypes";
+/** A workspace tab is a SQL editor, a read-only catalog surface, or the
+ * connect-to-database flow (so adding a connection doesn't hide your queries). */
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect";
 
 type SqlTab = {
   id: string;
@@ -103,7 +109,27 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   sql: Terminal,
   dbInfo: Info,
   dataTypes: Shapes,
+  connect: Plug,
 };
+
+/** Sentinel key for the not-connected tab bucket. */
+const NO_CONNECTION = "__none__";
+
+/** The initial tab for a bucket: the not-connected bucket opens on the connect
+ * flow; a live connection opens on a welcome query. */
+function initialTab(key: string): SqlTab {
+  if (key === NO_CONNECTION) {
+    return {
+      id: `tab-connect-${Date.now()}`,
+      title: "Connect",
+      view: "connect",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+  }
+  return newTab(1);
+}
 
 function defineMonacoThemes(monaco: Monaco) {
   monaco.editor.defineTheme("exasol-dark", {
@@ -195,10 +221,13 @@ function TitleBar({
   connection,
   onConnect,
   onDisconnect,
+  hideConnect,
 }: {
   connection: ActiveConnection | null;
   onConnect: () => void;
   onDisconnect: () => void;
+  /** Hide the Connect CTA while the connect view is already on screen. */
+  hideConnect?: boolean;
 }) {
   const connected = Boolean(connection);
   return (
@@ -243,7 +272,7 @@ function TitleBar({
             <Unplug className="h-3.5 w-3.5" />
             Disconnect
           </button>
-        ) : (
+        ) : hideConnect ? null : (
           <button
             onClick={onConnect}
             className="cta-glow flex h-6 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/85"
@@ -293,6 +322,8 @@ function ConnectionSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [connection.profile.id, treeKey],
   );
+  // Bumped to collapse every expanded node in this connection's tree.
+  const [collapseSignal, setCollapseSignal] = useState(0);
 
   return (
     <div className="min-w-0">
@@ -337,6 +368,9 @@ function ConnectionSection({
           <IconButton label="Data types" onClick={() => onOpenView("dataTypes")}>
             <Shapes className="h-3.5 w-3.5" />
           </IconButton>
+          <IconButton label="Collapse all" onClick={() => setCollapseSignal((n) => n + 1)}>
+            <ChevronsDownUp className="h-3.5 w-3.5" />
+          </IconButton>
           <IconButton label="Refresh" onClick={onRefresh}>
             <RefreshCcw className="h-3.5 w-3.5" />
           </IconButton>
@@ -351,6 +385,7 @@ function ConnectionSection({
           roots={roots}
           onOpenObject={onOpenObject}
           initialExpandedItems={["schemas"]}
+          collapseSignal={collapseSignal}
         />
       ) : null}
     </div>
@@ -368,6 +403,7 @@ function Sidebar({
   onDisconnect,
   onRefreshConnection,
   onOpenView,
+  onCollapse,
 }: {
   activity: ActivityId;
   connections: ActiveConnection[];
@@ -379,6 +415,7 @@ function Sidebar({
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
+  onCollapse: () => void;
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -390,8 +427,11 @@ function Sidebar({
   if (activity !== "databases") {
     return (
       <aside className="flex h-full min-w-0 flex-col bg-panel">
-        <div className="flex h-9 shrink-0 items-center border-b border-border pl-3">
+        <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pr-1 pl-3">
           <span className="eyebrow-muted">{title}</span>
+          <IconButton label="Collapse sidebar" onClick={onCollapse}>
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </IconButton>
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
           {(() => {
@@ -427,6 +467,9 @@ function Sidebar({
               <Search className="h-3.5 w-3.5" />
             </IconButton>
           ) : null}
+          <IconButton label="Collapse sidebar" onClick={onCollapse}>
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </IconButton>
         </div>
       </div>
 
@@ -436,18 +479,12 @@ function Sidebar({
             <Database className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-medium text-foreground">Not connected</p>
+            <p className="text-sm font-medium text-foreground">No connections yet</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Connect to browse schemas, tables, scripts, and virtual schemas.
+              Use the <span className="font-semibold text-primary">+</span> button above to configure
+              a connection and browse schemas, tables, scripts, and virtual schemas.
             </p>
           </div>
-          <button
-            onClick={onConnect}
-            className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
-          >
-            <PlugZap className="h-3.5 w-3.5" />
-            Connect
-          </button>
         </div>
       ) : showSearch && searchProfileId ? (
         <ObjectSearch
@@ -473,7 +510,16 @@ function Sidebar({
                   return next;
                 })
               }
-              onFocus={() => onFocusConnection(conn.profile.id)}
+              onFocus={() => {
+                onFocusConnection(conn.profile.id);
+                // Clicking a connection reveals its schemas (expand, don't collapse).
+                setCollapsed((prev) => {
+                  if (!prev.has(conn.profile.id)) return prev;
+                  const next = new Set(prev);
+                  next.delete(conn.profile.id);
+                  return next;
+                });
+              }}
               onOpenObject={(schema, name) => onOpenObject(conn.profile.id, schema, name)}
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
@@ -677,17 +723,16 @@ export function ExasolStudio({
   const [aiOpen, setAiOpen] = useState(true);
   const [treeKeys, setTreeKeys] = useState<Record<string, number>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [forceConnect, setForceConnect] = useState(false);
-  const showConnect = !connected || forceConnect;
-  const openConnect = () => setForceConnect(true);
 
   // Query state — tabs and the active tab are kept per connection, so each
   // database keeps its own workspace. A "__none__" bucket covers the
   // not-connected state so there is always a valid active tab.
-  const connKey = connection?.profile.id ?? "__none__";
+  const connKey = connection?.profile.id ?? NO_CONNECTION;
   const [tabsByConn, setTabsByConn] = useState<Record<string, SqlTab[]>>({});
   const [activeIdByConn, setActiveIdByConn] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
+  // Inline tab rename (double-click a tab title).
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [resultTab, setResultTab] = useState<"results" | "messages">("results");
   const [maxRows, setMaxRows] = useState(1000);
   const [schema, setSchema] = useState<string>("");
@@ -696,13 +741,16 @@ export function ExasolStudio({
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
+  // Imperative handles for the collapsible side panels.
+  const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const aiPanelRef = useRef<PanelImperativeHandle | null>(null);
   // Stable fallback tab per connection, used for the first render before the
   // bucket is committed to state (avoids identity churn / remounts).
   const fallbackTabs = useRef<Record<string, SqlTab[]>>({});
   const tabsFor = useCallback((key: string): SqlTab[] => {
     const existing = tabsByConn[key];
     if (existing && existing.length) return existing;
-    if (!fallbackTabs.current[key]) fallbackTabs.current[key] = [newTab(1)];
+    if (!fallbackTabs.current[key]) fallbackTabs.current[key] = [initialTab(key)];
     return fallbackTabs.current[key];
   }, [tabsByConn]);
 
@@ -728,6 +776,23 @@ export function ExasolStudio({
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
   }, []);
   useEffect(() => loadHistory(), [loadHistory]);
+
+  // When a new connection is established, retire any open "Connect" tabs (they
+  // served their purpose) so the workspace lands on the new database's queries.
+  const prevConnCount = useRef(connections.length);
+  useEffect(() => {
+    if (connections.length > prevConnCount.current) {
+      setTabsByConn((prev) => {
+        const next: Record<string, SqlTab[]> = {};
+        for (const [key, list] of Object.entries(prev)) {
+          const kept = list.filter((t) => t.view !== "connect");
+          if (kept.length) next[key] = kept;
+        }
+        return next;
+      });
+    }
+    prevConnCount.current = connections.length;
+  }, [connections.length]);
 
   useEffect(() => {
     if (!connection) {
@@ -770,6 +835,28 @@ export function ExasolStudio({
     if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
   }
 
+  // Open (or focus) the connect-to-database flow as a tab, so adding a
+  // connection never hides the current queries — you can switch right back.
+  function openConnect() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "connect");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-connect-${Date.now()}-${tabCounter.current}`,
+      title: "Connect",
+      view: "connect",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
   // Open (or focus) a read-only catalog surface for a connection.
   function openView(profileId: string, view: "dbInfo" | "dataTypes") {
     onFocusConnection(profileId);
@@ -796,6 +883,20 @@ export function ExasolStudio({
     setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
   }
 
+  function startRename(id: string, current: string) {
+    setRenaming({ id, value: current });
+  }
+
+  function commitRename() {
+    setRenaming((r) => {
+      if (r) {
+        const title = r.value.trim();
+        if (title) updateTabs(connKey, (list) => list.map((t) => (t.id === r.id ? { ...t, title } : t)));
+      }
+      return null;
+    });
+  }
+
   const run = useCallback(
     async (scope: "statement" | "selection" | "script") => {
       if (!connection) {
@@ -816,6 +917,9 @@ export function ExasolStudio({
         const pos = editor.getPosition();
         if (model && pos) sqlToRun = statementAtOffset(full, model.getOffsetAt(pos));
       }
+      // Cursor after a trailing ";" (common right after opening an object) yields
+      // an empty statement — fall back to running the whole tab so Run always acts.
+      if (!sqlToRun.trim()) sqlToRun = full;
       if (!sqlToRun.trim()) return;
 
       setRunning(true);
@@ -841,12 +945,31 @@ export function ExasolStudio({
     [connection, running, activeTab, maxRows, loadHistory],
   );
 
-  function saveTab() {
+  async function saveTab() {
+    const suggested = `${activeTab.title.replace(/\s+/g, "_").toLowerCase()}.sql`;
+    // In the desktop app, use a real native "Save As" dialog and write the
+    // file; in the browser preview, fall back to a blob download.
+    if (isTauri()) {
+      try {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const path = await save({
+          defaultPath: suggested,
+          filters: [{ name: "SQL", extensions: ["sql"] }],
+        });
+        if (path) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("write_text_file", { path, contents: activeTab.sql });
+        }
+      } catch {
+        // Dialog cancelled or unavailable — nothing to do.
+      }
+      return;
+    }
     const blob = new Blob([activeTab.sql], { type: "application/sql" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${activeTab.title.replace(/\s+/g, "_").toLowerCase()}.sql`;
+    a.download = suggested;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -875,7 +998,12 @@ export function ExasolStudio({
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
-      <TitleBar connection={connection} onConnect={openConnect} onDisconnect={onDisconnect} />
+      <TitleBar
+        connection={connection}
+        onConnect={openConnect}
+        onDisconnect={onDisconnect}
+        hideConnect={activeTab.view === "connect"}
+      />
 
       <div className="flex min-h-0 flex-1">
         <ActivityRail
@@ -883,17 +1011,37 @@ export function ExasolStudio({
           sidebarOpen={sidebarOpen}
           aiOpen={aiOpen}
           onSelect={(id) => {
-            if (id === activity && sidebarOpen) setSidebarOpen(false);
-            else {
+            if (id === activity && sidebarOpen) {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+            } else {
               setActivity(id);
               setSidebarOpen(true);
+              sidebarPanelRef.current?.expand();
             }
           }}
-          onToggleAi={() => setAiOpen((o) => !o)}
+          onToggleAi={() =>
+            setAiOpen((o) => {
+              const next = !o;
+              if (next) aiPanelRef.current?.expand();
+              else aiPanelRef.current?.collapse();
+              return next;
+            })
+          }
         />
 
-        {sidebarOpen ? (
-          <div className="w-64 shrink-0 border-r border-border">
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+          {/* Left navigator — resizable + collapsible */}
+          <ResizablePanel
+            panelRef={sidebarPanelRef}
+            collapsible
+            collapsedSize="0px"
+            defaultSize="256px"
+            minSize="184px"
+            maxSize="460px"
+            onResize={() => setSidebarOpen(!(sidebarPanelRef.current?.isCollapsed() ?? false))}
+            className="min-w-0 border-r border-border"
+          >
             <Sidebar
               activity={activity}
               connections={connections}
@@ -905,43 +1053,57 @@ export function ExasolStudio({
               onDisconnect={onDisconnect}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
-            />
-          </div>
-        ) : null}
-
-        {/* Editor column */}
-        <div className="relative flex min-w-0 flex-1 flex-col bg-editor">
-          {showConnect ? (
-            <ConnectView
-              drivers={drivers}
-              profiles={profiles}
-              onSaved={onSaved}
-              onConnected={(profile, server) => {
-                setForceConnect(false);
-                return onConnected(profile, server);
+              onCollapse={() => {
+                sidebarPanelRef.current?.collapse();
+                setSidebarOpen(false);
               }}
             />
-          ) : (
+          </ResizablePanel>
+          <ResizableHandle groupDirection="horizontal" />
+
+          {/* Editor column */}
+          <ResizablePanel minSize="360px" className="min-w-0">
+            <div className="relative flex h-full min-w-0 flex-col bg-editor">
           <>
           {/* Tab strip */}
           <div className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
             <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
               {tabs.map((tab) => {
                 const TabIcon = TAB_ICON[tab.view];
+                const isEditing = renaming?.id === tab.id;
                 return (
-                  <button
+                  <div
                     key={tab.id}
                     onClick={() => setActiveTabId(tab.id)}
+                    onDoubleClick={() => {
+                      if (tab.view === "sql") startRename(tab.id, tab.title);
+                    }}
+                    title={tab.view === "sql" ? "Double-click to rename" : undefined}
                     className={cn(
-                      "group flex h-9 shrink-0 items-center gap-1.5 border-r border-border px-3 text-[12px]",
+                      "group flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
                       tab.id === activeTabId
                         ? "bg-editor text-foreground"
                         : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
                     )}
                   >
-                    <TabIcon className={cn("h-3.5 w-3.5", tab.id === activeTabId && "text-primary")} />
-                    <span className="max-w-[120px] truncate">{tab.title}</span>
-                    {tabs.length > 1 ? (
+                    <TabIcon className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={renaming!.value}
+                        onChange={(e) => setRenaming((r) => (r ? { ...r, value: e.target.value } : r))}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRename();
+                          else if (e.key === "Escape") setRenaming(null);
+                        }}
+                        className="h-5 w-28 rounded border border-primary/50 bg-background px-1 text-[12px] text-foreground outline-none"
+                      />
+                    ) : (
+                      <span className="max-w-[140px] truncate">{tab.title}</span>
+                    )}
+                    {tabs.length > 1 && !isEditing ? (
                       <span
                         role="button"
                         tabIndex={0}
@@ -955,16 +1117,22 @@ export function ExasolStudio({
                         <X className="h-3 w-3" />
                       </span>
                     ) : null}
-                  </button>
+                  </div>
                 );
               })}
+              {/* New-tab button sits directly after the last tab. */}
+              <button
+                aria-label="New query tab"
+                onClick={addTab}
+                className="flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
-            <IconButton label="New query tab" onClick={addTab}>
-              <Plus className="h-4 w-4" />
-            </IconButton>
           </div>
 
-          {/* Toolbar */}
+          {/* Toolbar — hidden on the connect tab (it has its own header) */}
+          {activeTab.view !== "connect" ? (
           <div className="flex h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2">
             {!isSpecialTab ? (
               <>
@@ -1033,9 +1201,19 @@ export function ExasolStudio({
               </>
             ) : null}
           </div>
+          ) : null}
 
-          {/* Editor + results, or a read-only catalog surface */}
-          {isSpecialTab && connection ? (
+          {/* Connect flow, catalog surface, or the SQL editor + results */}
+          {activeTab.view === "connect" ? (
+            <div className="min-h-0 flex-1">
+              <ConnectView
+                drivers={drivers}
+                profiles={profiles}
+                onSaved={onSaved}
+                onConnected={onConnected}
+              />
+            </div>
+          ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
               {activeTab.view === "dbInfo" ? (
                 <DatabaseInfoPanel
@@ -1119,14 +1297,31 @@ export function ExasolStudio({
             </ResizablePanelGroup>
           )}
           </>
-          )}
-        </div>
+            </div>
+          </ResizablePanel>
+          <ResizableHandle groupDirection="horizontal" />
 
-        {aiOpen ? (
-          <div className="w-80 shrink-0">
-            <AssistantPanel contextSummary={contextSummary} editorSql={activeTab.sql} />
-          </div>
-        ) : null}
+          {/* AI assistant — resizable + collapsible */}
+          <ResizablePanel
+            panelRef={aiPanelRef}
+            collapsible
+            collapsedSize="0px"
+            defaultSize="320px"
+            minSize="240px"
+            maxSize="520px"
+            onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
+            className="min-w-0"
+          >
+            <AssistantPanel
+              contextSummary={contextSummary}
+              editorSql={activeTab.sql}
+              onCollapse={() => {
+                aiPanelRef.current?.collapse();
+                setAiOpen(false);
+              }}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
 
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>

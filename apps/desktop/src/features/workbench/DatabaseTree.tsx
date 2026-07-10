@@ -1,37 +1,189 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
-import { File, Folder, Tree, useTree } from "@/components/ui/file-tree";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { iconFor, type TreeNode } from "@/features/workbench/tree-model";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 /**
- * Database navigator built on MagicUI's file-tree (Tree / Folder / File),
- * extended to lazily load each level from the backend on expand while keeping
- * per-object icons, type metadata, and count/state badges.
+ * Self-contained database navigator.
+ *
+ * Rows lazily load their children on expand (cached per tree instance, so
+ * re-expanding is instant). Nesting is drawn with curved elbow connectors that
+ * link each child to its parent, and long object names scroll horizontally
+ * instead of truncating.
  */
+
+const INDENT = 16; // px per nesting level
+const ROW_H = 24; // px row height
+const MID = ROW_H / 2;
+const CENTER = 8; // x of the vertical trunk within an indent cell
+const LINE = "var(--border)";
+
+type NodeState = { status: "loading" | "done" | "error"; children: TreeNode[]; error?: string };
+
 export function DatabaseTree({
   roots,
   onOpenObject,
   initialExpandedItems,
+  collapseSignal,
 }: {
   roots: TreeNode[];
   onOpenObject: (schema: string, name: string) => void;
   /** Node ids expanded on first render (default: none). */
   initialExpandedItems?: string[];
+  /** Increment to collapse every expanded node in this tree. */
+  collapseSignal?: number;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialExpandedItems ?? []));
+  const [states, setStates] = useState<Record<string, NodeState>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const cache = useRef<Map<string, TreeNode[]>>(new Map());
+  const firstCollapse = useRef(true);
+
+  const load = useCallback((node: TreeNode) => {
+    const cached = cache.current.get(node.id);
+    if (cached) {
+      setStates((s) => ({ ...s, [node.id]: { status: "done", children: cached } }));
+      return;
+    }
+    if (!node.load) {
+      setStates((s) => ({ ...s, [node.id]: { status: "done", children: [] } }));
+      return;
+    }
+    setStates((s) => ({ ...s, [node.id]: { status: "loading", children: [] } }));
+    node
+      .load()
+      .then((children) => {
+        cache.current.set(node.id, children);
+        setStates((s) => ({ ...s, [node.id]: { status: "done", children } }));
+      })
+      .catch((err) =>
+        setStates((s) => ({
+          ...s,
+          [node.id]: { status: "error", children: [], error: errorMessage(err) },
+        })),
+      );
+  }, []);
+
+  // Load any nodes that are expanded on first mount (e.g. the Schemas folder).
+  useEffect(() => {
+    roots.forEach((r) => {
+      if (expanded.has(r.id)) load(r);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots]);
+
+  // Collapse everything when the signal changes.
+  useEffect(() => {
+    if (firstCollapse.current) {
+      firstCollapse.current = false;
+      return;
+    }
+    setExpanded(new Set());
+  }, [collapseSignal]);
+
+  const toggle = useCallback(
+    (node: TreeNode) => {
+      if (!node.expandable) return;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(node.id)) {
+          next.delete(node.id);
+        } else {
+          next.add(node.id);
+          const st = states[node.id];
+          if (!st || st.status === "error") load(node);
+        }
+        return next;
+      });
+    },
+    [states, load],
+  );
+
+  const rows: React.ReactNode[] = [];
+  const walk = (nodes: TreeNode[], trail: boolean[]) => {
+    nodes.forEach((node, i) => {
+      const isLast = i === nodes.length - 1;
+      const open = expanded.has(node.id);
+      const st = states[node.id];
+      rows.push(
+        <Row
+          key={node.id}
+          node={node}
+          trail={trail}
+          isLast={isLast}
+          open={open}
+          selected={selected === node.id}
+          onToggle={() => {
+            setSelected(node.id);
+            toggle(node);
+          }}
+          onOpen={() =>
+            node.selectable && onOpenObject(node.selectable.schema, node.selectable.name)
+          }
+        />,
+      );
+      if (open && st) {
+        const childTrail = [...trail, !isLast];
+        if (st.status === "loading") {
+          rows.push(<Placeholder key={node.id + ":l"} trail={childTrail} kind="loading" />);
+        } else if (st.status === "error") {
+          rows.push(
+            <Placeholder key={node.id + ":e"} trail={childTrail} kind="error" text={st.error} />,
+          );
+        } else {
+          walk(st.children, childTrail);
+        }
+      }
+    });
+  };
+  walk(roots, []);
+
   return (
-    <Tree
-      className="h-full"
-      indicator
-      initialExpandedItems={initialExpandedItems ?? []}
-      openIcon={<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />}
-      closeIcon={<ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
-    >
-      {roots.map((node) => (
-        <LazyFolder key={node.id} node={node} onOpenObject={onOpenObject} />
+    <div className="overflow-x-auto overflow-y-hidden py-0.5">
+      <div className="w-max min-w-full">{rows}</div>
+    </div>
+  );
+}
+
+/** Vertical trunk + curved elbow connectors for one row's indentation. */
+function Guides({ trail, isLast }: { trail: boolean[]; isLast: boolean }) {
+  return (
+    <>
+      {trail.map((cont, i) => (
+        <span key={i} className="relative inline-block shrink-0" style={{ width: INDENT, height: ROW_H }}>
+          {cont ? (
+            <span
+              className="absolute"
+              style={{ left: CENTER, top: 0, width: 1, height: ROW_H, background: LINE }}
+            />
+          ) : null}
+        </span>
       ))}
-    </Tree>
+      {/* Connector cell for this node: curved elbow from the parent trunk. */}
+      <span className="relative inline-block shrink-0" style={{ width: INDENT, height: ROW_H }}>
+        {/* curved elbow: trunk down to middle, then a rounded turn to the child */}
+        <span
+          className="absolute"
+          style={{
+            left: CENTER,
+            top: 0,
+            width: INDENT - CENTER,
+            height: MID,
+            borderLeft: `1px solid ${LINE}`,
+            borderBottom: `1px solid ${LINE}`,
+            borderBottomLeftRadius: 8,
+          }}
+        />
+        {/* continue the trunk down to the next sibling */}
+        {!isLast ? (
+          <span
+            className="absolute"
+            style={{ left: CENTER, top: MID, width: 1, height: MID, background: LINE }}
+          />
+        ) : null}
+      </span>
+    </>
   );
 }
 
@@ -44,115 +196,78 @@ function accentFor(kind: TreeNode["kind"]): string {
   return "";
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="ml-auto shrink-0 rounded-full bg-secondary px-1.5 py-px font-mono text-[9.5px] tracking-wide text-muted-foreground uppercase">
-      {children}
-    </span>
-  );
-}
-
-function Meta({ children }: { children: React.ReactNode }) {
-  return <span className="truncate font-mono text-[11px] text-syntax-type/80">{children}</span>;
-}
-
-/** Content shown inside a folder trigger (icon + label + meta + badge). */
-function folderLabel(node: TreeNode) {
-  const Icon = iconFor(node.kind);
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      <Icon className={cn("h-3.5 w-3.5 shrink-0", accentFor(node.kind))} />
-      <span className="truncate">{node.label}</span>
-      {node.meta ? <Meta>{node.meta}</Meta> : null}
-      {node.badge ? <Badge>{node.badge}</Badge> : null}
-    </span>
-  );
-}
-
-type LoadState = {
-  status: "idle" | "loading" | "done" | "error";
-  children: TreeNode[];
-  error?: string;
-};
-
-function LazyFolder({
+function Row({
   node,
-  onOpenObject,
+  trail,
+  isLast,
+  open,
+  selected,
+  onToggle,
+  onOpen,
 }: {
   node: TreeNode;
-  onOpenObject: (schema: string, name: string) => void;
+  trail: boolean[];
+  isLast: boolean;
+  open: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
 }) {
-  const { expandedItems } = useTree();
-  const open = Boolean(expandedItems?.includes(node.id));
-  const [state, setState] = useState<LoadState>({ status: "idle", children: [] });
-
-  useEffect(() => {
-    if (!open || state.status !== "idle") return;
-    if (!node.load) {
-      setState({ status: "done", children: [] });
-      return;
-    }
-    setState((s) => ({ ...s, status: "loading" }));
-    node
-      .load()
-      .then((children) => setState({ status: "done", children }))
-      .catch((err) => setState({ status: "error", children: [], error: errorMessage(err) }));
-  }, [open, state.status, node]);
-
+  const Icon = iconFor(node.kind);
   return (
-    <Folder
-      value={node.id}
-      element={folderLabel(node) as unknown as string}
-      className="min-h-[26px] w-full pr-1 text-[13px] text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
-      onDoubleClick={
-        node.selectable
-          ? () => onOpenObject(node.selectable!.schema, node.selectable!.name)
-          : undefined
-      }
-    >
-      {state.status === "loading" ? (
-        <div className="flex items-center gap-1.5 py-1 pl-1 text-[11px] text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
-        </div>
-      ) : null}
-      {state.status === "error" ? (
-        <div className="py-1 pl-1 text-[11px] text-destructive">{state.error}</div>
-      ) : null}
-      {state.children.map((child) =>
-        child.expandable ? (
-          <LazyFolder key={child.id} node={child} onOpenObject={onOpenObject} />
-        ) : (
-          <LeafNode key={child.id} node={child} onOpenObject={onOpenObject} />
-        ),
+    <div
+      onClick={onToggle}
+      onDoubleClick={onOpen}
+      style={{ height: ROW_H }}
+      className={cn(
+        "flex min-w-full items-center whitespace-nowrap pr-3 text-[13px] transition-colors",
+        selected ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
+        node.selectable ? "cursor-pointer" : "cursor-default",
       )}
-    </Folder>
+    >
+      <Guides trail={trail} isLast={isLast} />
+      <span className="flex w-4 shrink-0 items-center justify-center">
+        {node.expandable ? (
+          <ChevronRight
+            className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "rotate-90")}
+          />
+        ) : null}
+      </span>
+      <Icon className={cn("mr-1.5 h-3.5 w-3.5 shrink-0", accentFor(node.kind))} />
+      <span className="shrink-0">{node.label}</span>
+      {node.meta ? (
+        <span className="ml-1.5 shrink-0 font-mono text-[11px] text-syntax-type/80">{node.meta}</span>
+      ) : null}
+      {node.badge ? (
+        <span className="ml-1.5 shrink-0 rounded-full bg-secondary px-1.5 py-px font-mono text-[9.5px] tracking-wide text-muted-foreground uppercase">
+          {node.badge}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
-function LeafNode({
-  node,
-  onOpenObject,
+function Placeholder({
+  trail,
+  kind,
+  text,
 }: {
-  node: TreeNode;
-  onOpenObject: (schema: string, name: string) => void;
+  trail: boolean[];
+  kind: "loading" | "error";
+  text?: string;
 }) {
-  const Icon = iconFor(node.kind);
   return (
-    <File
-      value={node.id}
-      fileIcon={<Icon className={cn("h-3.5 w-3.5 shrink-0", accentFor(node.kind))} />}
-      className="min-h-[24px] w-full pr-1 text-[13px] text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
-      onDoubleClick={
-        node.selectable
-          ? () => onOpenObject(node.selectable!.schema, node.selectable!.name)
-          : undefined
-      }
+    <div
+      className="flex items-center whitespace-nowrap text-[11px]"
+      style={{ height: ROW_H, paddingLeft: (trail.length + 1) * INDENT + 4 }}
     >
-      <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span className="truncate">{node.label}</span>
-        {node.meta ? <Meta>{node.meta}</Meta> : null}
-        {node.badge ? <Badge>{node.badge}</Badge> : null}
-      </span>
-    </File>
+      {kind === "loading" ? (
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+        </span>
+      ) : (
+        <span className="text-destructive">{text ?? "Failed to load."}</span>
+      )}
+    </div>
   );
 }
