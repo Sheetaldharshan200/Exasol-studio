@@ -1,0 +1,79 @@
+name: Update marketplace catalog
+
+# Produces marketplace/catalog.json — the single source of truth the app reads
+# for the latest version of every item and whether an update is available.
+# One cheap ubuntu job; commits only when the catalog actually changed. Runs
+# after the weekly package builds (Wed) and on demand.
+
+on:
+  schedule:
+    - cron: "0 8 * * 3" # Wed 08:00 UTC (after Mon/Tue package builds)
+  workflow_dispatch:
+
+concurrency:
+  group: update-catalog
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build catalog.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # id|upstream repo|homepage
+          items=$(cat <<'EOF'
+          exasol-personal|krishna-exasol/starter-kit-testing-v1|https://github.com/krishna-exasol/starter-kit-testing-v1
+          exasol-cloud||https://docs.exasol.com/db/latest/administration/aws/c4/using_c4.htm
+          exapump|exasol/exapump|https://github.com/exasol/exapump
+          mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
+          pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
+          json-tables|exasol/json-tables|https://github.com/exasol/json-tables
+          ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
+          agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills
+          EOF
+          )
+          echo '{' > catalog.json
+          echo "  \"generatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> catalog.json
+          echo "  \"mirrorRepo\": \"${{ github.repository }}\"," >> catalog.json
+          echo '  "items": {' >> catalog.json
+          first=1
+          while IFS='|' read -r id repo homepage; do
+            [ -z "$id" ] && continue
+            latest="null"
+            if [ -n "$repo" ]; then
+              latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"')
+            fi
+            [ "$first" -eq 0 ] && echo ',' >> catalog.json
+            first=0
+            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s", "mirrorTag": "mirror-%s" }' \
+              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" "$id" >> catalog.json
+          done <<< "$items"
+          echo '' >> catalog.json
+          echo '  }' >> catalog.json
+          echo '}' >> catalog.json
+          mkdir -p marketplace
+          jq . catalog.json > marketplace/catalog.json
+          rm -f catalog.json
+          cat marketplace/catalog.json
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add marketplace/catalog.json
+          if git diff --cached --quiet; then
+            echo "Catalog unchanged — nothing to commit."
+          else
+            git commit -m "chore: refresh marketplace catalog"
+            git push
+          fi

@@ -26,6 +26,7 @@ import {
   ipc,
   isTauri,
   type InstalledItem,
+  type MarketCatalog,
   type MarketEnv,
   type Release,
   type ReleaseAsset,
@@ -206,6 +207,7 @@ type LogLine = { level: string; text: string };
 
 export function Marketplace() {
   const [env, setEnv] = useState<MarketEnv | null>(null);
+  const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
   const [releases, setReleases] = useState<Record<string, Release>>({});
   const [installed, setInstalled] = useState<InstalledItem[]>([]);
   const [detected, setDetected] = useState<Record<string, boolean>>({});
@@ -224,6 +226,7 @@ export function Marketplace() {
     ipc.marketEnv().then(setEnv).catch(() => undefined);
     ipc.marketInstalled().then(setInstalled).catch(() => undefined);
     ipc.marketDetect().then(setDetected).catch(() => undefined);
+    ipc.marketCatalog().then(setCatalog).catch(() => undefined);
     setLoadingReleases(true);
     Promise.allSettled(
       CATALOG.filter((c) => c.repo).map((c) => ipc.marketRelease(c.repo!).then((r) => [c.id, r] as const)),
@@ -245,6 +248,22 @@ export function Marketplace() {
     installed.forEach((i) => (m[i.id] = i));
     return m;
   }, [installed]);
+
+  // Catalog is the authoritative version; fall back to the per-repo release tag.
+  const latestFor = useCallback(
+    (id: string): string | null => catalog?.items?.[id]?.latest ?? releases[id]?.tag ?? null,
+    [catalog, releases],
+  );
+
+  const updatesAvailable = useMemo(
+    () =>
+      CATALOG.filter((item) => {
+        const inst = installedMap[item.id];
+        const latest = catalog?.items?.[item.id]?.latest ?? releases[item.id]?.tag ?? null;
+        return inst && latest && latest !== inst.version;
+      }).length,
+    [installedMap, catalog, releases],
+  );
 
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
@@ -271,6 +290,15 @@ export function Marketplace() {
               Install Exasol tools, drivers and extensions — one click, with a live install log.
             </p>
           </div>
+          {updatesAvailable > 0 ? (
+            <span className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+              </span>
+              {updatesAvailable} update{updatesAvailable > 1 ? "s" : ""} available
+            </span>
+          ) : null}
           {env ? (
             <div className="flex items-center gap-1.5">
               <span className="rounded-md border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
@@ -299,11 +327,11 @@ export function Marketplace() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {CATALOG.map((item) => {
             const Icon = KIND_ICON[item.kind];
-            const rel = releases[item.id];
             const inst = installedMap[item.id];
             const onSystem = detected[item.id] && !inst;
             const isBusy = busy[item.id];
-            const newer = inst && rel?.tag && rel.tag !== inst.version;
+            const latest = latestFor(item.id);
+            const newer = inst && latest && latest !== inst.version;
             return (
               <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
                 <div className="flex items-start gap-2.5">
@@ -334,7 +362,7 @@ export function Marketplace() {
                     </div>
                     <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
                     <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-                      {rel?.tag ? <span>{rel.tag}</span> : null}
+                      {latest ? <span>{latest}</span> : null}
                       <button
                         onClick={() => openExternal(item.homepage)}
                         className="flex items-center gap-0.5 hover:text-foreground"
@@ -355,7 +383,7 @@ export function Marketplace() {
                           disabled={isBusy}
                           className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                         >
-                          <Download className="h-3.5 w-3.5" /> Update to {rel?.tag}
+                          <Download className="h-3.5 w-3.5" /> Update to {latest}
                         </button>
                       ) : (
                         <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
@@ -412,7 +440,7 @@ export function Marketplace() {
           item={consoleItem}
           env={env}
           asset={pickAsset(releases[consoleItem.id]?.assets ?? [], env)}
-          version={releases[consoleItem.id]?.tag ?? undefined}
+          version={latestFor(consoleItem.id) ?? undefined}
           onDone={refreshInstalled}
           onClose={() => setConsoleItem(null)}
         />

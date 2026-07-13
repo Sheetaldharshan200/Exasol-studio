@@ -1,0 +1,21 @@
+name: pkg / ai-lab
+
+on:
+  schedule:
+    - cron: "30 6 * * 2" # Tue 06:30 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: pkg-ai-lab
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-package.yml
+    with:
+      id: ai-lab
+      repo: exasol/ai-lab
+      kind: mirror

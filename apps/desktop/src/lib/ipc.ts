@@ -180,6 +180,18 @@ export type Release = {
 } | null;
 export type InstalledItem = { id: string; version: string; path: string; filename: string };
 
+export type CatalogEntry = {
+  repo: string;
+  latest: string | null;
+  homepage: string;
+  mirrorTag: string;
+};
+export type MarketCatalog = {
+  generatedAt: string | null;
+  mirrorRepo: string;
+  items: Record<string, CatalogEntry>;
+};
+
 export type VsPrereqs = {
   adapters: { schema: string; name: string }[];
   connections: string[];
@@ -300,6 +312,7 @@ export const ipc = {
     call<SchemaGraph>("get_schema_graph", { profileId, schema }),
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
   marketEnv: () => call<MarketEnv>("market_env"),
+  marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
   marketRelease: (repo: string) => call<Release>("market_release", { repo }),
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),

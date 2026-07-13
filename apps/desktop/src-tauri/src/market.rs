@@ -202,6 +202,25 @@ pub fn market_installed(app: AppHandle) -> AppResult<Value> {
     Ok(Value::Array(read_manifest(&app)))
 }
 
+/// The marketplace catalog (single source of truth) published by our CI to
+/// `marketplace/catalog.json` on the app repo's default branch. Null on error.
+#[tauri::command]
+pub async fn market_catalog() -> AppResult<Value> {
+    const CATALOG_URL: &str =
+        "https://raw.githubusercontent.com/Sheetaldharshan200/Exasol-studio/main/marketplace/catalog.json";
+    let client = reqwest::Client::new();
+    let resp = match client
+        .get(CATALOG_URL)
+        .header("User-Agent", "exasol-studio")
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Ok(Value::Null),
+    };
+    Ok(resp.json().await.unwrap_or(Value::Null))
+}
+
 /// Latest GitHub release for a repo ("owner/name"); null when none exist.
 #[tauri::command]
 pub async fn market_release(repo: String) -> AppResult<Value> {

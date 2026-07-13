@@ -1,0 +1,22 @@
+name: pkg / mcp-server
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Mon 06:30 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: pkg-mcp-server
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-package.yml
+    with:
+      id: mcp-server
+      repo: exasol/mcp-server
+      kind: wheel
+      package: exasol-mcp-server

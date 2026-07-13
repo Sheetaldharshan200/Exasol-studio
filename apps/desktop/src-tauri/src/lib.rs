@@ -58,6 +58,7 @@ pub fn run() {
             fs::fs_home_roots,
             fs::fs_search,
             market::market_env,
+            market::market_catalog,
             market::market_release,
             market::market_installed,
             market::market_detect,
