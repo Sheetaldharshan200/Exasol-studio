@@ -1,4 +1,5 @@
 mod ai;
+mod bucketfs;
 mod catalog;
 mod connection;
 mod drivers;
@@ -71,6 +72,8 @@ pub fn run() {
             market::market_uninstall,
             market::bi_installed,
             market::bi_launch,
+            bucketfs::bucketfs_list,
+            bucketfs::bucketfs_upload,
             market::market_dir_path,
             query::execute_sql,
             history::sql_history_list,

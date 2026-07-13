@@ -133,6 +133,11 @@ export function NewVirtualSchema({
         <div className="grid min-h-0 flex-1 grid-cols-2">
           <div className="min-h-0 overflow-auto border-r border-border p-4">
             <div className="grid gap-3">
+              <p className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                Virtual schemas require a full or cloud Exasol deployment. They are not available on Exasol Personal{" "}
+                <span className="font-medium">local</span> (macOS) yet — use an Exasol Personal <span className="font-medium">cloud</span>{" "}
+                deployment or a full Exasol (<span className="font-mono">exasol/docker-db</span>) instance.
+              </p>
               <Field label="Virtual schema name">
                 <Input value={vsName} onChange={(e) => setVsName(e.target.value)} placeholder="MY_PG" />
               </Field>

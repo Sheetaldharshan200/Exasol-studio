@@ -498,6 +498,11 @@ export async function mockInvoke(
     case "bi_launch":
       return "http://localhost:8088";
 
+    case "bucketfs_list":
+      return ["drivers/", "EXAMPLE_ADAPTER.jar"];
+    case "bucketfs_upload":
+      return `/buckets/bfsdefault/${args?.bucket ?? "default"}/${args?.remotePath ?? "driver.jar"}`;
+
     case "market_uninstall":
       return null;
 

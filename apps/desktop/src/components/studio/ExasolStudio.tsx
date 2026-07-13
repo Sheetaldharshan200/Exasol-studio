@@ -43,6 +43,7 @@ import {
   Terminal,
   Trash2,
   Unplug,
+  HardDriveUpload,
   Waypoints,
   X,
   Zap,
@@ -93,6 +94,7 @@ import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
+import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -456,6 +458,7 @@ function ConnectionSection({
   onDisconnect,
   onOpenView,
   onNewVs,
+  onUploadDriver,
 }: {
   connection: ActiveConnection;
   focused: boolean;
@@ -468,6 +471,7 @@ function ConnectionSection({
   onDisconnect: () => void;
   onOpenView: (view: "dbInfo" | "dataTypes") => void;
   onNewVs: () => void;
+  onUploadDriver: () => void;
 }) {
   const roots = useMemo(
     () => buildConnectionNodes(connection.profile.id),
@@ -522,6 +526,9 @@ function ConnectionSection({
           </IconButton>
           <IconButton label="New virtual schema" onClick={onNewVs}>
             <Waypoints className="h-3.5 w-3.5" />
+          </IconButton>
+          <IconButton label="Upload driver to BucketFS" onClick={onUploadDriver}>
+            <HardDriveUpload className="h-3.5 w-3.5" />
           </IconButton>
           <IconButton label="Collapse all" onClick={() => setCollapseSignal((n) => n + 1)}>
             <ChevronsDownUp className="h-3.5 w-3.5" />
@@ -650,6 +657,7 @@ function Sidebar({
   onRefreshConnection,
   onOpenView,
   onNewVirtualSchema,
+  onUploadDriver,
   onCollapse,
   onOpenFile,
   onOpenData,
@@ -671,6 +679,7 @@ function Sidebar({
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
   onNewVirtualSchema: (profileId: string) => void;
+  onUploadDriver: (profileId: string) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string) => void;
   onOpenData: (name: string, path: string) => void;
@@ -810,6 +819,7 @@ function Sidebar({
               onDisconnect={() => onDisconnect(conn.profile.id)}
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
+              onUploadDriver={() => onUploadDriver(conn.profile.id)}
             />
           ))}
         </div>
@@ -1067,6 +1077,7 @@ export function ExasolStudio({
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string } | null>(null);
+  const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1673,6 +1684,10 @@ export function ExasolStudio({
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
               onNewVirtualSchema={openVs}
+              onUploadDriver={(pid) => {
+                const c = connections.find((x) => x.profile.id === pid);
+                if (c) setBucketFsFor(c.profile);
+              }}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
@@ -2242,6 +2257,8 @@ export function ExasolStudio({
           onCreated={() => refreshConnection(vsFor)}
         />
       ) : null}
+
+      {bucketFsFor ? <BucketFsPanel profile={bucketFsFor} onClose={() => setBucketFsFor(null)} /> : null}
 
       {biInfo ? (
         <div

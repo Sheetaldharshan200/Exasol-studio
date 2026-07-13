@@ -70,17 +70,18 @@ jobs:
           workspaces: . -> target
           key: ${{ matrix.label }}
       - name: Build ingest engine
-        run: cargo build --release --manifest-path crates/json_tables_ingest/Cargo.toml
+        run: cargo build --release --manifest-path crates/json_tables_ingest/Cargo.toml --target-dir "${{ github.workspace }}/rust-target"
       - name: Stage binary
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p out
-          bin="target/release/json_to_parquet${{ matrix.ext }}"
+          bin="rust-target/release/json_to_parquet${{ matrix.ext }}"
           if [ ! -f "$bin" ]; then
-            # Fall back to whatever executable the crate produced.
-            bin=$(find target/release -maxdepth 1 -type f -perm -u+x ! -name '*.d' | head -n1)
+            # Fall back: find the built executable anywhere under a release dir.
+            bin=$(find . -type f -name "json_to_parquet${{ matrix.ext }}" -path "*/release/*" | head -n1)
           fi
+          test -n "$bin" && test -f "$bin"
           cp "$bin" "out/exasol-json-tables-ingest-${{ matrix.label }}${{ matrix.ext }}"
       - uses: actions/upload-artifact@v4
         with:

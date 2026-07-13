@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "exasol-studio"
-version = "0.1.0"
+version = "2026.0.1"
 dependencies = [
  "chrono",
  "csv",

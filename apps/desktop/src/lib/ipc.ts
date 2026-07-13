@@ -331,6 +331,17 @@ export const ipc = {
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
   biInstalled: () => call<boolean>("bi_installed"),
   biLaunch: () => call<string>("bi_launch"),
+  bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
+    call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
+  bucketfsUpload: (args: {
+    host: string;
+    port: number;
+    tls: boolean;
+    bucket: string;
+    remotePath: string;
+    localPath: string;
+    writePassword: string;
+  }) => call<string>("bucketfs_upload", args),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
