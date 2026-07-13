@@ -30,12 +30,12 @@ jobs:
           set -euo pipefail
           # id|upstream repo|homepage
           items=$(cat <<'EOF'
-          exasol-personal|krishna-exasol/starter-kit-testing-v1|https://github.com/krishna-exasol/starter-kit-testing-v1
-          exasol-cloud||https://docs.exasol.com/db/latest/administration/aws/c4/using_c4.htm
-          exapump|exasol/exapump|https://github.com/exasol/exapump
+          exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
           mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
           pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
-          json-tables|exasol/json-tables|https://github.com/exasol/json-tables
+          json-tables|exasol-labs/exasol-json-tables|https://github.com/exasol-labs/exasol-json-tables
           ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
           agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills
           EOF

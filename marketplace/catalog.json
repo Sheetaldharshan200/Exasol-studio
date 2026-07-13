@@ -1,54 +1,14 @@
 {
-  "generatedAt": "2026-07-13T12:10:33Z",
+  "generatedAt": null,
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
-    "exasol-personal": {
-      "repo": "krishna-exasol/starter-kit-testing-v1",
-      "latest": null,
-      "homepage": "https://github.com/krishna-exasol/starter-kit-testing-v1",
-      "mirrorTag": "mirror-exasol-personal"
-    },
-    "exasol-cloud": {
-      "repo": "",
-      "latest": null,
-      "homepage": "https://docs.exasol.com/db/latest/administration/aws/c4/using_c4.htm",
-      "mirrorTag": "mirror-exasol-cloud"
-    },
-    "exapump": {
-      "repo": "exasol/exapump",
-      "latest": null,
-      "homepage": "https://github.com/exasol/exapump",
-      "mirrorTag": "mirror-exapump"
-    },
-    "mcp-server": {
-      "repo": "exasol/mcp-server",
-      "latest": "1.10.1",
-      "homepage": "https://github.com/exasol/mcp-server",
-      "mirrorTag": "mirror-mcp-server"
-    },
-    "pyexasol": {
-      "repo": "exasol/pyexasol",
-      "latest": "2.2.2",
-      "homepage": "https://github.com/exasol/pyexasol",
-      "mirrorTag": "mirror-pyexasol"
-    },
-    "json-tables": {
-      "repo": "exasol/json-tables",
-      "latest": null,
-      "homepage": "https://github.com/exasol/json-tables",
-      "mirrorTag": "mirror-json-tables"
-    },
-    "ai-lab": {
-      "repo": "exasol/ai-lab",
-      "latest": "6.0.0",
-      "homepage": "https://github.com/exasol/ai-lab",
-      "mirrorTag": "mirror-ai-lab"
-    },
-    "agent-skills": {
-      "repo": "exasol-labs/exasol-agent-skills",
-      "latest": "v0.16.0",
-      "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
-      "mirrorTag": "mirror-agent-skills"
-    }
+    "exasol-personal": { "repo": "exasol/exasol-personal", "latest": null, "homepage": "https://github.com/exasol/exasol-personal", "mirrorTag": "mirror-exasol-personal" },
+    "exasol-cloud": { "repo": "exasol/exasol-personal", "latest": null, "homepage": "https://github.com/exasol/exasol-personal", "mirrorTag": "mirror-exasol-cloud" },
+    "exapump": { "repo": "exasol-labs/exapump", "latest": null, "homepage": "https://github.com/exasol-labs/exapump", "mirrorTag": "mirror-exapump" },
+    "mcp-server": { "repo": "exasol/mcp-server", "latest": null, "homepage": "https://github.com/exasol/mcp-server", "mirrorTag": "mirror-mcp-server" },
+    "pyexasol": { "repo": "exasol/pyexasol", "latest": null, "homepage": "https://github.com/exasol/pyexasol", "mirrorTag": "mirror-pyexasol" },
+    "json-tables": { "repo": "exasol-labs/exasol-json-tables", "latest": null, "homepage": "https://github.com/exasol-labs/exasol-json-tables", "mirrorTag": "mirror-json-tables" },
+    "ai-lab": { "repo": "exasol/ai-lab", "latest": null, "homepage": "https://github.com/exasol/ai-lab", "mirrorTag": "mirror-ai-lab" },
+    "agent-skills": { "repo": "exasol-labs/exasol-agent-skills", "latest": null, "homepage": "https://github.com/exasol-labs/exasol-agent-skills", "mirrorTag": "mirror-agent-skills" }
   }
 }

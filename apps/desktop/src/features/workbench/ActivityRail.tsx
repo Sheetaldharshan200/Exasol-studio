@@ -1,4 +1,4 @@
-import { Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { BookOpen, Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type ActivityId = "databases" | "files" | "favorites" | "visualizer" | "git" | "marketplace";
+export type ActivityId = "databases" | "files" | "favorites" | "visualizer" | "git" | "marketplace" | "guides";
 
 export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
   { id: "databases", label: "Databases", icon: Database },
@@ -15,6 +15,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
   { id: "visualizer", label: "Visualizer", icon: Eye },
   { id: "git", label: "Git", icon: GitBranch },
   { id: "marketplace", label: "Marketplace", icon: Store },
+  { id: "guides", label: "Guides & Docs", icon: BookOpen },
 ];
 
 export function ActivityRail({

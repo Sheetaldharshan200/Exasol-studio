@@ -221,6 +221,56 @@ pub async fn market_catalog() -> AppResult<Value> {
     Ok(resp.json().await.unwrap_or(Value::Null))
 }
 
+fn docs_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    let d = market_dir(app)?.join("docs");
+    std::fs::create_dir_all(&d)?;
+    Ok(d)
+}
+
+/// Fetch a repo's README as raw markdown (any filename/branch). Null on error.
+#[tauri::command]
+pub async fn market_doc(repo: String) -> AppResult<Value> {
+    let url = format!("https://api.github.com/repos/{repo}/readme");
+    let client = reqwest::Client::new();
+    let resp = match client
+        .get(&url)
+        .header("User-Agent", "exasol-studio")
+        .header("Accept", "application/vnd.github.raw")
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Ok(Value::Null),
+    };
+    Ok(json!(resp.text().await.unwrap_or_default()))
+}
+
+/// Save a doc for offline use under the managed docs folder.
+#[tauri::command]
+pub fn market_doc_save(app: AppHandle, id: String, content: String) -> AppResult<()> {
+    let safe = id.replace(['/', '\\', '.'], "_");
+    std::fs::write(docs_dir(&app)?.join(format!("{safe}.md")), content)?;
+    Ok(())
+}
+
+/// Load an offline doc (null if not saved).
+#[tauri::command]
+pub fn market_doc_load(app: AppHandle, id: String) -> AppResult<Value> {
+    let safe = id.replace(['/', '\\', '.'], "_");
+    match std::fs::read_to_string(docs_dir(&app)?.join(format!("{safe}.md"))) {
+        Ok(s) => Ok(json!(s)),
+        Err(_) => Ok(Value::Null),
+    }
+}
+
+/// Remove an offline doc.
+#[tauri::command]
+pub fn market_doc_forget(app: AppHandle, id: String) -> AppResult<()> {
+    let safe = id.replace(['/', '\\', '.'], "_");
+    let _ = std::fs::remove_file(docs_dir(&app)?.join(format!("{safe}.md")));
+    Ok(())
+}
+
 /// Latest GitHub release for a repo ("owner/name"); null when none exist.
 #[tauri::command]
 pub async fn market_release(repo: String) -> AppResult<Value> {
@@ -381,13 +431,6 @@ fn install_uv_tool(app: &AppHandle, id: &str, package: &str) -> AppResult<String
     Ok(format!("{package} installed (uv tool)"))
 }
 
-// Reuse a running database if one exists, and skip MCP/data auto-config —
-// those are separate Marketplace items the user installs on purpose.
-const STARTER_KIT_SH: &str =
-    "curl -fsSL https://raw.githubusercontent.com/krishna-exasol/starter-kit-testing-v1/main/install.sh | EXAKIT_SKIP_MCP=1 EXAKIT_LOAD_SAMPLE=1 EXAKIT_REUSE_DB=1 sh";
-const STARTER_KIT_PS1: &str =
-    "$env:EXAKIT_SKIP_MCP=1; $env:EXAKIT_LOAD_SAMPLE=1; $env:EXAKIT_REUSE_DB=1; irm https://raw.githubusercontent.com/krishna-exasol/starter-kit-testing-v1/main/install.ps1 | iex";
-
 fn cmd_exists_unix(bin: &str) -> bool {
     if resolve_bin(bin).is_some() {
         return true;
@@ -406,98 +449,107 @@ fn cmd_exists_win(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Install a local Exasol Personal database. macOS installs natively via the
-/// official starter kit; Windows/Linux use a container runtime (Docker/Podman).
-/// If a starter kit (`exakit`) is already present we REUSE it rather than
-/// deploying a second database — never clone an existing local Exasol.
-fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
-    let windows = std::env::consts::OS == "windows";
-    let already = if windows { cmd_exists_win("exakit") } else { cmd_exists_unix("exakit") };
+// The official Exasol Personal launcher (`exasol`) drives BOTH local and cloud
+// deployments — the single source for exasol-personal.
+const EXASOL_INSTALLER_SH: &str = "curl -fsSL https://www.exasol.com/install/ | sh";
 
-    if already {
-        emit_log(
-            app,
-            id,
-            "An existing Exasol starter kit was found — reusing your local database instead of deploying a new one.",
-            "info",
-        );
-        // Bring it up if it isn't already running, then report status.
-        if windows {
-            let _ = run_streamed(app, id, "powershell", &["-Command", "exakit start"]);
-            let _ = run_streamed(app, id, "powershell", &["-Command", "exakit status"]);
-        } else {
-            let _ = run_streamed(app, id, "sh", &["-c", "exakit start || true"]);
-            let _ = run_streamed(app, id, "sh", &["-c", "exakit status || true"]);
-        }
-        return Ok("Reused your existing local Exasol (starter kit).".into());
-    }
-
-    match std::env::consts::OS {
-        "macos" => {
-            emit_log(app, id, "Installing Exasol Personal locally via the official starter kit…", "info");
-            let code = run_streamed(app, id, "sh", &["-c", STARTER_KIT_SH])?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("The installer exited with code {code}. See the log above.")));
-            }
-            Ok("Exasol Personal (local) installed via the starter kit.".into())
-        }
-        "windows" => {
-            let env = market_env();
-            if !env.docker {
-                return Err(AppError::Storage(
-                    "Docker Desktop is required to run Exasol locally on Windows. Install Docker Desktop, then try again — the rest of Exasol Studio works without it.".into(),
-                ));
-            }
-            emit_log(app, id, "Docker detected — installing Exasol Personal via the starter kit…", "info");
-            let code = run_streamed(app, id, "powershell", &["-Command", STARTER_KIT_PS1])?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("The installer exited with code {code}. See the log above.")));
-            }
-            Ok("Exasol Personal (local) installed via Docker.".into())
-        }
-        _ => {
-            let env = market_env();
-            if !env.docker && !env.podman {
-                return Err(AppError::Storage(
-                    "Docker or Podman is required to run Exasol locally on Linux. Install one, then try again — the rest of Exasol Studio works without it.".into(),
-                ));
-            }
-            emit_log(app, id, "Container runtime detected — installing Exasol Personal via the starter kit…", "info");
-            let code = run_streamed(app, id, "sh", &["-c", STARTER_KIT_SH])?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("The installer exited with code {code}. See the log above.")));
-            }
-            Ok("Exasol Personal (local) installed via a container runtime.".into())
-        }
-    }
+fn exasol_bin() -> String {
+    resolve_bin("exasol").map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "exasol".into())
 }
 
-/// Install the Exasol `c4` deployment tool used to launch Exasol on AWS, then
-/// print the AWS deploy usage. Deployment itself (which needs AWS credentials
-/// and incurs cost) is left for the user to run intentionally.
-async fn install_cloud_c4(app: &AppHandle, id: &str) -> AppResult<String> {
-    let plat = match std::env::consts::OS {
-        "macos" => "darwin",
-        "windows" => "windows",
-        _ => "linux",
-    };
-    let march = if std::env::consts::ARCH == "aarch64" { "aarch64" } else { "x86_64" };
-    let fname = if plat == "windows" { "c4.exe" } else { "c4" };
-    let url = format!("https://x-up.s3.amazonaws.com/releases/c4/{plat}/{march}/latest/{fname}");
-    emit_log(app, id, format!("Downloading the c4 deployment tool for {plat}/{march}…"), "info");
-    let path = match download_and_place(app, id, &url, fname).await {
-        Ok(p) => p,
-        Err(e) => {
-            emit_log(app, id, format!("No prebuilt c4 for {plat}/{march}: {e}"), "err");
-            emit_log(app, id, "Download c4 manually from https://downloads.exasol.com/exasol-8/c4", "info");
-            return Err(e);
+/// Ensure the official Exasol launcher is installed (into ~/.local/bin).
+fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
+    if bin_present("exasol") {
+        emit_log(app, id, "Exasol launcher is already installed.", "info");
+        return Ok(());
+    }
+    if std::env::consts::OS == "windows" {
+        return Err(AppError::Storage(
+            "On Windows, download the Exasol launcher from https://downloads.exasol.com/exasol-personal and place it on your PATH, then try again.".into(),
+        ));
+    }
+    emit_log(app, id, "Installing the official Exasol launcher…", "info");
+    let code = run_streamed(app, id, "sh", &["-c", EXASOL_INSTALLER_SH])?;
+    if code != 0 {
+        return Err(AppError::Storage(format!("Launcher install exited with code {code}. See the log above.")));
+    }
+    Ok(())
+}
+
+/// Exasol Personal — local deployment (macOS only, per the official launcher).
+fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
+    if std::env::consts::OS != "macos" {
+        return Err(AppError::Storage(
+            "Exasol Personal local deployment is macOS-only. Use “Exasol Personal — Cloud” to deploy on AWS, Azure, Exoscale or STACKIT.".into(),
+        ));
+    }
+    ensure_exasol_launcher(app, id)?;
+    emit_log(app, id, "Deploying a local Exasol database (this can take a few minutes)…", "info");
+    let exa = exasol_bin();
+    let code = run_streamed(app, id, &exa, &["install", "local"])?;
+    if code != 0 {
+        return Err(AppError::Storage(format!("`exasol install local` exited with code {code}. See the log above.")));
+    }
+    Ok("Exasol Personal deployed locally.".into())
+}
+
+/// Exasol Personal — cloud. Installs the launcher and shows the deploy commands;
+/// provisioning needs the user's cloud credentials and is left for them to run.
+fn install_personal_cloud(app: &AppHandle, id: &str) -> AppResult<String> {
+    ensure_exasol_launcher(app, id)?;
+    let exa = exasol_bin();
+    emit_log(app, id, "Exasol launcher ready. Deploy to your cloud provider with:", "success");
+    emit_log(app, id, format!("  {exa} install aws        # Amazon Web Services"), "info");
+    emit_log(app, id, format!("  {exa} install azure      # Microsoft Azure"), "info");
+    emit_log(app, id, format!("  {exa} install exoscale   # Exoscale"), "info");
+    emit_log(app, id, format!("  {exa} install stackit    # STACKIT"), "info");
+    emit_log(app, id, "Configure provider credentials first; provisioning takes ~10–20 min and uses your cloud account (costs may apply).", "info");
+    emit_log(app, id, "Setup guides: https://github.com/exasol/exasol-personal", "info");
+    Ok("Exasol launcher installed — run `exasol install <provider>` to deploy.".into())
+}
+
+/// JSON Tables (exasol-labs/exasol-json-tables): a Python package plus a Rust
+/// ingest engine — installs the Python entrypoint via uv and builds the Rust
+/// crate via cargo. Decoupled prerequisite checks up front.
+fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
+    if !bin_present("git") {
+        return Err(AppError::Storage("git is required to install JSON Tables.".into()));
+    }
+    let cargo = resolve_bin("cargo")
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| AppError::Storage(
+            "Rust (cargo) is required to build the JSON Tables ingest engine. Install it from https://rustup.rs and retry.".into(),
+        ))?;
+    let uv = ensure_uv(app, id)?;
+
+    let base = market_dir(app)?.join(id);
+    std::fs::create_dir_all(&base)?;
+    let src = base.join("src");
+    let src_s = src.to_string_lossy().to_string();
+    if src.join(".git").exists() {
+        emit_log(app, id, "Updating JSON Tables source…", "info");
+        let _ = run_streamed(app, id, "git", &["-C", &src_s, "pull", "--ff-only"]);
+    } else {
+        emit_log(app, id, "Cloning exasol-labs/exasol-json-tables…", "info");
+        if run_streamed(app, id, "git", &["clone", "--depth", "1", "https://github.com/exasol-labs/exasol-json-tables", &src_s])? != 0 {
+            return Err(AppError::Storage("git clone failed.".into()));
         }
-    };
-    emit_log(app, id, "c4 installed. To deploy Exasol on AWS:", "success");
-    emit_log(app, id, "  1) Configure AWS credentials:  aws configure", "info");
-    emit_log(app, id, format!("  2) Deploy:  {path} aws play -N 1 -T <package>"), "info");
-    emit_log(app, id, "  Docs: https://docs.exasol.com/db/latest/administration/aws/c4/using_c4.htm", "info");
-    Ok(format!("c4 deployment tool installed at {path}"))
+    }
+
+    let venv = base.join("venv");
+    let venv_s = venv.to_string_lossy().to_string();
+    emit_log(app, id, "Installing the Python package (exasol-json-tables)…", "info");
+    run_streamed(app, id, &uv, &["venv", &venv_s])?;
+    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &src_s])? != 0 {
+        return Err(AppError::Storage("uv pip install of exasol-json-tables failed.".into()));
+    }
+
+    emit_log(app, id, "Building the Rust ingest engine (cargo build --release)…", "info");
+    let manifest = src.join("crates/json_tables_ingest/Cargo.toml");
+    if run_streamed(app, id, &cargo, &["build", "--release", "--manifest-path", &manifest.to_string_lossy()])? != 0 {
+        return Err(AppError::Storage("cargo build of the ingest engine failed.".into()));
+    }
+    Ok(format!("JSON Tables installed (Python + Rust ingest engine) at {src_s}"))
 }
 
 /// Perform a real installation for an item, streaming logs over `market:log`
@@ -513,9 +565,12 @@ pub async fn market_install_run(
     emit_log(&app, &id, "Starting installation…", "info");
     let result: AppResult<String> = match id.as_str() {
         "mcp-server" => install_uv_tool(&app, &id, "exasol-mcp-server"),
+        "agent-skills" => install_uv_tool(&app, &id, "exasol-agent-skills"),
         "pyexasol" => install_uv_pip(&app, &id, "pyexasol"),
+        "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
+        "json-tables" => install_json_tables(&app, &id),
         "exasol-personal" => install_personal_local(&app, &id),
-        "exasol-cloud" => install_cloud_c4(&app, &id).await,
+        "exasol-cloud" => install_personal_cloud(&app, &id),
         _ => match (url, filename) {
             (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
             _ => Err(AppError::Storage("No downloadable asset was provided for this item.".into())),
@@ -602,25 +657,33 @@ fn managed_exists(app: &AppHandle, id: &str, name: &str) -> bool {
 #[tauri::command]
 pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     let mut map = serde_json::Map::new();
-    map.insert(
-        "exasol-personal".into(),
-        json!(bin_present("exakit") || bin_present("exasol")),
-    );
+    // Exasol Personal launcher drives both local and cloud.
+    let launcher = bin_present("exasol");
+    map.insert("exasol-personal".into(), json!(launcher));
+    map.insert("exasol-cloud".into(), json!(launcher));
     map.insert(
         "exapump".into(),
         json!(bin_present("exapump") || managed_exists(&app, "exapump", "exapump")),
-    );
-    map.insert(
-        "exasol-cloud".into(),
-        json!(bin_present("c4") || managed_exists(&app, "exasol-cloud", "c4") || managed_exists(&app, "exasol-cloud", "c4.exe")),
     );
     map.insert(
         "mcp-server".into(),
         json!(uv_tool_installed("exasol-mcp-server") || bin_present("exasol-mcp-server")),
     );
     map.insert(
+        "agent-skills".into(),
+        json!(uv_tool_installed("exasol-agent-skills") || bin_present("exasol-install-skills")),
+    );
+    map.insert(
         "pyexasol".into(),
         json!(managed_exists(&app, "pyexasol", "venv") || python_import_ok("pyexasol")),
+    );
+    map.insert(
+        "ai-lab".into(),
+        json!(managed_exists(&app, "ai-lab", "venv") || python_import_ok("exasol.ai_lab")),
+    );
+    map.insert(
+        "json-tables".into(),
+        json!(managed_exists(&app, "json-tables", "src") || bin_present("exasol-json-tables")),
     );
     Ok(Value::Object(map))
 }

@@ -446,6 +446,14 @@ export async function mockInvoke(
     case "market_env":
       return { os: "macos", arch: "aarch64", docker: false, podman: false };
 
+    case "market_doc":
+      return `# ${String(args?.repo ?? "docs")}\n\nThis is a **preview** of the documentation.\n\n\`\`\`bash\nexasol install local\n\`\`\`\n\n- Point one\n- Point two\n`;
+    case "market_doc_load":
+      return null;
+    case "market_doc_save":
+    case "market_doc_forget":
+      return null;
+
     case "market_catalog":
       return {
         generatedAt: "2026-07-01T08:00:00Z",

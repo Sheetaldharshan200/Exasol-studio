@@ -17,5 +17,5 @@ jobs:
     uses: ./.github/workflows/_build-package.yml
     with:
       id: exapump
-      repo: exasol/exapump
+      repo: exasol-labs/exapump
       kind: mirror

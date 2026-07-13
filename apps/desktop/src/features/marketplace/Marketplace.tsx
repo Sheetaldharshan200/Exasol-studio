@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud";
-type Install = "download" | "pip" | "personal" | "cloud";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build";
 
 type CatalogItem = {
   id: string;
@@ -48,40 +48,54 @@ type CatalogItem = {
   labs?: boolean;
 };
 
+// Official Exasol / Exasol-Labs repositories only.
 const CATALOG: CatalogItem[] = [
   {
     id: "exasol-personal",
     name: "Exasol Personal — Local",
+    repo: "exasol/exasol-personal",
     kind: "database",
-    install: "personal",
+    install: "personal-local",
     description:
-      "A free, local Exasol database. Installed natively on macOS via the official starter kit; runs via Docker/Podman on Windows & Linux.",
-    homepage: "https://github.com/krishna-exasol/starter-kit-testing-v1",
+      "A free, full-scale Exasol database on your own machine, via the official Exasol launcher. Local deployment is macOS-only.",
+    homepage: "https://github.com/exasol/exasol-personal",
   },
   {
     id: "exasol-cloud",
-    name: "Exasol Personal — Cloud (AWS)",
+    name: "Exasol Personal — Cloud",
+    repo: "exasol/exasol-personal",
     kind: "cloud",
-    install: "cloud",
+    install: "personal-cloud",
     description:
-      "Deploy Exasol on AWS with the official c4 tool. Installs the c4 binary and shows the AWS deploy command — you keep control of the deployment.",
-    homepage: "https://docs.exasol.com/db/latest/administration/aws/c4/using_c4.htm",
+      "Deploy Exasol Personal on AWS, Azure, Exoscale or STACKIT with the same official launcher — you keep control of the deployment.",
+    homepage: "https://github.com/exasol/exasol-personal",
   },
   {
     id: "exapump",
     name: "ExaPump",
-    repo: "exasol/exapump",
+    repo: "exasol-labs/exapump",
     kind: "cli",
-    install: "download",
-    description: "Single-binary CLI for Exasol data exchange — import, export, and SQL in one command.",
-    homepage: "https://github.com/exasol/exapump",
+    install: "binary",
+    labs: true,
+    description: "Single-binary Rust CLI for Exasol data exchange — import, export, and SQL in one command.",
+    homepage: "https://github.com/exasol-labs/exapump",
+  },
+  {
+    id: "json-tables",
+    name: "JSON Tables",
+    repo: "exasol-labs/exasol-json-tables",
+    kind: "extension",
+    install: "source-build",
+    labs: true,
+    description: "Ingest, query and reshape JSON-shaped data in Exasol — a Python package plus a Rust ingest engine.",
+    homepage: "https://github.com/exasol-labs/exasol-json-tables",
   },
   {
     id: "mcp-server",
     name: "Exasol MCP Server",
     repo: "exasol/mcp-server",
     kind: "server",
-    install: "pip",
+    install: "uv-tool",
     description: "Gives an LLM knowledge of your Exasol database over the Model Context Protocol.",
     homepage: "https://github.com/exasol/mcp-server",
   },
@@ -90,25 +104,16 @@ const CATALOG: CatalogItem[] = [
     name: "PyExasol",
     repo: "exasol/pyexasol",
     kind: "driver",
-    install: "pip",
+    install: "uv-pip",
     description: "Official Python driver with low overhead, fast HTTP transport and compression.",
     homepage: "https://github.com/exasol/pyexasol",
-  },
-  {
-    id: "json-tables",
-    name: "JSON Tables",
-    repo: "exasol/json-tables",
-    kind: "extension",
-    install: "download",
-    description: "Ingest, query and reshape JSON-shaped data in Exasol.",
-    homepage: "https://github.com/exasol/json-tables",
   },
   {
     id: "ai-lab",
     name: "Exasol AI Lab",
     repo: "exasol/ai-lab",
     kind: "extension",
-    install: "download",
+    install: "uv-pip",
     description: "A data-science environment with extensions like the Transformer Extension for in-DB ML.",
     homepage: "https://github.com/exasol/ai-lab",
   },
@@ -117,7 +122,7 @@ const CATALOG: CatalogItem[] = [
     name: "Exasol Agent Skills",
     repo: "exasol-labs/exasol-agent-skills",
     kind: "skills",
-    install: "download",
+    install: "uv-tool",
     labs: true,
     description: "Skills for AI agents, optimized for Claude Code and Codex.",
     homepage: "https://github.com/exasol-labs/exasol-agent-skills",
@@ -160,46 +165,39 @@ function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset 
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
-    case "download":
+    case "binary":
       return asset
-        ? [`Download ${asset.name} from GitHub`, "Place it in Exasol Studio's managed folder", "Mark it as installed"]
+        ? [`Download ${asset.name} from the official release`, "Make it executable in Exasol Studio's managed folder", "Mark it as installed"]
         : ["No prebuilt asset was found for this platform"];
-    case "pip":
-      return item.id === "mcp-server"
-        ? [
-            "Ensure the uv Python package manager (install it if missing)",
-            "Install exasol-mcp-server as a uv tool",
-          ]
-        : [
-            "Ensure the uv Python package manager (install it if missing)",
-            "Create a managed Python environment",
-            "Install pyexasol into it",
-          ];
-    case "personal": {
-      const reuse = "Reuse your existing local Exasol if one is already installed — never a duplicate";
-      if (env?.os === "macos") {
-        return [
-          reuse,
-          "Otherwise, run the official Exasol starter-kit installer",
-          "Deploy a local Exasol database natively (no Docker needed)",
-          "Load the bundled sample data",
-        ];
-      }
-      const rt = env?.docker ? "Docker" : env?.podman ? "Podman" : null;
-      if (env?.os === "windows") {
-        return rt
-          ? [reuse, "Otherwise, use Docker to pull & start a local Exasol database"]
-          : ["Docker Desktop is required on Windows — none was detected"];
-      }
-      return rt
-        ? [reuse, `Otherwise, use ${rt} to pull & start a local Exasol database`]
-        : ["Docker or Podman is required on Linux — none was detected"];
-    }
-    case "cloud":
+    case "uv-tool":
       return [
-        "Download the Exasol c4 deployment binary for your platform",
-        "Make it executable in Exasol Studio's managed folder",
-        "Show the AWS deploy command (c4 aws play …) — you run it when ready",
+        "Ensure the uv Python package manager (install it if missing)",
+        `Install ${item.id === "mcp-server" ? "exasol-mcp-server" : "exasol-agent-skills"} as a uv tool`,
+      ];
+    case "uv-pip":
+      return [
+        "Ensure the uv Python package manager (install it if missing)",
+        "Create a managed Python environment",
+        `Install ${item.id === "pyexasol" ? "pyexasol" : "exasol-ai-lab"} into it`,
+      ];
+    case "source-build":
+      return [
+        "Clone exasol-labs/exasol-json-tables (needs git)",
+        "Install the Python package with uv",
+        "Build the Rust ingest engine with cargo (needs Rust)",
+      ];
+    case "personal-local":
+      return env && env.os !== "macos"
+        ? ["Local deployment is macOS-only — use Exasol Personal — Cloud instead"]
+        : [
+            "Install the official Exasol launcher (if not already present)",
+            "Run `exasol install local` to deploy a local database",
+          ];
+    case "personal-cloud":
+      return [
+        "Install the official Exasol launcher (if not already present)",
+        "Show the deploy commands: exasol install aws | azure | exoscale | stackit",
+        "You run the deploy with your own cloud credentials",
       ];
   }
 }
@@ -422,12 +420,10 @@ export function Marketplace() {
                   )}
                 </div>
 
-                {item.install === "personal" && env && env.os !== "macos" && !runtime ? (
+                {item.install === "personal-local" && env && env.os !== "macos" ? (
                   <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
                     <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
-                    {env.os === "windows"
-                      ? "Docker Desktop is required to run Exasol locally on Windows."
-                      : "Docker or Podman is required to run Exasol locally on Linux."}
+                    Local deployment is macOS-only. Use “Exasol Personal — Cloud” on {env.os}.
                   </p>
                 ) : null}
               </div>
@@ -472,7 +468,7 @@ function InstallConsole({
   const logRef = useRef<HTMLDivElement | null>(null);
   const unlisteners = useRef<UnlistenFn[]>([]);
   const plan = planFor(item, env, asset);
-  const isBinary = item.install === "download" || item.install === "cloud";
+  const isBinary = item.install === "binary";
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });

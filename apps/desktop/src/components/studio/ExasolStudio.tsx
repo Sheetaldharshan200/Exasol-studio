@@ -3,6 +3,7 @@ import Editor, { type Monaco } from "@monaco-editor/react";
 import {
   Activity,
   Blocks,
+  BookOpen,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -86,6 +87,7 @@ import { FileExplorer } from "@/features/workbench/FileExplorer";
 import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
+import { Docs } from "@/features/marketplace/Docs";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
@@ -109,7 +111,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides";
 
 type SqlTab = {
   id: string;
@@ -145,6 +147,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   visualizer: Eye,
   filePreview: Table2,
   marketplace: Store,
+  guides: BookOpen,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -1310,6 +1313,27 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open (or focus) the Guides & Docs tab.
+  function openGuides() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "guides");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-docs-${Date.now()}-${tabCounter.current}`,
+      title: "Guides & Docs",
+      view: "guides",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
   // Open the New Virtual Schema flow in a separate native window (falls back to
   // an in-app modal in the browser preview).
   async function openVs(profileId: string) {
@@ -1548,6 +1572,10 @@ export function ExasolStudio({
               openMarketplace();
               return;
             }
+            if (id === "guides") {
+              openGuides();
+              return;
+            }
             if (id === activity && sidebarOpen) {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -1728,7 +1756,8 @@ export function ExasolStudio({
           {activeTab.view !== "connect" &&
           activeTab.view !== "visualizer" &&
           activeTab.view !== "filePreview" &&
-          activeTab.view !== "marketplace" ? (
+          activeTab.view !== "marketplace" &&
+          activeTab.view !== "guides" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
@@ -1935,6 +1964,10 @@ export function ExasolStudio({
           ) : activeTab.view === "marketplace" ? (
             <div className="min-h-0 flex-1">
               <Marketplace />
+            </div>
+          ) : activeTab.view === "guides" ? (
+            <div className="min-h-0 flex-1">
+              <Docs />
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
