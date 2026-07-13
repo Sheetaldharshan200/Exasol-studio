@@ -17,7 +17,7 @@ import {
   Server,
   type LucideIcon,
 } from "lucide-react";
-import { ipc } from "@/lib/ipc";
+import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 
@@ -37,7 +37,13 @@ const DOCS: DocItem[] = [
 ];
 
 function openExternal(url: string) {
-  window.open(url, "_blank");
+  if (isTauri()) {
+    import("@tauri-apps/plugin-opener")
+      .then((m) => m.openUrl(url))
+      .catch(() => window.open(url, "_blank"));
+  } else {
+    window.open(url, "_blank");
+  }
 }
 
 /** Resolve a relative README asset path to a raw GitHub URL. */

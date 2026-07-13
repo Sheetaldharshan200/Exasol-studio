@@ -17,6 +17,8 @@
     "core:event:allow-emit",
     "core:event:allow-emit-to",
     "dialog:allow-save",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "opener:allow-open-url",
+    "opener:allow-open-path"
   ]
 }

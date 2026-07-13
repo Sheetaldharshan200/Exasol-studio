@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Boxes, Columns3, Database, FileCode2, Info, KeyRound, Loader2, Play, Table2 } from "lucide-react";
-import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo } from "@/lib/ipc";
+import { Boxes, Columns3, Database, FileCode2, GraduationCap, Info, KeyRound, Loader2, Play, Shield, Table2, User } from "lucide-react";
+import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type UserDetails } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
-export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view"; schema?: string; name: string };
+export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
 
 type SubTab = { id: string; label: string; icon: typeof Info };
 
@@ -49,10 +49,12 @@ export function ObjectDetailPanel({
   onOpenData: (sql: string) => void;
 }) {
   const isTable = object.type === "table" || object.type === "view";
+  const isUser = object.type === "user";
   const [tab, setTab] = useState("info");
   const [cols, setCols] = useState<ColumnInfo[]>([]);
   const [cons, setCons] = useState<ConstraintInfo[]>([]);
   const [counts, setCounts] = useState<{ tables: number; views: number; functions: number; scripts: number } | null>(null);
+  const [userD, setUserD] = useState<UserDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,7 +62,13 @@ export function ObjectDetailPanel({
     let alive = true;
     setLoading(true);
     setError(null);
-    if (isTable && object.schema) {
+    if (isUser) {
+      ipc
+        .getUserDetails(profileId, object.name)
+        .then((d) => alive && setUserD(d))
+        .catch((e) => alive && setError(errorMessage(e)))
+        .finally(() => alive && setLoading(false));
+    } else if (isTable && object.schema) {
       ipc
         .getTableDetails(profileId, object.schema, object.name)
         .then((d) => {
@@ -80,21 +88,30 @@ export function ObjectDetailPanel({
     return () => {
       alive = false;
     };
-  }, [profileId, object.type, object.schema, object.name, isTable]);
+  }, [profileId, object.type, object.schema, object.name, isTable, isUser]);
 
-  const subtabs: SubTab[] = isTable
+  const subtabs: SubTab[] = isUser
     ? [
         { id: "info", label: "Info", icon: Info },
-        { id: "columns", label: "Columns", icon: Columns3 },
-        { id: "keys", label: "Keys & Constraints", icon: KeyRound },
-        { id: "ddl", label: "DDL", icon: FileCode2 },
+        { id: "roles", label: "Granted Roles", icon: GraduationCap },
+        { id: "sysprivs", label: "System Privileges", icon: Shield },
+        { id: "objprivs", label: "Object Privileges", icon: KeyRound },
+        { id: "owned", label: "Owned Schemas", icon: Database },
       ]
-    : [
-        { id: "info", label: "Info", icon: Info },
-        { id: "objects", label: "Objects", icon: Boxes },
-      ];
+    : isTable
+      ? [
+          { id: "info", label: "Info", icon: Info },
+          { id: "columns", label: "Columns", icon: Columns3 },
+          { id: "keys", label: "Keys & Constraints", icon: KeyRound },
+          { id: "ddl", label: "DDL", icon: FileCode2 },
+        ]
+      : [
+          { id: "info", label: "Info", icon: Info },
+          { id: "objects", label: "Objects", icon: Boxes },
+        ];
 
-  const TypeIcon = object.type === "table" ? Table2 : object.type.includes("schema") ? Database : Table2;
+  const TypeIcon = isUser ? User : object.type === "table" ? Table2 : object.type.includes("schema") ? Database : Table2;
+  const typeLabel = isUser ? "User" : object.type === "table" ? "Table" : object.type === "view" ? "View" : "Schema";
 
   return (
     <div className="flex h-full flex-col bg-editor">
@@ -102,7 +119,7 @@ export function ObjectDetailPanel({
         <div className="flex items-center gap-2">
           <TypeIcon className="h-4 w-4 text-primary" />
           <span className="text-[14px] font-bold text-foreground">
-            {object.type === "table" ? "Table" : object.type === "view" ? "View" : "Schema"}: {object.name}
+            {typeLabel}: {object.name}
           </span>
           {isTable ? (
             <button
@@ -144,10 +161,41 @@ export function ObjectDetailPanel({
           </div>
         ) : error ? (
           <div className="max-w-lg rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[12.5px] text-muted-foreground">{error}</div>
+        ) : tab === "roles" ? (
+          <StringList items={userD?.roles} empty="No roles granted." />
+        ) : tab === "sysprivs" ? (
+          <StringList items={userD?.systemPrivileges} empty="No system privileges granted." />
+        ) : tab === "owned" ? (
+          <StringList items={userD?.ownedSchemas} empty="Owns no schemas." />
+        ) : tab === "objprivs" ? (
+          (userD?.objectPrivileges.length ?? 0) ? (
+            <table className="w-full border-collapse border border-border text-[12px]">
+              <thead>
+                <tr className="bg-secondary text-left">
+                  <th className="border border-border px-3 py-1.5">Schema</th>
+                  <th className="border border-border px-3 py-1.5">Object</th>
+                  <th className="border border-border px-3 py-1.5">Privilege</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {userD?.objectPrivileges.map((p, i) => (
+                  <tr key={i} className="even:bg-secondary/30">
+                    <td className="border border-border px-3 py-1 text-muted-foreground">{p.schema ?? ""}</td>
+                    <td className="border border-border px-3 py-1 text-foreground">{p.object ?? ""}</td>
+                    <td className="border border-border px-3 py-1 text-muted-foreground">{p.privilege ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">No object privileges granted.</p>
+          )
         ) : tab === "info" ? (
           <PropTable
             rows={
-              isTable
+              isUser
+                ? (userD?.info ?? []).map((r) => [r.name, r.value ?? "—"] as [string, string])
+                : isTable
                 ? [
                     ["Schema", object.schema ?? "—"],
                     ["Name", object.name],
@@ -228,6 +276,19 @@ export function ObjectDetailPanel({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function StringList({ items, empty }: { items?: (string | null)[]; empty: string }) {
+  if (!items || items.length === 0) return <p className="text-[13px] text-muted-foreground">{empty}</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((it, i) => (
+        <span key={i} className="rounded-md border border-border bg-panel px-2 py-1 font-mono text-[12px] text-foreground">
+          {it}
+        </span>
+      ))}
     </div>
   );
 }

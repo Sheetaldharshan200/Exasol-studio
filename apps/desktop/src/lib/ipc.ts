@@ -147,6 +147,14 @@ export type DbaOverview = {
   } | null;
 };
 
+export type UserDetails = {
+  info: { name: string; value: string | null }[];
+  roles: (string | null)[];
+  systemPrivileges: (string | null)[];
+  objectPrivileges: { schema: string | null; object: string | null; privilege: string | null }[];
+  ownedSchemas: (string | null)[];
+};
+
 export type DatabaseInfo = {
   metadata: { name: string; value: string | null }[];
   parameters: { name: string; sessionValue: string | null; systemValue: string | null }[];
@@ -292,6 +300,7 @@ export const ipc = {
     call<ServerInfo>("test_connection", { profile: { id: "", ...profile } }),
   connect: (profileId: string) => call<ServerInfo>("connect", { profileId }),
   disconnect: (profileId: string) => call<void>("disconnect", { profileId }),
+  listOpenConnections: () => call<string[]>("list_open_connections"),
   getDatabaseOverview: (profileId: string) =>
     call<DatabaseOverview>("get_database_overview", { profileId }),
   listSchemaObjects: (profileId: string, schema: string) =>
@@ -303,6 +312,8 @@ export const ipc = {
   listSystemColumns: (profileId: string, schema: string, object: string) =>
     call<{ columns: ColumnInfo[] }>("list_system_columns", { profileId, schema, object }),
   getDbaOverview: (profileId: string) => call<DbaOverview>("get_dba_overview", { profileId }),
+  getUserDetails: (profileId: string, user: string) =>
+    call<UserDetails>("get_user_details", { profileId, user }),
   getDatabaseInfo: (profileId: string) => call<DatabaseInfo>("get_database_info", { profileId }),
   listDataTypes: (profileId: string) =>
     call<{ types: DataType[] }>("list_data_types", { profileId }),

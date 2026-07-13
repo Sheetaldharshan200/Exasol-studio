@@ -126,7 +126,7 @@ export function DatabaseTree({
           }}
           onOpen={() => {
             const c = node.ctx;
-            if (onOpenDetails && c && (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view")) {
+            if (onOpenDetails && c && (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user")) {
               onOpenDetails(node);
             } else if (node.selectable) {
               onOpenObject(node.selectable.schema, node.selectable.name);

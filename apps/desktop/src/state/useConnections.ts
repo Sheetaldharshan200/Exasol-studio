@@ -33,7 +33,30 @@ export function useConnections() {
   }, []);
 
   useEffect(() => {
-    refresh().finally(() => setLoading(false));
+    (async () => {
+      await refresh();
+      // Re-adopt connections that are still open in the backend (their pools
+      // survive a webview reload) so a reload never appears to disconnect.
+      try {
+        const [openIds, profs] = await Promise.all([
+          ipc.listOpenConnections(),
+          ipc.listConnectionProfiles(),
+        ]);
+        for (const id of openIds) {
+          const profile = profs.find((p) => p.id === id);
+          if (!profile) continue;
+          try {
+            const server = await ipc.connect(id); // idempotent: reuses the open pool
+            setConnections((list) => [...list.filter((c) => c.profile.id !== id), { profile, server }]);
+            setActiveProfileId((prev) => prev ?? id);
+          } catch {
+            /* pool gone — skip */
+          }
+        }
+      } catch {
+        /* backend didn't report open connections */
+      }
+    })().finally(() => setLoading(false));
   }, [refresh]);
 
   /** Record an already-established connection (e.g. from the native window). */

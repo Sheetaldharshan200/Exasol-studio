@@ -478,3 +478,99 @@ pub async fn get_dba_overview(state: State<'_, AppState>, profile_id: String) ->
         ])),
     }))
 }
+
+/// Detail for a single database user: info, granted roles, system & object
+/// privileges, and owned schemas. Resilient to privilege level (DBA → USER views).
+#[tauri::command]
+pub async fn get_user_details(
+    state: State<'_, AppState>,
+    profile_id: String,
+    user: String,
+) -> AppResult<Value> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let u = user.replace('\'', "''");
+
+    let info_rows = fetch_first_ok(
+        &pool,
+        &[
+            &format!(
+                "SELECT USER_NAME, CREATED, USER_CONSUMER_GROUP, PASSWORD_STATE \
+                 FROM SYS.EXA_ALL_USERS WHERE USER_NAME='{u}'"
+            ),
+            &format!(
+                "SELECT USER_NAME, CREATED, NULL, NULL FROM SYS.EXA_DBA_USERS WHERE USER_NAME='{u}'"
+            ),
+        ],
+    )
+    .await;
+    let info = info_rows.first().cloned().unwrap_or_default();
+
+    let roles: Vec<Value> = fetch_first_ok(
+        &pool,
+        &[
+            &format!("SELECT GRANTED_ROLE FROM SYS.EXA_DBA_ROLE_PRIVS WHERE GRANTEE='{u}' ORDER BY 1"),
+            "SELECT GRANTED_ROLE FROM SYS.EXA_USER_ROLE_PRIVS ORDER BY 1",
+        ],
+    )
+    .await
+    .iter()
+    .map(|r| cell(r, 0))
+    .collect();
+
+    let system_privileges: Vec<Value> = fetch_first_ok(
+        &pool,
+        &[
+            &format!("SELECT PRIVILEGE FROM SYS.EXA_DBA_SYS_PRIVS WHERE GRANTEE='{u}' ORDER BY 1"),
+            "SELECT PRIVILEGE FROM SYS.EXA_USER_SYS_PRIVS ORDER BY 1",
+        ],
+    )
+    .await
+    .iter()
+    .map(|r| cell(r, 0))
+    .collect();
+
+    let object_privileges: Vec<Value> = fetch_first_ok(
+        &pool,
+        &[
+            &format!(
+                "SELECT OBJECT_SCHEMA, OBJECT_NAME, PRIVILEGE FROM SYS.EXA_DBA_OBJ_PRIVS \
+                 WHERE GRANTEE='{u}' ORDER BY 1, 2"
+            ),
+            "SELECT OBJECT_SCHEMA, OBJECT_NAME, PRIVILEGE FROM SYS.EXA_USER_OBJ_PRIVS ORDER BY 1, 2",
+        ],
+    )
+    .await
+    .iter()
+    .map(|r| {
+        obj(vec![
+            ("schema", cell(r, 0)),
+            ("object", cell(r, 1)),
+            ("privilege", cell(r, 2)),
+        ])
+    })
+    .collect();
+
+    let owned_schemas: Vec<Value> = fetch_first_ok(
+        &pool,
+        &[&format!(
+            "SELECT SCHEMA_NAME FROM SYS.EXA_ALL_SCHEMAS WHERE SCHEMA_OWNER='{u}' ORDER BY 1"
+        )],
+    )
+    .await
+    .iter()
+    .map(|r| cell(r, 0))
+    .collect();
+
+    Ok(json!({
+        "info": [
+            obj(vec![("name", json!("Name")), ("value", cell(&info, 0))]),
+            obj(vec![("name", json!("Created")), ("value", cell(&info, 1))]),
+            obj(vec![("name", json!("Consumer group")), ("value", cell(&info, 2))]),
+            obj(vec![("name", json!("Password state")), ("value", cell(&info, 3))]),
+        ],
+        "roles": roles,
+        "systemPrivileges": system_privileges,
+        "objectPrivileges": object_privileges,
+        "ownedSchemas": owned_schemas,
+    }))
+}

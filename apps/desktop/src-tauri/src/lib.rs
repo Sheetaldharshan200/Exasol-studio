@@ -23,6 +23,7 @@ use crate::state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -48,6 +49,7 @@ pub fn run() {
             metadata::list_system_objects,
             metadata::list_system_columns,
             metadata::get_dba_overview,
+            metadata::get_user_details,
             catalog::get_database_info,
             catalog::list_data_types,
             catalog::search_objects,

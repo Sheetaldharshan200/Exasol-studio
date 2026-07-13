@@ -142,7 +142,8 @@ export function ObjectContextMenu({
 }) {
   const items = itemsFor(ctx, defaultSchema);
   const canDetail =
-    onDetails && (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view");
+    onDetails &&
+    (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view" || ctx.type === "user");
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const close = () => onClose();

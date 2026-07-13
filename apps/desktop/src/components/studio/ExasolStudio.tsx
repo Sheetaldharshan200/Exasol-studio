@@ -1595,7 +1595,7 @@ export function ExasolStudio({
   // Open (or focus) an object-detail tab for a schema/table/view.
   function openObjectDetails(profileId: string, ctx: { type: string; schema?: string; name: string }) {
     const type = ctx.type as ObjectRef["type"];
-    if (!["schema", "virtual-schema", "table", "view"].includes(type)) return;
+    if (!["schema", "virtual-schema", "table", "view", "user"].includes(type)) return;
     const list = tabsFor(connKey);
     const id = `obj:${profileId}:${ctx.schema ?? ""}:${ctx.name}:${type}`;
     const existing = list.find((t) => t.view === "object" && t.id === id);
@@ -2670,7 +2670,9 @@ export function ExasolStudio({
               {!biInfo.error ? (
                 <button
                   onClick={() => {
-                    window.open(biInfo.url, "_blank");
+                    if (isTauri())
+                      void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(biInfo.url)).catch(() => window.open(biInfo.url, "_blank"));
+                    else window.open(biInfo.url, "_blank");
                     setBiInfo(null);
                   }}
                   className="cta-glow h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"

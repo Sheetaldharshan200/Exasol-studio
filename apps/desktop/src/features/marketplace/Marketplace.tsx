@@ -272,7 +272,13 @@ const FILTERS: { key: MarketFilter; label: string }[] = [
 ];
 
 function openExternal(url: string) {
-  window.open(url, "_blank");
+  if (isTauri()) {
+    import("@tauri-apps/plugin-opener")
+      .then((m) => m.openUrl(url))
+      .catch(() => window.open(url, "_blank"));
+  } else {
+    window.open(url, "_blank");
+  }
 }
 
 /** Pick the release asset that best matches the host platform. */

@@ -204,6 +204,9 @@ export async function mockInvoke(
     case "disconnect":
       return null;
 
+    case "list_open_connections":
+      return [];
+
     case "get_database_overview":
       return {
         schemas: [
@@ -313,6 +316,20 @@ export async function mockInvoke(
           { name: "OBJECT_NAME", dataType: "VARCHAR(128) UTF8", comment: null },
           { name: "OBJECT_TYPE", dataType: "VARCHAR(15) UTF8", comment: null },
         ],
+      };
+
+    case "get_user_details":
+      return {
+        info: [
+          { name: "Name", value: String(args?.user ?? "USER") },
+          { name: "Created", value: "2026-07-13 11:17:54" },
+          { name: "Consumer group", value: null },
+          { name: "Password state", value: "VALID" },
+        ],
+        roles: ["PUBLIC"],
+        systemPrivileges: ["CREATE SESSION", "SELECT ANY TABLE"],
+        objectPrivileges: [{ schema: "ENERGY", object: "ENERGY_READINGS", privilege: "SELECT" }],
+        ownedSchemas: [],
       };
 
     case "get_dba_overview":
