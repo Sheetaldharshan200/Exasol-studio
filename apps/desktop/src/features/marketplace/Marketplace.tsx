@@ -15,8 +15,10 @@ import {
   Loader2,
   Plug,
   RefreshCcw,
+  Search,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   Store,
   Terminal,
   Trash2,
@@ -24,6 +26,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { BorderBeam } from "@/components/ui/border-beam";
 import {
   errorMessage,
   ipc,
@@ -152,6 +155,41 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   cloud: Cloud,
   bi: BarChart3,
 };
+
+// Marketplace sections (ordered). Every catalog item maps to exactly one.
+type SectionKey = "database" | "load" | "extension" | "ai" | "bi";
+const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
+  { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
+  { key: "load", label: "Data loading & drivers", hint: "Move data in and out, connect apps" },
+  { key: "extension", label: "Extensions", hint: "Extend what Exasol can store & query" },
+  { key: "ai", label: "AI & Agents", hint: "MCP, agent skills, LLM workflows" },
+  { key: "bi", label: "BI & Analytics", hint: "Dashboards and visual analytics" },
+];
+function sectionOf(kind: Kind): SectionKey {
+  switch (kind) {
+    case "database":
+    case "cloud":
+      return "database";
+    case "cli":
+    case "driver":
+      return "load";
+    case "extension":
+      return "extension";
+    case "server":
+    case "skills":
+      return "ai";
+    case "bi":
+      return "bi";
+  }
+}
+
+type MarketFilter = "all" | "installed" | "updates" | "labs";
+const FILTERS: { key: MarketFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "installed", label: "Installed" },
+  { key: "updates", label: "Updates" },
+  { key: "labs", label: "Labs" },
+];
 
 function openExternal(url: string) {
   window.open(url, "_blank");
@@ -296,6 +334,34 @@ export function Marketplace() {
 
   const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<MarketFilter>("all");
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return CATALOG.filter((item) => {
+      if (
+        q &&
+        !(
+          item.name.toLowerCase().includes(q) ||
+          item.id.includes(q) ||
+          (item.repo ?? "").toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q)
+        )
+      )
+        return false;
+      const inst = installedMap[item.id];
+      const present = inst || detected[item.id];
+      if (filter === "installed" && !present) return false;
+      if (filter === "labs" && !item.labs) return false;
+      if (filter === "updates") {
+        const l = catalog?.items?.[item.id]?.latest ?? releases[item.id]?.tag ?? null;
+        if (!(inst && l && l !== inst.version)) return false;
+      }
+      return true;
+    });
+  }, [query, filter, installedMap, detected, catalog, releases]);
+
   return (
     <div className="h-full overflow-auto bg-editor">
       <div className="mx-auto max-w-5xl p-6">
@@ -343,8 +409,63 @@ export function Marketplace() {
           </button>
         </header>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {CATALOG.map((item) => {
+        {/* Floating search + filters */}
+        <div className="sticky top-0 z-20 -mx-6 mb-5 border-b border-border/70 bg-editor/85 px-6 py-2.5 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search tools, drivers, extensions, agent skills…"
+                className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              />
+              {query ? (
+                <button
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={cn(
+                    "flex h-7 items-center gap-1 rounded-md px-2.5 text-[11.5px] transition-colors",
+                    filter === f.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {f.label}
+                  {f.key === "updates" && updatesAvailable > 0 ? (
+                    <span className="rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground">
+                      {updatesAvailable}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {SECTION_META.map((sec) => {
+          const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
+          if (!items.length) return null;
+          return (
+            <section key={sec.key} className="mb-6">
+              <div className="mb-2.5 flex items-baseline gap-2">
+                <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
+                <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+                  {items.length}
+                </span>
+                <span className="text-[11px] text-muted-foreground">· {sec.hint}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {items.map((item) => {
             const Icon = KIND_ICON[item.kind];
             const inst = installedMap[item.id];
             const onSystem = detected[item.id] && !inst;
@@ -448,8 +569,18 @@ export function Marketplace() {
                 ) : null}
               </div>
             );
-          })}
-        </div>
+                })}
+              </div>
+            </section>
+          );
+        })}
+
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+            <Search className="h-6 w-6 opacity-40" />
+            <p className="text-sm">No items match “{query}”.</p>
+          </div>
+        ) : null}
       </div>
 
       {consoleItem ? (
@@ -549,7 +680,8 @@ function InstallConsole({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm">
-      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
+      <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
+        {phase === "running" ? <BorderBeam duration={5} size={220} /> : null}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Terminal className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[13px] font-semibold text-foreground">
