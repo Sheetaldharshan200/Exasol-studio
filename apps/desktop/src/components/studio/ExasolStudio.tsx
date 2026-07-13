@@ -922,6 +922,8 @@ function ResultsGrid({
   editable,
   onCommitEdits,
   editBusy,
+  fontSize = 12,
+  zebra = true,
 }: {
   result: StatementResult | null;
   error: string | null;
@@ -930,6 +932,8 @@ function ResultsGrid({
   editable?: { schema?: string; table: string; pk: string[] } | null;
   onCommitEdits?: (statements: string[]) => void;
   editBusy?: boolean;
+  fontSize?: number;
+  zebra?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   if (error) {
@@ -1001,8 +1005,8 @@ function ResultsGrid({
           {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
         </span>
       </div>
-      <div className="h-full min-h-0 flex-1 overflow-auto p-px">
-        <table className="w-full border-collapse border border-border text-[12px]">
+      <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
+        <table className="w-full border-collapse border border-border">
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary">
               <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
@@ -1023,7 +1027,7 @@ function ResultsGrid({
           </thead>
           <tbody className="font-mono">
             {result.rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="odd:bg-transparent even:bg-secondary/30 hover:bg-accent/60">
+              <tr key={rowIndex} className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30")}>
                 <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
                   {rowIndex + 1}
                 </td>
@@ -1233,6 +1237,9 @@ export function ExasolStudio({
   const { theme, setTheme } = useTheme();
   const editorTheme = theme === "dark" ? "exasol-dark" : "exasol-light";
   const [editorFontSize, setEditorFontSize] = useState(13);
+  const [editorWordWrap, setEditorWordWrap] = useState(false);
+  const [gridFontSize, setGridFontSize] = useState(12);
+  const [gridZebra, setGridZebra] = useState(true);
 
   const setActiveTabId = useCallback(
     (id: string) => setActiveIdByConn((a) => ({ ...a, [connKey]: id })),
@@ -1280,6 +1287,9 @@ export function ExasolStudio({
         setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       if (typeof s.maxRows === "number") setMaxRows(s.maxRows);
       if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
+      if (typeof s.wordWrap === "boolean") setEditorWordWrap(s.wordWrap);
+      if (typeof s.gridFontSize === "number") setGridFontSize(s.gridFontSize);
+      if (typeof s.zebraStripes === "boolean") setGridZebra(s.zebraStripes);
       if (typeof s.autoCommit === "boolean") setAutoCommit(s.autoCommit);
       setExecSettings((v) => ({
         ...v,
@@ -2417,6 +2427,7 @@ export function ExasolStudio({
                     automaticLayout: true,
                     fontFamily: "JetBrains Mono",
                     fontSize: editorFontSize,
+                    wordWrap: editorWordWrap ? "on" : "off",
                     minimap: { enabled: false },
                     scrollBeyondLastLine: false,
                     padding: { top: 10 },
@@ -2478,6 +2489,8 @@ export function ExasolStudio({
                         editable={editTable}
                         onCommitEdits={(stmts) => void commitEdits(stmts)}
                         editBusy={running}
+                        fontSize={gridFontSize}
+                        zebra={gridZebra}
                       />
                     )}
                   </div>

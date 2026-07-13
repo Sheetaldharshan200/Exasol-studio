@@ -155,6 +155,15 @@ export type UserDetails = {
   ownedSchemas: (string | null)[];
 };
 
+export type ObjectGrant = { grantor: string | null; grantee: string | null; privilege: string | null; object: string | null };
+export type ObjectSize = {
+  rawSize: number | string | null;
+  memSize: number | string | null;
+  created: string | null;
+  lastCommit: string | null;
+  rowCount: number | string | null;
+};
+
 export type DatabaseInfo = {
   metadata: { name: string; value: string | null }[];
   parameters: { name: string; sessionValue: string | null; systemValue: string | null }[];
@@ -314,6 +323,10 @@ export const ipc = {
   getDbaOverview: (profileId: string) => call<DbaOverview>("get_dba_overview", { profileId }),
   getUserDetails: (profileId: string, user: string) =>
     call<UserDetails>("get_user_details", { profileId, user }),
+  getObjectGrants: (profileId: string, schema: string, object?: string) =>
+    call<ObjectGrant[]>("get_object_grants", { profileId, schema, object }),
+  getObjectSize: (profileId: string, schema: string, object?: string) =>
+    call<ObjectSize>("get_object_size", { profileId, schema, object }),
   getDatabaseInfo: (profileId: string) => call<DatabaseInfo>("get_database_info", { profileId }),
   listDataTypes: (profileId: string) =>
     call<{ types: DataType[] }>("list_data_types", { profileId }),

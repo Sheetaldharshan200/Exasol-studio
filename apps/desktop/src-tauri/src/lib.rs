@@ -50,6 +50,8 @@ pub fn run() {
             metadata::list_system_columns,
             metadata::get_dba_overview,
             metadata::get_user_details,
+            metadata::get_object_grants,
+            metadata::get_object_size,
             catalog::get_database_info,
             catalog::list_data_types,
             catalog::search_objects,

@@ -332,6 +332,11 @@ export async function mockInvoke(
         ownedSchemas: [],
       };
 
+    case "get_object_grants":
+      return [{ grantor: "SYS", grantee: "PUBLIC", privilege: "SELECT", object: String(args?.object ?? "") }];
+    case "get_object_size":
+      return { rawSize: "0.00151", memSize: "0.00044", created: "2026-07-13 11:14:49", lastCommit: "2026-07-13 11:14:49", rowCount: 108000 };
+
     case "get_dba_overview":
       return {
         users: [

@@ -574,3 +574,97 @@ pub async fn get_user_details(
         "ownedSchemas": owned_schemas,
     }))
 }
+
+/// Object privileges granted on a schema (or a specific object within it).
+#[tauri::command]
+pub async fn get_object_grants(
+    state: State<'_, AppState>,
+    profile_id: String,
+    schema: String,
+    object: Option<String>,
+) -> AppResult<Value> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let sc = schema.replace('\'', "''");
+    let filter = match &object {
+        Some(o) => format!("OBJECT_SCHEMA='{sc}' AND OBJECT_NAME='{}'", o.replace('\'', "''")),
+        None => format!("OBJECT_SCHEMA='{sc}'"),
+    };
+    let rows = fetch_first_ok(
+        &pool,
+        &[
+            &format!("SELECT GRANTOR, GRANTEE, PRIVILEGE, OBJECT_NAME FROM SYS.EXA_DBA_OBJ_PRIVS WHERE {filter} ORDER BY 2, 3"),
+            &format!("SELECT GRANTOR, GRANTEE, PRIVILEGE, OBJECT_NAME FROM SYS.EXA_ALL_OBJ_PRIVS WHERE {filter} ORDER BY 2, 3"),
+        ],
+    )
+    .await;
+    Ok(Value::Array(
+        rows.iter()
+            .map(|r| {
+                obj(vec![
+                    ("grantor", cell(r, 0)),
+                    ("grantee", cell(r, 1)),
+                    ("privilege", cell(r, 2)),
+                    ("object", cell(r, 3)),
+                ])
+            })
+            .collect(),
+    ))
+}
+
+/// Size metrics for a schema or a single table (from EXA_ALL_OBJECT_SIZES).
+#[tauri::command]
+pub async fn get_object_size(
+    state: State<'_, AppState>,
+    profile_id: String,
+    schema: String,
+    object: Option<String>,
+) -> AppResult<Value> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let sc = schema.replace('\'', "''");
+    let size_rows = match &object {
+        Some(o) => {
+            let on = o.replace('\'', "''");
+            fetch_first_ok(
+                &pool,
+                &[&format!(
+                    "SELECT RAW_OBJECT_SIZE, MEM_OBJECT_SIZE, CREATED, LAST_COMMIT \
+                     FROM SYS.EXA_ALL_OBJECT_SIZES WHERE ROOT_NAME='{sc}' AND OBJECT_NAME='{on}'"
+                )],
+            )
+            .await
+        }
+        None => {
+            fetch_first_ok(
+                &pool,
+                &[&format!(
+                    "SELECT RAW_OBJECT_SIZE, MEM_OBJECT_SIZE, CREATED, LAST_COMMIT \
+                     FROM SYS.EXA_ALL_OBJECT_SIZES WHERE OBJECT_NAME='{sc}' AND OBJECT_TYPE='SCHEMA'"
+                )],
+            )
+            .await
+        }
+    };
+    let s = size_rows.first().cloned().unwrap_or_default();
+
+    let row_count = if let Some(o) = &object {
+        let on = o.replace('\'', "''");
+        let rc = fetch_first_ok(
+            &pool,
+            &[&format!(
+                "SELECT TABLE_ROW_COUNT FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA='{sc}' AND TABLE_NAME='{on}'"
+            )],
+        )
+        .await;
+        rc.first().map(|r| cell(r, 0)).unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+
+    Ok(json!({
+        "rawSize": cell(&s, 0),
+        "memSize": cell(&s, 1),
+        "created": cell(&s, 2),
+        "lastCommit": cell(&s, 3),
+        "rowCount": row_count,
+    }))
+}

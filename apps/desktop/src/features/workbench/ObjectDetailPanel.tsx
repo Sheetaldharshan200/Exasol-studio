@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Boxes, Columns3, Database, FileCode2, GraduationCap, Info, KeyRound, Loader2, Play, Shield, Table2, User } from "lucide-react";
-import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type UserDetails } from "@/lib/ipc";
+import { Boxes, Columns3, Database, FileCode2, GraduationCap, HardDrive, Info, KeyRound, Loader2, Play, Shield, Table2, User } from "lucide-react";
+import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type ObjectGrant, type ObjectSize, type UserDetails } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
@@ -55,8 +55,22 @@ export function ObjectDetailPanel({
   const [cons, setCons] = useState<ConstraintInfo[]>([]);
   const [counts, setCounts] = useState<{ tables: number; views: number; functions: number; scripts: number } | null>(null);
   const [userD, setUserD] = useState<UserDetails | null>(null);
+  const [grants, setGrants] = useState<ObjectGrant[] | null>(null);
+  const [size, setSize] = useState<ObjectSize | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Grants + Size (schema & table/view) load lazily on first view.
+  useEffect(() => {
+    if (isUser) return;
+    if (tab === "grants" && grants === null) {
+      ipc.getObjectGrants(profileId, object.schema ?? object.name, isTable ? object.name : undefined).then(setGrants).catch(() => setGrants([]));
+    }
+    if (tab === "size" && size === null) {
+      ipc.getObjectSize(profileId, object.schema ?? object.name, isTable ? object.name : undefined).then(setSize).catch(() => setSize(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   useEffect(() => {
     let alive = true;
@@ -103,11 +117,15 @@ export function ObjectDetailPanel({
           { id: "info", label: "Info", icon: Info },
           { id: "columns", label: "Columns", icon: Columns3 },
           { id: "keys", label: "Keys & Constraints", icon: KeyRound },
+          { id: "grants", label: "Grants", icon: Shield },
+          { id: "size", label: "Size", icon: HardDrive },
           { id: "ddl", label: "DDL", icon: FileCode2 },
         ]
       : [
           { id: "info", label: "Info", icon: Info },
           { id: "objects", label: "Objects", icon: Boxes },
+          { id: "grants", label: "Grants", icon: Shield },
+          { id: "size", label: "Size", icon: HardDrive },
         ];
 
   const TypeIcon = isUser ? User : object.type === "table" ? Table2 : object.type.includes("schema") ? Database : Table2;
@@ -260,6 +278,47 @@ export function ObjectDetailPanel({
             </table>
           ) : (
             <p className="text-[13px] text-muted-foreground">No constraints.</p>
+          )
+        ) : tab === "grants" ? (
+          grants === null ? (
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading grants…</div>
+          ) : grants.length ? (
+            <table className="w-full border-collapse border border-border text-[12px]">
+              <thead>
+                <tr className="bg-secondary text-left">
+                  <th className="border border-border px-3 py-1.5">Grantor</th>
+                  <th className="border border-border px-3 py-1.5">Grantee</th>
+                  <th className="border border-border px-3 py-1.5">Privilege</th>
+                  <th className="border border-border px-3 py-1.5">Object</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {grants.map((g, i) => (
+                  <tr key={i} className="even:bg-secondary/30">
+                    <td className="border border-border px-3 py-1 text-muted-foreground">{g.grantor ?? ""}</td>
+                    <td className="border border-border px-3 py-1 text-foreground">{g.grantee ?? ""}</td>
+                    <td className="border border-border px-3 py-1 text-muted-foreground">{g.privilege ?? ""}</td>
+                    <td className="border border-border px-3 py-1 text-muted-foreground">{g.object ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">No grants. (Reads EXA_[ALL|DBA]_OBJ_PRIVS.)</p>
+          )
+        ) : tab === "size" ? (
+          size === null ? (
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading size…</div>
+          ) : (
+            <PropTable
+              rows={[
+                ["RAW size (GiB, uncompressed)", String(size.rawSize ?? "—")],
+                ["MEM size (GiB, compressed)", String(size.memSize ?? "—")],
+                ...(isTable ? ([["Row count", String(size.rowCount ?? "—")]] as [string, string][]) : []),
+                ["Created", String(size.created ?? "—")],
+                ["Last commit", String(size.lastCommit ?? "—")],
+              ]}
+            />
           )
         ) : tab === "ddl" ? (
           <pre className="overflow-auto rounded-lg border border-border bg-panel p-3 font-mono text-[12px] text-foreground [scrollbar-width:thin]">
