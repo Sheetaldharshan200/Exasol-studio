@@ -100,6 +100,8 @@ import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { ObjectContextMenu, SqlReviewDialog } from "@/features/workbench/ObjectContextMenu";
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
+import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
+import { addFavorite, type Favorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
@@ -694,6 +696,7 @@ function Sidebar({
   onUploadDriver,
   onContext,
   onOpenDetails,
+  onOpenFavorite,
   onCollapse,
   onOpenFile,
   onOpenData,
@@ -719,6 +722,7 @@ function Sidebar({
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onOpenDetails: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode) => void;
+  onOpenFavorite?: (fav: Favorite) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
@@ -755,6 +759,8 @@ function Sidebar({
         </div>
         {activity === "files" ? (
           <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} refreshSignal={filesRefresh} />
+        ) : activity === "favorites" ? (
+          <FavoritesPanel profileId={activeProfileId} onOpen={(fav) => onOpenFavorite?.(fav)} />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}
@@ -1990,6 +1996,11 @@ export function ExasolStudio({
               }}
               onContext={(pid, node, x, y) => node.ctx && setCtxMenu({ profileId: pid, node, x, y })}
               onOpenDetails={(pid, node) => node.ctx && openObjectDetails(pid, node.ctx)}
+              onOpenFavorite={(fav) => {
+                if (["schema", "virtual-schema", "table", "view", "user"].includes(fav.type)) {
+                  openObjectDetails(fav.profileId, { type: fav.type, schema: fav.schema, name: fav.name });
+                }
+              }}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
@@ -2620,6 +2631,15 @@ export function ExasolStudio({
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
           onDdl={(title, sql) => setDdlReview({ profileId: ctxMenu.profileId, title, sql })}
           onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
+          onFavorite={() =>
+            ctxMenu.node.ctx &&
+            addFavorite({
+              profileId: ctxMenu.profileId,
+              type: ctxMenu.node.ctx.type,
+              schema: ctxMenu.node.ctx.schema,
+              name: ctxMenu.node.ctx.name,
+            })
+          }
         />
       ) : null}
 

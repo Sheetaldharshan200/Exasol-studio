@@ -127,6 +127,7 @@ export function ObjectContextMenu({
   onEditorSql,
   onDdl,
   onDetails,
+  onFavorite,
 }: {
   ctx: NodeCtx;
   x: number;
@@ -139,6 +140,8 @@ export function ObjectContextMenu({
   onDdl: (title: string, sql: string) => void;
   /** Open the object detail tab (schema/table/view). */
   onDetails?: () => void;
+  /** Add this object to Favorites. */
+  onFavorite?: () => void;
 }) {
   const items = itemsFor(ctx, defaultSchema);
   const canDetail =
@@ -205,6 +208,20 @@ export function ObjectContextMenu({
           </button>
         ),
       )}
+      {onFavorite ? (
+        <>
+          <div className="my-1 h-px bg-border" />
+          <button
+            onClick={() => {
+              onFavorite();
+              onClose();
+            }}
+            className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+          >
+            ★ Add to Favorites
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
