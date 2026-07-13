@@ -493,6 +493,11 @@ export async function mockInvoke(
       await delay(200);
       return { ok: true };
 
+    case "bi_installed":
+      return false;
+    case "bi_launch":
+      return "http://localhost:8088";
+
     case "market_uninstall":
       return null;
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  BarChart3,
   Boxes,
   Check,
   Cloud,
@@ -34,8 +35,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 
-type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build";
+type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset";
 
 type CatalogItem = {
   id: string;
@@ -127,6 +128,16 @@ const CATALOG: CatalogItem[] = [
     description: "Skills for AI agents, optimized for Claude Code and Codex.",
     homepage: "https://github.com/exasol-labs/exasol-agent-skills",
   },
+  {
+    id: "superset",
+    name: "Apache Superset — BI",
+    repo: "apache/superset",
+    kind: "bi",
+    install: "bi-superset",
+    description:
+      "Optional open-source BI (Apache-2.0): dashboards + SQL Lab. Installed into a managed environment with the official Exasol connector, then launched from the SQL editor's ‘Open in BI’.",
+    homepage: "https://github.com/apache/superset",
+  },
 ];
 
 const KIND_ICON: Record<Kind, LucideIcon> = {
@@ -137,6 +148,7 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   extension: Boxes,
   skills: FileCode2,
   cloud: Cloud,
+  bi: BarChart3,
 };
 
 function openExternal(url: string) {
@@ -185,6 +197,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the prebuilt ingest engine for your platform (built by our CI)",
         "Download the Python package (wheel)",
         "Install it with uv — no Rust, cargo or git needed on your machine",
+      ];
+    case "bi-superset":
+      return [
+        "Create a managed Python environment (uv)",
+        "Install Apache Superset + the official Exasol SQLAlchemy dialect",
+        "Initialize Superset (login: admin / admin)",
       ];
     case "personal-local":
       return env && env.os !== "macos"

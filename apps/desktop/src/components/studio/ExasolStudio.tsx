@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import {
   Activity,
+  BarChart3,
   Blocks,
   BookOpen,
   Check,
@@ -1041,6 +1042,7 @@ export function ExasolStudio({
   const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
+  const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1506,6 +1508,33 @@ export function ExasolStudio({
     });
   }
 
+  // Open the current query/connection in the optional BI tool (Apache Superset).
+  async function openBi() {
+    const installed = await ipc.biInstalled().catch(() => false);
+    if (!installed) {
+      openMarketplace();
+      return;
+    }
+    try {
+      const url = await ipc.biLaunch();
+      const p = connection?.profile;
+      const uri = p
+        ? `exa+websocket://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password)}@${p.host}:${p.port}`
+        : "";
+      const sql = (activeTab.sql ?? "").trim();
+      const clip = [
+        uri && `# Exasol connection for Superset (Settings → Database Connections → + Database → SQLAlchemy URI):\n${uri}`,
+        sql && `\n-- Current query (paste into SQL Lab):\n${sql}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (clip) await navigator.clipboard?.writeText(clip).catch(() => undefined);
+      setBiInfo({ url, hasUri: Boolean(uri) });
+    } catch (e) {
+      setBiInfo({ url: "", error: errorMessage(e) });
+    }
+  }
+
   // Step through SQL history into the current editor.
   function historyNav(dir: "prev" | "next") {
     if (history.length === 0) return;
@@ -1782,6 +1811,9 @@ export function ExasolStudio({
                 </IconButton>
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
+                </IconButton>
+                <IconButton label="Open in BI (Apache Superset)" onClick={openBi} disabled={!connected}>
+                  <BarChart3 className="h-3.5 w-3.5" />
                 </IconButton>
                 <IconButton label="Stop" disabled={!running}>
                   <Square className="h-3.5 w-3.5" />
@@ -2181,6 +2213,60 @@ export function ExasolStudio({
           onClose={() => setVsFor(null)}
           onCreated={() => refreshConnection(vsFor)}
         />
+      ) : null}
+
+      {biInfo ? (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setBiInfo(null)}
+        >
+          <div
+            className="w-[420px] rounded-xl border border-border bg-popover p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <p className="text-[13px] font-semibold text-foreground">Open in BI — Apache Superset</p>
+            </div>
+            {biInfo.error ? (
+              <p className="text-[12px] text-destructive">{biInfo.error}</p>
+            ) : (
+              <>
+                <p className="text-[12px] leading-relaxed text-muted-foreground">
+                  Superset is starting at{" "}
+                  <span className="font-mono text-foreground">{biInfo.url}</span> (login{" "}
+                  <span className="font-mono text-foreground">admin / admin</span>). It may take a few seconds on first
+                  launch.
+                </p>
+                {biInfo.hasUri ? (
+                  <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                    Your Exasol connection URI{activeTab.sql?.trim() ? " and current query" : ""} have been copied to the
+                    clipboard — in Superset go to <span className="text-foreground">Settings → Database Connections → + Database → SQLAlchemy URI</span> and paste.
+                  </p>
+                ) : null}
+              </>
+            )}
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setBiInfo(null)}
+                className="h-8 rounded-md border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+              {!biInfo.error ? (
+                <button
+                  onClick={() => {
+                    window.open(biInfo.url, "_blank");
+                    setBiInfo(null);
+                  }}
+                  className="cta-glow h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
+                >
+                  Open Superset
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -23,9 +23,23 @@ fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
 
 /// Run a command, streaming stdout/stderr line-by-line to the frontend log.
 fn run_streamed(app: &AppHandle, id: &str, program: &str, args: &[&str]) -> AppResult<i32> {
+    run_streamed_env(app, id, program, args, &[])
+}
+
+/// Like `run_streamed`, with extra environment variables for the child.
+fn run_streamed_env(
+    app: &AppHandle,
+    id: &str,
+    program: &str,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> AppResult<i32> {
     emit_log(app, id, format!("$ {program} {}", args.join(" ")), "cmd");
     let mut cmd = Command::new(program);
     cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
     with_path(&mut cmd);
     let mut child = cmd
         .spawn()
@@ -604,6 +618,86 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
+fn superset_bin(venv: &std::path::Path) -> PathBuf {
+    if std::env::consts::OS == "windows" {
+        venv.join("Scripts/superset.exe")
+    } else {
+        venv.join("bin/superset")
+    }
+}
+
+/// Apache Superset — the optional BI tool (Apache-2.0). Installed into a managed
+/// uv environment together with the official Exasol SQLAlchemy dialect, then
+/// initialised. Not bundled; users opt in from the Marketplace.
+fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
+    let uv = ensure_uv(app, id)?;
+    let base = market_dir(app)?.join(id);
+    std::fs::create_dir_all(&base)?;
+    let venv = base.join("venv");
+    let venv_s = venv.to_string_lossy().to_string();
+    let home = base.join("home");
+    std::fs::create_dir_all(&home)?;
+    let home_s = home.to_string_lossy().to_string();
+
+    emit_log(app, id, "Creating a managed Python environment…", "info");
+    run_streamed(app, id, &uv, &["venv", &venv_s])?;
+    emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
+    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol"])? != 0 {
+        return Err(AppError::Storage("Superset installation failed. See the log above.".into()));
+    }
+
+    let superset = superset_bin(&venv).to_string_lossy().to_string();
+    let envs: &[(&str, &str)] = &[
+        ("FLASK_APP", "superset"),
+        ("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key"),
+        ("SUPERSET_HOME", &home_s),
+    ];
+    emit_log(app, id, "Initializing Superset metadata…", "info");
+    if run_streamed_env(app, id, &superset, &["db", "upgrade"], envs)? != 0 {
+        return Err(AppError::Storage("`superset db upgrade` failed.".into()));
+    }
+    let _ = run_streamed_env(
+        app,
+        id,
+        &superset,
+        &["fab", "create-admin", "--username", "admin", "--firstname", "Exasol", "--lastname", "Studio", "--email", "admin@exasol.local", "--password", "admin"],
+        envs,
+    );
+    let _ = run_streamed_env(app, id, &superset, &["init"], envs);
+    Ok("Apache Superset installed. Open it from the SQL editor’s ‘Open in BI’ button (login: admin / admin).".into())
+}
+
+/// True when Apache Superset has been installed into its managed environment.
+#[tauri::command]
+pub fn bi_installed(app: AppHandle) -> AppResult<bool> {
+    Ok(market_dir(&app)?.join("superset").join("venv").exists())
+}
+
+/// Start the local Superset server (detached) and return its URL.
+#[tauri::command]
+pub fn bi_launch(app: AppHandle) -> AppResult<String> {
+    let base = market_dir(&app)?.join("superset");
+    let venv = base.join("venv");
+    if !venv.exists() {
+        return Err(AppError::Storage(
+            "Apache Superset isn’t installed yet. Install it from the Marketplace first.".into(),
+        ));
+    }
+    let home = base.join("home");
+    std::fs::create_dir_all(&home)?;
+    let superset = superset_bin(&venv);
+    let mut cmd = Command::new(&superset);
+    cmd.args(["run", "-p", "8088", "--with-threads"])
+        .env("FLASK_APP", "superset")
+        .env("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key")
+        .env("SUPERSET_HOME", home.to_string_lossy().to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    with_path(&mut cmd);
+    cmd.spawn().map_err(|e| AppError::Storage(format!("Could not start Superset: {e}")))?;
+    Ok("http://localhost:8088".into())
+}
+
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
 #[tauri::command]
@@ -621,6 +715,7 @@ pub async fn market_install_run(
         "pyexasol" => install_uv_pip(&app, &id, "pyexasol"),
         "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
         "json-tables" => install_json_tables(&app, &id).await,
+        "superset" => install_superset(&app, &id),
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
         _ => match (url, filename) {
@@ -735,8 +830,9 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     );
     map.insert(
         "json-tables".into(),
-        json!(managed_exists(&app, "json-tables", "src") || bin_present("exasol-json-tables")),
+        json!(managed_exists(&app, "json-tables", "venv") || managed_exists(&app, "json-tables", "src")),
     );
+    map.insert("superset".into(), json!(managed_exists(&app, "superset", "venv")));
     Ok(Value::Object(map))
 }
 

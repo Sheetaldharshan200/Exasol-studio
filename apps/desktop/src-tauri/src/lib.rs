@@ -69,6 +69,8 @@ pub fn run() {
             market::market_install,
             market::market_install_run,
             market::market_uninstall,
+            market::bi_installed,
+            market::bi_launch,
             market::market_dir_path,
             query::execute_sql,
             history::sql_history_list,

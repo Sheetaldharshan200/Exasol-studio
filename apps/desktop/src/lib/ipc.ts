@@ -329,6 +329,8 @@ export const ipc = {
     filename?: string,
   ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename }),
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
+  biInstalled: () => call<boolean>("bi_installed"),
+  biLaunch: () => call<string>("bi_launch"),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),

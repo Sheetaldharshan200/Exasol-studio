@@ -49,6 +49,12 @@
       "latest": "v0.16.0",
       "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
       "mirrorTag": "mirror-agent-skills"
+    },
+    "superset": {
+      "repo": "apache/superset",
+      "latest": null,
+      "homepage": "https://github.com/apache/superset",
+      "mirrorTag": "mirror-superset"
     }
   }
 }
