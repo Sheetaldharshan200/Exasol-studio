@@ -1,6 +1,28 @@
 import { ipc } from "@/lib/ipc";
 import { NODE_ICON, scriptKind, type NodeKind } from "@/features/workbench/icons";
 
+/** Object identity for right-click actions (generate SQL, DDL, …). */
+export type NodeCtx = {
+  type:
+    | "schema"
+    | "virtual-schema"
+    | "table"
+    | "view"
+    | "column"
+    | "user"
+    | "role"
+    | "connection"
+    | "session"
+    | "script"
+    | "function";
+  /** Owning schema (tables/views/columns). */
+  schema?: string;
+  /** Owning table (columns). */
+  table?: string;
+  /** The object's own name (or session id). */
+  name: string;
+};
+
 export type TreeNode = {
   id: string;
   label: string;
@@ -15,6 +37,8 @@ export type TreeNode = {
   load?: () => Promise<TreeNode[]>;
   /** A runnable object (table/view) → double-click builds a SELECT. */
   selectable?: { schema: string; name: string };
+  /** Object identity for the right-click context menu. */
+  ctx?: NodeCtx;
 };
 
 export const iconFor = (kind: NodeKind) => NODE_ICON[kind];
@@ -61,6 +85,7 @@ function schemasFolder(profileId: string): TreeNode {
         kind: schema.isVirtual ? "virtual-schema" : "schema",
         badge: schema.isVirtual ? "virtual" : undefined,
         expandable: true,
+        ctx: { type: schema.isVirtual ? "virtual-schema" : "schema", name: schema.name },
         load: () => schemaChildren(profileId, schema.name),
       }));
     },
@@ -92,6 +117,7 @@ async function schemaChildren(profileId: string, schema: string): Promise<TreeNo
           kind: "view",
           expandable: false,
           selectable: { schema, name: view.name },
+          ctx: { type: "view", schema, name: view.name },
         })),
     },
     {
@@ -133,6 +159,7 @@ function tableNode(profileId: string, schema: string, table: string): TreeNode {
     kind: "table",
     expandable: true,
     selectable: { schema, name: table },
+    ctx: { type: "table", schema, name: table },
     load: async () => {
       const details = await ipc.getTableDetails(profileId, schema, table);
       const pkColumns = new Set(
@@ -155,6 +182,7 @@ function tableNode(profileId: string, schema: string, table: string): TreeNode {
               meta: col.dataType,
               badge: col.nullable === false ? "NOT NULL" : undefined,
               expandable: false,
+              ctx: { type: "column", schema, table, name: col.name },
             })),
         },
         {
@@ -236,6 +264,7 @@ function dbaFolder(profileId: string): TreeNode {
               kind: "user",
               meta: u.consumerGroup ?? undefined,
               expandable: false,
+              ctx: { type: "user", name: u.name },
             })),
         },
         {
@@ -250,6 +279,7 @@ function dbaFolder(profileId: string): TreeNode {
               label: r.name,
               kind: "role",
               expandable: false,
+              ctx: { type: "role", name: r.name },
             })),
         },
         {
@@ -280,6 +310,7 @@ function dbaFolder(profileId: string): TreeNode {
               kind: "connection",
               meta: c.userName ?? undefined,
               expandable: false,
+              ctx: { type: "connection", name: c.name },
             })),
         },
         {
@@ -295,6 +326,7 @@ function dbaFolder(profileId: string): TreeNode {
               kind: "session",
               meta: s.status ?? undefined,
               expandable: false,
+              ctx: { type: "session", name: s.sessionId },
             })),
         },
       ];

@@ -98,6 +98,8 @@ import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
+import { ObjectContextMenu, SqlReviewDialog } from "@/features/workbench/ObjectContextMenu";
+import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
 /** Detect a simple single-table SELECT (safe to edit inline). Null otherwise. */
@@ -479,6 +481,7 @@ function ConnectionSection({
   onOpenView,
   onNewVs,
   onUploadDriver,
+  onContext,
 }: {
   connection: ActiveConnection;
   focused: boolean;
@@ -492,6 +495,7 @@ function ConnectionSection({
   onOpenView: (view: "dbInfo" | "dataTypes") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
+  onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
 }) {
   const roots = useMemo(
     () => buildConnectionNodes(connection.profile.id),
@@ -566,6 +570,7 @@ function ConnectionSection({
           key={treeKey}
           roots={roots}
           onOpenObject={onOpenObject}
+          onContext={onContext}
           initialExpandedItems={["schemas"]}
           collapseSignal={collapseSignal}
         />
@@ -678,6 +683,7 @@ function Sidebar({
   onOpenView,
   onNewVirtualSchema,
   onUploadDriver,
+  onContext,
   onCollapse,
   onOpenFile,
   onOpenData,
@@ -701,6 +707,7 @@ function Sidebar({
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
+  onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
@@ -842,6 +849,7 @@ function Sidebar({
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
               onUploadDriver={() => onUploadDriver(conn.profile.id)}
+              onContext={(node, x, y) => onContext?.(conn.profile.id, node, x, y)}
             />
           ))}
         </div>
@@ -1179,6 +1187,8 @@ export function ExasolStudio({
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
   const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ profileId: string; node: TreeNode; x: number; y: number } | null>(null);
+  const [ddlReview, setDdlReview] = useState<{ profileId: string; title: string; sql: string } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1326,6 +1336,26 @@ export function ExasolStudio({
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e) });
       setResultTab("messages");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
+  // that connection's object tree.
+  async function runDdl(profileId: string, sql: string) {
+    const conn = connections.find((c) => c.profile.id === profileId);
+    if (!conn) return;
+    setRunning(true);
+    try {
+      await ipc.executeSql(profileId, conn.profile.name, sql, 1, false);
+      setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
+      loadHistory();
+      setDdlReview(null);
+    } catch (e) {
+      patchTab(activeTab.id, { execError: errorMessage(e) });
+      setResultTab("messages");
+      setDdlReview(null);
     } finally {
       setRunning(false);
     }
@@ -1911,6 +1941,7 @@ export function ExasolStudio({
                 const c = connections.find((x) => x.profile.id === pid);
                 if (c) setBucketFsFor(c.profile);
               }}
+              onContext={(pid, node, x, y) => node.ctx && setCtxMenu({ profileId: pid, node, x, y })}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
@@ -2517,6 +2548,28 @@ export function ExasolStudio({
       ) : null}
 
       {bucketFsFor ? <BucketFsPanel profile={bucketFsFor} onClose={() => setBucketFsFor(null)} /> : null}
+
+      {ctxMenu && ctxMenu.node.ctx ? (
+        <ObjectContextMenu
+          ctx={ctxMenu.node.ctx}
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          defaultSchema={connections.find((c) => c.profile.id === ctxMenu.profileId)?.profile.schema ?? undefined}
+          onClose={() => setCtxMenu(null)}
+          onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
+          onDdl={(title, sql) => setDdlReview({ profileId: ctxMenu.profileId, title, sql })}
+        />
+      ) : null}
+
+      {ddlReview ? (
+        <SqlReviewDialog
+          title={ddlReview.title}
+          sql={ddlReview.sql}
+          busy={running}
+          onRun={(finalSql) => void runDdl(ddlReview.profileId, finalSql)}
+          onClose={() => setDdlReview(null)}
+        />
+      ) : null}
 
       {loadFor && connection ? (
         <LoadDataDialog

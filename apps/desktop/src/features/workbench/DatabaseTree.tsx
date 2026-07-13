@@ -24,11 +24,14 @@ type NodeState = { status: "loading" | "done" | "error"; children: TreeNode[]; e
 export function DatabaseTree({
   roots,
   onOpenObject,
+  onContext,
   initialExpandedItems,
   collapseSignal,
 }: {
   roots: TreeNode[];
   onOpenObject: (schema: string, name: string) => void;
+  /** Right-click on a node → open the context menu at (x, y). */
+  onContext?: (node: TreeNode, x: number, y: number) => void;
   /** Node ids expanded on first render (default: none). */
   initialExpandedItems?: string[];
   /** Increment to collapse every expanded node in this tree. */
@@ -121,6 +124,14 @@ export function DatabaseTree({
           onOpen={() =>
             node.selectable && onOpenObject(node.selectable.schema, node.selectable.name)
           }
+          onContext={
+            node.ctx
+              ? (x, y) => {
+                  setSelected(node.id);
+                  onContext?.(node, x, y);
+                }
+              : undefined
+          }
         />,
       );
       if (open && st) {
@@ -204,6 +215,7 @@ function Row({
   selected,
   onToggle,
   onOpen,
+  onContext,
 }: {
   node: TreeNode;
   trail: boolean[];
@@ -212,12 +224,21 @@ function Row({
   selected: boolean;
   onToggle: () => void;
   onOpen: () => void;
+  onContext?: (x: number, y: number) => void;
 }) {
   const Icon = iconFor(node.kind);
   return (
     <div
       onClick={onToggle}
       onDoubleClick={onOpen}
+      onContextMenu={
+        onContext
+          ? (e) => {
+              e.preventDefault();
+              onContext(e.clientX, e.clientY);
+            }
+          : undefined
+      }
       style={{ height: ROW_H }}
       className={cn(
         "flex min-w-full items-center whitespace-nowrap pr-3 text-[13px] transition-colors",
