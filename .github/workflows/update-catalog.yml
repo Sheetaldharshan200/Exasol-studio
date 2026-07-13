@@ -49,8 +49,10 @@ jobs:
             [ -z "$id" ] && continue
             latest="null"
             if [ -n "$repo" ]; then
-              latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-                "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"')
+              # No -f: a repo with no published release returns 404 with a JSON
+              # body; jq then yields "null". Guard the whole pipe so set -e is happy.
+              latest=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"') || latest="null"
             fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0

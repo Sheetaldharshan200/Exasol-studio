@@ -42,15 +42,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          upstream=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/${{ inputs.repo }}/releases/latest" | jq -r '.tag_name // "none"')
+          # No -f: 404 (repo without releases, or our mirror not created yet)
+          # returns a JSON body we parse to "none"/""; guard so set -e is happy.
+          upstream=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ inputs.repo }}/releases/latest" | jq -r '.tag_name // "none"') || upstream="none"
           echo "upstream=$upstream" >> "$GITHUB_OUTPUT"
-          last=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+          last=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/mirror-${{ inputs.id }}" \
-            | jq -r '.body // ""' | sed -n 's/.*version=\([^ ]*\).*/\1/p')
-          if [ "$upstream" = "$last" ] && [ "$upstream" != "none" ]; then
+            | jq -r '.body // ""' | sed -n 's/.*version=\([^ ]*\).*/\1/p') || last=""
+          if [ "$upstream" = "none" ] || [ "$upstream" = "$last" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::${{ inputs.id }} already mirrored at $upstream — skipping build."
+            echo "::notice::${{ inputs.id }} upstream=$upstream (last=$last) — nothing to build."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "::notice::${{ inputs.id }} upstream=$upstream last=$last — building."
