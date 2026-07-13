@@ -7,6 +7,8 @@ import { VirtualSchemaWindow } from "@/features/connection/VirtualSchemaWindow";
 import { useConnections } from "@/state/useConnections";
 import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
 import { isVsWindow } from "@/lib/vs-window";
+import { isSettingsWindow } from "@/lib/settings-window";
+import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
@@ -20,6 +22,10 @@ export function App() {
   // The dedicated native virtual-schema window renders only that wizard.
   if (isVsWindow()) {
     return <VirtualSchemaWindow />;
+  }
+  // The standalone Settings window.
+  if (isSettingsWindow()) {
+    return <SettingsWindow />;
   }
   return <MainApp />;
 }

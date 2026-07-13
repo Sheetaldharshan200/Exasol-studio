@@ -10,6 +10,7 @@ mod fs;
 mod history;
 mod market;
 mod metadata;
+mod settings;
 mod profiles;
 mod query;
 mod state;
@@ -78,6 +79,8 @@ pub fn run() {
             bucketfs::bucketfs_upload,
             exapump::exapump_available,
             exapump::exapump_upload,
+            settings::get_app_settings,
+            settings::set_app_settings,
             market::market_dir_path,
             query::execute_sql,
             history::sql_history_list,

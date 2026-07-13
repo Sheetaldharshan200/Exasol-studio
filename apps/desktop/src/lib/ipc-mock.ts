@@ -692,6 +692,11 @@ export async function mockInvoke(
         stopReason: "end_turn",
       };
 
+    case "get_app_settings":
+      return {};
+    case "set_app_settings":
+      return (args?.patch as Record<string, unknown>) ?? {};
+
     default:
       throw { kind: "mock", message: `mock backend: unknown command ${command}` };
   }

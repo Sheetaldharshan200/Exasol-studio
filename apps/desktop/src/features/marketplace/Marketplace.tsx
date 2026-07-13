@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
 import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset" | "reference";
 
 type CatalogItem = {
   id: string;
@@ -111,8 +111,86 @@ const CATALOG: CatalogItem[] = [
     repo: "exasol/pyexasol",
     kind: "driver",
     install: "uv-pip",
-    description: "Official Python driver with low overhead, fast HTTP transport and compression.",
+    description: "Official Python driver — low overhead, fast HTTP transport, compression.",
     homepage: "https://github.com/exasol/pyexasol",
+  },
+  {
+    id: "sqlalchemy-exasol",
+    name: "SQLAlchemy Exasol",
+    repo: "exasol/sqlalchemy-exasol",
+    kind: "driver",
+    install: "uv-pip",
+    description: "Official SQLAlchemy dialect for Exasol — powers Superset, pandas, and Python ORMs.",
+    homepage: "https://github.com/exasol/sqlalchemy-exasol",
+  },
+  {
+    id: "exarrow-rs",
+    name: "exarrow-rs",
+    repo: "exasol-labs/exarrow-rs",
+    kind: "driver",
+    install: "reference",
+    labs: true,
+    description: "Rust Arrow / ADBC / native-protocol driver for high-throughput workflows.",
+    homepage: "https://github.com/exasol-labs/exarrow-rs",
+  },
+  {
+    id: "driver-jdbc",
+    name: "JDBC Driver",
+    kind: "driver",
+    install: "reference",
+    description: "Official JDBC driver for Java tools (DBeaver, DataGrip, JetBrains, Spark…).",
+    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
+  },
+  {
+    id: "driver-odbc",
+    name: "ODBC Driver",
+    kind: "driver",
+    install: "reference",
+    description: "Official ODBC driver for Windows/macOS/Linux applications and BI tools.",
+    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
+  },
+  {
+    id: "driver-ts",
+    name: "TypeScript / JavaScript Driver",
+    repo: "exasol/exasol-driver-ts",
+    kind: "driver",
+    install: "reference",
+    description: "Official Node/TS driver over the WebSocket protocol.",
+    homepage: "https://github.com/exasol/exasol-driver-ts",
+  },
+  {
+    id: "driver-go",
+    name: "Go SQL Driver",
+    repo: "exasol/exasol-driver-go",
+    kind: "driver",
+    install: "reference",
+    description: "Official database/sql driver for Go.",
+    homepage: "https://github.com/exasol/exasol-driver-go",
+  },
+  {
+    id: "driver-adonet",
+    name: "ADO.NET Provider",
+    kind: "driver",
+    install: "reference",
+    description: "Official ADO.NET data provider for .NET applications.",
+    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/ado.net.htm",
+  },
+  {
+    id: "driver-r",
+    name: "R Integration",
+    kind: "driver",
+    install: "reference",
+    description: "Connect R to Exasol via the documented R integration.",
+    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
+  },
+  {
+    id: "driver-websocket",
+    name: "WebSocket API",
+    repo: "exasol/websocket-api",
+    kind: "driver",
+    install: "reference",
+    description: "The native WebSocket protocol Exasol Studio itself connects with — build your own client.",
+    homepage: "https://github.com/exasol/websocket-api",
   },
   {
     id: "ai-lab",
@@ -157,10 +235,11 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
 };
 
 // Marketplace sections (ordered). Every catalog item maps to exactly one.
-type SectionKey = "database" | "load" | "extension" | "ai" | "bi";
+type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
 const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
   { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
-  { key: "load", label: "Data loading & drivers", hint: "Move data in and out, connect apps" },
+  { key: "load", label: "Data loading & tools", hint: "Move data in and out" },
+  { key: "drivers", label: "Drivers", hint: "Connect your apps & scripts to Exasol" },
   { key: "extension", label: "Extensions", hint: "Extend what Exasol can store & query" },
   { key: "ai", label: "AI & Agents", hint: "MCP, agent skills, LLM workflows" },
   { key: "bi", label: "BI & Analytics", hint: "Dashboards and visual analytics" },
@@ -171,8 +250,9 @@ function sectionOf(kind: Kind): SectionKey {
     case "cloud":
       return "database";
     case "cli":
-    case "driver":
       return "load";
+    case "driver":
+      return "drivers";
     case "extension":
       return "extension";
     case "server":
@@ -244,6 +324,8 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Install Apache Superset + the official Exasol SQLAlchemy dialect",
         "Initialize Superset (login: admin / admin)",
       ];
+    case "reference":
+      return ["Opens the official download / documentation page"];
     case "personal-local":
       return env && env.os !== "macos"
         ? ["Local deployment is macOS-only — use Exasol Personal — Cloud instead"]
@@ -551,6 +633,13 @@ export function Marketplace() {
                         <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
                       </button>
                     </>
+                  ) : item.install === "reference" ? (
+                    <button
+                      onClick={() => openExternal(item.homepage)}
+                      className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary"
+                    >
+                      Get <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
                   ) : (
                     <button
                       onClick={() => setConsoleItem(item)}

@@ -725,6 +725,7 @@ pub async fn market_install_run(
         "mcp-server" => install_uv_tool(&app, &id, "exasol-mcp-server"),
         "agent-skills" => install_uv_tool(&app, &id, "exasol-agent-skills"),
         "pyexasol" => install_uv_pip(&app, &id, "pyexasol"),
+        "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
         "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
         "json-tables" => install_json_tables(&app, &id).await,
         "superset" => install_superset(&app, &id),
@@ -835,6 +836,10 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     map.insert(
         "pyexasol".into(),
         json!(managed_exists(&app, "pyexasol", "venv") || python_import_ok("pyexasol")),
+    );
+    map.insert(
+        "sqlalchemy-exasol".into(),
+        json!(managed_exists(&app, "sqlalchemy-exasol", "venv") || python_import_ok("sqlalchemy_exasol")),
     );
     map.insert(
         "ai-lab".into(),

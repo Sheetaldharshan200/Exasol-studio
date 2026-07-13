@@ -35,6 +35,7 @@ jobs:
           exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
           mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
           pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
+          sqlalchemy-exasol|exasol/sqlalchemy-exasol|https://github.com/exasol/sqlalchemy-exasol
           json-tables|exasol-labs/exasol-json-tables|https://github.com/exasol-labs/exasol-json-tables
           ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
           agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills

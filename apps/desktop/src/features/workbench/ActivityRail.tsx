@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Settings, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +41,7 @@ export function ActivityRail({
   visualizerCount,
   onSelect,
   onToggleAi,
+  onOpenSettings,
 }: {
   active: ActivityId;
   sidebarOpen: boolean;
@@ -51,6 +52,7 @@ export function ActivityRail({
   visualizerCount: number;
   onSelect: (id: ActivityId) => void;
   onToggleAi: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <aside
@@ -108,6 +110,18 @@ export function ActivityRail({
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">AI Assistant</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="Settings"
+              onClick={onOpenSettings}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <Settings className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Settings</TooltipContent>
         </Tooltip>
       </div>
     </aside>

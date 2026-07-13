@@ -381,4 +381,7 @@ export const ipc = {
     call<AssistantSettings>("set_assistant_settings", { apiKey, model }),
   aiChat: (messages: ChatMessage[], context?: string) =>
     call<ChatReply>("ai_chat", { messages, context }),
+  getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
+  setAppSettings: (patch: Record<string, unknown>) =>
+    call<Record<string, unknown>>("set_app_settings", { patch }),
 };

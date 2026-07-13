@@ -96,6 +96,7 @@ import { ConnectView } from "@/features/connection/ConnectView";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
+import { openSettingsWindow } from "@/lib/settings-window";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -1705,6 +1706,7 @@ export function ExasolStudio({
           aiOpen={aiOpen}
           activeView={activeTab.view}
           visualizerCount={visualizerTabs.length}
+          onOpenSettings={() => void openSettingsWindow()}
           onSelect={(id) => {
             if (id === "marketplace") {
               openMarketplace();
