@@ -2631,14 +2631,17 @@ export function ExasolStudio({
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
           onDdl={(title, sql) => setDdlReview({ profileId: ctxMenu.profileId, title, sql })}
           onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
-          onFavorite={() =>
-            ctxMenu.node.ctx &&
-            addFavorite({
-              profileId: ctxMenu.profileId,
-              type: ctxMenu.node.ctx.type,
-              schema: ctxMenu.node.ctx.schema,
-              name: ctxMenu.node.ctx.name,
-            })
+          onFavorite={
+            ctxMenu.node.ctx && !ctxMenu.node.ctx.type.startsWith("new-")
+              ? () =>
+                  ctxMenu.node.ctx &&
+                  addFavorite({
+                    profileId: ctxMenu.profileId,
+                    type: ctxMenu.node.ctx.type,
+                    schema: ctxMenu.node.ctx.schema,
+                    name: ctxMenu.node.ctx.name,
+                  })
+              : undefined
           }
         />
       ) : null}

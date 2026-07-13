@@ -129,6 +129,20 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Copy name", kind: "copy", text: ctx.name },
       ];
     }
+    case "new-schema":
+      return [{ label: "New schema…", kind: "ddl", sql: `CREATE SCHEMA "NEW_SCHEMA";` }];
+    case "new-user":
+      return [{ label: "New user…", kind: "ddl", sql: `CREATE USER "NEW_USER" IDENTIFIED BY "change_me";` }];
+    case "new-role":
+      return [{ label: "New role…", kind: "ddl", sql: `CREATE ROLE "NEW_ROLE";` }];
+    case "new-connection":
+      return [
+        {
+          label: "New connection…",
+          kind: "ddl",
+          sql: `CREATE CONNECTION "NEW_CONNECTION" TO 'host:port' USER 'user' IDENTIFIED BY 'password';`,
+        },
+      ];
     case "session":
       return [
         { label: "Kill session…", kind: "ddl", danger: true, sql: `KILL SESSION ${ctx.name};` },

@@ -14,7 +14,11 @@ export type NodeCtx = {
     | "connection"
     | "session"
     | "script"
-    | "function";
+    | "function"
+    | "new-schema"
+    | "new-user"
+    | "new-role"
+    | "new-connection";
   /** Owning schema (tables/views/columns). */
   schema?: string;
   /** Owning table (columns). */
@@ -77,6 +81,7 @@ function schemasFolder(profileId: string): TreeNode {
     label: "Schemas",
     kind: "schemas-folder",
     expandable: true,
+    ctx: { type: "new-schema", name: "Schemas" },
     load: async () => {
       const overview = await ipc.getDatabaseOverview(profileId);
       return overview.schemas.map((schema) => ({
@@ -259,6 +264,7 @@ function dbaFolder(profileId: string): TreeNode {
           kind: "users-folder",
           badge: String(dba.users.length),
           expandable: dba.users.length > 0,
+          ctx: { type: "new-user", name: "Users" },
           load: async () =>
             dba.users.map((u) => ({
               id: `dba:user:${u.name}`,
@@ -275,6 +281,7 @@ function dbaFolder(profileId: string): TreeNode {
           kind: "roles-folder",
           badge: String(dba.roles.length),
           expandable: dba.roles.length > 0,
+          ctx: { type: "new-role", name: "Roles" },
           load: async () =>
             dba.roles.map((r) => ({
               id: `dba:role:${r.name}`,
@@ -305,6 +312,7 @@ function dbaFolder(profileId: string): TreeNode {
           kind: "connections-folder",
           badge: String(dba.connections.length),
           expandable: dba.connections.length > 0,
+          ctx: { type: "new-connection", name: "Connections" },
           load: async () =>
             dba.connections.map((c) => ({
               id: `dba:conn:${c.name}`,
