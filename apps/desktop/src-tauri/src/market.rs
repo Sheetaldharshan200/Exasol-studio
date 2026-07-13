@@ -21,10 +21,10 @@ fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
 /// Run a command, streaming stdout/stderr line-by-line to the frontend log.
 fn run_streamed(app: &AppHandle, id: &str, program: &str, args: &[&str]) -> AppResult<i32> {
     emit_log(app, id, format!("$ {program} {}", args.join(" ")), "cmd");
-    let mut child = Command::new(program)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    with_path(&mut cmd);
+    let mut child = cmd
         .spawn()
         .map_err(|e| AppError::Storage(format!("could not run `{program}`: {e}")))?;
     let stdout = child.stdout.take();
@@ -60,15 +60,65 @@ fn home() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// Resolve a working `uv` executable (PATH, then common install locations).
-fn uv_path() -> Option<String> {
-    if Command::new("uv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
-        return Some("uv".into());
+/// Bin directories a GUI app (launched via launchd/Finder) does NOT get on its
+/// PATH but where CLI tools commonly live. We probe these directly and prepend
+/// them when spawning subprocesses so `exakit`, `uv`, etc. resolve.
+fn extra_bin_dirs() -> Vec<PathBuf> {
+    let h = home();
+    vec![
+        h.join(".local/bin"),
+        h.join(".cargo/bin"),
+        h.join("bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/opt/homebrew/sbin"),
+        PathBuf::from("/usr/local/bin"),
+    ]
+}
+
+/// PATH with the extra bin dirs prepended (unix only; `:`-separated).
+fn augmented_path() -> String {
+    let mut parts: Vec<String> = extra_bin_dirs()
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    if let Ok(p) = std::env::var("PATH") {
+        parts.push(p);
     }
-    for cand in [home().join(".local/bin/uv"), home().join(".cargo/bin/uv")] {
-        if cand.exists() {
-            return Some(cand.to_string_lossy().to_string());
+    parts.join(":")
+}
+
+/// Prepend the extra bin dirs to a child's PATH so it can find user-installed
+/// tools. No-op on Windows (different PATH syntax; GUI apps inherit PATH there).
+fn with_path(cmd: &mut Command) {
+    if std::env::consts::OS != "windows" {
+        cmd.env("PATH", augmented_path());
+    }
+}
+
+/// Locate an executable by name in the extra + standard bin dirs.
+fn resolve_bin(bin: &str) -> Option<PathBuf> {
+    for dir in extra_bin_dirs()
+        .into_iter()
+        .chain([PathBuf::from("/usr/bin"), PathBuf::from("/bin")])
+    {
+        let cand = dir.join(bin);
+        if cand.is_file() {
+            return Some(cand);
         }
+    }
+    None
+}
+
+/// Resolve a working `uv` executable (extra dirs first, then PATH).
+fn uv_path() -> Option<String> {
+    if let Some(p) = resolve_bin("uv") {
+        return Some(p.to_string_lossy().to_string());
+    }
+    let mut c = Command::new("uv");
+    c.arg("--version");
+    with_path(&mut c);
+    if c.output().map(|o| o.status.success()).unwrap_or(false) {
+        return Some("uv".into());
     }
     None
 }
@@ -101,11 +151,11 @@ pub struct MarketEnv {
 }
 
 fn has_binary(bin: &str) -> bool {
-    std::process::Command::new(bin)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let prog = resolve_bin(bin).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| bin.to_string());
+    let mut c = Command::new(prog);
+    c.arg("--version");
+    with_path(&mut c);
+    c.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 /// Host OS/arch and whether Docker / Podman are available.
@@ -300,11 +350,13 @@ const STARTER_KIT_PS1: &str =
     "$env:EXAKIT_SKIP_MCP=1; $env:EXAKIT_LOAD_SAMPLE=1; $env:EXAKIT_REUSE_DB=1; irm https://raw.githubusercontent.com/krishna-exasol/starter-kit-testing-v1/main/install.ps1 | iex";
 
 fn cmd_exists_unix(bin: &str) -> bool {
-    Command::new("sh")
-        .args(["-c", &format!("command -v {bin}")])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    if resolve_bin(bin).is_some() {
+        return true;
+    }
+    let mut c = Command::new("sh");
+    c.args(["-c", &format!("command -v {bin}")]);
+    with_path(&mut c);
+    c.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 fn cmd_exists_win(bin: &str) -> bool {
@@ -479,9 +531,10 @@ fn bin_present(bin: &str) -> bool {
 
 fn uv_tool_installed(pkg: &str) -> bool {
     let Some(uv) = uv_path() else { return false };
-    Command::new(uv)
-        .args(["tool", "list"])
-        .output()
+    let mut c = Command::new(uv);
+    c.args(["tool", "list"]);
+    with_path(&mut c);
+    c.output()
         .map(|o| {
             o.status.success()
                 && String::from_utf8_lossy(&o.stdout)
@@ -493,11 +546,11 @@ fn uv_tool_installed(pkg: &str) -> bool {
 
 fn python_import_ok(module: &str) -> bool {
     ["python3", "python"].iter().any(|py| {
-        Command::new(py)
-            .args(["-c", &format!("import {module}")])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        let prog = resolve_bin(py).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| py.to_string());
+        let mut c = Command::new(prog);
+        c.args(["-c", &format!("import {module}")]);
+        with_path(&mut c);
+        c.output().map(|o| o.status.success()).unwrap_or(false)
     })
 }
 
