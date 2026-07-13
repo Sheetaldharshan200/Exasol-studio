@@ -354,6 +354,19 @@ export const ipc = {
   fsSearch: (root: string, query: string, limit?: number) =>
     call<FsEntry[]>("fs_search", { root, query, limit }),
   fsDelete: (path: string) => call<void>("fs_delete", { path }),
+  exapumpAvailable: () => call<boolean>("exapump_available"),
+  exapumpUpload: (args: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    schema?: string;
+    tls: boolean;
+    file: string;
+    table: string;
+    delimiter?: string;
+    dryRun: boolean;
+  }) => call<{ ok: boolean }>("exapump_upload", args),
   executeSql: (
     profileId: string,
     connectionName: string,

@@ -1,6 +1,7 @@
 mod ai;
 mod bucketfs;
 mod catalog;
+mod exapump;
 mod connection;
 mod drivers;
 mod error;
@@ -75,6 +76,8 @@ pub fn run() {
             market::bi_launch,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,
+            exapump::exapump_available,
+            exapump::exapump_upload,
             market::market_dir_path,
             query::execute_sql,
             history::sql_history_list,

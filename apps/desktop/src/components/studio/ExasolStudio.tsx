@@ -95,6 +95,7 @@ import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
+import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -663,6 +664,7 @@ function Sidebar({
   onCollapse,
   onOpenFile,
   onOpenData,
+  onLoadData,
   filesRefresh,
   visualizerTabs,
   activeTabId,
@@ -685,6 +687,7 @@ function Sidebar({
   onCollapse: () => void;
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
+  onLoadData: (name: string, path: string) => void;
   filesRefresh: number;
   visualizerTabs: { id: string; title: string }[];
   activeTabId: string;
@@ -716,7 +719,7 @@ function Sidebar({
           </IconButton>
         </div>
         {activity === "files" ? (
-          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} refreshSignal={filesRefresh} />
+          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} refreshSignal={filesRefresh} />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}
@@ -1125,6 +1128,7 @@ export function ExasolStudio({
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string } | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
+  const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1764,6 +1768,9 @@ export function ExasolStudio({
               }}
               onOpenFile={openFile}
               onOpenData={openData}
+              onLoadData={(name, path) => {
+                if (connection) setLoadFor({ name, path });
+              }}
               filesRefresh={filesRefresh}
               visualizerTabs={visualizerTabs}
               activeTabId={activeTabId}
@@ -2354,6 +2361,15 @@ export function ExasolStudio({
       ) : null}
 
       {bucketFsFor ? <BucketFsPanel profile={bucketFsFor} onClose={() => setBucketFsFor(null)} /> : null}
+
+      {loadFor && connection ? (
+        <LoadDataDialog
+          profile={connection.profile}
+          filePath={loadFor.path}
+          fileName={loadFor.name}
+          onClose={() => setLoadFor(null)}
+        />
+      ) : null}
 
       {biInfo ? (
         <div

@@ -13,6 +13,7 @@ import {
   Search,
   Table2,
   Trash2,
+  Upload,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -91,10 +92,13 @@ function ToolBtn({
 export function FileExplorer({
   onOpenFile,
   onOpenData,
+  onLoadData,
   refreshSignal = 0,
 }: {
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
+  /** Load a tabular file into Exasol via ExaPump (hover icon / right-click). */
+  onLoadData?: (name: string, path: string) => void;
   /** Bump to reload the workspace (e.g. after a Save writes a new file). */
   refreshSignal?: number;
 }) {
@@ -298,6 +302,7 @@ export function FileExplorer({
       if (!showHidden && isHidden(entry.name)) continue;
       const ws = workspacePath.current;
       const deletable = Boolean(ws && !entry.isDir && entry.path.startsWith(`${ws}/`));
+      const loadable = !entry.isDir && TABLE_EXT.has(extOf(entry.name));
       rows.push(
         <Row
           key={entry.path}
@@ -307,6 +312,7 @@ export function FileExplorer({
           selected={selected.has(entry.path)}
           onClick={(e) => rowClick(entry, e)}
           onDoubleClick={() => openEntry(entry)}
+          onLoad={loadable && onLoadData ? () => onLoadData(entry.name, entry.path) : undefined}
           onDelete={
             deletable
               ? () => {
@@ -468,6 +474,7 @@ function Row({
   onClick,
   onDoubleClick,
   onDelete,
+  onLoad,
 }: {
   entry: FsEntry;
   depth: number;
@@ -477,12 +484,22 @@ function Row({
   onDoubleClick: () => void;
   /** Present only for workspace files — shows a hover delete. */
   onDelete?: () => void;
+  /** Present for tabular files — "Load into Exasol" (hover + right-click). */
+  onLoad?: () => void;
 }) {
   const dim = !entry.isDir && !OPENABLE.has(entry.ext ?? "");
   return (
     <div
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={
+        onLoad
+          ? (e) => {
+              e.preventDefault();
+              onLoad();
+            }
+          : undefined
+      }
       style={{ height: ROW_H, paddingLeft: depth * INDENT + 8 }}
       className={cn(
         "group flex cursor-pointer items-center gap-1.5 pr-2 text-[13px] transition-colors",
@@ -500,6 +517,18 @@ function Row({
       </span>
       <RowIcon entry={entry} open={open} />
       <span className={cn("min-w-0 flex-1 truncate", dim && "text-muted-foreground")}>{entry.name}</span>
+      {onLoad ? (
+        <button
+          title={`Load ${entry.name} into Exasol`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onLoad();
+          }}
+          className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:text-primary group-hover:block"
+        >
+          <Upload className="h-3 w-3" />
+        </button>
+      ) : null}
       {onDelete ? (
         <button
           title={`Delete ${entry.name}`}
@@ -513,7 +542,7 @@ function Row({
         </button>
       ) : null}
       {!entry.isDir && entry.size ? (
-        <span className={cn("shrink-0 font-mono text-[10px] text-muted-foreground/70", onDelete && "group-hover:hidden")}>
+        <span className={cn("shrink-0 font-mono text-[10px] text-muted-foreground/70", (onDelete || onLoad) && "group-hover:hidden")}>
           {fmtSize(entry.size)}
         </span>
       ) : null}

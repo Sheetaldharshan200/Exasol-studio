@@ -612,6 +612,12 @@ export async function mockInvoke(
     case "fs_delete":
       return null;
 
+    case "exapump_available":
+      return true;
+    case "exapump_upload":
+      await delay(300);
+      return { ok: true };
+
     case "fs_search": {
       const q = String(args?.query ?? "").trim().toLowerCase();
       if (!q) return [];

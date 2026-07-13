@@ -96,7 +96,7 @@ fn extra_bin_dirs() -> Vec<PathBuf> {
 }
 
 /// PATH with the extra bin dirs prepended (unix only; `:`-separated).
-fn augmented_path() -> String {
+pub(crate) fn augmented_path() -> String {
     let mut parts: Vec<String> = extra_bin_dirs()
         .iter()
         .map(|p| p.to_string_lossy().to_string())
@@ -116,7 +116,7 @@ fn with_path(cmd: &mut Command) {
 }
 
 /// Locate an executable by name in the extra + standard bin dirs.
-fn resolve_bin(bin: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_bin(bin: &str) -> Option<PathBuf> {
     for dir in extra_bin_dirs()
         .into_iter()
         .chain([PathBuf::from("/usr/bin"), PathBuf::from("/bin")])
