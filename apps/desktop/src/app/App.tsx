@@ -10,6 +10,8 @@ import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
 import { isVsWindow } from "@/lib/vs-window";
 import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
+import { isInstallWindow } from "@/lib/install-window";
+import { InstallWindow } from "@/features/marketplace/InstallWindow";
 import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
@@ -28,6 +30,10 @@ export function App() {
   // The standalone Settings window.
   if (isSettingsWindow()) {
     return <SettingsWindow />;
+  }
+  // A standalone per-item install window.
+  if (isInstallWindow()) {
+    return <InstallWindow />;
   }
   return <MainApp />;
 }

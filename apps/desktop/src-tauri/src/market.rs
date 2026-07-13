@@ -650,7 +650,7 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
         return Err(AppError::Storage("Could not create the Python 3.11 environment for Superset.".into()));
     }
     emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
-    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol"])? != 0 {
+    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol", "rich", "Pillow"])? != 0 {
         // bi_installed()/tool detection treat an existing venv as "installed" —
         // don't leave a broken one behind.
         let _ = std::fs::remove_dir_all(&venv);

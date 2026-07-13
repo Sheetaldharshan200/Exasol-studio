@@ -39,11 +39,12 @@ import {
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
+import { openInstallWindow, INSTALL_DONE } from "@/lib/install-window";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
 type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset" | "reference";
 
-type CatalogItem = {
+export type CatalogItem = {
   id: string;
   name: string;
   repo?: string;
@@ -55,7 +56,7 @@ type CatalogItem = {
 };
 
 // Official Exasol / Exasol-Labs repositories only.
-const CATALOG: CatalogItem[] = [
+export const CATALOG: CatalogItem[] = [
   {
     id: "exasol-personal",
     name: "Exasol Personal — Local",
@@ -388,6 +389,16 @@ export function Marketplace() {
     refresh();
   }, [refresh]);
 
+  // A standalone install window finished → refresh installed/detected state.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: UnlistenFn | undefined;
+    listen(INSTALL_DONE, () => refreshInstalled())
+      .then((u) => (un = u))
+      .catch(() => undefined);
+    return () => un?.();
+  }, [refreshInstalled]);
+
   const installedMap = useMemo(() => {
     const m: Record<string, InstalledItem> = {};
     installed.forEach((i) => (m[i.id] = i));
@@ -409,6 +420,19 @@ export function Marketplace() {
       }).length,
     [installedMap, catalog, releases],
   );
+
+  // Run an install in its own floating window (Tauri) so several can run at
+  // once; fall back to the in-app console in the browser preview.
+  async function startInstall(item: CatalogItem) {
+    const asset = pickAsset(releases[item.id]?.assets ?? [], env);
+    const version = latestFor(item.id) ?? undefined;
+    const opened = await openInstallWindow(
+      { id: item.id, name: item.name },
+      asset ? { url: asset.url, name: asset.name } : undefined,
+      version,
+    );
+    if (!opened) setConsoleItem(item);
+  }
 
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
@@ -607,7 +631,7 @@ export function Marketplace() {
                     <>
                       {newer ? (
                         <button
-                          onClick={() => setConsoleItem(item)}
+                          onClick={() => void startInstall(item)}
                           disabled={isBusy}
                           className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                         >
@@ -633,7 +657,7 @@ export function Marketplace() {
                         <Check className="h-3.5 w-3.5" /> Already on your system
                       </span>
                       <button
-                        onClick={() => setConsoleItem(item)}
+                        onClick={() => void startInstall(item)}
                         className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
                       >
                         <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
@@ -648,7 +672,7 @@ export function Marketplace() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => setConsoleItem(item)}
+                      onClick={() => void startInstall(item)}
                       className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
                     >
                       <Download className="h-3.5 w-3.5" /> Install
@@ -692,7 +716,7 @@ export function Marketplace() {
   );
 }
 
-function InstallConsole({
+export function InstallConsole({
   item,
   env,
   asset,
