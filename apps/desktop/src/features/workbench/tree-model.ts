@@ -132,6 +132,7 @@ async function schemaChildren(profileId: string, schema: string): Promise<TreeNo
           label: fn.name,
           kind: "function",
           expandable: false,
+          ctx: { type: "function", schema, name: fn.name },
         })),
     },
     {
@@ -147,6 +148,7 @@ async function schemaChildren(profileId: string, schema: string): Promise<TreeNo
           kind: scriptKind(script.scriptType),
           badge: script.language ?? undefined,
           expandable: false,
+          ctx: { type: "script", schema, name: script.name },
         })),
     },
   ];

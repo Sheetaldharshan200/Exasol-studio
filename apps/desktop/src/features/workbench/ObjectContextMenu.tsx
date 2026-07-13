@@ -108,6 +108,27 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Copy name", kind: "copy", text: ctx.name },
       ];
     }
+    case "script": {
+      const s = q(schema, ctx.name);
+      return [
+        { label: "Execute", kind: "run", sql: `EXECUTE SCRIPT ${s};` },
+        { label: "Generate call", kind: "gen", sql: `EXECUTE SCRIPT ${s}();` },
+        { label: "Rename…", kind: "ddl", sql: `RENAME SCRIPT ${s} TO ${q(schema, "NEW_NAME")};` },
+        { label: "Comment…", kind: "ddl", sql: `COMMENT ON SCRIPT ${s} IS '';` },
+        { label: "Drop…", kind: "ddl", danger: true, sql: `DROP SCRIPT ${s};` },
+        { label: "Copy name", kind: "copy", text: ctx.name },
+      ];
+    }
+    case "function": {
+      const f = q(schema, ctx.name);
+      return [
+        { label: "Generate call", kind: "gen", sql: `SELECT ${f}();` },
+        { label: "Rename…", kind: "ddl", sql: `RENAME FUNCTION ${f} TO ${q(schema, "NEW_NAME")};` },
+        { label: "Comment…", kind: "ddl", sql: `COMMENT ON FUNCTION ${f} IS '';` },
+        { label: "Drop…", kind: "ddl", danger: true, sql: `DROP FUNCTION ${f};` },
+        { label: "Copy name", kind: "copy", text: ctx.name },
+      ];
+    }
     case "session":
       return [
         { label: "Kill session…", kind: "ddl", danger: true, sql: `KILL SESSION ${ctx.name};` },
