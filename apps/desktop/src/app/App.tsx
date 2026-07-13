@@ -3,8 +3,10 @@ import { ExasolStudio } from "@/components/studio/ExasolStudio";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { Tour, STUDIO_TOUR } from "@/features/onboarding/Tour";
 import { ConnectRunWindow } from "@/features/connection/ConnectRunWindow";
+import { VirtualSchemaWindow } from "@/features/connection/VirtualSchemaWindow";
 import { useConnections } from "@/state/useConnections";
 import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
+import { isVsWindow } from "@/lib/vs-window";
 import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
@@ -14,6 +16,10 @@ export function App() {
   // The dedicated native connect window renders only the run flow.
   if (isConnectWindow()) {
     return <ConnectRunWindow />;
+  }
+  // The dedicated native virtual-schema window renders only that wizard.
+  if (isVsWindow()) {
+    return <VirtualSchemaWindow />;
   }
   return <MainApp />;
 }

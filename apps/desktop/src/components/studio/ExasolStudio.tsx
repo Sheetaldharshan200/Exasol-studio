@@ -2,13 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import {
   Activity,
+  Blocks,
+  Check,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
   CircleSlash2,
+  Combine,
   Database,
   Eye,
   FileCode2,
   GitBranch,
+  GitCommitHorizontal,
   History,
   Info,
   ListChecks,
@@ -21,9 +27,13 @@ import {
   PlugZap,
   Plus,
   RefreshCcw,
+  RotateCcw,
   Save,
+  SaveAll,
   Search,
+  Settings2,
   Shapes,
+  Sparkles,
   Square,
   Star,
   Store,
@@ -31,6 +41,7 @@ import {
   Terminal,
   Trash2,
   Unplug,
+  Waypoints,
   X,
   Zap,
 } from "lucide-react";
@@ -45,6 +56,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -65,9 +85,12 @@ import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
 import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
+import { Marketplace } from "@/features/marketplace/Marketplace";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
+import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
+import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
   errorMessage,
@@ -86,7 +109,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace";
 
 type SqlTab = {
   id: string;
@@ -121,6 +144,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   connect: Plug,
   visualizer: Eye,
   filePreview: Table2,
+  marketplace: Store,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -252,6 +276,59 @@ function statementAtOffset(sql: string, offset: number): string {
   return stmts[stmts.length - 1].text;
 }
 
+/** Strip line (--) and block comments, preserving string literals. */
+function stripSqlComments(sql: string): string {
+  let out = "";
+  let inSingle = false;
+  let inDouble = false;
+  let inLine = false;
+  let inBlock = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    const n = sql[i + 1];
+    if (inLine) {
+      if (c === "\n") {
+        inLine = false;
+        out += c;
+      }
+      continue;
+    }
+    if (inBlock) {
+      if (c === "*" && n === "/") {
+        inBlock = false;
+        i++;
+      }
+      continue;
+    }
+    if (inSingle) {
+      out += c;
+      if (c === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      out += c;
+      if (c === '"') inDouble = false;
+      continue;
+    }
+    if (c === "'") {
+      inSingle = true;
+      out += c;
+    } else if (c === '"') {
+      inDouble = true;
+      out += c;
+    } else if (c === "-" && n === "-") {
+      inLine = true;
+      i++;
+    } else if (c === "/" && n === "*") {
+      inBlock = true;
+      i++;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
 function IconButton({
   label,
   onClick,
@@ -273,7 +350,7 @@ function IconButton({
           onClick={onClick}
           disabled={disabled}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
             active && "bg-secondary text-primary",
           )}
         >
@@ -374,6 +451,7 @@ function ConnectionSection({
   onRefresh,
   onDisconnect,
   onOpenView,
+  onNewVs,
 }: {
   connection: ActiveConnection;
   focused: boolean;
@@ -385,6 +463,7 @@ function ConnectionSection({
   onRefresh: () => void;
   onDisconnect: () => void;
   onOpenView: (view: "dbInfo" | "dataTypes") => void;
+  onNewVs: () => void;
 }) {
   const roots = useMemo(
     () => buildConnectionNodes(connection.profile.id),
@@ -436,6 +515,9 @@ function ConnectionSection({
           </IconButton>
           <IconButton label="Data types" onClick={() => onOpenView("dataTypes")}>
             <Shapes className="h-3.5 w-3.5" />
+          </IconButton>
+          <IconButton label="New virtual schema" onClick={onNewVs}>
+            <Waypoints className="h-3.5 w-3.5" />
           </IconButton>
           <IconButton label="Collapse all" onClick={() => setCollapseSignal((n) => n + 1)}>
             <ChevronsDownUp className="h-3.5 w-3.5" />
@@ -563,9 +645,11 @@ function Sidebar({
   onDisconnect,
   onRefreshConnection,
   onOpenView,
+  onNewVirtualSchema,
   onCollapse,
   onOpenFile,
   onOpenData,
+  filesRefresh,
   visualizerTabs,
   activeTabId,
   onOpenNewVisualizer,
@@ -582,9 +666,11 @@ function Sidebar({
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
+  onNewVirtualSchema: (profileId: string) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string) => void;
   onOpenData: (name: string, path: string) => void;
+  filesRefresh: number;
   visualizerTabs: { id: string; title: string }[];
   activeTabId: string;
   onOpenNewVisualizer: () => void;
@@ -615,7 +701,7 @@ function Sidebar({
           </IconButton>
         </div>
         {activity === "files" ? (
-          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} />
+          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} refreshSignal={filesRefresh} />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}
@@ -719,6 +805,7 @@ function Sidebar({
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
+              onNewVs={() => onNewVirtualSchema(conn.profile.id)}
             />
           ))}
         </div>
@@ -933,6 +1020,24 @@ export function ExasolStudio({
   const [schema, setSchema] = useState<string>("");
   const [schemas, setSchemas] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [wsPath, setWsPath] = useState<string | null>(null);
+  const [filesRefresh, setFilesRefresh] = useState(0);
+  // Query-toolbar options.
+  const [execSettings, setExecSettings] = useState({
+    stripComments: false,
+    stopOnError: true,
+    stopOnWarning: false,
+    stopOnNoRows: false,
+    showErrorPos: true,
+    showErrorStmt: true,
+  });
+  const [autoCommit, setAutoCommit] = useState(true);
+  const [mergeResults, setMergeResults] = useState(false);
+  const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number } | null>(null);
+  const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
+  const [vsFor, setVsFor] = useState<string | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -983,6 +1088,24 @@ export function ExasolStudio({
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
   }, []);
   useEffect(() => loadHistory(), [loadHistory]);
+
+  // Resolve the workspace folder where saved scripts land.
+  useEffect(() => {
+    ipc.fsWorkspaceDir().then((e) => setWsPath(e.path)).catch(() => undefined);
+  }, []);
+
+  // The separate virtual-schema window reports success here → refresh its tree.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<{ profileId: string }>(VS_DONE, (e) => {
+        setTreeKeys((k) => ({ ...k, [e.payload.profileId]: (k[e.payload.profileId] ?? 0) + 1 }));
+      });
+    })();
+    return () => unlisten?.();
+  }, []);
 
   // When a new connection is established, retire any open "Connect" tabs (they
   // served their purpose) so the workspace lands on the new database's queries.
@@ -1061,6 +1184,47 @@ export function ExasolStudio({
     updateTabs(connKey, (list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
   }
 
+  // Open (and optionally run) a query built in the visual query builder.
+  async function openBuiltSql(sql: string, runNow: boolean) {
+    const key = connKey;
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-q-${Date.now()}-${tabCounter.current}`,
+      title: "Query",
+      view: "sql",
+      sql,
+      response: null,
+      execError: null,
+    };
+    updateTabs(key, (list) => [...list, tab]);
+    setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
+    if (runNow && connection) {
+      setRunning(true);
+      setResultTab("results");
+      try {
+        const result = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
+        updateTabs(key, (list) =>
+          list.map((t) =>
+            t.id === tab.id
+              ? {
+                  ...t,
+                  response: result,
+                  execError: result.success ? null : result.results.find((r) => r.error)?.error ?? "Statement failed.",
+                }
+              : t,
+          ),
+        );
+        if (!result.success) setResultTab("messages");
+        loadHistory();
+      } catch (e) {
+        updateTabs(key, (list) => list.map((t) => (t.id === tab.id ? { ...t, execError: errorMessage(e) } : t)));
+        setResultTab("messages");
+      } finally {
+        setRunning(false);
+      }
+    }
+  }
+
   // Open a tabular file (CSV / TSV / Parquet) as a read-only preview tab.
   function openData(name: string, path: string) {
     tabCounter.current += 1;
@@ -1125,6 +1289,35 @@ export function ExasolStudio({
     setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
   }
 
+  // Open (or focus) the Marketplace as a full tab.
+  function openMarketplace() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "marketplace");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-mkt-${Date.now()}-${tabCounter.current}`,
+      title: "Marketplace",
+      view: "marketplace",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
+  // Open the New Virtual Schema flow in a separate native window (falls back to
+  // an in-app modal in the browser preview).
+  async function openVs(profileId: string) {
+    const name = connections.find((c) => c.profile.id === profileId)?.profile.name ?? "Exasol";
+    const opened = await openVsWindow({ profileId, connectionName: name });
+    if (!opened) setVsFor(profileId);
+  }
+
   // Open a brand-new Visualizer tab (multiple diagrams are allowed).
   function newVisualizer() {
     if (!connection) {
@@ -1178,7 +1371,7 @@ export function ExasolStudio({
   }
 
   const run = useCallback(
-    async (scope: "statement" | "selection" | "script") => {
+    async (scope: "statement" | "selection" | "script" | "buffer") => {
       if (!connection) {
         openConnect();
         return;
@@ -1200,13 +1393,23 @@ export function ExasolStudio({
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;
+      if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
+
+      // "buffer" runs everything as a single statement; others split.
+      const split = scope !== "buffer";
 
       setRunning(true);
       setResultTab("results");
       patchTab(activeTab.id, { execError: null });
       try {
-        const result = await ipc.executeSql(connection.profile.id, connection.profile.name, sqlToRun, maxRows);
+        const result = await ipc.executeSql(
+          connection.profile.id,
+          connection.profile.name,
+          sqlToRun,
+          maxRows,
+          split,
+        );
         if (!result.success) {
           const failed = result.results.find((r) => r.error);
           patchTab(activeTab.id, { response: result, execError: failed?.error ?? "Statement failed." });
@@ -1222,26 +1425,21 @@ export function ExasolStudio({
         setRunning(false);
       }
     },
-    [connection, running, activeTab, maxRows, loadHistory],
+    [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
   );
 
   async function saveTab() {
-    const suggested = `${activeTab.title.replace(/\s+/g, "_").toLowerCase()}.sql`;
-    // In the desktop app, use a real native "Save As" dialog and write the
-    // file; in the browser preview, fall back to a blob download.
-    if (isTauri()) {
+    const base = activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "");
+    const fileName = `${base}.sql`;
+    // Save straight into the workspace folder (shown in the Files panel) —
+    // no separate save window. Fall back to a download in the browser preview.
+    if (isTauri() && wsPath) {
       try {
-        const { save } = await import("@tauri-apps/plugin-dialog");
-        const path = await save({
-          defaultPath: suggested,
-          filters: [{ name: "SQL", extensions: ["sql"] }],
-        });
-        if (path) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          await invoke("write_text_file", { path, contents: activeTab.sql });
-        }
+        await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
+        patchTab(activeTab.id, { title: fileName });
+        setFilesRefresh((n) => n + 1);
       } catch {
-        // Dialog cancelled or unavailable — nothing to do.
+        /* ignore write error */
       }
       return;
     }
@@ -1249,9 +1447,62 @@ export function ExasolStudio({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = suggested;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // Save As — prompt for a new name, then write into the workspace.
+  async function commitSaveAs() {
+    const raw = namePrompt?.value.trim();
+    setNamePrompt(null);
+    if (!raw || !wsPath) return;
+    const file = raw.endsWith(".sql") ? raw : `${raw}.sql`;
+    try {
+      await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
+      patchTab(activeTab.id, { title: file });
+      setFilesRefresh((n) => n + 1);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Send the current selection (or whole buffer) to the AI for a plan explainer.
+  function aiExplain() {
+    const editor = editorRef.current;
+    const sel = editor?.getSelection();
+    const selected = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
+    const sql = (selected.trim() || activeTab.sql).trim();
+    if (!sql) return;
+    setAiOpen(true);
+    aiPanelRef.current?.expand();
+    setAiPrompt({
+      text: `Explain the execution plan and performance of this query, and suggest optimizations:\n\n\`\`\`sql\n${sql}\n\`\`\``,
+      nonce: Date.now(),
+    });
+  }
+
+  // Step through SQL history into the current editor.
+  function historyNav(dir: "prev" | "next") {
+    if (history.length === 0) return;
+    const idx =
+      dir === "prev"
+        ? Math.min((historyIdx < 0 ? -1 : historyIdx) + 1, history.length - 1)
+        : Math.max(historyIdx - 1, 0);
+    setHistoryIdx(idx);
+    const entry = history[idx];
+    if (entry) patchTab(activeTab.id, { sql: entry.sql });
+  }
+
+  // Commit / rollback the connection's pending work (runs the SQL command).
+  async function txn(action: "COMMIT" | "ROLLBACK") {
+    if (!connection) return;
+    try {
+      await ipc.executeSql(connection.profile.id, connection.profile.name, action, maxRows, false);
+      loadHistory();
+    } catch {
+      /* ignore */
+    }
   }
 
   // Opening a database object launches it in its own new query tab, scoped to
@@ -1293,6 +1544,10 @@ export function ExasolStudio({
           visualizerActive={activeTab.view === "visualizer"}
           visualizerCount={visualizerTabs.length}
           onSelect={(id) => {
+            if (id === "marketplace") {
+              openMarketplace();
+              return;
+            }
             if (id === activity && sidebarOpen) {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -1332,12 +1587,14 @@ export function ExasolStudio({
               onDisconnect={onDisconnect}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
+              onNewVirtualSchema={openVs}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
               }}
               onOpenFile={openFile}
               onOpenData={openData}
+              filesRefresh={filesRefresh}
               visualizerTabs={visualizerTabs}
               activeTabId={activeTabId}
               onOpenNewVisualizer={newVisualizer}
@@ -1470,31 +1727,151 @@ export function ExasolStudio({
           {/* Toolbar — hidden on tabs that carry their own header */}
           {activeTab.view !== "connect" &&
           activeTab.view !== "visualizer" &&
-          activeTab.view !== "filePreview" ? (
-          <div className="flex h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2">
+          activeTab.view !== "filePreview" &&
+          activeTab.view !== "marketplace" ? (
+          <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
+                {/* Execute group */}
                 <button
                   onClick={() => run("statement")}
                   disabled={running}
-                  className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
+                  title="Execute current statement (Ctrl/Cmd+Enter)"
+                  className="cta-glow flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
                 >
                   {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
                   Run
                 </button>
+                <IconButton label="Execute buffer as a SQL script" onClick={() => run("script")} disabled={running}>
+                  <FileCode2 className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Execute complete buffer as one statement" onClick={() => run("buffer")} disabled={running}>
+                  <Zap className="h-3.5 w-3.5" />
+                </IconButton>
                 <IconButton label="Run selection" onClick={() => run("selection")} disabled={running}>
                   <ListChecks className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Run entire script" onClick={() => run("script")} disabled={running}>
-                  <Zap className="h-3.5 w-3.5" />
+                <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
+                  <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
                 </IconButton>
                 <IconButton label="Stop" disabled={!running}>
                   <Square className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Save script (.sql)" onClick={saveTab}>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+
+                {/* Transactions */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      title="Transactions"
+                      disabled={!connected}
+                      className="flex h-7 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                    >
+                      <GitCommitHorizontal className="h-3.5 w-3.5" />
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuCheckboxItem
+                      checked={autoCommit}
+                      onCheckedChange={(v) => setAutoCommit(v === true)}
+                    >
+                      Auto-commit
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => txn("COMMIT")}>
+                      <Check className="h-3.5 w-3.5" /> Commit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => txn("ROLLBACK")}>
+                      <RotateCcw className="h-3.5 w-3.5" /> Rollback
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+
+                {/* Save + history */}
+                <IconButton label="Save to the current file" onClick={saveTab}>
                   <Save className="h-3.5 w-3.5" />
                 </IconButton>
-                <div className="mx-1 h-5 w-px bg-border" />
+                <IconButton label="Save as a new file…" onClick={() => setNamePrompt({ value: activeTab.title.replace(/\.sql$/, "") })}>
+                  <SaveAll className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Previous SQL from history" onClick={() => historyNav("prev")} disabled={history.length === 0}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Next SQL from history" onClick={() => historyNav("next")} disabled={history.length === 0}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </IconButton>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+
+                {/* Views */}
+                <IconButton label="Merge result sets from the last execution" active={mergeResults} onClick={() => setMergeResults((m) => !m)}>
+                  <Combine className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Show the query builder pane" active={queryBuilderOpen} onClick={() => setQueryBuilderOpen((q) => !q)}>
+                  <Blocks className="h-3.5 w-3.5" />
+                </IconButton>
+
+                {/* Execution settings */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      title="Execution settings"
+                      className="flex h-7 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-60">
+                    <DropdownMenuLabel>SQL processing</DropdownMenuLabel>
+                    <DropdownMenuItem disabled>Preprocess Script</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Parameterized SQL</DropdownMenuItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.stripComments}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stripComments: v === true }))}
+                    >
+                      Strip Comments when Executing
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.stopOnError}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnError: v === true }))}
+                    >
+                      Stop on Error
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.stopOnWarning}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnWarning: v === true }))}
+                    >
+                      Stop on SQL Warning
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.stopOnNoRows}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnNoRows: v === true }))}
+                    >
+                      Stop on No Row(s)
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.showErrorPos}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, showErrorPos: v === true }))}
+                    >
+                      Show Error Position Markers
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.showErrorStmt}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, showErrorStmt: v === true }))}
+                    >
+                      Show Error Statement Markers
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
               </>
             ) : (
               <span className="flex items-center gap-1.5 px-1 text-[12px] font-medium text-foreground">
@@ -1521,10 +1898,10 @@ export function ExasolStudio({
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
-                <div className="flex items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
+                <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
                   <span>Max rows</span>
                   <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
-                    <SelectTrigger className="h-6 w-24 text-xs" size="sm">
+                    <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1555,6 +1932,10 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <FilePreviewPanel name={activeTab.title} path={activeTab.filePath ?? ""} />
             </div>
+          ) : activeTab.view === "marketplace" ? (
+            <div className="min-h-0 flex-1">
+              <Marketplace />
+            </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
               {activeTab.view === "dbInfo" ? (
@@ -1571,6 +1952,8 @@ export function ExasolStudio({
                 <Visualizer
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
+                  onOpenSql={openBuiltSql}
+                  onNewVs={() => openVs(connection.profile.id)}
                 />
               )}
             </div>
@@ -1632,11 +2015,25 @@ export function ExasolStudio({
                       </span>
                     ) : null}
                   </div>
-                  <div className="min-h-0 flex-1">
-                    {resultTab === "results" ? (
-                      <ResultsGrid result={lastResult} error={null} />
-                    ) : (
+                  <div className="min-h-0 flex-1 overflow-auto">
+                    {resultTab === "messages" ? (
                       <ResultsGrid result={null} error={activeTab.execError} />
+                    ) : mergeResults && (activeTab.response?.results.length ?? 0) > 1 ? (
+                      // Merged view — every result set from the last execution.
+                      <div className="flex flex-col">
+                        {activeTab.response!.results.map((r, i) => (
+                          <div key={i} className="border-b border-border">
+                            <div className="bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground">
+                              #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                            </div>
+                            <div className="h-[280px]">
+                              <ResultsGrid result={r} error={null} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <ResultsGrid result={lastResult} error={null} />
                     )}
                   </div>
                 </div>
@@ -1659,7 +2056,11 @@ export function ExasolStudio({
             onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
             className="min-w-0"
           >
-            <AssistantPanel contextSummary={contextSummary} editorSql={activeTab.sql} />
+            <AssistantPanel
+              contextSummary={contextSummary}
+              editorSql={activeTab.sql}
+              pendingPrompt={aiPrompt}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
@@ -1696,6 +2097,58 @@ export function ExasolStudio({
           </span>
         </div>
       </footer>
+
+      {namePrompt ? (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setNamePrompt(null)}
+        >
+          <div
+            className="w-[360px] rounded-xl border border-border bg-popover p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 text-[13px] font-semibold text-foreground">Save as</p>
+            <div className="flex items-center gap-1.5">
+              <Input
+                autoFocus
+                value={namePrompt.value}
+                onChange={(e) => setNamePrompt({ value: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitSaveAs();
+                  else if (e.key === "Escape") setNamePrompt(null);
+                }}
+                placeholder="file name"
+                className="h-8 text-sm"
+              />
+              <span className="font-mono text-xs text-muted-foreground">.sql</span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">Saved into My&nbsp;Workspace.</p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setNamePrompt(null)}
+                className="h-8 rounded-md border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void commitSaveAs()}
+                className="cta-glow h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {vsFor ? (
+        <NewVirtualSchema
+          profileId={vsFor}
+          connectionName={connections.find((c) => c.profile.id === vsFor)?.profile.name ?? "Exasol"}
+          onClose={() => setVsFor(null)}
+          onCreated={() => refreshConnection(vsFor)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1717,7 +2170,7 @@ function Selector({
 }) {
   return (
     <Select value={options.includes(value) ? value : undefined} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="h-6 min-w-[120px] gap-1.5 text-xs" size="sm" aria-label={label}>
+      <SelectTrigger className="h-6 min-w-[120px] shrink-0 gap-1.5 text-xs" size="sm" aria-label={label}>
         {icon}
         <SelectValue placeholder={value} />
       </SelectTrigger>
@@ -1752,7 +2205,7 @@ function ConnectionSwitcher({
       onValueChange={onFocus}
       disabled={connections.length === 0}
     >
-      <SelectTrigger className="h-6 min-w-[140px] gap-1.5 text-xs" size="sm" aria-label="Connection">
+      <SelectTrigger className="h-6 min-w-[140px] shrink-0 gap-1.5 text-xs" size="sm" aria-label="Connection">
         <Database className="h-3.5 w-3.5 text-primary" />
         <SelectValue placeholder="not connected" />
       </SelectTrigger>

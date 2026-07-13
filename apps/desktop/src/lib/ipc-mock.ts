@@ -443,6 +443,53 @@ export async function mockInvoke(
       return { results };
     }
 
+    case "market_env":
+      return { os: "macos", arch: "aarch64", docker: false, podman: false };
+
+    case "market_installed":
+      return [];
+
+    case "market_detect":
+      return {};
+
+    case "market_release": {
+      const repo = String(args?.repo ?? "");
+      return {
+        tag: "v1.4.0",
+        name: `${repo.split("/").pop()} 1.4.0`,
+        publishedAt: "2026-06-20T10:00:00Z",
+        htmlUrl: `https://github.com/${repo}/releases/latest`,
+        assets: [
+          { name: "release-darwin-arm64.tar.gz", url: "https://example.com/a", size: 4200000 },
+          { name: "release-linux-x86_64.tar.gz", url: "https://example.com/b", size: 4300000 },
+        ],
+      };
+    }
+
+    case "market_install":
+      await delay(400);
+      return { ok: true, path: `/Users/you/ExasolStudio/.marketplace/${args?.id}` };
+
+    case "market_install_run":
+      // In the browser preview the console component simulates its own log.
+      await delay(200);
+      return { ok: true };
+
+    case "market_uninstall":
+      return null;
+
+    case "market_dir_path":
+      return "/Users/you/Library/Application Support/com.exasol.studio/marketplace";
+
+    case "list_vs_prereqs":
+      return {
+        adapters: [
+          { schema: "ADAPTERS", name: "JDBC_ADAPTER" },
+          { schema: "ADAPTERS", name: "POSTGRES_ADAPTER" },
+        ],
+        connections: ["POSTGRES_CONNECTION", "MYSQL_JDBC_CONNECTION"],
+      };
+
     case "get_schema_graph":
       return {
         tables: [
@@ -485,6 +532,12 @@ export async function mockInvoke(
           { source: "LINEITEM", sourceColumn: "L_ORDERKEY", target: "ORDERS", targetColumn: "O_ORDERKEY" },
         ],
       };
+
+    case "fs_workspace_dir":
+      return { name: "My Workspace", path: "/Users/you/ExasolStudio", isDir: true, size: 0, modified: null, ext: null };
+
+    case "write_text_file":
+      return null;
 
     case "fs_home_roots":
       return [{ name: "Home", path: "/Users/you", isDir: true, size: 0, modified: null, ext: null }];

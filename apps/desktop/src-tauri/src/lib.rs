@@ -6,6 +6,7 @@ mod error;
 mod files;
 mod fs;
 mod history;
+mod market;
 mod metadata;
 mod profiles;
 mod query;
@@ -48,12 +49,22 @@ pub fn run() {
             catalog::list_data_types,
             catalog::search_objects,
             catalog::get_schema_graph,
+            catalog::list_vs_prereqs,
             files::write_text_file,
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,
+            fs::fs_workspace_dir,
             fs::fs_home_roots,
             fs::fs_search,
+            market::market_env,
+            market::market_release,
+            market::market_installed,
+            market::market_detect,
+            market::market_install,
+            market::market_install_run,
+            market::market_uninstall,
+            market::market_dir_path,
             query::execute_sql,
             history::sql_history_list,
             history::sql_history_clear,

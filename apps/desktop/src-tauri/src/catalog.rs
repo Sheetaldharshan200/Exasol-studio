@@ -71,6 +71,37 @@ pub async fn list_data_types(state: State<'_, AppState>, profile_id: String) -> 
     }))
 }
 
+/// Prerequisites for the New Virtual Schema wizard: available adapter scripts
+/// and existing connection objects.
+#[tauri::command]
+pub async fn list_vs_prereqs(state: State<'_, AppState>, profile_id: String) -> AppResult<Value> {
+    let pool = require_pool(&state, &profile_id).await?;
+
+    let adapters = fetch_all_rows(
+        &pool,
+        "SELECT SCRIPT_SCHEMA, SCRIPT_NAME FROM SYS.EXA_ALL_SCRIPTS \
+         WHERE SCRIPT_TYPE = 'ADAPTER' ORDER BY SCRIPT_SCHEMA, SCRIPT_NAME",
+    )
+    .await
+    .unwrap_or_default();
+
+    let connections = fetch_first_ok(
+        &pool,
+        &[
+            "SELECT CONNECTION_NAME FROM SYS.EXA_ALL_CONNECTIONS ORDER BY CONNECTION_NAME",
+            "SELECT CONNECTION_NAME FROM SYS.EXA_DBA_CONNECTIONS ORDER BY CONNECTION_NAME",
+        ],
+    )
+    .await;
+
+    Ok(json!({
+        "adapters": adapters.iter().map(|r| obj(vec![
+            ("schema", cell(r, 0)), ("name", cell(r, 1)),
+        ])).collect::<Vec<_>>(),
+        "connections": connections.iter().filter_map(|r| r.first().and_then(|v| v.as_str()).map(String::from)).collect::<Vec<_>>(),
+    }))
+}
+
 /// Schema graph for the visualizer: tables with their columns (primary-key
 /// flagged) and the foreign-key links between them.
 #[tauri::command]

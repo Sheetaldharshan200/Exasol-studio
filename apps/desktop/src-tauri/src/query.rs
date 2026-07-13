@@ -282,10 +282,21 @@ pub async fn execute_sql(
     connection_name: String,
     sql: String,
     max_rows: Option<usize>,
+    split: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
     let pool = require_pool(&state, &profile_id).await?;
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
-    let statements = split_statements(&sql);
+    // `split` false runs the whole buffer as a single statement.
+    let statements = if split.unwrap_or(true) {
+        split_statements(&sql)
+    } else {
+        let trimmed = sql.trim().trim_end_matches(';').trim().to_string();
+        if trimmed.is_empty() {
+            Vec::new()
+        } else {
+            vec![trimmed]
+        }
+    };
 
     let started = std::time::Instant::now();
     let mut results = Vec::with_capacity(statements.len());

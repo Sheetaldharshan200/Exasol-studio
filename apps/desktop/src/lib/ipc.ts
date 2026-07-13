@@ -169,6 +169,22 @@ export type SearchHit = {
   selectable: boolean;
 };
 
+export type MarketEnv = { os: string; arch: string; docker: boolean; podman: boolean };
+export type ReleaseAsset = { name: string; url: string; size: number };
+export type Release = {
+  tag: string | null;
+  name: string | null;
+  publishedAt: string | null;
+  htmlUrl: string | null;
+  assets: ReleaseAsset[];
+} | null;
+export type InstalledItem = { id: string; version: string; path: string; filename: string };
+
+export type VsPrereqs = {
+  adapters: { schema: string; name: string }[];
+  connections: string[];
+};
+
 export type GraphColumn = { name: string; dataType: string; pk: boolean };
 export type GraphTable = { name: string; columns: GraphColumn[] };
 export type GraphLink = {
@@ -282,15 +298,38 @@ export const ipc = {
     call<{ results: SearchHit[] }>("search_objects", { profileId, query, limit }),
   getSchemaGraph: (profileId: string, schema: string) =>
     call<SchemaGraph>("get_schema_graph", { profileId, schema }),
+  listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
+  marketEnv: () => call<MarketEnv>("market_env"),
+  marketRelease: (repo: string) => call<Release>("market_release", { repo }),
+  marketInstalled: () => call<InstalledItem[]>("market_installed"),
+  marketDetect: () => call<Record<string, boolean>>("market_detect"),
+  marketInstall: (id: string, version: string, url: string, filename: string) =>
+    call<{ ok: boolean; path: string }>("market_install", { id, version, url, filename }),
+  marketInstallRun: (
+    id: string,
+    version?: string,
+    url?: string,
+    filename?: string,
+  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename }),
+  marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
+  marketDirPath: () => call<string>("market_dir_path"),
+  fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
+  writeTextFile: (path: string, contents: string) =>
+    call<void>("write_text_file", { path, contents }),
   fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
   fsReadText: (path: string) => call<string>("fs_read_text", { path }),
   fsReadTable: (path: string, limit?: number) =>
     call<TablePreview>("fs_read_table", { path, limit }),
   fsSearch: (root: string, query: string, limit?: number) =>
     call<FsEntry[]>("fs_search", { root, query, limit }),
-  executeSql: (profileId: string, connectionName: string, sql: string, maxRows: number) =>
-    call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows }),
+  executeSql: (
+    profileId: string,
+    connectionName: string,
+    sql: string,
+    maxRows: number,
+    split = true,
+  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
   getAssistantSettings: () => call<AssistantSettings>("get_assistant_settings"),

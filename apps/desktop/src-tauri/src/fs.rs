@@ -65,6 +65,19 @@ pub async fn fs_read_text(path: String) -> AppResult<String> {
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
+/// A dedicated, always-present workspace folder (~/ExasolStudio) where saved
+/// scripts land, so "Save" never needs a separate window — the file just shows
+/// up in the Files panel.
+#[tauri::command]
+pub fn fs_workspace_dir() -> AppResult<FsEntry> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| AppError::Storage("Could not resolve home directory.".to_string()))?;
+    let dir = std::path::PathBuf::from(home).join("ExasolStudio");
+    std::fs::create_dir_all(&dir)?;
+    Ok(to_entry(dir, "My Workspace".to_string()))
+}
+
 /// The user's home directory as the single tree root (expand it to browse).
 #[tauri::command]
 pub fn fs_home_roots() -> AppResult<Vec<FsEntry>> {

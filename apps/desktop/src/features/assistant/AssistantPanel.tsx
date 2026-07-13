@@ -44,9 +44,12 @@ const MENTIONS: { at: string; desc: string }[] = [
 export function AssistantPanel({
   contextSummary,
   editorSql,
+  pendingPrompt,
 }: {
   contextSummary: string;
   editorSql: string;
+  /** An external prompt (e.g. "AI explain plan") to send automatically. */
+  pendingPrompt?: { text: string; nonce: number } | null;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -70,6 +73,16 @@ export function AssistantPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  // An external action (e.g. "AI explain plan") pushed a prompt to send.
+  const lastNonce = useRef(0);
+  useEffect(() => {
+    if (pendingPrompt && pendingPrompt.nonce !== lastNonce.current) {
+      lastNonce.current = pendingPrompt.nonce;
+      void send(pendingPrompt.text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
 
   // Detect a "/" command at the start or a trailing "@" mention token.
   const trigger = useMemo(() => {

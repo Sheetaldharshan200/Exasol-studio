@@ -25,6 +25,7 @@
     "radix-ui": "^1.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-querybuilder": "^8.20.2",
     "react-resizable-panels": "^4.12.0",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.3.4"
