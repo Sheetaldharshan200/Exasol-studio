@@ -11,6 +11,9 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 
+/// Our own repo — the single source of truth for CI-built Marketplace artifacts.
+const OUR_REPO: &str = "Sheetaldharshan200/Exasol-studio";
+
 fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
     let _ = app.emit(
         "market:log",
@@ -508,48 +511,97 @@ fn install_personal_cloud(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("Exasol launcher installed — run `exasol install <provider>` to deploy.".into())
 }
 
-/// JSON Tables (exasol-labs/exasol-json-tables): a Python package plus a Rust
-/// ingest engine — installs the Python entrypoint via uv and builds the Rust
-/// crate via cargo. Decoupled prerequisite checks up front.
-fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
-    if !bin_present("git") {
-        return Err(AppError::Storage("git is required to install JSON Tables.".into()));
+/// Fetch a release ("tag") of OUR repo and return its assets array.
+async fn our_mirror_assets(tag: &str) -> AppResult<Vec<Value>> {
+    let url = format!("https://api.github.com/repos/{OUR_REPO}/releases/tags/{tag}");
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "exasol-studio")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Ok(vec![]);
     }
-    let cargo = resolve_bin("cargo")
-        .map(|p| p.to_string_lossy().to_string())
-        .ok_or_else(|| AppError::Storage(
-            "Rust (cargo) is required to build the JSON Tables ingest engine. Install it from https://rustup.rs and retry.".into(),
-        ))?;
-    let uv = ensure_uv(app, id)?;
+    let json: Value = resp.json().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default())
+}
 
+/// Pick an asset whose name matches the host OS + arch.
+fn pick_platform_asset<'a>(assets: &'a [Value]) -> Option<&'a Value> {
+    let os_tokens: &[&str] = match std::env::consts::OS {
+        "macos" => &["darwin", "macos", "apple", "osx"],
+        "windows" => &["windows", "win", ".exe"],
+        _ => &["linux"],
+    };
+    let arch_tokens: &[&str] = if std::env::consts::ARCH == "aarch64" {
+        &["arm64", "aarch64"]
+    } else {
+        &["x86_64", "amd64", "x64"]
+    };
+    let name = |a: &Value| a.get("name").and_then(|n| n.as_str()).unwrap_or("").to_lowercase();
+    assets
+        .iter()
+        .find(|a| {
+            let n = name(a);
+            !n.ends_with(".whl")
+                && os_tokens.iter().any(|t| n.contains(t))
+                && arch_tokens.iter().any(|t| n.contains(t))
+        })
+        .or_else(|| assets.iter().find(|a| {
+            let n = name(a);
+            !n.ends_with(".whl") && os_tokens.iter().any(|t| n.contains(t))
+        }))
+}
+
+/// JSON Tables (exasol-labs/exasol-json-tables): a Python package plus a Rust
+/// ingest engine. The ingest engine is cross-compiled once by OUR CI and shipped
+/// in our `mirror-json-tables` release, so the user never needs Rust/cargo — we
+/// just download the prebuilt binary + wheel and install the wheel with uv.
+async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
+    let assets = our_mirror_assets("mirror-json-tables").await?;
+    if assets.is_empty() {
+        return Err(AppError::Storage(
+            "JSON Tables prebuilt artifacts aren't published yet. They are built by our CI (pkg-json-tables workflow) — check back after it has run.".into(),
+        ));
+    }
     let base = market_dir(app)?.join(id);
     std::fs::create_dir_all(&base)?;
-    let src = base.join("src");
-    let src_s = src.to_string_lossy().to_string();
-    if src.join(".git").exists() {
-        emit_log(app, id, "Updating JSON Tables source…", "info");
-        let _ = run_streamed(app, id, "git", &["-C", &src_s, "pull", "--ff-only"]);
-    } else {
-        emit_log(app, id, "Cloning exasol-labs/exasol-json-tables…", "info");
-        if run_streamed(app, id, "git", &["clone", "--depth", "1", "https://github.com/exasol-labs/exasol-json-tables", &src_s])? != 0 {
-            return Err(AppError::Storage("git clone failed.".into()));
+
+    // 1) prebuilt Rust ingest binary for this platform
+    if let Some(ing) = pick_platform_asset(&assets) {
+        let url = ing.get("url").or_else(|| ing.get("browser_download_url")).and_then(|u| u.as_str());
+        let nm = ing.get("name").and_then(|n| n.as_str());
+        if let (Some(u), Some(n)) = (url, nm) {
+            emit_log(app, id, "Fetching the prebuilt ingest engine (built by our CI)…", "info");
+            download_and_place(app, id, u, n).await?;
         }
+    } else {
+        emit_log(app, id, "No prebuilt ingest engine for this platform — installing the Python package only.", "info");
     }
 
+    // 2) Python wheel via uv
+    let wheel = assets.iter().find(|a| {
+        a.get("name").and_then(|n| n.as_str()).map(|n| n.ends_with(".whl")).unwrap_or(false)
+    });
+    let wheel = wheel.ok_or_else(|| AppError::Storage("The JSON Tables wheel is missing from the release.".into()))?;
+    let wurl = wheel.get("url").or_else(|| wheel.get("browser_download_url")).and_then(|u| u.as_str())
+        .ok_or_else(|| AppError::Storage("wheel URL missing".into()))?;
+    let wname = wheel.get("name").and_then(|n| n.as_str()).unwrap_or("exasol_json_tables.whl");
+    emit_log(app, id, "Fetching the Python package…", "info");
+    let wpath = download_and_place(app, id, wurl, wname).await?;
+
+    let uv = ensure_uv(app, id)?;
     let venv = base.join("venv");
     let venv_s = venv.to_string_lossy().to_string();
-    emit_log(app, id, "Installing the Python package (exasol-json-tables)…", "info");
+    emit_log(app, id, "Installing exasol-json-tables into a managed environment…", "info");
     run_streamed(app, id, &uv, &["venv", &venv_s])?;
-    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &src_s])? != 0 {
-        return Err(AppError::Storage("uv pip install of exasol-json-tables failed.".into()));
+    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &wpath])? != 0 {
+        return Err(AppError::Storage("uv pip install of the JSON Tables wheel failed.".into()));
     }
-
-    emit_log(app, id, "Building the Rust ingest engine (cargo build --release)…", "info");
-    let manifest = src.join("crates/json_tables_ingest/Cargo.toml");
-    if run_streamed(app, id, &cargo, &["build", "--release", "--manifest-path", &manifest.to_string_lossy()])? != 0 {
-        return Err(AppError::Storage("cargo build of the ingest engine failed.".into()));
-    }
-    Ok(format!("JSON Tables installed (Python + Rust ingest engine) at {src_s}"))
+    Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
 /// Perform a real installation for an item, streaming logs over `market:log`
@@ -568,7 +620,7 @@ pub async fn market_install_run(
         "agent-skills" => install_uv_tool(&app, &id, "exasol-agent-skills"),
         "pyexasol" => install_uv_pip(&app, &id, "pyexasol"),
         "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
-        "json-tables" => install_json_tables(&app, &id),
+        "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
         _ => match (url, filename) {

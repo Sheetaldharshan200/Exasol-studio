@@ -182,9 +182,9 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       ];
     case "source-build":
       return [
-        "Clone exasol-labs/exasol-json-tables (needs git)",
-        "Install the Python package with uv",
-        "Build the Rust ingest engine with cargo (needs Rust)",
+        "Download the prebuilt ingest engine for your platform (built by our CI)",
+        "Download the Python package (wheel)",
+        "Install it with uv — no Rust, cargo or git needed on your machine",
       ];
     case "personal-local":
       return env && env.os !== "macos"
