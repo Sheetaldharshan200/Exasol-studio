@@ -99,6 +99,7 @@ import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { ObjectContextMenu, SqlReviewDialog } from "@/features/workbench/ObjectContextMenu";
+import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
@@ -134,7 +135,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object";
 
 type SqlTab = {
   id: string;
@@ -146,6 +147,10 @@ type SqlTab = {
   pinned?: boolean;
   /** For filePreview tabs — the local file path being previewed. */
   filePath?: string;
+  /** For object tabs — the database object being inspected. */
+  objectRef?: ObjectRef;
+  /** For object tabs — the owning connection. */
+  objectProfileId?: string;
   /** Execution lifecycle for the status strip (started/running/completed). */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
 };
@@ -173,6 +178,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   filePreview: Table2,
   marketplace: Store,
   guides: BookOpen,
+  object: Table2,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -482,6 +488,7 @@ function ConnectionSection({
   onNewVs,
   onUploadDriver,
   onContext,
+  onOpenDetails,
 }: {
   connection: ActiveConnection;
   focused: boolean;
@@ -496,6 +503,7 @@ function ConnectionSection({
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
+  onOpenDetails?: (node: import("@/features/workbench/tree-model").TreeNode) => void;
 }) {
   const roots = useMemo(
     () => buildConnectionNodes(connection.profile.id),
@@ -570,6 +578,7 @@ function ConnectionSection({
           key={treeKey}
           roots={roots}
           onOpenObject={onOpenObject}
+          onOpenDetails={onOpenDetails}
           onContext={onContext}
           initialExpandedItems={["schemas"]}
           collapseSignal={collapseSignal}
@@ -684,6 +693,7 @@ function Sidebar({
   onNewVirtualSchema,
   onUploadDriver,
   onContext,
+  onOpenDetails,
   onCollapse,
   onOpenFile,
   onOpenData,
@@ -708,6 +718,7 @@ function Sidebar({
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
+  onOpenDetails: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
@@ -850,6 +861,7 @@ function Sidebar({
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
               onUploadDriver={() => onUploadDriver(conn.profile.id)}
               onContext={(node, x, y) => onContext?.(conn.profile.id, node, x, y)}
+              onOpenDetails={(node) => onOpenDetails?.(conn.profile.id, node)}
             />
           ))}
         </div>
@@ -1580,6 +1592,31 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open (or focus) an object-detail tab for a schema/table/view.
+  function openObjectDetails(profileId: string, ctx: { type: string; schema?: string; name: string }) {
+    const type = ctx.type as ObjectRef["type"];
+    if (!["schema", "virtual-schema", "table", "view"].includes(type)) return;
+    const list = tabsFor(connKey);
+    const id = `obj:${profileId}:${ctx.schema ?? ""}:${ctx.name}:${type}`;
+    const existing = list.find((t) => t.view === "object" && t.id === id);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const tab: SqlTab = {
+      id,
+      title: ctx.name,
+      view: "object",
+      sql: "",
+      response: null,
+      execError: null,
+      objectRef: { type, schema: ctx.schema, name: ctx.name },
+      objectProfileId: profileId,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
   // Open (or focus) the Guides & Docs tab.
   function openGuides() {
     const list = tabsFor(connKey);
@@ -1942,6 +1979,7 @@ export function ExasolStudio({
                 if (c) setBucketFsFor(c.profile);
               }}
               onContext={(pid, node, x, y) => node.ctx && setCtxMenu({ profileId: pid, node, x, y })}
+              onOpenDetails={(pid, node) => node.ctx && openObjectDetails(pid, node.ctx)}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
@@ -2086,7 +2124,8 @@ export function ExasolStudio({
           activeTab.view !== "visualizer" &&
           activeTab.view !== "filePreview" &&
           activeTab.view !== "marketplace" &&
-          activeTab.view !== "guides" ? (
+          activeTab.view !== "guides" &&
+          activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
@@ -2325,6 +2364,15 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <Docs />
             </div>
+          ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
+            <div className="min-h-0 flex-1">
+              <ObjectDetailPanel
+                profileId={activeTab.objectProfileId}
+                connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
+                object={activeTab.objectRef}
+                onOpenData={(sql) => void openBuiltSql(sql, true)}
+              />
+            </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
               {activeTab.view === "dbInfo" ? (
@@ -2558,6 +2606,7 @@ export function ExasolStudio({
           onClose={() => setCtxMenu(null)}
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
           onDdl={(title, sql) => setDdlReview({ profileId: ctxMenu.profileId, title, sql })}
+          onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
         />
       ) : null}
 

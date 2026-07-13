@@ -24,12 +24,15 @@ type NodeState = { status: "loading" | "done" | "error"; children: TreeNode[]; e
 export function DatabaseTree({
   roots,
   onOpenObject,
+  onOpenDetails,
   onContext,
   initialExpandedItems,
   collapseSignal,
 }: {
   roots: TreeNode[];
   onOpenObject: (schema: string, name: string) => void;
+  /** Double-click a schema/table/view → open its detail tab. */
+  onOpenDetails?: (node: TreeNode) => void;
   /** Right-click on a node → open the context menu at (x, y). */
   onContext?: (node: TreeNode, x: number, y: number) => void;
   /** Node ids expanded on first render (default: none). */
@@ -121,9 +124,14 @@ export function DatabaseTree({
             setSelected(node.id);
             toggle(node);
           }}
-          onOpen={() =>
-            node.selectable && onOpenObject(node.selectable.schema, node.selectable.name)
-          }
+          onOpen={() => {
+            const c = node.ctx;
+            if (onOpenDetails && c && (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view")) {
+              onOpenDetails(node);
+            } else if (node.selectable) {
+              onOpenObject(node.selectable.schema, node.selectable.name);
+            }
+          }}
           onContext={
             node.ctx
               ? (x, y) => {

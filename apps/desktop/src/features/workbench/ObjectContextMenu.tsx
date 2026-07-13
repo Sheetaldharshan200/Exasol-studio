@@ -126,6 +126,7 @@ export function ObjectContextMenu({
   onClose,
   onEditorSql,
   onDdl,
+  onDetails,
 }: {
   ctx: NodeCtx;
   x: number;
@@ -136,8 +137,12 @@ export function ObjectContextMenu({
   onEditorSql: (sql: string, run: boolean) => void;
   /** Open the review dialog for a DDL/DCL statement. */
   onDdl: (title: string, sql: string) => void;
+  /** Open the object detail tab (schema/table/view). */
+  onDetails?: () => void;
 }) {
   const items = itemsFor(ctx, defaultSchema);
+  const canDetail =
+    onDetails && (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view");
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const close = () => onClose();
@@ -164,6 +169,20 @@ export function ObjectContextMenu({
       <div className="px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
         {ctx.type.replace("-", " ")} · {ctx.name}
       </div>
+      {canDetail ? (
+        <>
+          <button
+            onClick={() => {
+              onDetails?.();
+              onClose();
+            }}
+            className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] font-medium text-foreground hover:bg-secondary"
+          >
+            Open details
+          </button>
+          <div className="my-1 h-px bg-border" />
+        </>
+      ) : null}
       {items.map((it, i) =>
         "sep" in it ? (
           <div key={i} className="my-1 h-px bg-border" />
