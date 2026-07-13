@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExasolStudio } from "@/components/studio/ExasolStudio";
 import { Onboarding } from "@/features/onboarding/Onboarding";
+import { SetupPacks, PENDING_PACK_KEY } from "@/features/onboarding/SetupPacks";
 import { Tour, STUDIO_TOUR } from "@/features/onboarding/Tour";
 import { ConnectRunWindow } from "@/features/connection/ConnectRunWindow";
 import { VirtualSchemaWindow } from "@/features/connection/VirtualSchemaWindow";
@@ -12,6 +13,7 @@ import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
+const SETUP_KEY = "exasol-studio-setup-done";
 const TOURED_KEY = "exasol-studio-toured";
 
 export function App() {
@@ -35,6 +37,9 @@ function MainApp() {
     useConnections();
   const [onboarded, setOnboarded] = useState(
     () => window.localStorage.getItem(ONBOARDED_KEY) === "1",
+  );
+  const [setupDone, setSetupDone] = useState(
+    () => window.localStorage.getItem(SETUP_KEY) === "1",
   );
   const [showTour, setShowTour] = useState(false);
 
@@ -74,6 +79,20 @@ function MainApp() {
         onGetStarted={() => {
           window.localStorage.setItem(ONBOARDED_KEY, "1");
           setOnboarded(true);
+        }}
+      />
+    );
+  }
+
+  if (!setupDone) {
+    return (
+      <SetupPacks
+        onDone={(packItemIds) => {
+          if (packItemIds && packItemIds.length) {
+            window.localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(packItemIds));
+          }
+          window.localStorage.setItem(SETUP_KEY, "1");
+          setSetupDone(true);
         }}
       />
     );

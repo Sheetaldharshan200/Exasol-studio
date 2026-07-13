@@ -31,6 +31,7 @@ import {
   RefreshCcw,
   RotateCcw,
   Save,
+  Pencil,
   SaveAll,
   Search,
   Settings2,
@@ -96,7 +97,22 @@ import { ConnectView } from "@/features/connection/ConnectView";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
+import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { openSettingsWindow } from "@/lib/settings-window";
+
+/** Detect a simple single-table SELECT (safe to edit inline). Null otherwise. */
+function parseSingleTable(sql: string): { schema?: string; table: string } | null {
+  const s = sql.trim().replace(/;+\s*$/, "");
+  if (!/^select\b/i.test(s)) return null;
+  if (/\bjoin\b|\bgroup\s+by\b|\bunion\b|\bhaving\b|\bdistinct\b/i.test(s)) return null;
+  const fromIdx = s.toLowerCase().indexOf(" from ");
+  if (fromIdx < 0) return null;
+  if (/\(/.test(s.slice(6, fromIdx))) return null; // function/aggregate in projection
+  const m = s.slice(fromIdx + 6).match(/^\s*("?[\w$]+"?)(?:\s*\.\s*("?[\w$]+"?))?/);
+  if (!m) return null;
+  const clean = (x: string) => x.replace(/"/g, "");
+  return m[2] ? { schema: clean(m[1]), table: clean(m[2]) } : { table: clean(m[1]) };
+}
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -883,11 +899,19 @@ function ResultsGrid({
   result,
   error,
   onChart,
+  editable,
+  onCommitEdits,
+  editBusy,
 }: {
   result: StatementResult | null;
   error: string | null;
   onChart?: () => void;
+  /** Present when this result maps to a single updatable table. */
+  editable?: { schema?: string; table: string; pk: string[] } | null;
+  onCommitEdits?: (statements: string[]) => void;
+  editBusy?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -917,9 +941,33 @@ function ResultsGrid({
       </div>
     );
   }
+  const canEdit = Boolean(editable && editable.pk.length && onCommitEdits);
+  if (editing && editable && onCommitEdits) {
+    return (
+      <EditableResultGrid
+        columns={result.columns}
+        rows={result.rows}
+        schema={editable.schema}
+        table={editable.table}
+        pk={editable.pk}
+        busy={Boolean(editBusy)}
+        onApply={onCommitEdits}
+        onExit={() => setEditing(false)}
+      />
+    );
+  }
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+        {canEdit ? (
+          <button
+            onClick={() => setEditing(true)}
+            title={`Edit rows in ${editable!.table}`}
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Pencil className="h-3.5 w-3.5" /> Edit data
+          </button>
+        ) : null}
         {onChart ? (
           <button
             onClick={onChart}
@@ -1130,6 +1178,7 @@ export function ExasolStudio({
   const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string } | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
+  const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1159,8 +1208,9 @@ export function ExasolStudio({
   const visualizerTabs = tabs
     .filter((t) => t.view === "visualizer")
     .map((t) => ({ id: t.id, title: t.title }));
-  const { theme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const editorTheme = theme === "dark" ? "exasol-dark" : "exasol-light";
+  const [editorFontSize, setEditorFontSize] = useState(13);
 
   const setActiveTabId = useCallback(
     (id: string) => setActiveIdByConn((a) => ({ ...a, [connKey]: id })),
@@ -1197,6 +1247,103 @@ export function ExasolStudio({
       });
     })();
     return () => unlisten?.();
+  }, []);
+
+  // Apply persisted app settings live (initial load + when the Settings window
+  // saves a change and broadcasts settings:changed).
+  useEffect(() => {
+    const apply = (s: Record<string, unknown>) => {
+      if (s.theme === "light" || s.theme === "dark") setTheme(s.theme);
+      else if (s.theme === "system" && typeof window !== "undefined")
+        setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      if (typeof s.maxRows === "number") setMaxRows(s.maxRows);
+      if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
+      if (typeof s.autoCommit === "boolean") setAutoCommit(s.autoCommit);
+      setExecSettings((v) => ({
+        ...v,
+        stopOnError: typeof s.stopOnError === "boolean" ? s.stopOnError : v.stopOnError,
+        stripComments: typeof s.stripComments === "boolean" ? s.stripComments : v.stripComments,
+      }));
+    };
+    ipc.getAppSettings().then(apply).catch(() => undefined);
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<Record<string, unknown>>("settings:changed", (e) => apply(e.payload));
+    })();
+    return () => unlisten?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Detect whether the active tab's result maps to a single, updatable table
+  // (with a primary key) → enables inline editing of the grid.
+  useEffect(() => {
+    const res = activeTab.response;
+    if (!connection || !res?.success || activeTab.view !== "sql") {
+      setEditTable(null);
+      return;
+    }
+    const t = parseSingleTable(activeTab.sql);
+    const schema = t?.schema ?? connection.profile.schema ?? undefined;
+    if (!t || !schema) {
+      setEditTable(null);
+      return;
+    }
+    let alive = true;
+    ipc
+      .getTableDetails(connection.profile.id, schema, t.table)
+      .then((d) => {
+        if (!alive) return;
+        const pk =
+          d.constraints.find((c) => c.constraintType === "PRIMARY KEY")?.columns.map((c) => c.column) ?? [];
+        setEditTable(pk.length ? { schema, table: t.table, pk } : null);
+      })
+      .catch(() => alive && setEditTable(null));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
+
+  // Apply reviewed CRUD statements, then re-run the tab's query to refresh.
+  async function commitEdits(statements: string[]) {
+    if (!connection || !statements.length) return;
+    setRunning(true);
+    try {
+      for (const st of statements) {
+        await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
+      }
+      const res = await ipc.executeSql(
+        connection.profile.id,
+        connection.profile.name,
+        activeTab.sql,
+        maxRows,
+        false,
+      );
+      patchTab(activeTab.id, { response: res, execError: null });
+      loadHistory();
+    } catch (e) {
+      patchTab(activeTab.id, { execError: errorMessage(e) });
+      setResultTab("messages");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  // If the user chose a starter pack during setup, land them in the Marketplace
+  // (filtered to those tools) so they can install them.
+  useEffect(() => {
+    const raw = window.localStorage.getItem("exasol-studio-pending-pack");
+    if (!raw) return;
+    window.localStorage.removeItem("exasol-studio-pending-pack");
+    try {
+      const ids = JSON.parse(raw) as string[];
+      if (Array.isArray(ids) && ids.length) openMarketplace();
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // When a new connection is established, retire any open "Connect" tabs (they
@@ -2190,7 +2337,7 @@ export function ExasolStudio({
                   options={{
                     automaticLayout: true,
                     fontFamily: "JetBrains Mono",
-                    fontSize: 13,
+                    fontSize: editorFontSize,
                     minimap: { enabled: false },
                     scrollBeyondLastLine: false,
                     padding: { top: 10 },
@@ -2245,7 +2392,14 @@ export function ExasolStudio({
                         ))}
                       </div>
                     ) : (
-                      <ResultsGrid result={lastResult} error={lastResult?.error ?? null} onChart={() => void openBi()} />
+                      <ResultsGrid
+                        result={lastResult}
+                        error={lastResult?.error ?? null}
+                        onChart={() => void openBi()}
+                        editable={editTable}
+                        onCommitEdits={(stmts) => void commitEdits(stmts)}
+                        editBusy={running}
+                      />
                     )}
                   </div>
                 </div>
