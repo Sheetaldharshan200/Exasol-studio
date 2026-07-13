@@ -1,9 +1,24 @@
 import { useEffect, useState } from "react";
-import { Loader2, Table2 } from "lucide-react";
+import { Loader2, Pencil, Table2, Trash2 } from "lucide-react";
 import { errorMessage, ipc, type TablePreview } from "@/lib/ipc";
 
-/** Read-only grid preview of a tabular file (CSV / TSV / Parquet). */
-export function FilePreviewPanel({ name, path }: { name: string; path: string }) {
+/**
+ * Grid preview of a tabular file (CSV / TSV / Parquet). CSV/TSV can be opened
+ * as editable text; every previewed file can be deleted (with confirm).
+ */
+export function FilePreviewPanel({
+  name,
+  path,
+  onEdit,
+  onDelete,
+}: {
+  name: string;
+  path: string;
+  /** Open the file as editable text (CSV/TSV only). */
+  onEdit?: () => void;
+  /** Delete the file (already confirmed) and close this tab. */
+  onDelete?: () => void;
+}) {
   const [data, setData] = useState<TablePreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +66,29 @@ export function FilePreviewPanel({ name, path }: { name: string; path: string })
         <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {data.rows.length} rows{data.truncated ? " (truncated)" : ""} · {data.columns.length} cols
         </span>
+        {onEdit && (data.format === "csv" || data.format === "tsv") ? (
+          <button
+            onClick={onEdit}
+            title="Edit as text"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            onClick={() => {
+              if (window.confirm(`Delete “${name}”? This cannot be undone.`)) onDelete();
+            }}
+            title="Delete file"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+          >
+            <Trash2 className="h-3 w-3" /> Delete
+          </button>
+        ) : null}
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-[12px]">
+      <div className="min-h-0 flex-1 overflow-auto p-px">
+        <table className="w-full border-collapse border border-border text-[12px]">
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary">
               <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">

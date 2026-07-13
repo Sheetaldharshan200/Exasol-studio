@@ -135,7 +135,8 @@ export function BucketFsPanel({
           <p className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
             BucketFS &amp; virtual-schema adapters require a full or cloud Exasol deployment. Exasol Personal
             <span className="font-medium"> local</span> (macOS) does not support virtual schemas yet — use an Exasol Personal
-            <span className="font-medium"> cloud</span> deployment or a full Exasol (e.g. <span className="font-mono">exasol/docker-db</span>) instance.
+            <span className="font-medium"> cloud</span> deployment, or a Docker/Podman Exasol (<span className="font-mono">exasol/docker-db</span>,
+            or <span className="font-mono">exasol/nano</span> after <span className="font-mono">init slc install=all</span> — both have full BucketFS).
           </p>
           <div className="grid grid-cols-3 gap-2">
             <label className="text-[11px] text-muted-foreground">

@@ -126,6 +126,8 @@ type SqlTab = {
   pinned?: boolean;
   /** For filePreview tabs — the local file path being previewed. */
   filePath?: string;
+  /** Execution lifecycle for the status strip (started/running/completed). */
+  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
 };
 
 function newTab(index: number): SqlTab {
@@ -681,7 +683,7 @@ function Sidebar({
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onCollapse: () => void;
-  onOpenFile: (name: string, content: string) => void;
+  onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
   filesRefresh: number;
   visualizerTabs: { id: string; title: string }[];
@@ -828,6 +830,51 @@ function Sidebar({
   );
 }
 
+function fmtClock(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour12: false });
+}
+
+/** Execution lifecycle: Started → Running (live) → Completed/Failed, with timestamps. */
+function RunStatusStrip({
+  meta,
+  response,
+}: {
+  meta?: SqlTab["runMeta"];
+  response: ExecuteResponse | null;
+}) {
+  const running = Boolean(meta && !meta.finishedAt);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const t = window.setInterval(() => tick((n) => n + 1), 100);
+    return () => window.clearInterval(t);
+  }, [running]);
+  if (!meta) return null;
+  const elapsedMs = (meta.finishedAt ?? Date.now()) - meta.startedAt;
+  const dur = elapsedMs < 10_000 ? `${Math.round(elapsedMs)} ms` : `${(elapsedMs / 1000).toFixed(1)} s`;
+  const stmts = response?.results.length ?? 0;
+  const rows = response?.results.reduce((a, r) => a + r.rowCount, 0) ?? 0;
+  return (
+    <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-panel/40 px-3 py-1 font-mono text-[10.5px] whitespace-nowrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <span>
+        Started {fmtClock(meta.startedAt)} · {meta.scope}
+      </span>
+      {running ? (
+        <span className="flex items-center gap-1 text-primary">
+          <Loader2 className="h-3 w-3 animate-spin" /> Running… {(elapsedMs / 1000).toFixed(1)}s
+        </span>
+      ) : (
+        <span className={meta.ok ? "text-primary" : "text-destructive"}>
+          {meta.ok ? "✓ Completed" : "✗ Failed"} {fmtClock(meta.finishedAt!)} · {dur}
+          {meta.ok && stmts > 0
+            ? ` · ${stmts} statement${stmts === 1 ? "" : "s"} · ${rows} row${rows === 1 ? "" : "s"}`
+            : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ResultsGrid({
   result,
   error,
@@ -882,8 +929,8 @@ function ResultsGrid({
           {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
         </span>
       </div>
-      <div className="h-full min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-[12px]">
+      <div className="h-full min-h-0 flex-1 overflow-auto p-px">
+        <table className="w-full border-collapse border border-border text-[12px]">
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary">
               <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
@@ -1198,7 +1245,7 @@ export function ExasolStudio({
   }
 
   // Open a local file's contents as a new query tab in the current workspace.
-  function openFile(name: string, content: string) {
+  function openFile(name: string, content: string, path?: string) {
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-file-${Date.now()}-${tabCounter.current}`,
@@ -1207,6 +1254,7 @@ export function ExasolStudio({
       sql: content,
       response: null,
       execError: null,
+      filePath: path,
     };
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
@@ -1462,7 +1510,8 @@ export function ExasolStudio({
 
       setRunning(true);
       setResultTab("results");
-      patchTab(activeTab.id, { execError: null });
+      const startedAt = Date.now();
+      patchTab(activeTab.id, { execError: null, runMeta: { startedAt, scope } });
       try {
         const result = await ipc.executeSql(
           connection.profile.id,
@@ -1473,14 +1522,25 @@ export function ExasolStudio({
         );
         if (!result.success) {
           const failed = result.results.find((r) => r.error);
-          patchTab(activeTab.id, { response: result, execError: failed?.error ?? "Statement failed." });
+          patchTab(activeTab.id, {
+            response: result,
+            execError: failed?.error ?? "Statement failed.",
+            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
+          });
           setResultTab("messages");
         } else {
-          patchTab(activeTab.id, { response: result, execError: null });
+          patchTab(activeTab.id, {
+            response: result,
+            execError: null,
+            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true },
+          });
         }
         loadHistory();
       } catch (err) {
-        patchTab(activeTab.id, { execError: errorMessage(err) });
+        patchTab(activeTab.id, {
+          execError: errorMessage(err),
+          runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
+        });
         setResultTab("messages");
       } finally {
         setRunning(false);
@@ -1490,6 +1550,16 @@ export function ExasolStudio({
   );
 
   async function saveTab() {
+    // A tab opened from an existing file saves back to that same file.
+    if (isTauri() && activeTab.filePath) {
+      try {
+        await ipc.writeTextFile(activeTab.filePath, activeTab.sql);
+        setFilesRefresh((n) => n + 1);
+      } catch {
+        /* ignore write error */
+      }
+      return;
+    }
     const base = activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "");
     const fileName = `${base}.sql`;
     // Save straight into the workspace folder (shown in the Files panel) —
@@ -2034,7 +2104,31 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "filePreview" ? (
             <div className="min-h-0 flex-1">
-              <FilePreviewPanel name={activeTab.title} path={activeTab.filePath ?? ""} />
+              <FilePreviewPanel
+                name={activeTab.title}
+                path={activeTab.filePath ?? ""}
+                onEdit={async () => {
+                  const p = activeTab.filePath;
+                  if (!p) return;
+                  try {
+                    const text = await ipc.fsReadText(p);
+                    openFile(activeTab.title, text, p);
+                  } catch {
+                    /* unreadable as text */
+                  }
+                }}
+                onDelete={async () => {
+                  const p = activeTab.filePath;
+                  if (!p) return;
+                  try {
+                    await ipc.fsDelete(p);
+                    setFilesRefresh((n) => n + 1);
+                    closeTab(activeTab.id);
+                  } catch {
+                    /* delete failed */
+                  }
+                }}
+              />
             </div>
           ) : activeTab.view === "marketplace" ? (
             <div className="min-h-0 flex-1">
@@ -2123,6 +2217,7 @@ export function ExasolStudio({
                       </span>
                     ) : null}
                   </div>
+                  <RunStatusStrip meta={activeTab.runMeta} response={activeTab.response} />
                   <div className="min-h-0 flex-1 overflow-auto">
                     {resultTab === "messages" ? (
                       <ResultsGrid result={null} error={activeTab.execError} />
@@ -2135,13 +2230,13 @@ export function ExasolStudio({
                               #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                             </div>
                             <div className="h-[280px]">
-                              <ResultsGrid result={r} error={null} onChart={() => void openBi()} />
+                              <ResultsGrid result={r} error={r.error} onChart={() => void openBi()} />
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <ResultsGrid result={lastResult} error={null} onChart={() => void openBi()} />
+                      <ResultsGrid result={lastResult} error={lastResult?.error ?? null} onChart={() => void openBi()} />
                     )}
                   </div>
                 </div>

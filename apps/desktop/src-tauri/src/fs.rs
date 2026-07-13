@@ -214,3 +214,16 @@ pub async fn fs_search(root: String, query: String, limit: Option<usize>) -> App
     }
     Ok(out)
 }
+
+/// Delete a file (or directory tree) on the local filesystem. The UI confirms
+/// before calling and only offers this for workspace/preview files.
+#[tauri::command]
+pub fn fs_delete(path: String) -> AppResult<()> {
+    let p = std::path::Path::new(&path);
+    if p.is_dir() {
+        std::fs::remove_dir_all(p)?;
+    } else {
+        std::fs::remove_file(p)?;
+    }
+    Ok(())
+}

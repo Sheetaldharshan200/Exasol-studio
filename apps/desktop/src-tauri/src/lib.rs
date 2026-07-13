@@ -58,6 +58,7 @@ pub fn run() {
             fs::fs_workspace_dir,
             fs::fs_home_roots,
             fs::fs_search,
+            fs::fs_delete,
             market::market_env,
             market::market_catalog,
             market::market_doc,

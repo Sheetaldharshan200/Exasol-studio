@@ -353,6 +353,7 @@ export const ipc = {
     call<TablePreview>("fs_read_table", { path, limit }),
   fsSearch: (root: string, query: string, limit?: number) =>
     call<FsEntry[]>("fs_search", { root, query, limit }),
+  fsDelete: (path: string) => call<void>("fs_delete", { path }),
   executeSql: (
     profileId: string,
     connectionName: string,

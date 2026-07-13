@@ -609,6 +609,9 @@ export async function mockInvoke(
       };
     }
 
+    case "fs_delete":
+      return null;
+
     case "fs_search": {
       const q = String(args?.query ?? "").trim().toLowerCase();
       if (!q) return [];
