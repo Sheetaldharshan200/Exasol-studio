@@ -306,6 +306,9 @@ async fn download_and_place(
     url: &str,
     filename: &str,
 ) -> AppResult<String> {
+    use futures_util::StreamExt;
+    use std::io::Write;
+
     let dir = market_dir(app)?.join(id);
     std::fs::create_dir_all(&dir)?;
     emit_log(app, id, format!("Downloading {filename}…"), "info");
@@ -319,10 +322,27 @@ async fn download_and_place(
     if !resp.status().is_success() {
         return Err(AppError::Storage(format!("Download failed (HTTP {}).", resp.status())));
     }
-    let bytes = resp.bytes().await.map_err(|e| AppError::Storage(e.to_string()))?;
+
+    let total = resp.content_length();
     let file = dir.join(filename);
-    std::fs::write(&file, &bytes)?;
-    emit_log(app, id, format!("Saved {} ({} bytes).", file.display(), bytes.len()), "info");
+    let mut out = std::fs::File::create(&file)?;
+    let mut received: u64 = 0;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AppError::Storage(e.to_string()))?;
+        out.write_all(&chunk)?;
+        received += chunk.len() as u64;
+        let pct = total.map(|t| if t > 0 { (received * 100 / t).min(100) } else { 0 });
+        let _ = app.emit(
+            "market:progress",
+            json!({ "id": id, "received": received, "total": total, "pct": pct }),
+        );
+    }
+    let _ = app.emit(
+        "market:progress",
+        json!({ "id": id, "received": received, "total": total.or(Some(received)), "pct": 100 }),
+    );
+    emit_log(app, id, format!("Saved {} ({} bytes).", file.display(), received), "info");
     // Make a downloaded binary/archive executable on unix (best effort).
     #[cfg(unix)]
     {

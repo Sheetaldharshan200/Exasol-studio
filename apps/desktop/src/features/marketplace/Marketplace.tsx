@@ -32,6 +32,7 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud";
 type Install = "download" | "pip" | "personal" | "cloud";
@@ -467,9 +468,11 @@ function InstallConsole({
   const [phase, setPhase] = useState<"confirm" | "running" | "done">("confirm");
   const [ok, setOk] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
+  const [progress, setProgress] = useState<{ pct: number | null; received: number; total: number | null } | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const unlisteners = useRef<UnlistenFn[]>([]);
   const plan = planFor(item, env, asset);
+  const isBinary = item.install === "download" || item.install === "cloud";
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -489,19 +492,27 @@ function InstallConsole({
 
   async function run() {
     setLines([]);
+    setProgress(isBinary ? { pct: null, received: 0, total: null } : null);
     setPhase("running");
 
     if (isTauri()) {
       const onLog = await listen<{ id: string; line: string; level: string }>("market:log", (e) => {
         if (e.payload.id === item.id) push(e.payload.level, e.payload.line);
       });
+      const onProg = await listen<{ id: string; pct: number | null; received: number; total: number | null }>(
+        "market:progress",
+        (e) => {
+          if (e.payload.id === item.id)
+            setProgress({ pct: e.payload.pct ?? null, received: e.payload.received, total: e.payload.total ?? null });
+        },
+      );
       const onEnd = await listen<{ id: string; ok: boolean; error?: string }>("market:done", (e) => {
         if (e.payload.id !== item.id) return;
         setOk(e.payload.ok);
         setPhase("done");
         if (e.payload.ok) onDone();
       });
-      unlisteners.current.push(onLog, onEnd);
+      unlisteners.current.push(onLog, onProg, onEnd);
       try {
         await ipc.marketInstallRun(item.id, version, asset?.url, asset?.name);
       } catch (err) {
@@ -511,8 +522,8 @@ function InstallConsole({
         setPhase("done");
       }
     } else {
-      // Browser design-preview: replay the plan as a simulated log.
-      await simulate(item, plan, push);
+      // Browser design-preview: replay the plan as a simulated log/progress.
+      await simulate(item, plan, push, isBinary ? setProgress : undefined);
       setOk(true);
       setPhase("done");
       onDone();
@@ -574,27 +585,32 @@ function InstallConsole({
           </div>
         ) : (
           <>
-            <div
-              ref={logRef}
-              className="min-h-[220px] flex-1 overflow-auto bg-editor p-3 font-mono text-[11.5px] leading-relaxed [scrollbar-width:thin]"
-            >
-              {lines.length === 0 ? <div className="text-muted-foreground">Preparing…</div> : null}
-              {lines.map((l, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "whitespace-pre-wrap break-words",
-                    l.level === "err" && "text-destructive",
-                    l.level === "cmd" && "text-primary",
-                    l.level === "success" && "text-primary font-semibold",
-                    l.level === "info" && "text-syntax-function",
-                    (l.level === "out" || !l.level) && "text-foreground/80",
-                  )}
-                >
-                  {l.level === "cmd" ? "" : l.level === "err" ? "! " : l.level === "success" ? "" : ""}
-                  {l.text}
+            {isBinary ? (
+              <div className="border-b border-border px-4 py-3">
+                <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>{phase === "running" ? "Downloading…" : ok ? "Downloaded" : "Stopped"}</span>
+                  <span className="font-mono">
+                    {progress?.pct != null ? `${progress.pct}% · ` : ""}
+                    {progress ? fmtBytes(progress.received) : "0 B"}
+                    {progress?.total ? ` / ${fmtBytes(progress.total)}` : ""}
+                  </span>
                 </div>
-              ))}
+                <ProgressBar pct={progress?.pct ?? null} done={phase === "done" && ok} />
+              </div>
+            ) : null}
+            <div ref={logRef} className="min-h-[220px] max-h-[46vh] flex-1 overflow-auto p-3 [scrollbar-width:thin]">
+              <TerminalBox sequence={false} startOnView={false} className="w-full max-w-none max-h-none">
+                {lines.length === 0 ? (
+                  <AnimatedSpan startOnView={false} className="text-muted-foreground">
+                    Preparing…
+                  </AnimatedSpan>
+                ) : null}
+                {lines.map((l, i) => (
+                  <AnimatedSpan key={i} startOnView={false} className={cn("whitespace-pre-wrap break-words", lineClass(l.level))}>
+                    {l.text}
+                  </AnimatedSpan>
+                ))}
+              </TerminalBox>
             </div>
             <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
               {phase === "running" ? (
@@ -633,14 +649,64 @@ function InstallConsole({
   );
 }
 
-/** Design-preview only: fake a streamed log so the UX is visible in the browser. */
-async function simulate(item: CatalogItem, plan: string[], push: (level: string, text: string) => void) {
+function lineClass(level: string): string {
+  switch (level) {
+    case "err":
+      return "text-red-500";
+    case "cmd":
+      return "text-blue-400";
+    case "success":
+      return "text-green-500 font-semibold";
+    case "info":
+      return "text-cyan-400";
+    default:
+      return "text-foreground/80";
+  }
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function ProgressBar({ pct, done }: { pct: number | null; done: boolean }) {
+  const indeterminate = pct == null && !done;
+  const width = done ? 100 : (pct ?? 0);
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+      <div
+        className={cn(
+          "h-full rounded-full bg-primary transition-[width] duration-200",
+          indeterminate && "w-1/3 animate-pulse",
+        )}
+        style={indeterminate ? undefined : { width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+/** Design-preview only: fake a streamed log (and progress) so the UX is visible in the browser. */
+async function simulate(
+  item: CatalogItem,
+  plan: string[],
+  push: (level: string, text: string) => void,
+  setProgress?: (p: { pct: number | null; received: number; total: number | null }) => void,
+) {
   const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
   push("info", "Starting installation…");
   for (const step of plan) {
     await wait(450);
     push("cmd", `$ ${step}`);
-    await wait(400);
+    if (setProgress) {
+      for (let p = 0; p <= 100; p += 25) {
+        setProgress({ pct: p, received: p * 42_000, total: 4_200_000 });
+        await wait(120);
+      }
+    } else {
+      await wait(400);
+    }
     push("out", "done");
   }
   await wait(300);
