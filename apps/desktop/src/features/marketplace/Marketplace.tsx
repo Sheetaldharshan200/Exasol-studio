@@ -4,6 +4,8 @@ import {
   BarChart3,
   Boxes,
   Check,
+  ChevronDown,
+  ChevronRight,
   Cloud,
   Cpu,
   Database,
@@ -483,6 +485,7 @@ function InstallConsole({
   const [ok, setOk] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [progress, setProgress] = useState<{ pct: number | null; received: number; total: number | null } | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
   const unlisteners = useRef<UnlistenFn[]>([]);
   const plan = planFor(item, env, asset);
@@ -599,53 +602,71 @@ function InstallConsole({
           </div>
         ) : (
           <>
-            {isBinary ? (
-              <div className="border-b border-border px-4 py-3">
-                <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{phase === "running" ? "Downloading…" : ok ? "Downloaded" : "Stopped"}</span>
-                  <span className="font-mono">
-                    {progress?.pct != null ? `${progress.pct}% · ` : ""}
-                    {progress ? fmtBytes(progress.received) : "0 B"}
-                    {progress?.total ? ` / ${fmtBytes(progress.total)}` : ""}
-                  </span>
-                </div>
-                <ProgressBar pct={progress?.pct ?? null} done={phase === "done" && ok} />
+            <div className="px-5 pt-5 pb-3">
+              <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
+                <span className="font-medium text-foreground">
+                  {phase === "running"
+                    ? isBinary
+                      ? "Downloading…"
+                      : "Installing…"
+                    : ok
+                      ? "Installed successfully"
+                      : "Installation failed"}
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {isBinary && progress
+                    ? `${progress.pct != null ? `${progress.pct}% · ` : ""}${fmtBytes(progress.received)}${progress.total ? ` / ${fmtBytes(progress.total)}` : ""}`
+                    : ""}
+                </span>
+              </div>
+              <ProgressBar
+                pct={progress?.pct ?? null}
+                done={phase === "done" && ok}
+                indeterminate={!isBinary}
+              />
+              {phase === "done" && !ok ? (
+                <p className="mt-2 text-[11.5px] text-destructive">Something went wrong — open the logs for details.</p>
+              ) : null}
+            </div>
+
+            <div className="px-5">
+              <button
+                onClick={() => setShowLogs((s) => !s)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                {showLogs ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {showLogs ? "Hide logs" : "Show logs"}
+              </button>
+            </div>
+
+            {showLogs ? (
+              <div ref={logRef} className="mx-5 mt-2 max-h-[40vh] flex-1 overflow-auto [scrollbar-width:thin]">
+                <TerminalBox sequence={false} startOnView={false} showControls={false} className="w-full max-w-none max-h-none">
+                  {lines.length === 0 ? (
+                    <AnimatedSpan startOnView={false} className="text-muted-foreground">
+                      Preparing…
+                    </AnimatedSpan>
+                  ) : null}
+                  {lines.map((l, i) => (
+                    <AnimatedSpan key={i} startOnView={false} className={cn("whitespace-pre-wrap break-words", lineClass(l.level))}>
+                      {l.text}
+                    </AnimatedSpan>
+                  ))}
+                </TerminalBox>
               </div>
             ) : null}
-            <div ref={logRef} className="min-h-[220px] max-h-[46vh] flex-1 overflow-auto p-3 [scrollbar-width:thin]">
-              <TerminalBox sequence={false} startOnView={false} className="w-full max-w-none max-h-none">
-                {lines.length === 0 ? (
-                  <AnimatedSpan startOnView={false} className="text-muted-foreground">
-                    Preparing…
-                  </AnimatedSpan>
-                ) : null}
-                {lines.map((l, i) => (
-                  <AnimatedSpan key={i} startOnView={false} className={cn("whitespace-pre-wrap break-words", lineClass(l.level))}>
-                    {l.text}
-                  </AnimatedSpan>
-                ))}
-              </TerminalBox>
-            </div>
-            <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
+
+            <div className="mt-3 flex items-center gap-2 border-t border-border px-4 py-2.5">
               {phase === "running" ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                  <span className="flex-1 text-[12px] text-muted-foreground">Installing… you can watch progress above.</span>
+                  <span className="flex-1 text-[12px] text-muted-foreground">This can take a little while.</span>
                 </>
               ) : (
                 <>
-                  {ok ? (
-                    <Check className="h-4 w-4 text-primary" />
-                  ) : (
-                    <X className="h-4 w-4 text-destructive" />
-                  )}
-                  <span
-                    className={cn(
-                      "flex-1 text-[12px] font-medium",
-                      ok ? "text-primary" : "text-destructive",
-                    )}
-                  >
-                    {ok ? "Installed successfully." : "Installation failed — see the log above."}
+                  {ok ? <Check className="h-4 w-4 text-primary" /> : <X className="h-4 w-4 text-destructive" />}
+                  <span className={cn("flex-1 text-[12px] font-medium", ok ? "text-primary" : "text-destructive")}>
+                    {ok ? "Done." : "Failed."}
                   </span>
                   <button
                     onClick={onClose}
@@ -685,18 +706,18 @@ function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function ProgressBar({ pct, done }: { pct: number | null; done: boolean }) {
-  const indeterminate = pct == null && !done;
+function ProgressBar({ pct, done, indeterminate }: { pct: number | null; done: boolean; indeterminate?: boolean }) {
+  if (indeterminate && !done) {
+    return (
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+        <div className="exa-indeterminate" />
+      </div>
+    );
+  }
   const width = done ? 100 : (pct ?? 0);
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-      <div
-        className={cn(
-          "h-full rounded-full bg-primary transition-[width] duration-200",
-          indeterminate && "w-1/3 animate-pulse",
-        )}
-        style={indeterminate ? undefined : { width: `${width}%` }}
-      />
+      <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${width}%` }} />
     </div>
   );
 }

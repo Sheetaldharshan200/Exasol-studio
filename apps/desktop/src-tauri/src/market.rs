@@ -60,7 +60,10 @@ fn run_streamed_env(
     let h2 = std::thread::spawn(move || {
         if let Some(e) = stderr {
             for line in BufReader::new(e).lines().map_while(Result::ok) {
-                emit_log(&a2, &i2, line, "err");
+                // Most CLIs (pip, cargo, git, uv) write normal progress to stderr,
+                // so this is neutral output — NOT an error. Only explicit failures
+                // (emitted with level "err" by the recipes) are shown red.
+                emit_log(&a2, &i2, line, "out");
             }
         }
     });
@@ -429,7 +432,7 @@ fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String>
     std::fs::create_dir_all(venv.parent().unwrap())?;
     let venv_s = venv.to_string_lossy().to_string();
     emit_log(app, id, format!("Creating a managed environment at {venv_s}…"), "info");
-    if run_streamed(app, id, &uv, &["venv", &venv_s])? != 0 {
+    if run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])? != 0 {
         return Err(AppError::Storage("uv venv failed.".into()));
     }
     emit_log(app, id, format!("Installing {package}…"), "info");
@@ -611,7 +614,7 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     let venv = base.join("venv");
     let venv_s = venv.to_string_lossy().to_string();
     emit_log(app, id, "Installing exasol-json-tables into a managed environment…", "info");
-    run_streamed(app, id, &uv, &["venv", &venv_s])?;
+    run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])?;
     if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &wpath])? != 0 {
         return Err(AppError::Storage("uv pip install of the JSON Tables wheel failed.".into()));
     }
@@ -639,10 +642,18 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     std::fs::create_dir_all(&home)?;
     let home_s = home.to_string_lossy().to_string();
 
-    emit_log(app, id, "Creating a managed Python environment…", "info");
-    run_streamed(app, id, &uv, &["venv", &venv_s])?;
+    // Superset supports Python <=3.11 and pins pandas versions with no 3.13
+    // wheels, so a default (newest) interpreter fails building pandas from
+    // source. uv downloads a managed 3.11 automatically when it's missing.
+    emit_log(app, id, "Creating a managed Python 3.11 environment…", "info");
+    if run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])? != 0 {
+        return Err(AppError::Storage("Could not create the Python 3.11 environment for Superset.".into()));
+    }
     emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
     if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol"])? != 0 {
+        // bi_installed()/tool detection treat an existing venv as "installed" —
+        // don't leave a broken one behind.
+        let _ = std::fs::remove_dir_all(&venv);
         return Err(AppError::Storage("Superset installation failed. See the log above.".into()));
     }
 
@@ -654,6 +665,7 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     ];
     emit_log(app, id, "Initializing Superset metadata…", "info");
     if run_streamed_env(app, id, &superset, &["db", "upgrade"], envs)? != 0 {
+        let _ = std::fs::remove_dir_all(&venv);
         return Err(AppError::Storage("`superset db upgrade` failed.".into()));
     }
     let _ = run_streamed_env(

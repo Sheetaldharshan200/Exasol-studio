@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -54,8 +54,12 @@ export function Docs() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [source, setSource] = useState<"github" | "offline" | null>(null);
+  // Guards against out-of-order responses (clicking B then A must not let A's
+  // slower response overwrite B's content).
+  const reqId = useRef<string>(DOCS[0].id);
 
   const open = useCallback(async (item: DocItem) => {
+    reqId.current = item.id;
     setSelected(item);
     setLoading(true);
     setError(null);
@@ -65,6 +69,7 @@ export function Docs() {
       ipc.marketDoc(item.repo).catch(() => null),
       ipc.marketDocLoad(item.id).catch(() => null),
     ]);
+    if (reqId.current !== item.id) return; // a newer selection superseded this one
     setSaved(offline != null);
     if (online) {
       setContent(online);

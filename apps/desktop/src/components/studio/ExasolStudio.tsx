@@ -818,7 +818,15 @@ function Sidebar({
   );
 }
 
-function ResultsGrid({ result, error }: { result: StatementResult | null; error: string | null }) {
+function ResultsGrid({
+  result,
+  error,
+  onChart,
+}: {
+  result: StatementResult | null;
+  error: string | null;
+  onChart?: () => void;
+}) {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -849,44 +857,60 @@ function ResultsGrid({ result, error }: { result: StatementResult | null; error:
     );
   }
   return (
-    <div className="h-full overflow-auto">
-      <table className="w-full border-collapse text-[12px]">
-        <thead className="sticky top-0 z-10">
-          <tr className="bg-secondary">
-            <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
-              #
-            </th>
-            {result.columns.map((col) => (
-              <th
-                key={col.name}
-                className="border-r border-b border-border px-3 py-1.5 text-left font-medium text-foreground"
-              >
-                {col.name}
-                <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
-                  {col.typeName}
-                </span>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+        {onChart ? (
+          <button
+            onClick={onChart}
+            title="Visualize this result in Apache Superset"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <BarChart3 className="h-3.5 w-3.5" /> Chart in Superset
+          </button>
+        ) : null}
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+          {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
+        </span>
+      </div>
+      <div className="h-full min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-collapse text-[12px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-secondary">
+              <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
+                #
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="font-mono">
-          {result.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="odd:bg-transparent even:bg-secondary/30 hover:bg-accent/60">
-              <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
-                {rowIndex + 1}
-              </td>
-              {row.map((cell, cellIndex) => (
-                <td
-                  key={cellIndex}
-                  className="max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground"
+              {result.columns.map((col) => (
+                <th
+                  key={col.name}
+                  className="border-r border-b border-border px-3 py-1.5 text-left font-medium text-foreground"
                 >
-                  {cell === null ? <span className="text-muted-foreground italic">null</span> : String(cell)}
-                </td>
+                  {col.name}
+                  <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
+                    {col.typeName}
+                  </span>
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="font-mono">
+            {result.rows.map((row, rowIndex) => (
+              <tr key={rowIndex} className="odd:bg-transparent even:bg-secondary/30 hover:bg-accent/60">
+                <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
+                  {rowIndex + 1}
+                </td>
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={cellIndex}
+                    className="max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground"
+                  >
+                    {cell === null ? <span className="text-muted-foreground italic">null</span> : String(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1594,7 +1618,7 @@ export function ExasolStudio({
           active={activity}
           sidebarOpen={sidebarOpen}
           aiOpen={aiOpen}
-          visualizerActive={activeTab.view === "visualizer"}
+          activeView={activeTab.view}
           visualizerCount={visualizerTabs.length}
           onSelect={(id) => {
             if (id === "marketplace") {
@@ -1603,6 +1627,10 @@ export function ExasolStudio({
             }
             if (id === "guides") {
               openGuides();
+              return;
+            }
+            if (id === "bi") {
+              void openBi();
               return;
             }
             if (id === activity && sidebarOpen) {
@@ -2092,13 +2120,13 @@ export function ExasolStudio({
                               #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                             </div>
                             <div className="h-[280px]">
-                              <ResultsGrid result={r} error={null} />
+                              <ResultsGrid result={r} error={null} onChart={() => void openBi()} />
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <ResultsGrid result={lastResult} error={null} />
+                      <ResultsGrid result={lastResult} error={null} onChart={() => void openBi()} />
                     )}
                   </div>
                 </div>

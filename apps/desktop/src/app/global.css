@@ -503,3 +503,18 @@
 .md-body th { background: hsl(var(--secondary)); font-weight: 600; }
 .md-body img { max-width: 100%; border-radius: 6px; }
 .md-body hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.2em 0; }
+
+/* Indeterminate progress bar (script installs) */
+@keyframes exa-indeterminate {
+  0% { left: -45%; }
+  100% { left: 100%; }
+}
+.exa-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  animation: exa-indeterminate 1.1s ease-in-out infinite;
+}

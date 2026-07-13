@@ -1,4 +1,4 @@
-import { BookOpen, Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -6,7 +6,15 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type ActivityId = "databases" | "files" | "favorites" | "visualizer" | "git" | "marketplace" | "guides";
+export type ActivityId =
+  | "databases"
+  | "files"
+  | "favorites"
+  | "visualizer"
+  | "git"
+  | "marketplace"
+  | "guides"
+  | "bi";
 
 export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
   { id: "databases", label: "Databases", icon: Database },
@@ -16,13 +24,20 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
   { id: "git", label: "Git", icon: GitBranch },
   { id: "marketplace", label: "Marketplace", icon: Store },
   { id: "guides", label: "Guides & Docs", icon: BookOpen },
+  { id: "bi", label: "BI (Superset)", icon: BarChart3 },
 ];
+
+// Items that open a full-screen tab (highlighted by the active tab's view,
+// not the sidebar panel). "bi" launches an external tool, so it's an action —
+// never a persistent selection. Everything else is a sidebar panel.
+const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides"]);
+const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "git"]);
 
 export function ActivityRail({
   active,
   sidebarOpen,
   aiOpen,
-  visualizerActive,
+  activeView,
   visualizerCount,
   onSelect,
   onToggleAi,
@@ -30,8 +45,8 @@ export function ActivityRail({
   active: ActivityId;
   sidebarOpen: boolean;
   aiOpen: boolean;
-  /** True when the focused workspace tab is a Visualizer. */
-  visualizerActive: boolean;
+  /** The active workspace tab's view (drives full-tab icon highlighting). */
+  activeView: string | null;
   /** Number of open Visualizer tabs, shown as a badge. */
   visualizerCount: number;
   onSelect: (id: ActivityId) => void;
@@ -46,7 +61,9 @@ export function ActivityRail({
         {ACTIVITIES.map((item) => {
           const Icon = item.icon;
           const isViz = item.id === "visualizer";
-          const selected = (active === item.id && sidebarOpen) || (isViz && visualizerActive);
+          const selected = FULL_TAB_VIEWS.has(item.id)
+            ? activeView === item.id
+            : SIDEBAR_PANELS.has(item.id) && active === item.id && sidebarOpen;
           return (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
