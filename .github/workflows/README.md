@@ -60,6 +60,19 @@ release onward (the one that publishes `latest.json`). To rotate the key:
 `pnpm --dir apps/desktop tauri signer generate -w key`, put the pubkey in
 `tauri.conf.json > plugins.updater.pubkey`, and re-set the two secrets.
 
+**Local builds.** Because `createUpdaterArtifacts` is on, a bare `pnpm tauri build`
+fails at the end with *"A public key has been found, but no private key"*. Use the
+helper, which feeds the updater key contents (never committed):
+
+```bash
+scripts/build-local.sh                 # full build
+scripts/build-local.sh --bundles app   # quick .app-only build
+# or:  pnpm --dir apps/desktop build:local -- --bundles app
+```
+
+It reads the key from `~/.exasol-studio/signing/exasol-updater.key` by default
+(override with `$EXASOL_SIGNING_KEY` or an exported `$TAURI_SIGNING_PRIVATE_KEY`).
+
 **macOS notarization (needs your certs).** Add these repo secrets and the
 release is automatically signed + notarized (Gatekeeper-clean):
 `APPLE_CERTIFICATE` (base64 of your Developer ID `.p12`), `APPLE_CERTIFICATE_PASSWORD`,

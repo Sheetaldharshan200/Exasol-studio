@@ -51,6 +51,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:local": "../../scripts/build-local.sh"
   }
 }
