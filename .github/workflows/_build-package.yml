@@ -63,16 +63,21 @@ jobs:
     if: needs.check.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Build wheel (uv)
+      - name: Set up Python
         if: inputs.kind == 'wheel'
-        uses: astral-sh/setup-uv@v5
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Resolve wheel + deps
         if: inputs.kind == 'wheel'
         run: |
           set -euxo pipefail
           mkdir -p dist
-          uv pip download "${{ inputs.package }}" --dest dist --only-binary=:all: \
-            || uv pip download "${{ inputs.package }}" --dest dist
+          python -m pip install --upgrade pip
+          # pip download resolves the package + all its dependencies into dist/.
+          # Prefer wheels; fall back to allowing sdists if a wheel is unavailable.
+          python -m pip download "${{ inputs.package }}" --dest dist --only-binary=:all: \
+            || python -m pip download "${{ inputs.package }}" --dest dist
 
       - name: Mirror upstream release assets
         if: inputs.kind == 'mirror'
