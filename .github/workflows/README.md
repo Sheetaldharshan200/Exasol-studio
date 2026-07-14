@@ -48,3 +48,25 @@ behind.
 Lint + type checks, frontend and Rust unit tests, integration tests against
 disposable Exasol environments, end-to-end validation, and signing. See
 [foundation/graphify/cicd-workflow.md](../../docs/foundation/graphify/cicd-workflow.md).
+
+## Auto-update & code signing
+
+**Auto-update (active).** `release-app` builds updater artifacts (`createUpdaterArtifacts`)
+and signs them with the updater key (repo secrets `TAURI_SIGNING_PRIVATE_KEY` +
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, already set). The app checks
+`releases/latest/download/latest.json` on startup and offers a one-click
+"Install & restart". It becomes live for end users from the **next** tagged
+release onward (the one that publishes `latest.json`). To rotate the key:
+`pnpm --dir apps/desktop tauri signer generate -w key`, put the pubkey in
+`tauri.conf.json > plugins.updater.pubkey`, and re-set the two secrets.
+
+**macOS notarization (needs your certs).** Add these repo secrets and the
+release is automatically signed + notarized (Gatekeeper-clean):
+`APPLE_CERTIFICATE` (base64 of your Developer ID `.p12`), `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY` (e.g. `Developer ID Application: Name (TEAMID)`),
+`APPLE_ID`, `APPLE_PASSWORD` (app-specific password), `APPLE_TEAM_ID`.
+Until then builds are unsigned (users right-click → Open once).
+
+**Windows Authenticode (needs your cert).** Set
+`tauri.conf.json > bundle.windows.certificateThumbprint` (or a `signCommand`)
+with your code-signing certificate to avoid SmartScreen warnings.
