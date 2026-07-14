@@ -1235,7 +1235,7 @@ export function ExasolStudio({
   const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
-  const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string } | null>(null);
+  const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string; starting?: boolean } | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
   const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
@@ -1902,6 +1902,27 @@ export function ExasolStudio({
   }
 
   // Open the current query/connection in the optional BI tool (Apache Superset).
+  // Open Apache Superset inside its own Exasol Studio window (never the system
+  // browser), waiting until the local Superset server answers before showing it.
+  async function openSupersetWindow(url: string) {
+    if (!isTauri()) {
+      window.open(url, "_blank");
+      return;
+    }
+    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const existing = await WebviewWindow.getByLabel("superset");
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow("superset", {
+      url,
+      title: "Superset — Exasol Studio",
+      width: 1360,
+      height: 900,
+    });
+  }
+
   async function openBi() {
     const installed = await ipc.biInstalled().catch(() => false);
     if (!installed) {
@@ -1922,7 +1943,30 @@ export function ExasolStudio({
         .filter(Boolean)
         .join("\n");
       if (clip) await navigator.clipboard?.writeText(clip).catch(() => undefined);
-      setBiInfo({ url, hasUri: Boolean(uri) });
+
+      // Show a "starting…" panel, poll until Superset answers, then open it in-app.
+      setBiInfo({ url, hasUri: Boolean(uri), starting: true });
+      if (!isTauri()) {
+        setBiInfo({ url, hasUri: Boolean(uri) });
+        return;
+      }
+      const deadline = Date.now() + 45_000;
+      let up = false;
+      while (Date.now() < deadline) {
+        try {
+          await fetch(url, { mode: "no-cors" });
+          up = true;
+          break;
+        } catch {
+          await new Promise((r) => window.setTimeout(r, 900));
+        }
+      }
+      if (!up) {
+        setBiInfo({ url, hasUri: Boolean(uri), error: "Superset didn’t respond in time. It may still be starting — try again in a moment." });
+        return;
+      }
+      await openSupersetWindow(url);
+      setBiInfo(null);
     } catch (e) {
       setBiInfo({ url: "", error: errorMessage(e) });
     }
@@ -2752,11 +2796,12 @@ export function ExasolStudio({
               <p className="text-[12px] text-destructive">{biInfo.error}</p>
             ) : (
               <>
-                <p className="text-[12px] leading-relaxed text-muted-foreground">
-                  Superset is starting at{" "}
-                  <span className="font-mono text-foreground">{biInfo.url}</span> (login{" "}
-                  <span className="font-mono text-foreground">admin / admin</span>). It may take a few seconds on first
-                  launch.
+                <p className="flex items-center gap-2 text-[12px] leading-relaxed text-muted-foreground">
+                  {biInfo.starting ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : null}
+                  {biInfo.starting
+                    ? "Starting Superset… it opens in an Exasol Studio window once ready (first launch takes a few seconds)."
+                    : "Superset is ready — opening it in an Exasol Studio window."}
+                  {" "}Login <span className="font-mono text-foreground">admin / admin</span>.
                 </p>
                 {biInfo.hasUri ? (
                   <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
@@ -2773,12 +2818,10 @@ export function ExasolStudio({
               >
                 Close
               </button>
-              {!biInfo.error ? (
+              {!biInfo.error && !biInfo.starting ? (
                 <button
                   onClick={() => {
-                    if (isTauri())
-                      void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(biInfo.url)).catch(() => window.open(biInfo.url, "_blank"));
-                    else window.open(biInfo.url, "_blank");
+                    void openSupersetWindow(biInfo.url);
                     setBiInfo(null);
                   }}
                   className="cta-glow h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
