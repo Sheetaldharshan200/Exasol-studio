@@ -695,6 +695,17 @@ fn superset_bin(venv: &std::path::Path) -> PathBuf {
 /// Apache Superset — the optional BI tool (Apache-2.0). Installed into a managed
 /// uv environment together with the official Exasol SQLAlchemy dialect, then
 /// initialised. Not bundled; users opt in from the Marketplace.
+/// Minimal Superset config that lets it be embedded inside an Exasol Studio tab
+/// (iframe): no Talisman, no X-Frame-Options/CSP frame restrictions, no CSRF
+/// friction for the single local user. Kept deliberately small to avoid startup
+/// failure modes.
+fn superset_config_py() -> &'static str {
+    "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
+     TALISMAN_ENABLED = False\n\
+     HTTP_HEADERS = {}\n\
+     WTF_CSRF_ENABLED = False\n"
+}
+
 fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     let uv = ensure_uv(app, id)?;
     let base = market_dir(app)?.join(id);
@@ -717,16 +728,7 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     // Config that lets Superset be embedded inside an Exasol Studio tab: drop the
     // X-Frame-Options/CSP frame restrictions Talisman adds so an <iframe> can load it.
     let cfg = base.join("superset_config.py");
-    let _ = std::fs::write(
-        &cfg,
-        "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
-         TALISMAN_ENABLED = False\n\
-         HTTP_HEADERS = {}\n\
-         WTF_CSRF_ENABLED = False\n\
-         ENABLE_PROXY_FIX = True\n\
-         SESSION_COOKIE_SAMESITE = None\n\
-         SESSION_COOKIE_SECURE = False\n",
-    );
+    let _ = std::fs::write(&cfg, superset_config_py());
     emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
     if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol", "rich", "Pillow"])? != 0 {
         // bi_installed()/tool detection treat an existing venv as "installed" —
@@ -779,18 +781,8 @@ pub fn bi_launch(app: AppHandle) -> AppResult<String> {
     std::fs::create_dir_all(&home)?;
     // Ensure the embeddable config exists (older installs predate it).
     let cfg = base.join("superset_config.py");
-    if !cfg.exists() {
-        let _ = std::fs::write(
-            &cfg,
-            "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
-             TALISMAN_ENABLED = False\n\
-             HTTP_HEADERS = {}\n\
-             WTF_CSRF_ENABLED = False\n\
-             ENABLE_PROXY_FIX = True\n\
-             SESSION_COOKIE_SAMESITE = None\n\
-             SESSION_COOKIE_SECURE = False\n",
-        );
-    }
+    // Always (re)write so older installs pick up the current embeddable config.
+    let _ = std::fs::write(&cfg, superset_config_py());
     let superset = superset_bin(&venv);
     let mut cmd = Command::new(&superset);
     cmd.args(["run", "-p", "8088", "--with-threads"])
