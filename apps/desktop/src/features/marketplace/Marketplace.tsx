@@ -64,8 +64,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/exasol-personal",
     kind: "database",
     install: "personal-local",
-    description:
-      "A free, full-scale Exasol database on your own machine, via the official Exasol launcher. Local deployment is macOS-only.",
+    description: "Free local Exasol database (macOS).",
     homepage: "https://github.com/exasol/exasol-personal",
   },
   {
@@ -75,7 +74,7 @@ export const CATALOG: CatalogItem[] = [
     kind: "cli",
     install: "binary",
     labs: true,
-    description: "Single-binary Rust CLI for Exasol data exchange — import, export, and SQL in one command.",
+    description: "CLI to import, export, and run SQL.",
     homepage: "https://github.com/exasol-labs/exapump",
   },
   {
@@ -85,7 +84,7 @@ export const CATALOG: CatalogItem[] = [
     kind: "extension",
     install: "source-build",
     labs: true,
-    description: "Ingest, query and reshape JSON-shaped data in Exasol — a Python package plus a Rust ingest engine.",
+    description: "Query JSON data in Exasol.",
     homepage: "https://github.com/exasol-labs/exasol-json-tables",
   },
   {
@@ -94,7 +93,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/mcp-server",
     kind: "server",
     install: "uv-tool",
-    description: "Gives an LLM knowledge of your Exasol database over the Model Context Protocol.",
+    description: "Connect an LLM to your database.",
     homepage: "https://github.com/exasol/mcp-server",
   },
   {
@@ -103,7 +102,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/pyexasol",
     kind: "driver",
     install: "uv-pip",
-    description: "Official Python driver — low overhead, fast HTTP transport, compression.",
+    description: "Python driver for Exasol.",
     homepage: "https://github.com/exasol/pyexasol",
   },
   {
@@ -112,7 +111,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/sqlalchemy-exasol",
     kind: "driver",
     install: "uv-pip",
-    description: "Official SQLAlchemy dialect for Exasol — powers Superset, pandas, and Python ORMs.",
+    description: "SQLAlchemy dialect for Exasol.",
     homepage: "https://github.com/exasol/sqlalchemy-exasol",
   },
   {
@@ -122,7 +121,7 @@ export const CATALOG: CatalogItem[] = [
     kind: "driver",
     install: "reference",
     labs: true,
-    description: "Rust Arrow / ADBC / native-protocol driver for high-throughput workflows.",
+    description: "Rust Arrow / ADBC driver.",
     homepage: "https://github.com/exasol-labs/exarrow-rs",
   },
   {
@@ -130,7 +129,7 @@ export const CATALOG: CatalogItem[] = [
     name: "JDBC Driver",
     kind: "driver",
     install: "reference",
-    description: "Official JDBC driver for Java tools (DBeaver, DataGrip, JetBrains, Spark…).",
+    description: "JDBC driver for Java tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
   },
   {
@@ -138,7 +137,7 @@ export const CATALOG: CatalogItem[] = [
     name: "ODBC Driver",
     kind: "driver",
     install: "reference",
-    description: "Official ODBC driver for Windows/macOS/Linux applications and BI tools.",
+    description: "ODBC driver for apps and BI tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
   },
   {
@@ -147,7 +146,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/exasol-driver-ts",
     kind: "driver",
     install: "reference",
-    description: "Official Node/TS driver over the WebSocket protocol.",
+    description: "Node / TypeScript driver.",
     homepage: "https://github.com/exasol/exasol-driver-ts",
   },
   {
@@ -156,7 +155,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/exasol-driver-go",
     kind: "driver",
     install: "reference",
-    description: "Official database/sql driver for Go.",
+    description: "Go SQL driver.",
     homepage: "https://github.com/exasol/exasol-driver-go",
   },
   {
@@ -164,7 +163,7 @@ export const CATALOG: CatalogItem[] = [
     name: "ADO.NET Provider",
     kind: "driver",
     install: "reference",
-    description: "Official ADO.NET data provider for .NET applications.",
+    description: "ADO.NET provider for .NET.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/ado.net.htm",
   },
   {
@@ -172,7 +171,7 @@ export const CATALOG: CatalogItem[] = [
     name: "R Integration",
     kind: "driver",
     install: "reference",
-    description: "Connect R to Exasol via the documented R integration.",
+    description: "R integration for Exasol.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
   {
@@ -181,7 +180,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/websocket-api",
     kind: "driver",
     install: "reference",
-    description: "The native WebSocket protocol Exasol Studio itself connects with — build your own client.",
+    description: "Native WebSocket protocol.",
     homepage: "https://github.com/exasol/websocket-api",
   },
   {
@@ -190,7 +189,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/ai-lab",
     kind: "extension",
     install: "uv-pip",
-    description: "A data-science environment with extensions like the Transformer Extension for in-DB ML.",
+    description: "Data-science environment for in-DB ML.",
     homepage: "https://github.com/exasol/ai-lab",
   },
   {
@@ -200,7 +199,7 @@ export const CATALOG: CatalogItem[] = [
     kind: "skills",
     install: "uv-tool",
     labs: true,
-    description: "Skills for AI agents, optimized for Claude Code and Codex.",
+    description: "Skills for AI coding agents.",
     homepage: "https://github.com/exasol-labs/exasol-agent-skills",
   },
   {
@@ -209,8 +208,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "apache/superset",
     kind: "bi",
     install: "bi-superset",
-    description:
-      "Optional open-source BI (Apache-2.0): dashboards + SQL Lab. Installed into a managed environment with the official Exasol connector, then launched from the SQL editor's ‘Open in BI’.",
+    description: "Open-source BI dashboards and SQL Lab.",
     homepage: "https://github.com/apache/superset",
   },
 ];
