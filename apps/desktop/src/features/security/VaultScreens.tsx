@@ -1,50 +1,35 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Check, Copy, Download, Eye, EyeOff, KeyRound, Lock, ShieldCheck } from "lucide-react";
-import { BrandLoader } from "@/components/brand/BrandLoader";
+import { ArrowRight, Check, Copy, Download, Eye, EyeOff } from "lucide-react";
+import { ExasolMark } from "@/components/brand/ExasolMark";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 const MIN_LEN = 10;
 
-function strengthOf(pw: string) {
-  const checks = [
-    { label: `${MIN_LEN}+ characters`, ok: pw.length >= MIN_LEN },
-    { label: "A letter", ok: /[a-zA-Z]/.test(pw) },
-    { label: "A number", ok: /[0-9]/.test(pw) },
-  ];
-  const bonus = pw.length >= 14 && /[^a-zA-Z0-9]/.test(pw);
-  const passed = checks.filter((c) => c.ok).length;
-  const score = passed + (bonus ? 1 : 0); // 0..4
-  return { ok: checks.every((c) => c.ok), checks, score };
+function meets(pw: string) {
+  return pw.length >= MIN_LEN && /[a-zA-Z]/.test(pw) && /[0-9]/.test(pw);
 }
 
-/** Shared centered layout: brand mark, heading, and a soft card. */
-function Shell({ icon: Icon, title, subtitle, children }: { icon: typeof Lock; title: string; subtitle: string; children: React.ReactNode }) {
+/** Minimal centered shell: small mark, tight title, no card chrome. */
+function Shell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="hero-surface flex h-screen w-full items-center justify-center bg-background p-6 text-foreground">
-      <div className="w-full max-w-[400px]">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="relative">
-            <div className="absolute inset-0 -z-10 scale-150 rounded-full bg-primary/12 blur-2xl" />
-            <BrandLoader size={60} />
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <Icon className="h-4 w-4 text-primary" />
-            <h1 className="text-[18px] font-bold tracking-tight">{title}</h1>
-          </div>
-          <p className="mt-1 max-w-[320px] text-[13px] leading-relaxed text-muted-foreground">{subtitle}</p>
+    <div className="flex h-screen w-full items-center justify-center bg-background px-6 text-foreground">
+      <div className="w-full max-w-[320px]">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <ExasolMark className="h-9 w-9 text-primary" />
+          <h1 className="mt-4 text-[19px] font-semibold tracking-tight">{title}</h1>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{subtitle}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-panel/60 p-5 shadow-xl shadow-black/10 backdrop-blur-sm">{children}</div>
+        {children}
       </div>
     </div>
   );
 }
 
-function Field({ icon: Icon, value, onChange, placeholder, autoFocus, onEnter, mono }: { icon: typeof Lock; value: string; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean; onEnter?: () => void; mono?: boolean }) {
+function Field({ value, onChange, placeholder, autoFocus, onEnter, mono }: { value: string; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean; onEnter?: () => void; mono?: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
         type={show ? "text" : "password"}
         value={value}
@@ -53,41 +38,23 @@ function Field({ icon: Icon, value, onChange, placeholder, autoFocus, onEnter, m
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onEnter?.()}
         className={cn(
-          "h-11 w-full rounded-xl border border-border bg-editor pl-9 pr-10 text-[13.5px] text-foreground outline-none transition-shadow focus:border-primary/50 focus:ring-2 focus:ring-primary/15",
+          "h-10 w-full rounded-lg border border-border bg-editor px-3 pr-9 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground/60 focus:border-primary/50 focus:ring-2 focus:ring-primary/12",
           mono && "font-mono tracking-wide",
         )}
       />
-      <button onClick={() => setShow((s) => !s)} tabIndex={-1} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      <button onClick={() => setShow((s) => !s)} tabIndex={-1} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground">
+        {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
     </div>
   );
 }
 
-function StrengthBar({ score }: { score: number }) {
-  const labels = ["Too weak", "Weak", "Fair", "Good", "Strong"];
-  const colors = ["bg-destructive", "bg-destructive", "bg-warning", "bg-primary/70", "bg-primary"];
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex flex-1 gap-1">
-        {[0, 1, 2, 3].map((i) => (
-          <span key={i} className={cn("h-1.5 flex-1 rounded-full transition-colors", i < score ? colors[score] : "bg-border")} />
-        ))}
-      </div>
-      <span className="w-16 text-right text-[10.5px] text-muted-foreground">{labels[score]}</span>
-    </div>
-  );
-}
-
-function PrimaryButton({ onClick, disabled, full = true, children }: { onClick: () => void; disabled?: boolean; full?: boolean; children: React.ReactNode }) {
+function Submit({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "cta-glow flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-[14px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50",
-        full ? "w-full" : "px-10",
-      )}
+      className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-primary text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -103,8 +70,8 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
   const [codes, setCodes] = useState<string[] | null>(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
-  const strength = strengthOf(pw);
-  const canSubmit = strength.ok && pw === confirm && !busy;
+  const ok = meets(pw);
+  const canSubmit = ok && pw === confirm && !busy;
 
   async function create() {
     if (!canSubmit) return;
@@ -122,7 +89,7 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
   if (codes) {
     const text = codes.join("\n");
     const download = () => {
-      const blob = new Blob([`Exasol Studio — recovery keys\nKeep these safe. Each one can reset your master password once.\n\n${codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n`], { type: "text/plain" });
+      const blob = new Blob([`Exasol Studio — recovery keys\nEach one can reset your master password once. Keep them safe.\n\n${codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n`], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "exasol-studio-recovery-keys.txt";
@@ -130,20 +97,18 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
       URL.revokeObjectURL(a.href);
     };
     return (
-      <Shell icon={KeyRound} title="Save your recovery keys" subtitle="The only way back in if you forget your master password.">
-        <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
-          <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-warning" />
-          Shown once, never again. Each key can reset your password a single time.
+      <Shell title="Recovery keys" subtitle="Shown once. Any one resets your password if you forget it.">
+        <div className="rounded-lg border border-border bg-editor p-3">
+          <div className="grid gap-1.5 font-mono text-[12.5px]">
+            {codes.map((c, i) => (
+              <div key={c} className="flex items-center gap-2.5">
+                <span className="w-3 text-right text-[10.5px] text-muted-foreground/70">{i + 1}</span>
+                <span className="tracking-[0.06em] text-foreground">{c}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="mt-3 grid gap-1.5 rounded-xl border border-border bg-editor p-3 font-mono text-[13px]">
-          {codes.map((c, i) => (
-            <div key={c} className="flex items-center gap-2.5">
-              <span className="w-4 text-right text-[11px] text-muted-foreground">{i + 1}</span>
-              <span className="tracking-[0.08em] text-foreground">{c}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-2.5 flex items-center gap-4 text-[12px]">
+        <div className="mt-2 flex items-center gap-4 text-[12px]">
           <button
             onClick={() => {
               navigator.clipboard?.writeText(text).catch(() => undefined);
@@ -152,45 +117,40 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
             }}
             className="flex items-center gap-1.5 text-primary hover:underline"
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? "Copied" : "Copy all"}
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy"}
           </button>
           <button onClick={download} className="flex items-center gap-1.5 text-primary hover:underline">
-            <Download className="h-3.5 w-3.5" /> Download .txt
+            <Download className="h-3.5 w-3.5" /> Download
           </button>
         </div>
-        <label className="mt-4 flex items-center gap-2 text-[12.5px] text-foreground">
-          <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="h-4 w-4 accent-[color:hsl(var(--primary))]" />
-          I've saved my recovery keys somewhere safe.
+        <label className="mt-5 flex items-center gap-2 text-[12px] text-foreground">
+          <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="h-3.5 w-3.5 accent-[color:hsl(var(--primary))]" />
+          I've saved these somewhere safe.
         </label>
         <div className="mt-4">
-          <PrimaryButton onClick={onDone} disabled={!saved}>
-            Continue <ArrowRight className="h-4 w-4" />
-          </PrimaryButton>
+          <Submit onClick={onDone} disabled={!saved}>
+            Continue <ArrowRight className="h-3.5 w-3.5" />
+          </Submit>
         </div>
       </Shell>
     );
   }
 
   return (
-    <Shell icon={ShieldCheck} title="Set a master password" subtitle="It encrypts your saved connection passwords on this device. It's never stored.">
-      <div className="space-y-3">
-        <Field icon={Lock} value={pw} onChange={setPw} placeholder="Master password" autoFocus />
-        {pw ? <StrengthBar score={strength.score} /> : null}
-        <Field icon={Lock} value={confirm} onChange={setConfirm} placeholder="Confirm password" onEnter={create} />
-        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-          {strength.checks.map((c) => (
-            <span key={c.label} className={cn("flex items-center gap-1 text-[11.5px]", c.ok ? "text-primary" : "text-muted-foreground")}>
-              <Check className={cn("h-3.5 w-3.5", c.ok ? "opacity-100" : "opacity-25")} /> {c.label}
-            </span>
-          ))}
-        </div>
+    <Shell title="Set a master password" subtitle="It encrypts your saved connections. It's never stored.">
+      <div className="space-y-2.5">
+        <Field value={pw} onChange={setPw} placeholder="Master password" autoFocus />
+        <Field value={confirm} onChange={setConfirm} placeholder="Confirm password" onEnter={create} />
+        <p className={cn("flex items-center gap-1.5 pt-0.5 text-[11.5px]", ok ? "text-primary" : "text-muted-foreground")}>
+          {ok ? <Check className="h-3.5 w-3.5" /> : null}
+          10+ characters, with a letter and a number.
+        </p>
         {confirm && pw !== confirm ? <p className="text-[11.5px] text-destructive">Passwords don't match.</p> : null}
-        {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-        <div className="pt-1">
-          <PrimaryButton onClick={create} disabled={!canSubmit}>
-            <ShieldCheck className="h-4 w-4" /> {busy ? "Creating…" : "Create master password"}
-          </PrimaryButton>
+        {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}
+        <div className="pt-1.5">
+          <Submit onClick={create} disabled={!canSubmit}>
+            {busy ? "Creating…" : "Continue"}
+          </Submit>
         </div>
       </div>
     </Shell>
@@ -205,7 +165,7 @@ export function VaultUnlock({ onUnlocked }: { onUnlocked: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [newPw, setNewPw] = useState("");
-  const strength = strengthOf(newPw);
+  const ok = meets(newPw);
 
   async function unlock() {
     if (!pw || busy) return;
@@ -221,7 +181,7 @@ export function VaultUnlock({ onUnlocked }: { onUnlocked: () => void }) {
   }
 
   async function recover() {
-    if (!code.trim() || !strength.ok || busy) return;
+    if (!code.trim() || !ok || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -235,19 +195,19 @@ export function VaultUnlock({ onUnlocked }: { onUnlocked: () => void }) {
 
   if (mode === "recover") {
     return (
-      <Shell icon={KeyRound} title="Reset with a recovery key" subtitle="Enter one of your 5 recovery keys and choose a new password.">
-        <div className="space-y-3">
-          <Field icon={KeyRound} value={code} onChange={(v) => setCode(v.toUpperCase())} placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" autoFocus mono />
-          <Field icon={Lock} value={newPw} onChange={setNewPw} placeholder="New master password" />
-          {newPw ? <StrengthBar score={strength.score} /> : null}
-          {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-          <div className="pt-1">
-            <PrimaryButton onClick={recover} disabled={!code.trim() || !strength.ok || busy}>
-              <KeyRound className="h-4 w-4" /> {busy ? "Resetting…" : "Reset password & unlock"}
-            </PrimaryButton>
+      <Shell title="Reset password" subtitle="Enter a recovery key and choose a new password.">
+        <div className="space-y-2.5">
+          <Field value={code} onChange={(v) => setCode(v.toUpperCase())} placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" autoFocus mono />
+          <Field value={newPw} onChange={setNewPw} placeholder="New master password" />
+          <p className={cn("pt-0.5 text-[11.5px]", ok ? "text-primary" : "text-muted-foreground")}>10+ characters, with a letter and a number.</p>
+          {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}
+          <div className="pt-1.5">
+            <Submit onClick={recover} disabled={!code.trim() || !ok || busy}>
+              {busy ? "Resetting…" : "Reset & unlock"}
+            </Submit>
           </div>
-          <button onClick={() => { setMode("unlock"); setError(null); }} className="w-full pt-1 text-center text-[12px] text-muted-foreground hover:text-foreground">
-            Back to unlock
+          <button onClick={() => { setMode("unlock"); setError(null); }} className="w-full pt-0.5 text-center text-[11.5px] text-muted-foreground hover:text-foreground">
+            Back
           </button>
         </div>
       </Shell>
@@ -255,17 +215,17 @@ export function VaultUnlock({ onUnlocked }: { onUnlocked: () => void }) {
   }
 
   return (
-    <Shell icon={Lock} title="Welcome back" subtitle="Enter your master password to unlock Exasol Studio.">
-      <div className="space-y-3">
-        <Field icon={Lock} value={pw} onChange={setPw} placeholder="Master password" autoFocus onEnter={unlock} />
-        {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-        <div className="flex justify-center pt-1">
-          <PrimaryButton onClick={unlock} disabled={!pw || busy} full={false}>
-            <Lock className="h-4 w-4" /> {busy ? "Unlocking…" : "Unlock"}
-          </PrimaryButton>
+    <Shell title="Welcome back" subtitle="Enter your master password to continue.">
+      <div className="space-y-2.5">
+        <Field value={pw} onChange={setPw} placeholder="Master password" autoFocus onEnter={unlock} />
+        {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}
+        <div className="pt-1.5">
+          <Submit onClick={unlock} disabled={!pw || busy}>
+            {busy ? "Unlocking…" : "Unlock"}
+          </Submit>
         </div>
-        <button onClick={() => { setMode("recover"); setError(null); }} className="w-full pt-1 text-center text-[12px] text-muted-foreground hover:text-foreground">
-          Forgot password? Use a recovery key
+        <button onClick={() => { setMode("recover"); setError(null); }} className="w-full pt-0.5 text-center text-[11.5px] text-muted-foreground hover:text-foreground">
+          Forgot password?
         </button>
       </div>
     </Shell>
