@@ -351,7 +351,7 @@ export function ConnectView({
                       </SelectTrigger>
                       <SelectContent>
                         {drivers.map((driver) => (
-                          <SelectItem key={driver.id} value={driver.id} disabled={driver.kind !== "native"}>
+                          <SelectItem key={driver.id} value={driver.id}>
                             {driver.name}
                             {driver.isDefault ? " · default" : ""}
                             {driver.kind !== "native" ? " (external)" : ""}
@@ -371,6 +371,9 @@ export function ConnectView({
                 {selectedDriver ? (
                   <p className="text-xs text-muted-foreground">
                     {selectedDriver.name} — {selectedDriver.protocol}. {selectedDriver.description}
+                    {selectedDriver.kind !== "native"
+                      ? " Exasol Studio runs queries over the native WebSocket protocol; this choice is saved with the connection for export and external tooling."
+                      : ""}
                   </p>
                 ) : null}
               </div>
