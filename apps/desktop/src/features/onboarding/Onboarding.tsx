@@ -3,7 +3,7 @@ import { ArrowRight, Boxes, Database, Zap } from "lucide-react";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { cn } from "@/lib/utils";
-import exasolLogo from "@/assets/exasol-full-logo.svg";
+import exasolLogo from "@/assets/exasol-wordmark.svg";
 
 const HIGHLIGHTS = [
   { icon: Database, label: "Full database tree" },
@@ -42,9 +42,10 @@ export function Onboarding({ onGetStarted }: { onGetStarted: () => void }) {
         >
           <div>
             <span className="eyebrow">Analytics database workbench</span>
-            {/* The "Exasol" wordmark is the full logo; "Studio" stays as text. */}
-            <div className="mt-2 flex items-center justify-center gap-3">
-              <img src={exasolLogo} alt="Exasol" className="h-[44px] w-auto dark:brightness-0 dark:invert" />
+            {/* The "Exasol" wordmark is the brand logo; "Studio" stays as text,
+                sized to match the wordmark's cap height. */}
+            <div className="mt-2 flex items-baseline justify-center gap-3">
+              <img src={exasolLogo} alt="Exasol" className="h-[40px] w-auto translate-y-[6px] dark:brightness-0 dark:invert" />
               <span className="font-heading text-[52px] leading-[0.95] font-extrabold tracking-[-0.03em] text-primary">
                 Studio
               </span>
