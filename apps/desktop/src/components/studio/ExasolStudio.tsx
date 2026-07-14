@@ -36,6 +36,7 @@ import {
   Search,
   Settings2,
   Shapes,
+  Shield,
   Sparkles,
   Square,
   Star,
@@ -85,6 +86,7 @@ import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
+import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
 import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
@@ -137,7 +139,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba";
 
 type SqlTab = {
   id: string;
@@ -174,6 +176,7 @@ function newTab(index: number): SqlTab {
 const TAB_ICON: Record<TabView, typeof Terminal> = {
   sql: Terminal,
   dbInfo: Info,
+  dba: Shield,
   dataTypes: Shapes,
   connect: Plug,
   visualizer: Eye,
@@ -501,7 +504,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onOpenView: (view: "dbInfo" | "dataTypes") => void;
+  onOpenView: (view: "dbInfo" | "dataTypes" | "dba") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -557,6 +560,9 @@ function ConnectionSection({
           </IconButton>
           <IconButton label="Data types" onClick={() => onOpenView("dataTypes")}>
             <Shapes className="h-3.5 w-3.5" />
+          </IconButton>
+          <IconButton label="DBA dashboard" onClick={() => onOpenView("dba")}>
+            <Shield className="h-3.5 w-3.5" />
           </IconButton>
           <IconButton label="New virtual schema" onClick={onNewVs}>
             <Waypoints className="h-3.5 w-3.5" />
@@ -717,7 +723,7 @@ function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
-  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes") => void;
+  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -1562,7 +1568,7 @@ export function ExasolStudio({
   }
 
   // Open (or focus) a read-only catalog surface for a connection.
-  function openView(profileId: string, view: "dbInfo" | "dataTypes") {
+  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba") {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
     const existing = list.find((t) => t.view === view);
@@ -1573,7 +1579,7 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-${Date.now()}-${tabCounter.current}`,
-      title: view === "dbInfo" ? "Database Info" : "Data Types",
+      title: view === "dbInfo" ? "Database Info" : view === "dataTypes" ? "Data Types" : "DBA",
       view,
       sql: "",
       response: null,
@@ -2406,6 +2412,8 @@ export function ExasolStudio({
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
                 />
+              ) : activeTab.view === "dba" ? (
+                <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} />
               ) : (
                 <Visualizer
                   profileId={connection.profile.id}
