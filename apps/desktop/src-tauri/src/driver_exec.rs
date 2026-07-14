@@ -45,7 +45,19 @@ pub fn is_bridge_driver(driver_id: &str) -> bool {
 /// The `python`, `jvm`, … runtimes all execute through the shared Python bridge
 /// (JDBC via jaydebeapi/JPype), so they share the managed venv.
 fn uses_python_bridge(runtime: &str) -> bool {
-    runtime == "python" || runtime == "jvm"
+    runtime == "python" || runtime == "jvm" || runtime == "odbc"
+}
+
+fn has_marker(app: &AppHandle, name: &str) -> bool {
+    python_dir(app).map(|d| d.join(name).exists()).unwrap_or(false)
+}
+
+fn python_ready(app: &AppHandle) -> bool {
+    python_bin(app).map(|p| p.exists()).unwrap_or(false) && has_marker(app, ".python-ready")
+}
+
+fn odbc_ready(app: &AppHandle) -> bool {
+    python_bin(app).map(|p| p.exists()).unwrap_or(false) && has_marker(app, ".odbc-ready")
 }
 
 fn runtimes_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -102,6 +114,7 @@ fn jre_home(app: &AppHandle) -> Option<PathBuf> {
 
 fn python_jdbc_ready(app: &AppHandle) -> bool {
     python_bin(app).map(|p| p.exists()).unwrap_or(false)
+        && has_marker(app, ".jvm-ready")
         && jdbc_jar(app).map(|p| p.exists()).unwrap_or(false)
         && jre_home(app).is_some()
 }
@@ -124,12 +137,16 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
     let (ready, supported, hint) = match runtime {
         "native" => (true, true, String::new()),
         "python" => {
-            let ok = python_bin(&app).map(|p| p.exists()).unwrap_or(false);
+            let ok = python_ready(&app);
             (ok, true, if ok { String::new() } else { "Install the Python driver runtime to run queries over this driver.".into() })
         }
         "jvm" => {
             let ok = python_jdbc_ready(&app);
             (ok, true, if ok { String::new() } else { "Install the JDBC runtime (bundled JRE + Exasol JDBC driver) to run queries over JDBC.".into() })
+        }
+        "odbc" => {
+            let ok = odbc_ready(&app);
+            (ok, true, if ok { String::new() } else { "Install the ODBC runtime, then install Exasol’s ODBC driver on your OS (from Exasol Downloads) — it’s detected automatically.".into() })
         }
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
@@ -170,6 +187,7 @@ pub async fn driver_setup(app: AppHandle, driver_id: String) -> AppResult<Value>
     let result = match runtime {
         "python" => setup_python(&app, &id).await,
         "jvm" => setup_jvm(&app, &id).await,
+        "odbc" => setup_odbc(&app, &id).await,
         other => Err(AppError::Storage(format!("The {other} driver runtime isn’t installable yet."))),
     };
     match result {
@@ -194,7 +212,28 @@ async fn setup_python(app: &AppHandle, id: &str) -> AppResult<()> {
         ensure_python_venv(&app2, &id2, &uv, &["pyexasol", "sqlalchemy-exasol", "pandas"])
     })
     .await
-    .map_err(|e| AppError::Storage(e.to_string()))?
+    .map_err(|e| AppError::Storage(e.to_string()))??;
+    let _ = std::fs::write(python_dir(app)?.join(".python-ready"), b"1");
+    Ok(())
+}
+
+async fn setup_odbc(app: &AppHandle, id: &str) -> AppResult<()> {
+    let uv = ensure_uv()?;
+    let app2 = app.clone();
+    let id2 = id.to_string();
+    tokio::task::spawn_blocking(move || ensure_python_venv(&app2, &id2, &uv, &["pyodbc"]))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))??;
+    // Mark the ODBC bridge installed. The Exasol ODBC driver itself is a system
+    // component the user installs from Exasol Downloads; the bridge auto-detects it.
+    let _ = std::fs::write(python_dir(app)?.join(".odbc-ready"), b"1");
+    crate::market::emit_log(
+        app,
+        id,
+        "Note: install Exasol’s ODBC driver on your OS (Exasol Downloads) — it will be detected automatically.",
+        "info",
+    );
+    Ok(())
 }
 
 async fn setup_jvm(app: &AppHandle, id: &str) -> AppResult<()> {
@@ -235,6 +274,7 @@ async fn setup_jvm(app: &AppHandle, id: &str) -> AppResult<()> {
             return Err(AppError::Storage("Java runtime extracted but no `bin/java` was found.".into()));
         }
     }
+    let _ = std::fs::write(python_dir(app)?.join(".jvm-ready"), b"1");
     Ok(())
 }
 
@@ -317,6 +357,9 @@ fn execute_python(
     let is_jdbc = profile.driver_id == "jdbc";
     if is_jdbc && !python_jdbc_ready(app) {
         return Err(AppError::Storage("The JDBC runtime isn’t fully installed. Install it, then try again.".into()));
+    }
+    if profile.driver_id == "odbc" && !odbc_ready(app) {
+        return Err(AppError::Storage("The ODBC runtime isn’t installed. Install it, then try again.".into()));
     }
 
     let script = python_dir(app)?.join("bridge.py");
@@ -481,13 +524,58 @@ def run_jdbc(req):
     except Exception: pass
     return out
 
+def run_odbc(req):
+    import pyodbc
+    exa = [d for d in pyodbc.drivers() if "exa" in d.lower()]
+    if not exa:
+        raise Exception("No Exasol ODBC driver is registered on this system. Install it from Exasol Downloads.")
+    cs = "DRIVER={%s};EXAHOST=%s:%s;EXAUID=%s;EXAPWD=%s" % (exa[0], req["host"], req["port"], req["user"], req["password"])
+    if req.get("tls", True) and not req.get("verify"):
+        cs += ";SSLCERTIFICATE=SSL_VERIFY_NONE"
+    if req.get("schema"):
+        cs += ";SCHEMA=%s" % req["schema"]
+    C = pyodbc.connect(cs, autocommit=True)
+    max_rows = int(req.get("maxRows", 1000))
+    out = {"results": []}
+    for stmt in req.get("statements", []):
+        t0 = time.time()
+        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
+        cur = C.cursor()
+        try:
+            cur.execute(stmt)
+            if cur.description:
+                e["kind"] = "resultSet"
+                e["columns"] = [{"name": d[0], "typeName": ""} for d in cur.description]
+                rows = cur.fetchmany(max_rows)
+                e["rows"] = [[cell(v) for v in r] for r in rows]
+                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
+            else:
+                try: e["rowCount"] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+                except Exception: e["rowCount"] = 0
+        except Exception as ex:
+            e["error"] = str(ex)
+        finally:
+            try: cur.close()
+            except Exception: pass
+        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
+        if e["error"]: break
+    try: C.close()
+    except Exception: pass
+    return out
+
 def main():
     try:
         req = json.load(sys.stdin)
     except Exception as ex:
         print(json.dumps({"fatal": "bad request: %s" % ex})); return
+    driver = req.get("driver")
     try:
-        out = run_jdbc(req) if req.get("driver") == "jdbc" else run_pyexasol(req)
+        if driver == "jdbc":
+            out = run_jdbc(req)
+        elif driver == "odbc":
+            out = run_odbc(req)
+        else:
+            out = run_pyexasol(req)
     except Exception as ex:
         print(json.dumps({"fatal": "%s" % ex})); return
     print(json.dumps(out))

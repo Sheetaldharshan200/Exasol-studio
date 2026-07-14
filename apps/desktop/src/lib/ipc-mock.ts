@@ -551,13 +551,14 @@ export async function mockInvoke(
       const id = String(args?.driverId ?? "sqlx-exasol");
       const python = id === "pyexasol" || id === "sqlalchemy";
       const jvm = id === "jdbc";
+      const odbc = id === "odbc";
       const native = ["sqlx-exasol", "websocket-api", "exarrow-rs", ""].includes(id);
       return {
         driverId: id,
-        runtime: native ? "native" : python ? "python" : jvm ? "jvm" : id,
+        runtime: native ? "native" : python ? "python" : jvm ? "jvm" : odbc ? "odbc" : id,
         ready: native,
-        supported: native || python || jvm,
-        hint: native ? "" : python ? "Install the Python driver runtime to run queries over this driver." : jvm ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)." : "This driver runtime is coming soon.",
+        supported: native || python || jvm || odbc,
+        hint: native ? "" : python ? "Install the Python driver runtime." : jvm ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)." : odbc ? "Install the ODBC runtime, then Exasol’s OS ODBC driver." : "This driver runtime is coming soon.",
       };
     }
     case "driver_setup":
