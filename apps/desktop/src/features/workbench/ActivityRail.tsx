@@ -1,4 +1,5 @@
-import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Settings, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Settings, Star, Store, type LucideIcon } from "lucide-react";
+import { AgentMark } from "@/components/studio/AgentMark";
 import {
   Tooltip,
   TooltipContent,
@@ -99,17 +100,17 @@ export function ActivityRail({
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              aria-label="AI Assistant"
+              aria-label="Exasol AI"
               onClick={onToggleAi}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
                 aiOpen && "text-primary",
               )}
             >
-              <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              <AgentMark className="h-[19px] w-[19px]" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">AI Assistant</TooltipContent>
+          <TooltipContent side="right">Exasol AI</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>

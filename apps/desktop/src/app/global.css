@@ -579,3 +579,48 @@
 .assistant-markdown a { color: var(--primary); text-decoration: underline; }
 .assistant-markdown table { margin: 0.4rem 0; border-collapse: collapse; font-size: 0.78rem; }
 .assistant-markdown th, .assistant-markdown td { border: 1px solid var(--border); padding: 0.2rem 0.5rem; }
+
+/* ── Agent mark & panel ──────────────────────────────────────────────── */
+@keyframes agent-core-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes agent-node-orbit {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.25; }
+}
+.agent-mark-active .agent-mark-core {
+  animation: agent-core-pulse 1.3s ease-in-out infinite;
+}
+.agent-mark-active .agent-mark-node {
+  animation: agent-node-orbit 1.3s ease-in-out infinite;
+}
+.agent-mark-active .agent-mark-node:nth-of-type(3) { animation-delay: 0.22s; }
+.agent-mark-active .agent-mark-node:nth-of-type(4) { animation-delay: 0.44s; }
+
+.agent-hero-glow {
+  box-shadow: 0 0 34px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+@keyframes agent-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.agent-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 40%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-shimmer 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-mark-active .agent-mark-core,
+  .agent-mark-active .agent-mark-node,
+  .agent-shimmer { animation: none; }
+}

@@ -1,15 +1,21 @@
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::market::resolve_bin;
 use crate::state::AppState;
+
+// The webview cannot fetch http://127.0.0.1 from the tauri:// origin (WebKit
+// treats it as mixed content), so ALL agent traffic is proxied through Rust:
+// `agent_api` for REST and `agent_stream` for SSE → Tauri events.
 
 /// Connection details for the agent-core sidecar HTTP+SSE server.
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +38,8 @@ struct ReadyLine {
 #[derive(Default)]
 pub struct AgentSidecar {
     inner: Mutex<Option<(Child, AgentInfo)>>,
+    /// Session ids with an active SSE reader, to avoid duplicate event streams.
+    streams: Mutex<HashSet<String>>,
 }
 
 /// Locate the bundled agent-core script: release resource first, then the
@@ -108,14 +116,10 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     ))
 }
 
-/// Return the sidecar's port + token, starting it on first use and
-/// respawning it if it died.
-#[tauri::command]
-pub fn agent_info(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    sidecar: State<'_, AgentSidecar>,
-) -> AppResult<AgentInfo> {
+/// Get the sidecar's connection info, starting or respawning it as needed.
+fn ensure_agent(app: &AppHandle) -> AppResult<AgentInfo> {
+    let state = app.state::<AppState>();
+    let sidecar = app.state::<AgentSidecar>();
     let mut guard = sidecar
         .inner
         .lock()
@@ -128,8 +132,107 @@ pub fn agent_info(
         }
     }
 
-    let (child, info) = spawn_sidecar(&app, &state)?;
+    let (child, info) = spawn_sidecar(app, &state)?;
     let out = info.clone();
     *guard = Some((child, info));
     Ok(out)
+}
+
+/// Proxy a REST call to the sidecar (the webview cannot reach it directly).
+#[tauri::command]
+pub async fn agent_api(
+    app: AppHandle,
+    path: String,
+    method: String,
+    body: Option<serde_json::Value>,
+) -> AppResult<serde_json::Value> {
+    let info = ensure_agent(&app)?;
+    let url = format!("http://127.0.0.1:{}/v1{}", info.port, path);
+    let client = reqwest::Client::new();
+    let mut req = match method.as_str() {
+        "GET" => client.get(&url),
+        "PUT" => client.put(&url),
+        "POST" => client.post(&url),
+        other => return Err(AppError::Assistant(format!("unsupported method {other}"))),
+    }
+    .bearer_auth(&info.token);
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let res = req
+        .send()
+        .await
+        .map_err(|e| AppError::Assistant(format!("agent request failed: {e}")))?;
+    let status = res.status();
+    let payload: serde_json::Value = res
+        .json()
+        .await
+        .unwrap_or_else(|_| serde_json::json!({ "error": "invalid agent response" }));
+    if !status.is_success() {
+        let msg = payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("agent error");
+        return Err(AppError::Assistant(format!("{msg}")));
+    }
+    Ok(payload)
+}
+
+/// Attach to a session's SSE stream and forward every event to the webview
+/// as `agent-event:<session_id>`. Idempotent per session.
+#[tauri::command]
+pub async fn agent_stream(app: AppHandle, session_id: String) -> AppResult<()> {
+    let info = ensure_agent(&app)?;
+    {
+        let sidecar = app.state::<AgentSidecar>();
+        let mut streams = sidecar
+            .streams
+            .lock()
+            .map_err(|_| AppError::Assistant("agent state poisoned".into()))?;
+        if !streams.insert(session_id.clone()) {
+            return Ok(()); // already attached
+        }
+    }
+
+    let url = format!(
+        "http://127.0.0.1:{}/v1/sessions/{}/stream?token={}",
+        info.port, session_id, info.token
+    );
+    let event_name = format!("agent-event:{session_id}");
+    let app2 = app.clone();
+    let sid = session_id.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let cleanup = |app: &AppHandle| {
+            if let Ok(mut s) = app.state::<AgentSidecar>().streams.lock() {
+                s.remove(&sid);
+            }
+        };
+        let client = reqwest::Client::new();
+        let res = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => return cleanup(&app2),
+        };
+        let mut buf = String::new();
+        let mut stream = res.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let Ok(bytes) = chunk else { break };
+            buf.push_str(&String::from_utf8_lossy(&bytes));
+            // SSE frames are separated by a blank line; data lines carry JSON.
+            while let Some(pos) = buf.find("\n\n") {
+                let frame = buf[..pos].to_string();
+                buf.drain(..pos + 2);
+                for line in frame.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                            let _ = app2.emit(&event_name, v);
+                        }
+                    }
+                }
+            }
+        }
+        cleanup(&app2);
+    });
+
+    Ok(())
 }

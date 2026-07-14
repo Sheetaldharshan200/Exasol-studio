@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AtSign,
-  Bot,
   Check,
   ChevronDown,
   Cpu,
-  KeyRound,
-  Loader2,
+  FileSearch,
+  Gauge,
+  RotateCcw,
   Send,
-  Slash,
-  Sparkles,
+  Settings2,
   Square,
-  User,
+  Table2,
   Wand2,
-  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AgentMark } from "@/components/studio/AgentMark";
 import { agent, type AgentEvent, type AgentProviderInfo } from "@/lib/agent-client";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -51,6 +49,13 @@ const MENTIONS: { at: string; desc: string }[] = [
   { at: "@editor", desc: "Full editor SQL" },
   { at: "@selection", desc: "Selected SQL" },
   { at: "@history", desc: "Recent queries" },
+];
+
+const SUGGESTIONS: { icon: typeof Wand2; label: string; kind: "run" | "insert"; payload: string }[] = [
+  { icon: Wand2, label: "Generate SQL", kind: "insert", payload: "Generate an Exasol SQL query that " },
+  { icon: FileSearch, label: "Explain my SQL", kind: "run", payload: "Explain the SQL in my editor, step by step." },
+  { icon: Gauge, label: "Optimize a query", kind: "run", payload: "Suggest ways to optimize the SQL in my editor for Exasol." },
+  { icon: Table2, label: "List my tables", kind: "run", payload: "List the tables in the current schema, one line each." },
 ];
 
 const CLOUD_KEY_PROVIDERS = ["anthropic", "openai", "google", "openrouter"];
@@ -121,7 +126,6 @@ export function AssistantPanel({
       setSending(false);
     } else if (e.type === "error") {
       setMessages((m) => {
-        // Attach the error to the streaming bubble if one exists, else append.
         const last = m[m.length - 1];
         if (last?.streaming && !last.content) {
           return m.map((msg) =>
@@ -140,6 +144,15 @@ export function AssistantPanel({
     sessionRef.current = id;
     disposeRef.current = await agent.stream(id, handleEvent);
     return id;
+  }
+
+  function newChat() {
+    setMessages([]);
+    setInput("");
+    disposeRef.current?.();
+    disposeRef.current = null;
+    sessionRef.current = null;
+    setSending(false);
   }
 
   // Detect a "/" command at the start or a trailing "@" mention token.
@@ -182,8 +195,7 @@ export function AssistantPanel({
 
   function applySlash(cmd: SlashCommand) {
     if (cmd.kind === "clear") {
-      setMessages([]);
-      setInput("");
+      newChat();
       return;
     }
     if (cmd.kind === "run" && cmd.payload) {
@@ -284,7 +296,7 @@ export function AssistantPanel({
   }
 
   const modelLabel = useMemo(() => {
-    if (!model) return "choose model";
+    if (!model) return "Choose model";
     const [pid, ...rest] = model.split("/");
     const mid = rest.join("/");
     const p = providers.find((x) => x.id === pid);
@@ -293,73 +305,27 @@ export function AssistantPanel({
 
   const isLocalModel = model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
   const ollama = providers.find((p) => p.id === "ollama");
+  const thinking = sending && !messages.some((m) => m.streaming && m.content);
 
   return (
     <aside className="flex h-full min-w-0 flex-col border-l border-border bg-panel">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-          <span className="shrink-0 text-[13px] font-semibold text-foreground">AI</span>
-          {/* Model picker */}
-          <div className="relative min-w-0">
-            <button
-              onClick={() => {
-                setShowPicker((s) => !s);
-                setShowSettings(false);
-              }}
-              className="flex max-w-full items-center gap-1 rounded-full bg-secondary px-2 py-px font-mono text-[10px] text-muted-foreground hover:text-foreground"
-            >
-              {isLocalModel ? <Cpu className="h-2.5 w-2.5 shrink-0 text-primary" /> : null}
-              <span className="truncate">{modelLabel}</span>
-              <ChevronDown className="h-2.5 w-2.5 shrink-0" />
-            </button>
-            {showPicker ? (
-              <div className="absolute left-0 top-full z-30 mt-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
-                {providers
-                  .filter((p) => p.models.length > 0 && (p.kind === "local" ? p.running : p.configured))
-                  .map((p) => (
-                    <div key={p.id}>
-                      <div className="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
-                        <span className="eyebrow-muted">{p.name}</span>
-                        {p.kind === "local" ? (
-                          <span className="rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">local</span>
-                        ) : null}
-                      </div>
-                      {p.models.map((m) => {
-                        const ref = `${p.id}/${m.id}`;
-                        return (
-                          <button
-                            key={ref}
-                            onClick={() => pickModel(ref)}
-                            className={cn(
-                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
-                              ref === model && "bg-secondary",
-                            )}
-                          >
-                            <span className="flex-1 truncate text-[12px] text-foreground">{m.name}</span>
-                            {ref === model ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                {providers.every((p) => (p.kind === "local" ? !p.running || !p.models.length : !p.configured)) ? (
-                  <div className="px-2.5 py-3 text-[11.5px] text-muted-foreground">
-                    No models available yet — add an API key or start Ollama.
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+      {/* ── Header ── */}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary/12 text-primary">
+            <AgentMark className="h-4 w-4" active={sending} />
+          </span>
+          <span className="text-[13px] font-semibold text-foreground">Exasol AI</span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {messages.length > 0 ? (
             <button
               className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-              onClick={() => setMessages([])}
-              aria-label="Clear conversation"
+              onClick={newChat}
+              aria-label="New chat"
+              title="New chat"
             >
-              <X className="h-3.5 w-3.5" />
+              <RotateCcw className="h-3.5 w-3.5" />
             </button>
           ) : null}
           <button
@@ -372,29 +338,34 @@ export function AssistantPanel({
               setShowPicker(false);
             }}
             aria-label="Assistant settings"
+            title="Models & keys"
           >
-            <KeyRound className="h-3.5 w-3.5" />
+            <Settings2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
+      {/* ── Settings ── */}
       {showSettings ? (
-        <div className="space-y-3 overflow-y-auto border-b border-border bg-secondary/40 p-3">
-          {/* Local runtime status */}
+        <div className="max-h-[45%] space-y-2.5 overflow-y-auto border-b border-border bg-secondary/40 p-3">
           <div className="rounded-lg border border-border bg-panel/60 px-2.5 py-2">
             <div className="flex items-center gap-1.5">
               <Cpu className="h-3.5 w-3.5 text-primary" />
               <span className="text-[12px] font-medium text-foreground">Local models</span>
+              {ollama?.running ? (
+                <span className="ml-auto flex items-center gap-1 text-[10px] text-primary">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" /> running
+                </span>
+              ) : null}
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
               {ollama?.running
-                ? `Ollama is running — ${ollama.models.length} model${ollama.models.length === 1 ? "" : "s"} ready. No key needed.`
+                ? `Ollama — ${ollama.models.length} model${ollama.models.length === 1 ? "" : "s"} ready. Private, free, no key needed.`
                 : ollama?.installedOnly
                   ? "Ollama is installed but not running. Start it with `ollama serve`, then reopen this panel."
                   : "Install Ollama (ollama.com) to chat with free local models — fully private, no API key."}
             </p>
           </div>
-          {/* Cloud provider keys */}
           {providers
             .filter((p) => p.kind === "cloud" && CLOUD_KEY_PROVIDERS.includes(p.id))
             .map((p) => (
@@ -421,14 +392,10 @@ export function AssistantPanel({
                 </div>
               </div>
             ))}
-          <div className="flex justify-end">
-            <Button size="sm" variant="ghost" onClick={() => setShowSettings(false)}>
-              Close
-            </Button>
-          </div>
         </div>
       ) : null}
 
+      {/* ── Conversation ── */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {agentError ? (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-foreground">
@@ -436,42 +403,55 @@ export function AssistantPanel({
           </div>
         ) : null}
         {messages.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center gap-2 px-4 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
-              <Bot className="h-5 w-5" />
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
+            <div className="agent-hero-glow mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <AgentMark className="h-7 w-7" />
             </div>
-            <p className="text-sm font-medium text-foreground">Ask about your database</p>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Generate Exasol SQL, explain a query, or get tuning tips.
+            <p className="text-[14.5px] font-semibold text-foreground">Ask your data anything</p>
+            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              SQL generation, tuning and answers — grounded in Exasol.
               {ollama?.running ? " Running on your local models." : ""}
             </p>
-            <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Slash className="h-3 w-3 text-primary" /> commands
-              </span>
-              <span className="flex items-center gap-1">
-                <AtSign className="h-3 w-3 text-primary" /> add context
-              </span>
+            <div className="mt-4 grid w-full max-w-[260px] grid-cols-2 gap-1.5">
+              {SUGGESTIONS.map((s) => {
+                const Icon = s.icon;
+                return (
+                  <button
+                    key={s.label}
+                    onClick={() => {
+                      if (s.kind === "run") void send(s.payload);
+                      else {
+                        setInput(s.payload);
+                        inputRef.current?.focus();
+                      }
+                    }}
+                    className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-panel/60 p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/50"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[11px] font-medium leading-tight text-foreground">{s.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (
           messages.map((m) => <Bubble key={m.id} message={m} />)
         )}
-        {sending && !messages.some((m) => m.streaming && m.content) ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
+        {thinking ? (
+          <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
+            <AgentMark className="h-4 w-4 text-primary" active />
+            <span className="agent-shimmer">Thinking…</span>
           </div>
         ) : null}
       </div>
 
-      <div className="relative border-t border-border p-2.5">
+      {/* ── Composer ── */}
+      <div className="relative shrink-0 p-2.5 pt-0">
         {/* Slash / mention popup */}
         {menuItems.length > 0 ? (
-          <div className="absolute bottom-full left-2.5 mb-1 w-[calc(100%-1.25rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+          <div className="absolute bottom-full left-2.5 z-30 mb-1 w-[calc(100%-1.25rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
             <div className="border-b border-border px-2.5 py-1.5">
-              <span className="eyebrow-muted">
-                {trigger?.type === "slash" ? "Commands" : "Add context"}
-              </span>
+              <span className="eyebrow-muted">{trigger?.type === "slash" ? "Commands" : "Add context"}</span>
             </div>
             {menuItems.map((item, i) => (
               <button
@@ -490,79 +470,133 @@ export function AssistantPanel({
           </div>
         ) : null}
 
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {SLASH_COMMANDS.slice(0, 3).map((c) => (
-            <button
-              key={c.cmd}
-              className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-              onClick={() => applySlash(c)}
-            >
-              <Wand2 className="h-3 w-3" />
-              {c.cmd.slice(1)}
-            </button>
-          ))}
-        </div>
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send(input);
-          }}
-        >
+        <div className="rounded-xl border border-border bg-editor transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
           <textarea
             ref={inputRef}
-            className="min-h-[38px] max-h-32 flex-1 resize-none rounded-lg border border-input bg-editor px-3 py-2 text-[13px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
-            placeholder={model ? "Ask, or type / and @…" : "Pick a model or add a key to start"}
+            className="max-h-32 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] outline-none placeholder:text-muted-foreground"
+            placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
             value={input}
             rows={1}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          {sending ? (
-            <Button type="button" size="icon" variant="outline" onClick={() => void stop()} aria-label="Stop generating">
-              <Square className="h-3.5 w-3.5" />
-            </Button>
-          ) : (
-            <Button type="submit" size="icon" disabled={!input.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
-          )}
-        </form>
+          <div className="flex items-center justify-between px-1.5 pb-1.5">
+            {/* Model pill (opens upward) */}
+            <div className="relative min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPicker((s) => !s);
+                  setShowSettings(false);
+                }}
+                className="flex max-w-[190px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
+                <span className="truncate font-mono">{modelLabel}</span>
+                <ChevronDown className="h-2.5 w-2.5 shrink-0" />
+              </button>
+              {showPicker ? (
+                <div className="absolute bottom-full left-0 z-30 mb-1.5 max-h-72 w-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
+                  {providers
+                    .filter((p) => p.models.length > 0 && (p.kind === "local" ? p.running : p.configured))
+                    .map((p) => (
+                      <div key={p.id}>
+                        <div className="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
+                          <span className="eyebrow-muted">{p.name}</span>
+                          {p.kind === "local" ? (
+                            <span className="rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">
+                              local
+                            </span>
+                          ) : null}
+                        </div>
+                        {p.models.map((m) => {
+                          const ref = `${p.id}/${m.id}`;
+                          return (
+                            <button
+                              key={ref}
+                              onClick={() => pickModel(ref)}
+                              className={cn(
+                                "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
+                                ref === model && "bg-secondary",
+                              )}
+                            >
+                              <span className="flex-1 truncate text-[12px] text-foreground">{m.name}</span>
+                              {ref === model ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  {providers.every((p) => (p.kind === "local" ? !p.running || !p.models.length : !p.configured)) ? (
+                    <div className="px-2.5 py-3 text-[11.5px] text-muted-foreground">
+                      No models yet — add an API key or start Ollama.
+                    </div>
+                  ) : null}
+                  <button
+                    onClick={() => {
+                      setShowPicker(false);
+                      setShowSettings(true);
+                    }}
+                    className="flex w-full items-center gap-1.5 border-t border-border px-2.5 py-1.5 text-left text-[11px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                  >
+                    <Settings2 className="h-3 w-3" /> Manage models & keys…
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {sending ? (
+              <button
+                type="button"
+                onClick={() => void stop()}
+                aria-label="Stop generating"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+              >
+                <Square className="h-3 w-3" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void send(input)}
+                disabled={!input.trim()}
+                aria-label="Send"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-all hover:bg-primary/85 disabled:opacity-35"
+              >
+                <Send className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </aside>
   );
 }
 
 function Bubble({ message }: { message: DisplayMessage }) {
-  const isUser = message.role === "user";
-  return (
-    <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-          isUser ? "bg-secondary text-foreground" : "text-primary",
-        )}
-      >
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+  if (message.role === "user") {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-[13px] leading-relaxed text-foreground">
+          {message.content}
+        </div>
       </div>
-      <div
-        className={cn(
-          "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
-          isUser
-            ? "whitespace-pre-wrap bg-secondary text-foreground"
-            : message.error
-              ? "border border-destructive/40 bg-destructive/10 text-foreground"
-              : "bg-editor text-foreground",
-        )}
-      >
-        {isUser || message.error ? (
-          message.content
-        ) : (
-          <div className="assistant-markdown">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
-            {message.streaming ? <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" /> : null}
-          </div>
-        )}
+    );
+  }
+  if (message.error) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-foreground">
+        {message.content}
+      </div>
+    );
+  }
+  return (
+    <div className="flex gap-2">
+      <AgentMark className="mt-1 h-4 w-4 shrink-0 text-primary" />
+      <div className="assistant-markdown min-w-0 flex-1 text-[13px] leading-relaxed text-foreground">
+        <ReactMarkdown>{message.content}</ReactMarkdown>
+        {message.streaming ? (
+          <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
+        ) : null}
       </div>
     </div>
   );

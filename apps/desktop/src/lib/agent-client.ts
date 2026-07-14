@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "@/lib/ipc";
+import { listen } from "@tauri-apps/api/event";
 
-// Client for the agent-core sidecar (localhost HTTP + SSE).
-// The Rust side spawns the sidecar on demand and hands us port + token.
+// Client for the agent-core sidecar. The webview cannot reach the sidecar's
+// localhost HTTP server directly (mixed-content), so everything goes through
+// two Rust commands: `agent_api` (REST proxy) and `agent_stream` (SSE →
+// Tauri events named `agent-event:<sessionId>`).
 
 export type AgentModelInfo = {
   id: string;
@@ -31,40 +33,8 @@ export type AgentEvent =
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
-type AgentInfo = { port: number; token: string };
-
-let cached: AgentInfo | null = null;
-
-async function info(): Promise<AgentInfo> {
-  if (!isTauri()) throw new Error("Agent requires the desktop app");
-  if (cached) return cached;
-  cached = await invoke<AgentInfo>("agent_info");
-  return cached;
-}
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const { port, token } = await info();
-  const res = await fetch(`http://127.0.0.1:${port}/v1${path}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      ...init?.headers,
-    },
-  });
-  if (res.status === 401) {
-    // Sidecar restarted with a new token — refresh once and retry.
-    cached = null;
-    const { port: p2, token: t2 } = await info();
-    const retry = await fetch(`http://127.0.0.1:${p2}/v1${path}`, {
-      ...init,
-      headers: { authorization: `Bearer ${t2}`, "content-type": "application/json", ...init?.headers },
-    });
-    if (!retry.ok) throw new Error((await retry.json().catch(() => ({}))).error ?? `agent ${retry.status}`);
-    return retry.json() as Promise<T>;
-  }
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `agent ${res.status}`);
-  return res.json() as Promise<T>;
+async function api<T>(path: string, method: "GET" | "POST" | "PUT" = "GET", body?: unknown): Promise<T> {
+  return invoke<T>("agent_api", { path, method, body: body ?? null });
 }
 
 export const agent = {
@@ -73,40 +43,30 @@ export const agent = {
   },
 
   async setProviderKey(providerId: string, apiKey: string): Promise<void> {
-    await api(`/providers/${providerId}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
+    await api(`/providers/${providerId}`, "PUT", { apiKey });
   },
 
   async setDefaultModel(model: string): Promise<void> {
-    await api("/config", { method: "PUT", body: JSON.stringify({ model }) });
+    await api("/config", "PUT", { model });
   },
 
   async createSession(): Promise<string> {
-    const { id } = await api<{ id: string }>("/sessions", { method: "POST" });
+    const { id } = await api<{ id: string }>("/sessions", "POST");
     return id;
   },
 
   async send(sessionId: string, text: string, model: string, context?: string): Promise<void> {
-    await api(`/sessions/${sessionId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ text, model, context }),
-    });
+    await api(`/sessions/${sessionId}/messages`, "POST", { text, model, context });
   },
 
   async abort(sessionId: string): Promise<void> {
-    await api(`/sessions/${sessionId}/abort`, { method: "POST" });
+    await api(`/sessions/${sessionId}/abort`, "POST");
   },
 
-  /** Attach to the session's SSE stream. Returns a disposer. */
+  /** Attach to the session's event stream. Returns a disposer. */
   async stream(sessionId: string, onEvent: (e: AgentEvent) => void): Promise<() => void> {
-    const { port, token } = await info();
-    const es = new EventSource(`http://127.0.0.1:${port}/v1/sessions/${sessionId}/stream?token=${token}`);
-    es.onmessage = (ev) => {
-      try {
-        onEvent(JSON.parse(ev.data) as AgentEvent);
-      } catch {
-        // Ignore malformed frames.
-      }
-    };
-    return () => es.close();
+    const unlisten = await listen<AgentEvent>(`agent-event:${sessionId}`, (ev) => onEvent(ev.payload));
+    await invoke("agent_stream", { sessionId });
+    return unlisten;
   },
 };

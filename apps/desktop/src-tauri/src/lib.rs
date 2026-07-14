@@ -125,7 +125,8 @@ pub fn run() {
             query::execute_sql,
             history::sql_history_list,
             history::sql_history_clear,
-            agent::agent_info,
+            agent::agent_api,
+            agent::agent_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Exasol Studio");
