@@ -79,12 +79,15 @@ function StrengthBar({ score }: { score: number }) {
   );
 }
 
-function PrimaryButton({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+function PrimaryButton({ onClick, disabled, full = true, children }: { onClick: () => void; disabled?: boolean; full?: boolean; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="cta-glow flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[14px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+      className={cn(
+        "cta-glow flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-[14px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50",
+        full ? "w-full" : "px-10",
+      )}
     >
       {children}
     </button>
@@ -256,8 +259,8 @@ export function VaultUnlock({ onUnlocked }: { onUnlocked: () => void }) {
       <div className="space-y-3">
         <Field icon={Lock} value={pw} onChange={setPw} placeholder="Master password" autoFocus onEnter={unlock} />
         {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-        <div className="pt-1">
-          <PrimaryButton onClick={unlock} disabled={!pw || busy}>
+        <div className="flex justify-center pt-1">
+          <PrimaryButton onClick={unlock} disabled={!pw || busy} full={false}>
             <Lock className="h-4 w-4" /> {busy ? "Unlocking…" : "Unlock"}
           </PrimaryButton>
         </div>
