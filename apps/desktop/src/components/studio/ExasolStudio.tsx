@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
+  Boxes,
   ChevronRight,
   ChevronsDownUp,
   CircleSlash2,
@@ -155,6 +156,8 @@ type SqlTab = {
   filePath?: string;
   /** True when this tab's backing file was deleted on disk (title struck out). */
   fileMissing?: boolean;
+  /** Membership in a collapsible tab group (see TabGroup). */
+  groupId?: string;
   /** For object tabs — the database object being inspected. */
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
@@ -162,6 +165,9 @@ type SqlTab = {
   /** Execution lifecycle for the status strip (started/running/completed). */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
 };
+
+/** A collapsible group of query/view tabs shown as one chip in the tab strip. */
+type TabGroup = { id: string; name: string; collapsed: boolean };
 
 function newTab(index: number): SqlTab {
   return {
@@ -1209,6 +1215,9 @@ export function ExasolStudio({
   const connKey = connection?.profile.id ?? NO_CONNECTION;
   const [tabsByConn, setTabsByConn] = useState<Record<string, SqlTab[]>>({});
   const [activeIdByConn, setActiveIdByConn] = useState<Record<string, string>>({});
+  const [groupsByConn, setGroupsByConn] = useState<Record<string, TabGroup[]>>({});
+  // Right-click menu on a tab (group operations).
+  const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const [running, setRunning] = useState(false);
   // Inline tab rename (double-click a tab title).
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
@@ -1506,10 +1515,149 @@ export function ExasolStudio({
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
     if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
+    // Drop any group left with no members.
+    const live = new Set(next.map((t) => t.groupId).filter(Boolean) as string[]);
+    setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
   }
 
   function togglePin(id: string) {
     updateTabs(connKey, (list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
+  }
+
+  // ── Tab groups ────────────────────────────────────────────────────────────
+  const groups = groupsByConn[connKey] ?? [];
+  const setGroups = useCallback(
+    (updater: (g: TabGroup[]) => TabGroup[]) =>
+      setGroupsByConn((prev) => ({ ...prev, [connKey]: updater(prev[connKey] ?? []) })),
+    [connKey],
+  );
+
+  function createGroupFromTab(tabId: string) {
+    tabCounter.current += 1;
+    const gid = `grp-${Date.now()}-${tabCounter.current}`;
+    const n = (groupsByConn[connKey] ?? []).length + 1;
+    setGroups((g) => [...g, { id: gid, name: `Group ${n}`, collapsed: false }]);
+    updateTabs(connKey, (list) => list.map((t) => (t.id === tabId ? { ...t, groupId: gid } : t)));
+  }
+  function addTabToGroup(tabId: string, gid: string) {
+    updateTabs(connKey, (list) => list.map((t) => (t.id === tabId ? { ...t, groupId: gid } : t)));
+  }
+  function removeTabFromGroup(tabId: string) {
+    updateTabs(connKey, (list) => list.map((t) => (t.id === tabId ? { ...t, groupId: undefined } : t)));
+    pruneEmptyGroups();
+  }
+  function toggleGroup(gid: string) {
+    setGroups((g) => g.map((x) => (x.id === gid ? { ...x, collapsed: !x.collapsed } : x)));
+  }
+  function renameGroup(gid: string, name: string) {
+    setGroups((g) => g.map((x) => (x.id === gid ? { ...x, name } : x)));
+  }
+  // Drop groups that no longer have any member tabs.
+  function pruneEmptyGroups() {
+    const live = new Set((tabsFor(connKey) ?? []).map((t) => t.groupId).filter(Boolean) as string[]);
+    setGroups((g) => g.filter((x) => live.has(x.id)));
+  }
+
+  // One tab chip in the strip (reused for grouped and ungrouped tabs).
+  function renderTabChip(tab: SqlTab, grouped = false) {
+    const TabIcon = TAB_ICON[tab.view];
+    const isEditing = renaming?.id === tab.id;
+    return (
+      <div
+        key={tab.id}
+        onClick={() => setActiveTabId(tab.id)}
+        onDoubleClick={() => {
+          if (tab.view === "sql") startRename(tab.id, tab.title);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+        }}
+        title={tab.view === "sql" ? "Double-click to rename · right-click to group" : "Right-click to group"}
+        className={cn(
+          "group flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
+          grouped && "border-r-0",
+          tab.id === activeTabId
+            ? "bg-editor text-foreground"
+            : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
+        )}
+      >
+        <TabIcon className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        {isEditing ? (
+          <input
+            autoFocus
+            value={renaming!.value}
+            onChange={(e) => setRenaming((r) => (r ? { ...r, value: e.target.value } : r))}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              else if (e.key === "Escape") setRenaming(null);
+            }}
+            className="h-5 w-28 rounded border border-primary/50 bg-background px-1 text-[12px] text-foreground outline-none"
+          />
+        ) : (
+          <span
+            className={cn(
+              "max-w-[140px] truncate",
+              tab.fileMissing && "text-destructive line-through decoration-destructive",
+            )}
+            title={tab.fileMissing ? "The file backing this tab was deleted" : undefined}
+          >
+            {tab.title}
+          </span>
+        )}
+        {!isEditing ? (
+          <span className="ml-1 flex items-center">
+            {tab.pinned ? (
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label="Unpin tab"
+                title="Unpin tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePin(tab.id);
+                }}
+                className="rounded p-0.5 text-primary hover:bg-secondary"
+              >
+                <Pin className="h-3 w-3 fill-current" />
+              </span>
+            ) : (
+              <>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Pin tab"
+                  title="Pin tab"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePin(tab.id);
+                  }}
+                  className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
+                >
+                  <Pin className="h-3 w-3" />
+                </span>
+                {tabs.length > 1 ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Close tab"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                ) : null}
+              </>
+            )}
+          </span>
+        ) : null}
+      </div>
+    );
   }
 
   // A file was deleted on disk — flag every open tab backed by it (or by a file
@@ -2131,103 +2279,48 @@ export function ExasolStudio({
           {/* Tab strip */}
           <div data-tour="tabbar" className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
             <div className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {[...tabs]
-                .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
-                .map((tab) => {
-                const TabIcon = TAB_ICON[tab.view];
-                const isEditing = renaming?.id === tab.id;
-                return (
-                  <div
-                    key={tab.id}
-                    onClick={() => setActiveTabId(tab.id)}
-                    onDoubleClick={() => {
-                      if (tab.view === "sql") startRename(tab.id, tab.title);
-                    }}
-                    title={tab.view === "sql" ? "Double-click to rename" : undefined}
-                    className={cn(
-                      "group flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
-                      tab.id === activeTabId
-                        ? "bg-editor text-foreground"
-                        : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
-                    )}
-                  >
-                    <TabIcon className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
-                    {isEditing ? (
-                      <input
-                        autoFocus
-                        value={renaming!.value}
-                        onChange={(e) => setRenaming((r) => (r ? { ...r, value: e.target.value } : r))}
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={commitRename}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitRename();
-                          else if (e.key === "Escape") setRenaming(null);
+              {(() => {
+                const sorted = [...tabs].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+                const emitted = new Set<string>();
+                const els: React.ReactNode[] = [];
+                for (const tab of sorted) {
+                  const g = tab.groupId ? groups.find((x) => x.id === tab.groupId) : undefined;
+                  if (!g) {
+                    els.push(renderTabChip(tab));
+                    continue;
+                  }
+                  if (emitted.has(g.id)) continue; // members rendered with the group
+                  emitted.add(g.id);
+                  const members = sorted.filter((t) => t.groupId === g.id);
+                  const hasActive = members.some((m) => m.id === activeTabId);
+                  els.push(
+                    <div key={g.id} className="flex h-9 shrink-0 items-center border-r border-border">
+                      <button
+                        onClick={() => toggleGroup(g.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const name = window.prompt("Rename group", g.name);
+                          if (name != null && name.trim()) renameGroup(g.id, name.trim());
                         }}
-                        className="h-5 w-28 rounded border border-primary/50 bg-background px-1 text-[12px] text-foreground outline-none"
-                      />
-                    ) : (
-                      <span
+                        title={`${g.collapsed ? "Expand" : "Collapse"} group · right-click to rename`}
                         className={cn(
-                          "max-w-[140px] truncate",
-                          tab.fileMissing && "text-destructive line-through decoration-destructive",
+                          "flex h-9 items-center gap-1.5 px-2.5 text-[12px] font-medium",
+                          hasActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
                         )}
-                        title={tab.fileMissing ? "The file backing this tab was deleted" : undefined}
                       >
-                        {tab.title}
-                      </span>
-                    )}
-                    {!isEditing ? (
-                      <span className="ml-1 flex items-center">
-                        {tab.pinned ? (
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            aria-label="Unpin tab"
-                            title="Unpin tab"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              togglePin(tab.id);
-                            }}
-                            className="rounded p-0.5 text-primary hover:bg-secondary"
-                          >
-                            <Pin className="h-3 w-3 fill-current" />
-                          </span>
-                        ) : (
-                          <>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              aria-label="Pin tab"
-                              title="Pin tab"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                togglePin(tab.id);
-                              }}
-                              className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
-                            >
-                              <Pin className="h-3 w-3" />
-                            </span>
-                            {tabs.length > 1 ? (
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                aria-label="Close tab"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  closeTab(tab.id);
-                                }}
-                                className="rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
-                              >
-                                <X className="h-3 w-3" />
-                              </span>
-                            ) : null}
-                          </>
-                        )}
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
+                        <Boxes className="h-3.5 w-3.5" />
+                        <span className="max-w-[120px] truncate">{g.name}</span>
+                        <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{members.length}</span>
+                        <ChevronRight className={cn("h-3 w-3 transition-transform", !g.collapsed && "rotate-90")} />
+                      </button>
+                      {!g.collapsed ? (
+                        <div className="flex h-9 items-center rounded-md bg-secondary/25">{members.map((m) => renderTabChip(m, true))}</div>
+                      ) : null}
+                    </div>,
+                  );
+                }
+                return els;
+              })()}
               {/* New-tab button sits directly after the last tab. */}
               <button
                 aria-label="New query tab"
@@ -2768,6 +2861,69 @@ export function ExasolStudio({
           onSubmit={(sql) => void runDdl(objAction.profileId, sql)}
           onClose={() => setObjAction(null)}
         />
+      ) : null}
+
+      {tabMenu ? (
+        (() => {
+          const menuTab = tabs.find((t) => t.id === tabMenu.tabId);
+          if (!menuTab) return null;
+          const close = () => setTabMenu(null);
+          const otherGroups = groups.filter((g) => g.id !== menuTab.groupId);
+          return (
+            <>
+              <div className="fixed inset-0 z-[60]" onClick={close} onContextMenu={(e) => { e.preventDefault(); close(); }} />
+              <div
+                style={{ left: Math.min(tabMenu.x, window.innerWidth - 230), top: Math.min(tabMenu.y, window.innerHeight - 200) }}
+                className="fixed z-[61] min-w-[210px] rounded-lg border border-border bg-popover py-1 shadow-2xl"
+              >
+                <div className="truncate px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{menuTab.title}</div>
+                {menuTab.groupId ? (
+                  <button
+                    onClick={() => { removeTabFromGroup(menuTab.id); close(); }}
+                    className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+                  >
+                    Remove from group
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => { createGroupFromTab(menuTab.id); close(); }}
+                      className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+                    >
+                      <Boxes className="h-3.5 w-3.5" /> New group from tab
+                    </button>
+                    {otherGroups.length ? (
+                      <>
+                        <div className="my-1 h-px bg-border" />
+                        <div className="px-3 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Add to group</div>
+                        {otherGroups.map((g) => (
+                          <button
+                            key={g.id}
+                            onClick={() => { addTabToGroup(menuTab.id, g.id); close(); }}
+                            className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+                          >
+                            {g.name}
+                          </button>
+                        ))}
+                      </>
+                    ) : null}
+                  </>
+                )}
+                {tabs.length > 1 ? (
+                  <>
+                    <div className="my-1 h-px bg-border" />
+                    <button
+                      onClick={() => { closeTab(menuTab.id); close(); }}
+                      className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-destructive hover:bg-destructive/10"
+                    >
+                      Close tab
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </>
+          );
+        })()
       ) : null}
 
       {loadFor && connection ? (
