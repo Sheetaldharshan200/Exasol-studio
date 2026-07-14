@@ -13,6 +13,8 @@ import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
+import { isAiProvidersWindow } from "@/lib/ai-window";
+import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { ipc, isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
 
@@ -36,6 +38,10 @@ export function App() {
   // A standalone per-item install window.
   if (isInstallWindow()) {
     return <InstallWindow />;
+  }
+  // The standalone AI provider setup window.
+  if (isAiProvidersWindow()) {
+    return <AiProvidersWindow />;
   }
   return <MainApp />;
 }

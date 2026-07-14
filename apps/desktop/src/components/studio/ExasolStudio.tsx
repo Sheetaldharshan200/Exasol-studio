@@ -2771,6 +2771,7 @@ export function ExasolStudio({
               contextSummary={contextSummary}
               editorSql={activeTab.sql}
               pendingPrompt={aiPrompt}
+              onClose={toggleAi}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -5,18 +5,19 @@ import {
   Cpu,
   FileSearch,
   Gauge,
+  PanelRightClose,
   RotateCcw,
   Send,
-  Settings2,
+  SlidersHorizontal,
   Square,
   Table2,
   Wand2,
 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { agent, type AgentEvent, type AgentProviderInfo } from "@/lib/agent-client";
+import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -58,27 +59,26 @@ const SUGGESTIONS: { icon: typeof Wand2; label: string; kind: "run" | "insert"; 
   { icon: Table2, label: "List my tables", kind: "run", payload: "List the tables in the current schema, one line each." },
 ];
 
-const CLOUD_KEY_PROVIDERS = ["anthropic", "openai", "google", "openrouter"];
-
 export function AssistantPanel({
   contextSummary,
   editorSql,
   pendingPrompt,
+  onClose,
 }: {
   contextSummary: string;
   editorSql: string;
   /** An external prompt (e.g. "AI explain plan") to send automatically. */
   pendingPrompt?: { text: string; nonce: number } | null;
+  /** Hide the AI side panel. */
+  onClose?: () => void;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<string>("");
-  const [showSettings, setShowSettings] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
-  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [menuIndex, setMenuIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -107,7 +107,11 @@ export function AssistantPanel({
 
   useEffect(() => {
     void refreshProviders();
-    return () => disposeRef.current?.();
+    const un = listen(EV_AI_PROVIDERS_CHANGED, () => void refreshProviders());
+    return () => {
+      disposeRef.current?.();
+      void un.then((f) => f());
+    };
   }, [refreshProviders]);
 
   useEffect(() => {
@@ -226,7 +230,7 @@ export function AssistantPanel({
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     if (!model) {
-      setShowSettings(true);
+      void openAiProvidersWindow();
       return;
     }
     setMessages((m) => [...m, { id: `u-${Date.now()}`, role: "user", content: trimmed }]);
@@ -251,14 +255,6 @@ export function AssistantPanel({
 
   async function stop() {
     if (sessionRef.current) await agent.abort(sessionRef.current).catch(() => undefined);
-  }
-
-  async function saveKey(providerId: string) {
-    const key = keyDrafts[providerId]?.trim();
-    if (!key) return;
-    await agent.setProviderKey(providerId, key);
-    setKeyDrafts((d) => ({ ...d, [providerId]: "" }));
-    await refreshProviders();
   }
 
   function pickModel(ref: string) {
@@ -329,71 +325,25 @@ export function AssistantPanel({
             </button>
           ) : null}
           <button
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground",
-              showSettings && "text-primary",
-            )}
-            onClick={() => {
-              setShowSettings((s) => !s);
-              setShowPicker(false);
-            }}
-            aria-label="Assistant settings"
-            title="Models & keys"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+            onClick={() => void openAiProvidersWindow()}
+            aria-label="AI providers"
+            title="AI providers"
           >
-            <Settings2 className="h-3.5 w-3.5" />
+            <SlidersHorizontal className="h-3.5 w-3.5" />
           </button>
+          {onClose ? (
+            <button
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+              onClick={onClose}
+              aria-label="Hide AI panel"
+              title="Hide panel"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       </div>
-
-      {/* ── Settings ── */}
-      {showSettings ? (
-        <div className="max-h-[45%] space-y-2.5 overflow-y-auto border-b border-border bg-secondary/40 p-3">
-          <div className="rounded-lg border border-border bg-panel/60 px-2.5 py-2">
-            <div className="flex items-center gap-1.5">
-              <Cpu className="h-3.5 w-3.5 text-primary" />
-              <span className="text-[12px] font-medium text-foreground">Local models</span>
-              {ollama?.running ? (
-                <span className="ml-auto flex items-center gap-1 text-[10px] text-primary">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary" /> running
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              {ollama?.running
-                ? `Ollama — ${ollama.models.length} model${ollama.models.length === 1 ? "" : "s"} ready. Private, free, no key needed.`
-                : ollama?.installedOnly
-                  ? "Ollama is installed but not running. Start it with `ollama serve`, then reopen this panel."
-                  : "Install Ollama (ollama.com) to chat with free local models — fully private, no API key."}
-            </p>
-          </div>
-          {providers
-            .filter((p) => p.kind === "cloud" && CLOUD_KEY_PROVIDERS.includes(p.id))
-            .map((p) => (
-              <div key={p.id} className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="eyebrow-muted">{p.name}</span>
-                  {p.configured ? (
-                    <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">
-                      <Check className="h-2 w-2" /> key saved
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex gap-1.5">
-                  <Input
-                    type="password"
-                    placeholder={p.configured ? "•••• saved — enter to replace" : "API key…"}
-                    value={keyDrafts[p.id] ?? ""}
-                    onChange={(e) => setKeyDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
-                    className="h-7 text-xs"
-                  />
-                  <Button size="sm" className="h-7" disabled={!keyDrafts[p.id]?.trim()} onClick={() => void saveKey(p.id)}>
-                    Save
-                  </Button>
-                </div>
-              </div>
-            ))}
-        </div>
-      ) : null}
 
       {/* ── Conversation ── */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -485,10 +435,7 @@ export function AssistantPanel({
             <div className="relative min-w-0">
               <button
                 type="button"
-                onClick={() => {
-                  setShowPicker((s) => !s);
-                  setShowSettings(false);
-                }}
+                onClick={() => setShowPicker((s) => !s)}
                 className="flex max-w-[190px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               >
                 {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
@@ -535,11 +482,11 @@ export function AssistantPanel({
                   <button
                     onClick={() => {
                       setShowPicker(false);
-                      setShowSettings(true);
+                      void openAiProvidersWindow();
                     }}
                     className="flex w-full items-center gap-1.5 border-t border-border px-2.5 py-1.5 text-left text-[11px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   >
-                    <Settings2 className="h-3 w-3" /> Manage models & keys…
+                    <SlidersHorizontal className="h-3 w-3" /> Manage models & keys…
                   </button>
                 </div>
               ) : null}
