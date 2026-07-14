@@ -1658,7 +1658,7 @@ export function ExasolStudio({
                 >
                   <Pin className="h-3 w-3" />
                 </span>
-                {tabs.length > 1 ? (
+                {(
                   <span
                     role="button"
                     tabIndex={0}
@@ -1671,7 +1671,7 @@ export function ExasolStudio({
                   >
                     <X className="h-3 w-3" />
                   </span>
-                ) : null}
+                )}
               </>
             )}
           </span>
