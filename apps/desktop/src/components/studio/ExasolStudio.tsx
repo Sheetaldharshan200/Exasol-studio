@@ -101,7 +101,7 @@ import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
-import { ObjectContextMenu, SqlReviewDialog } from "@/features/workbench/ObjectContextMenu";
+import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/features/workbench/ObjectContextMenu";
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
 import { GitPanel } from "@/features/workbench/GitPanel";
@@ -1240,7 +1240,7 @@ export function ExasolStudio({
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
   const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ profileId: string; node: TreeNode; x: number; y: number } | null>(null);
-  const [ddlReview, setDdlReview] = useState<{ profileId: string; title: string; sql: string } | null>(null);
+  const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const tabCounter = useRef(1);
@@ -1409,11 +1409,11 @@ export function ExasolStudio({
       await ipc.executeSql(profileId, conn.profile.name, sql, 1, false);
       setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
       loadHistory();
-      setDdlReview(null);
+      setObjAction(null);
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e) });
       setResultTab("messages");
-      setDdlReview(null);
+      setObjAction(null);
     } finally {
       setRunning(false);
     }
@@ -2700,7 +2700,7 @@ export function ExasolStudio({
           defaultSchema={connections.find((c) => c.profile.id === ctxMenu.profileId)?.profile.schema ?? undefined}
           onClose={() => setCtxMenu(null)}
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
-          onDdl={(title, sql) => setDdlReview({ profileId: ctxMenu.profileId, title, sql })}
+          onAction={(action) => setObjAction({ profileId: ctxMenu.profileId, action })}
           onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
           onFavorite={
             ctxMenu.node.ctx && !ctxMenu.node.ctx.type.startsWith("new-")
@@ -2717,13 +2717,12 @@ export function ExasolStudio({
         />
       ) : null}
 
-      {ddlReview ? (
-        <SqlReviewDialog
-          title={ddlReview.title}
-          sql={ddlReview.sql}
+      {objAction ? (
+        <ObjectActionDialog
+          action={objAction.action}
           busy={running}
-          onRun={(finalSql) => void runDdl(ddlReview.profileId, finalSql)}
-          onClose={() => setDdlReview(null)}
+          onSubmit={(sql) => void runDdl(objAction.profileId, sql)}
+          onClose={() => setObjAction(null)}
         />
       ) : null}
 
