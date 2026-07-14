@@ -175,21 +175,24 @@ pub fn git_init() -> AppResult<()> {
 
 /// Stage everything and commit with the given message.
 #[tauri::command]
-pub fn git_commit(message: String) -> AppResult<String> {
+pub fn git_commit(message: String, stage_all: Option<bool>) -> AppResult<String> {
     let msg = message.trim();
     if msg.is_empty() {
         return Err(AppError::Storage("Commit message is required.".into()));
     }
-    let (ok, _, err) = run(&["add", "-A"])?;
-    if !ok {
-        return Err(AppError::Storage(format!("git add failed: {err}")));
+    // Only stage everything when asked; otherwise commit what's already staged.
+    if stage_all.unwrap_or(false) {
+        let (ok, _, err) = run(&["add", "-A"])?;
+        if !ok {
+            return Err(AppError::Storage(format!("git add failed: {err}")));
+        }
     }
     let (cok, out, cerr) = run(&["commit", "-m", msg])?;
     if !cok {
         let combined = format!("{out}{cerr}");
         // Nothing to commit is a benign, common case — surface it clearly.
         if combined.contains("nothing to commit") {
-            return Err(AppError::Storage("Nothing to commit — the working tree is clean.".into()));
+            return Err(AppError::Storage("Nothing staged to commit.".into()));
         }
         // A fresh repo with no identity configured is the other common snag.
         if combined.contains("Please tell me who you are") || combined.contains("user.email") {
@@ -240,4 +243,226 @@ pub fn git_log(limit: Option<u32>) -> AppResult<Vec<GitLogEntry>> {
         }
     }
     Ok(entries)
+}
+
+// ── Branches ─────────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranches {
+    pub current: String,
+    pub local: Vec<String>,
+    pub remote: Vec<String>,
+}
+
+#[tauri::command]
+pub fn git_branches() -> AppResult<GitBranches> {
+    if resolve_bin("git").is_none() {
+        return Ok(GitBranches { current: String::new(), local: vec![], remote: vec![] });
+    }
+    let (_, cur, _) = run(&["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let (_, l, _) = run(&["branch", "--format=%(refname:short)"])?;
+    let (_, r, _) = run(&["branch", "-r", "--format=%(refname:short)"])?;
+    let split = |s: &str| s.lines().map(|x| x.trim().to_string()).filter(|x| !x.is_empty() && !x.contains("->")).collect::<Vec<_>>();
+    Ok(GitBranches { current: cur.trim().to_string(), local: split(&l), remote: split(&r) })
+}
+
+#[tauri::command]
+pub fn git_checkout(branch: String) -> AppResult<()> {
+    let (ok, _, err) = run(&["checkout", &branch])?;
+    if !ok {
+        return Err(AppError::Storage(format!("git checkout failed: {}", err.trim())));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_create_branch(name: String) -> AppResult<()> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err(AppError::Storage("Branch name is required.".into()));
+    }
+    let (ok, _, err) = run(&["checkout", "-b", n])?;
+    if !ok {
+        return Err(AppError::Storage(format!("git branch failed: {}", err.trim())));
+    }
+    Ok(())
+}
+
+// ── Staging & discard ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn git_stage(paths: Vec<String>) -> AppResult<()> {
+    let mut args = vec!["add", "--"];
+    for p in &paths {
+        args.push(p.as_str());
+    }
+    let (ok, _, err) = run(&args)?;
+    if !ok {
+        return Err(AppError::Storage(format!("git add failed: {}", err.trim())));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stage_all() -> AppResult<()> {
+    let (ok, _, err) = run(&["add", "-A"])?;
+    if !ok {
+        return Err(AppError::Storage(format!("git add failed: {}", err.trim())));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_unstage(paths: Vec<String>) -> AppResult<()> {
+    let mut args = vec!["restore", "--staged", "--"];
+    for p in &paths {
+        args.push(p.as_str());
+    }
+    let (ok, _, err) = run(&args)?;
+    if !ok {
+        // Fall back for older git.
+        let mut a2 = vec!["reset", "-q", "HEAD", "--"];
+        for p in &paths {
+            a2.push(p.as_str());
+        }
+        let (ok2, _, err2) = run(&a2)?;
+        if !ok2 {
+            return Err(AppError::Storage(format!("git unstage failed: {}", if err2.trim().is_empty() { err.trim() } else { err2.trim() })));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_discard(paths: Vec<String>) -> AppResult<()> {
+    for p in &paths {
+        // Tracked: restore working-tree version. Untracked: remove the file.
+        let _ = run(&["restore", "--", p]);
+        let (tracked, _, _) = run(&["ls-files", "--error-unmatch", "--", p])?;
+        if !tracked {
+            let full = workspace()?.join(p);
+            let _ = std::fs::remove_file(&full);
+        }
+    }
+    Ok(())
+}
+
+// ── Diff ─────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn git_diff(path: String, staged: bool) -> AppResult<String> {
+    let mut args = vec!["diff"];
+    if staged {
+        args.push("--staged");
+    }
+    args.push("--");
+    args.push(path.as_str());
+    let (_, out, _) = run(&args)?;
+    if out.trim().is_empty() {
+        // Untracked file: show its content as an all-added diff.
+        if let Ok(text) = std::fs::read_to_string(workspace()?.join(&path)) {
+            let body: String = text.lines().map(|l| format!("+{l}")).collect::<Vec<_>>().join("\n");
+            return Ok(format!("@@ new file @@\n{body}"));
+        }
+    }
+    Ok(out)
+}
+
+// ── Remote operations ──────────────────────────────────────────────────────────
+
+fn remote_op(args: &[&str], label: &str) -> AppResult<String> {
+    let (has_remote, remotes, _) = run(&["remote"])?;
+    if !has_remote || remotes.trim().is_empty() {
+        return Err(AppError::Storage("No git remote is configured for this workspace.".into()));
+    }
+    let (ok, out, err) = run(args)?;
+    if !ok {
+        return Err(AppError::Storage(format!("git {label} failed: {}", err.trim())));
+    }
+    Ok(if out.trim().is_empty() { err.trim().to_string() } else { out.trim().to_string() })
+}
+
+#[tauri::command]
+pub fn git_fetch() -> AppResult<String> {
+    remote_op(&["fetch", "--all", "--prune"], "fetch")
+}
+
+#[tauri::command]
+pub fn git_pull() -> AppResult<String> {
+    remote_op(&["pull", "--ff-only"], "pull")
+}
+
+#[tauri::command]
+pub fn git_push() -> AppResult<String> {
+    // Push, setting upstream if the branch has none yet.
+    let (has_remote, remotes, _) = run(&["remote"])?;
+    if !has_remote || remotes.trim().is_empty() {
+        return Err(AppError::Storage("No git remote is configured for this workspace.".into()));
+    }
+    let (ok, out, err) = run(&["push"])?;
+    if ok {
+        return Ok(if out.trim().is_empty() { err.trim().to_string() } else { out.trim().to_string() });
+    }
+    // No upstream yet → push and set it.
+    let (_, cur, _) = run(&["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let cur = cur.trim();
+    let first = remotes.lines().next().unwrap_or("origin").trim().to_string();
+    let (ok2, out2, err2) = run(&["push", "-u", &first, cur])?;
+    if !ok2 {
+        return Err(AppError::Storage(format!("git push failed: {}", err2.trim())));
+    }
+    Ok(if out2.trim().is_empty() { err2.trim().to_string() } else { out2.trim().to_string() })
+}
+
+// ── Commit graph (the "git map") ───────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommit {
+    pub hash: String,
+    pub short: String,
+    pub parents: Vec<String>,
+    pub refs: String,
+    pub subject: String,
+    pub author: String,
+    pub relative: String,
+}
+
+#[tauri::command]
+pub fn git_graph(limit: Option<u32>) -> AppResult<Vec<GitCommit>> {
+    if resolve_bin("git").is_none() {
+        return Ok(vec![]);
+    }
+    let n = format!("-{}", limit.unwrap_or(200).clamp(1, 1000));
+    let (ok, out, _) = run(&[
+        "log",
+        "--all",
+        "--date-order",
+        &n,
+        "--pretty=format:%H\x1f%h\x1f%P\x1f%D\x1f%s\x1f%an\x1f%cr\x1e",
+    ])?;
+    if !ok {
+        return Ok(vec![]);
+    }
+    let mut commits = Vec::new();
+    for rec in out.split('\x1e') {
+        let rec = rec.trim_matches(['\n', '\r']);
+        if rec.is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = rec.split('\x1f').collect();
+        if f.len() >= 7 {
+            commits.push(GitCommit {
+                hash: f[0].to_string(),
+                short: f[1].to_string(),
+                parents: f[2].split_whitespace().map(|s| s.to_string()).collect(),
+                refs: f[3].to_string(),
+                subject: f[4].to_string(),
+                author: f[5].to_string(),
+                relative: f[6].to_string(),
+            });
+        }
+    }
+    Ok(commits)
 }

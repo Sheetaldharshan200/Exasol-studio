@@ -595,6 +595,29 @@ export async function mockInvoke(
         { hash: "abc1234", subject: "Add revenue report", author: "You", relative: "2 hours ago" },
         { hash: "def5678", subject: "Initial workspace", author: "You", relative: "yesterday" },
       ];
+    case "git_branches":
+      return { current: "main", local: ["main", "feature/x"], remote: ["origin/main"] };
+    case "git_checkout":
+    case "git_create_branch":
+    case "git_stage":
+    case "git_stage_all":
+    case "git_unstage":
+    case "git_discard":
+      await delay(120);
+      return null;
+    case "git_diff":
+      return "@@ -1,3 +1,4 @@\n SELECT 1\n-FROM dual\n+FROM DUAL\n+WHERE x = 1";
+    case "git_fetch":
+    case "git_pull":
+    case "git_push":
+      await delay(200);
+      return "Up to date.";
+    case "git_graph":
+      return [
+        { hash: "aaa", short: "abc1234", parents: ["bbb"], refs: "HEAD -> main, origin/main", subject: "Add revenue report", author: "You", relative: "2h" },
+        { hash: "bbb", short: "def5678", parents: ["ccc"], refs: "", subject: "Tweak query", author: "You", relative: "yesterday" },
+        { hash: "ccc", short: "999aaaa", parents: [], refs: "tag: v1", subject: "Initial workspace", author: "You", relative: "3d" },
+      ];
 
     case "market_uninstall":
       return null;

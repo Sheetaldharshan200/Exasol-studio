@@ -85,6 +85,22 @@ export type GitLogEntry = {
   relative: string;
 };
 
+export type GitBranches = {
+  current: string;
+  local: string[];
+  remote: string[];
+};
+
+export type GitCommit = {
+  hash: string;
+  short: string;
+  parents: string[];
+  refs: string;
+  subject: string;
+  author: string;
+  relative: string;
+};
+
 export type ScriptInfo = {
   name: string;
   scriptType: "UDF" | "SCRIPTING" | "ADAPTER" | "PREPROCESSOR" | string;
@@ -418,8 +434,20 @@ export const ipc = {
   openExternal: (url: string) => call<null>("open_external", { url }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
-  gitCommit: (message: string) => call<string>("git_commit", { message }),
+  gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),
   gitLog: (limit?: number) => call<GitLogEntry[]>("git_log", { limit }),
+  gitBranches: () => call<GitBranches>("git_branches"),
+  gitCheckout: (branch: string) => call<null>("git_checkout", { branch }),
+  gitCreateBranch: (name: string) => call<null>("git_create_branch", { name }),
+  gitStage: (paths: string[]) => call<null>("git_stage", { paths }),
+  gitStageAll: () => call<null>("git_stage_all"),
+  gitUnstage: (paths: string[]) => call<null>("git_unstage", { paths }),
+  gitDiscard: (paths: string[]) => call<null>("git_discard", { paths }),
+  gitDiff: (path: string, staged: boolean) => call<string>("git_diff", { path, staged }),
+  gitFetch: () => call<string>("git_fetch"),
+  gitPull: () => call<string>("git_pull"),
+  gitPush: () => call<string>("git_push"),
+  gitGraph: (limit?: number) => call<GitCommit[]>("git_graph", { limit }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
