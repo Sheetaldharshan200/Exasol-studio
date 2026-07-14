@@ -130,6 +130,48 @@ A visible agent cursor that *does things in the app*, always under user control.
 - **Every `ui_*` call flows through the permission system** — in Ask mode the cursor
   moves to the target and waits with an Approve/Deny chip before acting.
 
+## 6.1 Orchestration: hand-rolled loop — explicitly NOT LangChain/LangGraph
+
+Decision: no agent framework. opencode, Claude Code, and Codex CLI all use a plain
+hand-written loop; the core is ~200 lines (`streamText` → execute tool calls behind the
+permission gate → append results → repeat until no tool calls). Rationale:
+
+- LangChain/LangGraph wrap everything in chains/graphs/runnables — debugging crosses
+  five framework layers, and the ecosystem has notorious breaking-change churn.
+- We'd use ~5% of it. LangGraph's real value (multi-agent state machines,
+  checkpointing) doesn't apply: we are one agent + tools, and checkpointing is our
+  SQLite session store anyway.
+- The genuinely hard part — provider abstraction — is outsourced to the AI SDK +
+  models.dev. The loop, permissions, and tools stay ours: small, deterministic,
+  greppable. That is the maintenance strategy.
+
+## 6.2 Logs & observability (local-first)
+
+- **Session transcripts as JSONL** — one file per session in the app data dir: every
+  LLM request/response, tool call + args + result + duration, permission decision,
+  token counts and cost (from models.dev pricing). Append-only, replayable, exportable.
+- **pino** structured logger in agent-core (JSON, daily rotation). One logger, levels.
+- **In-app Activity view** renders the JSONL live: timeline of tool calls, expandable
+  args/results, per-session token/cost meter. Doubles as the user-facing audit trail.
+- **CLI:** `exa-agent logs` tails the same files — identical format everywhere.
+- Optional later: OpenTelemetry/Langfuse exporters. Default is 100% local files.
+
+## 6.3 Cursor implementation details (smoothness contract)
+
+- Single `AgentCursor` overlay at the app root, `position: fixed`, animated ONLY with
+  `transform: translate3d` via Framer Motion springs (stiffness ~120, damping ~20) —
+  GPU-composited, no layout thrash, 60fps under load.
+- `useAgentAnchor` hook registers `data-agent-id` elements in a live map. Tool call →
+  resolve anchor → `scrollIntoView` if off-screen → wait for settle → spring to rect
+  center.
+- Visual state machine: idle → moving → hovering (glow) → awaiting-approval (pulse +
+  Approve/Deny chip anchored to cursor) → clicking (ripple) → done. Narration chip
+  follows the cursor ("Saving query…").
+- The click is real: after landing, dispatch the registered command handler (same code
+  path as the button) — never a synthetic DOM click.
+- `prefers-reduced-motion` → fade-teleport instead of glide. Esc cancels mid-flight and
+  aborts the tool call.
+
 ## 7. Human-in-the-loop permission model
 
 opencode-style ruleset, per scope, each `allow | ask | deny`:
