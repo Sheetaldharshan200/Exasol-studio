@@ -4,9 +4,9 @@
   "version": "26.0.1",
   "identifier": "com.exasol.studio",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm -w -F @exasol-studio/agent-core build && pnpm dev",
     "devUrl": "http://127.0.0.1:4173",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm -w -F @exasol-studio/agent-core build && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -41,7 +41,10 @@
         "installMode": "currentUser"
       }
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "../../../packages/agent-core/dist/agent-core.cjs": "agent-core.cjs"
+    }
   },
   "plugins": {
     "updater": {

@@ -794,19 +794,8 @@ export async function mockInvoke(
       history = [];
       return null;
 
-    case "get_assistant_settings":
-      return { apiKey: "", model: "claude-opus-4-8" };
-
-    case "set_assistant_settings":
-      return { apiKey: "…demo", model: (args?.model as string) ?? "claude-opus-4-8" };
-
-    case "ai_chat":
-      await delay(600);
-      return {
-        text: "This is the design-preview assistant. Run the desktop app and add an Anthropic API key in the assistant settings to chat for real.",
-        model: "claude-opus-4-8",
-        stopReason: "end_turn",
-      };
+    case "agent_info":
+      throw new Error("The AI assistant requires the desktop app.");
 
     case "get_app_settings":
       return {};

@@ -1,22 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AtSign,
   Bot,
+  Check,
+  ChevronDown,
+  Cpu,
   KeyRound,
   Loader2,
   Send,
   Slash,
   Sparkles,
+  Square,
   User,
   Wand2,
   X,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { errorMessage, ipc, type ChatMessage } from "@/lib/ipc";
+import { agent, type AgentEvent, type AgentProviderInfo } from "@/lib/agent-client";
+import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
-type DisplayMessage = ChatMessage & { id: string; error?: boolean };
+type DisplayMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  error?: boolean;
+  streaming?: boolean;
+};
 
 type SlashCommand = {
   cmd: string;
@@ -41,6 +53,8 @@ const MENTIONS: { at: string; desc: string }[] = [
   { at: "@history", desc: "Recent queries" },
 ];
 
+const CLOUD_KEY_PROVIDERS = ["anthropic", "openai", "google", "openrouter"];
+
 export function AssistantPanel({
   contextSummary,
   editorSql,
@@ -54,35 +68,79 @@ export function AssistantPanel({
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
+  const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const [model, setModel] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
-  const [keyDraft, setKeyDraft] = useState("");
-  const [model, setModel] = useState("claude-opus-4-8");
+  const [showPicker, setShowPicker] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [menuIndex, setMenuIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sessionRef = useRef<string | null>(null);
+  const disposeRef = useRef<(() => void) | null>(null);
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      const { providers: list, defaultModel } = await agent.models();
+      setProviders(list);
+      setAgentError(null);
+      setModel((cur) => {
+        if (cur) return cur;
+        if (defaultModel) return defaultModel;
+        // Prefer a running local model, then any configured cloud model.
+        const local = list.find((p) => p.kind === "local" && p.running && p.models.length);
+        if (local) return `${local.id}/${local.models[0].id}`;
+        const cloud = list.find((p) => p.kind === "cloud" && p.configured && p.models.length);
+        if (cloud) return `${cloud.id}/${cloud.models[0].id}`;
+        return "";
+      });
+    } catch (err) {
+      setAgentError(errorMessage(err));
+    }
+  }, []);
 
   useEffect(() => {
-    ipc.getAssistantSettings().then((s) => {
-      setHasKey(Boolean(s.apiKey));
-      setModel(s.model);
-      if (!s.apiKey) setShowSettings(true);
-    });
-  }, []);
+    void refreshProviders();
+    return () => disposeRef.current?.();
+  }, [refreshProviders]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
-  // An external action (e.g. "AI explain plan") pushed a prompt to send.
-  const lastNonce = useRef(0);
-  useEffect(() => {
-    if (pendingPrompt && pendingPrompt.nonce !== lastNonce.current) {
-      lastNonce.current = pendingPrompt.nonce;
-      void send(pendingPrompt.text);
+  const handleEvent = useCallback((e: AgentEvent) => {
+    if (e.type === "message-start") {
+      setMessages((m) => [...m, { id: e.messageId, role: "assistant", content: "", streaming: true }]);
+    } else if (e.type === "text-delta") {
+      setMessages((m) =>
+        m.map((msg) => (msg.id === e.messageId ? { ...msg, content: msg.content + e.delta } : msg)),
+      );
+    } else if (e.type === "message-done") {
+      setMessages((m) => m.map((msg) => (msg.id === e.messageId ? { ...msg, streaming: false } : msg)));
+      setSending(false);
+    } else if (e.type === "error") {
+      setMessages((m) => {
+        // Attach the error to the streaming bubble if one exists, else append.
+        const last = m[m.length - 1];
+        if (last?.streaming && !last.content) {
+          return m.map((msg) =>
+            msg.id === last.id ? { ...msg, content: e.message, error: true, streaming: false } : msg,
+          );
+        }
+        return [...m, { id: `e-${Date.now()}`, role: "assistant", content: e.message, error: true }];
+      });
+      setSending(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPrompt]);
+  }, []);
+
+  async function ensureSession(): Promise<string> {
+    if (sessionRef.current) return sessionRef.current;
+    const id = await agent.createSession();
+    sessionRef.current = id;
+    disposeRef.current = await agent.stream(id, handleEvent);
+    return id;
+  }
 
   // Detect a "/" command at the start or a trailing "@" mention token.
   const trigger = useMemo(() => {
@@ -112,12 +170,15 @@ export function AssistantPanel({
 
   useEffect(() => setMenuIndex(0), [input]);
 
-  async function saveSettings() {
-    const saved = await ipc.setAssistantSettings(keyDraft || undefined, model);
-    setHasKey(Boolean(saved.apiKey));
-    setKeyDraft("");
-    setShowSettings(false);
-  }
+  // An external action (e.g. "AI explain plan") pushed a prompt to send.
+  const lastNonce = useRef(0);
+  useEffect(() => {
+    if (pendingPrompt && pendingPrompt.nonce !== lastNonce.current) {
+      lastNonce.current = pendingPrompt.nonce;
+      void send(pendingPrompt.text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
 
   function applySlash(cmd: SlashCommand) {
     if (cmd.kind === "clear") {
@@ -152,11 +213,11 @@ export function AssistantPanel({
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
-    const next: DisplayMessage[] = [
-      ...messages,
-      { id: `u-${Date.now()}`, role: "user", content: trimmed },
-    ];
-    setMessages(next);
+    if (!model) {
+      setShowSettings(true);
+      return;
+    }
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: "user", content: trimmed }]);
     setInput("");
     setSending(true);
 
@@ -165,19 +226,33 @@ export function AssistantPanel({
       .join("\n\n");
 
     try {
-      const reply = await ipc.aiChat(
-        next.map(({ role, content }) => ({ role, content })),
-        context,
-      );
-      setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "assistant", content: reply.text }]);
+      const sid = await ensureSession();
+      await agent.send(sid, trimmed, model, context || undefined);
     } catch (err) {
       setMessages((m) => [
         ...m,
         { id: `e-${Date.now()}`, role: "assistant", content: errorMessage(err), error: true },
       ]);
-    } finally {
       setSending(false);
     }
+  }
+
+  async function stop() {
+    if (sessionRef.current) await agent.abort(sessionRef.current).catch(() => undefined);
+  }
+
+  async function saveKey(providerId: string) {
+    const key = keyDrafts[providerId]?.trim();
+    if (!key) return;
+    await agent.setProviderKey(providerId, key);
+    setKeyDrafts((d) => ({ ...d, [providerId]: "" }));
+    await refreshProviders();
+  }
+
+  function pickModel(ref: string) {
+    setModel(ref);
+    setShowPicker(false);
+    void agent.setDefaultModel(ref).catch(() => undefined);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -204,21 +279,80 @@ export function AssistantPanel({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      send(input);
+      void send(input);
     }
   }
+
+  const modelLabel = useMemo(() => {
+    if (!model) return "choose model";
+    const [pid, ...rest] = model.split("/");
+    const mid = rest.join("/");
+    const p = providers.find((x) => x.id === pid);
+    return p?.models.find((m) => m.id === mid)?.name ?? mid;
+  }, [model, providers]);
+
+  const isLocalModel = model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
+  const ollama = providers.find((p) => p.id === "ollama");
 
   return (
     <aside className="flex h-full min-w-0 flex-col border-l border-border bg-panel">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="text-[13px] font-semibold text-foreground">AI Assistant</span>
-          <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[9px] text-muted-foreground">
-            {model.replace("claude-", "")}
-          </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+          <span className="shrink-0 text-[13px] font-semibold text-foreground">AI</span>
+          {/* Model picker */}
+          <div className="relative min-w-0">
+            <button
+              onClick={() => {
+                setShowPicker((s) => !s);
+                setShowSettings(false);
+              }}
+              className="flex max-w-full items-center gap-1 rounded-full bg-secondary px-2 py-px font-mono text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              {isLocalModel ? <Cpu className="h-2.5 w-2.5 shrink-0 text-primary" /> : null}
+              <span className="truncate">{modelLabel}</span>
+              <ChevronDown className="h-2.5 w-2.5 shrink-0" />
+            </button>
+            {showPicker ? (
+              <div className="absolute left-0 top-full z-30 mt-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
+                {providers
+                  .filter((p) => p.models.length > 0 && (p.kind === "local" ? p.running : p.configured))
+                  .map((p) => (
+                    <div key={p.id}>
+                      <div className="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
+                        <span className="eyebrow-muted">{p.name}</span>
+                        {p.kind === "local" ? (
+                          <span className="rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">local</span>
+                        ) : null}
+                      </div>
+                      {p.models.map((m) => {
+                        const ref = `${p.id}/${m.id}`;
+                        return (
+                          <button
+                            key={ref}
+                            onClick={() => pickModel(ref)}
+                            className={cn(
+                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
+                              ref === model && "bg-secondary",
+                            )}
+                          >
+                            <span className="flex-1 truncate text-[12px] text-foreground">{m.name}</span>
+                            {ref === model ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                {providers.every((p) => (p.kind === "local" ? !p.running || !p.models.length : !p.configured)) ? (
+                  <div className="px-2.5 py-3 text-[11.5px] text-muted-foreground">
+                    No models available yet — add an API key or start Ollama.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {messages.length > 0 ? (
             <button
               className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
@@ -233,7 +367,10 @@ export function AssistantPanel({
               "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground",
               showSettings && "text-primary",
             )}
-            onClick={() => setShowSettings((s) => !s)}
+            onClick={() => {
+              setShowSettings((s) => !s);
+              setShowPicker(false);
+            }}
             aria-label="Assistant settings"
           >
             <KeyRound className="h-3.5 w-3.5" />
@@ -242,27 +379,62 @@ export function AssistantPanel({
       </div>
 
       {showSettings ? (
-        <div className="space-y-2 border-b border-border bg-secondary/40 p-3">
-          <span className="eyebrow-muted">Anthropic API key</span>
-          <Input
-            type="password"
-            placeholder={hasKey ? "•••• saved — enter to replace" : "sk-ant-…"}
-            value={keyDraft}
-            onChange={(e) => setKeyDraft(e.target.value)}
-          />
-          <Input value={model} onChange={(e) => setModel(e.target.value)} className="font-mono text-xs" />
-          <div className="flex justify-end gap-2">
+        <div className="space-y-3 overflow-y-auto border-b border-border bg-secondary/40 p-3">
+          {/* Local runtime status */}
+          <div className="rounded-lg border border-border bg-panel/60 px-2.5 py-2">
+            <div className="flex items-center gap-1.5">
+              <Cpu className="h-3.5 w-3.5 text-primary" />
+              <span className="text-[12px] font-medium text-foreground">Local models</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {ollama?.running
+                ? `Ollama is running — ${ollama.models.length} model${ollama.models.length === 1 ? "" : "s"} ready. No key needed.`
+                : ollama?.installedOnly
+                  ? "Ollama is installed but not running. Start it with `ollama serve`, then reopen this panel."
+                  : "Install Ollama (ollama.com) to chat with free local models — fully private, no API key."}
+            </p>
+          </div>
+          {/* Cloud provider keys */}
+          {providers
+            .filter((p) => p.kind === "cloud" && CLOUD_KEY_PROVIDERS.includes(p.id))
+            .map((p) => (
+              <div key={p.id} className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="eyebrow-muted">{p.name}</span>
+                  {p.configured ? (
+                    <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">
+                      <Check className="h-2 w-2" /> key saved
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex gap-1.5">
+                  <Input
+                    type="password"
+                    placeholder={p.configured ? "•••• saved — enter to replace" : "API key…"}
+                    value={keyDrafts[p.id] ?? ""}
+                    onChange={(e) => setKeyDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
+                    className="h-7 text-xs"
+                  />
+                  <Button size="sm" className="h-7" disabled={!keyDrafts[p.id]?.trim()} onClick={() => void saveKey(p.id)}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+            ))}
+          <div className="flex justify-end">
             <Button size="sm" variant="ghost" onClick={() => setShowSettings(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={saveSettings}>
-              Save
+              Close
             </Button>
           </div>
         </div>
       ) : null}
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {agentError ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-foreground">
+            {agentError}
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <div className="mt-6 flex flex-col items-center gap-2 px-4 text-center">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
@@ -271,6 +443,7 @@ export function AssistantPanel({
             <p className="text-sm font-medium text-foreground">Ask about your database</p>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Generate Exasol SQL, explain a query, or get tuning tips.
+              {ollama?.running ? " Running on your local models." : ""}
             </p>
             <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
@@ -284,7 +457,7 @@ export function AssistantPanel({
         ) : (
           messages.map((m) => <Bubble key={m.id} message={m} />)
         )}
-        {sending ? (
+        {sending && !messages.some((m) => m.streaming && m.content) ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
           </div>
@@ -333,21 +506,27 @@ export function AssistantPanel({
           className="flex items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            send(input);
+            void send(input);
           }}
         >
           <textarea
             ref={inputRef}
-            className="min-h-[38px] max-h-32 flex-1 resize-none rounded-lg border border-input bg-editor px-3 py-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            placeholder={hasKey ? "Ask, or type / and @…" : "Add an API key to start chatting"}
+            className="min-h-[38px] max-h-32 flex-1 resize-none rounded-lg border border-input bg-editor px-3 py-2 text-[13px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+            placeholder={model ? "Ask, or type / and @…" : "Pick a model or add a key to start"}
             value={input}
             rows={1}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <Button type="submit" size="icon" disabled={sending || !input.trim()}>
-            <Send className="h-4 w-4" />
-          </Button>
+          {sending ? (
+            <Button type="button" size="icon" variant="outline" onClick={() => void stop()} aria-label="Stop generating">
+              <Square className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button type="submit" size="icon" disabled={!input.trim()}>
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </form>
       </div>
     </aside>
@@ -361,22 +540,29 @@ function Bubble({ message }: { message: DisplayMessage }) {
       <div
         className={cn(
           "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-          isUser ? "bg-secondary text-foreground" : "bg-primary/12 text-primary",
+          isUser ? "bg-secondary text-foreground" : "text-primary",
         )}
       >
         {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
       </div>
       <div
         className={cn(
-          "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap",
+          "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
           isUser
-            ? "bg-secondary text-foreground"
+            ? "whitespace-pre-wrap bg-secondary text-foreground"
             : message.error
               ? "border border-destructive/40 bg-destructive/10 text-foreground"
               : "bg-editor text-foreground",
         )}
       >
-        {message.content}
+        {isUser || message.error ? (
+          message.content
+        ) : (
+          <div className="assistant-markdown">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+            {message.streaming ? <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" /> : null}
+          </div>
+        )}
       </div>
     </div>
   );

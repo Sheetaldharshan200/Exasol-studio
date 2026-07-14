@@ -312,9 +312,6 @@ export type HistoryEntry = {
   rowCount: number;
 };
 
-export type AssistantSettings = { apiKey: string; model: string };
-export type ChatMessage = { role: "user" | "assistant"; content: string };
-export type ChatReply = { text: string; model: string; stopReason: string | null };
 
 export type AppErrorPayload = { kind: string; message: string };
 
@@ -482,11 +479,6 @@ export const ipc = {
   ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
-  getAssistantSettings: () => call<AssistantSettings>("get_assistant_settings"),
-  setAssistantSettings: (apiKey?: string, model?: string) =>
-    call<AssistantSettings>("set_assistant_settings", { apiKey, model }),
-  aiChat: (messages: ChatMessage[], context?: string) =>
-    call<ChatReply>("ai_chat", { messages, context }),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),

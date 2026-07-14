@@ -1,0 +1,26 @@
+{
+  "name": "@exasol-studio/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless agentic AI core for Exasol Studio — HTTP+SSE server, provider registry, agent loop.",
+  "type": "module",
+  "main": "dist/agent-core.cjs",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:*",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.0",
+    "@ai-sdk/google": "^2.0.0",
+    "@ai-sdk/openai": "^2.0.0",
+    "@ai-sdk/openai-compatible": "^1.0.0",
+    "ai": "^5.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0"
+  }
+}

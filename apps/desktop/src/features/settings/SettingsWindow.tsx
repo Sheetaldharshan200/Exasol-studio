@@ -121,25 +121,6 @@ const CATEGORIES: Category[] = [
   },
   {
     tab: "general",
-    key: "ai",
-    label: "AI Assistant",
-    desc: "Model and credentials for the built-in assistant.",
-    controls: [
-      {
-        key: "aiModel",
-        label: "Model",
-        type: "select",
-        options: [
-          { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
-          { value: "claude-sonnet-5", label: "Claude Sonnet 5" },
-          { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-        ],
-      },
-      { key: "aiApiKey", label: "Anthropic API key", type: "password", placeholder: "sk-ant-…", help: "Stored locally, used only for assistant requests." },
-    ],
-  },
-  {
-    tab: "general",
     key: "telemetry",
     label: "Telemetry",
     desc: "Anonymous usage statistics.",
@@ -289,10 +270,6 @@ export function SettingsWindow() {
       .getAppSettings()
       .then((s) => setValues((v) => ({ ...v, ...(s as Record<string, SettingValue>) })))
       .catch(() => undefined);
-    ipc
-      .getAssistantSettings()
-      .then((a) => setValues((v) => ({ ...v, aiModel: a.model || v.aiModel, aiApiKey: a.apiKey || "" })))
-      .catch(() => undefined);
   }, []);
 
   // Apply the chosen theme to THIS (settings) window live, so the appearance
@@ -326,11 +303,6 @@ export function SettingsWindow() {
 
   function update(key: string, value: SettingValue) {
     setValues((v) => ({ ...v, [key]: value }));
-    if (key === "aiModel" || key === "aiApiKey") {
-      const model = key === "aiModel" ? String(value) : String(values.aiModel);
-      const apiKey = key === "aiApiKey" ? String(value) : String(values.aiApiKey);
-      ipc.setAssistantSettings(apiKey, model).catch(() => undefined);
-    }
     ipc.setAppSettings({ [key]: value }).catch(() => undefined);
   }
 

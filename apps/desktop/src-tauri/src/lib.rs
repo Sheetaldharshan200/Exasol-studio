@@ -1,4 +1,4 @@
-mod ai;
+mod agent;
 mod bucketfs;
 mod catalog;
 mod exapump;
@@ -36,6 +36,7 @@ pub fn run() {
                 .expect("app data directory must resolve");
             std::fs::create_dir_all(&data_dir)?;
             app.manage(AppState::new(data_dir));
+            app.manage(crate::agent::AgentSidecar::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -124,9 +125,7 @@ pub fn run() {
             query::execute_sql,
             history::sql_history_list,
             history::sql_history_clear,
-            ai::get_assistant_settings,
-            ai::set_assistant_settings,
-            ai::ai_chat,
+            agent::agent_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Exasol Studio");
