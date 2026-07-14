@@ -727,9 +727,9 @@ export function Marketplace() {
         </header>
 
         {/* Two-pane: category rail + content */}
-        <div className="flex gap-6">
-          {/* Category rail */}
-          <nav className="w-44 shrink-0 space-y-0.5">
+        <div className="flex items-start gap-6">
+          {/* Category rail — sticky so it stays in view while the content scrolls */}
+          <nav className="sticky top-2 w-44 shrink-0 space-y-0.5 self-start rounded-xl border border-border/60 bg-panel/40 p-1.5">
             {NAV.map((n) => {
               const Icon = n.icon;
               const active = nav === n.key;
