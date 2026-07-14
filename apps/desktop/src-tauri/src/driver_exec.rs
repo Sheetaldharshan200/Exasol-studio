@@ -2,24 +2,26 @@
 //!
 //! The app's native path is `sqlx-exasol` (WebSocket) — it powers browsing,
 //! metadata and normal queries. This module adds *execution through other
-//! drivers* (PyExasol, SQLAlchemy, JDBC, ODBC, …) for people who want to run a
-//! query — or a bulk import/export — over a specific driver.
+//! drivers* (PyExasol, SQLAlchemy, JDBC, …) for people who want to run a query —
+//! or a bulk import/export — over a specific driver.
 //!
 //! Runtimes are NOT bundled. Each is installed on demand into a managed folder
-//! (from our releases / the Marketplace). Picking a driver whose runtime isn't
-//! present returns a clear "install it first" error.
+//! (official Exasol tooling, fetched via `uv` / Maven / Adoptium). Picking a
+//! driver whose runtime isn't present returns a clear "install it first" error.
 
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
-use crate::market::{augmented_path, resolve_bin};
+use crate::market::{augmented_path, emit_log, resolve_bin, run_streamed};
 use crate::profiles::ConnectionProfile;
 use crate::query::{ColumnMeta, ExecuteResponse, StatementResult};
+
+const JDBC_VERSION: &str = "25.2.3";
 
 /// Which runtime a driver id needs. "native" drivers run in-process (sqlx).
 pub fn driver_runtime(driver_id: &str) -> &'static str {
@@ -36,9 +38,14 @@ pub fn driver_runtime(driver_id: &str) -> &'static str {
     }
 }
 
-/// True when execution must go through an external-runtime bridge.
 pub fn is_bridge_driver(driver_id: &str) -> bool {
     driver_runtime(driver_id) != "native"
+}
+
+/// The `python`, `jvm`, … runtimes all execute through the shared Python bridge
+/// (JDBC via jaydebeapi/JPype), so they share the managed venv.
+fn uses_python_bridge(runtime: &str) -> bool {
+    runtime == "python" || runtime == "jvm"
 }
 
 fn runtimes_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -64,6 +71,41 @@ fn python_bin(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(p)
 }
 
+fn jdbc_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(runtimes_dir(app)?.join("jdbc"))
+}
+
+fn jdbc_jar(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(jdbc_dir(app)?.join(format!("exasol-jdbc-{JDBC_VERSION}.jar")))
+}
+
+/// Locate the extracted JRE's home (the dir that contains `bin/java[.exe]`).
+fn jre_home(app: &AppHandle) -> Option<PathBuf> {
+    let base = jdbc_dir(app).ok()?.join("jre");
+    let want = if cfg!(windows) { "java.exe" } else { "java" };
+    let mut stack = vec![base];
+    while let Some(dir) = stack.pop() {
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    if p.join("bin").join(want).exists() {
+                        return Some(p);
+                    }
+                    stack.push(p);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn python_jdbc_ready(app: &AppHandle) -> bool {
+    python_bin(app).map(|p| p.exists()).unwrap_or(false)
+        && jdbc_jar(app).map(|p| p.exists()).unwrap_or(false)
+        && jre_home(app).is_some()
+}
+
 // ── Status ──────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -71,15 +113,11 @@ fn python_bin(app: &AppHandle) -> AppResult<PathBuf> {
 pub struct DriverStatus {
     pub driver_id: String,
     pub runtime: String,
-    /// native drivers are always ready; bridge drivers need their runtime.
     pub ready: bool,
-    /// Whether this runtime bridge is implemented yet.
     pub supported: bool,
-    /// One-line hint for the UI when not ready.
     pub hint: String,
 }
 
-/// Report whether a driver can execute right now.
 #[tauri::command]
 pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatus> {
     let runtime = driver_runtime(&driver_id);
@@ -87,73 +125,182 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
         "native" => (true, true, String::new()),
         "python" => {
             let ok = python_bin(&app).map(|p| p.exists()).unwrap_or(false);
-            (
-                ok,
-                true,
-                if ok { String::new() } else { "Install the Python driver runtime to run queries over this driver.".into() },
-            )
+            (ok, true, if ok { String::new() } else { "Install the Python driver runtime to run queries over this driver.".into() })
         }
-        other => (
-            false,
-            false,
-            format!("The {other} driver runtime isn’t available yet — it’s coming in a later update."),
-        ),
+        "jvm" => {
+            let ok = python_jdbc_ready(&app);
+            (ok, true, if ok { String::new() } else { "Install the JDBC runtime (bundled JRE + Exasol JDBC driver) to run queries over JDBC.".into() })
+        }
+        other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
     Ok(DriverStatus { driver_id, runtime: runtime.to_string(), ready, supported, hint })
 }
 
-// ── Python runtime setup (pyexasol / sqlalchemy) ─────────────────────────────
+// ── Runtime setup (install on demand) ────────────────────────────────────────
 
-/// Install the Python driver runtime (a managed venv + pyexasol + sqlalchemy).
-/// Streams progress over `market:log` under the id `driver-python`.
+fn ensure_uv() -> AppResult<String> {
+    resolve_bin("uv")
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| AppError::Storage("`uv` is required. Install it from the Marketplace first.".into()))
+}
+
+/// Ensure the managed Python venv exists (shared by pyexasol and the JDBC bridge).
+fn ensure_python_venv(app: &AppHandle, id: &str, uv: &str, extra: &[&str]) -> AppResult<()> {
+    let venv = python_dir(app)?.join("venv");
+    let venv_s = venv.to_string_lossy().to_string();
+    if !python_bin(app)?.exists() {
+        emit_log(app, id, "Creating a managed Python 3.11 environment…", "info");
+        if run_streamed(app, id, uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
+            return Err(AppError::Storage("Could not create the Python environment.".into()));
+        }
+    }
+    let mut args = vec!["pip", "install", "--python", venv_s.as_str()];
+    args.extend_from_slice(extra);
+    emit_log(app, id, format!("Installing: {}", extra.join(" ")), "info");
+    if run_streamed(app, id, uv, &args)? != 0 {
+        return Err(AppError::Storage("Package install failed. See the log.".into()));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn driver_setup(app: AppHandle, driver_id: String) -> AppResult<Value> {
     let runtime = driver_runtime(&driver_id);
     let id = format!("driver-{runtime}");
-    if runtime != "python" {
-        let e = AppError::Storage(format!("The {runtime} driver runtime isn’t installable yet."));
-        crate::market::emit_log(&app, &id, format!("✗ {e}"), "err");
-        let _ = tauri::Emitter::emit(&app, "market:done", json!({ "id": id, "ok": false }));
-        return Err(e);
+    let result = match runtime {
+        "python" => setup_python(&app, &id).await,
+        "jvm" => setup_jvm(&app, &id).await,
+        other => Err(AppError::Storage(format!("The {other} driver runtime isn’t installable yet."))),
+    };
+    match result {
+        Ok(_) => {
+            emit_log(&app, &id, "✓ Driver runtime ready.", "success");
+            let _ = app.emit("market:done", json!({ "id": id, "ok": true }));
+            Ok(json!({ "ok": true }))
+        }
+        Err(e) => {
+            emit_log(&app, &id, format!("✗ {e}"), "err");
+            let _ = app.emit("market:done", json!({ "id": id, "ok": false, "error": e.to_string() }));
+            Err(e)
+        }
     }
-    let uv = resolve_bin("uv")
-        .map(|p| p.to_string_lossy().to_string())
-        .ok_or_else(|| AppError::Storage("`uv` is required to install the Python driver runtime. Install it from the Marketplace first.".into()))?;
-    let venv = python_dir(&app)?.join("venv");
-    let venv_s = venv.to_string_lossy().to_string();
+}
 
-    crate::market::emit_log(&app, &id, "Creating a managed Python 3.11 environment…", "info");
-    if crate::market::run_streamed(&app, &id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
-        let e = AppError::Storage("Could not create the Python environment.".into());
-        let _ = tauri::Emitter::emit(&app, "market:done", json!({ "id": id, "ok": false }));
-        return Err(e);
+async fn setup_python(app: &AppHandle, id: &str) -> AppResult<()> {
+    let uv = ensure_uv()?;
+    let app2 = app.clone();
+    let id2 = id.to_string();
+    tokio::task::spawn_blocking(move || {
+        ensure_python_venv(&app2, &id2, &uv, &["pyexasol", "sqlalchemy-exasol", "pandas"])
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+async fn setup_jvm(app: &AppHandle, id: &str) -> AppResult<()> {
+    let uv = ensure_uv()?;
+    // 1) Python venv with the JDBC bridge deps.
+    {
+        let app2 = app.clone();
+        let id2 = id.to_string();
+        let uv2 = uv.clone();
+        tokio::task::spawn_blocking(move || {
+            ensure_python_venv(&app2, &id2, &uv2, &["jaydebeapi", "JPype1"])
+        })
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))??;
     }
-    crate::market::emit_log(&app, &id, "Installing PyExasol + SQLAlchemy dialect…", "info");
-    if crate::market::run_streamed(&app, &id, &uv, &["pip", "install", "--python", &venv_s, "pyexasol", "sqlalchemy-exasol", "pandas"])? != 0 {
-        let e = AppError::Storage("Driver install failed. See the log.".into());
-        let _ = tauri::Emitter::emit(&app, "market:done", json!({ "id": id, "ok": false }));
-        return Err(e);
+    let dir = jdbc_dir(app)?;
+    std::fs::create_dir_all(&dir)?;
+
+    // 2) Exasol JDBC jar from Maven Central.
+    let jar = jdbc_jar(app)?;
+    if !jar.exists() {
+        emit_log(app, id, format!("Downloading Exasol JDBC driver {JDBC_VERSION}…"), "info");
+        let url = format!("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/{JDBC_VERSION}/exasol-jdbc-{JDBC_VERSION}.jar");
+        download(&url, &jar).await?;
     }
-    crate::market::emit_log(&app, &id, "✓ Python driver runtime ready.", "success");
-    let _ = tauri::Emitter::emit(&app, "market:done", json!({ "id": id, "ok": true }));
-    Ok(json!({ "ok": true }))
+
+    // 3) A JRE (Adoptium Temurin 21), extracted under jdbc/jre.
+    if jre_home(app).is_none() {
+        emit_log(app, id, "Downloading a Java runtime (Temurin JRE 21)…", "info");
+        let (url, archive) = adoptium_url(&dir);
+        download(&url, &archive).await?;
+        emit_log(app, id, "Extracting the Java runtime…", "info");
+        let jre_dir = dir.join("jre");
+        std::fs::create_dir_all(&jre_dir)?;
+        extract_archive(&archive, &jre_dir)?;
+        let _ = std::fs::remove_file(&archive);
+        if jre_home(app).is_none() {
+            return Err(AppError::Storage("Java runtime extracted but no `bin/java` was found.".into()));
+        }
+    }
+    Ok(())
+}
+
+/// Adoptium API binary URL for this platform + the local archive path to save to.
+fn adoptium_url(dir: &std::path::Path) -> (String, PathBuf) {
+    let os = match std::env::consts::OS {
+        "macos" => "mac",
+        "windows" => "windows",
+        _ => "linux",
+    };
+    let arch = if std::env::consts::ARCH == "aarch64" { "aarch64" } else { "x64" };
+    let ext = if os == "windows" { "zip" } else { "tar.gz" };
+    let url = format!("https://api.adoptium.net/v3/binary/latest/21/ga/{os}/{arch}/jre/hotspot/normal/eclipse");
+    (url, dir.join(format!("jre-download.{ext}")))
+}
+
+/// Extract a .tar.gz or .zip using the system `tar` (bsdtar handles both).
+fn extract_archive(archive: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let a = archive.to_string_lossy().to_string();
+    let d = dest.to_string_lossy().to_string();
+    let args: Vec<&str> = if a.ends_with(".zip") {
+        vec!["-xf", &a, "-C", &d]
+    } else {
+        vec!["-xzf", &a, "-C", &d]
+    };
+    let status = Command::new("tar")
+        .args(&args)
+        .status()
+        .map_err(|e| AppError::Storage(format!("could not run tar: {e}")))?;
+    if !status.success() {
+        return Err(AppError::Storage("Failed to extract the Java runtime.".into()));
+    }
+    Ok(())
+}
+
+async fn download(url: &str, dest: &std::path::Path) -> AppResult<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let resp = client
+        .get(url)
+        .header("User-Agent", "exasol-studio")
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Storage(format!("Download failed (HTTP {}) for {url}", resp.status())));
+    }
+    let bytes = resp.bytes().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    std::fs::write(dest, &bytes)?;
+    Ok(())
 }
 
 // ── Execution routing ─────────────────────────────────────────────────────────
 
-/// Execute `statements` through the profile's (non-native) driver. Returns the
-/// same shape as the native path so the frontend renders it identically.
 pub fn execute_via_driver(
     app: &AppHandle,
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
 ) -> AppResult<ExecuteResponse> {
-    match driver_runtime(&profile.driver_id) {
-        "python" => execute_python(app, profile, statements, max_rows),
-        other => Err(AppError::Storage(format!(
-            "Execution via the {other} driver isn’t available yet."
-        ))),
+    let runtime = driver_runtime(&profile.driver_id);
+    if uses_python_bridge(runtime) {
+        execute_python(app, profile, statements, max_rows)
+    } else {
+        Err(AppError::Storage(format!("Execution via the {runtime} driver isn’t available yet.")))
     }
 }
 
@@ -165,15 +312,19 @@ fn execute_python(
 ) -> AppResult<ExecuteResponse> {
     let py = python_bin(app)?;
     if !py.exists() {
-        return Err(AppError::Storage(
-            "The Python driver runtime isn’t installed. Install it, then try again.".into(),
-        ));
+        return Err(AppError::Storage("This driver's runtime isn’t installed. Install it, then try again.".into()));
     }
-    // Write the bridge script alongside the venv (idempotent).
+    let is_jdbc = profile.driver_id == "jdbc";
+    if is_jdbc && !python_jdbc_ready(app) {
+        return Err(AppError::Storage("The JDBC runtime isn’t fully installed. Install it, then try again.".into()));
+    }
+
     let script = python_dir(app)?.join("bridge.py");
     std::fs::write(&script, PYTHON_BRIDGE)?;
 
     let tls = profile.ssl_mode != "disabled";
+    let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
+    let jar = jdbc_jar(app)?.to_string_lossy().to_string();
     let req = json!({
         "driver": profile.driver_id,
         "host": profile.host,
@@ -182,7 +333,9 @@ fn execute_python(
         "password": profile.password,
         "schema": profile.schema.clone().unwrap_or_default(),
         "tls": tls,
+        "verify": verify,
         "maxRows": max_rows,
+        "jarPath": jar,
         "statements": statements,
     });
 
@@ -191,24 +344,23 @@ fn execute_python(
     if std::env::consts::OS != "windows" {
         cmd.env("PATH", augmented_path());
     }
+    if is_jdbc {
+        if let Some(home) = jre_home(app) {
+            cmd.env("JAVA_HOME", &home);
+        }
+    }
     let mut child = cmd
         .spawn()
-        .map_err(|e| AppError::Storage(format!("Could not run the Python bridge: {e}")))?;
+        .map_err(|e| AppError::Storage(format!("Could not run the driver bridge: {e}")))?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(req.to_string().as_bytes())
-            .map_err(|e| AppError::Storage(e.to_string()))?;
+        stdin.write_all(req.to_string().as_bytes()).map_err(|e| AppError::Storage(e.to_string()))?;
     }
     let out = child.wait_with_output().map_err(|e| AppError::Storage(e.to_string()))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: Value = serde_json::from_str(stdout.trim()).map_err(|_| {
         let err = String::from_utf8_lossy(&out.stderr);
-        AppError::Storage(format!(
-            "The Python driver returned no result. {}",
-            err.lines().last().unwrap_or("").trim()
-        ))
+        AppError::Storage(format!("The driver returned no result. {}", err.lines().last().unwrap_or("").trim()))
     })?;
-
     if let Some(err) = parsed.get("fatal").and_then(|v| v.as_str()) {
         return Err(AppError::Storage(err.to_string()));
     }
@@ -254,64 +406,90 @@ fn execute_python(
     Ok(ExecuteResponse { results, total_elapsed_ms, success })
 }
 
-/// The Python bridge: reads one JSON request on stdin, runs each statement via
-/// PyExasol (or the SQLAlchemy/PyExasol engine), writes one JSON response.
+/// The shared Python bridge: PyExasol for the `python` drivers, jaydebeapi for
+/// JDBC. Reads one JSON request on stdin, writes one JSON response on stdout.
 const PYTHON_BRIDGE: &str = r#"
 import sys, json, time
 
-def main():
-    try:
-        req = json.load(sys.stdin)
-    except Exception as e:
-        print(json.dumps({"fatal": "bad request: %s" % e})); return
-    try:
-        import pyexasol
-    except Exception:
-        print(json.dumps({"fatal": "PyExasol is not installed in the driver runtime."})); return
+def cell(v):
+    if v is None: return None
+    if isinstance(v, (int, float, bool)): return v
+    return str(v)
 
+def run_pyexasol(req):
+    import pyexasol
     dsn = "%s:%s" % (req["host"], req["port"])
-    try:
-        C = pyexasol.connect(
-            dsn=dsn, user=req["user"], password=req["password"],
-            schema=req.get("schema") or "",
-            encryption=bool(req.get("tls", True)),
-            websocket_sslopt={"cert_reqs": 0} if req.get("tls", True) else None,
-        )
-    except Exception as e:
-        print(json.dumps({"fatal": "connect failed: %s" % e})); return
-
+    C = pyexasol.connect(dsn=dsn, user=req["user"], password=req["password"],
+        schema=req.get("schema") or "", encryption=bool(req.get("tls", True)),
+        websocket_sslopt={"cert_reqs": 0} if (req.get("tls", True) and not req.get("verify")) else None)
     max_rows = int(req.get("maxRows", 1000))
     out = {"results": []}
     for stmt in req.get("statements", []):
         t0 = time.time()
-        entry = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [],
-                 "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
+        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
         try:
             st = C.execute(stmt)
             if getattr(st, "result_type", "") == "resultSet":
-                cols = st.columns()
-                names = list(cols.keys())
-                entry["kind"] = "resultSet"
-                entry["columns"] = [{"name": n, "typeName": str(cols[n].get("type", ""))} for n in names]
+                cols = st.columns(); names = list(cols.keys())
+                e["kind"] = "resultSet"
+                e["columns"] = [{"name": n, "typeName": str(cols[n].get("type", ""))} for n in names]
                 rows = st.fetchmany(max_rows)
-                data = []
-                for r in rows:
-                    data.append([("" if v is None else v) if isinstance(v, (int, float, bool)) else (None if v is None else str(v)) for v in r])
-                entry["rows"] = data
-                entry["rowCount"] = len(data)
-                entry["truncated"] = len(data) >= max_rows
+                e["rows"] = [[cell(v) for v in r] for r in rows]
+                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
             else:
-                entry["rowCount"] = st.rowcount()
-        except Exception as e:
-            entry["error"] = str(e)
-        entry["elapsedMs"] = int((time.time() - t0) * 1000)
-        out["results"].append(entry)
-        if entry["error"]:
-            break
+                e["rowCount"] = st.rowcount()
+        except Exception as ex:
+            e["error"] = str(ex)
+        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
+        if e["error"]: break
+    try: C.close()
+    except Exception: pass
+    return out
+
+def run_jdbc(req):
+    import jaydebeapi
+    url = "jdbc:exa:%s:%s" % (req["host"], req["port"])
+    if not req.get("tls", True): url += ";encryption=0"
+    elif not req.get("verify"): url += ";validateservercertificate=0"
+    if req.get("schema"): url += ";schema=%s" % req["schema"]
+    C = jaydebeapi.connect("com.exasol.jdbc.EXADriver", url, [req["user"], req["password"]], req["jarPath"])
+    max_rows = int(req.get("maxRows", 1000))
+    out = {"results": []}
+    for stmt in req.get("statements", []):
+        t0 = time.time()
+        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
+        cur = C.cursor()
+        try:
+            cur.execute(stmt)
+            if cur.description:
+                e["kind"] = "resultSet"
+                e["columns"] = [{"name": d[0], "typeName": ""} for d in cur.description]
+                rows = cur.fetchmany(max_rows)
+                e["rows"] = [[cell(v) for v in r] for r in rows]
+                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
+            else:
+                try: e["rowCount"] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+                except Exception: e["rowCount"] = 0
+        except Exception as ex:
+            e["error"] = str(ex)
+        finally:
+            try: cur.close()
+            except Exception: pass
+        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
+        if e["error"]: break
+    try: C.close()
+    except Exception: pass
+    return out
+
+def main():
     try:
-        C.close()
-    except Exception:
-        pass
+        req = json.load(sys.stdin)
+    except Exception as ex:
+        print(json.dumps({"fatal": "bad request: %s" % ex})); return
+    try:
+        out = run_jdbc(req) if req.get("driver") == "jdbc" else run_pyexasol(req)
+    except Exception as ex:
+        print(json.dumps({"fatal": "%s" % ex})); return
     print(json.dumps(out))
 
 main()
