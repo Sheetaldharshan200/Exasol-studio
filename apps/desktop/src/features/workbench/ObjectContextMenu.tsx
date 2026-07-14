@@ -174,28 +174,18 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
             ] as Item[])
           : ([
               {
+                // Open an editable CREATE TABLE template in a new query tab (not a
+                // dialog) so it can be tweaked and run like any other statement.
                 label: "New table…",
-                kind: "action",
-                action: {
-                  title: `New table in ${ctx.name}`,
-                  verb: "Create",
-                  fields: [
-                    { key: "name", label: "Table name", value: "MY_TABLE", required: true },
-                    {
-                      key: "columns",
-                      label: "Columns",
-                      type: "textarea",
-                      value: "ID DECIMAL(18,0),\nNAME VARCHAR(200)",
-                      help: "One column definition per line (name type).",
-                    },
-                  ],
-                  buildSql: (v) =>
-                    `CREATE TABLE ${q(ctx.name, v.name)} (\n  ${v.columns
-                      .split("\n")
-                      .map((l) => l.trim())
-                      .filter(Boolean)
-                      .join(",\n  ")}\n);`,
-                },
+                kind: "gen",
+                sql:
+                  `CREATE TABLE ${q(ctx.name, "MY_TABLE")} (\n` +
+                  `  ID           DECIMAL(18,0) IDENTITY,\n` +
+                  `  NAME         VARCHAR(200),\n` +
+                  `  AMOUNT       DECIMAL(18,2),\n` +
+                  `  CREATED_AT   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n` +
+                  `  PRIMARY KEY (ID)\n` +
+                  `);`,
               },
             ] as Item[])),
         { sep: true },

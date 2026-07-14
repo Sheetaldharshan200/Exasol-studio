@@ -12,6 +12,8 @@ import {
   Download,
   ExternalLink,
   FileCode2,
+  LayoutGrid,
+  List,
   Loader2,
   Plug,
   RefreshCcw,
@@ -535,6 +537,9 @@ export function Marketplace() {
 
   const [query, setQuery] = useState("");
   const [nav, setNav] = useState<string>("all");
+  const [layout, setLayout] = useState<"grid" | "list">("grid");
+  const isList = layout === "list";
+  const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3";
 
   // Query-filtered catalog (the category rail narrows further).
   const visible = useMemo(() => {
@@ -598,7 +603,7 @@ export function Marketplace() {
     }
   }
 
-  const renderCard = (item: CatalogItem) => {
+  const renderCard = (item: CatalogItem, compact = false) => {
     const Icon = KIND_ICON[item.kind];
     const inst = installedMap[item.id];
     const onSystem = detected[item.id] && !inst;
@@ -606,12 +611,116 @@ export function Marketplace() {
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
     const newer = inst && latest && latest !== inst.version;
-    // Driver runtimes install-on-demand into the shared runtime the connect
-    // dialog uses. Reference drivers are provided by Exasol but not executable
-    // inside Exasol Studio (yet).
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
     const comingSoon = !did && item.install === "reference";
+
+    const badges = (
+      <>
+        {item.labs ? (
+          <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">labs</span>
+        ) : (
+          <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
+        )}
+        {inst || (did && runtimeReady) ? (
+          <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
+            <Check className="h-2.5 w-2.5" /> installed
+          </span>
+        ) : onSystem ? (
+          <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
+            <Check className="h-2.5 w-2.5" /> detected
+          </span>
+        ) : comingSoon ? (
+          <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">coming soon</span>
+        ) : null}
+      </>
+    );
+
+    const actions = (
+      <div className="flex flex-wrap items-center gap-2">
+        {did ? (
+          runtimeReady ? (
+            <>
+              <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
+              </span>
+              <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
+                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Reinstall
+              </button>
+            </>
+          ) : (
+            <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+              {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {driverBusy[did] ? "Installing…" : "Install & use here"}
+            </button>
+          )
+        ) : comingSoon ? (
+          <>
+            <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">Coming soon to Exasol Studio</span>
+            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
+              Docs <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : inst ? (
+          <>
+            {newer ? (
+              <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+                <Download className="h-3.5 w-3.5" /> Update to {latest}
+              </button>
+            ) : (
+              <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                <Check className="h-3.5 w-3.5 text-primary" /> Up to date
+              </span>
+            )}
+            <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
+            </button>
+          </>
+        ) : onSystem ? (
+          <>
+            <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
+              <Check className="h-3.5 w-3.5" /> Already on your system
+            </span>
+            <button onClick={() => startInstall(item)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
+              <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
+            </button>
+          </>
+        ) : item.install === "reference" ? (
+          <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
+            Get <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+            {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {isInstalling ? "Installing…" : "Install"}
+          </button>
+        )}
+        {item.install === "personal-local" && (inst || onSystem) ? (
+          <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
+            <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+          </button>
+        ) : null}
+      </div>
+    );
+
+    // Compact list row.
+    if (compact) {
+      return (
+        <div key={item.id} className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3 py-2">
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[12.5px] font-semibold text-foreground">{item.name}</span>
+              {badges}
+            </div>
+            <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
+          </div>
+          <div className="shrink-0">{actions}</div>
+        </div>
+      );
+    }
+
+    // Full grid card.
     return (
       <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
         <div className="flex items-start gap-2.5">
@@ -621,22 +730,7 @@ export function Marketplace() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-[13px] font-semibold text-foreground">{item.name}</span>
-              {item.labs ? (
-                <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">labs</span>
-              ) : (
-                <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
-              )}
-              {inst || (did && runtimeReady) ? (
-                <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-                  <Check className="h-2.5 w-2.5" /> installed
-                </span>
-              ) : onSystem ? (
-                <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
-                  <Check className="h-2.5 w-2.5" /> detected
-                </span>
-              ) : comingSoon ? (
-                <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">coming soon</span>
-              ) : null}
+              {badges}
             </div>
             {did ? (
               <p className="mt-0.5 text-[10px] font-medium text-primary">✓ Runs inside Exasol Studio</p>
@@ -652,102 +746,7 @@ export function Marketplace() {
             </div>
           </div>
         </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {did ? (
-            // Driver runtime: install-on-demand (same runtime the connect dialog uses).
-            runtimeReady ? (
-              <>
-                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                  <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
-                </span>
-                <button
-                  onClick={() => void installDriverRuntime(did)}
-                  disabled={driverBusy[did]}
-                  className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
-                >
-                  {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Reinstall
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => void installDriverRuntime(did)}
-                disabled={driverBusy[did]}
-                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-              >
-                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                {driverBusy[did] ? "Installing…" : "Install & use here"}
-              </button>
-            )
-          ) : comingSoon ? (
-            <>
-              <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                Coming soon to Exasol Studio
-              </span>
-              <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
-                Docs <ExternalLink className="h-3.5 w-3.5" />
-              </button>
-            </>
-          ) : inst ? (
-            <>
-              {newer ? (
-                <button
-                  onClick={() => startInstall(item)}
-                  disabled={isBusy}
-                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                >
-                  <Download className="h-3.5 w-3.5" /> Update to {latest}
-                </button>
-              ) : (
-                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                  <Check className="h-3.5 w-3.5 text-primary" /> Up to date
-                </span>
-              )}
-              <button
-                onClick={() => uninstall(item)}
-                disabled={isBusy}
-                className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50"
-              >
-                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Uninstall
-              </button>
-            </>
-          ) : onSystem ? (
-            <>
-              <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
-                <Check className="h-3.5 w-3.5" /> Already on your system
-              </span>
-              <button
-                onClick={() => startInstall(item)}
-                className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
-              </button>
-            </>
-          ) : item.install === "reference" ? (
-            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
-              Get <ExternalLink className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <button
-              onClick={() => startInstall(item)}
-              disabled={isInstalling}
-              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-            >
-              {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              {isInstalling ? "Installing…" : "Install"}
-            </button>
-          )}
-          {item.install === "personal-local" && (inst || onSystem) ? (
-            <button
-              onClick={() => setManageLocal(true)}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20"
-            >
-              <Server className="h-3.5 w-3.5" /> Manage (start/stop)
-            </button>
-          ) : null}
-        </div>
-
+        <div className="mt-3">{actions}</div>
         {item.install === "personal-local" && env && env.os !== "macos" ? (
           <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
             <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
@@ -833,19 +832,43 @@ export function Marketplace() {
 
           {/* Content */}
           <div className="min-w-0 flex-1">
-            <div className="relative mb-4">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search tools, drivers, extensions…"
-                className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-              />
-              {query ? (
-                <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
+            <div className="mb-4 flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search tools, drivers, extensions…"
+                  className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                />
+                {query ? (
+                  <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border bg-panel/70 p-1">
+                <button
+                  onClick={() => setLayout("grid")}
+                  aria-label="Grid view"
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    layout === "grid" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <LayoutGrid className="h-4 w-4" />
                 </button>
-              ) : null}
+                <button
+                  onClick={() => setLayout("list")}
+                  aria-label="List view"
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    layout === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {nav === "recommended" ? (
@@ -891,13 +914,13 @@ export function Marketplace() {
                         <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
                         <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
                       </div>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{items.map(renderCard)}</div>
+                      <div className={gridClass}>{items.map((i) => renderCard(i, isList))}</div>
                     </section>
                   );
                 })}
               </>
             ) : navItems.length ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{navItems.map(renderCard)}</div>
+              <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 <Search className="h-6 w-6 opacity-40" />
