@@ -1,4 +1,5 @@
 import { BookOpen, Database, FileCode2, FolderOpen, Plug, Store } from "lucide-react";
+import { ipc, isTauri } from "@/lib/ipc";
 
 type Recent = { id: string; label: string; sub: string };
 
@@ -40,6 +41,11 @@ export function WelcomeScreen({
     "Write and run your first query",
     "Drivers & multi-driver execution",
   ];
+
+  const openExternal = (url: string) => {
+    if (isTauri()) void ipc.openExternal(url).catch(() => window.open(url, "_blank"));
+    else window.open(url, "_blank");
+  };
 
   const Link = ({ icon: Icon, children, onClick }: { icon?: typeof FileCode2; children: React.ReactNode; onClick: () => void }) => (
     <button
@@ -100,6 +106,17 @@ export function WelcomeScreen({
                 {g}
               </Link>
             ))}
+          </div>
+
+          {/* Subtle promo — Personal is free; production scales low-cost. */}
+          <div className="mt-8 rounded-lg border border-border/70 bg-panel/40 p-3">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">Exasol Personal is free</span> for local &amp; personal use.
+              Ready for production? Exasol scales to your cloud at low cost.{" "}
+              <button onClick={() => openExternal("https://www.exasol.com/exasol-personal/")} className="text-primary hover:underline">
+                Learn more →
+              </button>
+            </p>
           </div>
         </div>
       </div>

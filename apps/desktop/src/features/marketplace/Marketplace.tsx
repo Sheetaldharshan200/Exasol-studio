@@ -67,16 +67,6 @@ export const CATALOG: CatalogItem[] = [
     homepage: "https://github.com/exasol/exasol-personal",
   },
   {
-    id: "exasol-cloud",
-    name: "Exasol Personal — Cloud",
-    repo: "exasol/exasol-personal",
-    kind: "cloud",
-    install: "personal-cloud",
-    description:
-      "Deploy Exasol Personal on AWS, Azure, Exoscale or STACKIT with the same official launcher — you keep control of the deployment.",
-    homepage: "https://github.com/exasol/exasol-personal",
-  },
-  {
     id: "exapump",
     name: "ExaPump",
     repo: "exasol-labs/exapump",

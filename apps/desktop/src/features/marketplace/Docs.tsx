@@ -6,7 +6,6 @@ import {
   BarChart3,
   BookOpen,
   Boxes,
-  Cloud,
   Cpu,
   Database,
   Download,
@@ -27,7 +26,6 @@ type DocItem = { id: string; name: string; repo: string; icon: LucideIcon; labs?
 // Official Exasol / Exasol-Labs repositories only — mirrors the Marketplace catalog.
 const DOCS: DocItem[] = [
   { id: "exasol-personal", name: "Exasol Personal", repo: "exasol/exasol-personal", icon: Database },
-  { id: "exasol-cloud", name: "Exasol Personal — Cloud", repo: "exasol/exasol-personal", icon: Cloud },
   { id: "exapump", name: "ExaPump", repo: "exasol-labs/exapump", icon: Cpu, labs: true },
   { id: "json-tables", name: "JSON Tables", repo: "exasol-labs/exasol-json-tables", icon: Boxes, labs: true },
   { id: "mcp-server", name: "Exasol MCP Server", repo: "exasol/mcp-server", icon: Server },

@@ -1438,6 +1438,7 @@ export function ExasolStudio({
   // When a new connection is established, retire any open "Connect" tabs (they
   // served their purpose) so the workspace lands on the new database's queries.
   const prevConnCount = useRef(connections.length);
+  const registeredBi = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (connections.length > prevConnCount.current) {
       setTabsByConn((prev) => {
@@ -1450,7 +1451,15 @@ export function ExasolStudio({
       });
     }
     prevConnCount.current = connections.length;
-  }, [connections.length]);
+    // Keep Superset's registered databases in sync — auto-add any connection we
+    // haven't registered yet (no-op if Superset isn't installed).
+    for (const c of connections) {
+      if (!registeredBi.current.has(c.profile.id)) {
+        registeredBi.current.add(c.profile.id);
+        void ipc.biRegisterDb(c.profile.id, c.profile.name).catch(() => undefined);
+      }
+    }
+  }, [connections]);
 
   useEffect(() => {
     if (!connection) {
@@ -2108,12 +2117,12 @@ export function ExasolStudio({
       openMarketplace();
       return;
     }
-    // Auto-register the current Exasol connection inside Superset so the user
-    // never has to add a database by hand (best-effort — server-side builds the
+    // Auto-register EVERY open Exasol connection inside Superset so the user
+    // never has to add a database by hand (best-effort; server-side builds each
     // URI from the decrypted profile).
-    if (connection) {
-      await ipc.biRegisterDb(connection.profile.id, connection.profile.name).catch(() => undefined);
-    }
+    await Promise.all(
+      connections.map((c) => ipc.biRegisterDb(c.profile.id, c.profile.name).catch(() => undefined)),
+    );
     openBiTab();
   }
 

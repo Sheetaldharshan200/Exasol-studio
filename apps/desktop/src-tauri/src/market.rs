@@ -498,7 +498,9 @@ fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String>
     std::fs::create_dir_all(venv.parent().unwrap())?;
     let venv_s = venv.to_string_lossy().to_string();
     emit_log(app, id, format!("Creating a managed environment at {venv_s}…"), "info");
-    if run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])? != 0 {
+    // `--clear` recreates an existing venv (from a prior/failed install) instead
+    // of erroring with "a virtual environment already exists".
+    if run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
         return Err(AppError::Storage("uv venv failed.".into()));
     }
     emit_log(app, id, format!("Installing {package}…"), "info");
