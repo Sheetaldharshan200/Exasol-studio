@@ -681,7 +681,7 @@ export function Marketplace() {
 
   return (
     <div className="h-full overflow-auto bg-editor">
-      <div className="mx-auto max-w-5xl p-6">
+      <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
         <header className="mb-5 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
             <Store className="h-4 w-4" />
@@ -770,7 +770,7 @@ export function Marketplace() {
             </div>
 
             {nav === "recommended" ? (
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;
                   const allInstalled = pack.items.every((it) => {
@@ -812,13 +812,13 @@ export function Marketplace() {
                         <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
                         <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
                       </div>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{items.map(renderCard)}</div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{items.map(renderCard)}</div>
                     </section>
                   );
                 })}
               </>
             ) : navItems.length ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{navItems.map(renderCard)}</div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{navItems.map(renderCard)}</div>
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 <Search className="h-6 w-6 opacity-40" />
