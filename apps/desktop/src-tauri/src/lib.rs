@@ -5,6 +5,7 @@ mod exapump;
 mod connection;
 mod drivers;
 mod error;
+mod driver_exec;
 mod files;
 mod fs;
 mod git;
@@ -38,6 +39,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             drivers::list_drivers,
+            driver_exec::driver_status,
+            driver_exec::driver_setup,
             profiles::list_connection_profiles,
             profiles::save_connection_profile,
             profiles::delete_connection_profile,

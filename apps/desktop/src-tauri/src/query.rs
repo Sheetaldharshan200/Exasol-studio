@@ -277,6 +277,7 @@ async fn run_statement(pool: &ExaPool, statement: &str, max_rows: usize) -> Stat
 
 #[tauri::command]
 pub async fn execute_sql(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     profile_id: String,
     connection_name: String,
@@ -284,7 +285,6 @@ pub async fn execute_sql(
     max_rows: Option<usize>,
     split: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
-    let pool = require_pool(&state, &profile_id).await?;
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
     let statements = if split.unwrap_or(true) {
@@ -299,18 +299,33 @@ pub async fn execute_sql(
     };
 
     let started = std::time::Instant::now();
-    let mut results = Vec::with_capacity(statements.len());
-    let mut success = true;
 
-    for statement in &statements {
-        let result = run_statement(&pool, statement, max_rows).await;
-        let failed = result.error.is_some();
-        results.push(result);
-        if failed {
-            success = false;
-            break; // stop the script at the first failing statement
+    // If this connection's driver is a non-native one (PyExasol, JDBC, …), run
+    // the statements through that driver's runtime instead of native sqlx.
+    let profile = crate::profiles::find_profile(&state, &profile_id)?;
+    let (results, success) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
+        let stmts = statements.clone();
+        let resp = tokio::task::spawn_blocking(move || {
+            crate::driver_exec::execute_via_driver(&app, &profile, &stmts, max_rows)
+        })
+        .await
+        .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
+        (resp.results, resp.success)
+    } else {
+        let pool = require_pool(&state, &profile_id).await?;
+        let mut results = Vec::with_capacity(statements.len());
+        let mut success = true;
+        for statement in &statements {
+            let result = run_statement(&pool, statement, max_rows).await;
+            let failed = result.error.is_some();
+            results.push(result);
+            if failed {
+                success = false;
+                break; // stop the script at the first failing statement
+            }
         }
-    }
+        (results, success)
+    };
 
     let total_elapsed_ms = started.elapsed().as_millis() as u64;
     let row_total: u64 = results

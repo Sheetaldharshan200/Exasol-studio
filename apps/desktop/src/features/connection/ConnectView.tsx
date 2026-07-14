@@ -6,6 +6,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  Download,
   KeyRound,
   Loader2,
   Lock,
@@ -164,6 +165,33 @@ export function ConnectView({
   const dsn = useMemo(() => buildDsn(draft), [draft]);
   const selectedDriver = drivers.find((d) => d.id === draft.driverId);
   const canRun = Boolean(draft.host.trim() && draft.username.trim());
+
+  // Runtime readiness for the chosen driver (non-native drivers need a runtime
+  // installed on demand — nothing is bundled).
+  const [driverStat, setDriverStat] = useState<{ ready: boolean; supported: boolean; hint: string } | null>(null);
+  const [installingDriver, setInstallingDriver] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    ipc
+      .driverStatus(draft.driverId)
+      .then((s) => alive && setDriverStat({ ready: s.ready, supported: s.supported, hint: s.hint }))
+      .catch(() => alive && setDriverStat(null));
+    return () => {
+      alive = false;
+    };
+  }, [draft.driverId]);
+  async function installDriverRuntime() {
+    setInstallingDriver(true);
+    try {
+      await ipc.driverSetup(draft.driverId);
+      const s = await ipc.driverStatus(draft.driverId);
+      setDriverStat({ ready: s.ready, supported: s.supported, hint: s.hint });
+    } catch {
+      /* surfaced on next execute */
+    } finally {
+      setInstallingDriver(false);
+    }
+  }
 
   const patch = (partial: Partial<Draft>) => {
     setDraft((c) => ({ ...c, ...partial }));
@@ -372,8 +400,30 @@ export function ConnectView({
                   <p className="text-xs text-muted-foreground">
                     {selectedDriver.name} — {selectedDriver.protocol}. {selectedDriver.description}
                     {selectedDriver.kind !== "native"
-                      ? " Exasol Studio runs queries over the native WebSocket protocol; this choice is saved with the connection for export and external tooling."
+                      ? " Browsing & metadata use the native protocol; queries you run execute through this driver's runtime."
                       : ""}
+                  </p>
+                ) : null}
+
+                {/* Non-native driver: show runtime readiness + install-on-demand. */}
+                {selectedDriver && selectedDriver.kind !== "native" && driverStat && !driverStat.ready ? (
+                  driverStat.supported ? (
+                    <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+                      <span className="flex-1">This driver's runtime isn't installed yet. Install it once to run queries over {selectedDriver.name}.</span>
+                      <Button size="sm" variant="secondary" onClick={installDriverRuntime} disabled={installingDriver}>
+                        {installingDriver ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />}
+                        Install runtime
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                      {driverStat.hint}
+                    </div>
+                  )
+                ) : null}
+                {selectedDriver && selectedDriver.kind !== "native" && driverStat?.ready ? (
+                  <p className="flex items-center gap-1.5 text-xs text-primary">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {selectedDriver.name} runtime ready.
                   </p>
                 ) : null}
               </div>

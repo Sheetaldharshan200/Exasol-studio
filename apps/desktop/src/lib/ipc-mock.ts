@@ -529,6 +529,21 @@ export async function mockInvoke(
     case "exasol_local_ctl":
       await delay(300);
       return { ok: true, code: 0 };
+    case "driver_status": {
+      const id = String(args?.driverId ?? "sqlx-exasol");
+      const python = id === "pyexasol" || id === "sqlalchemy";
+      const native = ["sqlx-exasol", "websocket-api", "exarrow-rs", ""].includes(id);
+      return {
+        driverId: id,
+        runtime: native ? "native" : python ? "python" : id,
+        ready: native,
+        supported: native || python,
+        hint: native ? "" : python ? "Install the Python driver runtime to run queries over this driver." : "This driver runtime is coming soon.",
+      };
+    }
+    case "driver_setup":
+      await delay(400);
+      return { ok: true };
     case "market_doc_file":
       return `# ${String(args?.path ?? "file")}\n\n(Preview) linked repo file.`;
     case "open_external":

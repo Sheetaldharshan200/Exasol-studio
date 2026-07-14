@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 /// Our own repo — the single source of truth for CI-built Marketplace artifacts.
 const OUR_REPO: &str = "Sheetaldharshan200/Exasol-studio";
 
-fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
+pub(crate) fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
     let _ = app.emit(
         "market:log",
         json!({ "id": id, "line": line.into(), "level": level }),
@@ -22,7 +22,7 @@ fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level: &str) {
 }
 
 /// Run a command, streaming stdout/stderr line-by-line to the frontend log.
-fn run_streamed(app: &AppHandle, id: &str, program: &str, args: &[&str]) -> AppResult<i32> {
+pub(crate) fn run_streamed(app: &AppHandle, id: &str, program: &str, args: &[&str]) -> AppResult<i32> {
     run_streamed_env(app, id, program, args, &[])
 }
 
