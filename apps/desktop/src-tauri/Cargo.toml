@@ -37,6 +37,12 @@ parquet = { version = "53", default-features = false, features = ["snap", "zstd"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-updater = "2.0.0-rc.4"
 tauri-plugin-process = "2.0.0-rc.1"
+# Master-password vault: Argon2id KDF + AES-256-GCM at-rest encryption.
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+zeroize = "1"
 
 [profile.release]
 codegen-units = 1

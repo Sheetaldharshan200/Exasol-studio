@@ -15,6 +15,7 @@ mod metadata;
 mod settings;
 mod profiles;
 mod query;
+mod security;
 mod state;
 mod storage;
 
@@ -41,6 +42,13 @@ pub fn run() {
             drivers::list_drivers,
             driver_exec::driver_status,
             driver_exec::driver_setup,
+            security::vault_status,
+            security::vault_setup,
+            security::vault_unlock,
+            security::vault_lock,
+            security::vault_recover,
+            security::vault_change_password,
+            security::vault_regenerate_recovery,
             profiles::list_connection_profiles,
             profiles::save_connection_profile,
             profiles::delete_connection_profile,

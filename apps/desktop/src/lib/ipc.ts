@@ -401,6 +401,15 @@ export const ipc = {
   }) => call<string>("bucketfs_download", args),
   exasolLocalCtl: (action: "status" | "info" | "start" | "stop" | "destroy") =>
     call<{ ok: boolean; code: number }>("exasol_local_ctl", { action }),
+  vaultStatus: () =>
+    call<{ configured: boolean; unlocked: boolean; recoveryRemaining: number }>("vault_status"),
+  vaultSetup: (password: string) => call<string[]>("vault_setup", { password }),
+  vaultUnlock: (password: string) => call<boolean>("vault_unlock", { password }),
+  vaultLock: () => call<null>("vault_lock"),
+  vaultRecover: (code: string, newPassword: string) => call<number>("vault_recover", { code, newPassword }),
+  vaultChangePassword: (oldPassword: string, newPassword: string) =>
+    call<null>("vault_change_password", { oldPassword, newPassword }),
+  vaultRegenerateRecovery: () => call<string[]>("vault_regenerate_recovery"),
   driverStatus: (driverId: string) =>
     call<{ driverId: string; runtime: string; ready: boolean; supported: boolean; hint: string }>("driver_status", { driverId }),
   driverSetup: (driverId: string) => call<{ ok: boolean }>("driver_setup", { driverId }),

@@ -2,10 +2,17 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
+use crate::security;
 use crate::state::AppState;
 use crate::storage::{read_json, write_json};
 
 pub const DEFAULT_PORT: u16 = 8563;
+
+/// The current session's data-encryption key (None when the vault is locked or
+/// not configured).
+fn dek(state: &AppState) -> Option<[u8; 32]> {
+    *state.vault_key.read().unwrap()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,10 +66,13 @@ pub fn load_profiles(state: &AppState) -> AppResult<Vec<ConnectionProfile>> {
 }
 
 pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionProfile> {
-    load_profiles(state)?
+    let mut profile = load_profiles(state)?
         .into_iter()
         .find(|p| p.id == profile_id)
-        .ok_or_else(|| AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`")))
+        .ok_or_else(|| AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`")))?;
+    // Decrypt the stored password for actual use (connect / driver bridges).
+    profile.password = security::decrypt_secret(dek(state).as_ref(), &profile.password)?;
+    Ok(profile)
 }
 
 pub fn touch_profile(state: &AppState, profile_id: &str) -> AppResult<()> {
@@ -75,7 +85,13 @@ pub fn touch_profile(state: &AppState, profile_id: &str) -> AppResult<()> {
 
 #[tauri::command]
 pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<ConnectionProfile>> {
-    load_profiles(&state)
+    // Never hand stored passwords (encrypted or not) to the frontend — the UI
+    // doesn't need them; reconnects decrypt server-side in `find_profile`.
+    let mut profiles = load_profiles(&state)?;
+    for p in &mut profiles {
+        p.password = String::new();
+    }
+    Ok(profiles)
 }
 
 #[tauri::command]
@@ -109,13 +125,23 @@ pub fn save_connection_profile(
         })
     };
 
+    // Encrypt the password at rest (no-op when no vault is configured). If the
+    // field is left blank while editing an existing connection, keep the stored
+    // one instead of clobbering it.
+    let key = dek(&state);
     match existing_index {
         Some(idx) => {
+            if profile.password.is_empty() {
+                profile.password = profiles[idx].password.clone();
+            } else {
+                profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
+            }
             profile.id = profiles[idx].id.clone();
             profile.created_at = profiles[idx].created_at.clone();
             profiles[idx] = profile.clone();
         }
         None => {
+            profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
             profile.id = format!(
                 "conn-{}-{}",
                 chrono::Utc::now().timestamp_millis(),
@@ -127,6 +153,8 @@ pub fn save_connection_profile(
     }
 
     write_json(&profiles_path(&state), &profiles)?;
+    // Don't echo the stored secret back to the caller.
+    profile.password = String::new();
     Ok(profile)
 }
 

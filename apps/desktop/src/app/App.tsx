@@ -13,7 +13,8 @@ import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
-import { isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
+import { ipc, isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
+import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
 const SETUP_KEY = "exasol-studio-setup-done";
@@ -49,6 +50,13 @@ function MainApp() {
     () => window.localStorage.getItem(SETUP_KEY) === "1",
   );
   const [showTour, setShowTour] = useState(false);
+  // Master-password vault gate (null = still loading its status).
+  const [vault, setVault] = useState<{ configured: boolean; unlocked: boolean } | null>(null);
+  const refreshVault = () =>
+    ipc.vaultStatus().then((s) => setVault({ configured: s.configured, unlocked: s.unlocked })).catch(() => setVault({ configured: false, unlocked: true }));
+  useEffect(() => {
+    void refreshVault();
+  }, []);
 
   // Kick off the guided tour once, shortly after the studio first mounts.
   useEffect(() => {
@@ -80,6 +88,15 @@ function MainApp() {
     return () => unlisten?.();
   }, [refresh, adopt]);
 
+  // Vault gate. A returning user with a configured-but-locked vault unlocks
+  // first; a first-run user sets a master password right after Get Started.
+  if (vault === null) {
+    return <div className="flex h-screen items-center justify-center bg-background" />;
+  }
+  if (vault.configured && !vault.unlocked) {
+    return <VaultUnlock onUnlocked={refreshVault} />;
+  }
+
   if (!onboarded) {
     return (
       <Onboarding
@@ -89,6 +106,10 @@ function MainApp() {
         }}
       />
     );
+  }
+
+  if (!vault.configured) {
+    return <VaultSetup onDone={refreshVault} />;
   }
 
   if (!setupDone) {

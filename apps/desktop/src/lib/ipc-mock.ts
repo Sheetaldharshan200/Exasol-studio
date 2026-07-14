@@ -529,6 +529,24 @@ export async function mockInvoke(
     case "exasol_local_ctl":
       await delay(300);
       return { ok: true, code: 0 };
+    case "vault_status":
+      // Browser preview isn't gated by a master password.
+      return { configured: true, unlocked: true, recoveryRemaining: 5 };
+    case "vault_setup":
+    case "vault_regenerate_recovery":
+      await delay(200);
+      return ["ABCDE-FGHJK-LMNPQ-RSTUV-WXYZ2", "23456-789AB-CDEFG-HJKLM-NPQRS", "TUVWX-YZ234-56789-ABCDE-FGHJK", "LMNPQ-RSTUV-WXYZ2-34567-89ABC", "DEFGH-JKLMN-PQRST-UVWXY-Z2345"];
+    case "vault_unlock":
+      await delay(150);
+      return true;
+    case "vault_lock":
+      return null;
+    case "vault_recover":
+      await delay(150);
+      return 4;
+    case "vault_change_password":
+      await delay(150);
+      return null;
     case "driver_status": {
       const id = String(args?.driverId ?? "sqlx-exasol");
       const python = id === "pyexasol" || id === "sqlalchemy";
