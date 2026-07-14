@@ -36,7 +36,8 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { openInstallWindow, INSTALL_DONE } from "@/lib/install-window";
+import { INSTALL_DONE } from "@/lib/install-window";
+import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
@@ -262,9 +263,10 @@ function sectionOf(kind: Kind): SectionKey {
   }
 }
 
-type MarketFilter = "all" | "installed" | "updates" | "labs";
+type MarketFilter = "all" | "installing" | "installed" | "updates" | "labs";
 const FILTERS: { key: MarketFilter; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "installing", label: "Installing" },
   { key: "installed", label: "Installed" },
   { key: "updates", label: "Updates" },
   { key: "labs", label: "Labs" },
@@ -356,7 +358,6 @@ export function Marketplace() {
   const [detected, setDetected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
-  const [consoleItem, setConsoleItem] = useState<CatalogItem | null>(null);
   const [manageLocal, setManageLocal] = useState(false);
   // Starter-pack install queue (populated from the setup step).
   const [queue, setQueue] = useState<{ id: string; name: string; status: "pending" | "installing" | "done" | "failed" }[]>([]);
@@ -437,66 +438,90 @@ export function Marketplace() {
     }
   }, []);
 
-  const runQueue = useCallback(
-    async (items: CatalogItem[]) => {
-      for (const item of items) {
-        setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: "installing" } : x)));
-        const ok = await new Promise<boolean>((resolve) => {
-          if (!isTauri()) {
-            window.setTimeout(() => resolve(true), 500);
-            return;
-          }
-          const asset = pickAsset(releases[item.id]?.assets ?? [], env);
-          const version = latestFor(item.id) ?? undefined;
-          let un: UnlistenFn | undefined;
-          let settled = false;
-          const finish = (v: boolean) => {
-            if (settled) return;
-            settled = true;
-            un?.();
-            resolve(v);
-          };
-          listen<{ id: string; ok: boolean }>("market:done", (e) => {
-            if (e.payload.id === item.id) finish(e.payload.ok);
+  // Install one item, resolving when its `market:done` fires.
+  const installOne = useCallback(
+    (item: CatalogItem) =>
+      new Promise<boolean>((resolve) => {
+        if (!isTauri()) {
+          window.setTimeout(() => resolve(true), 800);
+          return;
+        }
+        const asset = pickAsset(releases[item.id]?.assets ?? [], env);
+        const version = latestFor(item.id) ?? undefined;
+        let un: UnlistenFn | undefined;
+        let settled = false;
+        const finish = (v: boolean) => {
+          if (settled) return;
+          settled = true;
+          un?.();
+          resolve(v);
+        };
+        listen<{ id: string; ok: boolean }>("market:done", (e) => {
+          if (e.payload.id === item.id) finish(e.payload.ok);
+        })
+          .then((u) => {
+            un = u;
+            ipc.marketInstallRun(item.id, version, asset?.url, asset?.name).catch(() => finish(false));
           })
-            .then((u) => {
-              un = u;
-              ipc.marketInstallRun(item.id, version, asset?.url, asset?.name).catch(() => finish(false));
-            })
-            .catch(() => finish(false));
-        });
-        setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
-      }
-      refreshInstalled();
-    },
-    [releases, env, latestFor, refreshInstalled],
+          .catch(() => finish(false));
+      }),
+    [releases, env, latestFor],
   );
 
-  // Start the queue once releases are ready.
+  // Queue items and install them all IN PARALLEL — one install never blocks
+  // another, and each reports its own status independently.
+  const enqueue = useCallback(
+    (items: CatalogItem[]) => {
+      const fresh = items.filter((i) => i.install !== "reference");
+      if (!fresh.length) return;
+      setQueue((q) => {
+        const seen = new Set(q.filter((x) => x.status === "installing" || x.status === "pending").map((x) => x.id));
+        const add = fresh
+          .filter((i) => !seen.has(i.id))
+          .map((i) => ({ id: i.id, name: i.name, status: "installing" as const }));
+        // drop any prior finished entry for these ids, then add fresh
+        const kept = q.filter((x) => !fresh.some((f) => f.id === x.id));
+        return [...kept, ...add];
+      });
+      for (const item of fresh) {
+        void installOne(item).then((ok) => {
+          setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
+          refreshInstalled();
+        });
+      }
+    },
+    [installOne, refreshInstalled],
+  );
+
+  // Start the pending pack once releases are ready.
   useEffect(() => {
     if (!pendingPack || loadingReleases) return;
     const items = pendingPack
       .map((id) => CATALOG.find((c) => c.id === id))
       .filter((c): c is CatalogItem => !!c && c.install !== "reference");
     setPendingPack(null);
-    if (!items.length) return;
-    setQueue(items.map((i) => ({ id: i.id, name: i.name, status: "pending" as const })));
-    void runQueue(items);
-  }, [pendingPack, loadingReleases, runQueue]);
+    if (items.length) enqueue(items);
+  }, [pendingPack, loadingReleases, enqueue]);
 
   const queueBusy = queue.some((q) => q.status === "pending" || q.status === "installing");
+  const installingIds = useMemo(() => new Set(queue.filter((q) => q.status === "installing").map((q) => q.id)), [queue]);
 
-  // Run an install in its own floating window (Tauri) so several can run at
-  // once; fall back to the in-app console in the browser preview.
-  async function startInstall(item: CatalogItem) {
-    const asset = pickAsset(releases[item.id]?.assets ?? [], env);
-    const version = latestFor(item.id) ?? undefined;
-    const opened = await openInstallWindow(
-      { id: item.id, name: item.name },
-      asset ? { url: asset.url, name: asset.name } : undefined,
-      version,
-    );
-    if (!opened) setConsoleItem(item);
+  // Install a single item (parallel, via the queue) or open the page for
+  // reference-only items.
+  function startInstall(item: CatalogItem) {
+    if (item.install === "reference") {
+      openExternal(item.homepage);
+      return;
+    }
+    enqueue([item]);
+  }
+
+  // Install every item in a recommended pack, in parallel.
+  function installPack(pack: Pack) {
+    const items = pack.items
+      .map((it) => CATALOG.find((c) => c.id === it.id))
+      .filter((c): c is CatalogItem => !!c && c.install !== "reference");
+    enqueue(items);
   }
 
   async function uninstall(item: CatalogItem) {
@@ -530,6 +555,7 @@ export function Marketplace() {
       const inst = installedMap[item.id];
       const present = inst || detected[item.id];
       if (filter === "installed" && !present) return false;
+      if (filter === "installing" && !queue.some((x) => x.id === item.id)) return false;
       if (filter === "labs" && !item.labs) return false;
       if (filter === "updates") {
         const l = catalog?.items?.[item.id]?.latest ?? releases[item.id]?.tag ?? null;
@@ -537,7 +563,7 @@ export function Marketplace() {
       }
       return true;
     });
-  }, [query, filter, installedMap, detected, catalog, releases]);
+  }, [query, filter, installedMap, detected, catalog, releases, queue]);
 
   return (
     <div className="h-full overflow-auto bg-editor">
@@ -623,11 +649,58 @@ export function Marketplace() {
                       {updatesAvailable}
                     </span>
                   ) : null}
+                  {f.key === "installing" && installingIds.size > 0 ? (
+                    <span className="rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground">
+                      {installingIds.size}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
           </div>
         </div>
+
+        {/* Recommended packs — install a curated set in one click (parallel). */}
+        {filter === "all" && !query ? (
+          <section className="mb-7">
+            <div className="mb-2.5 flex items-baseline gap-2">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">Recommended packs</h3>
+              <span className="text-[11px] text-muted-foreground">Curated sets — installed in parallel</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {PACKS.map((pack) => {
+                const Icon = pack.icon;
+                const allInstalled = pack.items.every((it) => {
+                  const c = CATALOG.find((x) => x.id === it.id);
+                  return c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                });
+                return (
+                  <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
+                    </div>
+                    <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {pack.items.map((it) => (
+                        <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => installPack(pack)}
+                      disabled={allInstalled}
+                      className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Install pack</>}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {SECTION_META.map((sec) => {
           const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
@@ -647,6 +720,7 @@ export function Marketplace() {
             const inst = installedMap[item.id];
             const onSystem = detected[item.id] && !inst;
             const isBusy = busy[item.id];
+            const isInstalling = installingIds.has(item.id);
             const latest = latestFor(item.id);
             const newer = inst && latest && latest !== inst.version;
             return (
@@ -737,10 +811,12 @@ export function Marketplace() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => void startInstall(item)}
-                      className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+                      onClick={() => startInstall(item)}
+                      disabled={isInstalling}
+                      className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
                     >
-                      <Download className="h-3.5 w-3.5" /> Install
+                      {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      {isInstalling ? "Installing…" : "Install"}
                     </button>
                   )}
                   {item.install === "personal-local" && (inst || onSystem) ? (
@@ -774,17 +850,6 @@ export function Marketplace() {
           </div>
         ) : null}
       </div>
-
-      {consoleItem ? (
-        <InstallConsole
-          item={consoleItem}
-          env={env}
-          asset={pickAsset(releases[consoleItem.id]?.assets ?? [], env)}
-          version={latestFor(consoleItem.id) ?? undefined}
-          onDone={refreshInstalled}
-          onClose={() => setConsoleItem(null)}
-        />
-      ) : null}
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
 

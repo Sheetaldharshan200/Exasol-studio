@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BarChart3, BookOpen, Boxes, Check, Cpu, Database, Package, Rocket, Server, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Pack = {
+export type Pack = {
   id: string;
   name: string;
   tagline: string;
@@ -11,7 +11,7 @@ type Pack = {
 };
 
 // Curated bundles — each installs a preselected set from the Marketplace.
-const PACKS: Pack[] = [
+export const PACKS: Pack[] = [
   {
     id: "starter-kit",
     name: "Starter Kit",
