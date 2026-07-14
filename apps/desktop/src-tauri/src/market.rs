@@ -703,10 +703,31 @@ fn superset_bin(venv: &std::path::Path) -> PathBuf {
 /// friction for the single local user. Kept deliberately small to avoid startup
 /// failure modes.
 fn superset_config_py() -> &'static str {
-    "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
-     TALISMAN_ENABLED = False\n\
-     HTTP_HEADERS = {}\n\
-     WTF_CSRF_ENABLED = False\n"
+    // Local, single-user, localhost-only BI embedded in the app: no frame
+    // restrictions, no CSRF friction, and — crucially — NO login. A tiny
+    // before-request hook auto-signs-in the built-in admin user, so Superset
+    // opens straight into the dashboards instead of a second login screen
+    // (verified: `/` renders the app, no login form).
+    r#"SECRET_KEY = "exasol-studio-local-dev-key"
+TALISMAN_ENABLED = False
+HTTP_HEADERS = {}
+WTF_CSRF_ENABLED = False
+SESSION_COOKIE_SAMESITE = None
+SESSION_COOKIE_HTTPONLY = False
+
+def FLASK_APP_MUTATOR(app):
+    from flask_login import login_user, current_user
+    @app.before_request
+    def _auto_login_admin():
+        try:
+            if current_user.is_anonymous:
+                from superset import security_manager
+                admin = security_manager.find_user(username="admin")
+                if admin:
+                    login_user(admin)
+        except Exception:
+            pass
+"#
 }
 
 fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {

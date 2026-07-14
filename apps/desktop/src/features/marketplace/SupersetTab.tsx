@@ -64,7 +64,7 @@ export function SupersetTab() {
         <span className="text-[12.5px] font-semibold text-foreground">Apache Superset</span>
         <span className="font-mono text-[11px] text-muted-foreground">{url}</span>
         {status === "serving" && frameLoaded ? (
-          <span className="rounded bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">login admin / admin</span>
+          <span className="rounded bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">signed in</span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
           <button
