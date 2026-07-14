@@ -1595,13 +1595,13 @@ export function ExasolStudio({
         key={tab.id}
         onClick={() => setActiveTabId(tab.id)}
         onDoubleClick={() => {
-          if (tab.view === "sql") startRename(tab.id, tab.title);
+          if (tab.view === "sql" || tab.view === "visualizer") startRename(tab.id, tab.title);
         }}
         onContextMenu={(e) => {
           e.preventDefault();
           setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
         }}
-        title={tab.view === "sql" ? "Double-click to rename · right-click to group" : "Right-click to group"}
+        title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
         className={cn(
           "group flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
           grouped && "border-r-0",

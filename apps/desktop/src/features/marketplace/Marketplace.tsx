@@ -566,6 +566,38 @@ export function Marketplace() {
 
   const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
+  // Driver runtimes: marketplace item id → the driver id the connect dialog uses.
+  // These install the SAME on-demand runtime, so "installed" here == usable there.
+  const DRIVER_RUNTIME: Record<string, string> = {
+    pyexasol: "pyexasol",
+    "sqlalchemy-exasol": "sqlalchemy",
+    "driver-jdbc": "jdbc",
+    "driver-odbc": "odbc",
+  };
+  const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});
+  const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
+  const refreshDrivers = useCallback(() => {
+    for (const did of new Set(Object.values(DRIVER_RUNTIME))) {
+      ipc.driverStatus(did).then((s) => setDriverReady((r) => ({ ...r, [did]: s.ready }))).catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    refreshDrivers();
+  }, [refreshDrivers]);
+  async function installDriverRuntime(did: string) {
+    setDriverBusy((b) => ({ ...b, [did]: true }));
+    try {
+      await ipc.driverSetup(did);
+      const s = await ipc.driverStatus(did);
+      setDriverReady((r) => ({ ...r, [did]: s.ready }));
+    } catch {
+      /* surfaced when they try to use it */
+    } finally {
+      setDriverBusy((b) => ({ ...b, [did]: false }));
+    }
+  }
+
   const renderCard = (item: CatalogItem) => {
     const Icon = KIND_ICON[item.kind];
     const inst = installedMap[item.id];
@@ -574,6 +606,12 @@ export function Marketplace() {
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
     const newer = inst && latest && latest !== inst.version;
+    // Driver runtimes install-on-demand into the shared runtime the connect
+    // dialog uses. Reference drivers are provided by Exasol but not executable
+    // inside Exasol Studio (yet).
+    const did = DRIVER_RUNTIME[item.id];
+    const runtimeReady = did ? driverReady[did] : false;
+    const comingSoon = !did && item.install === "reference";
     return (
       <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
         <div className="flex items-start gap-2.5">
@@ -588,7 +626,7 @@ export function Marketplace() {
               ) : (
                 <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
               )}
-              {inst ? (
+              {inst || (did && runtimeReady) ? (
                 <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
                   <Check className="h-2.5 w-2.5" /> installed
                 </span>
@@ -596,8 +634,15 @@ export function Marketplace() {
                 <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
                   <Check className="h-2.5 w-2.5" /> detected
                 </span>
+              ) : comingSoon ? (
+                <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">coming soon</span>
               ) : null}
             </div>
+            {did ? (
+              <p className="mt-0.5 text-[10px] font-medium text-primary">✓ Runs inside Exasol Studio</p>
+            ) : comingSoon ? (
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Supported by Exasol — not yet runnable in Exasol Studio</p>
+            ) : null}
             <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
             <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
               {latest ? <span>{latest}</span> : null}
@@ -609,7 +654,41 @@ export function Marketplace() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {inst ? (
+          {did ? (
+            // Driver runtime: install-on-demand (same runtime the connect dialog uses).
+            runtimeReady ? (
+              <>
+                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
+                </span>
+                <button
+                  onClick={() => void installDriverRuntime(did)}
+                  disabled={driverBusy[did]}
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Reinstall
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => void installDriverRuntime(did)}
+                disabled={driverBusy[did]}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+              >
+                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                {driverBusy[did] ? "Installing…" : "Install & use here"}
+              </button>
+            )
+          ) : comingSoon ? (
+            <>
+              <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                Coming soon to Exasol Studio
+              </span>
+              <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
+                Docs <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            </>
+          ) : inst ? (
             <>
               {newer ? (
                 <button
