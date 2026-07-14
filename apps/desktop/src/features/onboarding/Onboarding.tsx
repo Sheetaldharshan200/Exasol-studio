@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Boxes, Database, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { cn } from "@/lib/utils";
-import exasolLogo from "@/assets/exasol-wordmark.svg";
+import exasolWordmark from "@/assets/exasol-wordmark.svg";
+import exasolWordmarkDark from "@/assets/exasol-wordmark-dark.svg";
 
-const HIGHLIGHTS = [
-  { icon: Database, label: "Full database tree" },
-  { icon: Boxes, label: "Virtual schemas & scripts" },
-  { icon: Zap, label: "First query in seconds" },
-];
+// The single tagline shown under the title.
+const TAGLINE = "The desktop workbench for Exasol.";
 
 export function Onboarding({ onGetStarted }: { onGetStarted: () => void }) {
   const [ready, setReady] = useState(false);
@@ -36,42 +34,32 @@ export function Onboarding({ onGetStarted }: { onGetStarted: () => void }) {
 
         <div
           className={cn(
-            "flex flex-col items-center gap-4 transition-all duration-700",
+            "flex flex-col items-center gap-5 transition-all duration-700",
             ready ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
           )}
         >
-          <div>
-            <span className="eyebrow">Analytics database workbench</span>
-            {/* The "Exasol" wordmark is the brand logo; "Studio" stays as text,
-                sized to match the wordmark's cap height. */}
-            <div className="mt-2 flex items-baseline justify-center gap-3">
-              <img src={exasolLogo} alt="Exasol" className="h-[40px] w-auto translate-y-[6px] dark:brightness-0 dark:invert" />
-              <span className="font-heading text-[52px] leading-[0.95] font-extrabold tracking-[-0.03em] text-primary">
-                Studio
-              </span>
-            </div>
+          {/* Title: the "Exasol" wordmark (brand logo) + "Studio" text. */}
+          <div className="flex items-baseline justify-center gap-3">
+            <img
+              src={exasolWordmark}
+              alt="Exasol"
+              className="h-[40px] w-auto translate-y-[6px] dark:hidden"
+            />
+            <img
+              src={exasolWordmarkDark}
+              alt="Exasol"
+              className="hidden h-[40px] w-auto translate-y-[6px] dark:block"
+            />
+            <span className="font-heading text-[52px] leading-[0.95] font-extrabold tracking-[-0.03em] text-primary">
+              Studio
+            </span>
           </div>
 
-          <p className="max-w-md text-[16px] leading-relaxed text-muted-foreground">
-            A desktop-native workbench for Exasol — browse everything the database ships with,
-            write SQL over the native driver, and get help from an AI that knows Exasol.
-          </p>
-
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-            {HIGHLIGHTS.map(({ icon: Icon, label }) => (
-              <span
-                key={label}
-                className="flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-xs text-foreground/80"
-              >
-                <Icon className="h-3.5 w-3.5 text-primary" />
-                {label}
-              </span>
-            ))}
-          </div>
+          <p className="text-[16px] leading-relaxed text-muted-foreground">{TAGLINE}</p>
 
           <button
             onClick={onGetStarted}
-            className="btn-shine cta-glow mt-4 flex h-12 items-center gap-2 rounded-xl bg-primary px-8 text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            className="btn-shine cta-glow mt-2 flex h-12 items-center gap-2 rounded-xl bg-primary px-8 text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <span className="relative z-[2] flex items-center gap-2">
               Get started
