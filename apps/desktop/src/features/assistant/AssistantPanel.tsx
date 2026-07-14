@@ -265,7 +265,7 @@ export function AssistantPanel({
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {messages.length === 0 ? (
           <div className="mt-6 flex flex-col items-center gap-2 px-4 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
               <Bot className="h-5 w-5" />
             </div>
             <p className="text-sm font-medium text-foreground">Ask about your database</p>

@@ -120,7 +120,7 @@ export function GitPanel() {
   if (!status.isRepo)
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
           <GitBranch className="h-5 w-5" />
         </div>
         <div>
@@ -282,7 +282,7 @@ export function GitPanel() {
 function Empty({ title, body }: { title: string; body: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><GitBranch className="h-5 w-5" /></div>
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground"><GitBranch className="h-5 w-5" /></div>
       <div>
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</p>

@@ -783,7 +783,7 @@ export function Visualizer({
             onClick={() => setMode("build")}
             className={cn(
               "flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
-              mode === "build" ? "bg-secondary text-primary" : "text-muted-foreground hover:text-foreground",
+              mode === "build" ? "text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <SquarePen className="h-3.5 w-3.5" /> Build
@@ -821,7 +821,7 @@ export function Visualizer({
           title="Link style"
           className={cn(
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
-            stylePanelOpen ? "bg-secondary text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            stylePanelOpen ? "text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
           )}
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -831,7 +831,7 @@ export function Visualizer({
           title="Search tables (⌘F)"
           className={cn(
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
-            searchOpen ? "bg-secondary text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            searchOpen ? "text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
           )}
         >
           <Search className="h-3.5 w-3.5" />

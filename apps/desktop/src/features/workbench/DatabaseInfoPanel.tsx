@@ -20,7 +20,7 @@ function StatCard({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3.5 py-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
@@ -94,7 +94,7 @@ export function DatabaseInfoPanel({
     <div className="h-full overflow-auto bg-editor">
       <div className="mx-auto max-w-5xl p-6">
         <header className="mb-5 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
             <Info className="h-4 w-4" />
           </div>
           <div>

@@ -400,7 +400,7 @@ function IconButton({
           disabled={disabled}
           className={cn(
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
-            active && "bg-secondary text-primary",
+            active && "text-primary",
           )}
         >
           {children}
@@ -577,7 +577,7 @@ function ConnectionSection({
             <DropdownMenuTrigger asChild>
               <button
                 aria-label="More actions"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground data-[state=open]:bg-secondary data-[state=open]:text-foreground"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground data-[state=open]:text-foreground"
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
@@ -647,7 +647,7 @@ function VisualizerPanel({
   if (!hasConnection) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
           <Eye className="h-5 w-5" />
         </div>
         <div>
@@ -817,7 +817,7 @@ function Sidebar({
               const Icon = P.icon;
               return (
                 <>
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div>
@@ -854,7 +854,7 @@ function Sidebar({
 
       {!hasConnections ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
             <Database className="h-5 w-5" />
           </div>
           <div>
@@ -2351,7 +2351,7 @@ export function ExasolStudio({
               title={aiOpen ? "Hide AI panel" : "Show AI panel"}
               className={cn(
                 "mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
-                aiOpen ? "bg-secondary text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                aiOpen ? "text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
               )}
             >
               <PanelRight className="h-4 w-4" />

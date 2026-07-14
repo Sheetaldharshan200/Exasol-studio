@@ -361,7 +361,7 @@ export function FileExplorer({
           }
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-secondary hover:text-foreground",
-            showSearch ? "bg-secondary text-primary" : "text-muted-foreground",
+            showSearch ? "text-primary" : "text-muted-foreground",
           )}
         >
           <Search className="h-3.5 w-3.5" />

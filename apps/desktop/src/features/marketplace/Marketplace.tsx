@@ -615,7 +615,7 @@ export function Marketplace() {
     return (
       <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
         <div className="flex items-start gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-foreground">
             <Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -762,7 +762,7 @@ export function Marketplace() {
     <div className="h-full overflow-auto bg-editor">
       <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
         <header className="mb-5 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
             <Store className="h-4 w-4" />
           </div>
           <div className="flex-1">
@@ -859,7 +859,7 @@ export function Marketplace() {
                   return (
                     <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary"><PackIcon className="h-4 w-4" /></div>
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
                         <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
                       </div>
                       <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>

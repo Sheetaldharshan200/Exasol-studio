@@ -54,7 +54,7 @@ export function ConnectionInfoPanel({ connection }: { connection: ActiveConnecti
     <div className="h-full overflow-auto bg-editor [scrollbar-width:thin]">
       <div className="mx-auto max-w-3xl space-y-4 p-6">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg">
             <Database className="h-5 w-5 text-primary" />
           </div>
           <div className="min-w-0">

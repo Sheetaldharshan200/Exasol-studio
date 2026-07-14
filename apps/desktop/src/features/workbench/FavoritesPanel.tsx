@@ -33,7 +33,7 @@ export function FavoritesPanel({
   if (shown.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
           <Star className="h-5 w-5" />
         </div>
         <div>

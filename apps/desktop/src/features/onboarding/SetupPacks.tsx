@@ -112,7 +112,7 @@ export function SetupPacks({ onDone }: { onDone: (packItemIds: string[] | null) 
                 )}
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", active ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground")}>
+                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", active ? "text-primary" : "text-foreground")}>
                     <Icon className="h-4 w-4" />
                   </div>
                   <div className="flex-1">
