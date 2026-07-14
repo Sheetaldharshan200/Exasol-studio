@@ -39,9 +39,8 @@ const DOCS: DocItem[] = [
 
 function openExternal(url: string) {
   if (isTauri()) {
-    import("@tauri-apps/plugin-opener")
-      .then((m) => m.openUrl(url))
-      .catch(() => window.open(url, "_blank"));
+    // Route through the OS opener (reliable; window.open is a no-op in Tauri).
+    ipc.openExternal(url).catch(() => window.open(url, "_blank"));
   } else {
     window.open(url, "_blank");
   }
@@ -54,6 +53,20 @@ function absUrl(repo: string, src?: string): string | undefined {
   return `https://raw.githubusercontent.com/${repo}/HEAD/${src.replace(/^\.?\//, "")}`;
 }
 
+/** Resolve an href relative to the currently-viewed file's directory, and
+ * normalize `.`/`..` segments to a clean repo-root-relative path. */
+function resolveRepoPath(currentFile: string | null, href: string): string {
+  const dir = currentFile && currentFile.includes("/") ? currentFile.slice(0, currentFile.lastIndexOf("/") + 1) : "";
+  const combined = href.startsWith("/") ? href.slice(1) : dir + href;
+  const out: string[] = [];
+  for (const seg of combined.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/");
+}
+
 export function Docs() {
   const [selected, setSelected] = useState<DocItem>(DOCS[0]);
   const [content, setContent] = useState("");
@@ -61,6 +74,9 @@ export function Docs() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [source, setSource] = useState<"github" | "offline" | null>(null);
+  // When following a relative link into another repo file (e.g. CONTRIBUTING.md),
+  // this holds that file's repo-relative path; null means we're on the README.
+  const [subPath, setSubPath] = useState<string | null>(null);
   // Guards against out-of-order responses (clicking B then A must not let A's
   // slower response overwrite B's content).
   const reqId = useRef<string>(DOCS[0].id);
@@ -68,6 +84,7 @@ export function Docs() {
   const open = useCallback(async (item: DocItem) => {
     reqId.current = item.id;
     setSelected(item);
+    setSubPath(null);
     setLoading(true);
     setError(null);
     setContent("");
@@ -93,6 +110,40 @@ export function Docs() {
   useEffect(() => {
     void open(DOCS[0]);
   }, [open]);
+
+  // Follow a relative link to another markdown file in the same repo, rendering
+  // it in-place (with a Back affordance to return to the README).
+  async function loadSubFile(path: string) {
+    setLoading(true);
+    setError(null);
+    const md = await ipc.marketDocFile(selected.repo, path).catch(() => null);
+    if (md) {
+      setContent(md);
+      setSubPath(path);
+      setSource("github");
+    } else {
+      // Couldn't fetch it raw — open the rendered file on GitHub instead.
+      openExternal(`https://github.com/${selected.repo}/blob/HEAD/${path}`);
+    }
+    setLoading(false);
+  }
+
+  // Decide what a clicked link should do: in-app markdown navigation, the
+  // GitHub page for other repo files, or the external browser for absolute URLs.
+  function handleLinkClick(href: string) {
+    if (href.startsWith("#")) return;
+    if (/^(https?:|mailto:)/i.test(href)) {
+      openExternal(href);
+      return;
+    }
+    const path = resolveRepoPath(subPath, href.split("#")[0]);
+    if (!path) return;
+    if (/\.(md|markdown)$/i.test(path)) {
+      void loadSubFile(path);
+    } else {
+      openExternal(`https://github.com/${selected.repo}/blob/HEAD/${path}`);
+    }
+  }
 
   async function toggleOffline(next: boolean) {
     if (next) {
@@ -137,7 +188,19 @@ export function Docs() {
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <span className="flex-1 truncate text-[13px] font-semibold text-foreground">{selected.name}</span>
+          {subPath ? (
+            <button
+              onClick={() => void open(selected)}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              title="Back to the README"
+            >
+              ← README
+            </button>
+          ) : null}
+          <span className="flex-1 truncate text-[13px] font-semibold text-foreground">
+            {selected.name}
+            {subPath ? <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">/ {subPath}</span> : null}
+          </span>
           {source ? (
             <span
               className={cn(
@@ -187,9 +250,9 @@ export function Docs() {
               onClick={(e) => {
                 const anchor = (e.target as HTMLElement).closest("a");
                 const href = anchor?.getAttribute("href");
-                if (href && !href.startsWith("#")) {
+                if (href) {
                   e.preventDefault();
-                  openExternal(absUrl(selected.repo, href) ?? href);
+                  handleLinkClick(href);
                 }
               }}
             >

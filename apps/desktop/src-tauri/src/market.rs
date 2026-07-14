@@ -250,19 +250,82 @@ fn docs_dir(app: &AppHandle) -> AppResult<PathBuf> {
 /// Fetch a repo's README as raw markdown (any filename/branch). Null on error.
 #[tauri::command]
 pub async fn market_doc(repo: String) -> AppResult<Value> {
-    let url = format!("https://api.github.com/repos/{repo}/readme");
     let client = reqwest::Client::new();
-    let resp = match client
+    // Primary: GitHub API resolves whichever README variant exists.
+    let url = format!("https://api.github.com/repos/{repo}/readme");
+    if let Ok(r) = client
         .get(&url)
         .header("User-Agent", "exasol-studio")
         .header("Accept", "application/vnd.github.raw")
         .send()
         .await
     {
-        Ok(r) if r.status().is_success() => r,
-        _ => return Ok(Value::Null),
+        if r.status().is_success() {
+            return Ok(json!(r.text().await.unwrap_or_default()));
+        }
+    }
+    // Fallback (e.g. API rate-limited): fetch a raw README directly, which has
+    // far more generous limits.
+    for base in ["HEAD", "main", "master"] {
+        for name in ["README.md", "readme.md", "README.rst", "README.markdown"] {
+            let raw = format!("https://raw.githubusercontent.com/{repo}/{base}/{name}");
+            if let Ok(r) = client.get(&raw).header("User-Agent", "exasol-studio").send().await {
+                if r.status().is_success() {
+                    return Ok(json!(r.text().await.unwrap_or_default()));
+                }
+            }
+        }
+    }
+    Ok(Value::Null)
+}
+
+/// Fetch an arbitrary file from a repo (raw), used to follow relative links in
+/// a README (e.g. CONTRIBUTING.md, docs/*.md). Null when it can't be fetched.
+#[tauri::command]
+pub async fn market_doc_file(repo: String, path: String) -> AppResult<Value> {
+    let clean = path.trim_start_matches("./").trim_start_matches('/');
+    let client = reqwest::Client::new();
+    // Try the default branch, then common branch names.
+    for base in ["HEAD", "main", "master"] {
+        let url = format!("https://raw.githubusercontent.com/{repo}/{base}/{clean}");
+        if let Ok(r) = client.get(&url).header("User-Agent", "exasol-studio").send().await {
+            if r.status().is_success() {
+                return Ok(json!(r.text().await.unwrap_or_default()));
+            }
+        }
+    }
+    Ok(Value::Null)
+}
+
+/// Open a URL in the user's default browser via the OS opener. More reliable
+/// than the webview's window.open (a no-op in Tauri) and independent of the
+/// JS opener plugin's scoping.
+#[tauri::command]
+pub fn open_external(url: String) -> AppResult<()> {
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
+        return Err(AppError::Storage("Only http(s) and mailto URLs can be opened.".into()));
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(&url);
+        c
     };
-    Ok(json!(resp.text().await.unwrap_or_default()))
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", "", url.as_str()]);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    with_path(&mut cmd);
+    cmd.spawn().map_err(|e| AppError::Storage(format!("Could not open {url}: {e}")))?;
+    Ok(())
 }
 
 /// Save a doc for offline use under the managed docs folder.

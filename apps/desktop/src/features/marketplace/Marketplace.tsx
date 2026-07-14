@@ -273,9 +273,8 @@ const FILTERS: { key: MarketFilter; label: string }[] = [
 
 function openExternal(url: string) {
   if (isTauri()) {
-    import("@tauri-apps/plugin-opener")
-      .then((m) => m.openUrl(url))
-      .catch(() => window.open(url, "_blank"));
+    // OS opener via the backend — reliable regardless of JS plugin scoping.
+    ipc.openExternal(url).catch(() => window.open(url, "_blank"));
   } else {
     window.open(url, "_blank");
   }

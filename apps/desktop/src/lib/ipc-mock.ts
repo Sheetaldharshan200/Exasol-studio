@@ -529,6 +529,11 @@ export async function mockInvoke(
     case "exasol_local_ctl":
       await delay(300);
       return { ok: true, code: 0 };
+    case "market_doc_file":
+      return `# ${String(args?.path ?? "file")}\n\n(Preview) linked repo file.`;
+    case "open_external":
+      window.open(String(args?.url ?? ""), "_blank");
+      return null;
 
     case "git_status":
       return {

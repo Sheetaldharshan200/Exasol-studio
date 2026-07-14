@@ -401,6 +401,8 @@ export const ipc = {
   }) => call<string>("bucketfs_download", args),
   exasolLocalCtl: (action: "status" | "info" | "start" | "stop" | "destroy") =>
     call<{ ok: boolean; code: number }>("exasol_local_ctl", { action }),
+  marketDocFile: (repo: string, path: string) => call<string | null>("market_doc_file", { repo, path }),
+  openExternal: (url: string) => call<null>("open_external", { url }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string) => call<string>("git_commit", { message }),

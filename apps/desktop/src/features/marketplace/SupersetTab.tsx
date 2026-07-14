@@ -48,7 +48,7 @@ export function SupersetTab() {
   }, [reloadKey]);
 
   const openExternal = () => {
-    if (isTauri()) void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url)).catch(() => window.open(url, "_blank"));
+    if (isTauri()) void ipc.openExternal(url).catch(() => window.open(url, "_blank"));
     else window.open(url, "_blank");
   };
 

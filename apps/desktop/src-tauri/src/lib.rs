@@ -80,6 +80,8 @@ pub fn run() {
             market::market_install,
             market::market_install_run,
             market::market_uninstall,
+            market::market_doc_file,
+            market::open_external,
             market::exasol_local_ctl,
             market::bi_installed,
             market::bi_launch,
