@@ -530,6 +530,30 @@ export async function mockInvoke(
       await delay(300);
       return { ok: true, code: 0 };
 
+    case "git_status":
+      return {
+        hasGit: true,
+        isRepo: true,
+        branch: "main",
+        ahead: 0,
+        behind: 0,
+        dir: "/Users/you/ExasolStudio",
+        files: [
+          { code: " M", path: "reports/revenue.sql", label: "modified", staged: false },
+          { code: "??", path: "scratch/new-query.sql", label: "untracked", staged: false },
+        ],
+      };
+    case "git_init":
+      return null;
+    case "git_commit":
+      await delay(200);
+      return "[main abc1234] " + String(args?.message ?? "");
+    case "git_log":
+      return [
+        { hash: "abc1234", subject: "Add revenue report", author: "You", relative: "2 hours ago" },
+        { hash: "def5678", subject: "Initial workspace", author: "You", relative: "yesterday" },
+      ];
+
     case "market_uninstall":
       return null;
 

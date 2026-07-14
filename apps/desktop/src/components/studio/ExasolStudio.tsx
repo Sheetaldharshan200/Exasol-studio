@@ -103,6 +103,7 @@ import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { ObjectContextMenu, SqlReviewDialog } from "@/features/workbench/ObjectContextMenu";
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
+import { GitPanel } from "@/features/workbench/GitPanel";
 import { addFavorite, type Favorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
@@ -767,6 +768,8 @@ function Sidebar({
           <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} refreshSignal={filesRefresh} />
         ) : activity === "favorites" ? (
           <FavoritesPanel profileId={activeProfileId} onOpen={(fav) => onOpenFavorite?.(fav)} />
+        ) : activity === "git" ? (
+          <GitPanel />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}

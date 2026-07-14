@@ -7,6 +7,7 @@ mod drivers;
 mod error;
 mod files;
 mod fs;
+mod git;
 mod history;
 mod market;
 mod metadata;
@@ -85,6 +86,10 @@ pub fn run() {
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,
             bucketfs::bucketfs_download,
+            git::git_status,
+            git::git_init,
+            git::git_commit,
+            git::git_log,
             exapump::exapump_available,
             exapump::exapump_upload,
             settings::get_app_settings,

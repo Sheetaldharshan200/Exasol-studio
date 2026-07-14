@@ -61,6 +61,30 @@ export type DatabaseOverview = {
   systemSchemas: string[];
 };
 
+export type GitFile = {
+  code: string;
+  path: string;
+  label: string;
+  staged: boolean;
+};
+
+export type GitStatus = {
+  hasGit: boolean;
+  isRepo: boolean;
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  files: GitFile[];
+  dir: string;
+};
+
+export type GitLogEntry = {
+  hash: string;
+  subject: string;
+  author: string;
+  relative: string;
+};
+
 export type ScriptInfo = {
   name: string;
   scriptType: "UDF" | "SCRIPTING" | "ADAPTER" | "PREPROCESSOR" | string;
@@ -377,6 +401,10 @@ export const ipc = {
   }) => call<string>("bucketfs_download", args),
   exasolLocalCtl: (action: "status" | "info" | "start" | "stop" | "destroy") =>
     call<{ ok: boolean; code: number }>("exasol_local_ctl", { action }),
+  gitStatus: () => call<GitStatus>("git_status"),
+  gitInit: () => call<null>("git_init"),
+  gitCommit: (message: string) => call<string>("git_commit", { message }),
+  gitLog: (limit?: number) => call<GitLogEntry[]>("git_log", { limit }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
