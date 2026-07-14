@@ -20,7 +20,6 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Store,
-  Terminal,
   Trash2,
   TriangleAlert,
   X,
@@ -38,7 +37,6 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 import { openInstallWindow, INSTALL_DONE } from "@/lib/install-window";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
@@ -814,7 +812,7 @@ export function InstallConsole({
       <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
         {phase === "running" ? <BorderBeam duration={5} size={220} /> : null}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <Terminal className="h-4 w-4 text-primary" />
+          <Boxes className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[13px] font-semibold text-foreground">
             Install · {item.name}
             {version ? <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">{version}</span> : null}
@@ -865,32 +863,48 @@ export function InstallConsole({
           </div>
         ) : (
           <>
-            <div className="px-5 pt-5 pb-3">
-              <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
-                <span className="font-medium text-foreground">
-                  {phase === "running"
-                    ? isBinary
-                      ? "Downloading…"
-                      : "Installing…"
-                    : ok
-                      ? "Installed successfully"
-                      : "Installation failed"}
-                </span>
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {isBinary && progress
-                    ? `${progress.pct != null ? `${progress.pct}% · ` : ""}${fmtBytes(progress.received)}${progress.total ? ` / ${fmtBytes(progress.total)}` : ""}`
-                    : ""}
-                </span>
-              </div>
-              <ProgressBar
-                pct={progress?.pct ?? null}
-                done={phase === "done" && ok}
-                indeterminate={!isBinary}
-              />
-              {phase === "done" && !ok ? (
-                <p className="mt-2 text-[11.5px] text-destructive">Something went wrong — open the logs for details.</p>
-              ) : null}
-            </div>
+            {(() => {
+              // A real, advancing progress bar for every install. Binary
+              // downloads use byte progress; script installs (pip/uv/git) derive
+              // a step-based percentage from how many commands have run so far.
+              const stepsSeen = lines.filter((l) => l.level === "cmd").length;
+              const estSteps = Math.max(plan.length, 1);
+              const stepPct = Math.min(95, Math.round((stepsSeen / estSteps) * 100));
+              const shownPct =
+                phase === "done"
+                  ? ok
+                    ? 100
+                    : (isBinary ? progress?.pct ?? 0 : stepPct)
+                  : isBinary
+                    ? progress?.pct ?? 0
+                    : Math.max(6, stepPct); // small head start so the bar is visible immediately
+              return (
+                <div className="px-5 pt-5 pb-3">
+                  <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
+                    <span className="font-medium text-foreground">
+                      {phase === "running"
+                        ? isBinary
+                          ? "Downloading…"
+                          : "Installing…"
+                        : ok
+                          ? "Installed successfully"
+                          : "Installation failed"}
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {isBinary && progress
+                        ? `${fmtBytes(progress.received)}${progress.total ? ` / ${fmtBytes(progress.total)}` : ""}`
+                        : phase === "running"
+                          ? `${shownPct}%`
+                          : ""}
+                    </span>
+                  </div>
+                  <ProgressBar pct={shownPct} done={phase === "done" && ok} />
+                  {phase === "done" && !ok ? (
+                    <p className="mt-2 text-[11.5px] text-destructive">Something went wrong — open the logs for details.</p>
+                  ) : null}
+                </div>
+              );
+            })()}
 
             <div className="px-5">
               <button
@@ -903,19 +917,19 @@ export function InstallConsole({
             </div>
 
             {showLogs ? (
-              <div ref={logRef} className="mx-5 mt-2 max-h-[40vh] flex-1 overflow-auto [scrollbar-width:thin]">
-                <TerminalBox sequence={false} startOnView={false} showControls={false} className="w-full max-w-none max-h-none">
-                  {lines.length === 0 ? (
-                    <AnimatedSpan startOnView={false} className="text-muted-foreground">
-                      Preparing…
-                    </AnimatedSpan>
-                  ) : null}
-                  {lines.map((l, i) => (
-                    <AnimatedSpan key={i} startOnView={false} className={cn("whitespace-pre-wrap break-words", lineClass(l.level))}>
+              <div
+                ref={logRef}
+                className="mx-5 mt-2 max-h-[40vh] flex-1 overflow-auto rounded-md border border-border bg-editor p-2.5 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]"
+              >
+                {lines.length === 0 ? (
+                  <p className="text-muted-foreground">Preparing…</p>
+                ) : (
+                  lines.map((l, i) => (
+                    <div key={i} className={cn("whitespace-pre-wrap break-words", lineClass(l.level))}>
                       {l.text}
-                    </AnimatedSpan>
-                  ))}
-                </TerminalBox>
+                    </div>
+                  ))
+                )}
               </div>
             ) : null}
 

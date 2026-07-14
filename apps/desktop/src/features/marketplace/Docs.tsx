@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import {
   BarChart3,
   BookOpen,
@@ -178,21 +179,25 @@ export function Docs() {
               </button>
             </div>
           ) : (
-            <div className="md-body mx-auto max-w-3xl">
+            <div
+              className="md-body mx-auto max-w-3xl"
+              // Catch clicks on any anchor — including raw-HTML ones from
+              // rehype-raw — and route them through the OS opener instead of
+              // navigating the webview away from the app.
+              onClick={(e) => {
+                const anchor = (e.target as HTMLElement).closest("a");
+                const href = anchor?.getAttribute("href");
+                if (href && !href.startsWith("#")) {
+                  e.preventDefault();
+                  openExternal(absUrl(selected.repo, href) ?? href);
+                }
+              }}
+            >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
                 components={{
-                  a: ({ href, children }) => (
-                    <a
-                      href={href}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (href) openExternal(href);
-                      }}
-                    >
-                      {children}
-                    </a>
-                  ),
+                  a: ({ href, children }) => <a href={href}>{children}</a>,
                   img: ({ src, alt }) => <img src={absUrl(selected.repo, typeof src === "string" ? src : undefined)} alt={alt ?? ""} />,
                 }}
               >

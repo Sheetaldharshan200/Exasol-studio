@@ -20,6 +20,7 @@ import {
   History,
   Info,
   ListChecks,
+  MoreHorizontal,
   Loader2,
   PanelLeftClose,
   PanelRight,
@@ -556,30 +557,46 @@ function ConnectionSection({
             focused ? "opacity-100" : "opacity-0",
           )}
         >
-          <IconButton label="Database info" onClick={() => onOpenView("dbInfo")}>
-            <Info className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton label="Data types" onClick={() => onOpenView("dataTypes")}>
-            <Shapes className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton label="DBA dashboard" onClick={() => onOpenView("dba")}>
-            <Shield className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton label="New virtual schema" onClick={onNewVs}>
-            <Waypoints className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton label="Upload driver to BucketFS" onClick={onUploadDriver}>
-            <HardDriveUpload className="h-3.5 w-3.5" />
+          {/* Two most-used actions stay inline; the rest live in an overflow
+              menu so a narrow sidebar never collides names with a row of icons. */}
+          <IconButton label="Refresh" onClick={onRefresh}>
+            <RefreshCcw className="h-3.5 w-3.5" />
           </IconButton>
           <IconButton label="Collapse all" onClick={() => setCollapseSignal((n) => n + 1)}>
             <ChevronsDownUp className="h-3.5 w-3.5" />
           </IconButton>
-          <IconButton label="Refresh" onClick={onRefresh}>
-            <RefreshCcw className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton label="Disconnect" onClick={onDisconnect}>
-            <Unplug className="h-3.5 w-3.5" />
-          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="More actions"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground data-[state=open]:bg-secondary data-[state=open]:text-foreground"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={() => onOpenView("dbInfo")}>
+                <Info className="h-3.5 w-3.5" /> Database info
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("dataTypes")}>
+                <Shapes className="h-3.5 w-3.5" /> Data types
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("dba")}>
+                <Shield className="h-3.5 w-3.5" /> DBA dashboard
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onNewVs}>
+                <Waypoints className="h-3.5 w-3.5" /> New virtual schema
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onUploadDriver}>
+                <HardDriveUpload className="h-3.5 w-3.5" /> Upload driver to BucketFS
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDisconnect} className="text-destructive focus:text-destructive">
+                <Unplug className="h-3.5 w-3.5" /> Disconnect
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {!collapsed ? (
@@ -1947,11 +1964,17 @@ export function ExasolStudio({
           visualizerCount={visualizerTabs.length}
           onOpenSettings={() => void openSettingsWindow()}
           onSelect={(id) => {
+            // Full-tab views take the whole workspace — collapse the side panel
+            // so they aren't cramped next to a navigator the user isn't using.
             if (id === "marketplace") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
               openMarketplace();
               return;
             }
             if (id === "guides") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
               openGuides();
               return;
             }

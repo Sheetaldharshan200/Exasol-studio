@@ -112,6 +112,11 @@ export function DatabaseTree({
       const isLast = i === nodes.length - 1;
       const open = expanded.has(node.id);
       const st = states[node.id];
+      const c = node.ctx;
+      const hasDetails =
+        !!onOpenDetails &&
+        !!c &&
+        (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user");
       rows.push(
         <Row
           key={node.id}
@@ -120,16 +125,22 @@ export function DatabaseTree({
           isLast={isLast}
           open={open}
           selected={selected === node.id}
+          // The chevron alone toggles the branch — a plain row click no longer
+          // expands, so it never gets in the way of opening details.
           onToggle={() => {
             setSelected(node.id);
             toggle(node);
           }}
+          // Single click: open the detail tab if this node has one; otherwise
+          // run the object, else fall back to expanding (folders/connections).
           onOpen={() => {
-            const c = node.ctx;
-            if (onOpenDetails && c && (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user")) {
-              onOpenDetails(node);
+            setSelected(node.id);
+            if (hasDetails) {
+              onOpenDetails!(node);
             } else if (node.selectable) {
               onOpenObject(node.selectable.schema, node.selectable.name);
+            } else if (node.expandable) {
+              toggle(node);
             }
           }}
           onContext={
@@ -235,10 +246,14 @@ function Row({
   onContext?: (x: number, y: number) => void;
 }) {
   const Icon = iconFor(node.kind);
+  // Hover tooltip: friendly type + full name + any inline meta.
+  const kindLabel = node.kind.replace(/-/g, " ");
+  const tip = [kindLabel, node.label, node.meta].filter(Boolean).join(" · ");
   return (
     <div
-      onClick={onToggle}
+      onClick={onOpen}
       onDoubleClick={onOpen}
+      title={tip}
       onContextMenu={
         onContext
           ? (e) => {
@@ -251,17 +266,25 @@ function Row({
       className={cn(
         "flex min-w-full items-center whitespace-nowrap pr-3 text-[13px] transition-colors",
         selected ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
-        node.selectable ? "cursor-pointer" : "cursor-default",
+        node.selectable || node.ctx || node.expandable ? "cursor-pointer" : "cursor-default",
       )}
     >
       <Guides trail={trail} isLast={isLast} />
-      <span className="flex w-4 shrink-0 items-center justify-center">
+      <button
+        type="button"
+        aria-label={open ? "Collapse" : "Expand"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        className="flex w-4 shrink-0 items-center justify-center"
+      >
         {node.expandable ? (
           <ChevronRight
-            className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "rotate-90")}
+            className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform hover:text-foreground", open && "rotate-90")}
           />
         ) : null}
-      </span>
+      </button>
       <Icon className={cn("mr-1.5 h-3.5 w-3.5 shrink-0", accentFor(node.kind))} />
       <span className="shrink-0">{node.label}</span>
       {node.meta ? (
