@@ -18,7 +18,7 @@ import {
   Search,
   Server,
   ShieldCheck,
-  SlidersHorizontal,
+  Sparkles,
   Store,
   Trash2,
   TriangleAlert,
@@ -226,6 +226,21 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
 
 // Marketplace sections (ordered). Every catalog item maps to exactly one.
 type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
+// Left category rail — one entry per view.
+const NAV: { key: string; label: string; icon: LucideIcon }[] = [
+  { key: "all", label: "All", icon: Store },
+  { key: "recommended", label: "Recommended", icon: Sparkles },
+  { key: "database", label: "Databases", icon: Database },
+  { key: "load", label: "Data & tools", icon: Cpu },
+  { key: "drivers", label: "Drivers", icon: Plug },
+  { key: "extension", label: "Extensions", icon: Boxes },
+  { key: "ai", label: "AI & Agents", icon: Sparkles },
+  { key: "bi", label: "BI & Analytics", icon: BarChart3 },
+  { key: "installed", label: "Installed", icon: Check },
+  { key: "installing", label: "Installing", icon: Loader2 },
+  { key: "updates", label: "Updates", icon: Download },
+];
+
 const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
   { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
   { key: "load", label: "Data loading & tools", hint: "Move data in and out" },
@@ -253,14 +268,6 @@ function sectionOf(kind: Kind): SectionKey {
   }
 }
 
-type MarketFilter = "all" | "installing" | "installed" | "updates" | "labs";
-const FILTERS: { key: MarketFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "installing", label: "Installing" },
-  { key: "installed", label: "Installed" },
-  { key: "updates", label: "Updates" },
-  { key: "labs", label: "Labs" },
-];
 
 function openExternal(url: string) {
   if (isTauri()) {
@@ -527,33 +534,150 @@ export function Marketplace() {
   const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<MarketFilter>("all");
+  const [nav, setNav] = useState<string>("all");
 
+  // Query-filtered catalog (the category rail narrows further).
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return CATALOG.filter((item) => {
-      if (
-        q &&
-        !(
-          item.name.toLowerCase().includes(q) ||
-          item.id.includes(q) ||
-          (item.repo ?? "").toLowerCase().includes(q) ||
-          item.description.toLowerCase().includes(q)
-        )
-      )
-        return false;
-      const inst = installedMap[item.id];
-      const present = inst || detected[item.id];
-      if (filter === "installed" && !present) return false;
-      if (filter === "installing" && !queue.some((x) => x.id === item.id)) return false;
-      if (filter === "labs" && !item.labs) return false;
-      if (filter === "updates") {
-        const l = catalog?.items?.[item.id]?.latest ?? releases[item.id]?.tag ?? null;
-        if (!(inst && l && l !== inst.version)) return false;
-      }
-      return true;
-    });
-  }, [query, filter, installedMap, detected, catalog, releases, queue]);
+    return CATALOG.filter(
+      (item) =>
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        item.id.includes(q) ||
+        (item.repo ?? "").toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q),
+    );
+  }, [query]);
+
+  // Items to show for the selected category (flat lists; "all" is grouped below).
+  const navItems = useMemo(() => {
+    if (nav === "installed") return visible.filter((i) => installedMap[i.id] || detected[i.id]);
+    if (nav === "installing") return visible.filter((i) => queue.some((x) => x.id === i.id));
+    if (nav === "updates")
+      return visible.filter((i) => {
+        const inst = installedMap[i.id];
+        const l = catalog?.items?.[i.id]?.latest ?? releases[i.id]?.tag ?? null;
+        return inst && l && l !== inst.version;
+      });
+    if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
+      return visible.filter((i) => sectionOf(i.kind) === nav);
+    return visible;
+  }, [nav, visible, installedMap, detected, queue, catalog, releases]);
+
+  const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
+
+  const renderCard = (item: CatalogItem) => {
+    const Icon = KIND_ICON[item.kind];
+    const inst = installedMap[item.id];
+    const onSystem = detected[item.id] && !inst;
+    const isBusy = busy[item.id];
+    const isInstalling = installingIds.has(item.id);
+    const latest = latestFor(item.id);
+    const newer = inst && latest && latest !== inst.version;
+    return (
+      <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[13px] font-semibold text-foreground">{item.name}</span>
+              {item.labs ? (
+                <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">labs</span>
+              ) : (
+                <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
+              )}
+              {inst ? (
+                <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
+                  <Check className="h-2.5 w-2.5" /> installed
+                </span>
+              ) : onSystem ? (
+                <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
+                  <Check className="h-2.5 w-2.5" /> detected
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
+            <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+              {latest ? <span>{latest}</span> : null}
+              <button onClick={() => openExternal(item.homepage)} className="flex items-center gap-0.5 hover:text-foreground">
+                GitHub <ExternalLink className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {inst ? (
+            <>
+              {newer ? (
+                <button
+                  onClick={() => startInstall(item)}
+                  disabled={isBusy}
+                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" /> Update to {latest}
+                </button>
+              ) : (
+                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-primary" /> Up to date
+                </span>
+              )}
+              <button
+                onClick={() => uninstall(item)}
+                disabled={isBusy}
+                className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50"
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Uninstall
+              </button>
+            </>
+          ) : onSystem ? (
+            <>
+              <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
+                <Check className="h-3.5 w-3.5" /> Already on your system
+              </span>
+              <button
+                onClick={() => startInstall(item)}
+                className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
+              </button>
+            </>
+          ) : item.install === "reference" ? (
+            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
+              Get <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={() => startInstall(item)}
+              disabled={isInstalling}
+              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+            >
+              {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {isInstalling ? "Installing…" : "Install"}
+            </button>
+          )}
+          {item.install === "personal-local" && (inst || onSystem) ? (
+            <button
+              onClick={() => setManageLocal(true)}
+              className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20"
+            >
+              <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+            </button>
+          ) : null}
+        </div>
+
+        {item.install === "personal-local" && env && env.os !== "macos" ? (
+          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
+            Local deployment is macOS-only on this machine ({env.os}).
+          </p>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <div className="h-full overflow-auto bg-editor">
@@ -602,243 +726,107 @@ export function Marketplace() {
           </button>
         </header>
 
-        {/* Floating search + filters */}
-        <div className="sticky top-0 z-20 -mx-6 mb-5 border-b border-border/70 bg-editor/85 px-6 py-2.5 backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
+        {/* Two-pane: category rail + content */}
+        <div className="flex gap-6">
+          {/* Category rail */}
+          <nav className="w-44 shrink-0 space-y-0.5">
+            {NAV.map((n) => {
+              const Icon = n.icon;
+              const active = nav === n.key;
+              const count =
+                n.key === "installed" ? installedCount : n.key === "installing" ? installingIds.size : n.key === "updates" ? updatesAvailable : 0;
+              return (
+                <button
+                  key={n.key}
+                  onClick={() => setNav(n.key)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors",
+                    active ? "bg-primary/12 font-medium text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
+                  <span className="flex-1 truncate">{n.label}</span>
+                  {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Content */}
+          <div className="min-w-0 flex-1">
+            <div className="relative mb-4">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search tools, drivers, extensions, agent skills…"
-                className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                placeholder="Search tools, drivers, extensions…"
+                className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
               />
               {query ? (
-                <button
-                  onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
-                >
+                <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
                   <X className="h-3.5 w-3.5" />
                 </button>
               ) : null}
             </div>
-            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-              {FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={cn(
-                    "flex h-7 items-center gap-1 rounded-md px-2.5 text-[11.5px] transition-colors",
-                    filter === f.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {f.label}
-                  {f.key === "updates" && updatesAvailable > 0 ? (
-                    <span className="rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground">
-                      {updatesAvailable}
-                    </span>
-                  ) : null}
-                  {f.key === "installing" && installingIds.size > 0 ? (
-                    <span className="rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground">
-                      {installingIds.size}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        {/* Recommended packs — install a curated set in one click (parallel). */}
-        {filter === "all" && !query ? (
-          <section className="mb-7">
-            <div className="mb-2.5 flex items-baseline gap-2">
-              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">Recommended packs</h3>
-              <span className="text-[11px] text-muted-foreground">Curated sets — installed in parallel</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-              {PACKS.map((pack) => {
-                const Icon = pack.icon;
-                const allInstalled = pack.items.every((it) => {
-                  const c = CATALOG.find((x) => x.id === it.id);
-                  return c?.install === "reference" || installedMap[it.id] || detected[it.id];
-                });
-                return (
-                  <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary">
-                        <Icon className="h-4 w-4" />
+            {nav === "recommended" ? (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {PACKS.map((pack) => {
+                  const PackIcon = pack.icon;
+                  const allInstalled = pack.items.every((it) => {
+                    const c = CATALOG.find((x) => x.id === it.id);
+                    return c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                  });
+                  return (
+                    <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary"><PackIcon className="h-4 w-4" /></div>
+                        <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
                       </div>
-                      <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
-                    </div>
-                    <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {pack.items.map((it) => (
-                        <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => installPack(pack)}
-                      disabled={allInstalled}
-                      className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Install pack</>}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
-
-        {SECTION_META.map((sec) => {
-          const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
-          if (!items.length) return null;
-          return (
-            <section key={sec.key} className="mb-6">
-              <div className="mb-2.5 flex items-baseline gap-2">
-                <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
-                <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">
-                  {items.length}
-                </span>
-                <span className="text-[11px] text-muted-foreground">· {sec.hint}</span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {items.map((item) => {
-            const Icon = KIND_ICON[item.kind];
-            const inst = installedMap[item.id];
-            const onSystem = detected[item.id] && !inst;
-            const isBusy = busy[item.id];
-            const isInstalling = installingIds.has(item.id);
-            const latest = latestFor(item.id);
-            const newer = inst && latest && latest !== inst.version;
-            return (
-              <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
-                <div className="flex items-start gap-2.5">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground">
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-[13px] font-semibold text-foreground">{item.name}</span>
-                      {item.labs ? (
-                        <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
-                          labs
-                        </span>
-                      ) : (
-                        <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-                          official
-                        </span>
-                      )}
-                      {inst ? (
-                        <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-                          <Check className="h-2.5 w-2.5" /> installed
-                        </span>
-                      ) : onSystem ? (
-                        <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
-                          <Check className="h-2.5 w-2.5" /> detected
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
-                    <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-                      {latest ? <span>{latest}</span> : null}
+                      <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {pack.items.map((it) => (
+                          <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
+                        ))}
+                      </div>
                       <button
-                        onClick={() => openExternal(item.homepage)}
-                        className="flex items-center gap-0.5 hover:text-foreground"
+                        onClick={() => installPack(pack)}
+                        disabled={allInstalled}
+                        className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                       >
-                        GitHub <ExternalLink className="h-2.5 w-2.5" />
+                        {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Install pack</>}
                       </button>
                     </div>
-                  </div>
-                </div>
-
-                {/* One unified action row for every item */}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {inst ? (
-                    <>
-                      {newer ? (
-                        <button
-                          onClick={() => void startInstall(item)}
-                          disabled={isBusy}
-                          className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                        >
-                          <Download className="h-3.5 w-3.5" /> Update to {latest}
-                        </button>
-                      ) : (
-                        <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                          <Check className="h-3.5 w-3.5 text-primary" /> Up to date
-                        </span>
-                      )}
-                      <button
-                        onClick={() => uninstall(item)}
-                        disabled={isBusy}
-                        className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50"
-                      >
-                        {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        Uninstall
-                      </button>
-                    </>
-                  ) : onSystem ? (
-                    <>
-                      <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
-                        <Check className="h-3.5 w-3.5" /> Already on your system
-                      </span>
-                      <button
-                        onClick={() => void startInstall(item)}
-                        className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      >
-                        <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
-                      </button>
-                    </>
-                  ) : item.install === "reference" ? (
-                    <button
-                      onClick={() => openExternal(item.homepage)}
-                      className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary"
-                    >
-                      Get <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => startInstall(item)}
-                      disabled={isInstalling}
-                      className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-                    >
-                      {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                      {isInstalling ? "Installing…" : "Install"}
-                    </button>
-                  )}
-                  {item.install === "personal-local" && (inst || onSystem) ? (
-                    <button
-                      onClick={() => setManageLocal(true)}
-                      className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20"
-                    >
-                      <Server className="h-3.5 w-3.5" /> Manage (start/stop)
-                    </button>
-                  ) : null}
-                </div>
-
-                {item.install === "personal-local" && env && env.os !== "macos" ? (
-                  <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
-                    <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
-                    Local deployment is macOS-only. Use “Exasol Personal — Cloud” on {env.os}.
-                  </p>
-                ) : null}
-              </div>
-            );
+                  );
                 })}
               </div>
-            </section>
-          );
-        })}
-
-        {visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <Search className="h-6 w-6 opacity-40" />
-            <p className="text-sm">No items match “{query}”.</p>
+            ) : nav === "all" && !query ? (
+              <>
+                {SECTION_META.map((sec) => {
+                  const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
+                  if (!items.length) return null;
+                  return (
+                    <section key={sec.key} className="mb-6">
+                      <div className="mb-2.5 flex items-baseline gap-2">
+                        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
+                        <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
+                        <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{items.map(renderCard)}</div>
+                    </section>
+                  );
+                })}
+              </>
+            ) : navItems.length ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{navItems.map(renderCard)}</div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+                <Search className="h-6 w-6 opacity-40" />
+                <p className="text-sm">{query ? "No items match “" + query + "”." : "Nothing here yet."}</p>
+              </div>
+            )}
           </div>
-        ) : null}
+        </div>
       </div>
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}

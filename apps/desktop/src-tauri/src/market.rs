@@ -984,22 +984,61 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
         let _ = app.emit("market:done", json!({ "id": ID, "ok": false, "error": e.to_string() }));
         return Err(e);
     }
-    // `destroy` is irreversible — pass `--yes` so it doesn't hang on a prompt.
     let exa = exasol_bin();
-    let args: Vec<&str> = if action == "destroy" {
-        vec!["destroy", "--yes"]
-    } else {
-        vec![action.as_str()]
+    let ready = capture_output(&exa, &["status", "--json"]).to_lowercase().contains("database_ready");
+
+    // Build the command, self-healing the common local-VM snags:
+    //  • start on an already-running DB → no-op (avoid "VM already running")
+    //  • start on a failed state → clear any stale VM lock, then `deploy` (retry)
+    //  • stop on a not-running deployment → clear stale lock, report stopped
+    let args: Vec<&str> = match action.as_str() {
+        "destroy" => vec!["destroy", "--yes"], // irreversible — don't hang on a prompt
+        "start" if ready => {
+            emit_log(&app, ID, "✓ Exasol is already running.", "success");
+            let _ = app.emit("market:done", json!({ "id": ID, "ok": true }));
+            return Ok(json!({ "ok": true, "code": 0 }));
+        }
+        "start" => {
+            heal_stale_local_lock();
+            // `deploy` reconciles a failed/partial deployment where `start` refuses.
+            vec!["deploy"]
+        }
+        "stop" if !ready => {
+            heal_stale_local_lock();
+            emit_log(&app, ID, "✓ Exasol is not running.", "success");
+            let _ = app.emit("market:done", json!({ "id": ID, "ok": true }));
+            return Ok(json!({ "ok": true, "code": 0 }));
+        }
+        other => vec![other],
     };
+
     let code = run_streamed(&app, ID, &exa, &args)?;
     let ok = code == 0;
     if ok {
-        emit_log(&app, ID, format!("✓ exasol {action} finished."), "success");
+        emit_log(&app, ID, format!("✓ exasol {} finished.", args[0]), "success");
     } else {
-        emit_log(&app, ID, format!("✗ exasol {action} exited with code {code}."), "err");
+        emit_log(&app, ID, format!("✗ exasol {} exited with code {code}.", args[0]), "err");
     }
     let _ = app.emit("market:done", json!({ "id": ID, "ok": ok }));
     Ok(json!({ "ok": ok, "code": code }))
+}
+
+/// Remove a stale local-VM lock (vm.pid/vm.sock) when the recorded PID is dead —
+/// otherwise the launcher wrongly reports "VM is already running".
+fn heal_stale_local_lock() {
+    let rt = home().join(".exasol/personal/deployments/default/local/runtime");
+    let pidf = rt.join("vm.pid");
+    let Ok(s) = std::fs::read_to_string(&pidf) else { return };
+    let Ok(pid) = s.trim().parse::<i32>() else { return };
+    let alive = Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|st| st.success())
+        .unwrap_or(false);
+    if !alive {
+        let _ = std::fs::remove_file(&pidf);
+        let _ = std::fs::remove_file(rt.join("vm.sock"));
+    }
 }
 
 /// Remove an installed item's files and manifest entry.
