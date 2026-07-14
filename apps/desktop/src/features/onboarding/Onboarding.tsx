@@ -7,7 +7,7 @@ import exasolWordmark from "@/assets/exasol-wordmark.svg";
 import exasolWordmarkDark from "@/assets/exasol-wordmark-dark.svg";
 
 // The single tagline shown under the title.
-const TAGLINE = "The desktop workbench for Exasol.";
+const TAGLINE = "Everything Exasol, on your desktop.";
 
 export function Onboarding({ onGetStarted }: { onGetStarted: () => void }) {
   const [ready, setReady] = useState(false);
