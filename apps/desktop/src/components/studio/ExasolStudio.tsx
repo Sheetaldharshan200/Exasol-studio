@@ -88,6 +88,7 @@ import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { ConnectionInfoPanel } from "@/features/workbench/ConnectionInfoPanel";
+import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
@@ -144,7 +145,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome";
 
 type SqlTab = {
   id: string;
@@ -198,26 +199,21 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   object: Table2,
   bi: BarChart3,
   connInfo: Plug,
+  welcome: Sparkles,
+};
+
+/** Shown when a connection bucket has no open tabs (VS Code-style start page). */
+const WELCOME_TAB: SqlTab = {
+  id: "__welcome__",
+  title: "Welcome",
+  view: "welcome",
+  sql: "",
+  response: null,
+  execError: null,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
 const NO_CONNECTION = "__none__";
-
-/** The initial tab for a bucket: the not-connected bucket opens on the connect
- * flow; a live connection opens on a welcome query. */
-function initialTab(key: string): SqlTab {
-  if (key === NO_CONNECTION) {
-    return {
-      id: `tab-connect-${Date.now()}`,
-      title: "Connect",
-      view: "connect",
-      sql: "",
-      response: null,
-      execError: null,
-    };
-  }
-  return newTab(1);
-}
 
 function defineMonacoThemes(monaco: Monaco) {
   monaco.editor.defineTheme("exasol-dark", {
@@ -1264,23 +1260,14 @@ export function ExasolStudio({
   const aiPanelRef = useRef<PanelImperativeHandle | null>(null);
   // Stable fallback tab per connection, used for the first render before the
   // bucket is committed to state (avoids identity churn / remounts).
-  const fallbackTabs = useRef<Record<string, SqlTab[]>>({});
-  const tabsFor = useCallback((key: string): SqlTab[] => {
-    const existing = tabsByConn[key];
-    if (existing && existing.length) return existing;
-    if (!fallbackTabs.current[key]) fallbackTabs.current[key] = [initialTab(key)];
-    return fallbackTabs.current[key];
-  }, [tabsByConn]);
-
-  // Commit the fallback bucket into state so edits persist.
-  useEffect(() => {
-    setTabsByConn((prev) => (prev[connKey]?.length ? prev : { ...prev, [connKey]: tabsFor(connKey) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connKey]);
+  // A bucket may legitimately have zero tabs — the workspace then shows the
+  // Welcome start page (VS Code style). No tab is forced open.
+  const tabsFor = useCallback((key: string): SqlTab[] => tabsByConn[key] ?? [], [tabsByConn]);
 
   const tabs = tabsFor(connKey);
-  const activeTabId = activeIdByConn[connKey] ?? tabs[0].id;
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+  const activeTab =
+    tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
+  const activeTabId = activeTab.id;
   const isSpecialTab = activeTab.view !== "sql";
   const visualizerTabs = tabs
     .filter((t) => t.view === "visualizer")
@@ -1499,6 +1486,23 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open a .sql file from disk into a new editor tab (Welcome / VS Code style).
+  async function openSqlFile() {
+    if (!isTauri()) {
+      openFile("scratch.sql", "-- new query\n");
+      return;
+    }
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ multiple: false, filters: [{ name: "SQL", extensions: ["sql", "txt"] }] });
+    if (typeof picked !== "string") return;
+    try {
+      const text = await ipc.fsReadText(picked);
+      openFile(picked.split("/").pop() ?? "query.sql", text, picked);
+    } catch {
+      /* unreadable */
+    }
+  }
+
   // Open a local file's contents as a new query tab in the current workspace.
   function openFile(name: string, content: string, path?: string) {
     tabCounter.current += 1;
@@ -1517,10 +1521,10 @@ export function ExasolStudio({
 
   function closeTab(id: string) {
     const list = tabsFor(connKey);
-    if (list.length <= 1) return;
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
-    if (id === activeTabId) setActiveTabId(next[next.length - 1].id);
+    // Closing the last tab is allowed — the workspace falls back to Welcome.
+    if (id === activeTabId) setActiveTabId(next[next.length - 1]?.id ?? "");
     // Drop any group left with no members.
     const live = new Set(next.map((t) => t.groupId).filter(Boolean) as string[]);
     setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
@@ -2267,7 +2271,14 @@ export function ExasolStudio({
           <>
           {/* Tab strip */}
           <div data-tour="tabbar" className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
-            <div className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              onDoubleClick={(e) => {
+                // Double-click empty tab-bar space opens a new query (VS Code style).
+                if (e.target === e.currentTarget) addTab();
+              }}
+              title="Double-click to open a new query"
+            >
               {(() => {
                 const sorted = [...tabs].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
                 const emitted = new Set<string>();
@@ -2341,6 +2352,7 @@ export function ExasolStudio({
           activeTab.view !== "marketplace" &&
           activeTab.view !== "guides" &&
           activeTab.view !== "bi" &&
+          activeTab.view !== "welcome" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
@@ -2571,6 +2583,17 @@ export function ExasolStudio({
                     /* delete failed */
                   }
                 }}
+              />
+            </div>
+          ) : activeTab.view === "welcome" ? (
+            <div className="min-h-0 flex-1">
+              <WelcomeScreen
+                connected={!!connection}
+                onNewQuery={addTab}
+                onOpenFile={() => void openSqlFile()}
+                onConnect={openConnect}
+                onMarketplace={openMarketplace}
+                onGuides={openGuides}
               />
             </div>
           ) : activeTab.view === "marketplace" ? (
