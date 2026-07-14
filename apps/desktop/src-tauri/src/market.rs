@@ -570,13 +570,36 @@ fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
         ));
     }
     ensure_exasol_launcher(app, id)?;
-    emit_log(app, id, "Deploying a local Exasol database (this can take a few minutes)…", "info");
     let exa = exasol_bin();
+
+    // Never re-run `exasol install local` on top of an existing deployment — it
+    // tries to start a VM that may already be running ("Error: VM is already
+    // running") and breaks a perfectly good local database. Detect the current
+    // state first and reuse it when a VM/DB is already up.
+    let status = capture_output(&exa, &["status", "--json"]).to_lowercase();
+    if status.contains("database_ready") || status.contains("\"running\"") {
+        emit_log(app, id, "Exasol Personal is already deployed and running — reusing it.", "success");
+        return Ok("Exasol Personal is already deployed and running.".into());
+    }
+    if status.contains("already running") {
+        emit_log(app, id, "A local Exasol VM is already running — reusing the existing deployment (no redeploy).", "success");
+        return Ok("Exasol Personal is already running (existing deployment reused).".into());
+    }
+
+    emit_log(app, id, "Deploying a local Exasol database (this can take a few minutes)…", "info");
     let code = run_streamed(app, id, &exa, &["install", "local"])?;
     if code != 0 {
         return Err(AppError::Storage(format!("`exasol install local` exited with code {code}. See the log above.")));
     }
     Ok("Exasol Personal deployed locally.".into())
+}
+
+/// Run a command and capture its stdout (empty on failure). Used to probe state.
+fn capture_output(program: &str, args: &[&str]) -> String {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    with_path(&mut cmd);
+    cmd.output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default()
 }
 
 /// Exasol Personal — cloud. Installs the launcher and shows the deploy commands;
