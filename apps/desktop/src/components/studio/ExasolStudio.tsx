@@ -1486,6 +1486,19 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Connect to a saved profile from the Welcome "Recent" list (or fall back to
+  // the connect form if it can't connect straight away).
+  async function connectSaved(profileId: string) {
+    const p = profiles.find((x) => x.id === profileId);
+    if (!p) return openConnect();
+    try {
+      const server = await ipc.connect(p.id);
+      await onConnected(p, server);
+    } catch {
+      openConnect();
+    }
+  }
+
   // Open a .sql file from disk into a new editor tab (Welcome / VS Code style).
   async function openSqlFile() {
     if (!isTauri()) {
@@ -2589,11 +2602,13 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <WelcomeScreen
                 connected={!!connection}
+                recents={profiles.map((p) => ({ id: p.id, label: p.name, sub: `${p.host}:${p.port}` }))}
                 onNewQuery={addTab}
                 onOpenFile={() => void openSqlFile()}
                 onConnect={openConnect}
                 onMarketplace={openMarketplace}
                 onGuides={openGuides}
+                onOpenRecent={(id) => void connectSaved(id)}
               />
             </div>
           ) : activeTab.view === "marketplace" ? (
