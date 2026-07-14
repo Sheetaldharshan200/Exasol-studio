@@ -25,7 +25,6 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { BorderBeam } from "@/components/ui/border-beam";
 import {
   errorMessage,
   ipc,
@@ -732,6 +731,7 @@ export function InstallConsole({
   version,
   onDone,
   onClose,
+  embedded,
 }: {
   item: CatalogItem;
   env: MarketEnv | null;
@@ -739,6 +739,8 @@ export function InstallConsole({
   version?: string;
   onDone: () => void;
   onClose: () => void;
+  /** True when hosted in its own install window — render plainly (no overlay/box). */
+  embedded?: boolean;
 }) {
   const [phase, setPhase] = useState<"confirm" | "running" | "done">("confirm");
   const [ok, setOk] = useState(false);
@@ -806,10 +808,22 @@ export function InstallConsole({
     }
   }
 
+  // In its own window: fill it plainly (no dimmed overlay, no inner card/box).
+  // As a fallback modal: dim the backdrop and show a centered card.
+  const Outer = embedded
+    ? ({ children }: { children: React.ReactNode }) => (
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-panel">{children}</div>
+      )
+    : ({ children }: { children: React.ReactNode }) => (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm">
+          <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
+            {children}
+          </div>
+        </div>
+      );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm">
-      <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
-        {phase === "running" ? <BorderBeam duration={5} size={220} /> : null}
+    <Outer>
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Boxes className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[13px] font-semibold text-foreground">
@@ -955,8 +969,7 @@ export function InstallConsole({
             </div>
           </>
         )}
-      </div>
-    </div>
+    </Outer>
   );
 }
 

@@ -448,6 +448,9 @@ async fn download_and_place(
     let client = reqwest::Client::new();
     let resp = client
         .get(url)
+        // GitHub asset API URLs return JSON metadata unless we ask for the raw
+        // bytes — this header makes both the API and browser URLs stream the file.
+        .header("Accept", "application/octet-stream")
         .header("User-Agent", "exasol-studio")
         .send()
         .await
@@ -677,7 +680,7 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     let venv = base.join("venv");
     let venv_s = venv.to_string_lossy().to_string();
     emit_log(app, id, "Installing exasol-json-tables into a managed environment…", "info");
-    run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])?;
+    run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])?;
     if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &wpath])? != 0 {
         return Err(AppError::Storage("uv pip install of the JSON Tables wheel failed.".into()));
     }

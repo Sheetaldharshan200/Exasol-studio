@@ -25,6 +25,7 @@ export function InstallWindow() {
         item={item}
         env={env}
         asset={asset}
+        embedded
         version={params.version}
         onDone={async () => {
           const { emit } = await import("@tauri-apps/api/event");
