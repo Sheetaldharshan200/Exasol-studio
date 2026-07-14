@@ -358,6 +358,9 @@ export function Marketplace() {
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [consoleItem, setConsoleItem] = useState<CatalogItem | null>(null);
   const [manageLocal, setManageLocal] = useState(false);
+  // Starter-pack install queue (populated from the setup step).
+  const [queue, setQueue] = useState<{ id: string; name: string; status: "pending" | "installing" | "done" | "failed" }[]>([]);
+  const [pendingPack, setPendingPack] = useState<string[] | null>(null);
 
   const refreshInstalled = useCallback(() => {
     ipc.marketInstalled().then(setInstalled).catch(() => undefined);
@@ -418,6 +421,70 @@ export function Marketplace() {
       }).length,
     [installedMap, catalog, releases],
   );
+
+  // ── Starter-pack queue ──────────────────────────────────────────────────
+  // Read the pack chosen during setup once, then run it after releases load
+  // (so binary items have their download asset resolved).
+  useEffect(() => {
+    const raw = window.localStorage.getItem("exasol-studio-pending-pack");
+    if (!raw) return;
+    window.localStorage.removeItem("exasol-studio-pending-pack");
+    try {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids) && ids.length) setPendingPack(ids);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const runQueue = useCallback(
+    async (items: CatalogItem[]) => {
+      for (const item of items) {
+        setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: "installing" } : x)));
+        const ok = await new Promise<boolean>((resolve) => {
+          if (!isTauri()) {
+            window.setTimeout(() => resolve(true), 500);
+            return;
+          }
+          const asset = pickAsset(releases[item.id]?.assets ?? [], env);
+          const version = latestFor(item.id) ?? undefined;
+          let un: UnlistenFn | undefined;
+          let settled = false;
+          const finish = (v: boolean) => {
+            if (settled) return;
+            settled = true;
+            un?.();
+            resolve(v);
+          };
+          listen<{ id: string; ok: boolean }>("market:done", (e) => {
+            if (e.payload.id === item.id) finish(e.payload.ok);
+          })
+            .then((u) => {
+              un = u;
+              ipc.marketInstallRun(item.id, version, asset?.url, asset?.name).catch(() => finish(false));
+            })
+            .catch(() => finish(false));
+        });
+        setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
+      }
+      refreshInstalled();
+    },
+    [releases, env, latestFor, refreshInstalled],
+  );
+
+  // Start the queue once releases are ready.
+  useEffect(() => {
+    if (!pendingPack || loadingReleases) return;
+    const items = pendingPack
+      .map((id) => CATALOG.find((c) => c.id === id))
+      .filter((c): c is CatalogItem => !!c && c.install !== "reference");
+    setPendingPack(null);
+    if (!items.length) return;
+    setQueue(items.map((i) => ({ id: i.id, name: i.name, status: "pending" as const })));
+    void runQueue(items);
+  }, [pendingPack, loadingReleases, runQueue]);
+
+  const queueBusy = queue.some((q) => q.status === "pending" || q.status === "installing");
 
   // Run an install in its own floating window (Tauri) so several can run at
   // once; fall back to the in-app console in the browser preview.
@@ -720,6 +787,43 @@ export function Marketplace() {
       ) : null}
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
+
+      {queue.length ? (
+        <div className="fixed bottom-4 right-4 z-50 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+            {queueBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Check className="h-3.5 w-3.5 text-primary" />}
+            <span className="flex-1 text-[12.5px] font-semibold text-foreground">
+              {queueBusy ? "Installing your starter pack…" : "Starter pack installed"}
+            </span>
+            {!queueBusy ? (
+              <button onClick={() => setQueue([])} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <ul className="max-h-64 overflow-auto p-1.5 [scrollbar-width:thin]">
+            {queue.map((q) => (
+              <li key={q.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  {q.status === "installing" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  ) : q.status === "done" ? (
+                    <Check className="h-3.5 w-3.5 text-primary" />
+                  ) : q.status === "failed" ? (
+                    <X className="h-3.5 w-3.5 text-destructive" />
+                  ) : (
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-foreground/90">{q.name}</span>
+                <span className="shrink-0 text-[10.5px] text-muted-foreground">
+                  {q.status === "installing" ? "installing" : q.status === "done" ? "done" : q.status === "failed" ? "failed" : "queued"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

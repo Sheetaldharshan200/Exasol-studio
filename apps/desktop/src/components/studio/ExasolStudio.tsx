@@ -1421,12 +1421,11 @@ export function ExasolStudio({
     }
   }
 
-  // If the user chose a starter pack during setup, land them in the Marketplace
-  // (filtered to those tools) so they can install them.
+  // If the user chose a starter pack during setup, open the Marketplace — it
+  // reads the pending pack and installs the selected items in a visible queue.
   useEffect(() => {
     const raw = window.localStorage.getItem("exasol-studio-pending-pack");
     if (!raw) return;
-    window.localStorage.removeItem("exasol-studio-pending-pack");
     try {
       const ids = JSON.parse(raw) as string[];
       if (Array.isArray(ids) && ids.length) openMarketplace();
