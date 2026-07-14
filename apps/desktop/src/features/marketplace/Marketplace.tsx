@@ -40,6 +40,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Terminal as TerminalBox, AnimatedSpan } from "@/components/ui/terminal";
 import { openInstallWindow, INSTALL_DONE } from "@/lib/install-window";
+import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
 type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset" | "reference";
@@ -360,6 +361,7 @@ export function Marketplace() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [consoleItem, setConsoleItem] = useState<CatalogItem | null>(null);
+  const [manageLocal, setManageLocal] = useState(false);
 
   const refreshInstalled = useCallback(() => {
     ipc.marketInstalled().then(setInstalled).catch(() => undefined);
@@ -678,6 +680,14 @@ export function Marketplace() {
                       <Download className="h-3.5 w-3.5" /> Install
                     </button>
                   )}
+                  {item.install === "personal-local" && (inst || onSystem) ? (
+                    <button
+                      onClick={() => setManageLocal(true)}
+                      className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20"
+                    >
+                      <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+                    </button>
+                  ) : null}
                 </div>
 
                 {item.install === "personal-local" && env && env.os !== "macos" ? (
@@ -712,6 +722,8 @@ export function Marketplace() {
           onClose={() => setConsoleItem(null)}
         />
       ) : null}
+
+      {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
     </div>
   );
 }

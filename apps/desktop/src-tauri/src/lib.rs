@@ -79,6 +79,7 @@ pub fn run() {
             market::market_install,
             market::market_install_run,
             market::market_uninstall,
+            market::exasol_local_ctl,
             market::bi_installed,
             market::bi_launch,
             bucketfs::bucketfs_list,

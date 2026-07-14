@@ -375,6 +375,8 @@ export const ipc = {
     destPath: string;
     readPassword?: string;
   }) => call<string>("bucketfs_download", args),
+  exasolLocalCtl: (action: "status" | "info" | "start" | "stop" | "destroy") =>
+    call<{ ok: boolean; code: number }>("exasol_local_ctl", { action }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),

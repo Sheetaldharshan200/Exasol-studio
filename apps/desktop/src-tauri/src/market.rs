@@ -759,6 +759,45 @@ pub async fn market_install_run(
     }
 }
 
+/// Control a local Exasol Personal deployment (start / stop / status / info /
+/// destroy) via the `exasol` launcher. Streams output over `market:log` under
+/// the id `exasol-local` and finishes with `market:done`, so the frontend can
+/// reuse the install-console UI. Blocking lifecycle actions (start/stop/destroy)
+/// can take a while; the launcher prints progress as it goes.
+#[tauri::command]
+pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value> {
+    const ID: &str = "exasol-local";
+    // Allowlist — never pass arbitrary strings to the launcher.
+    let allowed = ["status", "info", "start", "stop", "destroy"];
+    if !allowed.contains(&action.as_str()) {
+        return Err(AppError::Storage(format!("Unsupported action: {action}")));
+    }
+    if !bin_present("exasol") {
+        let e = AppError::Storage(
+            "Exasol launcher not found. Install “Exasol Personal — Local” from the Marketplace first.".into(),
+        );
+        emit_log(&app, ID, format!("✗ {e}"), "err");
+        let _ = app.emit("market:done", json!({ "id": ID, "ok": false, "error": e.to_string() }));
+        return Err(e);
+    }
+    // `destroy` is irreversible — pass `--yes` so it doesn't hang on a prompt.
+    let exa = exasol_bin();
+    let args: Vec<&str> = if action == "destroy" {
+        vec!["destroy", "--yes"]
+    } else {
+        vec![action.as_str()]
+    };
+    let code = run_streamed(&app, ID, &exa, &args)?;
+    let ok = code == 0;
+    if ok {
+        emit_log(&app, ID, format!("✓ exasol {action} finished."), "success");
+    } else {
+        emit_log(&app, ID, format!("✗ exasol {action} exited with code {code}."), "err");
+    }
+    let _ = app.emit("market:done", json!({ "id": ID, "ok": ok }));
+    Ok(json!({ "ok": ok, "code": code }))
+}
+
 /// Remove an installed item's files and manifest entry.
 #[tauri::command]
 pub fn market_uninstall(app: AppHandle, id: String) -> AppResult<()> {
