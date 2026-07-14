@@ -87,6 +87,7 @@ import { cn } from "@/lib/utils";
 import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
+import { ConnectionInfoPanel } from "@/features/workbench/ConnectionInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
@@ -143,7 +144,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo";
 
 type SqlTab = {
   id: string;
@@ -196,6 +197,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   guides: BookOpen,
   object: Table2,
   bi: BarChart3,
+  connInfo: Plug,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -516,7 +518,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onOpenView: (view: "dbInfo" | "dataTypes" | "dba") => void;
+  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -585,6 +587,9 @@ function ConnectionSection({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={() => onOpenView("connInfo")}>
+                <Plug className="h-3.5 w-3.5" /> Connection info
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("dbInfo")}>
                 <Info className="h-3.5 w-3.5" /> Database info
               </DropdownMenuItem>
@@ -752,7 +757,7 @@ function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
-  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba") => void;
+  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -1757,7 +1762,7 @@ export function ExasolStudio({
   }
 
   // Open (or focus) a read-only catalog surface for a connection.
-  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba") {
+  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
     const existing = list.find((t) => t.view === view);
@@ -1768,7 +1773,14 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-${Date.now()}-${tabCounter.current}`,
-      title: view === "dbInfo" ? "Database Info" : view === "dataTypes" ? "Data Types" : "DBA",
+      title:
+        view === "dbInfo"
+          ? "Database Info"
+          : view === "dataTypes"
+            ? "Data Types"
+            : view === "connInfo"
+              ? "Connection Info"
+              : "DBA",
       view,
       sql: "",
       response: null,
@@ -2584,7 +2596,9 @@ export function ExasolStudio({
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
-              {activeTab.view === "dbInfo" ? (
+              {activeTab.view === "connInfo" ? (
+                <ConnectionInfoPanel connection={connection} />
+              ) : activeTab.view === "dbInfo" ? (
                 <DatabaseInfoPanel
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
