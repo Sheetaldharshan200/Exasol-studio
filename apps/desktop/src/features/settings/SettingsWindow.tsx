@@ -401,6 +401,7 @@ export function SettingsWindow() {
                   <ControlRow key={ct.key} ctrl={ct} value={values[ct.key]} onChange={(v) => update(ct.key, v)} />
                 ))}
               </div>
+              <SettingPreview catKey={current.key} values={values} />
             </div>
           ) : null}
         </div>
@@ -417,6 +418,103 @@ export function SettingsWindow() {
         <span className="ml-auto text-[11px] text-muted-foreground">Changes save automatically</span>
       </div>
     </div>
+  );
+}
+
+/**
+ * Live preview that reacts instantly to the controls above it (the values are
+ * component state, so every keystroke/toggle re-renders this). Shown only for
+ * the categories with a visible effect: appearance, SQL editor, result grid.
+ */
+function SettingPreview({ catKey, values }: { catKey: string; values: Record<string, SettingValue> }) {
+  if (catKey !== "appearance" && catKey !== "sqlEditor" && catKey !== "grid") return null;
+
+  const Frame = ({ children }: { children: React.ReactNode }) => (
+    <div className="mt-7">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Live preview</div>
+      <div className="overflow-hidden rounded-lg border border-border bg-panel/60">{children}</div>
+    </div>
+  );
+
+  if (catKey === "sqlEditor") {
+    const fs = Number(values.editorFontSize) || 14;
+    const wrap = Boolean(values.wordWrap);
+    return (
+      <Frame>
+        <pre
+          className={cn(
+            "m-0 p-3 font-mono text-foreground",
+            wrap ? "whitespace-pre-wrap break-words" : "overflow-x-auto whitespace-pre",
+          )}
+          style={{ fontSize: fs, lineHeight: 1.5 }}
+        >
+          <span className="text-syntax-function">SELECT</span> customer_name, SUM(o.amount) <span className="text-syntax-function">AS</span> revenue{"\n"}
+          <span className="text-syntax-function">FROM</span> sales.orders o <span className="text-syntax-function">JOIN</span> sales.customers c <span className="text-syntax-function">ON</span> c.id = o.customer_id{"\n"}
+          <span className="text-syntax-function">WHERE</span> o.created_at &gt;= <span className="text-teal">'2026-01-01'</span> <span className="text-syntax-function">GROUP BY</span> customer_name <span className="text-syntax-function">ORDER BY</span> revenue <span className="text-syntax-function">DESC</span>;
+        </pre>
+      </Frame>
+    );
+  }
+
+  if (catKey === "grid") {
+    const fs = Number(values.gridFontSize) || 12;
+    const zebra = Boolean(values.zebraStripes);
+    const nullText = String(values.nullText ?? "null");
+    const rows = [
+      ["1", "Acme Corp", "48,200"],
+      ["2", "Globex", nullText],
+      ["3", "Initech", "12,750"],
+      ["4", "Umbrella", "9,010"],
+    ];
+    return (
+      <Frame>
+        <table className="w-full border-collapse" style={{ fontSize: fs }}>
+          <thead>
+            <tr className="bg-secondary/70 text-left text-muted-foreground">
+              <th className="px-2.5 py-1.5 font-medium">ID</th>
+              <th className="px-2.5 py-1.5 font-medium">CUSTOMER</th>
+              <th className="px-2.5 py-1.5 font-medium">REVENUE</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            {rows.map((r, i) => (
+              <tr key={r[0]} className={cn(zebra && i % 2 === 1 && "bg-secondary/30")}>
+                <td className="px-2.5 py-1 text-muted-foreground">{r[0]}</td>
+                <td className="px-2.5 py-1 text-foreground">{r[1]}</td>
+                <td className={cn("px-2.5 py-1", r[2] === nullText ? "italic text-muted-foreground/60" : "text-foreground")}>{r[2]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Frame>
+    );
+  }
+
+  // appearance
+  const theme = String(values.theme ?? "system");
+  return (
+    <Frame>
+      <div className="flex items-center gap-3 p-3">
+        {(["light", "dark"] as const).map((t) => (
+          <div
+            key={t}
+            className={cn(
+              "flex-1 rounded-md border p-2",
+              t === "dark" ? "bg-[#14161a] text-white" : "bg-white text-[#14161a]",
+              theme === t ? "border-primary ring-2 ring-primary/30" : "border-border",
+            )}
+          >
+            <div className="mb-1.5 flex gap-1">
+              <span className="h-2 w-2 rounded-full bg-primary" />
+              <span className="h-2 w-6 rounded-full bg-current opacity-30" />
+            </div>
+            <div className="h-1.5 w-full rounded bg-current opacity-20" />
+            <div className="mt-1 h-1.5 w-2/3 rounded bg-current opacity-20" />
+            <div className="mt-2 text-[10px] font-medium capitalize opacity-70">{t}</div>
+          </div>
+        ))}
+      </div>
+    </Frame>
   );
 }
 

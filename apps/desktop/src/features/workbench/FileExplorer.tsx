@@ -93,12 +93,15 @@ export function FileExplorer({
   onOpenFile,
   onOpenData,
   onLoadData,
+  onFileDeleted,
   refreshSignal = 0,
 }: {
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
   /** Load a tabular file into Exasol via ExaPump (hover icon / right-click). */
   onLoadData?: (name: string, path: string) => void;
+  /** A workspace file was deleted — lets open tabs mark themselves stale. */
+  onFileDeleted?: (path: string) => void;
   /** Bump to reload the workspace (e.g. after a Save writes a new file). */
   refreshSignal?: number;
 }) {
@@ -317,6 +320,7 @@ export function FileExplorer({
             deletable
               ? () => {
                   void ipc.fsDelete(entry.path).then(() => {
+                    onFileDeleted?.(entry.path);
                     if (ws) fetchDir(ws);
                   });
                 }

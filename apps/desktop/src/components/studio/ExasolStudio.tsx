@@ -153,6 +153,8 @@ type SqlTab = {
   pinned?: boolean;
   /** For filePreview tabs — the local file path being previewed. */
   filePath?: string;
+  /** True when this tab's backing file was deleted on disk (title struck out). */
+  fileMissing?: boolean;
   /** For object tabs — the database object being inspected. */
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
@@ -725,6 +727,7 @@ function Sidebar({
   onOpenFile,
   onOpenData,
   onLoadData,
+  onFileDeleted,
   filesRefresh,
   visualizerTabs,
   activeTabId,
@@ -751,6 +754,7 @@ function Sidebar({
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
   onLoadData: (name: string, path: string) => void;
+  onFileDeleted: (path: string) => void;
   filesRefresh: number;
   visualizerTabs: { id: string; title: string }[];
   activeTabId: string;
@@ -782,7 +786,7 @@ function Sidebar({
           </IconButton>
         </div>
         {activity === "files" ? (
-          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} refreshSignal={filesRefresh} />
+          <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} onFileDeleted={onFileDeleted} refreshSignal={filesRefresh} />
         ) : activity === "favorites" ? (
           <FavoritesPanel profileId={activeProfileId} onOpen={(fav) => onOpenFavorite?.(fav)} />
         ) : activity === "git" ? (
@@ -1508,6 +1512,25 @@ export function ExasolStudio({
     updateTabs(connKey, (list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
   }
 
+  // A file was deleted on disk — flag every open tab backed by it (or by a file
+  // under it, if a folder was removed) so their titles show struck-out in red.
+  const markFileDeleted = useCallback((path: string) => {
+    setTabsByConn((prev) => {
+      let changed = false;
+      const next: Record<string, SqlTab[]> = {};
+      for (const [key, list] of Object.entries(prev)) {
+        next[key] = list.map((t) => {
+          if (t.filePath && (t.filePath === path || t.filePath.startsWith(`${path}/`))) {
+            changed = true;
+            return { ...t, fileMissing: true };
+          }
+          return t;
+        });
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
   // Open (and optionally run) a query built in the visual query builder.
   async function openBuiltSql(sql: string, runNow: boolean) {
     const key = connKey;
@@ -1815,6 +1838,10 @@ export function ExasolStudio({
     if (isTauri() && activeTab.filePath) {
       try {
         await ipc.writeTextFile(activeTab.filePath, activeTab.sql);
+        // Re-saving recreates a file that may have been deleted — clear the flag.
+        updateTabs(connKey, (list) =>
+          list.map((t) => (t.id === activeTab.id && t.fileMissing ? { ...t, fileMissing: false } : t)),
+        );
         setFilesRefresh((n) => n + 1);
       } catch {
         /* ignore write error */
@@ -2038,6 +2065,7 @@ export function ExasolStudio({
                 setSidebarOpen(false);
               }}
               onOpenFile={openFile}
+              onFileDeleted={markFileDeleted}
               onOpenData={openData}
               onLoadData={(name, path) => {
                 if (connection) setLoadFor({ name, path });
@@ -2094,7 +2122,15 @@ export function ExasolStudio({
                         className="h-5 w-28 rounded border border-primary/50 bg-background px-1 text-[12px] text-foreground outline-none"
                       />
                     ) : (
-                      <span className="max-w-[140px] truncate">{tab.title}</span>
+                      <span
+                        className={cn(
+                          "max-w-[140px] truncate",
+                          tab.fileMissing && "text-destructive line-through decoration-destructive",
+                        )}
+                        title={tab.fileMissing ? "The file backing this tab was deleted" : undefined}
+                      >
+                        {tab.title}
+                      </span>
                     )}
                     {!isEditing ? (
                       <span className="ml-1 flex items-center">
@@ -2401,6 +2437,7 @@ export function ExasolStudio({
                   if (!p) return;
                   try {
                     await ipc.fsDelete(p);
+                    markFileDeleted(p);
                     setFilesRefresh((n) => n + 1);
                     closeTab(activeTab.id);
                   } catch {
