@@ -38,19 +38,13 @@ export function Onboarding({ onGetStarted }: { onGetStarted: () => void }) {
             ready ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
           )}
         >
-          {/* Title: the "Exasol" wordmark (brand logo) + "Studio" text. */}
+          {/* Title: the "Exasol" wordmark (brand logo) + "Studio" text, sharing
+              one baseline. The wordmark SVG is cropped so its bottom edge IS the
+              type baseline, so `items-baseline` aligns them with no fudge. */}
           <div className="flex items-baseline justify-center gap-3">
-            <img
-              src={exasolWordmark}
-              alt="Exasol"
-              className="h-[40px] w-auto translate-y-[6px] dark:hidden"
-            />
-            <img
-              src={exasolWordmarkDark}
-              alt="Exasol"
-              className="hidden h-[40px] w-auto translate-y-[6px] dark:block"
-            />
-            <span className="font-heading text-[52px] leading-[0.95] font-extrabold tracking-[-0.03em] text-primary">
+            <img src={exasolWordmark} alt="Exasol" className="h-[38px] w-auto dark:hidden" />
+            <img src={exasolWordmarkDark} alt="Exasol" className="hidden h-[38px] w-auto dark:block" />
+            <span className="font-heading text-[52px] leading-none font-extrabold tracking-[-0.03em] text-primary">
               Studio
             </span>
           </div>
