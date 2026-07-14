@@ -1543,19 +1543,16 @@ export function ExasolStudio({
     updateTabs(connKey, (list) => list.map((t) => (t.id === tabId ? { ...t, groupId: gid } : t)));
   }
   function removeTabFromGroup(tabId: string) {
-    updateTabs(connKey, (list) => list.map((t) => (t.id === tabId ? { ...t, groupId: undefined } : t)));
-    pruneEmptyGroups();
+    const next = (tabsFor(connKey) ?? []).map((t) => (t.id === tabId ? { ...t, groupId: undefined } : t));
+    updateTabs(connKey, () => next);
+    const live = new Set(next.map((t) => t.groupId).filter(Boolean) as string[]);
+    setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
   }
   function toggleGroup(gid: string) {
     setGroups((g) => g.map((x) => (x.id === gid ? { ...x, collapsed: !x.collapsed } : x)));
   }
   function renameGroup(gid: string, name: string) {
     setGroups((g) => g.map((x) => (x.id === gid ? { ...x, name } : x)));
-  }
-  // Drop groups that no longer have any member tabs.
-  function pruneEmptyGroups() {
-    const live = new Set((tabsFor(connKey) ?? []).map((t) => t.groupId).filter(Boolean) as string[]);
-    setGroups((g) => g.filter((x) => live.has(x.id)));
   }
 
   // One tab chip in the strip (reused for grouped and ungrouped tabs).
