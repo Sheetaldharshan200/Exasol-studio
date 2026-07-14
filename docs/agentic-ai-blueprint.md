@@ -1,0 +1,156 @@
+# Exasol Studio — Agentic AI Blueprint
+
+Direction: replace the single-shot Anthropic chat (`ai.rs` + `AssistantPanel.tsx`) with a
+production agentic AI system that is Exasol-exclusive, local-model-first, and ships both
+inside the app and as a standalone CLI. Superset is removed and replaced by our own
+agent-editable BI module.
+
+All research verified July 2026. Everything we reuse is MIT-licensed.
+
+---
+
+## 1. Module layout (separate module, shippable as CLI)
+
+Follow the opencode pattern (MIT — patterns and code copyable): **everything is a client
+of one headless core.**
+
+```
+packages/agent-core/          # TypeScript. The entire agent, headless.
+  src/server/                 #   HTTP + SSE API (OpenAPI spec), localhost only
+  src/provider/               #   AI SDK + models.dev registry, transform quirks
+  src/session/                #   agent loop, compaction, permissions
+  src/tools/                  #   Exasol tools (metadata, query, profile, KB, BI, UI)
+  src/kb/                     #   graph knowledge base (SQLite)
+  src/driver/                 #   exasol-driver-ts (native WebSocket, MIT)
+  skills/                     #   vendored exasol-agent-skills markdown (pinned)
+  data/                       #   exasol_builtin_functions.json (152 KB), grammar EBNF,
+                              #   reserved keywords — from exasol/mcp-server (MIT)
+packages/agent-cli/           # `exa-agent` — Bun-compiled single binary; embeds core
+packages/bi/                  # dashboard renderer: ECharts 6 + Perspective + grid
+apps/desktop/                 # Tauri app = thin client; spawns agent-core as sidecar
+```
+
+- **Desktop:** Tauri spawns the compiled agent-core binary as a sidecar; the React panel
+  talks HTTP + SSE. Connection credentials never enter the agent config — the Rust vault
+  hands the sidecar a per-session DSN over stdin at spawn.
+- **CLI:** the same binary with a terminal chat UI (`exa-agent`), connecting with a DSN.
+  One codebase, two shells — exactly opencode's proven split.
+- Permission prompts are **async server→client events over SSE** (approve/deny round
+  trip), so both GUI and CLI get identical human-in-the-loop behavior.
+
+## 2. Providers — local-first, all providers supported
+
+Stack confirmed from opencode source:
+
+- **Vercel AI SDK** (`ai` + `@ai-sdk/*`) as the runtime abstraction.
+- **models.dev `api.json`** as the model catalog (context window, `tool_call` flag, cost,
+  modalities) — cached locally with a compiled-in snapshot fallback for offline use.
+- **Local models are the headline:** `@ai-sdk/openai-compatible` pointed at
+  Ollama (`http://localhost:11434/v1`), LM Studio (`:1234/v1`), llama.cpp (`:8080/v1`).
+  On startup we **auto-detect Ollama** (`GET /api/tags`) and list installed models with
+  zero config — that's the "magic" moment.
+- Provider registry = merge of: catalog → user config (`agent.json`) → env vars →
+  stored auth. Any provider with an AI SDK adapter is one config line away (75+).
+- A single `transform.ts`-style quirks module normalizes tool-call IDs, JSON-schema
+  sanitization, temperature defaults per model family (verbatim pattern from
+  `opencode/src/provider/transform.ts` — the most reusable file in their repo).
+- Per-model-family system prompts (anthropic / gpt / gemini / small-local), with a
+  compact "beast-mode" prompt for weak local models.
+
+## 3. Exasol knowledge — what we vendor (all MIT)
+
+| Source | What we take |
+|---|---|
+| `exasol/mcp-server` | Port `meta_query.py` SYS-catalog SQL → TS tools (list/find/describe/summarize schemas, tables, functions, UDFs); `profile_exasol_query` flow (`ALTER SESSION SET PROFILE='ON'` → `FLUSH STATISTICS` → `EXA_USER_PROFILE_LAST_DAY`); `exasol_builtin_functions.json` (152 KB machine-readable); its 7 SKILL.md files |
+| `exasol-labs/exasol-agent-skills` | ~200 KB markdown knowledge base: **EBNF grammar** (the source of docs.exasol.com syntax diagrams), reserved keywords (2026.1.0), dialect quirks, QUALIFY/window functions, table design (DISTRIBUTE/PARTITION BY), profiling, import/export — bundled pinned, loaded as skills |
+| `exasol-labs/exasol-vscode` | Mine for metadata queries + `exasol-driver-ts` usage patterns |
+| `exasol-labs/exasol-semantic-views` | Later: governed-metrics agent contract (`COMPILE_REQUEST_JSON`) |
+
+SQL safety guard: classify statements (SELECT auto-run with LIMIT wrap; DML/DDL/DCL
+always gated behind approval). Exasol has no EXPLAIN — profiling is the mechanism, and
+we ship it as a first-class tool.
+
+## 4. Graph knowledge base (the accuracy engine)
+
+Local models can't hold a 400-table schema in context. The KB gives them a precise,
+tiny slice instead.
+
+- **Store:** SQLite (nodes, edges, FTS5 for keyword search) inside agent-core — ships
+  with the CLI too. Optional embeddings via Ollama later. (Upgrade path: Kuzu.)
+- **Nodes:** schema → table/view → column; queries; dashboards; connections.
+- **Edges:** structural (PK/FK from `EXA_ALL_CONSTRAINTS`, view deps from
+  `EXA_ALL_DEPENDENCIES`), inferred (join pairs mined from query history, name/type
+  similarity), usage (query→tables, dashboard→queries, table heat).
+- **Build:** incremental crawl on connect + after DDL.
+- **Agent tools:** `kb_search(question)` → entry nodes + k-hop join subgraph (a few
+  hundred tokens), `kb_join_path(a, b)`, `kb_table_card(table)` (columns + stats +
+  sample values from `summarize`).
+- Bonus: the same graph powers a visual schema map in the UI later.
+
+## 5. BI module — Superset removed
+
+Superset is deleted (SupersetTab, market entry, `bi-superset` recipes, superset window
+capability, market.rs code). Replacement — all in-webview, no Python, no login:
+
+- **Charts:** Apache ECharts 6 (Apache-2.0, ~100 KB tree-shaken) — whole chart is one
+  JSON `option`; we constrain the agent to a validated subset (JSON Schema + repair
+  loop), data rows injected by us, never written by the model.
+- **Pivot/table:** FINOS Perspective 4.x (Apache-2.0, Rust/WASM) — **ingests Arrow IPC
+  straight from our Rust query engine**, pivots millions of rows client-side.
+- **Layout:** react-grid-layout v2 — layout is `[{i,x,y,w,h}]` JSON.
+- **Spec:** our own thin, Grafana-shaped dashboard JSON (`*.dash.json` in workspace):
+
+```json
+{ "version": 1, "title": "...", "theme": "auto",
+  "variables": [{"name": "region", "type": "select", "query": "..."}],
+  "panels": [
+    {"id": "p1", "grid": {"x":0,"y":0,"w":6,"h":8},
+     "query": {"sql": "SELECT ..."},
+     "viz": {"type": "echarts", "option": { }}},
+    {"id": "p2", "grid": {}, "query": {}, "viz": {"type": "kpi", "format": "$0.0a"}},
+    {"id": "p3", "grid": {}, "query": {}, "viz": {"type": "perspective", "config": {}}}
+  ],
+  "interactions": [{"source": "p1", "event": "click:seriesName", "sets": "region"}] }
+```
+
+Panel `viz` variants map 1:1 to each engine's native JSON, so we invent almost nothing.
+Agent tools: `dashboard_create`, `dashboard_edit_panel`, `dashboard_run` — schema-
+validated, versioned as plain files (diffable, git-friendly, human-editable).
+
+## 6. The pet — GUI agent with cursor magic
+
+A visible agent cursor that *does things in the app*, always under user control.
+
+- **UI action registry:** interactive elements get `data-agent-id` anchors
+  (`save-query`, `open-bi`, `tab:<id>`, `run-query`…). Frontend registers a typed
+  command map; agent-core exposes them as `ui_*` tools.
+- **Cursor overlay:** Framer Motion layer animates a glowing cursor from its current
+  position to the anchor, pulses, then dispatches the real action. Narration chip shows
+  what it's doing ("Saving query…").
+- **Every `ui_*` call flows through the permission system** — in Ask mode the cursor
+  moves to the target and waits with an Approve/Deny chip before acting.
+
+## 7. Human-in-the-loop permission model
+
+opencode-style ruleset, per scope, each `allow | ask | deny`:
+
+- `db.read` (SELECT — default allow, LIMIT-wrapped) · `db.write` (DML/DDL — default ask)
+- `ui.act` (pet actions — default ask) · `fs` (workspace files) · `bi.edit`
+- **Modes** are just rulesets: **Plan** (read-only, produces a plan, edit/write/ui all
+  ask), **Ask** (default), **Auto** (user-granted allowlist).
+- Doom-loop detection (N identical tool calls → forced interrupt) — verbatim from
+  opencode's processor.
+
+## 8. Phases
+
+1. **Core skeleton** — agent-core server (HTTP+SSE, sessions, agent loop), AI SDK
+   providers + models.dev, Ollama autodetect, new streaming chat panel replacing
+   `ai.rs`/old panel. *Chat with any provider or local model, streaming, in-app.*
+2. **Exasol tools** — driver, ported metadata tools, run_sql with guard + approval flow,
+   profile tool, bundled skills + dialect data. *Accurate SQL answering/building.*
+3. **Graph KB** — crawler, SQLite graph, kb_* tools wired into the loop. *Local models
+   get fast + precise.*
+4. **BI module** — packages/bi renderer, dashboard spec + tools, **remove Superset**.
+   *"Build me a revenue dashboard" → live dashboard tab.*
+5. **The pet** — action registry, cursor overlay, ui_* tools, permission modes UI.
+6. **CLI** — Bun-compiled `exa-agent` binary, config file, release pipeline.
