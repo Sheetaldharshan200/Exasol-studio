@@ -646,9 +646,24 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     // wheels, so a default (newest) interpreter fails building pandas from
     // source. uv downloads a managed 3.11 automatically when it's missing.
     emit_log(app, id, "Creating a managed Python 3.11 environment…", "info");
-    if run_streamed(app, id, &uv, &["venv", "--python", "3.11", &venv_s])? != 0 {
+    // `--clear` recreates the venv if a previous (possibly half-finished)
+    // install left one behind, instead of erroring out.
+    if run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
         return Err(AppError::Storage("Could not create the Python 3.11 environment for Superset.".into()));
     }
+    // Config that lets Superset be embedded inside an Exasol Studio tab: drop the
+    // X-Frame-Options/CSP frame restrictions Talisman adds so an <iframe> can load it.
+    let cfg = base.join("superset_config.py");
+    let _ = std::fs::write(
+        &cfg,
+        "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
+         TALISMAN_ENABLED = False\n\
+         HTTP_HEADERS = {}\n\
+         WTF_CSRF_ENABLED = False\n\
+         ENABLE_PROXY_FIX = True\n\
+         SESSION_COOKIE_SAMESITE = None\n\
+         SESSION_COOKIE_SECURE = False\n",
+    );
     emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
     if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol", "rich", "Pillow"])? != 0 {
         // bi_installed()/tool detection treat an existing venv as "installed" —
@@ -658,10 +673,12 @@ fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
     }
 
     let superset = superset_bin(&venv).to_string_lossy().to_string();
+    let cfg_s = cfg.to_string_lossy().to_string();
     let envs: &[(&str, &str)] = &[
         ("FLASK_APP", "superset"),
         ("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key"),
         ("SUPERSET_HOME", &home_s),
+        ("SUPERSET_CONFIG_PATH", &cfg_s),
     ];
     emit_log(app, id, "Initializing Superset metadata…", "info");
     if run_streamed_env(app, id, &superset, &["db", "upgrade"], envs)? != 0 {
@@ -697,12 +714,27 @@ pub fn bi_launch(app: AppHandle) -> AppResult<String> {
     }
     let home = base.join("home");
     std::fs::create_dir_all(&home)?;
+    // Ensure the embeddable config exists (older installs predate it).
+    let cfg = base.join("superset_config.py");
+    if !cfg.exists() {
+        let _ = std::fs::write(
+            &cfg,
+            "SECRET_KEY = \"exasol-studio-local-dev-key\"\n\
+             TALISMAN_ENABLED = False\n\
+             HTTP_HEADERS = {}\n\
+             WTF_CSRF_ENABLED = False\n\
+             ENABLE_PROXY_FIX = True\n\
+             SESSION_COOKIE_SAMESITE = None\n\
+             SESSION_COOKIE_SECURE = False\n",
+        );
+    }
     let superset = superset_bin(&venv);
     let mut cmd = Command::new(&superset);
     cmd.args(["run", "-p", "8088", "--with-threads"])
         .env("FLASK_APP", "superset")
         .env("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key")
         .env("SUPERSET_HOME", home.to_string_lossy().to_string())
+        .env("SUPERSET_CONFIG_PATH", cfg.to_string_lossy().to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     with_path(&mut cmd);

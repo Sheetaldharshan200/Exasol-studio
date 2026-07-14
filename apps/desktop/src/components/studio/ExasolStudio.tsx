@@ -95,6 +95,7 @@ import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
+import { SupersetTab } from "@/features/marketplace/SupersetTab";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
@@ -142,7 +143,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi";
 
 type SqlTab = {
   id: string;
@@ -194,6 +195,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   marketplace: Store,
   guides: BookOpen,
   object: Table2,
+  bi: BarChart3,
 };
 
 /** Sentinel key for the not-connected tab bucket. */
@@ -1244,7 +1246,6 @@ export function ExasolStudio({
   const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
-  const [biInfo, setBiInfo] = useState<{ url: string; hasUri?: boolean; error?: string; starting?: boolean } | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
   const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
@@ -2047,25 +2048,30 @@ export function ExasolStudio({
   }
 
   // Open the current query/connection in the optional BI tool (Apache Superset).
-  // Open Apache Superset inside its own Exasol Studio window (never the system
-  // browser), waiting until the local Superset server answers before showing it.
-  async function openSupersetWindow(url: string) {
-    if (!isTauri()) {
-      window.open(url, "_blank");
-      return;
-    }
-    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-    const existing = await WebviewWindow.getByLabel("superset");
+  // Open (or focus) the BI tab — Apache Superset embedded inside a full-screen
+  // Exasol Studio tab, like the Marketplace. The tab itself starts Superset and
+  // waits for it to come up.
+  function openBiTab() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "bi");
     if (existing) {
-      await existing.setFocus();
-      return;
+      setActiveTabId(existing.id);
+    } else {
+      tabCounter.current += 1;
+      const tab: SqlTab = {
+        id: `tab-bi-${Date.now()}-${tabCounter.current}`,
+        title: "BI · Superset",
+        view: "bi",
+        sql: "",
+        response: null,
+        execError: null,
+      };
+      updateTabs(connKey, (l) => [...l, tab]);
+      setActiveTabId(tab.id);
     }
-    new WebviewWindow("superset", {
-      url,
-      title: "Superset — Exasol Studio",
-      width: 1360,
-      height: 900,
-    });
+    // Full-tab view — collapse the side panel like Marketplace/Guides.
+    sidebarPanelRef.current?.collapse();
+    setSidebarOpen(false);
   }
 
   async function openBi() {
@@ -2074,47 +2080,21 @@ export function ExasolStudio({
       openMarketplace();
       return;
     }
-    try {
-      const url = await ipc.biLaunch();
-      const p = connection?.profile;
-      const uri = p
-        ? `exa+websocket://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password)}@${p.host}:${p.port}`
-        : "";
-      const sql = (activeTab.sql ?? "").trim();
-      const clip = [
-        uri && `# Exasol connection for Superset (Settings → Database Connections → + Database → SQLAlchemy URI):\n${uri}`,
-        sql && `\n-- Current query (paste into SQL Lab):\n${sql}`,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      if (clip) await navigator.clipboard?.writeText(clip).catch(() => undefined);
-
-      // Show a "starting…" panel, poll until Superset answers, then open it in-app.
-      setBiInfo({ url, hasUri: Boolean(uri), starting: true });
-      if (!isTauri()) {
-        setBiInfo({ url, hasUri: Boolean(uri) });
-        return;
-      }
-      const deadline = Date.now() + 45_000;
-      let up = false;
-      while (Date.now() < deadline) {
-        try {
-          await fetch(url, { mode: "no-cors" });
-          up = true;
-          break;
-        } catch {
-          await new Promise((r) => window.setTimeout(r, 900));
-        }
-      }
-      if (!up) {
-        setBiInfo({ url, hasUri: Boolean(uri), error: "Superset didn’t respond in time. It may still be starting — try again in a moment." });
-        return;
-      }
-      await openSupersetWindow(url);
-      setBiInfo(null);
-    } catch (e) {
-      setBiInfo({ url: "", error: errorMessage(e) });
-    }
+    // Copy the Exasol SQLAlchemy URI (+ current query) so it can be pasted into
+    // Superset's "Add database" form.
+    const p = connection?.profile;
+    const uri = p
+      ? `exa+websocket://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password)}@${p.host}:${p.port}`
+      : "";
+    const sql = (activeTab.sql ?? "").trim();
+    const clip = [
+      uri && `# Exasol connection for Superset (Settings → Database Connections → + Database → SQLAlchemy URI):\n${uri}`,
+      sql && `\n-- Current query (paste into SQL Lab):\n${sql}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    if (clip) await navigator.clipboard?.writeText(clip).catch(() => undefined);
+    openBiTab();
   }
 
   // Step through SQL history into the current editor.
@@ -2348,6 +2328,7 @@ export function ExasolStudio({
           activeTab.view !== "filePreview" &&
           activeTab.view !== "marketplace" &&
           activeTab.view !== "guides" &&
+          activeTab.view !== "bi" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
@@ -2587,6 +2568,10 @@ export function ExasolStudio({
           ) : activeTab.view === "guides" ? (
             <div className="min-h-0 flex-1">
               <Docs />
+            </div>
+          ) : activeTab.view === "bi" ? (
+            <div className="min-h-0 flex-1">
+              <SupersetTab />
             </div>
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">
@@ -2932,60 +2917,6 @@ export function ExasolStudio({
         />
       ) : null}
 
-      {biInfo ? (
-        <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => setBiInfo(null)}
-        >
-          <div
-            className="w-[420px] rounded-xl border border-border bg-popover p-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" />
-              <p className="text-[13px] font-semibold text-foreground">Open in BI — Apache Superset</p>
-            </div>
-            {biInfo.error ? (
-              <p className="text-[12px] text-destructive">{biInfo.error}</p>
-            ) : (
-              <>
-                <p className="flex items-center gap-2 text-[12px] leading-relaxed text-muted-foreground">
-                  {biInfo.starting ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : null}
-                  {biInfo.starting
-                    ? "Starting Superset… it opens in an Exasol Studio window once ready (first launch takes a few seconds)."
-                    : "Superset is ready — opening it in an Exasol Studio window."}
-                  {" "}Login <span className="font-mono text-foreground">admin / admin</span>.
-                </p>
-                {biInfo.hasUri ? (
-                  <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                    Your Exasol connection URI{activeTab.sql?.trim() ? " and current query" : ""} have been copied to the
-                    clipboard — in Superset go to <span className="text-foreground">Settings → Database Connections → + Database → SQLAlchemy URI</span> and paste.
-                  </p>
-                ) : null}
-              </>
-            )}
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={() => setBiInfo(null)}
-                className="h-8 rounded-md border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"
-              >
-                Close
-              </button>
-              {!biInfo.error && !biInfo.starting ? (
-                <button
-                  onClick={() => {
-                    void openSupersetWindow(biInfo.url);
-                    setBiInfo(null);
-                  }}
-                  className="cta-glow h-8 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
-                >
-                  Open Superset
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -295,6 +295,16 @@ export function SettingsWindow() {
       .catch(() => undefined);
   }, []);
 
+  // Apply the chosen theme to THIS (settings) window live, so the appearance
+  // updates the moment you pick it — not only after closing and reopening.
+  useEffect(() => {
+    const raw = String(values.theme ?? "system");
+    const dark =
+      raw === "dark" || (raw === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  }, [values.theme]);
+
   const q = query.trim().toLowerCase();
   const cats = useMemo(
     () =>
