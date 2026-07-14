@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Check, Copy, Download, Eye, EyeOff } from "lucide-react";
-import { ExasolMark } from "@/components/brand/ExasolMark";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,10 @@ function Shell({ title, subtitle, children }: { title: string; subtitle: string;
     <div className="flex h-screen w-full items-center justify-center bg-background px-6 text-foreground">
       <div className="w-full max-w-[320px]">
         <div className="mb-7 flex flex-col items-center text-center">
-          <ExasolMark className="h-9 w-9 text-primary" />
+          <div className="relative">
+            <div className="absolute inset-0 -z-10 scale-150 rounded-full bg-primary/12 blur-2xl" />
+            <BrandLoader size={60} />
+          </div>
           <h1 className="mt-4 text-[19px] font-semibold tracking-tight">{title}</h1>
           <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{subtitle}</p>
         </div>
