@@ -519,6 +519,8 @@ export async function mockInvoke(
       return false;
     case "bi_launch":
       return "http://localhost:8088";
+    case "bi_register_db":
+      return null;
 
     case "bucketfs_list":
       return ["drivers/", "EXAMPLE_ADAPTER.jar"];

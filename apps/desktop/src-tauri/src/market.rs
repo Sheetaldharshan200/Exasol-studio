@@ -797,6 +797,74 @@ pub fn bi_launch(app: AppHandle) -> AppResult<String> {
     Ok("http://localhost:8088".into())
 }
 
+/// Percent-encode URL userinfo (username / password) so special characters
+/// don't break the SQLAlchemy URI.
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Register (or update) an Exasol database connection inside Superset's metadata
+/// so the user doesn't have to add it by hand. Uses the SQLAlchemy dialect URI
+/// (`exa+websocket://…`). Runs against the metadata DB (server up or down).
+#[tauri::command]
+pub fn bi_register_db(
+    app: AppHandle,
+    state: tauri::State<'_, crate::state::AppState>,
+    profile_id: String,
+    name: String,
+) -> AppResult<()> {
+    // Build the SQLAlchemy URI server-side from the (decrypted) profile so the
+    // password never has to reach the frontend.
+    let profile = crate::profiles::find_profile(&state, &profile_id)?;
+    let user = percent_encode(&profile.username);
+    let pass = percent_encode(&profile.password);
+    let query = if profile.ssl_mode == "disabled" {
+        "?ENCRYPTION=No"
+    } else if profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity" {
+        ""
+    } else {
+        "?SSLCertificate=SSL_VERIFY_NONE"
+    };
+    let uri = format!(
+        "exa+websocket://{user}:{pass}@{}:{}/{query}",
+        profile.host, profile.port
+    );
+
+    let base = market_dir(&app)?.join("superset");
+    let venv = base.join("venv");
+    if !venv.exists() {
+        return Err(AppError::Storage("Superset isn’t installed yet.".into()));
+    }
+    let home = base.join("home");
+    std::fs::create_dir_all(&home)?;
+    let cfg = base.join("superset_config.py");
+    let _ = std::fs::write(&cfg, superset_config_py());
+    let superset = superset_bin(&venv);
+    let db_name = if name.trim().is_empty() { "Exasol".to_string() } else { name };
+    let mut cmd = Command::new(&superset);
+    cmd.args(["set_database_uri", "-d", &db_name, "-u", &uri])
+        .env("FLASK_APP", "superset")
+        .env("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key")
+        .env("SUPERSET_HOME", home.to_string_lossy().to_string())
+        .env("SUPERSET_CONFIG_PATH", cfg.to_string_lossy().to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    with_path(&mut cmd);
+    let status = cmd.status().map_err(|e| AppError::Storage(format!("Could not run Superset CLI: {e}")))?;
+    if !status.success() {
+        return Err(AppError::Storage("Could not register the Exasol connection in Superset.".into()));
+    }
+    Ok(())
+}
+
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
 #[tauri::command]

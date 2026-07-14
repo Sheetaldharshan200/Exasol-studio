@@ -96,6 +96,7 @@ pub fn run() {
             market::exasol_local_ctl,
             market::bi_installed,
             market::bi_launch,
+            market::bi_register_db,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,
             bucketfs::bucketfs_download,

@@ -2109,20 +2109,12 @@ export function ExasolStudio({
       openMarketplace();
       return;
     }
-    // Copy the Exasol SQLAlchemy URI (+ current query) so it can be pasted into
-    // Superset's "Add database" form.
-    const p = connection?.profile;
-    const uri = p
-      ? `exa+websocket://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password)}@${p.host}:${p.port}`
-      : "";
-    const sql = (activeTab.sql ?? "").trim();
-    const clip = [
-      uri && `# Exasol connection for Superset (Settings → Database Connections → + Database → SQLAlchemy URI):\n${uri}`,
-      sql && `\n-- Current query (paste into SQL Lab):\n${sql}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    if (clip) await navigator.clipboard?.writeText(clip).catch(() => undefined);
+    // Auto-register the current Exasol connection inside Superset so the user
+    // never has to add a database by hand (best-effort — server-side builds the
+    // URI from the decrypted profile).
+    if (connection) {
+      await ipc.biRegisterDb(connection.profile.id, connection.profile.name).catch(() => undefined);
+    }
     openBiTab();
   }
 
