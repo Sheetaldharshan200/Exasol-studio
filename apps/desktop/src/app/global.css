@@ -225,6 +225,21 @@
   html {
     @apply font-sans;
   }
+
+  /* Unified "activation" for every form control — the subtle primary border +
+     thin ring used on the master-password screens, applied app-wide. */
+  input,
+  textarea,
+  select {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent);
+  }
 }
 
 @layer components {
