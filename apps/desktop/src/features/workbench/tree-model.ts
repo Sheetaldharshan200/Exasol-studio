@@ -146,15 +146,35 @@ async function schemaChildren(profileId: string, schema: string): Promise<TreeNo
       kind: "scripts-folder",
       badge: objects.scripts.length ? String(objects.scripts.length) : undefined,
       expandable: objects.scripts.length > 0,
-      load: async () =>
-        objects.scripts.map((script) => ({
+      // Split scripts into their Exasol categories (matches CREATE ... SCRIPT
+      // types): adapter scripts, Lua scripting scripts, UDFs and preprocessors.
+      load: async () => {
+        const leaf = (script: (typeof objects.scripts)[number]) => ({
           id: `${schema}:script:${script.name}`,
           label: script.name,
           kind: scriptKind(script.scriptType),
           badge: script.language ?? undefined,
           expandable: false,
-          ctx: { type: "script", schema, name: script.name },
-        })),
+          ctx: { type: "script" as const, schema, name: script.name },
+        });
+        const categories: { id: string; label: string; match: (t: string) => boolean }[] = [
+          { id: "adapter", label: "Adapters", match: (t) => t === "ADAPTER" },
+          { id: "scripting", label: "LUA Scripting", match: (t) => t === "SCRIPTING" },
+          { id: "udf", label: "UDFs", match: (t) => t === "UDF" },
+          { id: "preprocessor", label: "Preprocessors", match: (t) => t === "PREPROCESSOR" },
+        ];
+        return categories.map((cat) => {
+          const items = objects.scripts.filter((s) => cat.match((s.scriptType ?? "").toUpperCase()));
+          return {
+            id: `${schema}:scripts:${cat.id}`,
+            label: cat.label,
+            kind: "scripts-folder" as const,
+            badge: items.length ? String(items.length) : undefined,
+            expandable: items.length > 0,
+            load: async () => items.map(leaf),
+          };
+        });
+      },
     },
   ];
 }
