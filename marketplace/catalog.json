@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-13T12:37:49Z",
+  "generatedAt": "2026-07-14T09:06:42Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
@@ -32,6 +32,12 @@
       "homepage": "https://github.com/exasol/pyexasol",
       "mirrorTag": "mirror-pyexasol"
     },
+    "sqlalchemy-exasol": {
+      "repo": "exasol/sqlalchemy-exasol",
+      "latest": "7.1.1",
+      "homepage": "https://github.com/exasol/sqlalchemy-exasol",
+      "mirrorTag": "mirror-sqlalchemy-exasol"
+    },
     "json-tables": {
       "repo": "exasol-labs/exasol-json-tables",
       "latest": null,
@@ -52,7 +58,7 @@
     },
     "superset": {
       "repo": "apache/superset",
-      "latest": null,
+      "latest": "6.1.0",
       "homepage": "https://github.com/apache/superset",
       "mirrorTag": "mirror-superset"
     }
