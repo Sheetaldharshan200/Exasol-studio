@@ -53,10 +53,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Only the x86_64 distributions we actually ship (matches release-app).
-        # macOS + arm64 dropped — those runners are slow and unused.
+        # macOS x86 (macos-13) dropped — that runner is the slow one. The rest
+        # of the distributions stay.
         include:
           - { os: ubuntu-22.04, label: linux-x86_64, ext: "" }
+          - { os: ubuntu-22.04-arm, label: linux-aarch64, ext: "" }
+          - { os: macos-14, label: macos-aarch64, ext: "" }
           - { os: windows-latest, label: windows-x86_64, ext: ".exe" }
     runs-on: ${{ matrix.os }}
     steps:
