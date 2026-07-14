@@ -157,7 +157,7 @@ export function ConnectRunOverlay({
           append("success", "Connected. Opening the workbench …");
           setTimeout(() => {
             if (!cancelled) void connected(profile!, server);
-          }, 650);
+          }, 200);
         }
       } catch (err) {
         if (cancelled) return;
