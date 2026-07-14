@@ -83,6 +83,7 @@ pub fn run() {
             market::bi_launch,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,
+            bucketfs::bucketfs_download,
             exapump::exapump_available,
             exapump::exapump_upload,
             settings::get_app_settings,

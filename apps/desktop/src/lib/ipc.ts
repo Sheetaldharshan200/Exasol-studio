@@ -366,6 +366,15 @@ export const ipc = {
     localPath: string;
     writePassword: string;
   }) => call<string>("bucketfs_upload", args),
+  bucketfsDownload: (args: {
+    host: string;
+    port: number;
+    tls: boolean;
+    bucket: string;
+    remotePath: string;
+    destPath: string;
+    readPassword?: string;
+  }) => call<string>("bucketfs_download", args),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),

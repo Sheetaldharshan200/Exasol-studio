@@ -42,6 +42,36 @@ pub async fn bucketfs_list(
         .collect())
 }
 
+/// Download a file from a BucketFS bucket to a local path.
+#[tauri::command]
+pub async fn bucketfs_download(
+    host: String,
+    port: u16,
+    tls: bool,
+    bucket: String,
+    remote_path: String,
+    dest_path: String,
+    read_password: Option<String>,
+) -> AppResult<String> {
+    let remote = remote_path.trim_start_matches('/');
+    let url = format!("{}/{remote}", base_url(&host, port, tls, &bucket));
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(tls)
+        .build()
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let mut req = client.get(&url).header("User-Agent", "exasol-studio");
+    if let Some(pw) = read_password.filter(|p| !p.is_empty()) {
+        req = req.basic_auth("r", Some(pw));
+    }
+    let resp = req.send().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Storage(format!("BucketFS download failed (HTTP {}).", resp.status())));
+    }
+    let bytes = resp.bytes().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    std::fs::write(&dest_path, &bytes)?;
+    Ok(dest_path)
+}
+
 /// Upload a local file into a BucketFS bucket via HTTP PUT (user `w`).
 /// Returns the BucketFS path usable in `CREATE ... SCRIPT` / adapter definitions.
 #[tauri::command]

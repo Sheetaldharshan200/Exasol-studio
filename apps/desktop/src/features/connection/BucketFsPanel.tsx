@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, FolderOpen, HardDriveUpload, Loader2, RefreshCcw, X } from "lucide-react";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { Check, Download, FolderOpen, HardDriveUpload, Loader2, RefreshCcw, X } from "lucide-react";
 import { errorMessage, ipc, isTauri, type ConnectionProfile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,10 @@ export function BucketFsPanel({
   const [tls, setTls] = useState(false);
   const [bucket, setBucket] = useState("default");
   const [writePassword, setWritePassword] = useState("");
+  const [readPassword, setReadPassword] = useState("");
   const [localPath, setLocalPath] = useState("");
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
   const [remotePath, setRemotePath] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -36,12 +39,41 @@ export function BucketFsPanel({
   const refreshList = async () => {
     setError(null);
     try {
-      const list = await ipc.bucketfsList(profile.host, port, tls, bucket, undefined);
+      const list = await ipc.bucketfsList(profile.host, port, tls, bucket, readPassword || undefined);
       setFiles(list);
     } catch (e) {
       setError(errorMessage(e));
     }
   };
+
+  async function downloadFile(remote: string) {
+    setError(null);
+    setDownloadedPath(null);
+    const base = remote.split("/").pop() ?? remote;
+    if (!isTauri()) {
+      setDownloadedPath(`~/Downloads/${base}`);
+      return;
+    }
+    const dest = await saveDialog({ defaultPath: base });
+    if (typeof dest !== "string") return;
+    setDownloading(remote);
+    try {
+      const saved = await ipc.bucketfsDownload({
+        host: profile.host,
+        port,
+        tls,
+        bucket,
+        remotePath: remote,
+        destPath: dest,
+        readPassword: readPassword || undefined,
+      });
+      setDownloadedPath(saved);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   useEffect(() => {
     void refreshList();
@@ -120,7 +152,7 @@ export function BucketFsPanel({
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <HardDriveUpload className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[13px] font-semibold text-foreground">
-            BucketFS — driver upload
+            BucketFS — browse &amp; upload
             <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">{profile.host}</span>
           </span>
           <button
@@ -162,16 +194,28 @@ export function BucketFsPanel({
             </label>
           </div>
 
-          <label className="block text-[11px] text-muted-foreground">
-            Bucket write password
-            <input
-              type="password"
-              value={writePassword}
-              onChange={(e) => setWritePassword(e.target.value)}
-              placeholder="required to upload"
-              className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[13px] text-foreground"
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-[11px] text-muted-foreground">
+              Write password
+              <input
+                type="password"
+                value={writePassword}
+                onChange={(e) => setWritePassword(e.target.value)}
+                placeholder="to upload"
+                className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[13px] text-foreground"
+              />
+            </label>
+            <label className="block text-[11px] text-muted-foreground">
+              Read password
+              <input
+                type="password"
+                value={readPassword}
+                onChange={(e) => setReadPassword(e.target.value)}
+                placeholder="private buckets only"
+                className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[13px] text-foreground"
+              />
+            </label>
+          </div>
 
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1">
@@ -226,13 +270,31 @@ export function BucketFsPanel({
             </p>
           ) : null}
 
+          {downloadedPath ? (
+            <p className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-[11.5px] text-primary">
+              <Check className="h-3.5 w-3.5" /> Downloaded — <span className="truncate font-mono">{downloadedPath}</span>
+            </p>
+          ) : null}
+
           {files.length ? (
             <div className="rounded-md border border-border bg-editor p-2">
-              <p className="mb-1 text-[10px] uppercase text-muted-foreground">In bucket “{bucket}”</p>
-              <ul className="max-h-28 overflow-auto font-mono text-[11px] text-foreground/80 [scrollbar-width:thin]">
+              <p className="mb-1 text-[10px] uppercase text-muted-foreground">In bucket “{bucket}” — click ↓ to download</p>
+              <ul className="max-h-40 overflow-auto text-[11px] text-foreground/80 [scrollbar-width:thin]">
                 {files.map((f) => (
-                  <li key={f} className="truncate">
-                    {f}
+                  <li key={f} className="group flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-secondary">
+                    <span className="min-w-0 flex-1 truncate font-mono">{f}</span>
+                    <button
+                      onClick={() => downloadFile(f)}
+                      disabled={downloading !== null}
+                      title="Download to…"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 disabled:opacity-40"
+                    >
+                      {downloading === f ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                   </li>
                 ))}
               </ul>
