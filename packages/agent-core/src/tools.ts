@@ -4,6 +4,7 @@ import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
+import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
 // exasol/mcp-server (MIT) SYS-catalog SQL. Reads run freely (row-capped);
@@ -248,6 +249,29 @@ export function buildTools(ctx: {
           const parts = rows.filter((r) => r.STMT_ID === latest).map((r) => columns.map((c) => r[c] ?? null));
           return { columns, rows: parts, rowCount: parts.length };
         });
+      },
+    }),
+
+    app_ui_locate: tool({
+      description:
+        "Find where something lives in the Exasol Studio app UI (panels, buttons, windows) so you can tell the user exactly where to click.",
+      inputSchema: z.object({
+        query: z.string().describe("What the user is looking for, e.g. 'where do I add an API key'"),
+      }),
+      execute: async ({ query }) => {
+        const q = query.toLowerCase();
+        const terms = q.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+        const scored = (uiMap.entries as { id: string; label: string; where: string; hint: string }[])
+          .map((e) => {
+            const hay = `${e.id} ${e.label} ${e.hint}`.toLowerCase();
+            const score = terms.reduce((acc, t) => acc + (hay.includes(t) ? 1 : 0), 0);
+            return { e, score };
+          })
+          .filter((x) => x.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 4)
+          .map((x) => x.e);
+        return scored.length ? { places: scored } : { places: [], note: "Nothing matched — describe the goal and I can suggest the closest surface." };
       },
     }),
 

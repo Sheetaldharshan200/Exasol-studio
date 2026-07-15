@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { generateText, type LanguageModel } from "ai";
 import type { DbRegistry } from "./db.ts";
 import { log } from "./log.ts";
 
@@ -15,7 +16,10 @@ export type TableCard = {
   kind: string;
   rows: number | null;
   comment: string | null;
+  /** AI-generated one-line meaning (cuts token usage in cards). */
+  meaning?: string;
   columns: { name: string; type: string }[];
+  columnCount?: number;
   joins: string[];
 };
 
@@ -46,6 +50,62 @@ export class KnowledgeGraph {
         conn UNINDEXED, schema UNINDEXED, tbl UNINDEXED, body
       );
     `);
+    // Additive migration for AI semantics.
+    try {
+      this.db.exec("ALTER TABLE kb_tables ADD COLUMN semantic TEXT");
+    } catch {
+      // column already exists
+    }
+  }
+
+  private annotating = new Set<string>();
+
+  /**
+   * AI semantics: give unannotated tables a one-line meaning in a single
+   * batched model call. Cheap, incremental, and it makes kb_search cards
+   * far smaller — the meaning replaces walls of column lists.
+   */
+  async annotateMissing(conn: string, model: LanguageModel, cap = 12): Promise<number> {
+    if (this.annotating.has(conn)) return 0;
+    this.annotating.add(conn);
+    try {
+      const pending = this.db
+        .prepare("SELECT schema, name FROM kb_tables WHERE conn=? AND semantic IS NULL LIMIT ?")
+        .all(conn, cap) as { schema: string; name: string }[];
+      if (!pending.length) return 0;
+      const specs = pending.map((t) => {
+        const cols = this.db
+          .prepare("SELECT name, type, comment FROM kb_columns WHERE conn=? AND schema=? AND tbl=? LIMIT 40")
+          .all(conn, t.schema, t.name) as { name: string; type: string; comment: string | null }[];
+        return `${t.schema}.${t.name}: ${cols.map((c) => c.name + (c.comment ? ` (${c.comment})` : "")).join(", ")}`;
+      });
+      const res = await generateText({
+        model,
+        system:
+          'For each database table, write ONE short line describing what it holds and what it is used for, based only on its name and columns. Reply as strict JSON: {"SCHEMA.TABLE": "meaning", ...}. No other text.',
+        prompt: specs.join("\n"),
+        temperature: 0.1,
+      });
+      const jsonMatch = res.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return 0;
+      const map = JSON.parse(jsonMatch[0]) as Record<string, string>;
+      let saved = 0;
+      const upd = this.db.prepare("UPDATE kb_tables SET semantic=? WHERE conn=? AND schema=? AND name=?");
+      for (const t of pending) {
+        const meaning = map[`${t.schema}.${t.name}`];
+        if (typeof meaning === "string" && meaning.trim()) {
+          upd.run(meaning.trim().slice(0, 200), conn, t.schema, t.name);
+          saved++;
+        }
+      }
+      if (saved) log.info("kb semantics annotated", { conn, saved });
+      return saved;
+    } catch (e) {
+      log.warn("kb annotation failed", { error: String(e) });
+      return 0;
+    } finally {
+      this.annotating.delete(conn);
+    }
   }
 
   crawledAt(conn: string): number | null {
@@ -180,11 +240,18 @@ export class KnowledgeGraph {
     const t = this.db
       .prepare("SELECT * FROM kb_tables WHERE conn=? AND schema=? AND name=?")
       .get(conn, schema.toUpperCase(), table.toUpperCase()) as
-      | { schema: string; name: string; kind: string; rows: number | null; comment: string | null }
+      | { schema: string; name: string; kind: string; rows: number | null; comment: string | null; semantic: string | null }
       | undefined;
     if (!t) return null;
+    const total = (
+      this.db
+        .prepare("SELECT COUNT(*) AS n FROM kb_columns WHERE conn=? AND schema=? AND tbl=?")
+        .get(conn, t.schema, t.name) as { n: number }
+    ).n;
+    // With a semantic meaning available the card can be much leaner.
+    const colCap = t.semantic ? 16 : 60;
     const cols = this.db
-      .prepare("SELECT name, type FROM kb_columns WHERE conn=? AND schema=? AND tbl=? LIMIT 60")
+      .prepare(`SELECT name, type FROM kb_columns WHERE conn=? AND schema=? AND tbl=? LIMIT ${colCap}`)
       .all(conn, t.schema, t.name) as { name: string; type: string }[];
     const edges = this.db
       .prepare(
@@ -211,7 +278,9 @@ export class KnowledgeGraph {
       kind: t.kind,
       rows: t.rows,
       comment: t.comment,
+      ...(t.semantic ? { meaning: t.semantic } : {}),
       columns: cols,
+      ...(total > cols.length ? { columnCount: total } : {}),
       joins: [...new Set(joins)],
     };
   }

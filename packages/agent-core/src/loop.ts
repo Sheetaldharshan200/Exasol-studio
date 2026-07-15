@@ -5,6 +5,7 @@ import type { DbRegistry } from "./db.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
+import { maybeCompact } from "./compact.ts";
 import { log } from "./log.ts";
 
 const MAX_STEPS = 12;
@@ -64,6 +65,14 @@ export async function runTurn(opts: {
   session.running = true;
   session.abort = new AbortController();
   session.emit({ type: "status", state: "thinking" });
+
+  // Fold older turns into a summary if we're nearing the context window.
+  await maybeCompact({
+    session,
+    model,
+    contextLimit: registry.contextFor(modelRef),
+    system,
+  });
 
   const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model });
   const started = Date.now();
@@ -165,6 +174,11 @@ export async function runTurn(opts: {
     session.abort = null;
     store.touch(session);
     session.emit({ type: "status", state: "idle" });
+    // Background: enrich the schema graph with AI semantics (batched, capped,
+    // deduplicated inside annotateMissing) — reduces future token usage.
+    if (session.connectionId) {
+      void kb.annotateMissing(session.connectionId, model).catch(() => undefined);
+    }
   }
 }
 

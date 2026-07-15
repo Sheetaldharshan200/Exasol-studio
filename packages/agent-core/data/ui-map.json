@@ -1,0 +1,131 @@
+{
+  "generatedAt": "2026-07-15T08:41:48.162Z",
+  "entries": [
+    {
+      "id": "editor.run",
+      "label": "Run query",
+      "where": "query tab toolbar",
+      "hint": "Executes the SQL in the active editor."
+    },
+    {
+      "id": "editor.save",
+      "label": "Save query",
+      "where": "query tab toolbar / Cmd+S",
+      "hint": "Saves the active editor SQL to a workspace file."
+    },
+    {
+      "id": "history.dock",
+      "label": "Query history",
+      "where": "bottom dock",
+      "hint": "Past statements with status and timing; click to reopen."
+    },
+    {
+      "id": "market.exasol-personal",
+      "label": "Exasol Personal install",
+      "where": "Marketplace → Databases",
+      "hint": "Installs/manages the free local Exasol database (start/stop under Manage)."
+    },
+    {
+      "id": "rail.ai",
+      "label": "Exasol AI panel",
+      "where": "activity rail, bottom section",
+      "hint": "The AI assistant side panel (this conversation)."
+    },
+    {
+      "id": "rail.databases",
+      "label": "Databases panel",
+      "where": "activity rail, 1st icon",
+      "hint": "Tree of connections, schemas, tables. Right-click objects for actions (new table, drop, generate SQL)."
+    },
+    {
+      "id": "rail.favorites",
+      "label": "Favorites panel",
+      "where": "activity rail, 3rd icon",
+      "hint": "Saved favorite objects and queries."
+    },
+    {
+      "id": "rail.files",
+      "label": "Files panel",
+      "where": "activity rail, 2nd icon",
+      "hint": "Workspace SQL files; double-click opens in a query tab."
+    },
+    {
+      "id": "rail.git",
+      "label": "Git panel",
+      "where": "activity rail, 5th icon",
+      "hint": "Branches, stage/unstage, commit, and the commit graph view."
+    },
+    {
+      "id": "rail.guides",
+      "label": "Guides & Docs",
+      "where": "activity rail, 7th icon",
+      "hint": "Documentation and setup guides."
+    },
+    {
+      "id": "rail.marketplace",
+      "label": "Marketplace",
+      "where": "activity rail, 6th icon",
+      "hint": "Install Exasol tools, drivers, extensions. Grid/list toggle beside search."
+    },
+    {
+      "id": "rail.settings",
+      "label": "Settings",
+      "where": "activity rail, bottom gear icon",
+      "hint": "Opens the Settings window (appearance, editor, database defaults)."
+    },
+    {
+      "id": "rail.visualizer",
+      "label": "Visualizer",
+      "where": "activity rail, 4th icon",
+      "hint": "Opens a visualizer tab; tab names are editable."
+    },
+    {
+      "id": "tabs.new",
+      "label": "New query tab",
+      "where": "tab strip + button",
+      "hint": "Opens a fresh SQL editor tab."
+    },
+    {
+      "id": "titlebar.connect",
+      "label": "Connect button",
+      "where": "title bar, right side",
+      "hint": "Opens the connection dialog to connect to an Exasol database."
+    },
+    {
+      "id": "tour.add-connection",
+      "label": "add connection",
+      "where": "apps/desktop/src/features/onboarding/Tour.tsx",
+      "hint": "Tour target in apps/desktop/src/features/onboarding/Tour.tsx"
+    },
+    {
+      "id": "tour.ai-toggle",
+      "label": "ai toggle",
+      "where": "apps/desktop/src/features/onboarding/Tour.tsx",
+      "hint": "Tour target in apps/desktop/src/features/onboarding/Tour.tsx"
+    },
+    {
+      "id": "tour.rail",
+      "label": "rail",
+      "where": "apps/desktop/src/features/workbench/ActivityRail.tsx",
+      "hint": "Tour target in apps/desktop/src/features/workbench/ActivityRail.tsx"
+    },
+    {
+      "id": "tour.tabbar",
+      "label": "tabbar",
+      "where": "apps/desktop/src/features/onboarding/Tour.tsx",
+      "hint": "Tour target in apps/desktop/src/features/onboarding/Tour.tsx"
+    },
+    {
+      "id": "tour.visualizer",
+      "label": "visualizer",
+      "where": "apps/desktop/src/features/onboarding/Tour.tsx",
+      "hint": "Tour target in apps/desktop/src/features/onboarding/Tour.tsx"
+    },
+    {
+      "id": "window.ai-providers",
+      "label": "AI Providers window",
+      "where": "AI panel header, sliders icon",
+      "hint": "Built-in local AI engine/models, Ollama status, external API keys."
+    }
+  ]
+}

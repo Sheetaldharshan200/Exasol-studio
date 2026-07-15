@@ -35,6 +35,7 @@ export type AgentEvent =
   | { type: "permission-ask"; id: string; tool: string; summary: string; detail: string }
   | { type: "permission-result"; id: string; allow: boolean }
   | { type: "title-changed"; title: string }
+  | { type: "compacted"; folded: number }
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 

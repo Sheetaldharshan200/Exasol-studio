@@ -31,7 +31,8 @@ import { cn } from "@/lib/utils";
 type ChatItem =
   | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean; streaming?: boolean }
   | { kind: "tool"; id: string; name: string; args: unknown; done: boolean; ok?: boolean; summary?: string }
-  | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean };
+  | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean }
+  | { kind: "note"; id: string; text: string };
 
 type SlashCommand = {
   cmd: string;
@@ -186,6 +187,11 @@ export function AssistantPanel({
       setItems((m) => (m.map((it) => (it.kind === "perm" && it.id === e.id ? { ...it, result: e.allow } : it))));
     } else if (e.type === "title-changed") {
       setTitle(e.title);
+    } else if (e.type === "compacted") {
+      setItems((m) => [
+        ...m,
+        { kind: "note", id: `n-${Date.now()}`, text: `Context compacted — ${e.folded} earlier messages summarized` },
+      ]);
     } else if (e.type === "message-done") {
       setItems((m) => m.map((it) => (it.kind === "msg" ? { ...it, streaming: false } : it)));
       setSending(false);
@@ -534,6 +540,12 @@ export function AssistantPanel({
           clusterItems(items).map((c) =>
             c.kind === "cluster" ? (
               <StepCluster key={c.id} items={c.items} onAnswer={answerPermission} />
+            ) : c.item.kind === "note" ? (
+              <div key={c.item.id} className="flex items-center gap-2 py-0.5">
+                <span className="h-px flex-1 bg-border" />
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{c.item.text}</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
             ) : (
               <Bubble key={c.item.id} message={c.item} />
             ),
@@ -644,14 +656,14 @@ function relTime(ts: number): string {
 }
 
 type Cluster =
-  | { kind: "item"; item: Extract<ChatItem, { kind: "msg" }> }
-  | { kind: "cluster"; id: string; items: Exclude<ChatItem, { kind: "msg" }>[] };
+  | { kind: "item"; item: Extract<ChatItem, { kind: "msg" | "note" }> }
+  | { kind: "cluster"; id: string; items: Extract<ChatItem, { kind: "tool" | "perm" }>[] };
 
 /** Group consecutive tool/permission items into one visual "steps" block. */
 function clusterItems(items: ChatItem[]): Cluster[] {
   const out: Cluster[] = [];
   for (const it of items) {
-    if (it.kind === "msg") {
+    if (it.kind === "msg" || it.kind === "note") {
       out.push({ kind: "item", item: it });
     } else {
       const last = out[out.length - 1];
@@ -666,7 +678,7 @@ function StepCluster({
   items,
   onAnswer,
 }: {
-  items: Exclude<ChatItem, { kind: "msg" }>[];
+  items: Extract<ChatItem, { kind: "tool" | "perm" }>[];
   onAnswer: (id: string, allow: boolean) => void;
 }) {
   const active = items.some((it) => (it.kind === "tool" ? !it.done : it.result === undefined));
@@ -705,6 +717,10 @@ const TOOL_LABELS: Record<string, string> = {
   get_table_sample: "Sampling rows",
   remember_insight: "Saving insight",
   spawn_researcher: "Researching",
+  kb_search: "Searching knowledge graph",
+  kb_join_path: "Finding join path",
+  kb_refresh: "Rebuilding knowledge graph",
+  app_ui_locate: "Locating in app",
 };
 
 function argPreview(args: unknown): string {

@@ -236,6 +236,18 @@ export class ProviderRegistry {
     return out;
   }
 
+  /** Context window (tokens) for a model ref; sensible local defaults. */
+  contextFor(modelRef: string): number {
+    const slash = modelRef.indexOf("/");
+    const providerId = modelRef.slice(0, slash);
+    const modelId = modelRef.slice(slash + 1);
+    const fromCatalog = this.catalog[providerId]?.find((m) => m.id === modelId)?.context;
+    if (fromCatalog) return fromCatalog;
+    // Local servers: builtin runs llama-server with -c 16384; Ollama defaults
+    // vary — 16k is a safe floor that triggers compaction before truncation.
+    return 16_000;
+  }
+
   /** Resolve "provider/model_id" into an AI SDK LanguageModel. */
   resolve(modelRef: string): LanguageModel {
     const slash = modelRef.indexOf("/");
