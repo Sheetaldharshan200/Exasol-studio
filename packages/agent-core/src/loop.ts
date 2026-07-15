@@ -76,7 +76,11 @@ export async function runTurn(opts: {
 
   const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model });
   const started = Date.now();
-  const fallbackId = crypto.randomUUID();
+  // Providers reuse stream part ids across turns (llama.cpp emits "0" every
+  // time) — scope every id to this turn so the UI never merges answers.
+  const turnId = crypto.randomUUID().slice(0, 8);
+  const scoped = (id: string | undefined | null) => `${turnId}:${id || "t"}`;
+  const fallbackId = scoped("t");
   let sawText = false;
   let currentTextId: string | null = null;
 
@@ -94,7 +98,7 @@ export async function runTurn(opts: {
     for await (const part of result.fullStream) {
       switch (part.type) {
         case "text-start": {
-          currentTextId = part.id || fallbackId;
+          currentTextId = scoped(part.id);
           session.emit({ type: "message-start", messageId: currentTextId, role: "assistant" });
           break;
         }
@@ -103,12 +107,12 @@ export async function runTurn(opts: {
             session.emit({ type: "status", state: "streaming" });
             sawText = true;
           }
-          const id = part.id || currentTextId || fallbackId;
+          const id = part.id ? scoped(part.id) : currentTextId || fallbackId;
           session.emit({ type: "text-delta", messageId: id, delta: part.text });
           break;
         }
         case "reasoning-delta": {
-          session.emit({ type: "reasoning-delta", messageId: part.id || fallbackId, delta: part.text });
+          session.emit({ type: "reasoning-delta", messageId: part.id ? scoped(part.id) : fallbackId, delta: part.text });
           break;
         }
         case "tool-call": {
