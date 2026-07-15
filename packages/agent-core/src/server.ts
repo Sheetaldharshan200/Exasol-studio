@@ -4,6 +4,7 @@ import type { ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
+import { InsightStore } from "./insights.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -15,6 +16,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const registry = new ProviderRegistry(config);
   const sessions = new SessionStore(config.dataDir);
   const db = new DbRegistry();
+  const insights = new InsightStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -73,7 +75,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { id: s.id });
       }
 
+      // GET /v1/sessions — list (newest first)
+      if (req.method === "GET" && parts[1] === "sessions" && !parts[2]) {
+        return json(res, 200, { sessions: sessions.list() });
+      }
+
       const session = parts[2] ? sessions.get(parts[2]) : undefined;
+
+      // GET /v1/sessions/:id/items — render-ready replay for session switch
+      if (req.method === "GET" && parts[1] === "sessions" && session && parts[3] === "items") {
+        return json(res, 200, { title: session.title, items: session.replay() });
+      }
+
+      // DELETE /v1/sessions/:id
+      if (req.method === "DELETE" && parts[1] === "sessions" && parts[2] && !parts[3]) {
+        const ok = sessions.delete(parts[2]);
+        return json(res, ok ? 200 : 404, ok ? { ok: true } : { error: "not found" });
+      }
 
       // GET /v1/sessions/:id/stream  (SSE)
       if (req.method === "GET" && parts[1] === "sessions" && session && parts[3] === "stream") {
@@ -103,6 +121,8 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           session,
           registry,
           db,
+          insights,
+          store: sessions,
           modelRef: body.model,
           userText: body.text,
           context: body.context,

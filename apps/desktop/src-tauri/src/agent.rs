@@ -187,6 +187,7 @@ pub async fn agent_api(
         "GET" => client.get(&url),
         "PUT" => client.put(&url),
         "POST" => client.post(&url),
+        "DELETE" => client.delete(&url),
         other => return Err(AppError::Assistant(format!("unsupported method {other}"))),
     }
     .bearer_auth(&info.token);

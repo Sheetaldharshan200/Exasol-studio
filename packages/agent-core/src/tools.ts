@@ -1,7 +1,8 @@
-import { tool, type ToolSet } from "ai";
+import { generateText, stepCountIs, tool, type LanguageModel, type ToolSet } from "ai";
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
+import type { InsightStore } from "./insights.ts";
 
 // The agent's Exasol tools. Metadata queries are ported from the official
 // exasol/mcp-server (MIT) SYS-catalog SQL. Reads run freely (row-capped);
@@ -42,6 +43,11 @@ export function buildTools(ctx: {
   db: DbRegistry;
   session: Session;
   connectionId: string | null;
+  insights?: InsightStore;
+  /** Model for sub-agents; omitting disables spawn_researcher. */
+  model?: LanguageModel;
+  /** Read-only mode (sub-agents): writes fail instead of asking. */
+  readOnly?: boolean;
 }): ToolSet {
   const { db, session } = ctx;
 
@@ -138,6 +144,9 @@ export function buildTools(ctx: {
           return shape(out);
         }
         // Mutation: human in the loop, always.
+        if (ctx.readOnly) {
+          return { denied: true, message: "This researcher context is read-only. Report the statement back instead of running it." };
+        }
         const allowed = await session.askPermission({
           tool: "run_sql",
           summary: purpose || "Execute a statement that modifies the database",
@@ -191,6 +200,55 @@ export function buildTools(ctx: {
         });
       },
     }),
+
+    remember_insight: tool({
+      description:
+        "Save a short, verified fact about this database for future sessions (join keys, table meanings, business definitions). " +
+        "Only save facts confirmed by tool results — never assumptions.",
+      inputSchema: z.object({
+        fact: z.string().max(300).describe("One concise, verified fact"),
+      }),
+      execute: async ({ fact }) => {
+        ctx.insights?.add(ctx.connectionId, fact);
+        session.record({ kind: "insight.saved", fact });
+        return { saved: true };
+      },
+    }),
+
+    ...(ctx.model && !ctx.readOnly
+      ? {
+          spawn_researcher: tool({
+            description:
+              "Spawn a parallel read-only researcher to explore part of the database (schemas, tables, sampling, read queries) and report findings. " +
+              "Use MULTIPLE calls in one turn to fan out across independent questions — they run concurrently and keep your own context small.",
+            inputSchema: z.object({
+              task: z.string().describe("A focused research question, e.g. 'Map the tables and join keys related to orders'"),
+            }),
+            execute: async ({ task }) => {
+              const subTools = buildTools({
+                db,
+                session,
+                connectionId: ctx.connectionId,
+                insights: ctx.insights,
+                readOnly: true,
+              });
+              const res = await generateText({
+                model: ctx.model!,
+                system:
+                  "You are a read-only database researcher inside Exasol Studio. Investigate the task with tools, then reply with a dense, factual report. " +
+                  "Every claim must come from a tool result — if something is unknown, state that plainly. Exasol dialect: LIMIT n, UPPERCASE identifiers, SYS.EXA_ALL_* metadata.",
+                prompt: task,
+                tools: subTools,
+                stopWhen: stepCountIs(6),
+                temperature: 0.1,
+                abortSignal: session.abort?.signal,
+              });
+              session.record({ kind: "subagent", task, report: res.text.slice(0, 2000) });
+              return { report: res.text };
+            },
+          }),
+        }
+      : {}),
 
     get_table_sample: tool({
       description: "Fetch a few sample rows from a table to understand its data.",

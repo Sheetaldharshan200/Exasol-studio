@@ -34,10 +34,24 @@ export type AgentEvent =
   | { type: "tool-end"; callId: string; name: string; ok: boolean; summary?: string }
   | { type: "permission-ask"; id: string; tool: string; summary: string; detail: string }
   | { type: "permission-result"; id: string; allow: boolean }
+  | { type: "title-changed"; title: string }
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
-async function api<T>(path: string, method: "GET" | "POST" | "PUT" = "GET", body?: unknown): Promise<T> {
+export type SessionMeta = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+};
+
+export type ReplayItem =
+  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean }
+  | { kind: "tool"; id: string; name: string; args: unknown; done: true; ok: boolean; summary?: string }
+  | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean };
+
+async function api<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
   return invoke<T>("agent_api", { path, method, body: body ?? null });
 }
 
@@ -57,6 +71,19 @@ export const agent = {
   async createSession(): Promise<string> {
     const { id } = await api<{ id: string }>("/sessions", "POST");
     return id;
+  },
+
+  async listSessions(): Promise<SessionMeta[]> {
+    const { sessions } = await api<{ sessions: SessionMeta[] }>("/sessions");
+    return sessions;
+  },
+
+  async sessionItems(sessionId: string): Promise<{ title: string; items: ReplayItem[] }> {
+    return api(`/sessions/${sessionId}/items`);
+  },
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await api(`/sessions/${sessionId}`, "DELETE");
   },
 
   async send(

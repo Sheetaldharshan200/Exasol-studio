@@ -5,14 +5,16 @@ import {
   Cpu,
   FileSearch,
   Gauge,
+  History,
   Loader2,
   PanelRightClose,
-  RotateCcw,
+  Plus,
   Send,
   ShieldAlert,
   SlidersHorizontal,
   Square,
   Table2,
+  Trash2,
   Wand2,
   Wrench,
   X,
@@ -21,7 +23,7 @@ import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
-import { agent, type AgentEvent, type AgentProviderInfo } from "@/lib/agent-client";
+import { agent, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,10 @@ export function AssistantPanel({
   const [showPicker, setShowPicker] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [menuIndex, setMenuIndex] = useState(0);
+  const [title, setTitle] = useState("New chat");
+  const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
+  const [showSessions, setShowSessions] = useState(false);
+  const sessionsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionRef = useRef<string | null>(null);
@@ -129,14 +135,18 @@ export function AssistantPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [items, sending]);
 
-  // Dismiss the model picker on outside click or Escape.
+  // Dismiss popovers on outside click or Escape.
   useEffect(() => {
-    if (!showPicker) return;
+    if (!showPicker && !showSessions) return;
     const onDown = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
+      if (showPicker && pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
+      if (showSessions && sessionsRef.current && !sessionsRef.current.contains(e.target as Node)) setShowSessions(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowPicker(false);
+      if (e.key === "Escape") {
+        setShowPicker(false);
+        setShowSessions(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -144,7 +154,7 @@ export function AssistantPanel({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [showPicker]);
+  }, [showPicker, showSessions]);
 
   const handleEvent = useCallback((e: AgentEvent) => {
     if (e.type === "message-start") {
@@ -174,6 +184,8 @@ export function AssistantPanel({
       setItems((m) => [...m, { kind: "perm", id: e.id, tool: e.tool, summary: e.summary, detail: e.detail }]);
     } else if (e.type === "permission-result") {
       setItems((m) => (m.map((it) => (it.kind === "perm" && it.id === e.id ? { ...it, result: e.allow } : it))));
+    } else if (e.type === "title-changed") {
+      setTitle(e.title);
     } else if (e.type === "message-done") {
       setItems((m) => m.map((it) => (it.kind === "msg" ? { ...it, streaming: false } : it)));
       setSending(false);
@@ -194,10 +206,48 @@ export function AssistantPanel({
   function newChat() {
     setItems([]);
     setInput("");
+    setTitle("New chat");
     disposeRef.current?.();
     disposeRef.current = null;
     sessionRef.current = null;
     setSending(false);
+    setShowSessions(false);
+  }
+
+  async function openSessionsMenu() {
+    setShowSessions((v) => !v);
+    setShowPicker(false);
+    try {
+      setSessionList(await agent.listSessions());
+    } catch {
+      setSessionList([]);
+    }
+  }
+
+  async function switchSession(id: string) {
+    if (id === sessionRef.current) {
+      setShowSessions(false);
+      return;
+    }
+    try {
+      const { title: t, items: replay } = await agent.sessionItems(id);
+      disposeRef.current?.();
+      sessionRef.current = id;
+      disposeRef.current = await agent.stream(id, handleEvent);
+      setItems(replay as ReplayItem[] as ChatItem[]);
+      setTitle(t);
+      setSending(false);
+    } catch (err) {
+      setAgentError(errorMessage(err));
+    } finally {
+      setShowSessions(false);
+    }
+  }
+
+  async function removeSession(id: string) {
+    await agent.deleteSession(id).catch(() => undefined);
+    setSessionList((l) => l.filter((s) => s.id !== id));
+    if (id === sessionRef.current) newChat();
   }
 
   // Detect a "/" command at the start or a trailing "@" mention token.
@@ -354,23 +404,72 @@ export function AssistantPanel({
     <aside className="flex h-full min-w-0 flex-col border-l border-border bg-panel">
       {/* ── Header ── */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary/12 text-primary">
+        <div className="flex min-w-0 items-center gap-2" ref={sessionsRef}>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
             <AgentMark className="h-4 w-4" active={sending} />
           </span>
-          <span className="text-[13px] font-semibold text-foreground">Exasol AI</span>
-        </div>
-        <div className="flex items-center gap-0.5">
-          {items.length > 0 ? (
+          <div className="relative min-w-0">
             <button
-              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-              onClick={newChat}
-              aria-label="New chat"
-              title="New chat"
+              onClick={() => void openSessionsMenu()}
+              className="flex max-w-[180px] items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-semibold text-foreground hover:bg-secondary"
+              title="Chats"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="truncate">{title}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
-          ) : null}
+            {showSessions ? (
+              <div className="absolute left-0 top-full z-30 mt-1 flex max-h-80 w-72 flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+                <button
+                  onClick={newChat}
+                  className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-[12px] font-medium text-foreground hover:bg-secondary/60"
+                >
+                  <Plus className="h-3.5 w-3.5 text-primary" /> New chat
+                </button>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {sessionList.length === 0 ? (
+                    <p className="px-3 py-3 text-[11.5px] text-muted-foreground">No previous chats yet.</p>
+                  ) : (
+                    sessionList.map((sess) => (
+                      <div
+                        key={sess.id}
+                        className={cn(
+                          "group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left",
+                          sess.id === sessionRef.current ? "bg-secondary" : "hover:bg-secondary/60",
+                        )}
+                        onClick={() => void switchSession(sess.id)}
+                      >
+                        <History className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] text-foreground">{sess.title}</div>
+                          <div className="text-[10px] text-muted-foreground">{relTime(sess.updatedAt)}</div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void removeSession(sess.id);
+                          }}
+                          className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground group-hover:flex hover:text-destructive"
+                          aria-label="Delete chat"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+            onClick={newChat}
+            aria-label="New chat"
+            title="New chat"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
           <button
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
             onClick={() => void openAiProvidersWindow()}
@@ -432,13 +531,11 @@ export function AssistantPanel({
             </div>
           </div>
         ) : (
-          items.map((it) =>
-            it.kind === "msg" ? (
-              <Bubble key={it.id} message={it} />
-            ) : it.kind === "tool" ? (
-              <ToolChip key={it.id} item={it} />
+          clusterItems(items).map((c) =>
+            c.kind === "cluster" ? (
+              <StepCluster key={c.id} items={c.items} onAnswer={answerPermission} />
             ) : (
-              <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
+              <Bubble key={c.item.id} message={c.item} />
             ),
           )
         )}
@@ -538,6 +635,67 @@ export function AssistantPanel({
   );
 }
 
+function relTime(ts: number): string {
+  const d = Date.now() - ts;
+  if (d < 60_000) return "just now";
+  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)}h ago`;
+  return `${Math.floor(d / 86_400_000)}d ago`;
+}
+
+type Cluster =
+  | { kind: "item"; item: Extract<ChatItem, { kind: "msg" }> }
+  | { kind: "cluster"; id: string; items: Exclude<ChatItem, { kind: "msg" }>[] };
+
+/** Group consecutive tool/permission items into one visual "steps" block. */
+function clusterItems(items: ChatItem[]): Cluster[] {
+  const out: Cluster[] = [];
+  for (const it of items) {
+    if (it.kind === "msg") {
+      out.push({ kind: "item", item: it });
+    } else {
+      const last = out[out.length - 1];
+      if (last && last.kind === "cluster") last.items.push(it);
+      else out.push({ kind: "cluster", id: it.id, items: [it] });
+    }
+  }
+  return out;
+}
+
+function StepCluster({
+  items,
+  onAnswer,
+}: {
+  items: Exclude<ChatItem, { kind: "msg" }>[];
+  onAnswer: (id: string, allow: boolean) => void;
+}) {
+  const active = items.some((it) => (it.kind === "tool" ? !it.done : it.result === undefined));
+  const steps = items.length;
+  return (
+    <div className="rounded-xl border border-border/70 bg-panel/40">
+      <div className="flex items-center gap-1.5 border-b border-border/50 px-2.5 py-1.5">
+        {active ? (
+          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+        ) : (
+          <Check className="h-3 w-3 text-primary" />
+        )}
+        <span className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+          {active ? "Working" : "Done"} · {steps} step{steps === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="space-y-1 p-1.5">
+        {items.map((it) =>
+          it.kind === "tool" ? (
+            <ToolChip key={it.id} item={it} />
+          ) : (
+            <PermissionCard key={it.id} item={it} onAnswer={onAnswer} />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
 const TOOL_LABELS: Record<string, string> = {
   list_schemas: "Listing schemas",
   list_tables: "Listing tables",
@@ -545,6 +703,8 @@ const TOOL_LABELS: Record<string, string> = {
   run_sql: "Running SQL",
   profile_query: "Profiling query",
   get_table_sample: "Sampling rows",
+  remember_insight: "Saving insight",
+  spawn_researcher: "Researching",
 };
 
 function argPreview(args: unknown): string {

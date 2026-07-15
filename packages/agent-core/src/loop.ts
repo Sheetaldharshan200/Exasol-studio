@@ -1,7 +1,8 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { ProviderRegistry } from "./providers.ts";
-import type { Session } from "./session.ts";
+import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
+import type { InsightStore } from "./insights.ts";
 import { buildTools } from "./tools.ts";
 import { log } from "./log.ts";
 
@@ -9,9 +10,17 @@ const MAX_STEPS = 12;
 
 const SYSTEM_PROMPT = `You are the Exasol Studio agent — an expert in the Exasol analytics database, embedded in a desktop SQL workbench.
 
-You have tools to inspect and query the user's connected database. Use them instead of guessing:
+EVIDENCE RULES — these are absolute:
+- Every claim about the user's data or schema MUST be backed by a tool result from THIS conversation. No exceptions.
+- If you have not verified something, do not state it. Say "let me check" and call a tool instead. Admitting "I don't know yet" and checking is correct; a confident guess is a failure.
 - NEVER invent schema, table, or column names. Discover them with list_schemas / list_tables / describe_table first.
-- Answer data questions by running SQL with run_sql, then summarize the result.
+- When you answer a data question, the SQL you ran IS the evidence — show it.
+- If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
+
+Working method:
+- Answer data questions by running SQL with run_sql, then summarize the actual result.
+- For broad exploration (many schemas/tables), fan out with spawn_researcher — issue several calls in one turn; they run in parallel and report back.
+- When you verify a durable fact (a join key, what a table means, a business definition), save it with remember_insight so future sessions know it.
 - For performance questions use profile_query (Exasol has no EXPLAIN — profiling is the mechanism).
 - Statements that modify data or structure require the user's approval; use them only when the user asked for a change, and never retry a denied statement.
 
@@ -27,24 +36,33 @@ export async function runTurn(opts: {
   session: Session;
   registry: ProviderRegistry;
   db: DbRegistry;
+  insights: InsightStore;
+  store: SessionStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, modelRef, userText, context } = opts;
+  const { session, registry, db, insights, store, modelRef, userText, context } = opts;
   if (session.running) throw new Error("Session is already generating");
 
   const model = registry.resolve(modelRef);
   const content = context ? `<context>\n${context}\n</context>\n\n${userText}` : userText;
+  session.autoTitle(userText);
   session.messages.push({ role: "user", content });
   session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId });
+
+  // Cross-session knowledge, verified facts saved by earlier sessions.
+  const known = insights.recent(session.connectionId);
+  const system = known.length
+    ? `${SYSTEM_PROMPT}\n\nVerified workspace knowledge from earlier sessions (still confirm anything critical):\n${known.map((k) => `- ${k}`).join("\n")}`
+    : SYSTEM_PROMPT;
 
   session.running = true;
   session.abort = new AbortController();
   session.emit({ type: "status", state: "thinking" });
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId });
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, model });
   const started = Date.now();
   const fallbackId = crypto.randomUUID();
   let sawText = false;
@@ -53,10 +71,11 @@ export async function runTurn(opts: {
   try {
     const result = streamText({
       model,
-      system: SYSTEM_PROMPT,
+      system,
       messages: session.messages as ModelMessage[],
       tools,
       stopWhen: stepCountIs(MAX_STEPS),
+      temperature: 0.2,
       abortSignal: session.abort.signal,
     });
 
@@ -141,6 +160,7 @@ export async function runTurn(opts: {
   } finally {
     session.running = false;
     session.abort = null;
+    store.touch(session);
     session.emit({ type: "status", state: "idle" });
   }
 }
