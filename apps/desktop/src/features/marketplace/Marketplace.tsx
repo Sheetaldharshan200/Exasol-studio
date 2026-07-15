@@ -522,7 +522,7 @@ export function Marketplace() {
   const [nav, setNav] = useState<string>("all");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const isList = layout === "list";
-  const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3";
+  const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
 
   // Query-filtered catalog (the category rail narrows further).
   const visible = useMemo(() => {
@@ -624,9 +624,15 @@ export function Marketplace() {
         {did ? (
           runtimeReady ? (
             <>
-              <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
-              </span>
+              {newer ? (
+                <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+                  <Download className="h-3.5 w-3.5" /> Update to {latest}
+                </button>
+              ) : (
+                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
+                </span>
+              )}
               <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
                 {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Reinstall
               </button>
@@ -855,7 +861,7 @@ export function Marketplace() {
             </div>
 
             {nav === "recommended" ? (
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;
                   const allInstalled = pack.items.every((it) => {
