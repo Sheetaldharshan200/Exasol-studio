@@ -97,7 +97,7 @@ import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
-import { SupersetTab } from "@/features/marketplace/SupersetTab";
+import { DashboardsTab } from "@/features/bi/Dashboards";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
@@ -1040,10 +1040,10 @@ function ResultsGrid({
         {onChart ? (
           <button
             onClick={onChart}
-            title="Visualize this result in Apache Superset"
+            title="Open Dashboards"
             className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
-            <BarChart3 className="h-3.5 w-3.5" /> Chart in Superset
+            <BarChart3 className="h-3.5 w-3.5" /> Dashboards
           </button>
         ) : null}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
@@ -1438,7 +1438,6 @@ export function ExasolStudio({
   // When a new connection is established, retire any open "Connect" tabs (they
   // served their purpose) so the workspace lands on the new database's queries.
   const prevConnCount = useRef(connections.length);
-  const registeredBi = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (connections.length > prevConnCount.current) {
       setTabsByConn((prev) => {
@@ -1451,14 +1450,6 @@ export function ExasolStudio({
       });
     }
     prevConnCount.current = connections.length;
-    // Keep Superset's registered databases in sync — auto-add any connection we
-    // haven't registered yet (no-op if Superset isn't installed).
-    for (const c of connections) {
-      if (!registeredBi.current.has(c.profile.id)) {
-        registeredBi.current.add(c.profile.id);
-        void ipc.biRegisterDb(c.profile.id, c.profile.name).catch(() => undefined);
-      }
-    }
   }, [connections]);
 
   useEffect(() => {
@@ -2084,9 +2075,7 @@ export function ExasolStudio({
     });
   }
 
-  // Open the current query/connection in the optional BI tool (Apache Superset).
-  // Open (or focus) the BI tab — Apache Superset embedded inside a full-screen
-  // Exasol Studio tab, like the Marketplace. The tab itself starts Superset and
+  // Open (or focus) the Dashboards tab — agent-built dashboards rendered
   // waits for it to come up.
   function openBiTab() {
     const list = tabsFor(connKey);
@@ -2097,7 +2086,7 @@ export function ExasolStudio({
       tabCounter.current += 1;
       const tab: SqlTab = {
         id: `tab-bi-${Date.now()}-${tabCounter.current}`,
-        title: "BI · Superset",
+        title: "Dashboards",
         view: "bi",
         sql: "",
         response: null,
@@ -2112,17 +2101,6 @@ export function ExasolStudio({
   }
 
   async function openBi() {
-    const installed = await ipc.biInstalled().catch(() => false);
-    if (!installed) {
-      openMarketplace();
-      return;
-    }
-    // Auto-register EVERY open Exasol connection inside Superset so the user
-    // never has to add a database by hand (best-effort; server-side builds each
-    // URI from the decrypted profile).
-    await Promise.all(
-      connections.map((c) => ipc.biRegisterDb(c.profile.id, c.profile.name).catch(() => undefined)),
-    );
     openBiTab();
   }
 
@@ -2392,7 +2370,7 @@ export function ExasolStudio({
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
                 </IconButton>
-                <IconButton label="Open in BI (Apache Superset)" onClick={openBi} disabled={!connected}>
+                <IconButton label="Open Dashboards" onClick={openBi}>
                   <BarChart3 className="h-3.5 w-3.5" />
                 </IconButton>
                 <IconButton label="Stop" disabled={!running}>
@@ -2621,7 +2599,10 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "bi" ? (
             <div className="min-h-0 flex-1">
-              <SupersetTab />
+              <DashboardsTab
+                profileId={connection?.profile.id ?? null}
+                connectionName={connection?.profile.name ?? ""}
+              />
             </div>
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">

@@ -1,6 +1,7 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
+import type { DashboardStore } from "./dashboards.ts";
 import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
 import type { InsightStore } from "./insights.ts";
@@ -19,6 +20,8 @@ EVIDENCE RULES — these are absolute:
 - NEVER invent schema, table, or column names. Discover them with list_schemas / list_tables / describe_table first.
 - When you answer a data question, the SQL you ran IS the evidence — show it.
 - If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
+
+Dashboards: you can BUILD live dashboards with dashboard_save (validated JSON spec: panels with SQL + bar/line/area/pie/scatter charts, KPI cards, tables on a 12-column grid). When the user asks for a dashboard: find the tables (kb_search), verify columns, test each panel's SQL with run_sql, then save — the dashboard opens in the app's Dashboards view.
 
 Working method:
 - START data questions with kb_search — it returns the relevant tables, columns, and join conditions from the schema knowledge graph in one call.
@@ -49,12 +52,13 @@ export async function runTurn(opts: {
   kb: KnowledgeGraph;
   store: SessionStore;
   config: ConfigStore;
+  dashboards: DashboardStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, insights, kb, store, config, modelRef, userText, context } = opts;
+  const { session, registry, db, insights, kb, store, config, dashboards, modelRef, userText, context } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -87,7 +91,7 @@ export async function runTurn(opts: {
     });
   }
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings });
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards });
   const started = Date.now();
   // Providers reuse stream part ids across turns (llama.cpp emits "0" every
   // time) — scope every id to this turn so the UI never merges answers.

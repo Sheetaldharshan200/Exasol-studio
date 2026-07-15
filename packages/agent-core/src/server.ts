@@ -6,6 +6,7 @@ import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { InsightStore } from "./insights.ts";
 import { KnowledgeGraph } from "./kb.ts";
+import { DashboardStore } from "./dashboards.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -19,6 +20,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const db = new DbRegistry();
   const insights = new InsightStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
+  const dashboards = new DashboardStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -89,6 +91,26 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { connections: db.list() });
       }
 
+      // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "dashboards") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2]) {
+          const d = dashboards.get(decodeURIComponent(parts[2]));
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
+        }
+        if (req.method === "PUT") {
+          try {
+            const d = dashboards.save(await readBody(req));
+            return json(res, 200, { dashboard: d });
+          } catch (e) {
+            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // POST /v1/sessions
       if (req.method === "POST" && parts[1] === "sessions" && !parts[2]) {
         const s = sessions.create();
@@ -130,6 +152,26 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return;
       }
 
+      // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "dashboards") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2]) {
+          const d = dashboards.get(decodeURIComponent(parts[2]));
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
+        }
+        if (req.method === "PUT") {
+          try {
+            const d = dashboards.save(await readBody(req));
+            return json(res, 200, { dashboard: d });
+          } catch (e) {
+            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // POST /v1/sessions/:id/messages  {text, model, context?, connectionId?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "messages") {
         const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string }>(req);
@@ -145,6 +187,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           kb,
           store: sessions,
           config,
+          dashboards,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
@@ -152,11 +195,51 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 202, { ok: true });
       }
 
+      // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "dashboards") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2]) {
+          const d = dashboards.get(decodeURIComponent(parts[2]));
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
+        }
+        if (req.method === "PUT") {
+          try {
+            const d = dashboards.save(await readBody(req));
+            return json(res, 200, { dashboard: d });
+          } catch (e) {
+            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // POST /v1/sessions/:id/permission  {id, allow}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "permission") {
         const body = await readBody<{ id: string; allow: boolean }>(req);
         const found = session.answerPermission(body.id, Boolean(body.allow));
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending permission" });
+      }
+
+      // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "dashboards") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2]) {
+          const d = dashboards.get(decodeURIComponent(parts[2]));
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
+        }
+        if (req.method === "PUT") {
+          try {
+            const d = dashboards.save(await readBody(req));
+            return json(res, 200, { dashboard: d });
+          } catch (e) {
+            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
       }
 
       // POST /v1/sessions/:id/abort

@@ -390,9 +390,6 @@ export const ipc = {
     filename?: string,
   ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename }),
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
-  biInstalled: () => call<boolean>("bi_installed"),
-  biLaunch: () => call<string>("bi_launch"),
-  biRegisterDb: (profileId: string, name: string) => call<null>("bi_register_db", { profileId, name }),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {

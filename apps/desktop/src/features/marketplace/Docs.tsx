@@ -32,7 +32,6 @@ const DOCS: DocItem[] = [
   { id: "pyexasol", name: "PyExasol", repo: "exasol/pyexasol", icon: Plug },
   { id: "ai-lab", name: "Exasol AI Lab", repo: "exasol/ai-lab", icon: Boxes },
   { id: "agent-skills", name: "Exasol Agent Skills", repo: "exasol-labs/exasol-agent-skills", icon: FileCode2, labs: true },
-  { id: "superset", name: "Apache Superset (BI)", repo: "apache/superset", icon: BarChart3 },
 ];
 
 function openExternal(url: string) {

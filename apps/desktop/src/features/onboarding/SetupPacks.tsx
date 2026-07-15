@@ -45,7 +45,6 @@ export const PACKS: Pack[] = [
     items: [
       { id: "exasol-personal", label: "Exasol Personal (local)", icon: Database },
       { id: "exapump", label: "ExaPump", icon: Cpu },
-      { id: "superset", label: "Apache Superset (BI)", icon: BarChart3 },
       { id: "mcp-server", label: "MCP Server", icon: Server },
     ],
   },

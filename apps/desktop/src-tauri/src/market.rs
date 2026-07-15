@@ -712,207 +712,9 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
-fn superset_bin(venv: &std::path::Path) -> PathBuf {
-    if std::env::consts::OS == "windows" {
-        venv.join("Scripts/superset.exe")
-    } else {
-        venv.join("bin/superset")
-    }
-}
 
-/// Apache Superset — the optional BI tool (Apache-2.0). Installed into a managed
-/// uv environment together with the official Exasol SQLAlchemy dialect, then
-/// initialised. Not bundled; users opt in from the Marketplace.
-/// Minimal Superset config that lets it be embedded inside an Exasol Studio tab
-/// (iframe): no Talisman, no X-Frame-Options/CSP frame restrictions, no CSRF
-/// friction for the single local user. Kept deliberately small to avoid startup
-/// failure modes.
-fn superset_config_py() -> &'static str {
-    // Local, single-user, localhost-only BI embedded in the app: no frame
-    // restrictions, no CSRF friction, and — crucially — NO login. A tiny
-    // before-request hook auto-signs-in the built-in admin user, so Superset
-    // opens straight into the dashboards instead of a second login screen
-    // (verified: `/` renders the app, no login form).
-    r#"SECRET_KEY = "exasol-studio-local-dev-key"
-TALISMAN_ENABLED = False
-HTTP_HEADERS = {}
-WTF_CSRF_ENABLED = False
-SESSION_COOKIE_SAMESITE = None
-SESSION_COOKIE_HTTPONLY = False
 
-def FLASK_APP_MUTATOR(app):
-    from flask_login import login_user, current_user
-    @app.before_request
-    def _auto_login_admin():
-        try:
-            if current_user.is_anonymous:
-                from superset import security_manager
-                admin = security_manager.find_user(username="admin")
-                if admin:
-                    login_user(admin)
-        except Exception:
-            pass
-"#
-}
 
-fn install_superset(app: &AppHandle, id: &str) -> AppResult<String> {
-    let uv = ensure_uv(app, id)?;
-    let base = market_dir(app)?.join(id);
-    std::fs::create_dir_all(&base)?;
-    let venv = base.join("venv");
-    let venv_s = venv.to_string_lossy().to_string();
-    let home = base.join("home");
-    std::fs::create_dir_all(&home)?;
-    let home_s = home.to_string_lossy().to_string();
-
-    // Superset supports Python <=3.11 and pins pandas versions with no 3.13
-    // wheels, so a default (newest) interpreter fails building pandas from
-    // source. uv downloads a managed 3.11 automatically when it's missing.
-    emit_log(app, id, "Creating a managed Python 3.11 environment…", "info");
-    // `--clear` recreates the venv if a previous (possibly half-finished)
-    // install left one behind, instead of erroring out.
-    if run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
-        return Err(AppError::Storage("Could not create the Python 3.11 environment for Superset.".into()));
-    }
-    // Config that lets Superset be embedded inside an Exasol Studio tab: drop the
-    // X-Frame-Options/CSP frame restrictions Talisman adds so an <iframe> can load it.
-    let cfg = base.join("superset_config.py");
-    let _ = std::fs::write(&cfg, superset_config_py());
-    emit_log(app, id, "Installing Apache Superset + the official Exasol dialect (this can take a few minutes)…", "info");
-    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, "apache-superset", "sqlalchemy-exasol", "rich", "Pillow", "cachetools"])? != 0 {
-        // bi_installed()/tool detection treat an existing venv as "installed" —
-        // don't leave a broken one behind.
-        let _ = std::fs::remove_dir_all(&venv);
-        return Err(AppError::Storage("Superset installation failed. See the log above.".into()));
-    }
-
-    let superset = superset_bin(&venv).to_string_lossy().to_string();
-    let cfg_s = cfg.to_string_lossy().to_string();
-    let envs: &[(&str, &str)] = &[
-        ("FLASK_APP", "superset"),
-        ("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key"),
-        ("SUPERSET_HOME", &home_s),
-        ("SUPERSET_CONFIG_PATH", &cfg_s),
-    ];
-    emit_log(app, id, "Initializing Superset metadata…", "info");
-    if run_streamed_env(app, id, &superset, &["db", "upgrade"], envs)? != 0 {
-        let _ = std::fs::remove_dir_all(&venv);
-        return Err(AppError::Storage("`superset db upgrade` failed.".into()));
-    }
-    let _ = run_streamed_env(
-        app,
-        id,
-        &superset,
-        &["fab", "create-admin", "--username", "admin", "--firstname", "Exasol", "--lastname", "Studio", "--email", "admin@exasol.local", "--password", "admin"],
-        envs,
-    );
-    let _ = run_streamed_env(app, id, &superset, &["init"], envs);
-    Ok("Apache Superset installed. Open it from the SQL editor’s ‘Open in BI’ button (login: admin / admin).".into())
-}
-
-/// True when Apache Superset has been installed into its managed environment.
-#[tauri::command]
-pub fn bi_installed(app: AppHandle) -> AppResult<bool> {
-    Ok(market_dir(&app)?.join("superset").join("venv").exists())
-}
-
-/// Start the local Superset server (detached) and return its URL.
-#[tauri::command]
-pub fn bi_launch(app: AppHandle) -> AppResult<String> {
-    let base = market_dir(&app)?.join("superset");
-    let venv = base.join("venv");
-    if !venv.exists() {
-        return Err(AppError::Storage(
-            "Apache Superset isn’t installed yet. Install it from the Marketplace first.".into(),
-        ));
-    }
-    let home = base.join("home");
-    std::fs::create_dir_all(&home)?;
-    // Ensure the embeddable config exists (older installs predate it).
-    let cfg = base.join("superset_config.py");
-    // Always (re)write so older installs pick up the current embeddable config.
-    let _ = std::fs::write(&cfg, superset_config_py());
-    let superset = superset_bin(&venv);
-    let mut cmd = Command::new(&superset);
-    cmd.args(["run", "-p", "8088", "--with-threads"])
-        .env("FLASK_APP", "superset")
-        .env("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key")
-        .env("SUPERSET_HOME", home.to_string_lossy().to_string())
-        .env("SUPERSET_CONFIG_PATH", cfg.to_string_lossy().to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    with_path(&mut cmd);
-    cmd.spawn().map_err(|e| AppError::Storage(format!("Could not start Superset: {e}")))?;
-    Ok("http://localhost:8088".into())
-}
-
-/// Percent-encode URL userinfo (username / password) so special characters
-/// don't break the SQLAlchemy URI.
-fn percent_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
-
-/// Register (or update) an Exasol database connection inside Superset's metadata
-/// so the user doesn't have to add it by hand. Uses the SQLAlchemy dialect URI
-/// (`exa+websocket://…`). Runs against the metadata DB (server up or down).
-#[tauri::command]
-pub fn bi_register_db(
-    app: AppHandle,
-    state: tauri::State<'_, crate::state::AppState>,
-    profile_id: String,
-    name: String,
-) -> AppResult<()> {
-    // Build the SQLAlchemy URI server-side from the (decrypted) profile so the
-    // password never has to reach the frontend.
-    let profile = crate::profiles::find_profile(&state, &profile_id)?;
-    let user = percent_encode(&profile.username);
-    let pass = percent_encode(&profile.password);
-    let query = if profile.ssl_mode == "disabled" {
-        "?ENCRYPTION=No"
-    } else if profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity" {
-        ""
-    } else {
-        "?SSLCertificate=SSL_VERIFY_NONE"
-    };
-    let uri = format!(
-        "exa+websocket://{user}:{pass}@{}:{}/{query}",
-        profile.host, profile.port
-    );
-
-    let base = market_dir(&app)?.join("superset");
-    let venv = base.join("venv");
-    if !venv.exists() {
-        return Err(AppError::Storage("Superset isn’t installed yet.".into()));
-    }
-    let home = base.join("home");
-    std::fs::create_dir_all(&home)?;
-    let cfg = base.join("superset_config.py");
-    let _ = std::fs::write(&cfg, superset_config_py());
-    let superset = superset_bin(&venv);
-    let db_name = if name.trim().is_empty() { "Exasol".to_string() } else { name };
-    let mut cmd = Command::new(&superset);
-    cmd.args(["set_database_uri", "-d", &db_name, "-u", &uri])
-        .env("FLASK_APP", "superset")
-        .env("SUPERSET_SECRET_KEY", "exasol-studio-local-dev-key")
-        .env("SUPERSET_HOME", home.to_string_lossy().to_string())
-        .env("SUPERSET_CONFIG_PATH", cfg.to_string_lossy().to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    with_path(&mut cmd);
-    let status = cmd.status().map_err(|e| AppError::Storage(format!("Could not run Superset CLI: {e}")))?;
-    if !status.success() {
-        return Err(AppError::Storage("Could not register the Exasol connection in Superset.".into()));
-    }
-    Ok(())
-}
 
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
@@ -932,7 +734,6 @@ pub async fn market_install_run(
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
         "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
         "json-tables" => install_json_tables(&app, &id).await,
-        "superset" => install_superset(&app, &id),
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
         _ => match (url, filename) {
@@ -1131,7 +932,6 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
         "json-tables".into(),
         json!(managed_exists(&app, "json-tables", "venv") || managed_exists(&app, "json-tables", "src")),
     );
-    map.insert("superset".into(), json!(managed_exists(&app, "superset", "venv")));
     Ok(Value::Object(map))
 }
 

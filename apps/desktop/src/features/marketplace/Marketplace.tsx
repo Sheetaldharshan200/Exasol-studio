@@ -43,7 +43,7 @@ import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bi-superset" | "reference";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "reference";
 
 export type CatalogItem = {
   id: string;
@@ -202,15 +202,6 @@ export const CATALOG: CatalogItem[] = [
     description: "Skills for AI coding agents.",
     homepage: "https://github.com/exasol-labs/exasol-agent-skills",
   },
-  {
-    id: "superset",
-    name: "Apache Superset — BI",
-    repo: "apache/superset",
-    kind: "bi",
-    install: "bi-superset",
-    description: "Open-source BI dashboards and SQL Lab.",
-    homepage: "https://github.com/apache/superset",
-  },
 ];
 
 const KIND_ICON: Record<Kind, LucideIcon> = {
@@ -320,12 +311,6 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the prebuilt ingest engine for your platform (built by our CI)",
         "Download the Python package (wheel)",
         "Install it with uv — no Rust, cargo or git needed on your machine",
-      ];
-    case "bi-superset":
-      return [
-        "Create a managed Python environment (uv)",
-        "Install Apache Superset + the official Exasol SQLAlchemy dialect",
-        "Initialize Superset (login: admin / admin)",
       ];
     case "reference":
       return ["Opens the official download / documentation page"];

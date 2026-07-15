@@ -25,7 +25,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
   { id: "git", label: "Git", icon: GitBranch },
   { id: "marketplace", label: "Marketplace", icon: Store },
   { id: "guides", label: "Guides & Docs", icon: BookOpen },
-  { id: "bi", label: "BI (Superset)", icon: BarChart3 },
+  { id: "bi", label: "Dashboards", icon: BarChart3 },
 ];
 
 // Items that open a full-screen tab (highlighted by the active tab's view,

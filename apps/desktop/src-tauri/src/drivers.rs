@@ -42,7 +42,7 @@ pub const DRIVERS: &[DriverInfo] = &[
         id: "sqlalchemy",
         name: "SQLAlchemy",
         protocol: "exa+websocket:// (SQLAlchemy dialect)",
-        description: "Official SQLAlchemy dialect — same engine that powers Superset & pandas.",
+        description: "Official SQLAlchemy dialect for Python tools and pandas.",
         default_port: 8563,
         kind: "external",
         is_default: false,

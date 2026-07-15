@@ -174,3 +174,44 @@ export const llm = {
   onProgress: (cb: (p: LlmProgress) => void) =>
     listen<LlmProgress>("llm-progress", (e) => cb(e.payload)),
 };
+
+// ── Dashboards (agent-built, JSON specs stored in agent-core) ──
+
+export type DashPanel = {
+  id: string;
+  title: string;
+  grid: { x: number; y: number; w: number; h: number };
+  query: { sql: string };
+  viz:
+    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean }
+    | { type: "kpi"; valueField?: string; unit?: string }
+    | { type: "table" };
+};
+
+export type Dashboard = {
+  version: 1;
+  id: string;
+  title: string;
+  description: string;
+  panels: DashPanel[];
+};
+
+export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
+
+export const dashboards = {
+  async list(): Promise<DashboardMeta[]> {
+    const { dashboards: d } = await api<{ dashboards: DashboardMeta[] }>("/dashboards");
+    return d;
+  },
+  async get(id: string): Promise<Dashboard> {
+    const { dashboard } = await api<{ dashboard: Dashboard }>(`/dashboards/${encodeURIComponent(id)}`);
+    return dashboard;
+  },
+  async save(d: Dashboard): Promise<Dashboard> {
+    const { dashboard } = await api<{ dashboard: Dashboard }>("/dashboards", "PUT", d);
+    return dashboard;
+  },
+  async remove(id: string): Promise<void> {
+    await api(`/dashboards/${encodeURIComponent(id)}`, "DELETE");
+  },
+};

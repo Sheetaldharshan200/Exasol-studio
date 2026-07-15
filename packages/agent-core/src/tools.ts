@@ -5,6 +5,7 @@ import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
+import { DashboardSchema, type DashboardStore } from "./dashboards.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
@@ -49,6 +50,7 @@ export function buildTools(ctx: {
   insights?: InsightStore;
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
+  dashboards?: DashboardStore;
   /** Model for sub-agents; omitting disables spawn_researcher. */
   model?: LanguageModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
@@ -270,6 +272,49 @@ export function buildTools(ctx: {
         });
       },
     }),
+
+    ...(ctx.dashboards && !ctx.readOnly
+      ? {
+          dashboard_list: tool({
+            description: "List saved dashboards (id, title, panel count).",
+            inputSchema: z.object({}),
+            execute: async () => ({ dashboards: ctx.dashboards!.list() }),
+          }),
+
+          dashboard_get: tool({
+            description: "Fetch a dashboard's full JSON spec for editing.",
+            inputSchema: z.object({ id: z.string() }),
+            execute: async ({ id }) => {
+              const d = ctx.dashboards!.get(id);
+              return d ? { dashboard: d } : { error: "not found" };
+            },
+          }),
+
+          dashboard_save: tool({
+            description:
+              "Create or update a dashboard. Panels live on a 12-column grid; each has SQL and a viz " +
+              "(echarts bar/line/area/pie/scatter with xField/yFields, kpi with valueField, or table). " +
+              "TEST each panel's SQL with run_sql before saving. Omit id to create.",
+            inputSchema: z.object({
+              dashboard: z.object({
+                id: z.string().optional(),
+                title: z.string(),
+                description: z.string().optional(),
+                panels: z.array(z.record(z.string(), z.unknown())).min(1).describe("Panel objects per the dashboard spec"),
+              }),
+            }),
+            execute: async ({ dashboard }) => {
+              try {
+                const saved = ctx.dashboards!.save({ version: 1, description: "", ...dashboard });
+                session.record({ kind: "dashboard.saved", id: saved.id, title: saved.title, panels: saved.panels.length });
+                return { ok: true, id: saved.id, note: "Saved. The user can open it in the Dashboards view (chart icon in the activity rail)." };
+              } catch (e) {
+                return { ok: false, error: e instanceof Error ? e.message : String(e), hint: "Fix the spec to match the schema and retry." };
+              }
+            },
+          }),
+        }
+      : {}),
 
     list_connections: tool({
       description:
