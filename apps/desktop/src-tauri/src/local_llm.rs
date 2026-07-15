@@ -479,24 +479,35 @@ pub fn llm_set_auto_start(state: State<'_, AppState>, enabled: bool) -> AppResul
 }
 
 /// Called once at app startup: silently bring the last-used model up.
+/// With no recorded preference, fall back to any already-downloaded model
+/// (curated order) so a fresh install still comes up hands-free.
 pub fn auto_start_if_enabled(app: &AppHandle) {
     use tauri::Manager;
-    let prefs = load_prefs(&app.state::<AppState>());
-    let Some(model_id) = prefs.model.filter(|_| prefs.auto_start) else {
-        return;
-    };
-    // Only if both engine and model are actually on disk.
-    {
+    let model_id = {
         let state = app.state::<AppState>();
-        let downloaded = MODELS
-            .iter()
-            .find(|m| m.id == model_id)
-            .map(|m| models_dir(&state).join(m.file).exists())
-            .unwrap_or(false);
-        if !downloaded || find_server(&state).is_none() {
+        let prefs = load_prefs(&state);
+        if !prefs.auto_start || find_server(&state).is_none() {
             return;
         }
-    }
+        let mdir = models_dir(&state);
+        let downloaded = |id: &str| {
+            MODELS
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| mdir.join(m.file).exists())
+                .unwrap_or(false)
+        };
+        let picked = prefs
+            .model
+            .clone()
+            .filter(|id| downloaded(id))
+            .or_else(|| MODELS.iter().find(|m| mdir.join(m.file).exists()).map(|m| m.id.to_string()));
+        let Some(id) = picked else { return };
+        if prefs.model.as_deref() != Some(&id) {
+            save_prefs(&state, &LlmPrefs { auto_start: prefs.auto_start, model: Some(id.clone()) });
+        }
+        id
+    };
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if start_model(&app, &model_id).await.is_ok() {
