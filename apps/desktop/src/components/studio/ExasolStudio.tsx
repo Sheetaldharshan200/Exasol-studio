@@ -1609,6 +1609,23 @@ export function ExasolStudio({
           // bidirectional search, and Maps-style rerouting when a step fails.
           const g = new UiGraph();
           const anchor = (id: string) => document.querySelector(`[data-agent-id="${id}"]`) as HTMLElement | null;
+          // Self-heal if the user (or a re-render) closes the form mid-flow —
+          // reopen a couple of times, but don't fight the user forever.
+          let reopens = 0;
+          const ensureForm = async (): Promise<void> => {
+            if (anchor("connect.name")) return;
+            if (reopens >= 2) {
+              throw new Error("The connect tab was closed — tell me to connect again whenever you're ready.");
+            }
+            reopens += 1;
+            openConnect();
+            for (let i = 0; i < 20 && !anchor("connect.name"); i++) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            if (!anchor("connect.name")) {
+              throw new Error("Couldn't reopen the connect tab.");
+            }
+          };
           const hop = (id: string, lbl: string) => async () => {
             const el = anchor(id);
             if (!el) return false;
@@ -1616,6 +1633,7 @@ export function ExasolStudio({
             return true;
           };
           const fillStep = (id: string, value: string, lbl: string) => async () => {
+            await ensureForm();
             const el = anchor(id);
             if (!el) return false;
             await cursorRef.current?.flyTo(el, lbl, mode, avatar);
@@ -1664,6 +1682,7 @@ export function ExasolStudio({
             weight: 2,
             label: "connect",
             action: async () => {
+              await ensureForm();
               const submit = anchor("connect.submit");
               await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
               // Do the REAL connect via IPC so we get the true outcome — a
