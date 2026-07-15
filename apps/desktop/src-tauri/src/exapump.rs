@@ -16,7 +16,26 @@ fn exapump_path(app: &AppHandle) -> Option<String> {
     if let Some(p) = resolve_bin("exapump") {
         return Some(p.to_string_lossy().to_string());
     }
-    let dir = app.path().app_data_dir().ok()?.join("marketplace").join("exapump");
+    let managed_name = if cfg!(windows) {
+        "exapump.exe"
+    } else {
+        "exapump"
+    };
+    let managed = app
+        .path()
+        .app_data_dir()
+        .ok()?
+        .join("personal-local/bin")
+        .join(managed_name);
+    if managed.is_file() {
+        return Some(managed.to_string_lossy().to_string());
+    }
+    let dir = app
+        .path()
+        .app_data_dir()
+        .ok()?
+        .join("marketplace")
+        .join("exapump");
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let p = entry.path();
         if p.is_file() {
@@ -41,7 +60,9 @@ fn enc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -69,10 +90,15 @@ pub async fn exapump_upload(
     dry_run: bool,
 ) -> AppResult<Value> {
     let bin = exapump_path(&app).ok_or_else(|| {
-        AppError::Storage("ExaPump isn't installed. Install it from the Marketplace, then try again.".into())
+        AppError::Storage(
+            "ExaPump isn't installed. Install it from the Marketplace, then try again.".into(),
+        )
     })?;
 
-    let schema_path = schema.filter(|s| !s.is_empty()).map(|s| format!("/{s}")).unwrap_or_default();
+    let schema_path = schema
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("/{s}"))
+        .unwrap_or_default();
     let dsn = format!(
         "exasol://{}:{}@{host}:{port}{schema_path}?tls={}&validateservercertificate=0",
         enc(&user),
@@ -89,7 +115,15 @@ pub async fn exapump_upload(
         args.push("--dry-run".into());
     }
 
-    emit(&app, if dry_run { "Previewing (dry run)…" } else { "Starting ExaPump upload…" }, "info");
+    emit(
+        &app,
+        if dry_run {
+            "Previewing (dry run)…"
+        } else {
+            "Starting ExaPump upload…"
+        },
+        "info",
+    );
     emit(&app, format!("$ exapump {}", args.join(" ")), "cmd");
 
     let mut cmd = Command::new(&bin);
@@ -100,7 +134,9 @@ pub async fn exapump_upload(
     if std::env::consts::OS != "windows" {
         cmd.env("PATH", augmented_path());
     }
-    let mut child = cmd.spawn().map_err(|e| AppError::Storage(format!("Could not run exapump: {e}")))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| AppError::Storage(format!("Could not run exapump: {e}")))?;
     let out = child.stdout.take();
     let err = child.stderr.take();
     let a1 = app.clone();
@@ -124,14 +160,28 @@ pub async fn exapump_upload(
     let _ = h2.join();
     let ok = status.success();
     if ok {
-        emit(&app, if dry_run { "✓ Preview complete." } else { "✓ Upload complete." }, "success");
+        emit(
+            &app,
+            if dry_run {
+                "✓ Preview complete."
+            } else {
+                "✓ Upload complete."
+            },
+            "success",
+        );
     } else {
-        emit(&app, format!("✗ exapump exited with code {}", status.code().unwrap_or(-1)), "err");
+        emit(
+            &app,
+            format!("✗ exapump exited with code {}", status.code().unwrap_or(-1)),
+            "err",
+        );
     }
     let _ = app.emit("load:done", json!({ "ok": ok, "dryRun": dry_run }));
     if ok {
         Ok(json!({ "ok": true }))
     } else {
-        Err(AppError::Storage("ExaPump upload failed — see the log.".into()))
+        Err(AppError::Storage(
+            "ExaPump upload failed — see the log.".into(),
+        ))
     }
 }

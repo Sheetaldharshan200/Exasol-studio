@@ -3,9 +3,26 @@
 This repo is the **single source of truth** for the Exasol Studio app and for
 every tool in its Marketplace.
 
+## Bundled first-install runtime — `refresh-runtime-components.yml`
+Runs daily (and on manual dispatch) to resolve the latest stable Exasol
+Personal, Exasol Nano, ExaPump, and uv releases; solve a compatible
+PyExasol/MCP Python environment; and resolve immutable revisions for Semantic
+Views, Exasol agent skills, and Fable Method. It opens a review-gated pull
+request only for changed generated state, after macOS, Linux, and Windows
+validation succeeds.
+
+Source identities and platform asset patterns are declarative in
+`.github/runtime-component-sources.json`. Generated versions, checksums, image
+digests, and source revisions are recorded in
+`apps/desktop/src-tauri/resources/runtime-components.lock.json`; application
+source must not duplicate them.
+`verify-runtime-components.yml` independently rejects pull requests whose
+vendored bytes, source identities, or Python lock differ from that generated
+provenance record.
+
 ## App distribution — `release-app.yml`
-Builds all distributions in one matrix: macOS (Apple Silicon + Intel), Windows
-(x64 + arm64), Linux (x64 + arm64). Triggered **only** on a `v*` tag or manual
+Builds all supported distributions in one matrix: macOS (Apple Silicon +
+Intel), Windows x64, and Linux (x64 + arm64). Triggered **only** on a `v*` tag or manual
 dispatch, and publishes a **draft** GitHub release. Push a tag to cut a build:
 
 ```bash

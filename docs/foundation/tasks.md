@@ -51,6 +51,15 @@ Status legend:
 - [ ] CI workflows implemented
 - [ ] Test harness wired
 
+### Local First-Install Stack
+
+- [x] Studio-owned macOS Exasol Personal lifecycle implemented
+- [x] Studio-owned Windows/Linux Docker-or-Podman Exasol Nano lifecycle implemented
+- [x] Pinned PyExasol, ExaPump, MCP server, Semantic Views, Exasol agent skills, and Fable Method wired into first install
+- [x] Semantic capability gated on an authenticated install/readiness probe
+- [x] Rust unit tests, type checks, and production builds pass
+- [ ] Release smoke test on clean macOS, Windows, and Linux machines
+
 ## 3. Delivery Milestones
 
 | Milestone | Goal | Exit Gate |

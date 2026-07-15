@@ -82,7 +82,17 @@ Decision: ship a **managed `llama-server` sidecar**, not FFI-embedded llama.cpp.
 | `exasol/mcp-server` | Port `meta_query.py` SYS-catalog SQL → TS tools (list/find/describe/summarize schemas, tables, functions, UDFs); `profile_exasol_query` flow (`ALTER SESSION SET PROFILE='ON'` → `FLUSH STATISTICS` → `EXA_USER_PROFILE_LAST_DAY`); `exasol_builtin_functions.json` (152 KB machine-readable); its 7 SKILL.md files |
 | `exasol-labs/exasol-agent-skills` | ~200 KB markdown knowledge base: **EBNF grammar** (the source of docs.exasol.com syntax diagrams), reserved keywords (2026.1.0), dialect quirks, QUALIFY/window functions, table design (DISTRIBUTE/PARTITION BY), profiling, import/export — bundled pinned, loaded as skills |
 | `exasol-labs/exasol-vscode` | Mine for metadata queries + `exasol-driver-ts` usage patterns |
-| `exasol-labs/exasol-semantic-views` | Later: governed-metrics agent contract (`COMPILE_REQUEST_JSON`) |
+| `exasol-labs/exasol-semantic-views` | Pinned first-run install into the Studio-managed local database; readiness-gated analyst skill plus `semantic_compile_request` / `semantic_compile_sql` tools |
+
+The desktop uses the Personal Local Starter Kit only as design reference. Runtime and
+component orchestration are implemented inside Studio: native Exasol Personal on macOS,
+Exasol Nano through Docker/Podman on Windows/Linux, and pinned first-install PyExasol,
+ExaPump, MCP server, Semantic Views, and agent skills. Semantic Views readiness plus its
+managed profile id is written to `agent/capabilities.json`. Agent-core reads
+that marker on every turn: physical discovery remains available during setup, and the
+semantic-first contract/tools become active only after the database installer reports
+success and that exact profile is active. `Sahir619/fable-method` is pinned as the default
+always-active work method; workspace instructions and user skill overrides still take precedence.
 
 SQL safety guard: classify statements (SELECT auto-run with LIMIT wrap; DML/DDL/DCL
 always gated behind approval). Exasol has no EXPLAIN — profiling is the mechanism, and

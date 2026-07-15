@@ -22,12 +22,17 @@ pub(crate) fn emit_log(app: &AppHandle, id: &str, line: impl Into<String>, level
 }
 
 /// Run a command, streaming stdout/stderr line-by-line to the frontend log.
-pub(crate) fn run_streamed(app: &AppHandle, id: &str, program: &str, args: &[&str]) -> AppResult<i32> {
+pub(crate) fn run_streamed(
+    app: &AppHandle,
+    id: &str,
+    program: &str,
+    args: &[&str],
+) -> AppResult<i32> {
     run_streamed_env(app, id, program, args, &[])
 }
 
 /// Like `run_streamed`, with extra environment variables for the child.
-fn run_streamed_env(
+pub(crate) fn run_streamed_env(
     app: &AppHandle,
     id: &str,
     program: &str,
@@ -82,7 +87,7 @@ fn home() -> PathBuf {
 
 /// Bin directories a GUI app (launched via launchd/Finder) does NOT get on its
 /// PATH but where CLI tools commonly live. We probe these directly and prepend
-/// them when spawning subprocesses so `exakit`, `uv`, etc. resolve.
+/// them when spawning subprocesses so `exasol`, `uv`, etc. resolve.
 fn extra_bin_dirs() -> Vec<PathBuf> {
     let h = home();
     vec![
@@ -129,36 +134,137 @@ pub(crate) fn resolve_bin(bin: &str) -> Option<PathBuf> {
     None
 }
 
-/// Resolve a working `uv` executable (extra dirs first, then PATH).
+/// Resolve any working `uv` executable for read-only marketplace detection.
+/// First-install setup uses `ensure_uv` below, which deliberately requires the
+/// checksum-pinned Studio-managed version instead.
 fn uv_path() -> Option<String> {
-    if let Some(p) = resolve_bin("uv") {
-        return Some(p.to_string_lossy().to_string());
+    if let Some(path) = resolve_bin("uv") {
+        return Some(path.to_string_lossy().to_string());
     }
-    let mut c = Command::new("uv");
-    c.arg("--version");
-    with_path(&mut c);
-    if c.output().map(|o| o.status.success()).unwrap_or(false) {
-        return Some("uv".into());
-    }
-    None
+    let mut command = Command::new("uv");
+    command.arg("--version");
+    with_path(&mut command);
+    command
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|_| "uv".into())
 }
 
-fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
-    if let Some(p) = uv_path() {
-        emit_log(app, id, "uv is available.", "info");
-        return Ok(p);
+pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
+    let component = &crate::component_lock::components().uv;
+    let version = &component.version;
+    let artifact = crate::component_lock::artifact_for(component).ok_or_else(|| {
+        AppError::Storage(format!(
+            "uv {version} is not bundled for {}.",
+            crate::component_lock::platform_key()
+        ))
+    })?;
+    let managed_name = if std::env::consts::OS == "windows" {
+        "uv.exe"
+    } else {
+        "uv"
+    };
+    if let Ok(dir) = market_dir(app) {
+        if let Some(path) = find_named_file(&dir.join("uv"), managed_name) {
+            let expected = format!("uv {version} ");
+            let valid = Command::new(&path)
+                .arg("--version")
+                .output()
+                .map(|output| {
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).starts_with(&expected)
+                })
+                .unwrap_or(false);
+            let checksum_valid = artifact.executable_sha256.as_ref().is_some_and(|expected| {
+                crate::local_runtime::sha256_file(&path)
+                    .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
+            });
+            if valid && checksum_valid {
+                emit_log(
+                    app,
+                    id,
+                    format!("Studio-managed uv {version} is available."),
+                    "info",
+                );
+                return Ok(path.to_string_lossy().to_string());
+            }
+        }
     }
-    emit_log(app, id, "uv not found — installing the uv package manager…", "info");
-    #[cfg(not(target_os = "windows"))]
-    run_streamed(app, id, "sh", &["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"])?;
-    #[cfg(target_os = "windows")]
-    run_streamed(
+    let asset = artifact.name.as_str();
+    let marketplace = market_dir(app)?;
+    let install_dir = marketplace.join("uv");
+    let staging_dir = marketplace.join("uv-staging");
+    let download_dir = marketplace.join("uv-download");
+    let _ = std::fs::remove_dir_all(&staging_dir);
+    let _ = std::fs::remove_dir_all(&download_dir);
+    std::fs::create_dir_all(&staging_dir)?;
+    std::fs::create_dir_all(&download_dir)?;
+    let archive = download_dir.join(asset);
+    emit_log(
         app,
         id,
-        "powershell",
-        &["-Command", "irm https://astral.sh/uv/install.ps1 | iex"],
-    )?;
-    uv_path().ok_or_else(|| AppError::Storage("uv installed but not found on PATH — restart may be needed.".into()))
+        format!("Downloading verified uv {version}…"),
+        "info",
+    );
+    crate::local_runtime::download_verified(&artifact.url, &archive, &artifact.sha256)?;
+    if asset.ends_with(".zip") {
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive)?)
+            .map_err(|e| AppError::Storage(format!("could not open uv archive: {e}")))?;
+        zip.extract(&staging_dir)
+            .map_err(|e| AppError::Storage(format!("could not extract uv archive: {e}")))?;
+    } else {
+        let decoder = flate2::read::GzDecoder::new(std::fs::File::open(&archive)?);
+        tar::Archive::new(decoder).unpack(&staging_dir)?;
+    }
+    let name = if std::env::consts::OS == "windows" {
+        "uv.exe"
+    } else {
+        "uv"
+    };
+    let installed = find_named_file(&staging_dir, name)
+        .ok_or_else(|| AppError::Storage(format!("uv archive did not contain {name}.")))?;
+    let expected_binary = artifact.executable_sha256.as_ref().ok_or_else(|| {
+        AppError::Storage("The generated uv lock has no executable checksum.".into())
+    })?;
+    let actual_binary = crate::local_runtime::sha256_file(&installed)?;
+    if !actual_binary.eq_ignore_ascii_case(expected_binary) {
+        return Err(AppError::Storage(format!(
+            "uv executable checksum mismatch: expected {expected_binary}, got {actual_binary}."
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&installed)?.permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&installed, permissions)?;
+    }
+    let relative = installed
+        .strip_prefix(&staging_dir)
+        .map_err(|e| AppError::Storage(format!("invalid uv archive layout: {e}")))?
+        .to_path_buf();
+    if install_dir.exists() {
+        std::fs::remove_dir_all(&install_dir)?;
+    }
+    std::fs::rename(&staging_dir, &install_dir)?;
+    let _ = std::fs::remove_dir_all(download_dir);
+    Ok(install_dir.join(relative).to_string_lossy().to_string())
+}
+
+fn find_named_file(dir: &std::path::Path, name: &str) -> Option<PathBuf> {
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.file_name().and_then(|part| part.to_str()) == Some(name) {
+            return Some(path);
+        }
+        if path.is_dir() {
+            if let Some(found) = find_named_file(&path, name) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -171,7 +277,9 @@ pub struct MarketEnv {
 }
 
 fn has_binary(bin: &str) -> bool {
-    let prog = resolve_bin(bin).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| bin.to_string());
+    let prog = resolve_bin(bin)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| bin.to_string());
     let mut c = Command::new(prog);
     c.arg("--version");
     with_path(&mut c);
@@ -269,7 +377,12 @@ pub async fn market_doc(repo: String) -> AppResult<Value> {
     for base in ["HEAD", "main", "master"] {
         for name in ["README.md", "readme.md", "README.rst", "README.markdown"] {
             let raw = format!("https://raw.githubusercontent.com/{repo}/{base}/{name}");
-            if let Ok(r) = client.get(&raw).header("User-Agent", "exasol-studio").send().await {
+            if let Ok(r) = client
+                .get(&raw)
+                .header("User-Agent", "exasol-studio")
+                .send()
+                .await
+            {
                 if r.status().is_success() {
                     return Ok(json!(r.text().await.unwrap_or_default()));
                 }
@@ -288,7 +401,12 @@ pub async fn market_doc_file(repo: String, path: String) -> AppResult<Value> {
     // Try the default branch, then common branch names.
     for base in ["HEAD", "main", "master"] {
         let url = format!("https://raw.githubusercontent.com/{repo}/{base}/{clean}");
-        if let Ok(r) = client.get(&url).header("User-Agent", "exasol-studio").send().await {
+        if let Ok(r) = client
+            .get(&url)
+            .header("User-Agent", "exasol-studio")
+            .send()
+            .await
+        {
             if r.status().is_success() {
                 return Ok(json!(r.text().await.unwrap_or_default()));
             }
@@ -303,7 +421,9 @@ pub async fn market_doc_file(repo: String, path: String) -> AppResult<Value> {
 #[tauri::command]
 pub fn open_external(url: String) -> AppResult<()> {
     if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
-        return Err(AppError::Storage("Only http(s) and mailto URLs can be opened.".into()));
+        return Err(AppError::Storage(
+            "Only http(s) and mailto URLs can be opened.".into(),
+        ));
     }
     #[cfg(target_os = "macos")]
     let mut cmd = {
@@ -324,7 +444,8 @@ pub fn open_external(url: String) -> AppResult<()> {
         c
     };
     with_path(&mut cmd);
-    cmd.spawn().map_err(|e| AppError::Storage(format!("Could not open {url}: {e}")))?;
+    cmd.spawn()
+        .map_err(|e| AppError::Storage(format!("Could not open {url}: {e}")))?;
     Ok(())
 }
 
@@ -369,7 +490,10 @@ pub async fn market_release(repo: String) -> AppResult<Value> {
     if !resp.status().is_success() {
         return Ok(Value::Null);
     }
-    let json: Value = resp.json().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    let json: Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
     let assets = json
         .get("assets")
         .and_then(|a| a.as_array())
@@ -413,9 +537,15 @@ pub async fn market_install(
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
     if !resp.status().is_success() {
-        return Err(AppError::Storage(format!("Download failed (HTTP {}).", resp.status())));
+        return Err(AppError::Storage(format!(
+            "Download failed (HTTP {}).",
+            resp.status()
+        )));
     }
-    let bytes = resp.bytes().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
     let file = dir.join(&filename);
     std::fs::write(&file, &bytes)?;
 
@@ -456,7 +586,10 @@ async fn download_and_place(
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?;
     if !resp.status().is_success() {
-        return Err(AppError::Storage(format!("Download failed (HTTP {}).", resp.status())));
+        return Err(AppError::Storage(format!(
+            "Download failed (HTTP {}).",
+            resp.status()
+        )));
     }
 
     let total = resp.content_length();
@@ -468,7 +601,13 @@ async fn download_and_place(
         let chunk = chunk.map_err(|e| AppError::Storage(e.to_string()))?;
         out.write_all(&chunk)?;
         received += chunk.len() as u64;
-        let pct = total.map(|t| if t > 0 { (received * 100 / t).min(100) } else { 0 });
+        let pct = total.map(|t| {
+            if t > 0 {
+                (received * 100 / t).min(100)
+            } else {
+                0
+            }
+        });
         let _ = app.emit(
             "market:progress",
             json!({ "id": id, "received": received, "total": total, "pct": pct }),
@@ -478,7 +617,12 @@ async fn download_and_place(
         "market:progress",
         json!({ "id": id, "received": received, "total": total.or(Some(received)), "pct": 100 }),
     );
-    emit_log(app, id, format!("Saved {} ({} bytes).", file.display(), received), "info");
+    emit_log(
+        app,
+        id,
+        format!("Saved {} ({} bytes).", file.display(), received),
+        "info",
+    );
     // Make a downloaded binary/archive executable on unix (best effort).
     #[cfg(unix)]
     {
@@ -497,24 +641,50 @@ fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String>
     let venv = market_dir(app)?.join(id).join("venv");
     std::fs::create_dir_all(venv.parent().unwrap())?;
     let venv_s = venv.to_string_lossy().to_string();
-    emit_log(app, id, format!("Creating a managed environment at {venv_s}…"), "info");
+    emit_log(
+        app,
+        id,
+        format!("Creating a managed environment at {venv_s}…"),
+        "info",
+    );
     // `--clear` recreates an existing venv (from a prior/failed install) instead
     // of erroring with "a virtual environment already exists".
-    if run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])? != 0 {
+    if run_streamed(
+        app,
+        id,
+        &uv,
+        &["venv", "--clear", "--python", "3.11", &venv_s],
+    )? != 0
+    {
         return Err(AppError::Storage("uv venv failed.".into()));
     }
     emit_log(app, id, format!("Installing {package}…"), "info");
-    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, package])? != 0 {
-        return Err(AppError::Storage(format!("uv pip install {package} failed.")));
+    if run_streamed(
+        app,
+        id,
+        &uv,
+        &["pip", "install", "--python", &venv_s, package],
+    )? != 0
+    {
+        return Err(AppError::Storage(format!(
+            "uv pip install {package} failed."
+        )));
     }
     Ok(format!("{package} installed into {venv_s}"))
 }
 
 fn install_uv_tool(app: &AppHandle, id: &str, package: &str) -> AppResult<String> {
     let uv = ensure_uv(app, id)?;
-    emit_log(app, id, format!("Installing {package} as a uv tool…"), "info");
+    emit_log(
+        app,
+        id,
+        format!("Installing {package} as a uv tool…"),
+        "info",
+    );
     if run_streamed(app, id, &uv, &["tool", "install", "--force", package])? != 0 {
-        return Err(AppError::Storage(format!("uv tool install {package} failed.")));
+        return Err(AppError::Storage(format!(
+            "uv tool install {package} failed."
+        )));
     }
     Ok(format!("{package} installed (uv tool)"))
 }
@@ -537,12 +707,15 @@ fn cmd_exists_win(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-// The official Exasol Personal launcher (`exasol`) drives BOTH local and cloud
-// deployments — the single source for exasol-personal.
+// The official Exasol launcher (`exasol`) drives cloud deployments. The local
+// runtime is owned by `local_runtime`: native Personal on macOS, Nano through
+// Docker/Podman on Windows and Linux.
 const EXASOL_INSTALLER_SH: &str = "curl -fsSL https://www.exasol.com/install/ | sh";
 
 fn exasol_bin() -> String {
-    resolve_bin("exasol").map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "exasol".into())
+    resolve_bin("exasol")
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "exasol".into())
 }
 
 /// Ensure the official Exasol launcher is installed (into ~/.local/bin).
@@ -559,49 +732,20 @@ fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
     emit_log(app, id, "Installing the official Exasol launcher…", "info");
     let code = run_streamed(app, id, "sh", &["-c", EXASOL_INSTALLER_SH])?;
     if code != 0 {
-        return Err(AppError::Storage(format!("Launcher install exited with code {code}. See the log above.")));
+        return Err(AppError::Storage(format!(
+            "Launcher install exited with code {code}. See the log above."
+        )));
     }
     Ok(())
 }
 
-/// Exasol Personal — local deployment (macOS only, per the official launcher).
+/// Local database: native Exasol Personal on macOS, Exasol Nano elsewhere.
 fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
-    if std::env::consts::OS != "macos" {
-        return Err(AppError::Storage(
-            "Exasol Personal local deployment is macOS-only. Use “Exasol Personal — Cloud” to deploy on AWS, Azure, Exoscale or STACKIT.".into(),
-        ));
-    }
-    ensure_exasol_launcher(app, id)?;
-    let exa = exasol_bin();
-
-    // Never re-run `exasol install local` on top of an existing deployment — it
-    // tries to start a VM that may already be running ("Error: VM is already
-    // running") and breaks a perfectly good local database. Detect the current
-    // state first and reuse it when a VM/DB is already up.
-    let status = capture_output(&exa, &["status", "--json"]).to_lowercase();
-    if status.contains("database_ready") || status.contains("\"running\"") {
-        emit_log(app, id, "Exasol Personal is already deployed and running — reusing it.", "success");
-        return Ok("Exasol Personal is already deployed and running.".into());
-    }
-    if status.contains("already running") {
-        emit_log(app, id, "A local Exasol VM is already running — reusing the existing deployment (no redeploy).", "success");
-        return Ok("Exasol Personal is already running (existing deployment reused).".into());
-    }
-
-    emit_log(app, id, "Deploying a local Exasol database (this can take a few minutes)…", "info");
-    let code = run_streamed(app, id, &exa, &["install", "local"])?;
-    if code != 0 {
-        return Err(AppError::Storage(format!("`exasol install local` exited with code {code}. See the log above.")));
-    }
-    Ok("Exasol Personal deployed locally.".into())
-}
-
-/// Run a command and capture its stdout (empty on failure). Used to probe state.
-fn capture_output(program: &str, args: &[&str]) -> String {
-    let mut cmd = Command::new(program);
-    cmd.args(args);
-    with_path(&mut cmd);
-    cmd.output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default()
+    let runtime = crate::local_runtime::ensure_runtime(app, id)?;
+    Ok(format!(
+        "Studio-managed Exasol {} is running at {}:{}.",
+        runtime.kind, runtime.host, runtime.port
+    ))
 }
 
 /// Exasol Personal — cloud. Installs the launcher and shows the deploy commands;
@@ -609,13 +753,43 @@ fn capture_output(program: &str, args: &[&str]) -> String {
 fn install_personal_cloud(app: &AppHandle, id: &str) -> AppResult<String> {
     ensure_exasol_launcher(app, id)?;
     let exa = exasol_bin();
-    emit_log(app, id, "Exasol launcher ready. Deploy to your cloud provider with:", "success");
-    emit_log(app, id, format!("  {exa} install aws        # Amazon Web Services"), "info");
-    emit_log(app, id, format!("  {exa} install azure      # Microsoft Azure"), "info");
-    emit_log(app, id, format!("  {exa} install exoscale   # Exoscale"), "info");
-    emit_log(app, id, format!("  {exa} install stackit    # STACKIT"), "info");
+    emit_log(
+        app,
+        id,
+        "Exasol launcher ready. Deploy to your cloud provider with:",
+        "success",
+    );
+    emit_log(
+        app,
+        id,
+        format!("  {exa} install aws        # Amazon Web Services"),
+        "info",
+    );
+    emit_log(
+        app,
+        id,
+        format!("  {exa} install azure      # Microsoft Azure"),
+        "info",
+    );
+    emit_log(
+        app,
+        id,
+        format!("  {exa} install exoscale   # Exoscale"),
+        "info",
+    );
+    emit_log(
+        app,
+        id,
+        format!("  {exa} install stackit    # STACKIT"),
+        "info",
+    );
     emit_log(app, id, "Configure provider credentials first; provisioning takes ~10–20 min and uses your cloud account (costs may apply).", "info");
-    emit_log(app, id, "Setup guides: https://github.com/exasol/exasol-personal", "info");
+    emit_log(
+        app,
+        id,
+        "Setup guides: https://github.com/exasol/exasol-personal",
+        "info",
+    );
     Ok("Exasol launcher installed — run `exasol install <provider>` to deploy.".into())
 }
 
@@ -633,8 +807,15 @@ async fn our_mirror_assets(tag: &str) -> AppResult<Vec<Value>> {
     if !resp.status().is_success() {
         return Ok(vec![]);
     }
-    let json: Value = resp.json().await.map_err(|e| AppError::Storage(e.to_string()))?;
-    Ok(json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default())
+    let json: Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(json
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Pick an asset whose name matches the host OS + arch.
@@ -649,7 +830,12 @@ fn pick_platform_asset<'a>(assets: &'a [Value]) -> Option<&'a Value> {
     } else {
         &["x86_64", "amd64", "x64"]
     };
-    let name = |a: &Value| a.get("name").and_then(|n| n.as_str()).unwrap_or("").to_lowercase();
+    let name = |a: &Value| {
+        a.get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_lowercase()
+    };
     assets
         .iter()
         .find(|a| {
@@ -658,10 +844,12 @@ fn pick_platform_asset<'a>(assets: &'a [Value]) -> Option<&'a Value> {
                 && os_tokens.iter().any(|t| n.contains(t))
                 && arch_tokens.iter().any(|t| n.contains(t))
         })
-        .or_else(|| assets.iter().find(|a| {
-            let n = name(a);
-            !n.ends_with(".whl") && os_tokens.iter().any(|t| n.contains(t))
-        }))
+        .or_else(|| {
+            assets.iter().find(|a| {
+                let n = name(a);
+                !n.ends_with(".whl") && os_tokens.iter().any(|t| n.contains(t))
+            })
+        })
 }
 
 /// JSON Tables (exasol-labs/exasol-json-tables): a Python package plus a Rust
@@ -680,41 +868,83 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
 
     // 1) prebuilt Rust ingest binary for this platform
     if let Some(ing) = pick_platform_asset(&assets) {
-        let url = ing.get("url").or_else(|| ing.get("browser_download_url")).and_then(|u| u.as_str());
+        let url = ing
+            .get("url")
+            .or_else(|| ing.get("browser_download_url"))
+            .and_then(|u| u.as_str());
         let nm = ing.get("name").and_then(|n| n.as_str());
         if let (Some(u), Some(n)) = (url, nm) {
-            emit_log(app, id, "Fetching the prebuilt ingest engine (built by our CI)…", "info");
+            emit_log(
+                app,
+                id,
+                "Fetching the prebuilt ingest engine (built by our CI)…",
+                "info",
+            );
             download_and_place(app, id, u, n).await?;
         }
     } else {
-        emit_log(app, id, "No prebuilt ingest engine for this platform — installing the Python package only.", "info");
+        emit_log(
+            app,
+            id,
+            "No prebuilt ingest engine for this platform — installing the Python package only.",
+            "info",
+        );
     }
 
     // 2) Python wheel via uv
     let wheel = assets.iter().find(|a| {
-        a.get("name").and_then(|n| n.as_str()).map(|n| n.ends_with(".whl")).unwrap_or(false)
+        a.get("name")
+            .and_then(|n| n.as_str())
+            .map(|n| n.ends_with(".whl"))
+            .unwrap_or(false)
     });
-    let wheel = wheel.ok_or_else(|| AppError::Storage("The JSON Tables wheel is missing from the release.".into()))?;
-    let wurl = wheel.get("url").or_else(|| wheel.get("browser_download_url")).and_then(|u| u.as_str())
+    let wheel = wheel.ok_or_else(|| {
+        AppError::Storage("The JSON Tables wheel is missing from the release.".into())
+    })?;
+    let wurl = wheel
+        .get("url")
+        .or_else(|| wheel.get("browser_download_url"))
+        .and_then(|u| u.as_str())
         .ok_or_else(|| AppError::Storage("wheel URL missing".into()))?;
-    let wname = wheel.get("name").and_then(|n| n.as_str()).unwrap_or("exasol_json_tables.whl");
+    let wname = wheel
+        .get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or("exasol_json_tables.whl");
     emit_log(app, id, "Fetching the Python package…", "info");
     let wpath = download_and_place(app, id, wurl, wname).await?;
 
     let uv = ensure_uv(app, id)?;
     let venv = base.join("venv");
     let venv_s = venv.to_string_lossy().to_string();
-    emit_log(app, id, "Installing exasol-json-tables into a managed environment…", "info");
-    run_streamed(app, id, &uv, &["venv", "--clear", "--python", "3.11", &venv_s])?;
-    if run_streamed(app, id, &uv, &["pip", "install", "--python", &venv_s, &wpath])? != 0 {
-        return Err(AppError::Storage("uv pip install of the JSON Tables wheel failed.".into()));
+    emit_log(
+        app,
+        id,
+        "Installing exasol-json-tables into a managed environment…",
+        "info",
+    );
+    let python_version = crate::component_lock::components()
+        .python_stack
+        .python_version
+        .as_str();
+    run_streamed(
+        app,
+        id,
+        &uv,
+        &["venv", "--clear", "--python", python_version, &venv_s],
+    )?;
+    if run_streamed(
+        app,
+        id,
+        &uv,
+        &["pip", "install", "--python", &venv_s, &wpath],
+    )? != 0
+    {
+        return Err(AppError::Storage(
+            "uv pip install of the JSON Tables wheel failed.".into(),
+        ));
     }
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
-
-
-
-
 
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
@@ -727,10 +957,14 @@ pub async fn market_install_run(
     filename: Option<String>,
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
+    let stack = &crate::component_lock::components().python_stack;
+    let mcp_package = format!("exasol-mcp-server=={}", stack.mcp_server_version);
+    let pyexasol_package = format!("pyexasol=={}", stack.pyexasol_version);
     let result: AppResult<String> = match id.as_str() {
-        "mcp-server" => install_uv_tool(&app, &id, "exasol-mcp-server"),
-        "agent-skills" => install_uv_tool(&app, &id, "exasol-agent-skills"),
-        "pyexasol" => install_uv_pip(&app, &id, "pyexasol"),
+        "mcp-server" => install_uv_tool(&app, &id, &mcp_package),
+        "agent-skills" => crate::local_database::ensure_agent_skills(&app)
+            .map(|_| "Bundled Exasol agent skills are ready.".into()),
+        "pyexasol" => install_uv_pip(&app, &id, &pyexasol_package),
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
         "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
         "json-tables" => install_json_tables(&app, &id).await,
@@ -738,7 +972,9 @@ pub async fn market_install_run(
         "exasol-cloud" => install_personal_cloud(&app, &id),
         _ => match (url, filename) {
             (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
-            _ => Err(AppError::Storage("No downloadable asset was provided for this item.".into())),
+            _ => Err(AppError::Storage(
+                "No downloadable asset was provided for this item.".into(),
+            )),
         },
     };
 
@@ -758,14 +994,17 @@ pub async fn market_install_run(
         }
         Err(e) => {
             emit_log(&app, &id, format!("✗ {e}"), "err");
-            let _ = app.emit("market:done", json!({ "id": id, "ok": false, "error": e.to_string() }));
+            let _ = app.emit(
+                "market:done",
+                json!({ "id": id, "ok": false, "error": e.to_string() }),
+            );
             Err(e)
         }
     }
 }
 
-/// Control a local Exasol Personal deployment (start / stop / status / info /
-/// destroy) via the `exasol` launcher. Streams output over `market:log` under
+/// Control the Studio-managed local runtime (native Personal on macOS, Nano on
+/// Windows/Linux). Streams output over `market:log` under
 /// the id `exasol-local` and finishes with `market:done`, so the frontend can
 /// reuse the install-console UI. Blocking lifecycle actions (start/stop/destroy)
 /// can take a while; the launcher prints progress as it goes.
@@ -777,69 +1016,38 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
     if !allowed.contains(&action.as_str()) {
         return Err(AppError::Storage(format!("Unsupported action: {action}")));
     }
-    if !bin_present("exasol") {
+    if !crate::local_runtime::runtime_installed(&app) {
         let e = AppError::Storage(
-            "Exasol launcher not found. Install “Exasol Personal — Local” from the Marketplace first.".into(),
+            "Local Exasol is not installed yet. Run first-install setup or install it from the Marketplace.".into(),
         );
         emit_log(&app, ID, format!("✗ {e}"), "err");
-        let _ = app.emit("market:done", json!({ "id": ID, "ok": false, "error": e.to_string() }));
+        let _ = app.emit(
+            "market:done",
+            json!({ "id": ID, "ok": false, "error": e.to_string() }),
+        );
         return Err(e);
     }
-    let exa = exasol_bin();
-    let ready = capture_output(&exa, &["status", "--json"]).to_lowercase().contains("database_ready");
 
-    // Build the command, self-healing the common local-VM snags:
-    //  • start on an already-running DB → no-op (avoid "VM already running")
-    //  • start on a failed state → clear any stale VM lock, then `deploy` (retry)
-    //  • stop on a not-running deployment → clear stale lock, report stopped
-    let args: Vec<&str> = match action.as_str() {
-        "destroy" => vec!["destroy", "--yes"], // irreversible — don't hang on a prompt
-        "start" if ready => {
-            emit_log(&app, ID, "✓ Exasol is already running.", "success");
-            let _ = app.emit("market:done", json!({ "id": ID, "ok": true }));
-            return Ok(json!({ "ok": true, "code": 0 }));
-        }
-        "start" => {
-            heal_stale_local_lock();
-            // `deploy` reconciles a failed/partial deployment where `start` refuses.
-            vec!["deploy"]
-        }
-        "stop" if !ready => {
-            heal_stale_local_lock();
-            emit_log(&app, ID, "✓ Exasol is not running.", "success");
-            let _ = app.emit("market:done", json!({ "id": ID, "ok": true }));
-            return Ok(json!({ "ok": true, "code": 0 }));
-        }
-        other => vec![other],
-    };
-
-    let code = run_streamed(&app, ID, &exa, &args)?;
+    let code = crate::local_runtime::control_runtime(&app, ID, &action)?;
     let ok = code == 0;
+    crate::local_database::record_lifecycle(&app, &action, ok);
     if ok {
-        emit_log(&app, ID, format!("✓ exasol {} finished.", args[0]), "success");
+        emit_log(
+            &app,
+            ID,
+            format!("✓ Local runtime {action} finished."),
+            "success",
+        );
     } else {
-        emit_log(&app, ID, format!("✗ exasol {} exited with code {code}.", args[0]), "err");
+        emit_log(
+            &app,
+            ID,
+            format!("✗ Local runtime {action} exited with code {code}."),
+            "err",
+        );
     }
     let _ = app.emit("market:done", json!({ "id": ID, "ok": ok }));
     Ok(json!({ "ok": ok, "code": code }))
-}
-
-/// Remove a stale local-VM lock (vm.pid/vm.sock) when the recorded PID is dead —
-/// otherwise the launcher wrongly reports "VM is already running".
-fn heal_stale_local_lock() {
-    let rt = home().join(".exasol/personal/deployments/default/local/runtime");
-    let pidf = rt.join("vm.pid");
-    let Ok(s) = std::fs::read_to_string(&pidf) else { return };
-    let Ok(pid) = s.trim().parse::<i32>() else { return };
-    let alive = Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .map(|st| st.success())
-        .unwrap_or(false);
-    if !alive {
-        let _ = std::fs::remove_file(&pidf);
-        let _ = std::fs::remove_file(rt.join("vm.sock"));
-    }
 }
 
 /// Remove an installed item's files and manifest entry.
@@ -883,7 +1091,9 @@ fn uv_tool_installed(pkg: &str) -> bool {
 
 fn python_import_ok(module: &str) -> bool {
     ["python3", "python"].iter().any(|py| {
-        let prog = resolve_bin(py).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| py.to_string());
+        let prog = resolve_bin(py)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| py.to_string());
         let mut c = Command::new(prog);
         c.args(["-c", &format!("import {module}")]);
         with_path(&mut c);
@@ -892,7 +1102,9 @@ fn python_import_ok(module: &str) -> bool {
 }
 
 fn managed_exists(app: &AppHandle, id: &str, name: &str) -> bool {
-    market_dir(app).map(|d| d.join(id).join(name).exists()).unwrap_or(false)
+    market_dir(app)
+        .map(|d| d.join(id).join(name).exists())
+        .unwrap_or(false)
 }
 
 /// Probe the real system for tools that may already be installed (in PATH, as a
@@ -900,9 +1112,12 @@ fn managed_exists(app: &AppHandle, id: &str, name: &str) -> bool {
 #[tauri::command]
 pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     let mut map = serde_json::Map::new();
-    // Exasol Personal launcher drives both local and cloud.
+    // Native Personal is local on macOS; Docker/Podman Nano is local elsewhere.
     let launcher = bin_present("exasol");
-    map.insert("exasol-personal".into(), json!(launcher));
+    map.insert(
+        "exasol-personal".into(),
+        json!(crate::local_runtime::runtime_installed(&app)),
+    );
     map.insert("exasol-cloud".into(), json!(launcher));
     map.insert(
         "exapump".into(),
@@ -910,19 +1125,33 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     );
     map.insert(
         "mcp-server".into(),
-        json!(uv_tool_installed("exasol-mcp-server") || bin_present("exasol-mcp-server")),
+        json!(
+            uv_tool_installed("exasol-mcp-server")
+                || bin_present("exasol-mcp-server")
+                || app
+                    .path()
+                    .app_data_dir()
+                    .map(|dir| dir
+                        .join(if cfg!(windows) {
+                            "personal-local/python/Scripts/exasol-mcp-server.exe"
+                        } else {
+                            "personal-local/python/bin/exasol-mcp-server"
+                        })
+                        .is_file())
+                    .unwrap_or(false)
+        ),
     );
-    map.insert(
-        "agent-skills".into(),
-        json!(uv_tool_installed("exasol-agent-skills") || bin_present("exasol-install-skills")),
-    );
+    map.insert("agent-skills".into(), json!(true));
     map.insert(
         "pyexasol".into(),
         json!(managed_exists(&app, "pyexasol", "venv") || python_import_ok("pyexasol")),
     );
     map.insert(
         "sqlalchemy-exasol".into(),
-        json!(managed_exists(&app, "sqlalchemy-exasol", "venv") || python_import_ok("sqlalchemy_exasol")),
+        json!(
+            managed_exists(&app, "sqlalchemy-exasol", "venv")
+                || python_import_ok("sqlalchemy_exasol")
+        ),
     );
     map.insert(
         "ai-lab".into(),
@@ -930,7 +1159,10 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     );
     map.insert(
         "json-tables".into(),
-        json!(managed_exists(&app, "json-tables", "venv") || managed_exists(&app, "json-tables", "src")),
+        json!(
+            managed_exists(&app, "json-tables", "venv")
+                || managed_exists(&app, "json-tables", "src")
+        ),
     );
     Ok(Value::Object(map))
 }

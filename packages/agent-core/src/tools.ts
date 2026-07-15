@@ -59,6 +59,10 @@ export function buildTools(ctx: {
   /** Read-only mode (sub-agents): writes fail instead of asking. */
   readOnly?: boolean;
   skills?: Skill[];
+  /** Desktop bootstrap confirmed that the SEMANTIC_ADMIN scripts are ready. */
+  semanticViewsReady?: boolean;
+  /** Connection profile that owns the ready Semantic Views installation. */
+  semanticViewsConnectionId?: string;
 }): ToolSet {
   const { db, session } = ctx;
 
@@ -68,7 +72,7 @@ export function buildTools(ctx: {
       throw new Error(
         saved.length
           ? `No connection is active in this chat. Saved connections exist (${saved.map((c) => c.name).join(", ")}) — tell the user to connect via the Connect button in the title bar, then retry. Do not ask for credentials.`
-          : "No database connection is active. Tell the user to connect via the Connect button in the title bar (for a local Exasol Personal the defaults are localhost:8563, user sys, password exasol). Do not ask for credentials in chat — Exasol Studio manages them.",
+          : "No database connection is active. Tell the user to connect via the Connect button in the title bar; the saved Local Exasol profile contains its generated vault-backed credential. Do not ask for credentials in chat — Exasol Studio manages them.",
       );
     }
     return ctx.connectionId;
@@ -251,6 +255,51 @@ export function buildTools(ctx: {
         return { ok: true, affectedRows: affected };
       },
     }),
+
+    ...(ctx.semanticViewsReady
+      ? {
+          semantic_compile_request: tool({
+            description:
+              "Compile a structured analytics request through Exasol Semantic Views. " +
+              "This calls SEMANTIC_ADMIN.COMPILE_REQUEST_JSON as a read-like compiler operation and returns GENERATED_SQL, PLAN_JSON, clarification, and trace handles. " +
+              "After STATUS=OK, execute only the returned GENERATED_SQL with run_sql.",
+            inputSchema: z.object({
+              request: z.record(z.unknown()).describe("Semantic request with model, object, metrics, dimensions, filters, order_by, limit, and client"),
+            }),
+            execute: async ({ request }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const requestJson = JSON.stringify(request);
+              const out = await db.query(
+                id,
+                `EXECUTE SCRIPT SEMANTIC_ADMIN.COMPILE_REQUEST_JSON(${lit(requestJson)})`,
+              );
+              session.record({ kind: "tool.semantic_compile_request", request, rows: out.rowCount });
+              return shape(out);
+            },
+          }),
+
+          semantic_compile_sql: tool({
+            description:
+              "Compile user-supplied semantic SQL through SEMANTIC_ADMIN.COMPILE_SQL. " +
+              "Supports semantic fields, MEASURE(), and GROUP BY ALL. This is a read-like compiler operation; after STATUS=OK, execute only the returned GENERATED_SQL with run_sql.",
+            inputSchema: z.object({
+              sql: z.string().min(1).describe("Semantic SQL to compile, not physical-table SQL"),
+            }),
+            execute: async ({ sql }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const out = await db.query(id, `EXECUTE SCRIPT SEMANTIC_ADMIN.COMPILE_SQL(${lit(sql)})`);
+              session.record({ kind: "tool.semantic_compile_sql", sql, rows: out.rowCount });
+              return shape(out);
+            },
+          }),
+        }
+      : {}),
 
     profile_query: tool({
       description:
@@ -504,6 +553,8 @@ export function buildTools(ctx: {
                 kb: ctx.kb,
                 settings: ctx.settings,
                 readOnly: true,
+                semanticViewsReady: ctx.semanticViewsReady,
+                semanticViewsConnectionId: ctx.semanticViewsConnectionId,
               });
               const res = await generateText({
                 model: ctx.model!,

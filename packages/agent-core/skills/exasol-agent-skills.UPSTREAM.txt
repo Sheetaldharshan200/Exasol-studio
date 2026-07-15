@@ -1,0 +1,4 @@
+Source: https://github.com/exasol-labs/exasol-agent-skills.git
+Commit: c10526e214bf4aff64c4b21fce892b7633e45f94
+Path: plugins/exasol/skills
+Vendored: 2026-07-15

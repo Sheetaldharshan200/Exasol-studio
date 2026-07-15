@@ -1,0 +1,17 @@
+{
+  "repository": "exasol-labs/exasol-agent-skills",
+  "paths": [
+    "exasol",
+    "exasol-ai-setup",
+    "exasol-bucketfs",
+    "exasol-database",
+    "exasol-distributed-ml",
+    "exasol-extension-catalog",
+    "exasol-import",
+    "exasol-itde",
+    "exasol-notebook-connections",
+    "exasol-text-ai",
+    "exasol-transformers",
+    "exasol-udfs"
+  ]
+}

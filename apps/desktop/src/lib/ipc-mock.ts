@@ -4,6 +4,8 @@
  * with `pnpm dev` outside of Tauri. Never used inside the packaged app.
  */
 
+import runtimeComponents from "../../src-tauri/resources/runtime-components.lock.json";
+
 const delay = (ms = 120) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const profiles: Record<string, unknown>[] = [
@@ -524,6 +526,25 @@ export async function mockInvoke(
     case "exasol_local_ctl":
       await delay(300);
       return { ok: true, code: 0 };
+    case "personal_local_bootstrap":
+      return { started: false, reason: "already-ready" };
+    case "personal_local_status":
+      return {
+        state: "ready",
+        step: "complete",
+        message: "Local Exasol and the complete AI/data stack are ready.",
+        localReady: true,
+        profileId: "conn-demo-1",
+        components: {
+          pyexasol: { state: "ready", version: runtimeComponents.pythonStack.pyexasolVersion, error: null, connectionId: null },
+          "mcp-server": { state: "ready", version: runtimeComponents.pythonStack.mcpServerVersion, error: null, connectionId: null },
+          exapump: { state: "ready", version: runtimeComponents.exapump.version, error: null, connectionId: null },
+          "agent-skills": { state: "ready", version: runtimeComponents.agentSkills.revision, error: null, connectionId: null },
+          "fable-method": { state: "ready", version: runtimeComponents.fableMethod.revision, error: null, connectionId: null },
+        },
+        semanticViews: { state: "ready", version: runtimeComponents.semanticViews.revision, error: null, connectionId: "conn-demo-1" },
+        updatedAt: new Date().toISOString(),
+      };
     case "vault_status":
       // Browser preview isn't gated by a master password.
       return { configured: true, unlocked: true, recoveryRemaining: 5 };

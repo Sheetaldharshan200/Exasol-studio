@@ -1,0 +1,24 @@
+name: Verify runtime component provenance
+
+on:
+  pull_request:
+    paths:
+      - ".github/runtime-component-sources.json"
+      - ".github/scripts/refresh_runtime_components.py"
+      - "apps/desktop/src-tauri/resources/runtime-components.lock.json"
+      - "apps/desktop/src-tauri/resources/python-stack/**"
+      - "apps/desktop/src-tauri/resources/exasol-semantic-views/**"
+      - "packages/agent-core/skills/**"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: python .github/scripts/refresh_runtime_components.py --verify

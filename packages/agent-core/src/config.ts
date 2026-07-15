@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 /** Editable guardrails + behavior for the agent loop and tools. */
 export type AgentSettings = {
+  /** Built-in or user-overridden skills injected into every turn. */
+  defaultSkills: string[];
   /** Read statements: run automatically or ask first. */
   readPolicy: "allow" | "ask";
   /** Write statements: ask first (default) or refuse entirely. */
@@ -31,6 +33,7 @@ export type AgentSettings = {
 };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  defaultSkills: ["fable-method"],
   readPolicy: "allow",
   writePolicy: "ask",
   maxSteps: 12,
@@ -102,7 +105,13 @@ export class ConfigStore {
   }
 
   settings(): AgentSettings {
-    return { ...DEFAULT_AGENT_SETTINGS, ...this.cache.agent };
+    const merged = { ...DEFAULT_AGENT_SETTINGS, ...this.cache.agent };
+    return {
+      ...merged,
+      defaultSkills: Array.isArray(merged.defaultSkills)
+        ? merged.defaultSkills.filter((name): name is string => typeof name === "string")
+        : [...DEFAULT_AGENT_SETTINGS.defaultSkills],
+    };
   }
 
   update(mutate: (cfg: AgentConfig) => void) {

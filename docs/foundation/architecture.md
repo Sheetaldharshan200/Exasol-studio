@@ -57,6 +57,8 @@ flowchart TB
 
 ### Rust Modules
 
+- `local_runtime` (native Exasol Personal lifecycle on macOS; Docker/Podman Exasol Nano lifecycle on Windows/Linux)
+- `local_database` (first-install component state, vault-backed profile, Semantic Views bootstrap)
 - `workspace_store`
 - `command_bus`
 - `job_manager`
@@ -213,6 +215,10 @@ repo/
 
 - signed desktop builds for macOS, Windows, and Linux
 - bundled or managed driver-side runtime
+- Studio-owned local setup installs/resumes in the background: native Exasol
+  Personal on macOS or Exasol Nano through Docker/Podman on Windows/Linux,
+  followed by PyExasol, Semantic Views, ExaPump, MCP server, and agent skills;
+  it auto-starts on later launches and exposes durable loading/ready/failed state
 - in-app updater with policy controls
 
 ## 10. Future Extensibility
@@ -229,6 +235,7 @@ repo/
 - [ADR-0002: Tauri plus Rust desktop architecture](./adr/ADR-0002-tauri-rust-desktop.md)
 - [ADR-0003: Driver service boundary for Exasol connectivity](./adr/ADR-0003-driver-service-boundary.md)
 - [ADR-0004: Governed AI action model](./adr/ADR-0004-governed-ai-action-model.md)
+- [ADR-0005: Studio-owned local runtime and first-install stack](./adr/ADR-0005-studio-owned-local-runtime.md)
 
 ## 12. Architectural Recommendations and Gaps
 
@@ -241,4 +248,3 @@ repo/
 - Completeness check: system, modules, interactions, repository, layering, patterns, decisions, integration points, deployment, extensibility, and ADRs are covered.
 - Consistency check: aligns with the requirements and design documents.
 - Clean Architecture check: business workflows and policies stay above infrastructure concerns.
-

@@ -43,7 +43,7 @@ import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "reference";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bundled" | "reference";
 
 export type CatalogItem = {
   id: string;
@@ -64,7 +64,7 @@ export const CATALOG: CatalogItem[] = [
     repo: "exasol/exasol-personal",
     kind: "database",
     install: "personal-local",
-    description: "Free local Exasol database (macOS).",
+    description: "Native Exasol Personal on macOS; Exasol Nano via Docker/Podman on Windows and Linux. Starts automatically.",
     homepage: "https://github.com/exasol/exasol-personal",
   },
   {
@@ -197,9 +197,9 @@ export const CATALOG: CatalogItem[] = [
     name: "Exasol Agent Skills",
     repo: "exasol-labs/exasol-agent-skills",
     kind: "skills",
-    install: "uv-tool",
+    install: "bundled",
     labs: true,
-    description: "Skills for AI coding agents.",
+    description: "Pinned Exasol skills bundled into the Studio AI agent.",
     homepage: "https://github.com/exasol-labs/exasol-agent-skills",
   },
 ];
@@ -312,15 +312,14 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the Python package (wheel)",
         "Install it with uv — no Rust, cargo or git needed on your machine",
       ];
+    case "bundled":
+      return ["Verify the pinned skills shipped inside Exasol Studio", "Make them available to the AI agent immediately"];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
-      return env && env.os !== "macos"
-        ? ["Local deployment is macOS-only — use Exasol Personal — Cloud instead"]
-        : [
-            "Install the official Exasol launcher (if not already present)",
-            "Run `exasol install local` to deploy a local database",
-          ];
+      return env && env.os === "macos"
+        ? ["Install the verified native Exasol Personal launcher", "Run `exasol install local` and save its generated credential in the Studio vault"]
+        : ["Detect a running Docker or Podman engine", "Pull the pinned official Exasol Nano image", "Create a persistent local container with a generated vault-backed SYS credential"];
     case "personal-cloud":
       return [
         "Install the official Exasol launcher (if not already present)",
@@ -736,10 +735,10 @@ export function Marketplace() {
           </div>
         </div>
         <div className="mt-3">{actions}</div>
-        {item.install === "personal-local" && env && env.os !== "macos" ? (
+        {item.install === "personal-local" && env && env.os !== "macos" && !env.docker && !env.podman ? (
           <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
             <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
-            Local deployment is macOS-only on this machine ({env.os}).
+            Start or install Docker/Podman to run Exasol Nano on {env.os}.
           </p>
         ) : null}
       </div>

@@ -31,7 +31,7 @@ futures-util = "0.3"
 thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
 csv = "1.3"
 parquet = { version = "53", default-features = false, features = ["snap", "zstd", "brotli", "flate2", "lz4"] }
 tauri-plugin-opener = "2.5.4"
@@ -43,6 +43,10 @@ aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
 zeroize = "1"
+sha2 = "0.10"
+flate2 = "1"
+tar = "0.4"
+zip = "0.6"
 
 [profile.release]
 codegen-units = 1

@@ -62,6 +62,7 @@ async function api<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = 
 }
 
 export type AgentSettings = {
+  defaultSkills: string[];
   readPolicy: "allow" | "ask";
   writePolicy: "ask" | "deny";
   maxSteps: number;

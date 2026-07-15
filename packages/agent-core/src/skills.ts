@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 // Claude-style skills: markdown packs with name+description frontmatter.
 // Two sources — BUILT-IN (shipped, read-only) and USER (added in-app, editable).
@@ -45,10 +45,42 @@ export class SkillStore {
     const out: Skill[] = [];
     const readDir = (dir: string, source: "builtin" | "user") => {
       try {
-        for (const f of readdirSync(dir)) {
-          if (!f.endsWith(".md")) continue;
-          const p = parse(readFileSync(join(dir, f), "utf8"), f.replace(/\.md$/, ""));
-          out.push({ ...p, source });
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isFile() && entry.name.endsWith(".md")) {
+            const p = parse(
+              readFileSync(join(dir, entry.name), "utf8"),
+              entry.name.replace(/\.md$/, ""),
+            );
+            out.push({ ...p, source });
+            continue;
+          }
+          if (!entry.isDirectory()) continue;
+          const skillDir = join(dir, entry.name);
+          const skillFile = join(skillDir, "SKILL.md");
+          let skill: ReturnType<typeof parse>;
+          try {
+            skill = parse(readFileSync(skillFile, "utf8"), entry.name);
+            out.push({ ...skill, source });
+          } catch {
+            continue;
+          }
+          const addReferences = (current: string) => {
+            for (const child of readdirSync(current, { withFileTypes: true })) {
+              const childPath = join(current, child.name);
+              if (child.isDirectory()) {
+                addReferences(childPath);
+              } else if (child.isFile() && child.name.endsWith(".md") && childPath !== skillFile) {
+                const resource = relative(skillDir, childPath).replaceAll("\\", "/");
+                out.push({
+                  name: `${skill.name}/${resource.replace(/\.md$/, "")}`,
+                  description: `Reference material for ${skill.name}: ${resource}`,
+                  body: readFileSync(childPath, "utf8").trim(),
+                  source,
+                });
+              }
+            }
+          };
+          addReferences(skillDir);
         }
       } catch {
         /* none */

@@ -1,24 +1,27 @@
 mod agent;
 mod bucketfs;
 mod catalog;
-mod exapump;
 mod connection;
+mod component_lock;
+mod driver_exec;
 mod drivers;
 mod error;
-mod driver_exec;
+mod exapump;
 mod files;
 mod fs;
 mod git;
 mod history;
+mod local_database;
+mod local_llm;
+mod local_runtime;
 mod market;
 mod metadata;
-mod settings;
 mod profiles;
 mod query;
 mod security;
+mod settings;
 mod state;
 mod storage;
-mod local_llm;
 
 use tauri::Manager;
 
@@ -39,7 +42,9 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
+            app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
+            crate::local_database::auto_start_if_installed(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -134,6 +139,8 @@ pub fn run() {
             local_llm::llm_start,
             local_llm::llm_stop,
             local_llm::llm_set_auto_start,
+            local_database::personal_local_bootstrap,
+            local_database::personal_local_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

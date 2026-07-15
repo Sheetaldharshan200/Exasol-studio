@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExasolStudio } from "@/components/studio/ExasolStudio";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { SetupPacks, PENDING_PACK_KEY } from "@/features/onboarding/SetupPacks";
@@ -15,7 +15,7 @@ import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
 import { isAiProvidersWindow } from "@/lib/ai-window";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
-import { ipc, isTauri, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
+import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
@@ -56,6 +56,8 @@ function MainApp() {
     () => window.localStorage.getItem(SETUP_KEY) === "1",
   );
   const [showTour, setShowTour] = useState(false);
+  const [localStatus, setLocalStatus] = useState<PersonalLocalStatus | null>(null);
+  const localConnectAttempt = useRef<string | null>(null);
   // Master-password vault gate (null = still loading its status).
   const [vault, setVault] = useState<{ configured: boolean; unlocked: boolean } | null>(null);
   const refreshVault = () =>
@@ -63,6 +65,42 @@ function MainApp() {
   useEffect(() => {
     void refreshVault();
   }, []);
+
+  // First value should not depend on a Marketplace window staying open. Once
+  // the vault is available, resume the durable local database + Semantic Views
+  // bootstrap in the native background and leave the main UI responsive.
+  useEffect(() => {
+    if (!isTauri() || !onboarded || !vault?.configured || !vault.unlocked) return;
+    void ipc.personalLocalBootstrap().catch(() => undefined);
+  }, [onboarded, vault?.configured, vault?.unlocked]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      unlisten = await listen<PersonalLocalStatus>("personal-local:status", (event) => setLocalStatus(event.payload));
+    });
+    return () => unlisten?.();
+  }, []);
+
+  // Match the out-of-box pgAdmin experience: open the managed connection as
+  // soon as the database/profile are ready; Semantic Views may keep loading.
+  useEffect(() => {
+    const profileId = localStatus?.localReady ? localStatus.profileId : null;
+    if (!profileId || localConnectAttempt.current === profileId || connections.some((c) => c.profile.id === profileId)) return;
+    localConnectAttempt.current = profileId;
+    void (async () => {
+      const nextProfiles = await ipc.listConnectionProfiles();
+      const profile = nextProfiles.find((candidate) => candidate.id === profileId);
+      if (!profile) return;
+      const server = await ipc.connect(profileId);
+      adopt({ profile, server });
+      await refresh();
+    })().catch(() => {
+      localConnectAttempt.current = null;
+    });
+  }, [localStatus, connections, adopt, refresh]);
 
   // Kick off the guided tour once, shortly after the studio first mounts.
   useEffect(() => {
@@ -122,8 +160,12 @@ function MainApp() {
     return (
       <SetupPacks
         onDone={(packItemIds) => {
-          if (packItemIds && packItemIds.length) {
-            window.localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(packItemIds));
+          // The complete local data/AI stack is handled by the durable native
+          // bootstrap; setup packs only queue genuinely optional additions.
+          const core = new Set(["exasol-personal", "pyexasol", "exapump", "mcp-server", "agent-skills"]);
+          const optionalItems = packItemIds?.filter((id) => !core.has(id));
+          if (optionalItems?.length) {
+            window.localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(optionalItems));
           }
           window.localStorage.setItem(SETUP_KEY, "1");
           setSetupDone(true);

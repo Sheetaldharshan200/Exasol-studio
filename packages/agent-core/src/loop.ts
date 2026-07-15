@@ -12,6 +12,7 @@ import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
 import { log } from "./log.ts";
+import { readAgentCapabilities } from "./capabilities.ts";
 
 const MAX_STEPS = 12;
 
@@ -47,7 +48,7 @@ Connections — how they actually work:
 - The same clarify-first rule applies to other vague asks (e.g. "make a dashboard" with no subject): one short question, then do it.
 - UI tools (ui_open / ui_editor_insert) are ONLY for things the user explicitly asked to see or have placed in the app ("open the marketplace", "put this query in a tab"). They are NEVER part of building dashboards, testing SQL (use run_sql), or any other internal work — and never call the same UI tool twice in a row with the same input. Open a saved dashboard at most ONCE, after it saved successfully.
 - If any tool fails twice with the same error, STOP and tell the user what failed instead of trying again.
-- Exasol Personal (local) background knowledge, useful when the user asks about defaults: host localhost, port 8563, user sys, password exasol, self-signed TLS. Share this as information; do not ask the user to paste it back.
+- Local Exasol background knowledge: Studio uses native Exasol Personal on macOS and digest-pinned Exasol Nano through Docker/Podman on Windows/Linux. The managed local profile uses localhost, a generated vault-backed SYS password, and self-signed TLS; the bundled MCP server uses its own read-only STUDIO_MCP_* profile. Connect through the saved profiles and never ask the user to paste generated passwords into chat.
 
 Exasol SQL dialect:
 - Use LIMIT n (never FETCH FIRST or TOP). QUALIFY filters window functions. IDENTITY columns exist.
@@ -95,14 +96,32 @@ export async function runTurn(opts: {
   let system = known.length
     ? `${SYSTEM_PROMPT}\n\nVerified workspace knowledge from earlier sessions (still confirm anything critical):\n${known.map((k) => `- ${k}`).join("\n")}`
     : SYSTEM_PROMPT;
-  if (settings.customInstructions.trim()) {
-    system += `\n\nWorkspace instructions from the user:\n${settings.customInstructions.trim()}`;
-  }
   const skillList = skillStore.list();
-  if (skillList.length) {
-    system += `\n\nSkills — load the full instructions with load_skill(name) before the matching task:\n${skillList
-      .map((sk) => `- ${sk.name}: ${sk.description}`)
+  const defaultSkills = [...new Set(settings.defaultSkills)]
+    .map((name) => skillList.find((skill) => skill.name === name))
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+  if (defaultSkills.length) {
+    system += `\n\nDefault skills — these instructions are already active for this turn:\n${defaultSkills
+      .map((skill) => `\n<skill name="${skill.name}">\n${skill.body}\n</skill>`)
       .join("\n")}`;
+  }
+  if (skillList.length) {
+    system += `\n\nSkills — default skills above are already active; use load_skill(name) before a matching non-default task:\n${skillList
+      .map((sk) => `- ${sk.name}${defaultSkills.includes(sk) ? " (active default)" : ""}: ${sk.description}`)
+      .join("\n")}`;
+  }
+  const capabilities = readAgentCapabilities(config.dataDir);
+  const semanticViewsConnectionId = capabilities.semanticViews?.connectionId;
+  const semanticViewsReady =
+    capabilities.localReady === true &&
+    capabilities.semanticViews?.state === "ready" &&
+    Boolean(session.connectionId) &&
+    semanticViewsConnectionId === session.connectionId;
+  if (semanticViewsReady) {
+    system += `\n\nSEMANTIC VIEWS READY — use the semantic layer as the source of truth for business and analytics questions. Load exasol-semantic-analyst before the first semantic task, discover SEMANTIC_AGENT models/fields, check valid combinations, then compile with semantic_compile_request (or semantic_compile_sql for user-supplied semantic SQL). Execute only GENERATED_SQL returned with STATUS=OK. Never reconstruct metric formulas, infer physical joins, or fall back to physical-table SQL after a semantic compiler error.`;
+  }
+  if (settings.customInstructions.trim()) {
+    system += `\n\nWorkspace instructions from the user (these take precedence over built-in skill defaults when they conflict):\n${settings.customInstructions.trim()}`;
   }
 
   session.running = true;
@@ -119,7 +138,20 @@ export async function runTurn(opts: {
     });
   }
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards, artifacts, skills: skillStore.list() });
+  const tools = buildTools({
+    db,
+    session,
+    connectionId: session.connectionId,
+    insights,
+    kb,
+    model,
+    settings,
+    dashboards,
+    artifacts,
+    skills: skillList,
+    semanticViewsReady,
+    semanticViewsConnectionId,
+  });
   const started = Date.now();
   const callCounts = new Map<string, number>();
   const DOOM_LIMIT = 3;

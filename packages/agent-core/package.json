@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist/agent-core.cjs",
   "scripts": {
-    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.mkdirSync('dist/skills',{recursive:true});for(const f of fs.readdirSync('skills'))fs.copyFileSync('skills/'+f,'dist/skills/'+f)\"",
+    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\"",
     "dev": "node --experimental-strip-types src/index.ts",
     "typecheck": "tsc --noEmit"
   },

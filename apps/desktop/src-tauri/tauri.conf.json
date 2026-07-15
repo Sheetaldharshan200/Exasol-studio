@@ -51,7 +51,10 @@
     "createUpdaterArtifacts": true,
     "resources": {
       "../../../packages/agent-core/dist/agent-core.cjs": "agent-core.cjs",
-      "../../../packages/agent-core/dist/skills": "skills"
+      "../../../packages/agent-core/dist/skills": "skills",
+      "resources/exasol-semantic-views": "exasol-semantic-views",
+      "resources/python-stack": "python-stack",
+      "resources/runtime-components.lock.json": "runtime-components.lock.json"
     }
   },
   "plugins": {

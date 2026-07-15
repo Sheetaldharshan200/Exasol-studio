@@ -569,6 +569,12 @@ function GuardrailsSection({
       <section>
         <h2 className="mb-1 text-[13px] font-semibold">Capabilities</h2>
         <div className="space-y-2">
+          <div className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+            <div className="text-[12.5px] font-medium">Default method</div>
+            <div className="text-[11px] text-muted-foreground">
+              {settings.defaultSkills.includes("fable-method") ? "Fable Method · evidence → action → verification" : "Workspace default"}
+            </div>
+          </div>
           <ToggleRow
             label="Parallel researchers"
             desc="Read-only sub-agents that fan out for broad exploration."

@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": ".github/scripts/refresh_runtime_components.py",
+  "generatedAt": "2026-07-15T19:39:29Z",
+  "personal": {
+    "repository": "exasol/exasol-personal",
+    "version": "v2.1.0",
+    "artifacts": {
+      "macos-aarch64": {
+        "name": "exasol-personal_macOS_arm64.tar.gz",
+        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.1.0/exasol-personal_macOS_arm64.tar.gz",
+        "sha256": "5d15cb69103155a279d68fe8c2a0309417561d64104cc5b2d49c687dee013d80",
+        "executableSha256": "fa6e07c5bb7610268131cbb665c82b07e6ef2dc8cb975a024afbec4f32ce8e54"
+      },
+      "macos-x86_64": {
+        "name": "exasol-personal_macOS_x86_64.tar.gz",
+        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.1.0/exasol-personal_macOS_x86_64.tar.gz",
+        "sha256": "ba3924246e1d60923569c7649b96b48ac1ee1a35d32ac42abae97d5416d24844",
+        "executableSha256": "a9f265b92d73b1fae626207cb6de35138a2824a82dec77080a12d8f00c6d3635"
+      }
+    }
+  },
+  "nano": {
+    "registry": "docker.io",
+    "repository": "exasol/nano",
+    "tag": "2026.2.0-nano.2",
+    "digest": "sha256:ac05475fbec127c5908abdab61ecc7d5eb51e30830efb46f70488a41a88c16d3"
+  },
+  "uv": {
+    "repository": "astral-sh/uv",
+    "version": "0.11.29",
+    "artifacts": {
+      "linux-aarch64": {
+        "name": "uv-aarch64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "94500fb064ae3c971a873cba64d94694c50677e0a4dbf78735c80509e7429919",
+        "executableSha256": "40de8760ec3d368ae7a19d06392a071b761dddbe1b926d23f736ce65befe131c"
+      },
+      "linux-x86_64": {
+        "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "04f8b82f5d47f0512dcd32c67a4a6f16a0ea27c81537c338fd0ad6b23cebe829",
+        "executableSha256": "4f26786f798cce6e9f467fe917d4305b9600ef8bf14994aa016fbb32523e5ca5"
+      },
+      "macos-aarch64": {
+        "name": "uv-aarch64-apple-darwin.tar.gz",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "61c04acc52a33ef0f331e494bdfbedcdb6c26c6970c022ed3699e5860f8930e3",
+        "executableSha256": "3ac242bb6bca0841cad65b877e21a3e9f65c97141712b5c8438cc8a8c89ead54"
+      },
+      "macos-x86_64": {
+        "name": "uv-x86_64-apple-darwin.tar.gz",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "c4c4de482da9ccdd076dc4fb5cfe7b740609029385c72f58606be3153602387d",
+        "executableSha256": "3fcfeb23eb951da9c2db2ebdde52b7f83cafe3bf90f1d6225519b6d0db43c04b"
+      },
+      "windows-aarch64": {
+        "name": "uv-aarch64-pc-windows-msvc.zip",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-aarch64-pc-windows-msvc.zip",
+        "sha256": "55b597ae81bc29531a7c352a1431a8a73cc2755d7a5b9ec454580cbe02e5154f",
+        "executableSha256": "bbafdd69166bdc7038b7362c0aacd44fc5a25a5e505bb7a86bdde388590197b2"
+      },
+      "windows-x86_64": {
+        "name": "uv-x86_64-pc-windows-msvc.zip",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.29/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "a047d55651bc3e0ca24595b25ec4cfcb10f9dca9fb56514e661269b37d4fae68",
+        "executableSha256": "6d40479cd1d0d5db7fc0fe68ad703fc8acbd84bba50d864bb97461f6af9d9561"
+      }
+    }
+  },
+  "pythonStack": {
+    "pythonVersion": "3.12",
+    "pyexasolVersion": "1.3.0",
+    "mcpServerVersion": "1.10.1",
+    "lockSha256": "b0a3150c66f0e26b9d2784f8a0e44f31b09b9d5561e872fb60436b2088950cb9"
+  },
+  "exapump": {
+    "repository": "exasol-labs/exapump",
+    "version": "v0.11.2",
+    "artifacts": {
+      "linux-aarch64": {
+        "name": "exapump-0.11.2-linux-aarch64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.2/exapump-0.11.2-linux-aarch64",
+        "sha256": "106c3c5ea168a1381549807b82639137c8b3f94bd64c1b6d02fa380a025d5085"
+      },
+      "linux-x86_64": {
+        "name": "exapump-0.11.2-linux-x86_64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.2/exapump-0.11.2-linux-x86_64",
+        "sha256": "669af4d488e5b1ae2e9c9e030c1be4b1cdb7442dedf3175a361928613f4b3e80"
+      },
+      "macos-aarch64": {
+        "name": "exapump-0.11.2-macos-aarch64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.2/exapump-0.11.2-macos-aarch64",
+        "sha256": "e1438c69f26cdcca69ad1b7211aa9495524c53ff1badebee91d5a631c503616b"
+      },
+      "macos-x86_64": {
+        "name": "exapump-0.11.2-macos-x86_64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.2/exapump-0.11.2-macos-x86_64",
+        "sha256": "1dd68d2dbc2d556e1613975eeffb25813f1ec60e06e93d514d5dd86df8144648"
+      },
+      "windows-x86_64": {
+        "name": "exapump-0.11.2-windows-x86_64.exe",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.2/exapump-0.11.2-windows-x86_64.exe",
+        "sha256": "8a2e8199a94f1b21782e4c68179948bfa43217c82c9b9b2a25eaec4532305237"
+      }
+    }
+  },
+  "semanticViews": {
+    "repository": "exasol-labs/exasol-semantic-views",
+    "revision": "4499d9dd2647fbc966e72933376e9b9121e6ff49",
+    "contentSha256": "98ba460c38f08af3ba70ada044e49fa940b58f391f14eb82114c44d0d6906401"
+  },
+  "agentSkills": {
+    "repository": "exasol-labs/exasol-agent-skills",
+    "revision": "c10526e214bf4aff64c4b21fce892b7633e45f94",
+    "contentSha256": "46a53869bfef2a88c21f9fabdd279ae77a2ff07af22b11218e5e9b5004eba8d2"
+  },
+  "fableMethod": {
+    "repository": "Sahir619/fable-method",
+    "revision": "88b5cf36b10ee3679e08ee0f0181b9774d481508",
+    "contentSha256": "c88aebf650ee522594639d3776d64ecbbf289ac069b32443ea491cdfcc4e03d4"
+  }
+}

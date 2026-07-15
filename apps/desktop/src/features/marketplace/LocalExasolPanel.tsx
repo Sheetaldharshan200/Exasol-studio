@@ -17,8 +17,8 @@ const ACTIONS: { key: Action; label: string; Icon: typeof Play; danger?: boolean
 ];
 
 /**
- * Control a local Exasol Personal deployment (start / stop / status / info /
- * destroy) straight from the app. Streams the launcher's output live over the
+ * Control the Studio-managed local runtime (native Personal on macOS, Nano on
+ * Windows/Linux) straight from the app. Streams lifecycle output live over the
  * `market:log` / `market:done` events (id `exasol-local`).
  */
 export function LocalExasolPanel({ onClose }: { onClose: () => void }) {
@@ -62,14 +62,14 @@ export function LocalExasolPanel({ onClose }: { onClose: () => void }) {
     }
     setConfirmDestroy(false);
     setRunning(action);
-    setLines((prev) => [...prev, { level: "cmd", text: `$ exasol ${action}` }]);
+    setLines((prev) => [...prev, { level: "cmd", text: `$ studio local-exasol ${action}` }]);
     try {
       const r = await ipc.exasolLocalCtl(action);
       if (!isTauri()) {
         setLines((prev) => [
           ...prev,
-          { level: "out", text: `(preview) exasol ${action} → ok` },
-          { level: "success", text: `✓ exasol ${action} finished.` },
+          { level: "out", text: `(preview) local runtime ${action} → ok` },
+          { level: "success", text: `✓ Local runtime ${action} finished.` },
         ]);
         setRunning(null);
         void r;
@@ -123,9 +123,9 @@ export function LocalExasolPanel({ onClose }: { onClose: () => void }) {
         >
           {lines.length === 0 ? (
             <p className="text-muted-foreground">
-              Manage your local Exasol Personal deployment. Run <span className="text-foreground">Status</span> to check
+              Manage native Exasol Personal on macOS or Exasol Nano through Docker/Podman on Windows and Linux. Run <span className="text-foreground">Status</span> to check
               whether it is up, then <span className="text-foreground">Start</span> / <span className="text-foreground">Stop</span>{" "}
-              as needed. Output from the <span className="text-foreground">exasol</span> launcher streams here.
+              as needed. Studio-owned lifecycle output streams here.
             </p>
           ) : (
             lines.map((l, i) => (

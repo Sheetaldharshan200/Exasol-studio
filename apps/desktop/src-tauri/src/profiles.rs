@@ -69,7 +69,9 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
     let mut profile = load_profiles(state)?
         .into_iter()
         .find(|p| p.id == profile_id)
-        .ok_or_else(|| AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`")))?;
+        .ok_or_else(|| {
+            AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`"))
+        })?;
     // Decrypt the stored password for actual use (connect / driver bridges).
     profile.password = security::decrypt_secret(dek(state).as_ref(), &profile.password)?;
     Ok(profile)
@@ -97,6 +99,16 @@ pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<Con
 #[tauri::command]
 pub fn save_connection_profile(
     state: State<'_, AppState>,
+    profile: ConnectionProfile,
+) -> AppResult<ConnectionProfile> {
+    save_profile(&state, profile)
+}
+
+/// Persist a profile through the same validation and encryption path used by
+/// the Tauri command. Background bootstrap jobs call this directly so local
+/// defaults never bypass the vault.
+pub fn save_profile(
+    state: &AppState,
     mut profile: ConnectionProfile,
 ) -> AppResult<ConnectionProfile> {
     if profile.host.trim().is_empty() {
@@ -128,7 +140,7 @@ pub fn save_connection_profile(
     // Encrypt the password at rest (no-op when no vault is configured). If the
     // field is left blank while editing an existing connection, keep the stored
     // one instead of clobbering it.
-    let key = dek(&state);
+    let key = dek(state);
     match existing_index {
         Some(idx) => {
             if profile.password.is_empty() {
@@ -156,6 +168,45 @@ pub fn save_connection_profile(
     // Don't echo the stored secret back to the caller.
     profile.password = String::new();
     Ok(profile)
+}
+
+/// Create or reconcile the pgAdmin-style built-in local connection. Studio
+/// refreshes the generated SYS secret while preserving the user's display
+/// settings.
+pub fn ensure_personal_local_profile(
+    state: &AppState,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+) -> AppResult<ConnectionProfile> {
+    if let Some(mut existing) = load_profiles(state)?.into_iter().find(|p| {
+        p.host.trim().eq_ignore_ascii_case(host.trim())
+            && p.port == port
+            && p.username.eq_ignore_ascii_case(username)
+    }) {
+        existing.password = password.into();
+        return save_profile(state, existing);
+    }
+
+    save_profile(
+        state,
+        ConnectionProfile {
+            id: String::new(),
+            name: "Local Exasol".into(),
+            host: host.into(),
+            port,
+            username: username.into(),
+            password: password.into(),
+            schema: None,
+            notes: Some("Managed automatically by Exasol Studio".into()),
+            ssl_mode: "preferred".into(),
+            compression: true,
+            driver_id: default_driver(),
+            created_at: None,
+            last_used_at: None,
+        },
+    )
 }
 
 #[tauri::command]

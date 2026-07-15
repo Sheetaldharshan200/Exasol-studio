@@ -227,6 +227,26 @@ export type SearchHit = {
 };
 
 export type MarketEnv = { os: string; arch: string; docker: boolean; podman: boolean };
+export type PersonalLocalStatus = {
+  state: "idle" | "installing" | "ready" | "failed" | "stopped";
+  step: string;
+  message: string;
+  localReady: boolean;
+  profileId: string | null;
+  components: Record<string, {
+    state: "unavailable" | "waiting" | "installing" | "ready" | "failed";
+    version: string | null;
+    error: string | null;
+    connectionId: string | null;
+  }>;
+  semanticViews: {
+    state: "unavailable" | "waiting" | "installing" | "ready" | "failed";
+    version: string | null;
+    error: string | null;
+    connectionId: string | null;
+  };
+  updatedAt: string;
+};
 export type ReleaseAsset = { name: string; url: string; size: number };
 export type Release = {
   tag: string | null;
@@ -390,6 +410,8 @@ export const ipc = {
     filename?: string,
   ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename }),
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
+  personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
+  personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {

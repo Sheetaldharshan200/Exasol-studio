@@ -1,0 +1,3 @@
+Source: https://github.com/Sahir619/fable-method
+Commit: 88b5cf36b10ee3679e08ee0f0181b9774d481508
+License: MIT (see ../fable-method.LICENSE.txt)

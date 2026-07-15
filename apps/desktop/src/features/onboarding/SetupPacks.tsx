@@ -13,8 +13,8 @@ export type Pack = {
 // Curated bundles — each installs a preselected set from the Marketplace.
 export const PACKS: Pack[] = [
   {
-    id: "starter-kit",
-    name: "Starter Kit",
+    id: "local-ai-stack",
+    name: "Local AI Stack",
     tagline: "The essentials to go from zero to querying with AI.",
     icon: Rocket,
     items: [
@@ -91,8 +91,8 @@ export function SetupPacks({ onDone }: { onDone: (packItemIds: string[] | null) 
         </div>
         <h1 className="font-heading text-[26px] font-bold text-foreground">Choose a starter pack</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Each pack installs a curated set of official Exasol tools from the Marketplace. Everything is optional — you can
-          skip this and add tools any time.
+          Studio is already preparing the platform-native local database, PyExasol, Semantic Views, Fable Method, ExaPump,
+          the MCP server, and Exasol agent skills. Choose a pack only for additional tools, or skip and add them later.
         </p>
 
         <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2">
