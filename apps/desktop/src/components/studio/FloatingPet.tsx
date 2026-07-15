@@ -48,6 +48,7 @@ export function FloatingPet({
   offset = 0,
   onSpawn,
   onClose,
+  tag,
 }: {
   connectionId?: string | null;
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
@@ -57,6 +58,8 @@ export function FloatingPet({
   offset?: number;
   onSpawn?: () => void;
   onClose?: () => void;
+  /** Small identity chip under the pet ("main", "task 1"…). */
+  tag?: string;
 }) {
   const [enabled, setEnabled] = useState(true);
   const [avatar, setAvatar] = useState<PetAvatarId>("exa");
@@ -455,6 +458,11 @@ export function FloatingPet({
           // walk like a person: face where you're going
           {...{ style: { transform: `scaleX(${facing})` } }}
         />
+        {tag ? (
+          <span className="pointer-events-none absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-panel px-1.5 py-px text-[8px] font-medium uppercase tracking-wide text-muted-foreground shadow">
+            {tag}
+          </span>
+        ) : null}
         {/* resize handle */}
         <div
           onPointerDown={(e) => {

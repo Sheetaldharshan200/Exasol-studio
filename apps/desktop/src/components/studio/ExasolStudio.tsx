@@ -2998,6 +2998,7 @@ export function ExasolStudio({
         connectionId={connection?.profile.id ?? null}
         onUiAction={handleUiAction}
         onSpawn={() => setExtraPets((p) => [...p, `${Date.now()}`])}
+        tag={extraPets.length ? "main" : undefined}
       />
       {extraPets.map((id, i) => (
         <FloatingPet
@@ -3007,6 +3008,7 @@ export function ExasolStudio({
           connectionId={connection?.profile.id ?? null}
           onUiAction={handleUiAction}
           onClose={() => setExtraPets((p) => p.filter((x) => x !== id))}
+          tag={`task ${i + 1}`}
         />
       ))}
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
