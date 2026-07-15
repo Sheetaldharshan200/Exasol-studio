@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { motion, useMotionValue, useSpring } from "motion/react";
 import { Plus, Send, Square, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -416,9 +416,28 @@ export function FloatingPet({
         role="button"
         aria-label="Your Exasol AI pet — click to ask, drag to move"
         title="Click to ask · drag to move"
-        className={cn("relative cursor-grab touch-none select-none active:cursor-grabbing")}
+        className={cn("group/pet relative cursor-grab touch-none select-none active:cursor-grabbing")}
         style={{ width: size, height: size }}
       >
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (standalone) onClose?.();
+            else {
+              // Dismiss = turn the pet off; re-enable any time in AI Settings.
+              void agent
+                .setSettings({ petMode: "off" })
+                .then(() => emit(EV_AI_PROVIDERS_CHANGED))
+                .catch(() => undefined);
+            }
+          }}
+          aria-label="Remove pet"
+          title={standalone ? "Dismiss this pet" : "Remove pet (re-enable in AI Settings)"}
+          className="absolute -right-1.5 -top-1.5 z-10 hidden h-4.5 w-4.5 items-center justify-center rounded-full border border-border bg-panel text-muted-foreground shadow group-hover/pet:flex hover:text-destructive"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
         <PetAvatar
           avatar={avatar}
           expression={expression}
