@@ -466,6 +466,40 @@ function GuardrailsSection({
       </section>
 
       <section>
+        <div className="mb-1 flex items-center gap-1.5">
+          <h2 className="text-[13px] font-semibold">Pet & app control</h2>
+        </div>
+        <p className="mb-2.5 text-[11.5px] text-muted-foreground">
+          The AI can operate the app for you (connect, open views, prepare SQL). Choose how visible that is.
+        </p>
+        <div className="space-y-2">
+          <ChoiceRow
+            label="When the AI acts in the app"
+            desc="Pet: a companion + cursor perform actions visibly. Cursor: just the cursor. Off: actions run silently."
+            value={settings.petMode}
+            options={[
+              { value: "pet", label: "Pet companion" },
+              { value: "cursor", label: "Cursor only" },
+              { value: "off", label: "Off — background" },
+            ]}
+            onChange={(v) => void patch({ petMode: v as AgentSettings["petMode"] })}
+          />
+          <ToggleRow
+            label="Allow destructive app actions"
+            desc="Disconnecting, deleting, dropping via UI control. Keep off unless you need it."
+            checked={settings.allowDestructiveUi}
+            onChange={(v) => void patch({ allowDestructiveUi: v })}
+          />
+          <ToggleRow
+            label="Allow file access"
+            desc="Reading and editing workspace files. Off by default."
+            checked={settings.allowFileAccess}
+            onChange={(v) => void patch({ allowFileAccess: v })}
+          />
+        </div>
+      </section>
+
+      <section>
         <h2 className="mb-1 text-[13px] font-semibold">Capabilities</h2>
         <div className="space-y-2">
           <ToggleRow

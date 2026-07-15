@@ -98,6 +98,8 @@ import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
+import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
+import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
@@ -469,6 +471,7 @@ function TitleBar({
         ) : hideConnect ? null : (
           <button
             onClick={onConnect}
+            data-agent-id="titlebar.connect"
             className="cta-glow flex h-6 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/85"
           >
             <PlugZap className="h-3.5 w-3.5" />
@@ -1496,6 +1499,96 @@ export function ExasolStudio({
     } catch {
       openConnect();
     }
+  }
+
+  // ── Agent UI control (the pet): ui_* tools land here ──
+  const cursorRef = useRef<AgentCursorHandle | null>(null);
+
+  async function handleUiAction(
+    action: string,
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; detail?: string }> {
+    let mode: CursorMode = "pet";
+    try {
+      mode = (await agentClient.getSettings()).settings.petMode;
+    } catch {
+      // default to pet
+    }
+
+    const target = String(params.target ?? "");
+    const railId = target === "dashboards" ? "bi" : target;
+    const anchorSel =
+      action === "connect"
+        ? '[data-agent-id="titlebar.connect"]'
+        : action === "open"
+          ? `[data-agent-id="rail.${railId}"]`
+          : null;
+    const el = anchorSel ? (document.querySelector(anchorSel) as HTMLElement | null) : null;
+    const label =
+      action === "connect"
+        ? "Connecting…"
+        : action === "open"
+          ? `Opening ${target}…`
+          : "Preparing SQL…";
+    await cursorRef.current?.flyTo(el, label, mode);
+
+    let result: { ok: boolean; detail?: string };
+    try {
+      if (action === "connect") {
+        const wanted = params.name ? String(params.name).toLowerCase() : null;
+        const profile = wanted
+          ? profiles.find((p) => p.name.toLowerCase() === wanted) ??
+            profiles.find((p) => p.name.toLowerCase().includes(wanted))
+          : profiles.length === 1
+            ? profiles[0]
+            : null;
+        if (!profile) {
+          openConnect();
+          result = { ok: false, detail: "Connect dialog opened — the user must pick/complete the connection." };
+        } else {
+          const server = await ipc.connect(profile.id);
+          await onConnected(profile, server);
+          await agentClient.grantConnection(profile.id).catch(() => undefined);
+          result = { ok: true, detail: profile.id };
+        }
+      } else if (action === "open") {
+        switch (railId) {
+          case "marketplace":
+            sidebarPanelRef.current?.collapse();
+            setSidebarOpen(false);
+            openMarketplace();
+            break;
+          case "guides":
+            sidebarPanelRef.current?.collapse();
+            setSidebarOpen(false);
+            openGuides();
+            break;
+          case "bi":
+            void openBi();
+            break;
+          case "settings":
+            void openSettingsWindow();
+            break;
+          case "query":
+            await openBuiltSql("", false);
+            break;
+          default:
+            setActivity(railId as ActivityId);
+            setSidebarOpen(true);
+            sidebarPanelRef.current?.expand();
+        }
+        result = { ok: true };
+      } else if (action === "editor_insert") {
+        await openBuiltSql(String(params.sql ?? ""), false);
+        result = { ok: true, detail: "SQL opened in a new query tab" };
+      } else {
+        result = { ok: false, detail: `unknown ui action ${action}` };
+      }
+    } catch (e) {
+      result = { ok: false, detail: errorMessage(e) };
+    }
+    await cursorRef.current?.finish(result.ok);
+    return result;
   }
 
   // Open a .sql file from disk into a new editor tab (Welcome / VS Code style).
@@ -2755,11 +2848,13 @@ export function ExasolStudio({
               connectionId={connection?.profile.id ?? null}
               onClose={toggleAi}
               onConnectRequest={openConnect}
+              onUiAction={handleUiAction}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
 
+      <AgentCursor ref={cursorRef} />
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
         <HistoryDock
           entries={history}

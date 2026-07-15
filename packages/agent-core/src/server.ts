@@ -242,6 +242,13 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // POST /v1/sessions/:id/ui-result  {id, ok, detail?}
+      if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "ui-result") {
+        const body = await readBody<{ id: string; ok: boolean; detail?: string }>(req);
+        const found = session.answerUi(body.id, Boolean(body.ok), body.detail);
+        return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending ui request" });
+      }
+
       // POST /v1/sessions/:id/abort
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "abort") {
         session.abort?.abort();

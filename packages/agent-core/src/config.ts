@@ -20,6 +20,12 @@ export type AgentSettings = {
   enableInsights: boolean;
   /** Auto-compact near the context window. */
   enableCompaction: boolean;
+  /** Pet companion mode for UI actions: pet, cursor-only, or background. */
+  petMode: "pet" | "cursor" | "off";
+  /** Allow UI actions that are destructive (disconnect, delete, drop). */
+  allowDestructiveUi: boolean;
+  /** Allow the agent to read/edit workspace files. */
+  allowFileAccess: boolean;
 };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -31,6 +37,9 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   enableResearcher: true,
   enableInsights: true,
   enableCompaction: true,
+  petMode: "pet",
+  allowDestructiveUi: false,
+  allowFileAccess: false,
 };
 
 /** Persistent agent configuration: provider keys, default model, options. */

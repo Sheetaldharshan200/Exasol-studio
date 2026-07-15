@@ -71,6 +71,7 @@ export function AssistantPanel({
   connectionId,
   onClose,
   onConnectRequest,
+  onUiAction,
 }: {
   contextSummary: string;
   editorSql: string;
@@ -82,6 +83,8 @@ export function AssistantPanel({
   onClose?: () => void;
   /** Open the app's connect dialog. */
   onConnectRequest?: () => void;
+  /** Perform a UI action for the agent (pet/cursor drives it). */
+  onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -100,6 +103,8 @@ export function AssistantPanel({
   const sessionRef = useRef<string | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const uiActionRef = useRef(onUiAction);
+  uiActionRef.current = onUiAction;
 
   const refreshProviders = useCallback(async () => {
     try {
@@ -190,6 +195,16 @@ export function AssistantPanel({
       setItems((m) => (m.map((it) => (it.kind === "perm" && it.id === e.id ? { ...it, result: e.allow } : it))));
     } else if (e.type === "title-changed") {
       setTitle(e.title);
+    } else if (e.type === "ui-request") {
+      void (async () => {
+        const sid = sessionRef.current;
+        if (!sid) return;
+        const r = (await uiActionRef.current?.(e.action, e.params).catch((err) => ({
+          ok: false as const,
+          detail: errorMessage(err),
+        }))) ?? { ok: false as const, detail: "UI control is unavailable in this window" };
+        await agent.answerUi(sid, e.id, r.ok, r.detail).catch(() => undefined);
+      })();
     } else if (e.type === "compacted") {
       setItems((m) => [
         ...m,
@@ -740,6 +755,13 @@ const TOOL_LABELS: Record<string, string> = {
   kb_join_path: "Finding join path",
   kb_refresh: "Rebuilding knowledge graph",
   app_ui_locate: "Locating in app",
+  ui_connect: "Connecting the app",
+  ui_open: "Opening in app",
+  ui_editor_insert: "Inserting SQL",
+  dashboard_save: "Saving dashboard",
+  dashboard_list: "Listing dashboards",
+  dashboard_get: "Reading dashboard",
+  list_connections: "Checking connections",
 };
 
 function argPreview(args: unknown): string {

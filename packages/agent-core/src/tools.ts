@@ -316,6 +316,57 @@ export function buildTools(ctx: {
         }
       : {}),
 
+    ...(!ctx.readOnly
+      ? {
+          ui_connect: tool({
+            description:
+              "Connect the app to a database by driving the UI (the pet/cursor performs it visibly, per the user's settings). " +
+              "Pass the saved connection's name if known; without a name the connect dialog opens for the user. " +
+              "After it reports ok, the connection is granted automatically — verify with list_connections and continue.",
+            inputSchema: z.object({
+              connection_name: z.string().optional().describe("Saved connection name, e.g. 'Exasol Personal'"),
+            }),
+            execute: async ({ connection_name }) => {
+              const r = await session.askUi("connect", { name: connection_name ?? null });
+              if (r.ok && r.detail) ctx.connectionId = r.detail; // granted id reported back
+              return r.ok
+                ? { ok: true, connected: r.detail ?? true }
+                : { ok: false, error: r.detail ?? "the app could not complete the connection" };
+            },
+          }),
+
+          ui_open: tool({
+            description:
+              "Open a part of the Exasol Studio UI for the user (pet/cursor drives it): " +
+              "databases, files, favorites, visualizer, git, marketplace, guides, dashboards, settings, or a new query tab ('query').",
+            inputSchema: z.object({
+              target: z.enum([
+                "databases",
+                "files",
+                "favorites",
+                "visualizer",
+                "git",
+                "marketplace",
+                "guides",
+                "dashboards",
+                "settings",
+                "query",
+              ]),
+            }),
+            execute: async ({ target }) => session.askUi("open", { target }),
+          }),
+
+          ui_editor_insert: tool({
+            description:
+              "Open a new query tab containing SQL for the user to review/run themselves (does NOT execute anything).",
+            inputSchema: z.object({
+              sql: z.string().min(1),
+            }),
+            execute: async ({ sql }) => session.askUi("editor_insert", { sql }),
+          }),
+        }
+      : {}),
+
     list_connections: tool({
       description:
         "List the database connections Exasol Studio has granted to this agent (names only). Useful to check whether a connection is available before answering.",

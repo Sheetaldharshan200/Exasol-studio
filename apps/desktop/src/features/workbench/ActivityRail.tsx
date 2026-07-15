@@ -72,6 +72,7 @@ export function ActivityRail({
               <TooltipTrigger asChild>
                 <button
                   data-tour={isViz ? "visualizer" : undefined}
+                  data-agent-id={`rail.${item.id}`}
                   aria-label={item.label}
                   onClick={() => onSelect(item.id)}
                   className={cn(
@@ -116,6 +117,7 @@ export function ActivityRail({
           <TooltipTrigger asChild>
             <button
               aria-label="Settings"
+              data-agent-id="rail.settings"
               onClick={onOpenSettings}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >

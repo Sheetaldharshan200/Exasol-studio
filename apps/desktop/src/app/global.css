@@ -624,3 +624,19 @@
   .agent-mark-active .agent-mark-node,
   .agent-shimmer { animation: none; }
 }
+
+/* ── Agent pet ──────────────────────────────────────────────────────── */
+@keyframes agent-pet-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes agent-pet-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-6px) scale(1.06); }
+}
+.agent-pet { animation: agent-pet-bob 1.6s ease-in-out infinite; }
+.agent-pet-acting { animation: agent-pet-bob 0.7s ease-in-out infinite; }
+.agent-pet-happy { animation: agent-pet-hop 0.5s ease-in-out 2; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-pet, .agent-pet-acting, .agent-pet-happy { animation: none; }
+}

@@ -36,6 +36,8 @@ export type AgentEvent =
   | { type: "permission-result"; id: string; allow: boolean }
   | { type: "title-changed"; title: string }
   | { type: "compacted"; folded: number }
+  | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
+  | { type: "ui-result"; id: string; ok: boolean; detail?: string }
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
@@ -65,6 +67,9 @@ export type AgentSettings = {
   enableResearcher: boolean;
   enableInsights: boolean;
   enableCompaction: boolean;
+  petMode: "pet" | "cursor" | "off";
+  allowDestructiveUi: boolean;
+  allowFileAccess: boolean;
 };
 
 export const agent = {
@@ -119,6 +124,10 @@ export const agent = {
 
   async answerPermission(sessionId: string, id: string, allow: boolean): Promise<void> {
     await api(`/sessions/${sessionId}/permission`, "POST", { id, allow });
+  },
+
+  async answerUi(sessionId: string, id: string, ok: boolean, detail?: string): Promise<void> {
+    await api(`/sessions/${sessionId}/ui-result`, "POST", { id, ok, detail });
   },
 
   /** Register a saved connection with the agent (decrypts server-side in Rust). */

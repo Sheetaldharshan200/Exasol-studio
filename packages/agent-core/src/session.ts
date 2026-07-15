@@ -15,6 +15,8 @@ export type AgentEvent =
   | { type: "permission-result"; id: string; allow: boolean }
   | { type: "title-changed"; title: string }
   | { type: "compacted"; folded: number }
+  | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
+  | { type: "ui-result"; id: string; ok: boolean; detail?: string }
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
@@ -45,6 +47,7 @@ export class Session {
   connectionId: string | null = null;
   private listeners = new Set<(e: AgentEvent) => void>();
   private pendingPermissions = new Map<string, (allow: boolean) => void>();
+  private pendingUi = new Map<string, (r: { ok: boolean; detail?: string }) => void>();
   private readonly transcriptFile: string;
 
   constructor(dataDir: string, id?: string, createdAt?: number) {
@@ -94,6 +97,34 @@ export class Session {
       this.abort?.signal.addEventListener("abort", onAbort, { once: true });
       this.emit({ type: "permission-ask", id, tool: req.tool, summary: req.summary, detail: req.detail });
     });
+  }
+
+  /** Ask the app UI to perform an action (pet/cursor drives it) and wait. */
+  askUi(action: string, params: Record<string, unknown>): Promise<{ ok: boolean; detail?: string }> {
+    const id = randomUUID();
+    this.record({ kind: "ui.request", id, action, params });
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => finish({ ok: false, detail: "timed out waiting for the app" }), 60_000);
+      const onAbort = () => finish({ ok: false, detail: "aborted" });
+      const finish = (r: { ok: boolean; detail?: string }) => {
+        clearTimeout(timer);
+        this.abort?.signal.removeEventListener("abort", onAbort);
+        this.pendingUi.delete(id);
+        this.record({ kind: "ui.result", id, ...r });
+        this.emit({ type: "ui-result", id, ok: r.ok, detail: r.detail });
+        resolve(r);
+      };
+      this.pendingUi.set(id, finish);
+      this.abort?.signal.addEventListener("abort", onAbort, { once: true });
+      this.emit({ type: "ui-request", id, action, params });
+    });
+  }
+
+  answerUi(id: string, ok: boolean, detail?: string): boolean {
+    const finish = this.pendingUi.get(id);
+    if (!finish) return false;
+    finish({ ok, detail });
+    return true;
   }
 
   answerPermission(id: string, allow: boolean): boolean {
