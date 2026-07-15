@@ -1525,6 +1525,13 @@ export function ExasolStudio({
     async (id: string, title: string) => {
       const a = await artifactClient.get(id).catch(() => null);
       if (!a) return;
+      // Focus an already-open tab for this artifact; otherwise open a NEW one
+      // (no limit — many artifacts can be open at once).
+      const existing = tabsFor(connKey).find((t) => t.view === "artifact" && t.id.startsWith(`tab-artifact-${id}-`));
+      if (existing) {
+        setActiveTabId(existing.id);
+        return;
+      }
       tabCounter.current += 1;
       const tab: SqlTab = {
         id: `tab-artifact-${id}-${tabCounter.current}`,

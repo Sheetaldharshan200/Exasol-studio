@@ -212,6 +212,21 @@ export type Dashboard = {
 
 export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
 
+export type Skill = { name: string; description: string; body: string; source: "builtin" | "user" };
+
+export const skills = {
+  async list(): Promise<Skill[]> {
+    const { skills: s } = await api<{ skills: Skill[] }>("/skills");
+    return s;
+  },
+  async save(name: string, description: string, body: string): Promise<void> {
+    await api("/skills", "PUT", { name, description, body });
+  },
+  async remove(name: string): Promise<void> {
+    await api(`/skills/${encodeURIComponent(name)}`, "DELETE");
+  },
+};
+
 export const artifacts = {
   async list(): Promise<{ id: string; title: string; createdAt: number }[]> {
     const { artifacts: a } = await api<{ artifacts: { id: string; title: string; createdAt: number }[] }>("/artifacts");

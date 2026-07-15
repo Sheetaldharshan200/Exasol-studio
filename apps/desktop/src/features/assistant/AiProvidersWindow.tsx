@@ -9,6 +9,7 @@ import {
   Play,
   RefreshCcw,
   ShieldCheck,
+  Sparkles,
   SlidersHorizontal,
   Square,
   Zap,
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { PET_AVATARS, PetAvatar } from "@/components/studio/PetAvatar";
+import { skills as skillsApi, type Skill } from "@/lib/agent-client";
 import {
   agent,
   llm,
@@ -39,12 +41,13 @@ const CLOUD_META: Record<string, { hint: string; keyUrl: string }> = {
   openrouter: { hint: "One key, many models", keyUrl: "https://openrouter.ai/keys" },
 };
 
-type SectionKey = "providers" | "guardrails" | "behavior";
+type SectionKey = "providers" | "guardrails" | "behavior" | "skills";
 
 const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon; desc: string }[] = [
   { key: "providers", label: "Providers & Models", icon: Cpu, desc: "Built-in engine, local runtimes, API keys" },
   { key: "guardrails", label: "Guardrails", icon: ShieldCheck, desc: "What the AI may and may not do" },
   { key: "behavior", label: "Behavior", icon: SlidersHorizontal, desc: "Steps, temperature, instructions" },
+  { key: "skills", label: "Skills", icon: Sparkles, desc: "Reusable instruction packs for the agent" },
 ];
 
 /** Standalone AI Settings window: sidebar + sections. */
@@ -210,6 +213,8 @@ export function AiProvidersWindow() {
               />
             ) : section === "guardrails" ? (
               <GuardrailsSection settings={settings} patch={patchSettings} />
+            ) : section === "skills" ? (
+              <SkillsSection />
             ) : (
               <BehaviorSection
                 settings={settings}
@@ -754,6 +759,115 @@ function NumberRow({
         className="h-7 w-20 shrink-0 rounded-md border border-border bg-editor px-2 text-right font-mono text-[12px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
       />
     </div>
+  );
+}
+
+function SkillsSection() {
+  const [list, setList] = useState<Skill[]>([]);
+  const [editing, setEditing] = useState<{ name: string; description: string; body: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const refresh = () => skillsApi.list().then(setList).catch((e) => setErr(errorMessage(e)));
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  if (editing) {
+    return (
+      <section>
+        <h2 className="mb-1 text-[13px] font-semibold">{editing.name ? "Edit skill" : "New skill"}</h2>
+        <p className="mb-2.5 text-[11.5px] text-muted-foreground">
+          A skill is an instruction pack the agent loads for a matching task. Give it a clear name and description; write the steps in the body (Markdown).
+        </p>
+        <div className="space-y-2">
+          <input
+            value={editing.name}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            placeholder="skill-name"
+            className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12.5px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+          />
+          <input
+            value={editing.description}
+            onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+            placeholder="One line — when should the agent use this?"
+            className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+          />
+          <textarea
+            value={editing.body}
+            onChange={(e) => setEditing({ ...editing, body: e.target.value })}
+            rows={12}
+            placeholder="# How to do X\n\nStep-by-step instructions the agent will follow…"
+            className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[12px] leading-relaxed outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+          />
+        </div>
+        <div className="mt-2 flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+          <Button
+            size="sm"
+            disabled={!editing.name.trim() || !editing.body.trim()}
+            onClick={() => {
+              void skillsApi
+                .save(editing.name, editing.description, editing.body)
+                .then(() => {
+                  setEditing(null);
+                  void refresh();
+                })
+                .catch((e) => setErr(errorMessage(e)));
+            }}
+          >
+            Save skill
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <div className="mb-1 flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        <h2 className="text-[13px] font-semibold">Skills</h2>
+        <Button
+          size="sm"
+          className="ml-auto h-7"
+          onClick={() => setEditing({ name: "", description: "", body: "" })}
+        >
+          New skill
+        </Button>
+      </div>
+      <p className="mb-2.5 text-[11.5px] text-muted-foreground">
+        Reusable instruction packs the agent loads for matching tasks. Built-in ones ship with the app; add your own for your team's conventions.
+      </p>
+      {err ? <div className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-[11.5px]">{err}</div> : null}
+      <div className="space-y-2">
+        {list.map((sk) => (
+          <div key={sk.name} className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[12.5px] font-medium text-foreground">{sk.name}</span>
+              <span className={cn("rounded px-1.5 py-px text-[9px] font-medium uppercase", sk.source === "builtin" ? "bg-secondary text-muted-foreground" : "bg-primary/15 text-primary")}>
+                {sk.source}
+              </span>
+              <div className="ml-auto flex gap-1">
+                <button
+                  onClick={() => setEditing({ name: sk.name, description: sk.description, body: sk.body })}
+                  className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  {sk.source === "builtin" ? "Copy & edit" : "Edit"}
+                </button>
+                {sk.source === "user" ? (
+                  <button
+                    onClick={() => void skillsApi.remove(sk.name).then(refresh)}
+                    className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-destructive"
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{sk.description}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -9,7 +9,7 @@ import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
-import { loadSkills } from "./skills.ts";
+import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
 import { log } from "./log.ts";
 
@@ -71,12 +71,13 @@ export async function runTurn(opts: {
   config: ConfigStore;
   dashboards: DashboardStore;
   artifacts: ArtifactStore;
+  skills: SkillStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, insights, kb, store, config, dashboards, artifacts, modelRef, userText, context } = opts;
+  const { session, registry, db, insights, kb, store, config, dashboards, artifacts, skills: skillStore, modelRef, userText, context } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -95,7 +96,7 @@ export async function runTurn(opts: {
   if (settings.customInstructions.trim()) {
     system += `\n\nWorkspace instructions from the user:\n${settings.customInstructions.trim()}`;
   }
-  const skillList = loadSkills();
+  const skillList = skillStore.list();
   if (skillList.length) {
     system += `\n\nSkills — load the full instructions with load_skill(name) before the matching task:\n${skillList
       .map((sk) => `- ${sk.name}: ${sk.description}`)
@@ -116,8 +117,7 @@ export async function runTurn(opts: {
     });
   }
 
-  const skills = loadSkills();
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards, artifacts, skills });
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards, artifacts, skills: skillStore.list() });
   const started = Date.now();
   const callCounts = new Map<string, number>();
   const DOOM_LIMIT = 3;

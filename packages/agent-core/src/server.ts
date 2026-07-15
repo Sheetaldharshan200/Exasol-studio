@@ -8,6 +8,7 @@ import { InsightStore } from "./insights.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
 import { ArtifactStore } from "./artifacts.ts";
+import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -23,6 +24,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const kb = new KnowledgeGraph(config.dataDir);
   const dashboards = new DashboardStore(config.dataDir);
   const artifacts = new ArtifactStore(config.dataDir);
+  const skills = new SkillStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -113,6 +115,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // Skills: list / save / delete
+      if (parts[1] === "skills") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
+        if (req.method === "PUT") {
+          const b = await readBody<{ name: string; description?: string; body: string }>(req);
+          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
+          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // GET /v1/artifacts — list (newest first)
       if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
         return json(res, 200, { artifacts: artifacts.list() });
@@ -185,6 +200,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // Skills: list / save / delete
+      if (parts[1] === "skills") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
+        if (req.method === "PUT") {
+          const b = await readBody<{ name: string; description?: string; body: string }>(req);
+          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
+          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // GET /v1/artifacts — list (newest first)
       if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
         return json(res, 200, { artifacts: artifacts.list() });
@@ -213,6 +241,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           config,
           dashboards,
           artifacts,
+          skills,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
@@ -237,6 +266,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         if (req.method === "DELETE" && parts[2]) {
           return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
+      // Skills: list / save / delete
+      if (parts[1] === "skills") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
+        if (req.method === "PUT") {
+          const b = await readBody<{ name: string; description?: string; body: string }>(req);
+          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
+          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
         }
       }
 
@@ -278,6 +320,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // Skills: list / save / delete
+      if (parts[1] === "skills") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
+        if (req.method === "PUT") {
+          const b = await readBody<{ name: string; description?: string; body: string }>(req);
+          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
+          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
+      }
+
       // GET /v1/artifacts — list (newest first)
       if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
         return json(res, 200, { artifacts: artifacts.list() });
@@ -294,6 +349,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const body = await readBody<{ id: string; ok: boolean; detail?: string }>(req);
         const found = session.answerUi(body.id, Boolean(body.ok), body.detail);
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending ui request" });
+      }
+
+      // Skills: list / save / delete
+      if (parts[1] === "skills") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
+        if (req.method === "PUT") {
+          const b = await readBody<{ name: string; description?: string; body: string }>(req);
+          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
+          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
+        }
       }
 
       // GET /v1/artifacts — list (newest first)
