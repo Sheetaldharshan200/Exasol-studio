@@ -20,6 +20,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { ModelPicker } from "@/features/assistant/ModelPicker";
 import { agent, type AgentEvent, type AgentProviderInfo } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { errorMessage } from "@/lib/ipc";
@@ -326,7 +327,8 @@ export function AssistantPanel({
     return p?.models.find((m) => m.id === mid)?.name ?? mid;
   }, [model, providers]);
 
-  const isLocalModel = model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
+  const isLocalModel =
+    model.startsWith("builtin/") || model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
   const ollama = providers.find((p) => p.id === "ollama");
   const thinking = sending && !items.some((it) => it.kind === "msg" && it.streaming && it.content);
 
@@ -478,52 +480,16 @@ export function AssistantPanel({
                 <ChevronDown className="h-2.5 w-2.5 shrink-0" />
               </button>
               {showPicker ? (
-                <div className="absolute bottom-full left-0 z-30 mb-1.5 max-h-72 w-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
-                  {providers
-                    .filter((p) => p.models.length > 0 && (p.kind === "local" ? p.running : p.configured))
-                    .map((p) => (
-                      <div key={p.id}>
-                        <div className="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
-                          <span className="eyebrow-muted">{p.name}</span>
-                          {p.kind === "local" ? (
-                            <span className="rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">
-                              local
-                            </span>
-                          ) : null}
-                        </div>
-                        {p.models.map((m) => {
-                          const ref = `${p.id}/${m.id}`;
-                          return (
-                            <button
-                              key={ref}
-                              onClick={() => pickModel(ref)}
-                              className={cn(
-                                "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
-                                ref === model && "bg-secondary",
-                              )}
-                            >
-                              <span className="flex-1 truncate text-[12px] text-foreground">{m.name}</span>
-                              {ref === model ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  {providers.every((p) => (p.kind === "local" ? !p.running || !p.models.length : !p.configured)) ? (
-                    <div className="px-2.5 py-3 text-[11.5px] text-muted-foreground">
-                      No models yet — add an API key or start Ollama.
-                    </div>
-                  ) : null}
-                  <button
-                    onClick={() => {
-                      setShowPicker(false);
-                      void openAiProvidersWindow();
-                    }}
-                    className="flex w-full items-center gap-1.5 border-t border-border px-2.5 py-1.5 text-left text-[11px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-                  >
-                    <SlidersHorizontal className="h-3 w-3" /> Manage models & keys…
-                  </button>
-                </div>
+                <ModelPicker
+                  providers={providers}
+                  model={model}
+                  onPick={pickModel}
+                  onManage={() => {
+                    setShowPicker(false);
+                    void openAiProvidersWindow();
+                  }}
+                  onRefresh={() => void refreshProviders()}
+                />
               ) : null}
             </div>
 
