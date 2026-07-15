@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
 import type { InsightStore } from "./insights.ts";
+import type { KnowledgeGraph } from "./kb.ts";
 
 // The agent's Exasol tools. Metadata queries are ported from the official
 // exasol/mcp-server (MIT) SYS-catalog SQL. Reads run freely (row-capped);
@@ -44,6 +45,7 @@ export function buildTools(ctx: {
   session: Session;
   connectionId: string | null;
   insights?: InsightStore;
+  kb?: KnowledgeGraph;
   /** Model for sub-agents; omitting disables spawn_researcher. */
   model?: LanguageModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
@@ -61,6 +63,54 @@ export function buildTools(ctx: {
   };
 
   return {
+    ...(ctx.kb
+      ? {
+          kb_search: tool({
+            description:
+              "FASTEST way to find the right tables: search the pre-built schema knowledge graph with the user's question. " +
+              "Returns compact table cards (columns, row counts, join conditions). Use this FIRST for any data question, then verify details with describe_table if needed.",
+            inputSchema: z.object({
+              question: z.string().describe("The user's question or keywords, e.g. 'revenue by region'"),
+            }),
+            execute: async ({ question }) => {
+              const id = requireConn();
+              if (!ctx.kb!.crawledAt(id)) {
+                await ctx.kb!.refresh(id, db);
+              }
+              const cards = ctx.kb!.search(id, question);
+              session.record({ kind: "tool.kb_search", question, hits: cards.length });
+              return cards.length
+                ? { tables: cards }
+                : { tables: [], note: "No graph matches — fall back to list_schemas / list_tables discovery." };
+            },
+          }),
+
+          kb_join_path: tool({
+            description: "Find how two tables join (shortest path over foreign keys and inferred keys).",
+            inputSchema: z.object({
+              from_table: z.string(),
+              to_table: z.string(),
+            }),
+            execute: async ({ from_table, to_table }) => {
+              const id = requireConn();
+              const path = ctx.kb!.joinPath(id, from_table, to_table);
+              return path
+                ? { joins: path }
+                : { joins: null, note: "No known join path — inspect both tables with describe_table." };
+            },
+          }),
+
+          kb_refresh: tool({
+            description: "Re-crawl the database schema into the knowledge graph (after DDL changes).",
+            inputSchema: z.object({}),
+            execute: async () => {
+              const id = requireConn();
+              return ctx.kb!.refresh(id, db);
+            },
+          }),
+        }
+      : {}),
+
     list_schemas: tool({
       description: "List all schemas in the connected Exasol database.",
       inputSchema: z.object({}),
@@ -107,7 +157,7 @@ export function buildTools(ctx: {
         const columns = await db.query(
           id,
           `SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_IS_NULLABLE AS NULLABLE,
-                  COLUMN_DEFAULT AS DEFAULT_VALUE, COLUMN_IDENTITY AS IDENTITY, COLUMN_COMMENT AS REMARKS
+                  COLUMN_DEFAULT AS DEFAULT_VALUE, COLUMN_IDENTITY AS IDENTITY_START, COLUMN_COMMENT AS REMARKS
              FROM SYS.EXA_ALL_COLUMNS
             WHERE COLUMN_SCHEMA = ${s} AND COLUMN_TABLE = ${t}
             ORDER BY COLUMN_ORDINAL_POSITION`,
@@ -230,6 +280,7 @@ export function buildTools(ctx: {
                 session,
                 connectionId: ctx.connectionId,
                 insights: ctx.insights,
+                kb: ctx.kb,
                 readOnly: true,
               });
               const res = await generateText({

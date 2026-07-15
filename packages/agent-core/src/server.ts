@@ -5,6 +5,7 @@ import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { InsightStore } from "./insights.ts";
+import { KnowledgeGraph } from "./kb.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -17,6 +18,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const sessions = new SessionStore(config.dataDir);
   const db = new DbRegistry();
   const insights = new InsightStore(config.dataDir);
+  const kb = new KnowledgeGraph(config.dataDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -61,6 +63,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const info = await readBody<DbConnectionInfo>(req);
         if (!info.id || !info.host || !info.user) return json(res, 400, { error: "id, host, user required" });
         db.register(info);
+        // Crawl the schema graph in the background so kb_search is warm.
+        setTimeout(() => {
+          kb.refresh(info.id, db).catch((e) => log.warn("kb crawl failed", { error: String(e) }));
+        }, 50);
         return json(res, 200, { ok: true });
       }
 
@@ -122,6 +128,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           registry,
           db,
           insights,
+          kb,
           store: sessions,
           modelRef: body.model,
           userText: body.text,

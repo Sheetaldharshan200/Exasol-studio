@@ -3,6 +3,7 @@ import type { ProviderRegistry } from "./providers.ts";
 import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
 import type { InsightStore } from "./insights.ts";
+import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
 import { log } from "./log.ts";
 
@@ -18,6 +19,7 @@ EVIDENCE RULES — these are absolute:
 - If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
 
 Working method:
+- START data questions with kb_search — it returns the relevant tables, columns, and join conditions from the schema knowledge graph in one call.
 - Answer data questions by running SQL with run_sql, then summarize the actual result.
 - For broad exploration (many schemas/tables), fan out with spawn_researcher — issue several calls in one turn; they run in parallel and report back.
 - When you verify a durable fact (a join key, what a table means, a business definition), save it with remember_insight so future sessions know it.
@@ -37,13 +39,14 @@ export async function runTurn(opts: {
   registry: ProviderRegistry;
   db: DbRegistry;
   insights: InsightStore;
+  kb: KnowledgeGraph;
   store: SessionStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, insights, store, modelRef, userText, context } = opts;
+  const { session, registry, db, insights, kb, store, modelRef, userText, context } = opts;
   if (session.running) throw new Error("Session is already generating");
 
   const model = registry.resolve(modelRef);
@@ -62,7 +65,7 @@ export async function runTurn(opts: {
   session.abort = new AbortController();
   session.emit({ type: "status", state: "thinking" });
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, model });
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model });
   const started = Date.now();
   const fallbackId = crypto.randomUUID();
   let sawText = false;

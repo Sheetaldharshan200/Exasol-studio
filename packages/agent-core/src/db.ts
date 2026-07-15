@@ -27,7 +27,8 @@ export type QueryOutput = {
 
 /** Rows returned to the model are capped hard — context is precious. */
 const MODEL_ROW_CAP = 50;
-const FETCH_ROW_CAP = 500;
+/** Driver-level ceiling — protects memory on runaway SELECTs. */
+const FETCH_ROW_CAP = 200_000;
 
 export class DbRegistry {
   private conns = new Map<string, DbConnectionInfo>();
@@ -113,6 +114,20 @@ export class DbRegistry {
       rows,
       rowCount: all.length,
       truncated: all.length > MODEL_ROW_CAP || all.length === FETCH_ROW_CAP,
+    };
+  }
+
+  /** Full-result query for internal consumers (KB crawler) — no model cap. */
+  async queryAll(id: string, sql: string): Promise<QueryOutput> {
+    const d = await this.driver(id);
+    const result = await d.query(sql);
+    const columns = result.getColumns().map((c) => c.name);
+    const all = result.getRows();
+    return {
+      columns,
+      rows: all.map((r) => columns.map((c) => r[c] ?? null)),
+      rowCount: all.length,
+      truncated: all.length === FETCH_ROW_CAP,
     };
   }
 
