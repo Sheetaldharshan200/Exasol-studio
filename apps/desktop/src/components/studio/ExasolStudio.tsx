@@ -2773,6 +2773,7 @@ export function ExasolStudio({
               pendingPrompt={aiPrompt}
               connectionId={connection?.profile.id ?? null}
               onClose={toggleAi}
+              onConnectRequest={openConnect}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

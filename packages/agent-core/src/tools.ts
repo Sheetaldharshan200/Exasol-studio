@@ -58,8 +58,11 @@ export function buildTools(ctx: {
 
   const requireConn = (): string => {
     if (!ctx.connectionId) {
+      const saved = db.list();
       throw new Error(
-        "No database connection is active. Ask the user to connect to a database in Exasol Studio first.",
+        saved.length
+          ? `No connection is active in this chat. Saved connections exist (${saved.map((c) => c.name).join(", ")}) — tell the user to connect via the Connect button in the title bar, then retry. Do not ask for credentials.`
+          : "No database connection is active. Tell the user to connect via the Connect button in the title bar (for a local Exasol Personal the defaults are localhost:8563, user sys, password exasol). Do not ask for credentials in chat — Exasol Studio manages them.",
       );
     }
     return ctx.connectionId;
@@ -265,6 +268,22 @@ export function buildTools(ctx: {
           const parts = rows.filter((r) => r.STMT_ID === latest).map((r) => columns.map((c) => r[c] ?? null));
           return { columns, rows: parts, rowCount: parts.length };
         });
+      },
+    }),
+
+    list_connections: tool({
+      description:
+        "List the database connections Exasol Studio has granted to this agent (names only). Useful to check whether a connection is available before answering.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const conns = db.list();
+        return {
+          connections: conns,
+          active: ctx.connectionId,
+          note: conns.length
+            ? undefined
+            : "None granted yet — the user must connect via the Connect button in the title bar.",
+        };
       },
     }),
 
