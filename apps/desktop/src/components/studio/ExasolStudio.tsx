@@ -1514,15 +1514,15 @@ export function ExasolStudio({
   const cursorRef = useRef<AgentCursorHandle | null>(null);
   const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
-  const openSavedDashboard = useCallback((id: string) => {
+  // Plain functions (redefined each render) so they always see the CURRENT
+  // connection/tabs — a useCallback([]) here froze them at the disconnected
+  // first render and opened tabs in the wrong bucket.
+  function openSavedDashboard(id: string) {
     openBiTab();
-    // Let the Dashboards view mount before asking it to open the report.
     window.setTimeout(() => dashboardBus.open(id), 200);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
-  const openArtifact = useCallback(
-    async (id: string, title: string) => {
+  async function openArtifact(id: string, title: string) {
       const a = await artifactClient.get(id).catch(() => null);
       if (!a) return;
       // Focus an already-open tab for this artifact; otherwise open a NEW one
@@ -1544,10 +1544,7 @@ export function ExasolStudio({
       };
       updateTabs(connKey, (l) => [...l, tab]);
       setActiveTabId(tab.id);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [connKey],
-  );
+  }
 
   /** Fill a React-controlled input the way a real keystroke would. */
   function fillAnchor(anchor: string, value: string): boolean {
