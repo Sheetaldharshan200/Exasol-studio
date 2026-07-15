@@ -207,36 +207,55 @@ pub async fn llm_engine_install(app: AppHandle, state: State<'_, AppState>) -> A
         ))
     })?;
 
-    emit(&app, "engine", None, "Fetching latest engine release…");
+    emit(&app, "engine", None, "Resolving latest engine release…");
     let client = reqwest::Client::builder()
         .user_agent("exasol-studio")
         .build()
         .map_err(|e| AppError::Assistant(e.to_string()))?;
-    let release: serde_json::Value = client
-        .get(RELEASES_LATEST)
+    // Separate no-redirect client purely for reading the Location header.
+    let no_redirect = reqwest::Client::builder()
+        .user_agent("exasol-studio")
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AppError::Assistant(e.to_string()))?;
+
+    // Resolve the latest tag from the releases/latest redirect — unlike the
+    // REST API this is not rate-limited. Fall back to the API if it fails.
+    let tag = match no_redirect
+        .get("https://github.com/ggml-org/llama.cpp/releases/latest")
         .send()
         .await
-        .map_err(|e| AppError::Assistant(format!("release lookup failed: {e}")))?
-        .json()
-        .await
-        .map_err(|e| AppError::Assistant(format!("bad release payload: {e}")))?;
+        .ok()
+        .and_then(|r| r.headers().get("location").and_then(|l| l.to_str().ok()).map(String::from))
+        .and_then(|loc| loc.rsplit('/').next().map(String::from))
+        .filter(|t| !t.is_empty())
+    {
+        Some(tag) => tag,
+        None => {
+            let release: serde_json::Value = client
+                .get(RELEASES_LATEST)
+                .send()
+                .await
+                .map_err(|e| AppError::Assistant(format!("release lookup failed: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Assistant(format!("bad release payload: {e}")))?;
+            match release["tag_name"].as_str() {
+                Some(t) => t.to_string(),
+                None => {
+                    let msg = release["message"].as_str().unwrap_or("unknown error");
+                    return Err(AppError::Assistant(format!("could not resolve engine release: {msg}")));
+                }
+            }
+        }
+    };
 
-    let tag = release["tag_name"].as_str().unwrap_or("unknown").to_string();
-    let asset = release["assets"]
-        .as_array()
-        .and_then(|assets| {
-            assets.iter().find(|a| {
-                a["name"]
-                    .as_str()
-                    .map(|n| n.starts_with("llama-") && n.contains(fragment))
-                    .unwrap_or(false)
-            })
-        })
-        .ok_or_else(|| AppError::Assistant("no engine build for this platform in the latest release".into()))?;
-    let url = asset["browser_download_url"]
-        .as_str()
-        .ok_or_else(|| AppError::Assistant("asset has no download url".into()))?;
-    let name = asset["name"].as_str().unwrap_or("engine");
+    // Asset names follow "llama-<tag>-bin-<platform>.<ext>" in every release.
+    let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
+    let name = format!("llama-{tag}{fragment}{ext}");
+    let url = format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{name}");
+    let name = name.as_str();
+    let url = url.as_str();
 
     // Fresh install dir per version.
     let dir = engine_dir(&state);
