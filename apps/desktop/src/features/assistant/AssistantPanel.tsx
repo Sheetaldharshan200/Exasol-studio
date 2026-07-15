@@ -557,7 +557,7 @@ export function AssistantPanel({
         ) : (
           clusterItems(items).map((c) =>
             c.kind === "cluster" ? (
-              <StepCluster key={c.id} items={c.items} onAnswer={answerPermission} />
+              <StepCluster key={c.id} items={c.items} />
             ) : c.item.kind === "note" ? (
               <div key={c.item.id} className="flex items-center gap-2 py-0.5">
                 <span className="h-px flex-1 bg-border" />
@@ -579,6 +579,14 @@ export function AssistantPanel({
 
       {/* ── Composer ── */}
       <div className="relative shrink-0 p-2.5 pt-0">
+        {items
+          .filter((it): it is Extract<ChatItem, { kind: "perm" }> => it.kind === "perm" && it.result === undefined)
+          .slice(0, 1)
+          .map((p) => (
+            <div key={p.id} className="mb-1.5">
+              <PermissionCard item={p} onAnswer={answerPermission} />
+            </div>
+          ))}
         {!connectionId ? (
           <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/8 px-2.5 py-1.5">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
@@ -710,34 +718,66 @@ function clusterItems(items: ChatItem[]): Cluster[] {
 
 function StepCluster({
   items,
-  onAnswer,
 }: {
   items: Extract<ChatItem, { kind: "tool" | "perm" }>[];
-  onAnswer: (id: string, allow: boolean) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const active = items.some((it) => (it.kind === "tool" ? !it.done : it.result === undefined));
   const steps = items.length;
+  const current = [...items].reverse().find((it) => it.kind === "tool" && !it.done) as
+    | Extract<ChatItem, { kind: "tool" }>
+    | undefined;
   return (
     <div className="rounded-xl border border-border/70 bg-panel/40">
-      <div className="flex items-center gap-1.5 border-b border-border/50 px-2.5 py-1.5">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
+      >
+        <ChevronDown
+          className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !expanded && "-rotate-90")}
+        />
         {active ? (
-          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
         ) : (
-          <Check className="h-3 w-3 text-primary" />
+          <Check className="h-3 w-3 shrink-0 text-primary" />
         )}
-        <span className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
-          {active ? "Working" : "Done"} · {steps} step{steps === 1 ? "" : "s"}
+        <span className={cn("text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground", active && "agent-shimmer")}>
+          {active ? (current ? TOOL_LABELS[current.name] ?? "Working" : "Working") : "Done"} · {steps} step{steps === 1 ? "" : "s"}
         </span>
-      </div>
-      <div className="space-y-1 p-1.5">
-        {items.map((it) =>
-          it.kind === "tool" ? (
-            <ToolChip key={it.id} item={it} />
-          ) : (
-            <PermissionCard key={it.id} item={it} onAnswer={onAnswer} />
-          ),
+      </button>
+      {expanded ? (
+        <div className="space-y-1 border-t border-border/50 p-1.5">
+          {items.map((it) =>
+            it.kind === "tool" ? (
+              <ToolChip key={it.id} item={it} />
+            ) : (
+              <PermRow key={it.id} item={it} />
+            ),
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Compact record of an answered (or pending) permission inside the steps list. */
+function PermRow({ item }: { item: Extract<ChatItem, { kind: "perm" }> }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-1.5">
+      <ShieldAlert className={cn("h-3 w-3 shrink-0", item.result === undefined ? "text-warning" : "text-muted-foreground")} />
+      <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground">{item.summary}</span>
+      <span
+        className={cn(
+          "shrink-0 rounded px-1.5 py-px text-[9px] font-medium uppercase",
+          item.result === undefined
+            ? "bg-warning/15 text-warning"
+            : item.result
+              ? "bg-primary/15 text-primary"
+              : "bg-destructive/15 text-destructive",
         )}
-      </div>
+      >
+        {item.result === undefined ? "waiting" : item.result ? "allowed" : "denied"}
+      </span>
     </div>
   );
 }
