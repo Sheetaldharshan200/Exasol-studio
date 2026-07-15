@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-15T12:05:33.013Z",
+  "generatedAt": "2026-07-15T12:15:11.994Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -65,6 +65,12 @@
       "label": "rail settings",
       "where": "apps/desktop/src/features/workbench/ActivityRail.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/workbench/ActivityRail.tsx"
+    },
+    {
+      "id": "anchor.sidebar.add-connection",
+      "label": "sidebar add connection",
+      "where": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/components/studio/ExasolStudio.tsx"
     },
     {
       "id": "anchor.tabs.new",

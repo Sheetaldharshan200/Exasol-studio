@@ -99,6 +99,7 @@ import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
+import { UiGraph } from "@/lib/ui-graph";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
@@ -842,7 +843,7 @@ function Sidebar({
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pr-1 pl-3">
         <span className="eyebrow-muted">{title}</span>
         <div data-tour="add-connection" className="flex items-center gap-0.5">
-          <IconButton label="Add connection" onClick={onConnect}>
+          <IconButton label="Add connection" data-agent-id="sidebar.add-connection" onClick={onConnect}>
             <Plus className="h-3.5 w-3.5" />
           </IconButton>
           {hasConnections ? (
@@ -1603,36 +1604,69 @@ export function ExasolStudio({
             result = { ok: false, detail: errorMessage(e) };
           }
         } else {
-          // Human-style, on the REAL connect tab: open it, walk to each field,
-          // type, then press the real Connect button and wait for the outcome.
-          openConnect();
-          await new Promise((r) => setTimeout(r, 350));
-          const steps: [string, string, string][] = [
-            ["connect.name", draft.name, "Naming the connection…"],
-            ["connect.host", draft.host, "Host…"],
-            ["connect.username", draft.username, "Username…"],
-            ["connect.password", draft.password, "Password…"],
-          ];
-          for (const [anchor, value, lbl] of steps) {
-            const el = document.querySelector(`[data-agent-id="${anchor}"]`) as HTMLElement | null;
+          // Route-planner navigation over the REAL UI: weighted edges,
+          // bidirectional search, and Maps-style rerouting when a step fails.
+          const g = new UiGraph();
+          const anchor = (id: string) => document.querySelector(`[data-agent-id="${id}"]`) as HTMLElement | null;
+          const hop = (id: string, lbl: string) => async () => {
+            const el = anchor(id);
+            if (!el) return false;
             await cursorRef.current?.flyTo(el, lbl, mode, avatar);
-            fillAnchor(anchor, value);
-          }
-          const submit = document.querySelector('[data-agent-id="connect.submit"]') as HTMLElement | null;
-          await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
-          const done = new Promise<{ ok: boolean; detail?: string }>((resolve) => {
-            const timer = window.setTimeout(() => {
-              agentConnectedCb.current = null;
-              resolve({ ok: false, detail: "Connection didn't complete — the Connect tab shows the details; the user can adjust and retry there." });
-            }, 45_000);
-            agentConnectedCb.current = (pid) => {
-              window.clearTimeout(timer);
-              agentConnectedCb.current = null;
-              resolve({ ok: true, detail: pid });
-            };
+            return true;
+          };
+          const fillStep = (id: string, value: string, lbl: string) => async () => {
+            const el = anchor(id);
+            if (!el) return false;
+            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            return fillAnchor(id, value);
+          };
+          const openTab = (viaAnchor: string) => async () => {
+            const el = anchor(viaAnchor);
+            if (!el) return false;
+            await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode, avatar);
+            openConnect();
+            await new Promise((r) => setTimeout(r, 350));
+            return true;
+          };
+          g.node({ id: "connect.tab", verify: () => Boolean(anchor("connect.name")) });
+          // Two roads into the connect tab — the title bar, or the sidebar (+).
+          g.edge({ from: "start", to: "connect.tab", weight: 1, label: "via Connect button", action: openTab("titlebar.connect") });
+          g.edge({ from: "start", to: "connect.tab", weight: 2, label: "via sidebar +", action: openTab("sidebar.add-connection") });
+          g.edge({ from: "connect.tab", to: "name.filled", weight: 1, label: "name", action: fillStep("connect.name", draft.name, "Naming the connection…") });
+          g.edge({ from: "name.filled", to: "host.filled", weight: 1, label: "host", action: fillStep("connect.host", draft.host, "Host…") });
+          g.edge({ from: "host.filled", to: "user.filled", weight: 1, label: "username", action: fillStep("connect.username", draft.username, "Username…") });
+          g.edge({ from: "user.filled", to: "pass.filled", weight: 1, label: "password", action: fillStep("connect.password", draft.password, "Password…") });
+          g.edge({
+            from: "pass.filled",
+            to: "connected",
+            weight: 2,
+            label: "connect",
+            action: async () => {
+              const submit = anchor("connect.submit");
+              if (!submit) return false;
+              await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
+              const done = new Promise<boolean>((resolve) => {
+                const timer = window.setTimeout(() => {
+                  agentConnectedCb.current = null;
+                  resolve(false);
+                }, 45_000);
+                agentConnectedCb.current = () => {
+                  window.clearTimeout(timer);
+                  agentConnectedCb.current = null;
+                  resolve(true);
+                };
+              });
+              submit.click();
+              return done;
+            },
           });
-          submit?.click();
-          result = await done;
+          const nav = await g.navigate("start", "connected");
+          result = nav.ok
+            ? { ok: true, detail: "connected" }
+            : {
+                ok: false,
+                detail: `Stopped at "${nav.at}" — ${nav.detail ?? "the Connect tab shows the current state; the user can adjust and retry there."}`,
+              };
         }
       } else if (action === "open") {
         switch (railId) {
