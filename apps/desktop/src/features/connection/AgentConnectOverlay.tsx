@@ -76,7 +76,7 @@ export function AgentConnectOverlay({
 
   return (
     <div className="fixed inset-0 z-[9997] flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
-      <div className="w-[380px] rounded-2xl border border-border bg-popover p-4 shadow-2xl">
+      <div data-agent-id="agent-overlay" className="w-[380px] rounded-2xl border border-border bg-popover p-4 shadow-2xl">
         <div className="mb-3 flex items-center gap-2">
           <AgentMark className="h-4 w-4 text-primary" active={connecting || !typed} />
           <span className="text-[13px] font-semibold text-foreground">

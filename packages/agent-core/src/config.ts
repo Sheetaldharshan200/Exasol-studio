@@ -39,7 +39,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   enableResearcher: true,
   enableInsights: true,
   enableCompaction: true,
-  petMode: "pet",
+  petMode: "off",
   petAvatar: "exa",
   allowDestructiveUi: false,
   allowFileAccess: false,

@@ -1590,8 +1590,12 @@ export function ExasolStudio({
       action === "connect"
         ? '[data-agent-id="titlebar.connect"]'
         : action === "open"
-          ? `[data-agent-id="rail.${railId}"]`
-          : null;
+          ? railId === "query"
+            ? '[data-agent-id="tabs.new"]'
+            : `[data-agent-id="rail.${railId}"]`
+          : action === "editor_insert"
+            ? '[data-agent-id="tabs.new"]'
+            : null;
     const el = anchorSel ? (document.querySelector(anchorSel) as HTMLElement | null) : null;
     const label =
       action === "connect"
@@ -1652,9 +1656,15 @@ export function ExasolStudio({
           // Human-style: fill the form in view, then WAIT for the user to
           // confirm, adjust, or cancel. The tool resolves with the truth.
           setOverlayError(null);
-          result = await new Promise<{ ok: boolean; detail?: string }>((resolve) => {
+          const pending = new Promise<{ ok: boolean; detail?: string }>((resolve) => {
             setConnectOverlay({ draft: draft!, resolve });
           });
+          // Step 2: walk over to the form it just "opened".
+          window.setTimeout(() => {
+            const card = document.querySelector('[data-agent-id="agent-overlay"]') as HTMLElement | null;
+            if (card) void cursorRef.current?.flyTo(card, "Filling in the details…", mode, avatar);
+          }, 250);
+          result = await pending;
         }
       } else if (action === "open") {
         switch (railId) {
@@ -2513,6 +2523,7 @@ export function ExasolStudio({
               {/* New-tab button sits directly after the last tab. */}
               <button
                 aria-label="New query tab"
+                data-agent-id="tabs.new"
                 onClick={addTab}
                 className="flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
               >

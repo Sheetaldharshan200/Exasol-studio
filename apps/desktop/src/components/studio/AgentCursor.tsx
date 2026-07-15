@@ -48,11 +48,13 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
       setState("moving");
 
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Scroll FIRST (instantly), then measure — measuring before the scroll
+      // sent the cursor to where the element USED to be.
+      el?.scrollIntoView?.({ behavior: "auto", block: "nearest" });
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const rect = el?.getBoundingClientRect();
       const tx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
       const ty = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-
-      el?.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "center" });
 
       if (mode === "pet") petBus.emit({ type: "travel", x: tx + 30, y: ty + 26 });
       if (reduced) {

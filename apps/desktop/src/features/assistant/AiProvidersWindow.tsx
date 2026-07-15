@@ -474,7 +474,7 @@ function GuardrailsSection({
           <h2 className="text-[13px] font-semibold">Pet & app control</h2>
         </div>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
-          The AI can operate the app for you (connect, open views, prepare SQL). Choose how visible that is.
+          The AI can operate the app for you (connect, open views, prepare SQL). Off by default — enable it here if you want the pet or cursor to click around; Off runs everything silently in the background.
         </p>
         <div className="space-y-2">
           <ChoiceRow
