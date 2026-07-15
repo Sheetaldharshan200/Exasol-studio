@@ -100,6 +100,7 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { FloatingPet } from "@/components/studio/FloatingPet";
+import { AgentConnectOverlay, type ConnectDraft } from "@/features/connection/AgentConnectOverlay";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
@@ -1504,6 +1505,70 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
+  const [connectOverlay, setConnectOverlay] = useState<{
+    draft: ConnectDraft;
+    resolve: (r: { ok: boolean; detail?: string }) => void;
+  } | null>(null);
+  const [overlayError, setOverlayError] = useState<string | null>(null);
+  const [overlayConnecting, setOverlayConnecting] = useState(false);
+
+  async function overlayConnectDirect(final: ConnectDraft): Promise<{ ok: boolean; detail?: string }> {
+    const existing = profiles.find((p) => p.name.toLowerCase() === final.name.toLowerCase());
+    const profile = await ipc.saveConnectionProfile({
+      ...(existing ?? {}),
+      id: existing?.id,
+      name: final.name,
+      host: final.host,
+      port: final.port,
+      username: final.username,
+      password: final.password,
+      schema: final.schema,
+      notes: final.notes,
+      sslMode: existing?.sslMode ?? "preferred",
+      compression: existing?.compression ?? false,
+      driverId: existing?.driverId ?? "sqlx-exasol",
+    });
+    await onSaved?.();
+    const server = await ipc.connect(profile.id);
+    await onConnected(profile, server);
+    await agentClient.grantConnection(profile.id).catch(() => undefined);
+    return { ok: true, detail: profile.id };
+  }
+
+  async function overlayConnect(final: ConnectDraft) {
+    if (!connectOverlay) return;
+    setOverlayConnecting(true);
+    setOverlayError(null);
+    try {
+      const existing = profiles.find((p) => p.name.toLowerCase() === final.name.toLowerCase());
+      const profile = await ipc.saveConnectionProfile({
+        ...(existing ?? {}),
+        id: existing?.id,
+        name: final.name || `${final.username}@${final.host}`,
+        host: final.host,
+        port: final.port,
+        username: final.username,
+        password: final.password,
+        schema: final.schema,
+        notes: final.notes,
+        sslMode: existing?.sslMode ?? "preferred",
+        compression: existing?.compression ?? false,
+        driverId: existing?.driverId ?? "sqlx-exasol",
+      });
+      await onSaved?.();
+      const server = await ipc.connect(profile.id);
+      await onConnected(profile, server);
+      await agentClient.grantConnection(profile.id).catch(() => undefined);
+      const resolve = connectOverlay.resolve;
+      setConnectOverlay(null);
+      setOverlayConnecting(false);
+      resolve({ ok: true, detail: profile.id });
+    } catch (e) {
+      // Stay open — the human adjusts and retries, exactly like a person would.
+      setOverlayConnecting(false);
+      setOverlayError(errorMessage(e));
+    }
+  }
 
   async function handleUiAction(
     action: string,
@@ -1540,63 +1605,56 @@ export function ExasolStudio({
     try {
       if (action === "connect") {
         const wanted = params.name ? String(params.name).toLowerCase() : null;
-        let profile = wanted
+        const profile = wanted
           ? profiles.find((p) => p.name.toLowerCase() === wanted) ??
             profiles.find((p) => p.name.toLowerCase().includes(wanted))
           : profiles.length === 1
             ? profiles[0]
             : profiles.find((p) => p.host === "localhost" || p.host === "127.0.0.1") ?? null;
-        // Explicit details from the user (host/username/password/notes) win:
-        // create or update the profile with exactly what they specified.
-        if (params.host || params.username || params.password || params.notes) {
-          const host = String(params.host ?? profile?.host ?? "localhost");
-          const username = String(params.username ?? profile?.username ?? "sys");
-          profile = await ipc.saveConnectionProfile({
-            ...(profile ?? {}),
-            id: profile?.id,
-            name: String(params.name ?? profile?.name ?? `${username}@${host}`),
-            host,
+
+        // Build the draft the way a person would fill the form: explicit user
+        // details > the matched saved profile > local defaults (if reachable).
+        let draft: ConnectDraft | null = null;
+        if (params.host || params.username || profile) {
+          draft = {
+            name: String(params.name ?? profile?.name ?? `${params.username ?? "sys"}@${params.host ?? "localhost"}`),
+            host: String(params.host ?? profile?.host ?? "localhost"),
             port: Number(params.port ?? profile?.port ?? 8563),
-            username,
+            username: String(params.username ?? profile?.username ?? "sys"),
             password: String(params.password ?? profile?.password ?? ""),
-            schema: params.schema ? String(params.schema) : profile?.schema,
-            notes: params.notes ? String(params.notes) : profile?.notes,
-            sslMode: profile?.sslMode ?? "preferred",
-            compression: profile?.compression ?? false,
-            driverId: profile?.driverId ?? "sqlx-exasol",
-          });
-          await onSaved?.();
-        }
-        // No saved profile? If the local Exasol Personal is reachable, create
-        // the default profile and connect — "use defaults" should just work.
-        if (!profile) {
-          try {
-            const ping = await ipc.pingServer("localhost", 8563).catch(() => null);
-            if (ping?.reachable) {
-              profile = await ipc.saveConnectionProfile({
-                name: "Exasol Personal",
-                host: "localhost",
-                port: 8563,
-                username: "sys",
-                password: "exasol",
-                sslMode: "preferred",
-                compression: false,
-                driverId: "sqlx-exasol",
-              });
-              await onSaved?.();
-            }
-          } catch {
-            // fall through to the dialog
+            schema: params.schema ? String(params.schema) : (profile?.schema ?? undefined),
+            notes: params.notes ? String(params.notes) : (profile?.notes ?? undefined),
+          };
+        } else {
+          const ping = await ipc.pingServer("localhost", 8563).catch(() => null);
+          if (ping?.reachable) {
+            draft = {
+              name: "Exasol Personal",
+              host: "localhost",
+              port: 8563,
+              username: "sys",
+              password: "exasol",
+            };
           }
         }
-        if (!profile) {
+
+        if (!draft) {
           openConnect();
           result = { ok: false, detail: "Connect dialog opened — the user must pick/complete the connection." };
+        } else if (mode === "off") {
+          // Background mode: no theater, just connect.
+          try {
+            result = await overlayConnectDirect(draft);
+          } catch (e) {
+            result = { ok: false, detail: errorMessage(e) };
+          }
         } else {
-          const server = await ipc.connect(profile.id);
-          await onConnected(profile, server);
-          await agentClient.grantConnection(profile.id).catch(() => undefined);
-          result = { ok: true, detail: profile.id };
+          // Human-style: fill the form in view, then WAIT for the user to
+          // confirm, adjust, or cancel. The tool resolves with the truth.
+          setOverlayError(null);
+          result = await new Promise<{ ok: boolean; detail?: string }>((resolve) => {
+            setConnectOverlay({ draft: draft!, resolve });
+          });
         }
       } else if (action === "open") {
         switch (railId) {
@@ -2901,13 +2959,21 @@ export function ExasolStudio({
       </div>
 
       <AgentCursor ref={cursorRef} />
-      <FloatingPet
-        onAsk={(text) => {
-          setAiOpen(true);
-          aiPanelRef.current?.expand();
-          setAiPrompt({ text, nonce: Date.now() });
-        }}
-      />
+      <FloatingPet connectionId={connection?.profile.id ?? null} onUiAction={handleUiAction} />
+      {connectOverlay ? (
+        <AgentConnectOverlay
+          draft={connectOverlay.draft}
+          error={overlayError}
+          connecting={overlayConnecting}
+          onConnect={(final) => void overlayConnect(final)}
+          onCancel={() => {
+            const resolve = connectOverlay.resolve;
+            setConnectOverlay(null);
+            setOverlayError(null);
+            resolve({ ok: false, detail: "The user cancelled the connection." });
+          }}
+        />
+      ) : null}
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
         <HistoryDock
           entries={history}

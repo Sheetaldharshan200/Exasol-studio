@@ -1,7 +1,8 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { AgentMark } from "@/components/studio/AgentMark";
-import { PetAvatar, type PetAvatarId } from "@/components/studio/PetAvatar";
+import type { PetAvatarId } from "@/components/studio/PetAvatar";
+import { petBus } from "@/lib/pet-bus";
 import { cn } from "@/lib/utils";
 
 // The agent's visible hand: a Magic-UI-style smooth spring cursor, optionally
@@ -22,8 +23,7 @@ const SPRING = { stiffness: 130, damping: 18, mass: 0.6 };
 
 export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_props, ref) {
   const [visible, setVisible] = useState(false);
-  const [withPet, setWithPet] = useState(true);
-  const [avatar, setAvatar] = useState<PetAvatarId>("exa");
+  const withPetRef = useRef(true);
   const [label, setLabel] = useState("");
   const [state, setState] = useState<"moving" | "acting" | "done" | "failed">("moving");
   const x = useMotionValue(typeof window === "undefined" ? 0 : window.innerWidth / 2);
@@ -42,8 +42,8 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
     async flyTo(el, lbl, mode, av) {
       if (mode === "off") return;
       if (hideTimer.current) window.clearTimeout(hideTimer.current);
-      setWithPet(mode === "pet");
-      if (av) setAvatar(av);
+      withPetRef.current = mode === "pet";
+      void av;
       setLabel(lbl);
       setState("moving");
 
@@ -54,6 +54,7 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
 
       el?.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "center" });
 
+      if (mode === "pet") petBus.emit({ type: "travel", x: tx + 30, y: ty + 26 });
       if (reduced) {
         x.set(tx);
         y.set(ty);
@@ -74,11 +75,16 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
         await settled(sx, sy, tx, ty);
       }
       setState("acting");
+      if (withPetRef.current) petBus.emit({ type: "work" });
       await sleep(reduced ? 150 : 420);
     },
 
     async finish(ok) {
       setState(ok ? "done" : "failed");
+      if (withPetRef.current) {
+        petBus.emit({ type: "celebrate", ok });
+        window.setTimeout(() => petBus.emit({ type: "home" }), 900);
+      }
       await sleep(650);
       setVisible(false);
       hideTimer.current = window.setTimeout(() => setLabel(""), 300);
@@ -125,34 +131,9 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
         ) : null}
       </motion.div>
 
-      {/* Pet companion — trails the cursor on softer springs */}
-      {withPet ? <Pet x={x} y={y} state={state} avatar={avatar} /> : null}
     </div>
   );
 });
-
-function Pet({
-  x,
-  y,
-  state,
-  avatar,
-}: {
-  x: ReturnType<typeof useMotionValue<number>>;
-  y: ReturnType<typeof useMotionValue<number>>;
-  state: "moving" | "acting" | "done" | "failed";
-  avatar: PetAvatarId;
-}) {
-  const px = useSpring(x, { stiffness: 60, damping: 14, mass: 1.1 });
-  const py = useSpring(y, { stiffness: 60, damping: 14, mass: 1.1 });
-  const ox = useTransform(px, (v) => v + 26);
-  const oy = useTransform(py, (v) => v + 20);
-  const expression = state === "moving" ? "walk" : state === "acting" ? "work" : state === "done" ? "happy" : "idle";
-  return (
-    <motion.div style={{ x: ox, y: oy }} className="absolute">
-      <PetAvatar avatar={avatar} expression={expression} className="h-11 w-11 drop-shadow-lg" />
-    </motion.div>
-  );
-}
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));

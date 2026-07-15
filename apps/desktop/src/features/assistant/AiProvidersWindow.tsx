@@ -131,6 +131,8 @@ export function AiProvidersWindow() {
     try {
       const next = await agent.setSettings(patch);
       setSettings(next);
+      // Other windows (pet, panel) react immediately.
+      await emit(EV_AI_PROVIDERS_CHANGED);
     } catch (err) {
       setError(errorMessage(err));
     }

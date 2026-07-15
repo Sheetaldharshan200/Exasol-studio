@@ -104,7 +104,7 @@ export class Session {
     const id = randomUUID();
     this.record({ kind: "ui.request", id, action, params });
     return new Promise((resolve) => {
-      const timer = setTimeout(() => finish({ ok: false, detail: "timed out waiting for the app" }), 60_000);
+      const timer = setTimeout(() => finish({ ok: false, detail: "timed out waiting for the app/user" }), 180_000);
       const onAbort = () => finish({ ok: false, detail: "aborted" });
       const finish = (r: { ok: boolean; detail?: string }) => {
         clearTimeout(timer);
