@@ -20,6 +20,14 @@ const MAX = 4000;
 let counts = new Map<string, number>();
 let lastAnchor: string | null = null;
 let started = false;
+let loaded = false;
+
+function ensureLoaded() {
+  if (!loaded) {
+    loaded = true;
+    load();
+  }
+}
 
 function load() {
   try {
@@ -50,7 +58,7 @@ function persist() {
 export function initTraceRecorder() {
   if (started) return;
   started = true;
-  load();
+  ensureLoaded();
   document.addEventListener(
     "click",
     (e) => {
@@ -80,13 +88,23 @@ export function addLearnedEdges(
   }
 }
 
+/** Record a transition programmatically (agent-driven navigation learns too). */
+export function recordTransition(from: string, to: string) {
+  ensureLoaded();
+  const k = `${from}→${to}`;
+  counts.set(k, (counts.get(k) ?? 0) + 1);
+  persist();
+}
+
 export function traceStats(): { transitions: number; interactions: number } {
+  ensureLoaded();
   let interactions = 0;
   for (const c of counts.values()) interactions += c;
   return { transitions: counts.size, interactions };
 }
 
 export function exportTraces(): string {
+  ensureLoaded();
   return JSON.stringify(
     {
       version: 1,
@@ -103,6 +121,7 @@ export function exportTraces(): string {
 
 /** Merge an imported pack (max-count merge — never loses local learning). */
 export function importTraces(json: string): number {
+  ensureLoaded();
   const pack = JSON.parse(json) as TracePack;
   if (pack.version !== 1 || !Array.isArray(pack.transitions)) throw new Error("Not a trace pack");
   for (const t of pack.transitions) {

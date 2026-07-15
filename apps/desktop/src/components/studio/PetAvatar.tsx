@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 // walking legs. Pure SVG + CSS animation — no assets, theme-independent.
 
 export type PetAvatarId = "exa" | "byte" | "pixel" | "quill" | "dot";
-export type PetExpression = "idle" | "walk" | "work" | "happy";
+export type PetExpression = "idle" | "walk" | "work" | "happy" | "dizzy";
 
 export const PET_AVATARS: { id: PetAvatarId; name: string; body: string; accent: string }[] = [
   { id: "exa", name: "Exa", body: "#5fc33b", accent: "#2f7d14" },
@@ -28,7 +28,13 @@ export function PetAvatar({
   return (
     <svg
       viewBox="0 0 48 48"
-      className={cn("pet-svg", walking && "pet-svg-walking", expression === "happy" && "pet-svg-happy", className)}
+      className={cn(
+        "pet-svg",
+        walking && "pet-svg-walking",
+        expression === "happy" && "pet-svg-happy",
+        expression === "dizzy" && "pet-svg-dizzy",
+        className,
+      )}
       aria-hidden
     >
       {/* legs */}
@@ -58,7 +64,14 @@ export function PetAvatar({
         )}
         {/* face */}
         <g className="pet-face">
-          {expression === "happy" ? (
+          {expression === "dizzy" ? (
+            <>
+              {/* spiral eyes + wavy mouth */}
+              <path d="M15.5 21a2.5 2.5 0 1 1 2.5 2.5 1.4 1.4 0 1 1 0-2.8" stroke="#0b1e04" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+              <path d="M27.5 21a2.5 2.5 0 1 1 2.5 2.5 1.4 1.4 0 1 1 0-2.8" stroke="#0b1e04" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+              <path d="M18 29q2-2 4 0t4 0" stroke="#0b1e04" strokeWidth="2" fill="none" strokeLinecap="round" />
+            </>
+          ) : expression === "happy" ? (
             <>
               <path d="M15 21q3-4 6 0" stroke="#0b1e04" strokeWidth="2.4" fill="none" strokeLinecap="round" />
               <path d="M27 21q3-4 6 0" stroke="#0b1e04" strokeWidth="2.4" fill="none" strokeLinecap="round" />

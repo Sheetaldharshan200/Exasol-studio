@@ -680,3 +680,11 @@
 @media (prefers-reduced-motion: reduce) {
   .pet-svg, .pet-svg *, .pet-svg-walking, .pet-svg-happy { animation: none !important; }
 }
+
+@keyframes pet-dizzy-wobble {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+.pet-svg-dizzy { transform-origin: 24px 24px; animation: pet-dizzy-wobble 0.35s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pet-svg-dizzy { animation: none; } }

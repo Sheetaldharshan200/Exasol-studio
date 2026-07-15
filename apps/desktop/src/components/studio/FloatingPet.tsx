@@ -64,6 +64,13 @@ export function FloatingPet({
   const [text, setText] = useState("");
   const [scale, setScale] = useState(() => Number(localStorage.getItem(SIZE_KEY)) || 1);
   const [expression, setExpression] = useState<PetExpression>("idle");
+  const [facing, setFacing] = useState<1 | -1>(1);
+  const dizzyTimer = useRef<number | null>(null);
+  function bonk() {
+    setExpression("dizzy");
+    if (dizzyTimer.current) window.clearTimeout(dizzyTimer.current);
+    dizzyTimer.current = window.setTimeout(() => setExpression("idle"), 900);
+  }
   const [traveling, setTraveling] = useState(false);
   const [chat, setChat] = useState<PetChat | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -118,8 +125,12 @@ export function FloatingPet({
           setTraveling(true);
           setOpen(false);
           setExpression("walk");
-          x.set(Math.min(Math.max(cmd.x, 8), window.innerWidth - 40));
-          y.set(Math.min(Math.max(cmd.y, 8), window.innerHeight - 48));
+          setFacing(cmd.x >= x.get() ? 1 : -1);
+          const cx = Math.min(Math.max(cmd.x, 8), window.innerWidth - 40);
+          const cy = Math.min(Math.max(cmd.y, 8), window.innerHeight - 48);
+          if (cx !== cmd.x || cy !== cmd.y) bonk();
+          x.set(cx);
+          y.set(cy);
         } else if (cmd.type === "work") {
           setExpression("work");
         } else if (cmd.type === "celebrate") {
@@ -259,10 +270,14 @@ export function FloatingPet({
     const ny = e.clientY - dragging.current.dy;
     if (Math.abs(nx - dock.current.x) + Math.abs(ny - dock.current.y) > 6) dragging.current.moved = true;
     if (dragging.current.moved) {
-      x.set(nx);
-      y.set(ny);
-      sx.jump(nx);
-      sy.jump(ny);
+      const cx = Math.min(Math.max(nx, 4), window.innerWidth - 44);
+      const cy = Math.min(Math.max(ny, 4), window.innerHeight - 52);
+      if (cx !== nx || cy !== ny) bonk();
+      setFacing(cx >= x.get() ? 1 : -1);
+      x.set(cx);
+      y.set(cy);
+      sx.jump(cx);
+      sy.jump(cy);
     }
   }
   function onPetPointerUp(e: React.PointerEvent) {
@@ -404,7 +419,13 @@ export function FloatingPet({
         className={cn("relative cursor-grab touch-none select-none active:cursor-grabbing")}
         style={{ width: size, height: size }}
       >
-        <PetAvatar avatar={avatar} expression={expression} className="h-full w-full drop-shadow-lg" />
+        <PetAvatar
+          avatar={avatar}
+          expression={expression}
+          className="h-full w-full drop-shadow-lg transition-transform"
+          // walk like a person: face where you're going
+          {...{ style: { transform: `scaleX(${facing})` } }}
+        />
         {/* resize handle */}
         <div
           onPointerDown={(e) => {

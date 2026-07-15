@@ -101,7 +101,7 @@ import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { EV_ESTABLISHED } from "@/lib/connect-window";
-import { addLearnedEdges, initTraceRecorder } from "@/lib/ui-trace";
+import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
@@ -1678,7 +1678,7 @@ export function ExasolStudio({
               return done;
             },
           });
-          const nav = await g.navigate("start", "connected");
+          const nav = await g.navigate("start", "connected", (e) => recordTransition(e.from, e.to));
           result = nav.ok
             ? { ok: true, detail: "connected" }
             : {
