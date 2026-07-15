@@ -100,6 +100,7 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
+import { EV_ESTABLISHED } from "@/lib/connect-window";
 import { addLearnedEdges, initTraceRecorder } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
@@ -1655,16 +1656,22 @@ export function ExasolStudio({
               const submit = anchor("connect.submit");
               if (!submit) return false;
               await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
+              // Success arrives via EITHER path: the in-tab callback OR the
+              // dedicated connect window's established event.
+              const { listen: tListen } = await import("@tauri-apps/api/event");
               const done = new Promise<boolean>((resolve) => {
-                const timer = window.setTimeout(() => {
-                  agentConnectedCb.current = null;
-                  resolve(false);
-                }, 45_000);
-                agentConnectedCb.current = () => {
+                let un: (() => void) | null = null;
+                const finish = (ok: boolean) => {
                   window.clearTimeout(timer);
                   agentConnectedCb.current = null;
-                  resolve(true);
+                  un?.();
+                  resolve(ok);
                 };
+                const timer = window.setTimeout(() => finish(false), 45_000);
+                agentConnectedCb.current = () => finish(true);
+                void tListen(EV_ESTABLISHED, () => finish(true)).then((f) => {
+                  un = f;
+                });
               });
               submit.click();
               return done;
