@@ -240,7 +240,7 @@ export function ConnectView({
               )}
               {testing ? "Testing…" : testedOk === true ? "Tested" : "Test connection"}
             </Button>
-            <Button size="sm" className="cta-glow" disabled={!canRun} onClick={() => launch("connect")}>
+            <Button size="sm" className="cta-glow" data-agent-id="connect.submit" disabled={!canRun} onClick={() => launch("connect")}>
               <PlugZap className="h-3.5 w-3.5" />
               Connect
               <ArrowRight className="h-3.5 w-3.5" />
@@ -327,6 +327,7 @@ export function ConnectView({
               <div className="grid max-w-2xl gap-4">
                 <Field label="Connection name" optional>
                   <Input
+                    data-agent-id="connect.name"
                     placeholder={draft.username && draft.host ? `${draft.username}@${draft.host}` : "Local Exasol"}
                     value={draft.name}
                     onChange={(e) => patch({ name: e.target.value })}
@@ -334,7 +335,7 @@ export function ConnectView({
                 </Field>
                 <div className="grid grid-cols-[1fr_120px] gap-3">
                   <Field label="Host">
-                    <Input value={draft.host} onChange={(e) => patch({ host: e.target.value })} />
+                    <Input data-agent-id="connect.host" value={draft.host} onChange={(e) => patch({ host: e.target.value })} />
                   </Field>
                   <Field label="Port">
                     <Input
@@ -348,13 +349,14 @@ export function ConnectView({
                   <Field label="Username">
                     <div className="relative">
                       <KeyRound className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input className="pl-8" value={draft.username} onChange={(e) => patch({ username: e.target.value })} />
+                      <Input data-agent-id="connect.username" className="pl-8" value={draft.username} onChange={(e) => patch({ username: e.target.value })} />
                     </div>
                   </Field>
                   <Field label="Password">
                     <div className="relative">
                       <Lock className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
+                        data-agent-id="connect.password"
                         className="pl-8 pr-9"
                         type={showPassword ? "text" : "password"}
                         value={draft.password}

@@ -205,6 +205,8 @@ export function FloatingPet({
 
   // Drag to move (click still opens); corner handle resizes.
   function onPetPointerDown(e: React.PointerEvent) {
+    e.preventDefault(); // no text selection while dragging
+    document.body.classList.add("select-none");
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     dragging.current = { dx: e.clientX - x.get(), dy: e.clientY - y.get(), moved: false };
   }
@@ -226,6 +228,7 @@ export function FloatingPet({
     }
   }
   function onPetPointerUp(e: React.PointerEvent) {
+    document.body.classList.remove("select-none");
     if (resizing.current) {
       localStorage.setItem(SIZE_KEY, String(scale));
       resizing.current = null;

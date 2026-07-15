@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-15T11:50:49.636Z",
+  "generatedAt": "2026-07-15T12:04:20.419Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -31,10 +31,46 @@
       "hint": "Sidebar: Providers & Models / Guardrails (read-write policy, pet mode + companion picker, restrictions) / Behavior (steps, temperature, workspace instructions)."
     },
     {
+      "id": "anchor.connect.host",
+      "label": "connect host",
+      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
+      "id": "anchor.connect.name",
+      "label": "connect name",
+      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
+      "id": "anchor.connect.password",
+      "label": "connect password",
+      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
+      "id": "anchor.connect.submit",
+      "label": "connect submit",
+      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
+      "id": "anchor.connect.username",
+      "label": "connect username",
+      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
       "id": "anchor.rail.settings",
       "label": "rail settings",
       "where": "apps/desktop/src/features/workbench/ActivityRail.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/workbench/ActivityRail.tsx"
+    },
+    {
+      "id": "anchor.tabs.new",
+      "label": "tabs new",
+      "where": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/components/studio/ExasolStudio.tsx"
     },
     {
       "id": "anchor.titlebar.connect",

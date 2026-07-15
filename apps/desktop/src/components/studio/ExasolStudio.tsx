@@ -100,7 +100,6 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { FloatingPet } from "@/components/studio/FloatingPet";
-import { AgentConnectOverlay, type ConnectDraft } from "@/features/connection/AgentConnectOverlay";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
@@ -1505,14 +1504,20 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
-  const [connectOverlay, setConnectOverlay] = useState<{
-    draft: ConnectDraft;
-    resolve: (r: { ok: boolean; detail?: string }) => void;
-  } | null>(null);
-  const [overlayError, setOverlayError] = useState<string | null>(null);
-  const [overlayConnecting, setOverlayConnecting] = useState(false);
+  /** Resolves when ConnectView completes a connection (agent flow waits on it). */
+  const agentConnectedCb = useRef<((profileId: string) => void) | null>(null);
 
-  async function overlayConnectDirect(final: ConnectDraft): Promise<{ ok: boolean; detail?: string }> {
+  /** Fill a React-controlled input the way a real keystroke would. */
+  function fillAnchor(anchor: string, value: string): boolean {
+    const el = document.querySelector(`[data-agent-id="${anchor}"]`) as HTMLInputElement | null;
+    if (!el) return false;
+    el.focus();
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    setter?.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+  async function overlayConnectDirect(final: { name: string; host: string; port: number; username: string; password: string; schema?: string; notes?: string }): Promise<{ ok: boolean; detail?: string }> {
     const existing = profiles.find((p) => p.name.toLowerCase() === final.name.toLowerCase());
     const profile = await ipc.saveConnectionProfile({
       ...(existing ?? {}),
@@ -1535,40 +1540,7 @@ export function ExasolStudio({
     return { ok: true, detail: profile.id };
   }
 
-  async function overlayConnect(final: ConnectDraft) {
-    if (!connectOverlay) return;
-    setOverlayConnecting(true);
-    setOverlayError(null);
-    try {
-      const existing = profiles.find((p) => p.name.toLowerCase() === final.name.toLowerCase());
-      const profile = await ipc.saveConnectionProfile({
-        ...(existing ?? {}),
-        id: existing?.id,
-        name: final.name || `${final.username}@${final.host}`,
-        host: final.host,
-        port: final.port,
-        username: final.username,
-        password: final.password,
-        schema: final.schema,
-        notes: final.notes,
-        sslMode: existing?.sslMode ?? "preferred",
-        compression: existing?.compression ?? false,
-        driverId: existing?.driverId ?? "sqlx-exasol",
-      });
-      await onSaved?.();
-      const server = await ipc.connect(profile.id);
-      await onConnected(profile, server);
-      await agentClient.grantConnection(profile.id).catch(() => undefined);
-      const resolve = connectOverlay.resolve;
-      setConnectOverlay(null);
-      setOverlayConnecting(false);
-      resolve({ ok: true, detail: profile.id });
-    } catch (e) {
-      // Stay open — the human adjusts and retries, exactly like a person would.
-      setOverlayConnecting(false);
-      setOverlayError(errorMessage(e));
-    }
-  }
+
 
   async function handleUiAction(
     action: string,
@@ -1615,56 +1587,52 @@ export function ExasolStudio({
           : profiles.length === 1
             ? profiles[0]
             : profiles.find((p) => p.host === "localhost" || p.host === "127.0.0.1") ?? null;
-
-        // Build the draft the way a person would fill the form: explicit user
-        // details > the matched saved profile > local defaults (if reachable).
-        let draft: ConnectDraft | null = null;
-        if (params.host || params.username || profile) {
-          draft = {
-            name: String(params.name ?? profile?.name ?? `${params.username ?? "sys"}@${params.host ?? "localhost"}`),
-            host: String(params.host ?? profile?.host ?? "localhost"),
-            port: Number(params.port ?? profile?.port ?? 8563),
-            username: String(params.username ?? profile?.username ?? "sys"),
-            password: String(params.password ?? profile?.password ?? ""),
-            schema: params.schema ? String(params.schema) : (profile?.schema ?? undefined),
-            notes: params.notes ? String(params.notes) : (profile?.notes ?? undefined),
-          };
-        } else {
-          const ping = await ipc.pingServer("localhost", 8563).catch(() => null);
-          if (ping?.reachable) {
-            draft = {
-              name: "Exasol Personal",
-              host: "localhost",
-              port: 8563,
-              username: "sys",
-              password: "exasol",
-            };
-          }
-        }
-
-        if (!draft) {
-          openConnect();
-          result = { ok: false, detail: "Connect dialog opened — the user must pick/complete the connection." };
-        } else if (mode === "off") {
-          // Background mode: no theater, just connect.
+        const ping = !profile && !params.host ? await ipc.pingServer("localhost", 8563).catch(() => null) : null;
+        const draft = {
+          name: String(params.name ?? profile?.name ?? "Exasol Personal"),
+          host: String(params.host ?? profile?.host ?? "localhost"),
+          port: Number(params.port ?? profile?.port ?? 8563),
+          username: String(params.username ?? profile?.username ?? "sys"),
+          password: String(params.password ?? profile?.password ?? (ping?.reachable ? "exasol" : "")),
+          notes: params.notes ? String(params.notes) : undefined,
+        };
+        if (mode === "off") {
           try {
-            result = await overlayConnectDirect(draft);
+            result = await overlayConnectDirect({ ...draft, schema: undefined });
           } catch (e) {
             result = { ok: false, detail: errorMessage(e) };
           }
         } else {
-          // Human-style: fill the form in view, then WAIT for the user to
-          // confirm, adjust, or cancel. The tool resolves with the truth.
-          setOverlayError(null);
-          const pending = new Promise<{ ok: boolean; detail?: string }>((resolve) => {
-            setConnectOverlay({ draft: draft!, resolve });
+          // Human-style, on the REAL connect tab: open it, walk to each field,
+          // type, then press the real Connect button and wait for the outcome.
+          openConnect();
+          await new Promise((r) => setTimeout(r, 350));
+          const steps: [string, string, string][] = [
+            ["connect.name", draft.name, "Naming the connection…"],
+            ["connect.host", draft.host, "Host…"],
+            ["connect.username", draft.username, "Username…"],
+            ["connect.password", draft.password, "Password…"],
+          ];
+          for (const [anchor, value, lbl] of steps) {
+            const el = document.querySelector(`[data-agent-id="${anchor}"]`) as HTMLElement | null;
+            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            fillAnchor(anchor, value);
+          }
+          const submit = document.querySelector('[data-agent-id="connect.submit"]') as HTMLElement | null;
+          await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
+          const done = new Promise<{ ok: boolean; detail?: string }>((resolve) => {
+            const timer = window.setTimeout(() => {
+              agentConnectedCb.current = null;
+              resolve({ ok: false, detail: "Connection didn't complete — the Connect tab shows the details; the user can adjust and retry there." });
+            }, 45_000);
+            agentConnectedCb.current = (pid) => {
+              window.clearTimeout(timer);
+              agentConnectedCb.current = null;
+              resolve({ ok: true, detail: pid });
+            };
           });
-          // Step 2: walk over to the form it just "opened".
-          window.setTimeout(() => {
-            const card = document.querySelector('[data-agent-id="agent-overlay"]') as HTMLElement | null;
-            if (card) void cursorRef.current?.flyTo(card, "Filling in the details…", mode, avatar);
-          }, 250);
-          result = await pending;
+          submit?.click();
+          result = await done;
         }
       } else if (action === "open") {
         switch (railId) {
@@ -2753,7 +2721,11 @@ export function ExasolStudio({
                 drivers={drivers}
                 profiles={profiles}
                 onSaved={onSaved}
-                onConnected={onConnected}
+                onConnected={async (p, srv) => {
+                  await onConnected(p, srv);
+                  await agentClient.grantConnection(p.id).catch(() => undefined);
+                  agentConnectedCb.current?.(p.id);
+                }}
               />
             </div>
           ) : activeTab.view === "filePreview" ? (
@@ -2971,20 +2943,6 @@ export function ExasolStudio({
 
       <AgentCursor ref={cursorRef} />
       <FloatingPet connectionId={connection?.profile.id ?? null} onUiAction={handleUiAction} />
-      {connectOverlay ? (
-        <AgentConnectOverlay
-          draft={connectOverlay.draft}
-          error={overlayError}
-          connecting={overlayConnecting}
-          onConnect={(final) => void overlayConnect(final)}
-          onCancel={() => {
-            const resolve = connectOverlay.resolve;
-            setConnectOverlay(null);
-            setOverlayError(null);
-            resolve({ ok: false, detail: "The user cancelled the connection." });
-          }}
-        />
-      ) : null}
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
         <HistoryDock
           entries={history}
