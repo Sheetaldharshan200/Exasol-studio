@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T09:06:42Z",
+  "generatedAt": "2026-07-15T10:05:17Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
@@ -28,7 +28,7 @@
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
-      "latest": "2.2.2",
+      "latest": "2.2.3",
       "homepage": "https://github.com/exasol/pyexasol",
       "mirrorTag": "mirror-pyexasol"
     },
@@ -52,7 +52,7 @@
     },
     "agent-skills": {
       "repo": "exasol-labs/exasol-agent-skills",
-      "latest": "v0.16.0",
+      "latest": "v0.17.0",
       "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
       "mirrorTag": "mirror-agent-skills"
     },
