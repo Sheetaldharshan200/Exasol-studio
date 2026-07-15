@@ -1507,6 +1507,7 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
+  const [extraPets, setExtraPets] = useState<string[]>([]);
   useEffect(() => initTraceRecorder(), []);
   /** Resolves when ConnectView completes a connection (agent flow waits on it). */
   const agentConnectedCb = useRef<((profileId: string) => void) | null>(null);
@@ -2993,7 +2994,21 @@ export function ExasolStudio({
       </div>
 
       <AgentCursor ref={cursorRef} />
-      <FloatingPet connectionId={connection?.profile.id ?? null} onUiAction={handleUiAction} />
+      <FloatingPet
+        connectionId={connection?.profile.id ?? null}
+        onUiAction={handleUiAction}
+        onSpawn={() => setExtraPets((p) => [...p, `${Date.now()}`])}
+      />
+      {extraPets.map((id, i) => (
+        <FloatingPet
+          key={id}
+          standalone
+          offset={i + 1}
+          connectionId={connection?.profile.id ?? null}
+          onUiAction={handleUiAction}
+          onClose={() => setExtraPets((p) => p.filter((x) => x !== id))}
+        />
+      ))}
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
         <HistoryDock
           entries={history}

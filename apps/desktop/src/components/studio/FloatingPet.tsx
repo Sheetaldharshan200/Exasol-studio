@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { motion, useMotionValue, useSpring } from "motion/react";
-import { Send, Square, X } from "lucide-react";
+import { Plus, Send, Square, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { PetAvatar, type PetAvatarId, type PetExpression } from "@/components/studio/PetAvatar";
 import { agent, type AgentEvent } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED } from "@/lib/ai-window";
 import { petBus } from "@/lib/pet-bus";
+import { sessionBus } from "@/lib/session-bus";
 import { cn } from "@/lib/utils";
 
 // THE pet — exactly one on screen. It idles where you dock it (drag to move,
@@ -43,9 +44,19 @@ const TOOL_LABELS: Record<string, string> = {
 export function FloatingPet({
   connectionId,
   onUiAction,
+  standalone = false,
+  offset = 0,
+  onSpawn,
+  onClose,
 }: {
   connectionId?: string | null;
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
+  /** Standalone pets own a private session (task runners); the primary pet mirrors the AI panel's session. */
+  standalone?: boolean;
+  /** Dock offset so multiple pets don't stack. */
+  offset?: number;
+  onSpawn?: () => void;
+  onClose?: () => void;
 }) {
   const [enabled, setEnabled] = useState(true);
   const [avatar, setAvatar] = useState<PetAvatarId>("exa");
@@ -67,12 +78,12 @@ export function FloatingPet({
   const dock = useRef<{ x: number; y: number }>(
     (() => {
       try {
-        const saved = JSON.parse(localStorage.getItem(DOCK_KEY) ?? "");
+        const saved = standalone ? null : JSON.parse(localStorage.getItem(DOCK_KEY) ?? "");
         if (typeof saved?.x === "number" && typeof saved?.y === "number") return saved;
       } catch {
         // default below
       }
-      return { x: window.innerWidth - 76, y: window.innerHeight - 128 };
+      return { x: window.innerWidth - 76 - offset * 64, y: window.innerHeight - 128 };
     })(),
   );
   const x = useMotionValue(dock.current.x);
@@ -102,6 +113,7 @@ export function FloatingPet({
   useEffect(
     () =>
       petBus.on((cmd) => {
+        if (standalone) return;
         if (cmd.type === "travel") {
           setTraveling(true);
           setOpen(false);
@@ -136,6 +148,28 @@ export function FloatingPet({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
+  const attach = useCallback(
+    async (sid: string) => {
+      if (sessionRef.current === sid) return;
+      disposeRef.current?.();
+      sessionRef.current = sid;
+      setChat({ status: "idle", answer: "" });
+      disposeRef.current = await agent.stream(sid, (e) => handleEventRef.current(e));
+    },
+    [],
+  );
+  const handleEventRef = useRef<(e: AgentEvent) => void>(() => undefined);
+
+  // The primary pet mirrors whatever session the AI panel is on.
+  useEffect(() => {
+    if (standalone) return;
+    const cur = sessionBus.get();
+    if (cur) void attach(cur);
+    return sessionBus.on((sid) => {
+      if (sid) void attach(sid);
+    });
+  }, [standalone, attach]);
+
   const handleEvent = useCallback(
     (e: AgentEvent) => {
       if (e.type === "status" && e.state === "thinking") {
@@ -166,6 +200,7 @@ export function FloatingPet({
     },
     [onUiAction],
   );
+  handleEventRef.current = handleEvent;
 
   async function ask() {
     const q = text.trim();
@@ -190,9 +225,12 @@ export function FloatingPet({
         return;
       }
       if (!sessionRef.current) {
-        sessionRef.current = await agent.createSession();
-        disposeRef.current = await agent.stream(sessionRef.current, handleEvent);
+        const shared = !standalone ? sessionBus.get() : null;
+        const sid = shared ?? (await agent.createSession());
+        await attach(sid);
+        if (!standalone) sessionBus.set(sid);
       }
+      if (!sessionRef.current) throw new Error("no session");
       await agent.send(sessionRef.current, q, modelRef.current, undefined, connectionId);
     } catch (e) {
       setChat({ status: "idle", answer: "", error: String(e) });
@@ -272,13 +310,35 @@ export function FloatingPet({
                     ? "Answering…"
                     : "Ask me anything"}
             </span>
-            <button
-              onClick={() => setOpen(false)}
-              className="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            <span className="ml-auto flex items-center gap-0.5">
+              {onSpawn ? (
+                <button
+                  onClick={onSpawn}
+                  title="Spawn another pet (own task session)"
+                  className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  aria-label="Spawn pet"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              ) : null}
+              {onClose ? (
+                <button
+                  onClick={onClose}
+                  title="Dismiss this pet"
+                  className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive"
+                  aria-label="Dismiss pet"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              ) : null}
+              <button
+                onClick={() => setOpen(false)}
+                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
           </div>
 
           {chat && (chat.answer || chat.error || busy) ? (

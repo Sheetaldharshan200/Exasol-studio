@@ -25,6 +25,7 @@ import { AgentMark } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
 import { agent, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
+import { sessionBus } from "@/lib/session-bus";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -132,6 +133,16 @@ export function AssistantPanel({
     };
   }, [refreshProviders]);
 
+  // Follow sessions created elsewhere (the pet): switch this panel to them.
+  useEffect(
+    () =>
+      sessionBus.on((sid) => {
+        if (sid && sid !== sessionRef.current) void switchSession(sid);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // Hand the active connection to the agent (password decrypts Rust-side).
   useEffect(() => {
     if (connectionId) void agent.grantConnection(connectionId).catch(() => undefined);
@@ -190,6 +201,15 @@ export function AssistantPanel({
       setItems((m) => [...m, { kind: "perm", id: e.id, tool: e.tool, summary: e.summary, detail: e.detail }]);
     } else if (e.type === "permission-result") {
       setItems((m) => (m.map((it) => (it.kind === "perm" && it.id === e.id ? { ...it, result: e.allow } : it))));
+    } else if (e.type === "user-message") {
+      // Asks can originate from any view (the pet) — show them here too,
+      // deduped against our own local append.
+      setItems((m) => {
+        const lastUser = [...m].reverse().find((it) => it.kind === "msg" && it.role === "user");
+        if (lastUser && lastUser.kind === "msg" && lastUser.content === e.text) return m;
+        return [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: e.text }];
+      });
+      setSending(true);
     } else if (e.type === "title-changed") {
       setTitle(e.title);
     } else if (e.type === "ui-request") {
@@ -221,6 +241,7 @@ export function AssistantPanel({
     const id = await agent.createSession();
     sessionRef.current = id;
     disposeRef.current = await agent.stream(id, handleEvent);
+    sessionBus.set(id);
     return id;
   }
 
@@ -233,6 +254,7 @@ export function AssistantPanel({
     sessionRef.current = null;
     setSending(false);
     setShowSessions(false);
+    sessionBus.set(null);
   }
 
   async function openSessionsMenu() {
@@ -258,6 +280,7 @@ export function AssistantPanel({
       setItems(replay as ReplayItem[] as ChatItem[]);
       setTitle(t);
       setSending(false);
+      sessionBus.set(id);
     } catch (err) {
       setAgentError(errorMessage(err));
     } finally {

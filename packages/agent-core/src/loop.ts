@@ -80,6 +80,7 @@ export async function runTurn(opts: {
   session.autoTitle(userText);
   session.messages.push({ role: "user", content });
   session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId });
+  session.emit({ type: "user-message", text: userText });
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
   const known = settings.enableInsights ? insights.recent(session.connectionId) : [];
