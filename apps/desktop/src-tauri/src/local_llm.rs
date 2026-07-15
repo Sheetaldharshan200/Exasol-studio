@@ -77,7 +77,37 @@ impl LlmEngine {
                 let _ = child.kill();
             }
         }
+        kill_port_orphans();
     }
+}
+
+/// Kill any process still bound to the builtin port — an engine left behind
+/// by a previous app instance (force-quit, crash). Unix best-effort.
+fn kill_port_orphans() {
+    #[cfg(unix)]
+    {
+        if let Ok(out) = Command::new("lsof").args(["-ti", &format!(":{BUILTIN_PORT}")]).output() {
+            for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+                let _ = Command::new("kill").args(["-9", pid]).status();
+            }
+        }
+    }
+}
+
+/// If something already serves the builtin port, return its model alias.
+async fn serving_alias() -> Option<String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .get(format!("http://127.0.0.1:{BUILTIN_PORT}/v1/models"))
+        .timeout(Duration::from_millis(900))
+        .send()
+        .await
+        .ok()?;
+    let body: serde_json::Value = res.json().await.ok()?;
+    body["models"][0]["name"]
+        .as_str()
+        .or_else(|| body["data"][0]["id"].as_str())
+        .map(String::from)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,8 +228,8 @@ fn emit(app: &AppHandle, stage: &str, pct: Option<u8>, msg: &str) {
 }
 
 #[tauri::command]
-pub fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> AppResult<LlmStatus> {
-    let running_model = engine
+pub async fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> AppResult<LlmStatus> {
+    let mut running_model = engine
         .child
         .lock()
         .ok()
@@ -217,6 +247,14 @@ pub fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> A
                 None
             }
         });
+
+    // No owned child, but the port may be served by an engine from a previous
+    // app instance — recognize it so the UI doesn't show a stale "Use".
+    if running_model.is_none() {
+        if let Some(alias) = serving_alias().await {
+            running_model = MODELS.iter().find(|m| m.name == alias).map(|m| m.id.to_string());
+        }
+    }
 
     let version = fs::read_to_string(engine_dir(&state).join(".version")).ok();
     let prefs = load_prefs(&state);
@@ -387,7 +425,13 @@ pub async fn start_model(app: &AppHandle, model_id: &str) -> AppResult<()> {
         return Err(AppError::Assistant("model not downloaded".into()));
     }
 
-    // Stop whatever is running first (also frees the port).
+    // Already serving this exact model (e.g. survived an app restart)? Adopt.
+    if serving_alias().await.as_deref() == Some(model.name) {
+        emit(app, "start", Some(100), "Model already running");
+        return Ok(());
+    }
+
+    // Stop whatever is running first (also frees the port + orphans).
     engine.kill();
 
     emit(app, "start", None, &format!("Loading {}…", model.name));
