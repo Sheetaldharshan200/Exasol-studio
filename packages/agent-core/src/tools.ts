@@ -321,13 +321,28 @@ export function buildTools(ctx: {
           ui_connect: tool({
             description:
               "Connect the app to a database by driving the UI (the pet/cursor performs it visibly, per the user's settings). " +
-              "Pass the saved connection's name if known; without a name the connect dialog opens for the user. " +
-              "After it reports ok, the connection is granted automatically — verify with list_connections and continue.",
+              "Use a saved connection by name, OR pass explicit details the user gave you (host/port/username/password) — " +
+              "the app saves them as a profile (password encrypted in the vault) and connects. Optionally set a profile name and notes/description. " +
+              "After ok, the connection is granted automatically — verify with list_connections and continue.",
             inputSchema: z.object({
               connection_name: z.string().optional().describe("Saved connection name, e.g. 'Exasol Personal'"),
+              host: z.string().optional().describe("Host, only if the user provided one"),
+              port: z.number().int().optional().describe("Port (Exasol default 8563)"),
+              username: z.string().optional(),
+              password: z.string().optional().describe("Only if the user explicitly gave it in this conversation"),
+              schema: z.string().optional().describe("Schema to open on connect"),
+              notes: z.string().optional().describe("Description/notes to store on the connection profile"),
             }),
-            execute: async ({ connection_name }) => {
-              const r = await session.askUi("connect", { name: connection_name ?? null });
+            execute: async ({ connection_name, host, port, username, password, schema, notes }) => {
+              const r = await session.askUi("connect", {
+                name: connection_name ?? null,
+                host: host ?? null,
+                port: port ?? null,
+                username: username ?? null,
+                password: password ?? null,
+                schema: schema ?? null,
+                notes: notes ?? null,
+              });
               if (r.ok && r.detail) ctx.connectionId = r.detail; // granted id reported back
               return r.ok
                 ? { ok: true, connected: r.detail ?? true }

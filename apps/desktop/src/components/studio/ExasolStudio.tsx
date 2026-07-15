@@ -1546,6 +1546,27 @@ export function ExasolStudio({
           : profiles.length === 1
             ? profiles[0]
             : profiles.find((p) => p.host === "localhost" || p.host === "127.0.0.1") ?? null;
+        // Explicit details from the user (host/username/password/notes) win:
+        // create or update the profile with exactly what they specified.
+        if (params.host || params.username || params.password || params.notes) {
+          const host = String(params.host ?? profile?.host ?? "localhost");
+          const username = String(params.username ?? profile?.username ?? "sys");
+          profile = await ipc.saveConnectionProfile({
+            ...(profile ?? {}),
+            id: profile?.id,
+            name: String(params.name ?? profile?.name ?? `${username}@${host}`),
+            host,
+            port: Number(params.port ?? profile?.port ?? 8563),
+            username,
+            password: String(params.password ?? profile?.password ?? ""),
+            schema: params.schema ? String(params.schema) : profile?.schema,
+            notes: params.notes ? String(params.notes) : profile?.notes,
+            sslMode: profile?.sslMode ?? "preferred",
+            compression: profile?.compression ?? false,
+            driverId: profile?.driverId ?? "sqlx-exasol",
+          });
+          await onSaved?.();
+        }
         // No saved profile? If the local Exasol Personal is reachable, create
         // the default profile and connect — "use defaults" should just work.
         if (!profile) {

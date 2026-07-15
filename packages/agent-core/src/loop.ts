@@ -7,6 +7,7 @@ import type { DbRegistry } from "./db.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
+import uiMap from "../data/ui-map.json" with { type: "json" };
 import { maybeCompact } from "./compact.ts";
 import { log } from "./log.ts";
 
@@ -44,7 +45,13 @@ Exasol SQL dialect:
 - Unquoted identifiers fold to UPPERCASE; double-quote mixed-case or reserved identifiers.
 - System metadata lives in SYS (EXA_ALL_*), statistics in EXA_STATISTICS.
 
-Be concise and direct. Prefer runnable SQL in \`\`\`sql blocks. Small result tables may be shown as markdown tables.`;
+Be concise and direct. Prefer runnable SQL in \`\`\`sql blocks. Small result tables may be shown as markdown tables.
+
+App map — Exasol Studio's geography (use app_ui_locate for detail on anything deeper):
+${(uiMap.entries as { id: string; label: string; where: string }[])
+  .filter((e) => /^(rail|titlebar|editor|tabs|history|ai)\./.test(e.id))
+  .map((e) => `- ${e.label}: ${e.where}`)
+  .join("\n")}`;
 
 /** One user turn: multi-step agent loop with tool execution. */
 export async function runTurn(opts: {

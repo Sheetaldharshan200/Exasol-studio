@@ -15,7 +15,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = join(root, "apps/desktop/src");
 const outFile = join(root, "packages/agent-core/data/ui-map.json");
 
-/** Curated map of the app's surfaces — the stable navigation skeleton. */
+/** Curated map of the app's surfaces — the stable navigation skeleton.
+ *  `within` builds the containment hierarchy; `open` is the ui_open target
+ *  (or route) that reaches the surface. */
 const BASE = [
   { id: "rail.databases", label: "Databases panel", where: "activity rail, 1st icon", hint: "Tree of connections, schemas, tables. Right-click objects for actions (new table, drop, generate SQL)." },
   { id: "rail.files", label: "Files panel", where: "activity rail, 2nd icon", hint: "Workspace SQL files; double-click opens in a query tab." },
@@ -32,7 +34,19 @@ const BASE = [
   { id: "tabs.new", label: "New query tab", where: "tab strip + button", hint: "Opens a fresh SQL editor tab." },
   { id: "history.dock", label: "Query history", where: "bottom dock", hint: "Past statements with status and timing; click to reopen." },
   { id: "window.ai-providers", label: "AI Providers window", where: "AI panel header, sliders icon", hint: "Built-in local AI engine/models, Ollama status, external API keys." },
-  { id: "market.exasol-personal", label: "Exasol Personal install", where: "Marketplace → Databases", hint: "Installs/manages the free local Exasol database (start/stop under Manage)." },
+  { id: "market.exasol-personal", label: "Exasol Personal install", where: "Marketplace → Databases", within: "rail.marketplace", open: "marketplace", hint: "Installs/manages the free local Exasol database (start/stop under Manage)." },
+  { id: "market.search", label: "Marketplace search", where: "Marketplace, top of content pane", within: "rail.marketplace", open: "marketplace", hint: "Search tools/drivers/extensions; grid/list toggle beside it; category rail on the left." },
+  { id: "bi.dashboards", label: "Dashboards gallery", where: "Dashboards view (chart icon in rail)", within: "rail.bi", open: "dashboards", hint: "Agent-built dashboards; open one to see live panels (drag/resize persists)." },
+  { id: "connect.dialog", label: "Connect dialog", where: "opens from the Connect button", within: "titlebar.connect", hint: "Fields: host, port (8563), username, password, schema, SSL mode. Saved profiles listed for reuse. ui_connect fills this automatically." },
+  { id: "ai.panel", label: "Exasol AI chat panel", where: "right side panel", within: "rail.ai", hint: "Chat with the agent; session dropdown in its header (new chat, history, delete); model pill at the composer bottom." },
+  { id: "ai.model-picker", label: "Model picker", where: "AI panel composer, bottom-left pill", within: "ai.panel", hint: "Three groups: Built-in (install/run inline), Local (Ollama etc.), Cloud (API keys). Search on top." },
+  { id: "ai.settings", label: "AI Settings window", where: "AI panel header, sliders icon", within: "ai.panel", open: "settings", hint: "Sidebar: Providers & Models / Guardrails (read-write policy, pet mode + companion picker, restrictions) / Behavior (steps, temperature, workspace instructions)." },
+  { id: "ai.pet", label: "Floating pet companion", where: "bottom-right of the workbench", within: "ai.panel", hint: "Tap to ask a quick question; performs UI actions visibly (walks, works, hops). Configure/disable in AI Settings → Guardrails." },
+  { id: "git.changes", label: "Git changes & commit", where: "Git panel", within: "rail.git", open: "git", hint: "Stage/unstage/discard per file, commit box, branch bar." },
+  { id: "git.graph", label: "Git commit graph", where: "Git panel → Graph tab", within: "rail.git", open: "git", hint: "SVG commit graph with lanes." },
+  { id: "tree.context", label: "Object tree context menu", where: "right-click any object in Databases panel", within: "rail.databases", open: "databases", hint: "New table (opens editable SQL in a query tab), drop, generate SELECT/INSERT, details." },
+  { id: "editor.results", label: "Query results grid", where: "under the SQL editor after Run", within: "editor.run", hint: "Result rows, export, and the Dashboards button to visualize." },
+  { id: "vault.unlock", label: "Master password unlock", where: "app start (when vault configured)", hint: "Unlocks encrypted connection passwords; 5 recovery codes exist from setup." },
 ];
 
 function* walk(dir) {
