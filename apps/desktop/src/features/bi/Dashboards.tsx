@@ -600,6 +600,26 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
     const chart = chartRef.current;
     if (!chart) return;
     const cols = result.columns.map((c) => c.name);
+    const styles0 = getComputedStyle(document.documentElement);
+    const fg0 = styles0.getPropertyValue("--muted-foreground").trim() || "#888";
+    // FULL ECharts mode: a custom option with its own `series` takes over
+    // completely — we inject the query result as dataset.source so any
+    // series type (heatmap, funnel, gauge, radar, sankey, candlestick…)
+    // can reference it. Everything ECharts can do, a panel can do.
+    const custom = viz.option as { series?: unknown } | undefined;
+    if (custom?.series) {
+      chart.setOption(
+        {
+          color: PALETTE,
+          tooltip: {},
+          textStyle: { color: fg0 },
+          dataset: { source: [cols, ...result.rows] },
+          ...custom,
+        } as Parameters<typeof chart.setOption>[0],
+        true,
+      );
+      return;
+    }
     const xIdx = viz.xField ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0) : 0;
     const isNumCol = (i: number) => result.rows.some((r) => typeof r[i] === "number");
     const yIdxs = viz.yFields?.length

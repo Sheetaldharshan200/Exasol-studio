@@ -96,6 +96,24 @@ export class DashboardStore {
   save(input: unknown): Dashboard {
     const raw = input as Record<string, unknown>;
     if (raw && typeof raw === "object" && !raw.id) raw.id = randomUUID().slice(0, 8);
+    // Normalize before validating — models forget ids/grids constantly and a
+    // missing coordinate must not kill an otherwise good dashboard.
+    if (Array.isArray(raw?.panels)) {
+      raw.panels = (raw.panels as Record<string, unknown>[]).map((p, i) => {
+        const viz = (p.viz ?? { type: "table" }) as Record<string, unknown>;
+        if (viz.type === "echarts" && !viz.chart) viz.chart = "bar";
+        return {
+          id: typeof p.id === "string" && p.id ? p.id : `p${i + 1}`,
+          title: typeof p.title === "string" ? p.title : "",
+          grid:
+            p.grid && typeof p.grid === "object"
+              ? p.grid
+              : { x: (i % 2) * 6, y: Math.floor(i / 2) * 6, w: 6, h: 6 },
+          query: p.query ?? (typeof p.sql === "string" ? { sql: p.sql } : p.query),
+          viz,
+        };
+      });
+    }
     const parsed = DashboardSchema.parse(raw);
     writeFileSync(
       join(this.dir, `${sanitize(parsed.id)}.json`),
