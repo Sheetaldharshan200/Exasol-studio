@@ -89,6 +89,7 @@ export function AssistantPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionRef = useRef<string | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   const refreshProviders = useCallback(async () => {
     try {
@@ -127,6 +128,23 @@ export function AssistantPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [items, sending]);
+
+  // Dismiss the model picker on outside click or Escape.
+  useEffect(() => {
+    if (!showPicker) return;
+    const onDown = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPicker(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showPicker]);
 
   const handleEvent = useCallback((e: AgentEvent) => {
     if (e.type === "message-start") {
@@ -469,7 +487,7 @@ export function AssistantPanel({
           />
           <div className="flex items-center justify-between px-1.5 pb-1.5">
             {/* Model pill (opens upward) */}
-            <div className="relative min-w-0">
+            <div className="relative min-w-0" ref={pickerRef}>
               <button
                 type="button"
                 onClick={() => setShowPicker((s) => !s)}

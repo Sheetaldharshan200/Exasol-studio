@@ -39,6 +39,7 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
+            crate::local_llm::auto_start_if_enabled(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -135,6 +136,7 @@ pub fn run() {
             local_llm::llm_model_install,
             local_llm::llm_start,
             local_llm::llm_stop,
+            local_llm::llm_set_auto_start,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

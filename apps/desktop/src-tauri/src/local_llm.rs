@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::{AppError, AppResult};
@@ -87,6 +87,8 @@ pub struct LlmStatus {
     pub engine_installed: bool,
     pub engine_version: Option<String>,
     pub running_model: Option<String>,
+    pub auto_start: bool,
+    pub last_model: Option<String>,
     pub port: u16,
     pub models: Vec<LlmModelStatus>,
 }
@@ -97,6 +99,44 @@ pub struct LlmModelStatus {
     #[serde(flatten)]
     pub model: LlmModel,
     pub downloaded: bool,
+}
+
+/// Persisted built-in-AI preferences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmPrefs {
+    /// Start the last-used model automatically when the app opens.
+    #[serde(default = "default_true")]
+    pub auto_start: bool,
+    /// The last model the user ran.
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for LlmPrefs {
+    fn default() -> Self {
+        Self { auto_start: true, model: None }
+    }
+}
+
+fn prefs_path(state: &AppState) -> PathBuf {
+    llm_dir(state).join("prefs.json")
+}
+
+fn load_prefs(state: &AppState) -> LlmPrefs {
+    fs::read_to_string(prefs_path(state))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn save_prefs(state: &AppState, prefs: &LlmPrefs) {
+    let _ = fs::create_dir_all(llm_dir(state));
+    let _ = fs::write(prefs_path(state), serde_json::to_string_pretty(prefs).unwrap_or_default());
 }
 
 fn llm_dir(state: &AppState) -> PathBuf {
@@ -179,12 +219,15 @@ pub fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> A
         });
 
     let version = fs::read_to_string(engine_dir(&state).join(".version")).ok();
+    let prefs = load_prefs(&state);
     let mdir = models_dir(&state);
     Ok(LlmStatus {
         supported: asset_fragment().is_some(),
         engine_installed: find_server(&state).is_some(),
         engine_version: version,
         running_model,
+        auto_start: prefs.auto_start,
+        last_model: prefs.model,
         port: BUILTIN_PORT,
         models: MODELS
             .iter()
@@ -329,13 +372,10 @@ pub async fn llm_model_install(app: AppHandle, state: State<'_, AppState>, model
 }
 
 /// Start (or switch) the engine on the fixed builtin port.
-#[tauri::command]
-pub async fn llm_start(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    engine: State<'_, LlmEngine>,
-    model_id: String,
-) -> AppResult<()> {
+pub async fn start_model(app: &AppHandle, model_id: &str) -> AppResult<()> {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let engine = app.state::<LlmEngine>();
     let model = MODELS
         .iter()
         .find(|m| m.id == model_id)
@@ -350,7 +390,7 @@ pub async fn llm_start(
     // Stop whatever is running first (also frees the port).
     engine.kill();
 
-    emit(&app, "start", None, &format!("Loading {}…", model.name));
+    emit(app, "start", None, &format!("Loading {}…", model.name));
     let child = Command::new(&server)
         .args([
             "-m",
@@ -377,7 +417,7 @@ pub async fn llm_start(
             .child
             .lock()
             .map_err(|_| AppError::Assistant("engine state poisoned".into()))?;
-        *guard = Some((child, model_id.clone()));
+        *guard = Some((child, model_id.to_string()));
     }
 
     // Wait until the server reports healthy (model load can take a while).
@@ -410,8 +450,59 @@ pub async fn llm_start(
         }
     }
 
-    emit(&app, "start", Some(100), "Model loaded");
+    emit(app, "start", Some(100), "Model loaded");
     Ok(())
+}
+
+#[tauri::command]
+pub async fn llm_start(app: AppHandle, model_id: String) -> AppResult<()> {
+    start_model(&app, &model_id).await?;
+    {
+        use tauri::Manager;
+        let state = app.state::<AppState>();
+        let mut prefs = load_prefs(&state);
+        prefs.model = Some(model_id);
+        save_prefs(&state, &prefs);
+    }
+    // Panels listen for this app-wide and refresh their model pickers.
+    let _ = app.emit("ai-providers-changed", serde_json::json!({}));
+    Ok(())
+}
+
+/// Toggle auto-start of the last-used built-in model on app launch.
+#[tauri::command]
+pub fn llm_set_auto_start(state: State<'_, AppState>, enabled: bool) -> AppResult<()> {
+    let mut prefs = load_prefs(&state);
+    prefs.auto_start = enabled;
+    save_prefs(&state, &prefs);
+    Ok(())
+}
+
+/// Called once at app startup: silently bring the last-used model up.
+pub fn auto_start_if_enabled(app: &AppHandle) {
+    use tauri::Manager;
+    let prefs = load_prefs(&app.state::<AppState>());
+    let Some(model_id) = prefs.model.filter(|_| prefs.auto_start) else {
+        return;
+    };
+    // Only if both engine and model are actually on disk.
+    {
+        let state = app.state::<AppState>();
+        let downloaded = MODELS
+            .iter()
+            .find(|m| m.id == model_id)
+            .map(|m| models_dir(&state).join(m.file).exists())
+            .unwrap_or(false);
+        if !downloaded || find_server(&state).is_none() {
+            return;
+        }
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if start_model(&app, &model_id).await.is_ok() {
+            let _ = app.emit("ai-providers-changed", serde_json::json!({}));
+        }
+    });
 }
 
 #[tauri::command]

@@ -108,6 +108,8 @@ export type LlmStatus = {
   engineInstalled: boolean;
   engineVersion: string | null;
   runningModel: string | null;
+  autoStart: boolean;
+  lastModel: string | null;
   port: number;
   models: LlmModelStatus[];
 };
@@ -120,6 +122,7 @@ export const llm = {
   installModel: (modelId: string) => invoke<null>("llm_model_install", { modelId }),
   start: (modelId: string) => invoke<null>("llm_start", { modelId }),
   stop: () => invoke<null>("llm_stop"),
+  setAutoStart: (enabled: boolean) => invoke<null>("llm_set_auto_start", { enabled }),
   onProgress: (cb: (p: LlmProgress) => void) =>
     listen<LlmProgress>("llm-progress", (e) => cb(e.payload)),
 };

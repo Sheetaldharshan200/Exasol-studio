@@ -6,9 +6,11 @@ import {
   Cpu,
   Download,
   Loader2,
+  MoreHorizontal,
   Play,
   Search,
   SlidersHorizontal,
+  Square,
   Zap,
 } from "lucide-react";
 import {
@@ -46,6 +48,7 @@ export function ModelPicker({
     builtin: true,
     [model.split("/")[0] ?? ""]: true,
   }));
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const refreshLlm = () => llm.status().then(setLlmState).catch(() => setLlmState(null));
 
@@ -116,6 +119,56 @@ export function ModelPicker({
             count={builtinModels.length}
             open={isOpen("builtin")}
             onToggle={() => toggle("builtin")}
+            action={
+              llmState.engineInstalled ? (
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen((v) => !v);
+                    }}
+                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    aria-label="Built-in AI options"
+                  >
+                    <MoreHorizontal className="h-3 w-3" />
+                  </button>
+                  {menuOpen ? (
+                    <div className="absolute right-0 top-full z-40 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuOpen(false);
+                          void run("prefs", () => llm.setAutoStart(!llmState.autoStart));
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-foreground hover:bg-secondary/60"
+                      >
+                        <span
+                          className={cn(
+                            "flex h-3 w-3 items-center justify-center rounded-sm border",
+                            llmState.autoStart ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                          )}
+                        >
+                          {llmState.autoStart ? <Check className="h-2 w-2" /> : null}
+                        </span>
+                        Auto-start on launch
+                      </button>
+                      {llmState.runningModel ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuOpen(false);
+                            void run("prefs", () => llm.stop());
+                          }}
+                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-muted-foreground hover:bg-secondary/60 hover:text-destructive"
+                        >
+                          <Square className="h-3 w-3" /> Stop engine
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : undefined
+            }
           >
             {!llmState.engineInstalled ? (
               <div className="mx-2 mb-2 rounded-lg border border-border bg-panel/60 px-2.5 py-2">
@@ -300,6 +353,7 @@ function Group({
   count,
   open,
   onToggle,
+  action,
   children,
 }: {
   label: string;
@@ -308,13 +362,15 @@ function Group({
   count?: number;
   open: boolean;
   onToggle: () => void;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="border-b border-border/50 last:border-b-0">
-      <button
+      <div
         onClick={onToggle}
-        className="flex w-full items-center gap-1.5 px-2.5 py-2 text-left hover:bg-secondary/40"
+        role="button"
+        className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-2 text-left hover:bg-secondary/40"
       >
         <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
         <Icon className="h-3 w-3 shrink-0 text-primary" />
@@ -322,10 +378,13 @@ function Group({
         {badge ? (
           <span className="rounded bg-primary/15 px-1 py-px text-[8px] font-medium uppercase text-primary">{badge}</span>
         ) : null}
-        {typeof count === "number" ? (
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground">{count}</span>
-        ) : null}
-      </button>
+        <span className="ml-auto flex items-center gap-1.5">
+          {typeof count === "number" ? (
+            <span className="font-mono text-[10px] text-muted-foreground">{count}</span>
+          ) : null}
+          {action}
+        </span>
+      </div>
       {open ? <div className="pb-1">{children}</div> : null}
     </div>
   );
