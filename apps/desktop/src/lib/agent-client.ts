@@ -37,6 +37,7 @@ export type AgentEvent =
   | { type: "title-changed"; title: string }
   | { type: "user-message"; text: string }
   | { type: "dashboard-saved"; id: string; title: string }
+  | { type: "artifact-created"; id: string; title: string }
   | { type: "compacted"; folded: number }
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
@@ -210,6 +211,13 @@ export type Dashboard = {
 };
 
 export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
+
+export const artifacts = {
+  async get(id: string): Promise<{ id: string; title: string; html: string }> {
+    const { artifact } = await api<{ artifact: { id: string; title: string; html: string } }>(`/artifacts/${encodeURIComponent(id)}`);
+    return artifact;
+  },
+};
 
 export const dashboards = {
   async list(): Promise<DashboardMeta[]> {

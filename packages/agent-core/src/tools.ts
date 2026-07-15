@@ -6,6 +6,7 @@ import type { AgentSettings } from "./config.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
+import type { ArtifactStore } from "./artifacts.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
@@ -51,6 +52,7 @@ export function buildTools(ctx: {
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
   dashboards?: DashboardStore;
+  artifacts?: ArtifactStore;
   /** Model for sub-agents; omitting disables spawn_researcher. */
   model?: LanguageModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
@@ -272,6 +274,26 @@ export function buildTools(ctx: {
         });
       },
     }),
+
+    ...(ctx.artifacts && !ctx.readOnly
+      ? {
+          render_artifact: tool({
+            description:
+              "Render a self-contained HTML page as a tab in Exasol Studio — for rich insights, reports, or small interactive views. " +
+              "html must be ONE complete document with inline CSS/JS and NO external URLs.",
+            inputSchema: z.object({
+              title: z.string(),
+              html: z.string().min(1),
+            }),
+            execute: async ({ title, html }) => {
+              const a = ctx.artifacts!.save(title, html);
+              session.record({ kind: "artifact.created", id: a.id, title });
+              session.emit({ type: "artifact-created", id: a.id, title });
+              return { ok: true, id: a.id, note: "Rendered and opened as a tab for the user." };
+            },
+          }),
+        }
+      : {}),
 
     ...(ctx.dashboards && !ctx.readOnly
       ? {

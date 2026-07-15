@@ -448,7 +448,9 @@ function KpiPanel({ panel, result }: { panel: DashPanel; result: StatementResult
         ? `${(num / 1e6).toFixed(2)}M`
         : Math.abs(num) >= 1e3
           ? `${(num / 1e3).toFixed(1)}K`
-          : `${num}`
+          : Number.isInteger(num)
+            ? String(num)
+            : num.toFixed(2)
     : String(raw ?? "—");
   return (
     <div className="flex h-full flex-col items-center justify-center gap-0.5">

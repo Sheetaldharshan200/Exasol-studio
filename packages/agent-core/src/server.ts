@@ -7,6 +7,7 @@ import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { InsightStore } from "./insights.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
+import { ArtifactStore } from "./artifacts.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -21,6 +22,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const insights = new InsightStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
   const dashboards = new DashboardStore(config.dataDir);
+  const artifacts = new ArtifactStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -111,6 +113,12 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts/:id
+      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
+        const a = artifacts.get(decodeURIComponent(parts[2]));
+        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
+      }
+
       // POST /v1/sessions
       if (req.method === "POST" && parts[1] === "sessions" && !parts[2]) {
         const s = sessions.create();
@@ -172,6 +180,12 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts/:id
+      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
+        const a = artifacts.get(decodeURIComponent(parts[2]));
+        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
+      }
+
       // POST /v1/sessions/:id/messages  {text, model, context?, connectionId?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "messages") {
         const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string }>(req);
@@ -188,6 +202,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           store: sessions,
           config,
           dashboards,
+          artifacts,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
@@ -213,6 +228,12 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "DELETE" && parts[2]) {
           return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
         }
+      }
+
+      // GET /v1/artifacts/:id
+      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
+        const a = artifacts.get(decodeURIComponent(parts[2]));
+        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
       }
 
       // POST /v1/sessions/:id/permission  {id, allow}
@@ -242,11 +263,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts/:id
+      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
+        const a = artifacts.get(decodeURIComponent(parts[2]));
+        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
+      }
+
       // POST /v1/sessions/:id/ui-result  {id, ok, detail?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "ui-result") {
         const body = await readBody<{ id: string; ok: boolean; detail?: string }>(req);
         const found = session.answerUi(body.id, Boolean(body.ok), body.detail);
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending ui request" });
+      }
+
+      // GET /v1/artifacts/:id
+      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
+        const a = artifacts.get(decodeURIComponent(parts[2]));
+        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
       }
 
       // POST /v1/sessions/:id/abort

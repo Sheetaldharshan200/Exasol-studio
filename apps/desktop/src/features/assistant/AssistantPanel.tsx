@@ -73,6 +73,7 @@ export function AssistantPanel({
   onClose,
   onUiAction,
   onDashboardSaved,
+  onArtifact,
 }: {
   contextSummary: string;
   editorSql: string;
@@ -86,6 +87,8 @@ export function AssistantPanel({
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
   /** Open a dashboard the agent just saved. */
   onDashboardSaved?: (id: string) => void;
+  /** Open an HTML artifact the agent rendered. */
+  onArtifact?: (id: string, title: string) => void;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -108,6 +111,8 @@ export function AssistantPanel({
   uiActionRef.current = onUiAction;
   const onDashboardSavedRef = useRef(onDashboardSaved);
   onDashboardSavedRef.current = onDashboardSaved;
+  const onArtifactRef = useRef(onArtifact);
+  onArtifactRef.current = onArtifact;
 
   const refreshProviders = useCallback(async () => {
     try {
@@ -217,6 +222,8 @@ export function AssistantPanel({
       setSending(true);
     } else if (e.type === "dashboard-saved") {
       onDashboardSavedRef.current?.(e.id);
+    } else if (e.type === "artifact-created") {
+      onArtifactRef.current?.(e.id, e.title);
     } else if (e.type === "title-changed") {
       setTitle(e.title);
     } else if (e.type === "ui-request") {

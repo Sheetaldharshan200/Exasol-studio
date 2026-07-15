@@ -51,10 +51,12 @@ export function FloatingPet({
   tag,
   onRename,
   onDashboardSaved,
+  onArtifact,
 }: {
   connectionId?: string | null;
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
   onDashboardSaved?: (id: string) => void;
+  onArtifact?: (id: string, title: string) => void;
   /** Standalone pets own a private session (task runners); the primary pet mirrors the AI panel's session. */
   standalone?: boolean;
   /** Dock offset so multiple pets don't stack. */
@@ -181,6 +183,8 @@ export function FloatingPet({
   const handleEventRef = useRef<(e: AgentEvent) => void>(() => undefined);
   const onDashboardSavedRef = useRef(onDashboardSaved);
   onDashboardSavedRef.current = onDashboardSaved;
+  const onArtifactRef = useRef(onArtifact);
+  onArtifactRef.current = onArtifact;
 
   // The primary pet mirrors whatever session the AI panel is on.
   useEffect(() => {
@@ -211,6 +215,8 @@ export function FloatingPet({
         setExpression("idle");
       } else if (e.type === "dashboard-saved") {
         onDashboardSavedRef.current?.(e.id);
+      } else if (e.type === "artifact-created") {
+        onArtifactRef.current?.(e.id, e.title);
       } else if (e.type === "ui-request") {
         void (async () => {
           const sid = sessionRef.current;

@@ -98,6 +98,8 @@ import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
+import { ArtifactTab } from "@/features/artifact/ArtifactTab";
+import { artifacts as artifactClient } from "@/lib/agent-client";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { dashboardBus } from "@/lib/dashboard-bus";
@@ -151,7 +153,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact";
 
 type SqlTab = {
   id: string;
@@ -173,6 +175,8 @@ type SqlTab = {
   objectProfileId?: string;
   /** Execution lifecycle for the status strip (started/running/completed). */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
+  /** For artifact tabs — the rendered HTML document. */
+  artifactHtml?: string;
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -206,6 +210,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   bi: BarChart3,
   connInfo: Plug,
   welcome: Sparkles,
+  artifact: FileCode2,
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -1515,6 +1520,27 @@ export function ExasolStudio({
     window.setTimeout(() => dashboardBus.open(id), 200);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const openArtifact = useCallback(
+    async (id: string, title: string) => {
+      const a = await artifactClient.get(id).catch(() => null);
+      if (!a) return;
+      tabCounter.current += 1;
+      const tab: SqlTab = {
+        id: `tab-artifact-${id}-${tabCounter.current}`,
+        title: title || a.title || "Artifact",
+        view: "artifact",
+        sql: "",
+        response: null,
+        execError: null,
+        artifactHtml: a.html,
+      };
+      updateTabs(connKey, (l) => [...l, tab]);
+      setActiveTabId(tab.id);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connKey],
+  );
 
   /** Fill a React-controlled input the way a real keystroke would. */
   function fillAnchor(anchor: string, value: string): boolean {
@@ -2851,6 +2877,10 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <Docs />
             </div>
+          ) : activeTab.view === "artifact" ? (
+            <div className="min-h-0 flex-1">
+              <ArtifactTab html={activeTab.artifactHtml ?? ""} />
+            </div>
           ) : activeTab.view === "bi" ? (
             <div className="min-h-0 flex-1">
               <DashboardsTab
@@ -3019,6 +3049,7 @@ export function ExasolStudio({
         connectionId={connection?.profile.id ?? null}
         onUiAction={handleUiAction}
         onDashboardSaved={openSavedDashboard}
+        onArtifact={openArtifact}
         onSpawn={() => setExtraPets((p) => [...p, { id: `${Date.now()}`, name: `task ${p.length + 1}` }])}
         tag={extraPets.length ? "main" : undefined}
       />
@@ -3030,6 +3061,7 @@ export function ExasolStudio({
           connectionId={connection?.profile.id ?? null}
           onUiAction={handleUiAction}
           onDashboardSaved={openSavedDashboard}
+          onArtifact={openArtifact}
           onClose={() => setExtraPets((list) => list.filter((x) => x.id !== p.id))}
           tag={p.name}
           onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}

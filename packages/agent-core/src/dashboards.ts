@@ -104,7 +104,7 @@ export class DashboardStore {
         if (viz.type === "echarts" && !viz.chart) viz.chart = "bar";
         return {
           id: typeof p.id === "string" && p.id ? p.id : `p${i + 1}`,
-          title: typeof p.title === "string" ? p.title : "",
+          title: typeof p.title === "string" && p.title ? p.title : typeof p.name === "string" ? p.name : "",
           grid:
             p.grid && typeof p.grid === "object"
               ? p.grid
