@@ -70,7 +70,6 @@ export function AssistantPanel({
   pendingPrompt,
   connectionId,
   onClose,
-  onConnectRequest,
   onUiAction,
 }: {
   contextSummary: string;
@@ -81,8 +80,6 @@ export function AssistantPanel({
   connectionId?: string | null;
   /** Hide the AI side panel. */
   onClose?: () => void;
-  /** Open the app's connect dialog. */
-  onConnectRequest?: () => void;
   /** Perform a UI action for the agent (pet/cursor drives it). */
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
 }) {
@@ -587,22 +584,6 @@ export function AssistantPanel({
               <PermissionCard item={p} onAnswer={answerPermission} />
             </div>
           ))}
-        {!connectionId ? (
-          <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/8 px-2.5 py-1.5">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-              No database connected — I can chat, but not query.
-            </span>
-            {onConnectRequest ? (
-              <button
-                onClick={onConnectRequest}
-                className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-secondary"
-              >
-                Connect
-              </button>
-            ) : null}
-          </div>
-        ) : null}
         {/* Slash / mention popup */}
         {menuItems.length > 0 ? (
           <div className="absolute bottom-full left-2.5 z-30 mb-1 w-[calc(100%-1.25rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-xl">

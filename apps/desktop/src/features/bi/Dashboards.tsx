@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
+import { worker as pspWorker } from "@perspective-dev/client";
+import "@perspective-dev/viewer";
+import "@perspective-dev/viewer-datagrid";
+import { PerspectiveViewer } from "@perspective-dev/react";
+import "@perspective-dev/viewer/dist/css/themes.css";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
@@ -19,6 +24,12 @@ import { cn } from "@/lib/utils";
 // active connection — no external BI server.
 
 const PALETTE = ["#5fc33b", "#4fa823", "#8ed16f", "#2f7d14", "#b5e3a1", "#1f5c0d", "#d3efc7"];
+
+// One shared Perspective WASM worker for all table panels (lazy).
+let pspClientPromise: ReturnType<typeof pspWorker> | null = null;
+function pspClient() {
+  return (pspClientPromise ??= pspWorker());
+}
 
 export function DashboardsTab({
   profileId,
@@ -229,7 +240,7 @@ function Panel({
     let cancelled = false;
     setLoading(true);
     ipc
-      .executeSql(profileId, connectionName, panel.query.sql, 5000, false)
+      .executeSql(profileId, connectionName, panel.query.sql, panel.viz.type === "table" ? 50000 : 5000, false)
       .then((res) => {
         if (cancelled) return;
         const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
@@ -262,7 +273,7 @@ function Panel({
         ) : panel.viz.type === "kpi" ? (
           <KpiPanel panel={panel} result={result} />
         ) : panel.viz.type === "table" ? (
-          <TablePanel result={result} />
+          <PerspectiveTable result={result} />
         ) : (
           <ChartPanel panel={panel} result={result} />
         )}
@@ -299,6 +310,50 @@ function KpiPanel({ panel, result }: { panel: DashPanel; result: StatementResult
       <span className="font-heading text-[28px] font-bold tabular-nums text-foreground">{display}</span>
       {viz.unit ? <span className="text-[11px] text-muted-foreground">{viz.unit}</span> : null}
     </div>
+  );
+}
+
+/**
+ * Big-data table: FINOS Perspective (Rust/WASM) pivots hundreds of thousands
+ * of rows client-side without breaking a sweat. Falls back to the simple
+ * table if the WASM engine fails to load.
+ */
+function PerspectiveTable({ result }: { result: StatementResult }) {
+  const [table, setTable] = useState<unknown | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!result.rows.length) return; // empty → simple table below
+    let cancelled = false;
+    let created: { delete?: () => Promise<void> } | null = null;
+    (async () => {
+      try {
+        const client = await pspClient();
+        const rows = result.rows.map((r) =>
+          Object.fromEntries(result.columns.map((c, i) => [c.name, r[i] as string | number | boolean | null])),
+        );
+        const t = await client.table(rows);
+        created = t as unknown as { delete?: () => Promise<void> };
+        if (!cancelled) setTable(t);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void created?.delete?.()?.catch(() => undefined);
+    };
+  }, [result]);
+
+  if (failed || !result.rows.length) return <TablePanel result={result} />;
+  if (!table) return <Hint text="Loading table engine…" />;
+  const dark = document.documentElement.classList.contains("dark");
+  return (
+    <PerspectiveViewer
+      client={table as never}
+      config={{ plugin: "Datagrid", theme: dark ? "Pro Dark" : "Pro", settings: false }}
+      style={{ height: "100%", width: "100%" }}
+    />
   );
 }
 

@@ -99,6 +99,7 @@ import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
+import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
@@ -2847,7 +2848,6 @@ export function ExasolStudio({
               pendingPrompt={aiPrompt}
               connectionId={connection?.profile.id ?? null}
               onClose={toggleAi}
-              onConnectRequest={openConnect}
               onUiAction={handleUiAction}
             />
           </ResizablePanel>
@@ -2855,6 +2855,13 @@ export function ExasolStudio({
       </div>
 
       <AgentCursor ref={cursorRef} />
+      <FloatingPet
+        onAsk={(text) => {
+          setAiOpen(true);
+          aiPanelRef.current?.expand();
+          setAiPrompt({ text, nonce: Date.now() });
+        }}
+      />
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
         <HistoryDock
           entries={history}
