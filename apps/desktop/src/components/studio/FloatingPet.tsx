@@ -74,7 +74,7 @@ export function FloatingPet({
   const [traveling, setTraveling] = useState(false);
   const [chat, setChat] = useState<PetChat | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionRef = useRef<string | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
   const modelRef = useRef<string | null>(null);
@@ -184,12 +184,13 @@ export function FloatingPet({
   const handleEvent = useCallback(
     (e: AgentEvent) => {
       if (e.type === "status" && e.state === "thinking") {
-        setChat((c) => (c ? { ...c, status: "thinking" } : c));
+        setChat((c) => ({ ...(c ?? { answer: "" }), status: "thinking" }));
         setExpression("work");
       } else if (e.type === "tool-start") {
-        setChat((c) => (c ? { ...c, status: "tool", toolLabel: TOOL_LABELS[e.name] ?? e.name } : c));
+        setChat((c) => ({ ...(c ?? { answer: "" }), status: "tool", toolLabel: TOOL_LABELS[e.name] ?? e.name }));
+        setExpression("work");
       } else if (e.type === "text-delta") {
-        setChat((c) => (c ? { ...c, status: "streaming", answer: c.answer + e.delta } : c));
+        setChat((c) => ({ ...(c ?? { answer: "" }), status: "streaming", answer: (c?.answer ?? "") + e.delta }));
       } else if (e.type === "message-done") {
         setChat((c) => (c ? { ...c, status: "idle" } : c));
         setExpression("happy");
@@ -375,22 +376,31 @@ export function FloatingPet({
             </div>
           ) : null}
 
-          <div className="flex items-center gap-1.5">
-            <input
+          <div className="flex items-end gap-1.5 rounded-xl border border-border bg-editor p-1.5 transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
+            <textarea
               ref={inputRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void ask();
+              rows={1}
+              onChange={(e) => {
+                setText(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 88)}px`;
               }}
-              placeholder="e.g. connect and show my schemas…"
-              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void ask();
+                }
+              }}
+              placeholder="Ask me anything…"
+              className="max-h-[88px] min-h-[28px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1 text-[12.5px] leading-relaxed outline-none placeholder:text-muted-foreground"
             />
             {busy ? (
               <button
                 onClick={() => void stop()}
                 aria-label="Stop"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-destructive"
+                title="Stop"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
               >
                 <Square className="h-3 w-3" />
               </button>
@@ -399,9 +409,9 @@ export function FloatingPet({
                 onClick={() => void ask()}
                 disabled={!text.trim()}
                 aria-label="Ask"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-40"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-all hover:bg-primary/85 disabled:opacity-35"
               >
-                <Send className="h-3.5 w-3.5" />
+                <Send className="h-3 w-3" />
               </button>
             )}
           </div>

@@ -315,7 +315,11 @@ export function buildTools(ctx: {
                 session.record({ kind: "dashboard.saved", id: saved.id, title: saved.title, panels: saved.panels.length });
                 return { ok: true, id: saved.id, note: "Saved. The user can open it in the Dashboards view (chart icon in the activity rail)." };
               } catch (e) {
-                return { ok: false, error: e instanceof Error ? e.message : String(e), hint: "Fix the spec to match the schema and retry." };
+                return {
+                  ok: false,
+                  error: e instanceof Error ? e.message : String(e),
+                  hint: 'Match this working example exactly: {"id":"p1","title":"Revenue by segment","grid":{"x":0,"y":0,"w":6,"h":8},"query":{"sql":"SELECT C_MKTSEGMENT, SUM(O_TOTALPRICE) AS REVENUE FROM TPCH.ORDERS o JOIN TPCH.CUSTOMER c ON o.O_CUSTKEY=c.C_CUSTKEY GROUP BY C_MKTSEGMENT"},"viz":{"type":"echarts","chart":"bar"}}. Avoid reserved words (VALUE) as column aliases.',
+                };
               }
             },
           }),
