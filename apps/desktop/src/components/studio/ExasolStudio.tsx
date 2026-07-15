@@ -100,7 +100,6 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
-import { EV_ESTABLISHED } from "@/lib/connect-window";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
@@ -1509,8 +1508,6 @@ export function ExasolStudio({
   const cursorRef = useRef<AgentCursorHandle | null>(null);
   const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
-  /** Resolves when ConnectView completes a connection (agent flow waits on it). */
-  const agentConnectedCb = useRef<((profileId: string) => void) | null>(null);
 
   /** Fill a React-controlled input the way a real keystroke would. */
   function fillAnchor(anchor: string, value: string): boolean {
@@ -1634,13 +1631,20 @@ export function ExasolStudio({
           };
           g.node({ id: "connect.tab", verify: () => Boolean(anchor("connect.name")) });
           // Auto-permutations: everything users have ever done becomes a road.
-          addLearnedEdges(g, (id, lbl) => async () => {
-            const el = anchor(id);
-            if (!el) return false;
-            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
-            el.click();
-            return true;
-          });
+          const curatedNodes = new Set([
+            "start", "connect.tab", "name.filled", "host.filled", "user.filled", "pass.filled", "connected",
+          ]);
+          addLearnedEdges(
+            g,
+            (id, lbl) => async () => {
+              const el = anchor(id);
+              if (!el) return false;
+              await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+              el.click();
+              return true;
+            },
+            (from, to) => curatedNodes.has(from) || curatedNodes.has(to),
+          );
           // Two roads into the connect tab — the title bar, or the sidebar (+).
           g.edge({ from: "start", to: "connect.tab", weight: 1, label: "via Connect button", action: openTab("titlebar.connect") });
           g.edge({ from: "start", to: "connect.tab", weight: 2, label: "via sidebar +", action: openTab("sidebar.add-connection") });
@@ -1655,27 +1659,13 @@ export function ExasolStudio({
             label: "connect",
             action: async () => {
               const submit = anchor("connect.submit");
-              if (!submit) return false;
               await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
-              // Success arrives via EITHER path: the in-tab callback OR the
-              // dedicated connect window's established event.
-              const { listen: tListen } = await import("@tauri-apps/api/event");
-              const done = new Promise<boolean>((resolve) => {
-                let un: (() => void) | null = null;
-                const finish = (ok: boolean) => {
-                  window.clearTimeout(timer);
-                  agentConnectedCb.current = null;
-                  un?.();
-                  resolve(ok);
-                };
-                const timer = window.setTimeout(() => finish(false), 45_000);
-                agentConnectedCb.current = () => finish(true);
-                void tListen(EV_ESTABLISHED, () => finish(true)).then((f) => {
-                  un = f;
-                });
-              });
-              submit.click();
-              return done;
+              // Do the REAL connect via IPC so we get the true outcome — a
+              // domain failure (bad password, DB down) throws with the actual
+              // message instead of a silent 45s timeout that looks like a
+              // blocked road.
+              await overlayConnectDirect({ ...draft, schema: undefined });
+              return true;
             },
           });
           const nav = await g.navigate("start", "connected", (e) => recordTransition(e.from, e.to));
@@ -2776,7 +2766,6 @@ export function ExasolStudio({
                 onConnected={async (p, srv) => {
                   await onConnected(p, srv);
                   await agentClient.grantConnection(p.id).catch(() => undefined);
-                  agentConnectedCb.current?.(p.id);
                 }}
               />
             </div>

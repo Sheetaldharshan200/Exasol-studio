@@ -33,6 +33,12 @@ export class UiGraph {
   edge(e: UiEdge) {
     if (!this.nodes.has(e.from)) this.nodes.set(e.from, { id: e.from });
     if (!this.nodes.has(e.to)) this.nodes.set(e.to, { id: e.to });
+    // No duplicate roads: same from→to keeps only the cheaper edge.
+    const dup = this.edges.find((x) => x.from === e.from && x.to === e.to);
+    if (dup) {
+      if (e.weight < dup.weight) Object.assign(dup, e);
+      return this;
+    }
     this.edges.push(e);
     return this;
   }
@@ -109,7 +115,14 @@ export class UiGraph {
       let detour = false;
       for (const e of route) {
         onStep?.(e);
-        const ok = await e.action().catch(() => false);
+        let ok = false;
+        try {
+          ok = await e.action();
+        } catch (err) {
+          // A thrown error is a DOMAIN failure (bad credentials, DB rejected)
+          // — not a wrong turn. Rerouting won't help; report it truthfully.
+          return { ok: false, at: current, detail: err instanceof Error ? err.message : String(err) };
+        }
         const verified = ok && (this.nodes.get(e.to)?.verify?.() ?? true);
         if (!verified) {
           e.blocked = true; // road closed — recalculate from here

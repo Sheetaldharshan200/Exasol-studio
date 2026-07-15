@@ -80,9 +80,12 @@ export function initTraceRecorder() {
 export function addLearnedEdges(
   g: UiGraph,
   clickExec: (anchorId: string, label: string) => () => Promise<boolean>,
+  skip?: (from: string, to: string) => boolean,
 ) {
   for (const [k, count] of counts) {
     const [from, to] = k.split("→");
+    if (from === to) continue; // no self-loops
+    if (skip?.(from, to)) continue; // don't shadow curated flow edges
     const weight = Math.max(0.5, 3 - Math.log2(count + 1));
     g.edge({ from, to, weight, label: `learned: ${from}→${to}`, action: clickExec(to, `Going to ${to}…`) });
   }
