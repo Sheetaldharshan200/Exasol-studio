@@ -18,6 +18,7 @@ mod query;
 mod security;
 mod state;
 mod storage;
+mod local_llm;
 
 use tauri::Manager;
 
@@ -37,6 +38,7 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
+            app.manage(crate::local_llm::LlmEngine::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,7 +130,17 @@ pub fn run() {
             agent::agent_api,
             agent::agent_grant_connection,
             agent::agent_stream,
+            local_llm::llm_status,
+            local_llm::llm_engine_install,
+            local_llm::llm_model_install,
+            local_llm::llm_start,
+            local_llm::llm_stop,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Exasol Studio");
+        .build(tauri::generate_context!())
+        .expect("error while running Exasol Studio")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<crate::local_llm::LlmEngine>().kill();
+            }
+        });
 }

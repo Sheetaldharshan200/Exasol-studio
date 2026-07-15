@@ -89,3 +89,37 @@ export const agent = {
     return unlisten;
   },
 };
+
+// ── Built-in local AI engine (managed llama-server, see local_llm.rs) ──
+
+export type LlmModelStatus = {
+  id: string;
+  name: string;
+  description: string;
+  file: string;
+  url: string;
+  sizeMb: number;
+  minRamGb: number;
+  downloaded: boolean;
+};
+
+export type LlmStatus = {
+  supported: boolean;
+  engineInstalled: boolean;
+  engineVersion: string | null;
+  runningModel: string | null;
+  port: number;
+  models: LlmModelStatus[];
+};
+
+export type LlmProgress = { stage: "engine" | "model" | "start"; pct: number | null; msg: string };
+
+export const llm = {
+  status: () => invoke<LlmStatus>("llm_status"),
+  installEngine: () => invoke<null>("llm_engine_install"),
+  installModel: (modelId: string) => invoke<null>("llm_model_install", { modelId }),
+  start: (modelId: string) => invoke<null>("llm_start", { modelId }),
+  stop: () => invoke<null>("llm_stop"),
+  onProgress: (cb: (p: LlmProgress) => void) =>
+    listen<LlmProgress>("llm-progress", (e) => cb(e.payload)),
+};

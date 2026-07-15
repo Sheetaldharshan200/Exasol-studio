@@ -68,6 +68,8 @@ const EMBEDDED_CATALOG: Record<string, ModelInfo[]> = {
 
 type LocalServer = { id: string; name: string; baseURL: string };
 const LOCAL_SERVERS: LocalServer[] = [
+  // Exasol Studio's managed llama-server (see local_llm.rs) — fixed port.
+  { id: "builtin", name: "Built-in AI", baseURL: "http://127.0.0.1:41414/v1" },
   { id: "ollama", name: "Ollama (local)", baseURL: "http://127.0.0.1:11434/v1" },
   { id: "lmstudio", name: "LM Studio (local)", baseURL: "http://127.0.0.1:1234/v1" },
   { id: "llamacpp", name: "llama.cpp (local)", baseURL: "http://127.0.0.1:8080/v1" },
@@ -256,6 +258,7 @@ export class ProviderRegistry {
           baseURL: "https://openrouter.ai/api/v1",
           apiKey: pc.apiKey ?? process.env.OPENROUTER_API_KEY,
         })(modelId);
+      case "builtin":
       case "ollama":
       case "lmstudio":
       case "llamacpp": {
