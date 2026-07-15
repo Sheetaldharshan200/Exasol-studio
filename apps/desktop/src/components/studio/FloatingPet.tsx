@@ -49,6 +49,7 @@ export function FloatingPet({
   onSpawn,
   onClose,
   tag,
+  onRename,
 }: {
   connectionId?: string | null;
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
@@ -60,6 +61,8 @@ export function FloatingPet({
   onClose?: () => void;
   /** Small identity chip under the pet ("main", "task 1"…). */
   tag?: string;
+  /** Provided for spawned pets: makes the tag click-to-rename. */
+  onRename?: (name: string) => void;
 }) {
   const [enabled, setEnabled] = useState(true);
   const [avatar, setAvatar] = useState<PetAvatarId>("exa");
@@ -68,6 +71,7 @@ export function FloatingPet({
   const [scale, setScale] = useState(() => Number(localStorage.getItem(SIZE_KEY)) || 1);
   const [expression, setExpression] = useState<PetExpression>("idle");
   const [facing, setFacing] = useState<1 | -1>(1);
+  const [renamingTag, setRenamingTag] = useState(false);
   const dizzyTimer = useRef<number | null>(null);
   function bonk() {
     setExpression("dizzy");
@@ -459,9 +463,39 @@ export function FloatingPet({
           {...{ style: { transform: `scaleX(${facing})` } }}
         />
         {tag ? (
-          <span className="pointer-events-none absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-panel px-1.5 py-px text-[8px] font-medium uppercase tracking-wide text-muted-foreground shadow">
-            {tag}
-          </span>
+          renamingTag ? (
+            <input
+              autoFocus
+              defaultValue={tag}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                onRename?.(e.target.value.trim() || tag);
+                setRenamingTag(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") setRenamingTag(false);
+              }}
+              className="absolute -bottom-4 left-1/2 w-20 -translate-x-1/2 rounded-full border border-primary/50 bg-panel px-1.5 py-px text-center text-[9px] text-foreground outline-none shadow"
+            />
+          ) : (
+            <span
+              onPointerDown={(e) => onRename && e.stopPropagation()}
+              onClick={(e) => {
+                if (!onRename) return;
+                e.stopPropagation();
+                setRenamingTag(true);
+              }}
+              title={onRename ? "Click to rename" : undefined}
+              className={cn(
+                "absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-panel px-1.5 py-px text-[8px] font-medium uppercase tracking-wide text-muted-foreground shadow",
+                onRename ? "cursor-text hover:border-primary/40 hover:text-foreground" : "pointer-events-none",
+              )}
+            >
+              {tag}
+            </span>
+          )
         ) : null}
         {/* resize handle */}
         <div

@@ -1507,7 +1507,7 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
-  const [extraPets, setExtraPets] = useState<string[]>([]);
+  const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
   /** Resolves when ConnectView completes a connection (agent flow waits on it). */
   const agentConnectedCb = useRef<((profileId: string) => void) | null>(null);
@@ -2997,18 +2997,19 @@ export function ExasolStudio({
       <FloatingPet
         connectionId={connection?.profile.id ?? null}
         onUiAction={handleUiAction}
-        onSpawn={() => setExtraPets((p) => [...p, `${Date.now()}`])}
+        onSpawn={() => setExtraPets((p) => [...p, { id: `${Date.now()}`, name: `task ${p.length + 1}` }])}
         tag={extraPets.length ? "main" : undefined}
       />
-      {extraPets.map((id, i) => (
+      {extraPets.map((p, i) => (
         <FloatingPet
-          key={id}
+          key={p.id}
           standalone
           offset={i + 1}
           connectionId={connection?.profile.id ?? null}
           onUiAction={handleUiAction}
-          onClose={() => setExtraPets((p) => p.filter((x) => x !== id))}
-          tag={`task ${i + 1}`}
+          onClose={() => setExtraPets((list) => list.filter((x) => x.id !== p.id))}
+          tag={p.name}
+          onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}
         />
       ))}
       <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
