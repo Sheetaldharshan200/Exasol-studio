@@ -196,7 +196,8 @@ export type DashPanel = {
   viz:
     | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
     | { type: "kpi"; valueField?: string; unit?: string }
-    | { type: "table" };
+    | { type: "table" }
+    | { type: "explore"; config?: Record<string, unknown> };
 };
 
 export type Dashboard = {

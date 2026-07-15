@@ -38,6 +38,11 @@ export const PanelSchema = z.object({
       unit: z.string().optional(),
     }),
     z.object({ type: z.literal("table") }),
+    z.object({
+      type: z.literal("explore"),
+      /** Perspective viewer config (group_by, split_by, aggregates, plugin…). */
+      config: z.record(z.string(), z.unknown()).optional(),
+    }),
   ]),
 });
 

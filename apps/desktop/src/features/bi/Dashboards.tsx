@@ -3,6 +3,7 @@ import * as echarts from "echarts";
 import { worker as pspWorker } from "@perspective-dev/client";
 import "@perspective-dev/viewer";
 import "@perspective-dev/viewer-datagrid";
+import "@perspective-dev/viewer-d3fc";
 import { PerspectiveViewer } from "@perspective-dev/react";
 import "@perspective-dev/viewer/dist/css/themes.css";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
@@ -294,6 +295,9 @@ function DashboardView({
                 profileId={profileId}
                 connectionName={connectionName}
                 nonce={nonce}
+                onVizChange={(viz) => {
+                  void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === p.id ? { ...x, viz } : x)) });
+                }}
                 onEdit={() => setEditing(p)}
                 onDelete={() => {
                   if (dash.panels.length <= 1) return;
@@ -330,6 +334,7 @@ function Panel({
   nonce,
   onEdit,
   onDelete,
+  onVizChange,
 }: {
   panel: DashPanel;
   profileId: string | null;
@@ -337,6 +342,7 @@ function Panel({
   nonce: number;
   onEdit: () => void;
   onDelete: () => void;
+  onVizChange?: (viz: DashPanel["viz"]) => void;
 }) {
   const [result, setResult] = useState<StatementResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -403,6 +409,8 @@ function Panel({
           <KpiPanel panel={panel} result={result} />
         ) : panel.viz.type === "table" ? (
           <PerspectiveTable result={result} />
+        ) : panel.viz.type === "explore" ? (
+          <ExplorePanel panel={panel} result={result} onVizChange={onVizChange} />
         ) : (
           <ChartPanel panel={panel} result={result} />
         )}
@@ -481,6 +489,61 @@ function PerspectiveTable({ result }: { result: StatementResult }) {
     <PerspectiveViewer
       client={table as never}
       config={{ plugin: "Datagrid", theme: dark ? "Pro Dark" : "Pro", settings: false }}
+      style={{ height: "100%", width: "100%" }}
+    />
+  );
+}
+
+/**
+ * The self-serve BI studio (Superset-style, Rust/WASM): full Perspective
+ * viewer with the config bar on — drag columns into group-by/split-by, pick
+ * any d3fc chart (bars, lines, heatmap, treemap, sunburst…). Every change
+ * persists into the panel spec, so the AI can read and edit it too.
+ */
+function ExplorePanel({
+  panel,
+  result,
+  onVizChange,
+}: {
+  panel: DashPanel;
+  result: StatementResult;
+  onVizChange?: (viz: DashPanel["viz"]) => void;
+}) {
+  const [table, setTable] = useState<unknown | null>(null);
+  const [failed, setFailed] = useState(false);
+  const viz = panel.viz as Extract<DashPanel["viz"], { type: "explore" }>;
+
+  useEffect(() => {
+    if (!result.rows.length) return;
+    let cancelled = false;
+    let created: { delete?: () => Promise<void> } | null = null;
+    (async () => {
+      try {
+        const client = await pspClient();
+        const rows = result.rows.map((r) =>
+          Object.fromEntries(result.columns.map((c, i) => [c.name, r[i] as string | number | boolean | null])),
+        );
+        const t = await client.table(rows);
+        created = t as unknown as { delete?: () => Promise<void> };
+        if (!cancelled) setTable(t);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void created?.delete?.()?.catch(() => undefined);
+    };
+  }, [result]);
+
+  if (failed || !result.rows.length) return <TablePanel result={result} />;
+  if (!table) return <Hint text="Loading studio…" />;
+  const dark = document.documentElement.classList.contains("dark");
+  return (
+    <PerspectiveViewer
+      client={table as never}
+      config={{ theme: dark ? "Pro Dark" : "Pro", ...(viz.config ?? { plugin: "Datagrid" }) }}
+      onConfigUpdate={(cfg) => onVizChange?.({ type: "explore", config: cfg as Record<string, unknown> })}
       style={{ height: "100%", width: "100%" }}
     />
   );
@@ -621,7 +684,7 @@ function PanelEditor({
 }) {
   const [title, setTitle] = useState(panel.title);
   const [sql, setSql] = useState(panel.query.sql);
-  const [vizType, setVizType] = useState<"echarts" | "kpi" | "table">(panel.viz.type);
+  const [vizType, setVizType] = useState<"echarts" | "kpi" | "table" | "explore">(panel.viz.type);
   const ev = panel.viz.type === "echarts" ? panel.viz : null;
   const [chart, setChart] = useState<"bar" | "line" | "area" | "pie" | "scatter">(ev?.chart ?? "bar");
   const [xField, setXField] = useState(ev?.xField ?? "");
@@ -631,6 +694,43 @@ function PanelEditor({
   const [kpiUnit, setKpiUnit] = useState(panel.viz.type === "kpi" ? (panel.viz.unit ?? "") : "");
   const [optionJson, setOptionJson] = useState(ev?.option ? JSON.stringify(ev.option, null, 2) : "");
   const [preview, setPreview] = useState<StatementResult | null>(null);
+  const [datasets, setDatasets] = useState<string[]>([]);
+  const [dataset, setDataset] = useState("");
+
+  // Every table/view on the connection is a dataset — virtual schemas too
+  // (they surface in the same catalog views).
+  useEffect(() => {
+    if (!profileId) return;
+    ipc
+      .executeSql(
+        profileId,
+        connectionName,
+        `SELECT TABLE_SCHEMA || '.' || TABLE_NAME AS DS FROM SYS.EXA_ALL_TABLES
+         UNION SELECT VIEW_SCHEMA || '.' || VIEW_NAME FROM SYS.EXA_ALL_VIEWS ORDER BY 1`,
+        2000,
+        false,
+      )
+      .then((res) => {
+        const first = res.results.find((r) => r.kind === "resultSet");
+        if (first && !first.error) setDatasets(first.rows.map((r) => String(r[0])));
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId]);
+
+  function applyTemplate(t: (typeof TEMPLATES)[number]) {
+    const ds = dataset || "SCHEMA.TABLE";
+    setSql(t.sql(ds));
+    if (t.viz === "explore") setVizType("explore");
+    else if (t.viz === "kpi") setVizType("kpi");
+    else if (t.viz === "table") setVizType("table");
+    else {
+      setVizType("echarts");
+      setChart(t.viz);
+    }
+    if (!title || title === "New panel") setTitle(t.label);
+    setPreview(null);
+  }
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [jsonErr, setJsonErr] = useState<string | null>(null);
@@ -667,7 +767,9 @@ function PanelEditor({
         ? { type: "kpi", valueField: kpiField || undefined, unit: kpiUnit || undefined }
         : vizType === "table"
           ? { type: "table" }
-          : {
+          : vizType === "explore"
+            ? { type: "explore", config: panel.viz.type === "explore" ? panel.viz.config : undefined }
+            : {
               type: "echarts",
               chart,
               xField: xField || undefined,
@@ -709,6 +811,38 @@ function PanelEditor({
           </label>
 
           <div>
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Start from a template
+            </span>
+            <div className="mb-1.5 flex gap-1.5">
+              <select
+                value={dataset}
+                onChange={(e) => setDataset(e.target.value)}
+                className="h-7 min-w-0 flex-1 rounded-lg border border-border bg-editor px-2 text-[11.5px] outline-none"
+              >
+                <option value="">Pick a dataset (table / view / virtual schema)…</option>
+                {datasets.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.label}
+                  onClick={() => applyTemplate(t)}
+                  title={t.hint}
+                  className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <div className="mb-0.5 flex items-center justify-between">
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL (the dataset)</span>
               <button
@@ -739,13 +873,14 @@ function PanelEditor({
           <div>
             <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Visualize as</span>
             <div className="flex flex-wrap gap-1.5">
-              {(["bar", "line", "area", "pie", "scatter", "kpi", "table"] as const).map((t) => {
-                const active = t === "kpi" || t === "table" ? vizType === t : vizType === "echarts" && chart === t;
+              {(["bar", "line", "area", "pie", "scatter", "kpi", "table", "explore"] as const).map((t) => {
+                const active =
+                  t === "kpi" || t === "table" || t === "explore" ? vizType === t : vizType === "echarts" && chart === t;
                 return (
                   <button
                     key={t}
                     onClick={() => {
-                      if (t === "kpi" || t === "table") setVizType(t);
+                      if (t === "kpi" || t === "table" || t === "explore") setVizType(t);
                       else {
                         setVizType("echarts");
                         setChart(t);
@@ -867,3 +1002,16 @@ function PanelEditor({
     </div>
   );
 }
+
+
+/** Prebuilt chart starters — pick a dataset, tap one, adjust, done. */
+const TEMPLATES: { label: string; hint: string; viz: "bar" | "line" | "area" | "pie" | "scatter" | "kpi" | "table" | "explore"; sql: (ds: string) => string }[] = [
+  { label: "Breakdown bar", hint: "Count by a category", viz: "bar", sql: (ds) => `SELECT <category_column>, COUNT(*) AS CNT\nFROM ${ds}\nGROUP BY 1 ORDER BY 2 DESC LIMIT 20` },
+  { label: "Time series", hint: "Metric over time", viz: "line", sql: (ds) => `SELECT TRUNC(<date_column>, 'MM') AS MONTH, SUM(<value_column>) AS TOTAL\nFROM ${ds}\nGROUP BY 1 ORDER BY 1` },
+  { label: "Stacked area", hint: "Composition over time", viz: "area", sql: (ds) => `SELECT TRUNC(<date_column>, 'MM') AS MONTH, <category_column>, SUM(<value_column>) AS TOTAL\nFROM ${ds}\nGROUP BY 1, 2 ORDER BY 1` },
+  { label: "Share donut", hint: "Proportions of a whole", viz: "pie", sql: (ds) => `SELECT <category_column>, SUM(<value_column>) AS TOTAL\nFROM ${ds}\nGROUP BY 1 ORDER BY 2 DESC LIMIT 10` },
+  { label: "Correlation", hint: "Two measures, scattered", viz: "scatter", sql: (ds) => `SELECT <x_column>, <y_column>\nFROM ${ds}\nLIMIT 2000` },
+  { label: "KPI total", hint: "One number that matters", viz: "kpi", sql: (ds) => `SELECT SUM(<value_column>) AS TOTAL\nFROM ${ds}` },
+  { label: "Top-N table", hint: "Ranked records", viz: "table", sql: (ds) => `SELECT *\nFROM ${ds}\nORDER BY <value_column> DESC LIMIT 100` },
+  { label: "Pivot studio", hint: "Drag-drop explore (Perspective)", viz: "explore", sql: (ds) => `SELECT *\nFROM ${ds}\nLIMIT 20000` },
+];

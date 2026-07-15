@@ -12,6 +12,7 @@
     "@perspective-dev/client": "^4.5.2",
     "@perspective-dev/react": "^4.5.2",
     "@perspective-dev/viewer": "^4.5.2",
+    "@perspective-dev/viewer-d3fc": "^4.4.1",
     "@perspective-dev/viewer-datagrid": "^4.5.2",
     "@radix-ui/react-accordion": "^1.2.14",
     "@radix-ui/react-separator": "^1.1.10",
