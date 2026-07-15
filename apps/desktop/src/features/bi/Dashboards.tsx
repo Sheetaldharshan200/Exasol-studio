@@ -11,8 +11,12 @@ import {
   ArrowLeft,
   BarChart3,
   Loader2,
+  Pencil,
+  Play,
+  Plus,
   RefreshCcw,
   Trash2,
+  X,
 } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { dashboards, type Dashboard, type DashPanel } from "@/lib/agent-client";
@@ -93,11 +97,60 @@ export function DashboardsTab({
             <AgentMark className="h-8 w-8 text-primary" />
             <p className="text-[13.5px] font-medium text-foreground">No dashboards yet</p>
             <p className="max-w-sm text-[12px] text-muted-foreground">
-              Open the Exasol AI panel and describe the dashboard you want — the agent verifies the SQL and builds it here.
+              Ask the AI to build one — or start from scratch yourself.
             </p>
+            <button
+              onClick={() =>
+                void dashboards
+                  .save({
+                    version: 1,
+                    id: "",
+                    title: "Untitled dashboard",
+                    description: "",
+                    panels: [
+                      {
+                        id: "p1",
+                        title: "New panel",
+                        grid: { x: 0, y: 0, w: 6, h: 6 },
+                        query: { sql: "SELECT 1 AS VALUE" },
+                        viz: { type: "kpi" },
+                      },
+                    ],
+                  })
+                  .then(setOpen)
+              }
+              className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-[12.5px] text-foreground hover:bg-secondary"
+            >
+              <Plus className="h-3.5 w-3.5 text-primary" /> New dashboard
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <button
+              onClick={() =>
+                void dashboards
+                  .save({
+                    version: 1,
+                    id: "",
+                    title: "Untitled dashboard",
+                    description: "",
+                    panels: [
+                      {
+                        id: "p1",
+                        title: "New panel",
+                        grid: { x: 0, y: 0, w: 6, h: 6 },
+                        query: { sql: "SELECT 1 AS VALUE" },
+                        viz: { type: "kpi" },
+                      },
+                    ],
+                  })
+                  .then(setOpen)
+              }
+              className="flex min-h-[110px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              <Plus className="h-5 w-5 text-primary" />
+              <span className="text-[12.5px] font-medium">New dashboard</span>
+            </button>
             {list.map((d) => (
               <div
                 key={d.id}
@@ -135,7 +188,7 @@ export function DashboardsTab({
 /* ────────────────────────── Dashboard view ────────────────────────── */
 
 function DashboardView({
-  dash,
+  dash: initial,
   profileId,
   connectionName,
   onBack,
@@ -145,7 +198,27 @@ function DashboardView({
   connectionName: string;
   onBack: () => void;
 }) {
+  const [dash, setDash] = useState<Dashboard>(initial);
+  const [editing, setEditing] = useState<DashPanel | null>(null);
   const [nonce, setNonce] = useState(0);
+
+  async function saveDash(next: Dashboard) {
+    setDash(next);
+    await dashboards.save(next).catch(() => undefined);
+  }
+
+  function addPanel() {
+    const maxY = Math.max(0, ...dash.panels.map((p) => p.grid.y + p.grid.h));
+    const panel: DashPanel = {
+      id: `p${Date.now().toString(36)}`,
+      title: "New panel",
+      grid: { x: 0, y: maxY, w: 6, h: 6 },
+      query: { sql: "" },
+      viz: { type: "table" },
+    };
+    void saveDash({ ...dash, panels: [...dash.panels, panel] });
+    setEditing(panel);
+  }
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1100);
 
@@ -191,8 +264,15 @@ function DashboardView({
           </span>
         ) : null}
         <button
+          onClick={addPanel}
+          className="ml-auto flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          title="Add panel"
+        >
+          <Plus className="h-3.5 w-3.5" /> Panel
+        </button>
+        <button
           onClick={() => setNonce((n) => n + 1)}
-          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
           aria-label="Refresh all panels"
           title="Refresh"
         >
@@ -208,12 +288,35 @@ function DashboardView({
           onLayoutChange={persistLayout}
         >
           {dash.panels.map((p) => (
-            <div key={p.id} className="overflow-hidden rounded-xl border border-border bg-panel/70">
-              <Panel panel={p} profileId={profileId} connectionName={connectionName} nonce={nonce} />
+            <div key={p.id} className="group/panel overflow-hidden rounded-xl border border-border bg-panel/70">
+              <Panel
+                panel={p}
+                profileId={profileId}
+                connectionName={connectionName}
+                nonce={nonce}
+                onEdit={() => setEditing(p)}
+                onDelete={() => {
+                  if (dash.panels.length <= 1) return;
+                  void saveDash({ ...dash, panels: dash.panels.filter((x) => x.id !== p.id) });
+                }}
+              />
             </div>
           ))}
         </GridLayout>
       </div>
+      {editing ? (
+        <PanelEditor
+          panel={editing}
+          profileId={profileId}
+          connectionName={connectionName}
+          onClose={() => setEditing(null)}
+          onSave={(next) => {
+            void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === next.id ? next : x)) });
+            setEditing(null);
+            setNonce((n) => n + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -225,11 +328,15 @@ function Panel({
   profileId,
   connectionName,
   nonce,
+  onEdit,
+  onDelete,
 }: {
   panel: DashPanel;
   profileId: string | null;
   connectionName: string;
   nonce: number;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [result, setResult] = useState<StatementResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -261,7 +368,29 @@ function Panel({
     <div className="flex h-full flex-col">
       <div className="dash-panel-title flex shrink-0 cursor-move items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
         <span className="truncate text-[11.5px] font-medium text-foreground">{panel.title || "Panel"}</span>
-        {loading ? <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" /> : null}
+        <span className="ml-auto flex items-center gap-0.5">
+          {loading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-foreground"
+            aria-label="Edit panel"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-destructive"
+            aria-label="Delete panel"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </span>
       </div>
       <div className="min-h-0 flex-1">
         {!profileId ? (
@@ -467,7 +596,274 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
       },
       true,
     );
+    // Full-control overrides: whatever the human (or agent) put in viz.option
+    // merges over the generated chart.
+    if (viz.option) chart.setOption(viz.option as Parameters<typeof chart.setOption>[0]);
   }, [result, viz]);
 
   return <div ref={ref} className="h-full w-full" />;
+}
+
+/* ────────────────────────── Panel editor (human control) ────────────────── */
+
+function PanelEditor({
+  panel,
+  profileId,
+  connectionName,
+  onSave,
+  onClose,
+}: {
+  panel: DashPanel;
+  profileId: string | null;
+  connectionName: string;
+  onSave: (p: DashPanel) => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(panel.title);
+  const [sql, setSql] = useState(panel.query.sql);
+  const [vizType, setVizType] = useState<"echarts" | "kpi" | "table">(panel.viz.type);
+  const ev = panel.viz.type === "echarts" ? panel.viz : null;
+  const [chart, setChart] = useState<"bar" | "line" | "area" | "pie" | "scatter">(ev?.chart ?? "bar");
+  const [xField, setXField] = useState(ev?.xField ?? "");
+  const [yFields, setYFields] = useState((ev?.yFields ?? []).join(", "));
+  const [stacked, setStacked] = useState(Boolean(ev?.stacked));
+  const [kpiField, setKpiField] = useState(panel.viz.type === "kpi" ? (panel.viz.valueField ?? "") : "");
+  const [kpiUnit, setKpiUnit] = useState(panel.viz.type === "kpi" ? (panel.viz.unit ?? "") : "");
+  const [optionJson, setOptionJson] = useState(ev?.option ? JSON.stringify(ev.option, null, 2) : "");
+  const [preview, setPreview] = useState<StatementResult | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [jsonErr, setJsonErr] = useState<string | null>(null);
+
+  async function runPreview() {
+    if (!profileId || !sql.trim()) return;
+    setRunning(true);
+    setPreviewErr(null);
+    try {
+      const res = await ipc.executeSql(profileId, connectionName, sql, 200, false);
+      const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
+      if (!first || first.error) setPreviewErr(first?.error ?? "no result");
+      else setPreview(first);
+    } catch (e) {
+      setPreviewErr(errorMessage(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function save() {
+    let option: Record<string, unknown> | undefined;
+    if (optionJson.trim()) {
+      try {
+        option = JSON.parse(optionJson) as Record<string, unknown>;
+        setJsonErr(null);
+      } catch (e) {
+        setJsonErr(`Invalid ECharts JSON: ${String(e)}`);
+        return;
+      }
+    }
+    const viz: DashPanel["viz"] =
+      vizType === "kpi"
+        ? { type: "kpi", valueField: kpiField || undefined, unit: kpiUnit || undefined }
+        : vizType === "table"
+          ? { type: "table" }
+          : {
+              type: "echarts",
+              chart,
+              xField: xField || undefined,
+              yFields: yFields
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+              stacked: stacked || undefined,
+              option,
+            };
+    onSave({ ...panel, title, query: { sql }, viz });
+  }
+
+  const cols = preview?.columns.map((c) => c.name) ?? [];
+
+  return (
+    <div className="fixed inset-0 z-[9996] flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
+      <div className="flex max-h-[85vh] w-[620px] flex-col rounded-2xl border border-border bg-popover shadow-2xl">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          <span className="text-[13px] font-semibold text-foreground">Edit panel</span>
+          <button
+            onClick={onClose}
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+            aria-label="Close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          <label className="block">
+            <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Title</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12.5px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+            />
+          </label>
+
+          <div>
+            <div className="mb-0.5 flex items-center justify-between">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL (the dataset)</span>
+              <button
+                onClick={() => void runPreview()}
+                disabled={running || !profileId || !sql.trim()}
+                className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+              >
+                {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} Preview
+              </button>
+            </div>
+            <textarea
+              value={sql}
+              onChange={(e) => setSql(e.target.value)}
+              rows={4}
+              spellCheck={false}
+              placeholder="SELECT region, SUM(revenue) FROM … GROUP BY region"
+              className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[12px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+            />
+            {previewErr ? (
+              <p className="mt-1 text-[11px] text-destructive">{previewErr}</p>
+            ) : preview ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                ✓ {preview.rowCount} rows · columns: {cols.join(", ")}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Visualize as</span>
+            <div className="flex flex-wrap gap-1.5">
+              {(["bar", "line", "area", "pie", "scatter", "kpi", "table"] as const).map((t) => {
+                const active = t === "kpi" || t === "table" ? vizType === t : vizType === "echarts" && chart === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      if (t === "kpi" || t === "table") setVizType(t);
+                      else {
+                        setVizType("echarts");
+                        setChart(t);
+                      }
+                    }}
+                    className={cn(
+                      "flex h-7 items-center rounded-md border px-2.5 text-[11.5px] capitalize transition-colors",
+                      active
+                        ? "border-primary/50 bg-primary/10 font-medium text-primary"
+                        : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+                    )}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {vizType === "echarts" ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <label className="flex-1">
+                  <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    X / category column
+                  </span>
+                  {cols.length ? (
+                    <select
+                      value={xField}
+                      onChange={(e) => setXField(e.target.value)}
+                      className="h-8 w-full rounded-lg border border-border bg-editor px-2 text-[12px] outline-none"
+                    >
+                      <option value="">(first column)</option>
+                      {cols.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={xField}
+                      onChange={(e) => setXField(e.target.value)}
+                      placeholder="(first column)"
+                      className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none"
+                    />
+                  )}
+                </label>
+                <label className="flex-1">
+                  <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Value columns (comma-separated)
+                  </span>
+                  <input
+                    value={yFields}
+                    onChange={(e) => setYFields(e.target.value)}
+                    placeholder="(all numeric columns)"
+                    className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none"
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-[12px] text-foreground">
+                <input type="checkbox" checked={stacked} onChange={(e) => setStacked(e.target.checked)} /> Stacked
+              </label>
+              <div>
+                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Advanced — raw ECharts option (JSON, merged over the generated chart)
+                </span>
+                <textarea
+                  value={optionJson}
+                  onChange={(e) => setOptionJson(e.target.value)}
+                  rows={4}
+                  spellCheck={false}
+                  placeholder='{"yAxis": {"type": "log"}, "series": [{"label": {"show": true}}]}'
+                  className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[11.5px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+                />
+                {jsonErr ? <p className="mt-1 text-[11px] text-destructive">{jsonErr}</p> : null}
+              </div>
+            </div>
+          ) : vizType === "kpi" ? (
+            <div className="flex gap-2">
+              <label className="flex-1">
+                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Value column</span>
+                <input
+                  value={kpiField}
+                  onChange={(e) => setKpiField(e.target.value)}
+                  placeholder="(first cell)"
+                  className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none"
+                />
+              </label>
+              <label className="w-32">
+                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Unit</span>
+                <input
+                  value={kpiUnit}
+                  onChange={(e) => setKpiUnit(e.target.value)}
+                  placeholder="€, rows…"
+                  className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none"
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-2.5">
+          <button
+            onClick={onClose}
+            className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={!sql.trim()}
+            className="cta-glow flex h-8 items-center rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+          >
+            Save panel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

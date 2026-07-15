@@ -28,6 +28,8 @@ export const PanelSchema = z.object({
       /** Value columns to plot (all numeric columns if omitted). */
       yFields: z.array(z.string()).optional(),
       stacked: z.boolean().optional(),
+      /** Raw ECharts option overrides, deep-merged over the generated option — full control. */
+      option: z.record(z.string(), z.unknown()).optional(),
     }),
     z.object({
       type: z.literal("kpi"),

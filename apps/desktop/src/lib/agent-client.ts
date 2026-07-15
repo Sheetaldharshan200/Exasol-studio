@@ -193,7 +193,7 @@ export type DashPanel = {
   grid: { x: number; y: number; w: number; h: number };
   query: { sql: string };
   viz:
-    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean }
+    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
     | { type: "kpi"; valueField?: string; unit?: string }
     | { type: "table" };
 };
