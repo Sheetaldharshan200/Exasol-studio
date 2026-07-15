@@ -28,6 +28,7 @@ import {
   type LlmStatus,
 } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED } from "@/lib/ai-window";
+import { exportTraces, importTraces, traceStats } from "@/lib/ui-trace";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -522,6 +523,41 @@ function GuardrailsSection({
             checked={settings.allowFileAccess}
             onChange={(v) => void patch({ allowFileAccess: v })}
           />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-[13px] font-semibold">Navigation knowledge</h2>
+        <p className="mb-2 text-[11.5px] text-muted-foreground">
+          The app learns routes from real usage ({traceStats().transitions} transitions, {traceStats().interactions}{" "}
+          interactions). Export to share a base pack; import merges without losing local learning.
+        </p>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            onClick={() => void navigator.clipboard.writeText(exportTraces())}
+          >
+            Export to clipboard
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            onClick={() => {
+              const json = window.prompt("Paste a trace pack (JSON):");
+              if (!json) return;
+              try {
+                const n = importTraces(json);
+                window.alert(`Imported ${n} transitions.`);
+              } catch (e) {
+                window.alert(String(e));
+              }
+            }}
+          >
+            Import…
+          </Button>
         </div>
       </section>
 

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-15T00:00:00Z",
+  "transitions": [
+    { "from": "titlebar.connect", "to": "connect.name", "count": 8 },
+    { "from": "connect.name", "to": "connect.host", "count": 8 },
+    { "from": "connect.host", "to": "connect.username", "count": 8 },
+    { "from": "connect.username", "to": "connect.password", "count": 8 },
+    { "from": "connect.password", "to": "connect.submit", "count": 8 },
+    { "from": "sidebar.add-connection", "to": "connect.name", "count": 4 },
+    { "from": "rail.databases", "to": "sidebar.add-connection", "count": 4 },
+    { "from": "rail.bi", "to": "rail.databases", "count": 2 },
+    { "from": "tabs.new", "to": "editor.run", "count": 3 }
+  ]
+}

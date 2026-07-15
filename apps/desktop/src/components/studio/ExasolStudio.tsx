@@ -100,6 +100,7 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
+import { addLearnedEdges, initTraceRecorder } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
@@ -1505,6 +1506,7 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
+  useEffect(() => initTraceRecorder(), []);
   /** Resolves when ConnectView completes a connection (agent flow waits on it). */
   const agentConnectedCb = useRef<((profileId: string) => void) | null>(null);
 
@@ -1629,6 +1631,14 @@ export function ExasolStudio({
             return true;
           };
           g.node({ id: "connect.tab", verify: () => Boolean(anchor("connect.name")) });
+          // Auto-permutations: everything users have ever done becomes a road.
+          addLearnedEdges(g, (id, lbl) => async () => {
+            const el = anchor(id);
+            if (!el) return false;
+            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            el.click();
+            return true;
+          });
           // Two roads into the connect tab — the title bar, or the sidebar (+).
           g.edge({ from: "start", to: "connect.tab", weight: 1, label: "via Connect button", action: openTab("titlebar.connect") });
           g.edge({ from: "start", to: "connect.tab", weight: 2, label: "via sidebar +", action: openTab("sidebar.add-connection") });
