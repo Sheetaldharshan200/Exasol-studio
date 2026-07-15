@@ -159,7 +159,9 @@ export function ConnectView({
       await ipc.deleteConnectionProfile(p.id);
     }
     await onSaved();
-    setDraft(emptyDraft());
+    // Only reset the form if it was showing one of the deleted profiles —
+    // never wipe details the user is currently typing.
+    if (draft.id) setDraft(emptyDraft());
   }
 
   const dsn = useMemo(() => buildDsn(draft), [draft]);
