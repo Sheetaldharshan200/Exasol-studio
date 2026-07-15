@@ -57,6 +57,24 @@ Stack confirmed from opencode source:
 - Per-model-family system prompts (anthropic / gpt / gemini / small-local), with a
   compact "beast-mode" prompt for weak local models.
 
+## 2.1 Built-in local engine — no Ollama required
+
+Decision: ship a **managed `llama-server` sidecar**, not FFI-embedded llama.cpp.
+
+- llama.cpp publishes prebuilt `llama-server` binaries per platform (macOS arm64
+  +Metal included); the server speaks the OpenAI-compatible API with tool calling
+  (`--jinja`), which our `llamacpp` provider already consumes.
+- Same on-demand pattern as driver runtimes: engine binary downloads from llama.cpp
+  GitHub releases into `driver-runtimes/llm/`; GGUF models download from Hugging Face
+  (curated, tool-call-capable list: Qwen3-coder / Qwen2.5-Instruct 7B, Llama-3.2-3B
+  for small machines) with resumable progress via the Marketplace queue.
+- Rust `local_llm.rs` manages download / spawn / health / port; agent-core
+  auto-registers it as the "builtin" provider. AI Providers window gets a
+  "Built-in local AI" card: pick model → download → chat. Offline, zero deps.
+- Why not FFI (llama-cpp-2 / mistral.rs / Candle): per-platform native build matrix,
+  in-process crashes kill the app, engine upgrades locked to app releases.
+- Ollama / LM Studio remain supported as bring-your-own options.
+
 ## 3. Exasol knowledge — what we vendor (all MIT)
 
 | Source | What we take |
