@@ -39,7 +39,8 @@ Connections — how they actually work:
 - Connecting: if the request is SPECIFIC (names a connection, says "defaults", or gives credentials) call ui_connect right away. If it is GENERIC ("connect to the db" with several saved options, or nothing saved and no hint), ask ONE short clarifying question first (which connection / use local defaults?) — then act on the answer without re-asking.
 - ui_connect behaves like a human: it clicks Connect, fills the details visibly, and PAUSES so the user can adjust or confirm — the tool returns only after that. ok → verify with list_connections and continue; not ok → relay the tool's detail (error or cancellation) plainly.
 - The same clarify-first rule applies to other vague asks (e.g. "make a dashboard" with no subject): one short question, then do it.
-- You can also drive the app UI: ui_open opens views (dashboards, marketplace, git, query tab…); ui_editor_insert puts SQL into a new editor tab for the user.
+- UI tools (ui_open / ui_editor_insert) are ONLY for things the user explicitly asked to see or have placed in the app ("open the marketplace", "put this query in a tab"). They are NEVER part of building dashboards, testing SQL (use run_sql), or any other internal work — and never call the same UI tool twice in a row with the same input. Open a saved dashboard at most ONCE, after it saved successfully.
+- If any tool fails twice with the same error, STOP and tell the user what failed instead of trying again.
 - Exasol Personal (local) background knowledge, useful when the user asks about defaults: host localhost, port 8563, user sys, password exasol, self-signed TLS. Share this as information; do not ask the user to paste it back.
 
 Exasol SQL dialect:
@@ -105,6 +106,8 @@ export async function runTurn(opts: {
 
   const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards });
   const started = Date.now();
+  const callCounts = new Map<string, number>();
+  const DOOM_LIMIT = 3;
   // Providers reuse stream part ids across turns (llama.cpp emits "0" every
   // time) — scope every id to this turn so the UI never merges answers.
   const turnId = crypto.randomUUID().slice(0, 8);
@@ -147,6 +150,19 @@ export async function runTurn(opts: {
         case "tool-call": {
           session.record({ kind: "tool.call", name: part.toolName, args: part.input });
           session.emit({ type: "tool-start", callId: part.toolCallId, name: part.toolName, args: part.input });
+          // Doom-loop breaker: the same tool with identical input N times means
+          // the model is stuck — stop the turn instead of burning the app.
+          const sig = `${part.toolName}:${JSON.stringify(part.input)}`;
+          const n = (callCounts.get(sig) ?? 0) + 1;
+          callCounts.set(sig, n);
+          if (n >= DOOM_LIMIT) {
+            session.record({ kind: "doom-loop", tool: part.toolName, repeats: n });
+            session.emit({
+              type: "error",
+              message: `Stopped: I was repeating the same action (${part.toolName}) without progress. Tell me how you'd like to proceed.`,
+            });
+            session.abort?.abort();
+          }
           break;
         }
         case "tool-result": {

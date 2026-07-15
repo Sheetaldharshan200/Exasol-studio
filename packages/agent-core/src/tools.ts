@@ -5,7 +5,7 @@ import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
-import { DashboardSchema, type DashboardStore } from "./dashboards.ts";
+import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
@@ -297,10 +297,16 @@ export function buildTools(ctx: {
               "TEST each panel's SQL with run_sql before saving. Omit id to create.",
             inputSchema: z.object({
               dashboard: z.object({
-                id: z.string().optional(),
+                id: z.string().optional().describe("Omit to create a new dashboard"),
                 title: z.string(),
                 description: z.string().optional(),
-                panels: z.array(z.record(z.string(), z.unknown())).min(1).describe("Panel objects per the dashboard spec"),
+                panels: z
+                  .array(PanelSchema)
+                  .min(1)
+                  .max(24)
+                  .describe(
+                    'Each panel: {id, title, grid:{x(0-11),y,w(2-12),h(2-24)}, query:{sql}, viz:{type:"echarts",chart:"bar|line|area|pie|scatter",xField?,yFields?} | {type:"kpi",valueField?,unit?} | {type:"table"}}',
+                  ),
               }),
             }),
             execute: async ({ dashboard }) => {

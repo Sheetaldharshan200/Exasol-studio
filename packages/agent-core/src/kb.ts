@@ -143,13 +143,25 @@ export class KnowledgeGraph {
     const tx = this.db;
     tx.exec("BEGIN");
     try {
+      // Keep AI semantics across re-crawls — they cost a model call each.
+      const kept = new Map<string, string>(
+        (tx.prepare("SELECT schema, name, semantic FROM kb_tables WHERE conn = ? AND semantic IS NOT NULL").all(connId) as {
+          schema: string;
+          name: string;
+          semantic: string;
+        }[]).map((r) => [`${r.schema}.${r.name}`, r.semantic]),
+      );
       for (const t of ["kb_tables", "kb_columns", "kb_edges", "kb_fts"]) {
         tx.prepare(`DELETE FROM ${t} WHERE conn = ?`).run(connId);
       }
-      const insT = tx.prepare("INSERT OR REPLACE INTO kb_tables VALUES (?,?,?,?,?,?)");
-      const insC = tx.prepare("INSERT OR REPLACE INTO kb_columns VALUES (?,?,?,?,?,?)");
-      const insE = tx.prepare("INSERT INTO kb_edges VALUES (?,?,?,?,?,?,?,?)");
-      const insF = tx.prepare("INSERT INTO kb_fts VALUES (?,?,?,?)");
+      const insT = tx.prepare(
+        "INSERT OR REPLACE INTO kb_tables(conn, schema, name, kind, rows, comment, semantic) VALUES (?,?,?,?,?,?,?)",
+      );
+      const insC = tx.prepare("INSERT OR REPLACE INTO kb_columns(conn, schema, tbl, name, type, comment) VALUES (?,?,?,?,?,?)");
+      const insE = tx.prepare(
+        "INSERT INTO kb_edges(conn, kind, src_schema, src_table, src_col, dst_schema, dst_table, dst_col) VALUES (?,?,?,?,?,?,?,?)",
+      );
+      const insF = tx.prepare("INSERT INTO kb_fts(conn, schema, tbl, body) VALUES (?,?,?,?)");
 
       const colByTable = new Map<string, { name: string; type: string; comment: string | null }[]>();
       for (const r of columns.rows) {
@@ -162,7 +174,7 @@ export class KnowledgeGraph {
       for (const r of tables.rows) {
         const [s, n, k, rows, c] = r as [string, string, string, number | null, string | null];
         if (s === "SYS" || s === "EXA_STATISTICS") continue;
-        insT.run(connId, s, n, k, rows ?? null, c ?? null);
+        insT.run(connId, s, n, k, rows ?? null, c ?? null, kept.get(`${s}.${n}`) ?? null);
         const cols = colByTable.get(`${s}.${n}`) ?? [];
         const body = [n, c ?? "", ...cols.map((x) => `${x.name} ${x.comment ?? ""}`)].join(" ");
         insF.run(connId, s, n, body);
