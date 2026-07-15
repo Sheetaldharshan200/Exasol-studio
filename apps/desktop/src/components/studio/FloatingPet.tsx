@@ -288,6 +288,28 @@ export function FloatingPet({
       sy.jump(cy);
     }
   }
+  function commitDock() {
+    dock.current = {
+      x: Math.min(Math.max(x.get(), 8), window.innerWidth - 40),
+      y: Math.min(Math.max(y.get(), 8), window.innerHeight - 48),
+    };
+    if (!standalone) localStorage.setItem(DOCK_KEY, JSON.stringify(dock.current));
+  }
+
+  // Drag the whole pet+bubble by its header (no click-to-toggle).
+  function onHeaderPointerDown(e: React.PointerEvent) {
+    if ((e.target as HTMLElement).closest("button,input,textarea")) return;
+    e.preventDefault();
+    document.body.classList.add("select-none");
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragging.current = { dx: e.clientX - x.get(), dy: e.clientY - y.get(), moved: false };
+  }
+  function onHeaderPointerUp() {
+    document.body.classList.remove("select-none");
+    if (dragging.current?.moved) commitDock();
+    dragging.current = null;
+  }
+
   function onPetPointerUp(e: React.PointerEvent) {
     document.body.classList.remove("select-none");
     if (resizing.current) {
