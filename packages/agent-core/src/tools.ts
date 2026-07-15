@@ -313,7 +313,8 @@ export function buildTools(ctx: {
               try {
                 const saved = ctx.dashboards!.save({ version: 1, description: "", ...dashboard });
                 session.record({ kind: "dashboard.saved", id: saved.id, title: saved.title, panels: saved.panels.length });
-                return { ok: true, id: saved.id, note: "Saved. The user can open it in the Dashboards view (chart icon in the activity rail)." };
+                session.emit({ type: "dashboard-saved", id: saved.id, title: saved.title });
+                return { ok: true, id: saved.id, note: "Saved and opened in the Dashboards view for the user." };
               } catch (e) {
                 return {
                   ok: false,

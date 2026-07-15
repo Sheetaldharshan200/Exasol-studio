@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { dashboards, type Dashboard, type DashPanel } from "@/lib/agent-client";
+import { dashboardBus } from "@/lib/dashboard-bus";
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +60,14 @@ export function DashboardsTab({
   useEffect(() => {
     void refresh();
     const t = setInterval(refresh, 5000); // pick up agent-created dashboards
-    return () => clearInterval(t);
+    // Agent saved/edited a dashboard → open it straight away.
+    const un = dashboardBus.on((id) => {
+      void dashboards.get(id).then(setOpen).catch(() => undefined);
+    });
+    return () => {
+      clearInterval(t);
+      un();
+    };
   }, [refresh]);
 
   if (open) {

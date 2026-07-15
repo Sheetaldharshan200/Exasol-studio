@@ -100,6 +100,7 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
+import { dashboardBus } from "@/lib/dashboard-bus";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
@@ -1508,6 +1509,12 @@ export function ExasolStudio({
   const cursorRef = useRef<AgentCursorHandle | null>(null);
   const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
+  const openSavedDashboard = useCallback((id: string) => {
+    openBiTab();
+    // Let the Dashboards view mount before asking it to open the report.
+    window.setTimeout(() => dashboardBus.open(id), 200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Fill a React-controlled input the way a real keystroke would. */
   function fillAnchor(anchor: string, value: string): boolean {
@@ -3011,6 +3018,7 @@ export function ExasolStudio({
       <FloatingPet
         connectionId={connection?.profile.id ?? null}
         onUiAction={handleUiAction}
+        onDashboardSaved={openSavedDashboard}
         onSpawn={() => setExtraPets((p) => [...p, { id: `${Date.now()}`, name: `task ${p.length + 1}` }])}
         tag={extraPets.length ? "main" : undefined}
       />
@@ -3021,6 +3029,7 @@ export function ExasolStudio({
           offset={i + 1}
           connectionId={connection?.profile.id ?? null}
           onUiAction={handleUiAction}
+          onDashboardSaved={openSavedDashboard}
           onClose={() => setExtraPets((list) => list.filter((x) => x.id !== p.id))}
           tag={p.name}
           onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}

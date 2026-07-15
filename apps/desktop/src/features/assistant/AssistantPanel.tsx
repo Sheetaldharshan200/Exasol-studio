@@ -72,6 +72,7 @@ export function AssistantPanel({
   connectionId,
   onClose,
   onUiAction,
+  onDashboardSaved,
 }: {
   contextSummary: string;
   editorSql: string;
@@ -83,6 +84,8 @@ export function AssistantPanel({
   onClose?: () => void;
   /** Perform a UI action for the agent (pet/cursor drives it). */
   onUiAction?: (action: string, params: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
+  /** Open a dashboard the agent just saved. */
+  onDashboardSaved?: (id: string) => void;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -103,6 +106,8 @@ export function AssistantPanel({
   const pickerRef = useRef<HTMLDivElement>(null);
   const uiActionRef = useRef(onUiAction);
   uiActionRef.current = onUiAction;
+  const onDashboardSavedRef = useRef(onDashboardSaved);
+  onDashboardSavedRef.current = onDashboardSaved;
 
   const refreshProviders = useCallback(async () => {
     try {
@@ -210,6 +215,8 @@ export function AssistantPanel({
         return [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: e.text }];
       });
       setSending(true);
+    } else if (e.type === "dashboard-saved") {
+      onDashboardSavedRef.current?.(e.id);
     } else if (e.type === "title-changed") {
       setTitle(e.title);
     } else if (e.type === "ui-request") {

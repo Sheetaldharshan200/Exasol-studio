@@ -15,6 +15,7 @@ export type AgentEvent =
   | { type: "permission-result"; id: string; allow: boolean }
   | { type: "title-changed"; title: string }
   | { type: "user-message"; text: string }
+  | { type: "dashboard-saved"; id: string; title: string }
   | { type: "compacted"; folded: number }
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
