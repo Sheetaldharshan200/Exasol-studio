@@ -2,11 +2,44 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/** Editable guardrails + behavior for the agent loop and tools. */
+export type AgentSettings = {
+  /** Read statements: run automatically or ask first. */
+  readPolicy: "allow" | "ask";
+  /** Write statements: ask first (default) or refuse entirely. */
+  writePolicy: "ask" | "deny";
+  /** Max tool-loop steps per turn. */
+  maxSteps: number;
+  /** Sampling temperature. */
+  temperature: number;
+  /** Extra instructions appended to the system prompt. */
+  customInstructions: string;
+  /** Allow parallel read-only researcher sub-agents. */
+  enableResearcher: boolean;
+  /** Save/inject cross-session insights. */
+  enableInsights: boolean;
+  /** Auto-compact near the context window. */
+  enableCompaction: boolean;
+};
+
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  readPolicy: "allow",
+  writePolicy: "ask",
+  maxSteps: 12,
+  temperature: 0.2,
+  customInstructions: "",
+  enableResearcher: true,
+  enableInsights: true,
+  enableCompaction: true,
+};
+
 /** Persistent agent configuration: provider keys, default model, options. */
 export type AgentConfig = {
   version: 1;
   /** Default model as "provider/model_id". */
   model?: string;
+  /** Guardrails + behavior (missing fields fall back to defaults). */
+  agent?: Partial<AgentSettings>;
   providers: Record<
     string,
     {
@@ -54,6 +87,10 @@ export class ConfigStore {
 
   get(): AgentConfig {
     return this.cache;
+  }
+
+  settings(): AgentSettings {
+    return { ...DEFAULT_AGENT_SETTINGS, ...this.cache.agent };
   }
 
   update(mutate: (cfg: AgentConfig) => void) {

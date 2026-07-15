@@ -1,5 +1,6 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { ProviderRegistry } from "./providers.ts";
+import type { ConfigStore } from "./config.ts";
 import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
 import type { InsightStore } from "./insights.ts";
@@ -42,12 +43,14 @@ export async function runTurn(opts: {
   insights: InsightStore;
   kb: KnowledgeGraph;
   store: SessionStore;
+  config: ConfigStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, insights, kb, store, modelRef, userText, context } = opts;
+  const { session, registry, db, insights, kb, store, config, modelRef, userText, context } = opts;
+  const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
   const model = registry.resolve(modelRef);
@@ -57,24 +60,29 @@ export async function runTurn(opts: {
   session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId });
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
-  const known = insights.recent(session.connectionId);
-  const system = known.length
+  const known = settings.enableInsights ? insights.recent(session.connectionId) : [];
+  let system = known.length
     ? `${SYSTEM_PROMPT}\n\nVerified workspace knowledge from earlier sessions (still confirm anything critical):\n${known.map((k) => `- ${k}`).join("\n")}`
     : SYSTEM_PROMPT;
+  if (settings.customInstructions.trim()) {
+    system += `\n\nWorkspace instructions from the user:\n${settings.customInstructions.trim()}`;
+  }
 
   session.running = true;
   session.abort = new AbortController();
   session.emit({ type: "status", state: "thinking" });
 
   // Fold older turns into a summary if we're nearing the context window.
-  await maybeCompact({
-    session,
-    model,
-    contextLimit: registry.contextFor(modelRef),
-    system,
-  });
+  if (settings.enableCompaction) {
+    await maybeCompact({
+      session,
+      model,
+      contextLimit: registry.contextFor(modelRef),
+      system,
+    });
+  }
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model });
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings });
   const started = Date.now();
   // Providers reuse stream part ids across turns (llama.cpp emits "0" every
   // time) — scope every id to this turn so the UI never merges answers.
@@ -90,8 +98,8 @@ export async function runTurn(opts: {
       system,
       messages: session.messages as ModelMessage[],
       tools,
-      stopWhen: stepCountIs(MAX_STEPS),
-      temperature: 0.2,
+      stopWhen: stepCountIs(Math.min(Math.max(settings.maxSteps, 2), 24)),
+      temperature: Math.min(Math.max(settings.temperature, 0), 1),
       abortSignal: session.abort.signal,
     });
 

@@ -2,6 +2,7 @@ import { generateText, stepCountIs, tool, type LanguageModel, type ToolSet } fro
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
+import type { AgentSettings } from "./config.ts";
 import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
@@ -47,6 +48,7 @@ export function buildTools(ctx: {
   connectionId: string | null;
   insights?: InsightStore;
   kb?: KnowledgeGraph;
+  settings?: AgentSettings;
   /** Model for sub-agents; omitting disables spawn_researcher. */
   model?: LanguageModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
@@ -189,6 +191,14 @@ export function buildTools(ctx: {
         const id = requireConn();
         const kind = classifySql(sql);
         if (kind === "read") {
+          if (ctx.settings?.readPolicy === "ask" && !ctx.readOnly) {
+            const ok = await session.askPermission({
+              tool: "run_sql",
+              summary: purpose || "Run a read query",
+              detail: sql,
+            });
+            if (!ok) return { denied: true, message: "The user declined this query." };
+          }
           const started = Date.now();
           const out = await db.query(id, sql);
           session.record({ kind: "tool.run_sql", mode: "read", sql, rows: out.rowCount, ms: Date.now() - started });
@@ -197,6 +207,12 @@ export function buildTools(ctx: {
         // Mutation: human in the loop, always.
         if (ctx.readOnly) {
           return { denied: true, message: "This researcher context is read-only. Report the statement back instead of running it." };
+        }
+        if (ctx.settings?.writePolicy === "deny") {
+          return {
+            denied: true,
+            message: "Write statements are disabled in this workspace's AI guardrails. Provide the SQL for the user to run manually instead.",
+          };
         }
         const allowed = await session.askPermission({
           tool: "run_sql",
@@ -283,13 +299,16 @@ export function buildTools(ctx: {
         fact: z.string().max(300).describe("One concise, verified fact"),
       }),
       execute: async ({ fact }) => {
+        if (ctx.settings && !ctx.settings.enableInsights) {
+          return { saved: false, note: "Cross-session insights are disabled in settings." };
+        }
         ctx.insights?.add(ctx.connectionId, fact);
         session.record({ kind: "insight.saved", fact });
         return { saved: true };
       },
     }),
 
-    ...(ctx.model && !ctx.readOnly
+    ...(ctx.model && !ctx.readOnly && ctx.settings?.enableResearcher !== false
       ? {
           spawn_researcher: tool({
             description:
@@ -305,6 +324,7 @@ export function buildTools(ctx: {
                 connectionId: ctx.connectionId,
                 insights: ctx.insights,
                 kb: ctx.kb,
+                settings: ctx.settings,
                 readOnly: true,
               });
               const res = await generateText({

@@ -56,7 +56,27 @@ async function api<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = 
   return invoke<T>("agent_api", { path, method, body: body ?? null });
 }
 
+export type AgentSettings = {
+  readPolicy: "allow" | "ask";
+  writePolicy: "ask" | "deny";
+  maxSteps: number;
+  temperature: number;
+  customInstructions: string;
+  enableResearcher: boolean;
+  enableInsights: boolean;
+  enableCompaction: boolean;
+};
+
 export const agent = {
+  async getSettings(): Promise<{ settings: AgentSettings; defaults: AgentSettings }> {
+    return api("/settings");
+  },
+
+  async setSettings(patch: Partial<AgentSettings>): Promise<AgentSettings> {
+    const { settings } = await api<{ settings: AgentSettings }>("/settings", "PUT", patch);
+    return settings;
+  },
+
   async models(): Promise<{ providers: AgentProviderInfo[]; defaultModel: string | null }> {
     return api("/models");
   },

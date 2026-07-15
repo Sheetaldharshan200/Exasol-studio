@@ -44,10 +44,14 @@ export function ModelPicker({
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<LlmProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Record<string, boolean>>(() => ({
-    builtin: true,
-    [model.split("/")[0] ?? ""]: true,
-  }));
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    const pid = model.split("/")[0] ?? "";
+    return {
+      builtin: true,
+      local: ["ollama", "lmstudio", "llamacpp"].includes(pid),
+      cloud: ["anthropic", "openai", "google", "openrouter"].includes(pid),
+    };
+  });
   const [menuOpen, setMenuOpen] = useState(false);
 
   const refreshLlm = () => llm.status().then(setLlmState).catch(() => setLlmState(null));
@@ -253,87 +257,98 @@ export function ModelPicker({
           </Group>
         ) : null}
 
-        {/* ── Other local runtimes ── */}
-        {locals.map((p) => {
-          const models = p.models.filter((m) => !q || m.name.toLowerCase().includes(q));
-          if (searching && models.length === 0) return null;
+        {/* ── Local (all detected runtimes) ── */}
+        {(() => {
+          const rows = locals.flatMap((p) =>
+            p.models
+              .filter((m) => !q || m.name.toLowerCase().includes(q))
+              .map((m) => ({ ref: `${p.id}/${m.id}`, name: m.name, tag: p.name.replace(" (local)", "") })),
+          );
+          const hintOnly = locals.every((p) => p.installedOnly) && locals.length > 0;
+          if (searching && rows.length === 0) return null;
           return (
             <Group
-              key={p.id}
-              label={p.name.replace(" (local)", "")}
+              label="Local"
               icon={Cpu}
-              count={models.length}
-              open={isOpen(p.id)}
-              onToggle={() => toggle(p.id)}
+              count={rows.length}
+              open={isOpen("local")}
+              onToggle={() => toggle("local")}
             >
-              {p.installedOnly ? (
+              {rows.length === 0 ? (
                 <p className="px-3 pb-2 text-[11px] text-muted-foreground">
-                  Installed but not running — start it with <code className="rounded bg-secondary px-1">ollama serve</code>.
+                  {hintOnly ? (
+                    <>Ollama is installed but not running — start it with <code className="rounded bg-secondary px-1">ollama serve</code>.</>
+                  ) : (
+                    "No local runtimes detected (Ollama, LM Studio, llama.cpp)."
+                  )}
                 </p>
               ) : (
-                models.map((m) => {
-                  const ref = `${p.id}/${m.id}`;
-                  return (
-                    <button
-                      key={ref}
-                      onClick={() => onPick(ref)}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-3 py-1.5 text-left",
-                        model === ref ? "bg-secondary" : "hover:bg-secondary/60",
-                      )}
-                    >
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{m.name}</span>
-                      {model === ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
-                    </button>
-                  );
-                })
+                rows.map((r) => (
+                  <button
+                    key={r.ref}
+                    onClick={() => onPick(r.ref)}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-left",
+                      model === r.ref ? "bg-secondary" : "hover:bg-secondary/60",
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{r.name}</span>
+                    <span className="shrink-0 font-mono text-[9px] uppercase text-muted-foreground">{r.tag}</span>
+                    {model === r.ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                  </button>
+                ))
               )}
             </Group>
           );
-        })}
+        })()}
 
-        {/* ── Cloud providers ── */}
-        {clouds.map((p) => {
-          const models = p.configured ? p.models.filter((m) => !q || m.name.toLowerCase().includes(q)) : [];
-          if (searching && models.length === 0) return null;
+        {/* ── Cloud (all providers) ── */}
+        {(() => {
+          const rows = clouds
+            .filter((p) => p.configured)
+            .flatMap((p) =>
+              p.models
+                .filter((m) => !q || m.name.toLowerCase().includes(q))
+                .map((m) => ({ ref: `${p.id}/${m.id}`, name: m.name, tag: p.name })),
+            );
+          const missing = clouds.filter((p) => !p.configured);
+          if (searching && rows.length === 0) return null;
           return (
             <Group
-              key={p.id}
-              label={p.name}
+              label="Cloud"
               icon={Cloud}
-              count={p.configured ? models.length : undefined}
-              open={isOpen(p.id)}
-              onToggle={() => toggle(p.id)}
+              count={rows.length}
+              open={isOpen("cloud")}
+              onToggle={() => toggle("cloud")}
             >
-              {!p.configured ? (
+              {rows.map((r) => (
                 <button
-                  onClick={onManage}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11.5px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                  key={r.ref}
+                  onClick={() => onPick(r.ref)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-left",
+                    model === r.ref ? "bg-secondary" : "hover:bg-secondary/60",
+                  )}
                 >
-                  <SlidersHorizontal className="h-3 w-3" /> Add API key…
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{r.name}</span>
+                  <span className="shrink-0 font-mono text-[9px] uppercase text-muted-foreground">{r.tag}</span>
+                  {model === r.ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
                 </button>
-              ) : (
-                models.map((m) => {
-                  const ref = `${p.id}/${m.id}`;
-                  return (
-                    <button
-                      key={ref}
-                      onClick={() => onPick(ref)}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-3 py-1.5 text-left",
-                        model === ref ? "bg-secondary" : "hover:bg-secondary/60",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{m.name}</span>
-                      {model === ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
-                    </button>
-                  );
-                })
-              )}
+              ))}
+              {!searching &&
+                missing.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={onManage}
+                    className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11.5px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                  >
+                    <SlidersHorizontal className="h-3 w-3" /> {p.name} — add API key…
+                  </button>
+                ))}
             </Group>
           );
-        })}
+        })()}
       </div>
 
       <button

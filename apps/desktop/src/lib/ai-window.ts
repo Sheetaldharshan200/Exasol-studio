@@ -23,12 +23,12 @@ export async function openAiProvidersWindow(): Promise<boolean> {
     }
     const win = new WebviewWindow(AI_PROVIDERS_WINDOW_LABEL, {
       url: `index.html?view=${AI_PROVIDERS_WINDOW_LABEL}`,
-      title: "AI Providers",
-      width: 620,
+      title: "AI Settings",
+      width: 780,
       height: 640,
       center: true,
       resizable: true,
-      minWidth: 520,
+      minWidth: 660,
       minHeight: 480,
     });
     await new Promise<void>((resolve, reject) => {

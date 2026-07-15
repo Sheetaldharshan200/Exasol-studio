@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
-import type { ConfigStore } from "./config.ts";
+import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
@@ -46,6 +46,20 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           cfg.providers[parts[2]] = { ...cfg.providers[parts[2]], ...body };
         });
         return json(res, 200, { ok: true });
+      }
+
+      // GET /v1/settings — guardrails + behavior
+      if (req.method === "GET" && parts[1] === "settings") {
+        return json(res, 200, { settings: config.settings(), defaults: DEFAULT_AGENT_SETTINGS });
+      }
+
+      // PUT /v1/settings — partial update
+      if (req.method === "PUT" && parts[1] === "settings") {
+        const body = await readBody<Partial<AgentSettings>>(req);
+        config.update((cfg) => {
+          cfg.agent = { ...cfg.agent, ...body };
+        });
+        return json(res, 200, { settings: config.settings() });
       }
 
       // PUT /v1/config  {model?}
@@ -130,6 +144,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           insights,
           kb,
           store: sessions,
+          config,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
