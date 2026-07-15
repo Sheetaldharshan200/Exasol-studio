@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { PET_AVATARS, PetAvatar } from "@/components/studio/PetAvatar";
 import {
   agent,
   llm,
@@ -484,6 +485,28 @@ function GuardrailsSection({
             ]}
             onChange={(v) => void patch({ petMode: v as AgentSettings["petMode"] })}
           />
+          <div className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+            <div className="text-[12.5px] font-medium">Companion</div>
+            <div className="text-[11px] text-muted-foreground">Pick who does the walking.</div>
+            <div className="mt-2 flex gap-2">
+              {PET_AVATARS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => void patch({ petAvatar: a.id })}
+                  title={a.name}
+                  className={cn(
+                    "flex flex-col items-center gap-0.5 rounded-xl border p-1.5 transition-colors",
+                    settings.petAvatar === a.id
+                      ? "border-primary/60 bg-primary/10"
+                      : "border-border hover:border-primary/30",
+                  )}
+                >
+                  <PetAvatar avatar={a.id} expression={settings.petAvatar === a.id ? "happy" : "idle"} className="h-9 w-9" />
+                  <span className="text-[9.5px] text-muted-foreground">{a.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <ToggleRow
             label="Allow destructive app actions"
             desc="Disconnecting, deleting, dropping via UI control. Keep off unless you need it."

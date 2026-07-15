@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { PetAvatar, type PetAvatarId } from "@/components/studio/PetAvatar";
 import { cn } from "@/lib/utils";
 
 // The agent's visible hand: a Magic-UI-style smooth spring cursor, optionally
@@ -12,7 +13,7 @@ export type CursorMode = "pet" | "cursor" | "off";
 
 export type AgentCursorHandle = {
   /** Fly to an element, dwell briefly, then resolve (caller runs the action). */
-  flyTo: (el: HTMLElement | null, label: string, mode: CursorMode) => Promise<void>;
+  flyTo: (el: HTMLElement | null, label: string, mode: CursorMode, avatar?: PetAvatarId) => Promise<void>;
   /** Flash success/failure at the current position, then fade out. */
   finish: (ok: boolean) => Promise<void>;
 };
@@ -22,6 +23,7 @@ const SPRING = { stiffness: 130, damping: 18, mass: 0.6 };
 export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_props, ref) {
   const [visible, setVisible] = useState(false);
   const [withPet, setWithPet] = useState(true);
+  const [avatar, setAvatar] = useState<PetAvatarId>("exa");
   const [label, setLabel] = useState("");
   const [state, setState] = useState<"moving" | "acting" | "done" | "failed">("moving");
   const x = useMotionValue(typeof window === "undefined" ? 0 : window.innerWidth / 2);
@@ -37,10 +39,11 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
   const hideTimer = useRef<number | null>(null);
 
   useImperativeHandle(ref, () => ({
-    async flyTo(el, lbl, mode) {
+    async flyTo(el, lbl, mode, av) {
       if (mode === "off") return;
       if (hideTimer.current) window.clearTimeout(hideTimer.current);
       setWithPet(mode === "pet");
+      if (av) setAvatar(av);
       setLabel(lbl);
       setState("moving");
 
@@ -123,7 +126,7 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
       </motion.div>
 
       {/* Pet companion — trails the cursor on softer springs */}
-      {withPet ? <Pet x={x} y={y} state={state} /> : null}
+      {withPet ? <Pet x={x} y={y} state={state} avatar={avatar} /> : null}
     </div>
   );
 });
@@ -132,26 +135,21 @@ function Pet({
   x,
   y,
   state,
+  avatar,
 }: {
   x: ReturnType<typeof useMotionValue<number>>;
   y: ReturnType<typeof useMotionValue<number>>;
   state: "moving" | "acting" | "done" | "failed";
+  avatar: PetAvatarId;
 }) {
   const px = useSpring(x, { stiffness: 60, damping: 14, mass: 1.1 });
   const py = useSpring(y, { stiffness: 60, damping: 14, mass: 1.1 });
   const ox = useTransform(px, (v) => v + 26);
-  const oy = useTransform(py, (v) => v + 22);
+  const oy = useTransform(py, (v) => v + 20);
+  const expression = state === "moving" ? "walk" : state === "acting" ? "work" : state === "done" ? "happy" : "idle";
   return (
     <motion.div style={{ x: ox, y: oy }} className="absolute">
-      <div
-        className={cn(
-          "agent-pet flex h-9 w-9 items-center justify-center rounded-[14px] border border-primary/30 bg-panel shadow-lg",
-          state === "acting" && "agent-pet-acting",
-          state === "done" && "agent-pet-happy",
-        )}
-      >
-        <AgentMark className="h-5 w-5 text-primary" active={state === "moving" || state === "acting"} />
-      </div>
+      <PetAvatar avatar={avatar} expression={expression} className="h-11 w-11 drop-shadow-lg" />
     </motion.div>
   );
 }

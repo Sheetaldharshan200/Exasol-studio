@@ -22,6 +22,8 @@ export type AgentSettings = {
   enableCompaction: boolean;
   /** Pet companion mode for UI actions: pet, cursor-only, or background. */
   petMode: "pet" | "cursor" | "off";
+  /** Which companion character to show. */
+  petAvatar: "exa" | "byte" | "pixel" | "quill" | "dot";
   /** Allow UI actions that are destructive (disconnect, delete, drop). */
   allowDestructiveUi: boolean;
   /** Allow the agent to read/edit workspace files. */
@@ -38,6 +40,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   enableInsights: true,
   enableCompaction: true,
   petMode: "pet",
+  petAvatar: "exa",
   allowDestructiveUi: false,
   allowFileAccess: false,
 };

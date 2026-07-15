@@ -68,6 +68,7 @@ export type AgentSettings = {
   enableInsights: boolean;
   enableCompaction: boolean;
   petMode: "pet" | "cursor" | "off";
+  petAvatar: "exa" | "byte" | "pixel" | "quill" | "dot";
   allowDestructiveUi: boolean;
   allowFileAccess: boolean;
 };

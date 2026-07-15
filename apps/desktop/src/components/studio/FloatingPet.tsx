@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Send } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { PetAvatar, type PetAvatarId } from "@/components/studio/PetAvatar";
 import { agent } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
  */
 export function FloatingPet({ onAsk }: { onAsk: (text: string) => void }) {
   const [enabled, setEnabled] = useState(true);
+  const [avatar, setAvatar] = useState<PetAvatarId>("exa");
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
@@ -22,7 +24,10 @@ export function FloatingPet({ onAsk }: { onAsk: (text: string) => void }) {
     const check = () =>
       agent
         .getSettings()
-        .then(({ settings }) => setEnabled(settings.petMode === "pet"))
+        .then(({ settings }) => {
+          setEnabled(settings.petMode === "pet");
+          setAvatar(settings.petAvatar ?? "exa");
+        })
         .catch(() => undefined);
     void check();
     const un = listen(EV_AI_PROVIDERS_CHANGED, () => void check());
@@ -90,12 +95,9 @@ export function FloatingPet({ onAsk }: { onAsk: (text: string) => void }) {
         onClick={() => setOpen((v) => !v)}
         aria-label="Ask the Exasol AI pet"
         title="Ask me anything"
-        className={cn(
-          "agent-pet flex h-11 w-11 items-center justify-center rounded-[16px] border border-primary/30 bg-panel shadow-lg transition-transform hover:scale-105",
-          open && "scale-105 border-primary/60",
-        )}
+        className={cn("transition-transform hover:scale-110", open && "scale-110")}
       >
-        <AgentMark className="h-6 w-6 text-primary" active={open} />
+        <PetAvatar avatar={avatar} expression={open ? "happy" : "idle"} className="h-12 w-12 drop-shadow-lg" />
       </button>
     </div>
   );

@@ -1510,8 +1510,11 @@ export function ExasolStudio({
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; detail?: string }> {
     let mode: CursorMode = "pet";
+    let avatar: import("@/components/studio/PetAvatar").PetAvatarId = "exa";
     try {
-      mode = (await agentClient.getSettings()).settings.petMode;
+      const { settings } = await agentClient.getSettings();
+      mode = settings.petMode;
+      avatar = settings.petAvatar ?? "exa";
     } catch {
       // default to pet
     }
@@ -1531,18 +1534,40 @@ export function ExasolStudio({
         : action === "open"
           ? `Opening ${target}…`
           : "Preparing SQL…";
-    await cursorRef.current?.flyTo(el, label, mode);
+    await cursorRef.current?.flyTo(el, label, mode, avatar);
 
     let result: { ok: boolean; detail?: string };
     try {
       if (action === "connect") {
         const wanted = params.name ? String(params.name).toLowerCase() : null;
-        const profile = wanted
+        let profile = wanted
           ? profiles.find((p) => p.name.toLowerCase() === wanted) ??
             profiles.find((p) => p.name.toLowerCase().includes(wanted))
           : profiles.length === 1
             ? profiles[0]
-            : null;
+            : profiles.find((p) => p.host === "localhost" || p.host === "127.0.0.1") ?? null;
+        // No saved profile? If the local Exasol Personal is reachable, create
+        // the default profile and connect — "use defaults" should just work.
+        if (!profile) {
+          try {
+            const ping = await ipc.pingServer("localhost", 8563).catch(() => null);
+            if (ping?.reachable) {
+              profile = await ipc.saveConnectionProfile({
+                name: "Exasol Personal",
+                host: "localhost",
+                port: 8563,
+                username: "sys",
+                password: "exasol",
+                sslMode: "preferred",
+                compression: false,
+                driverId: "sqlx-exasol",
+              });
+              await onSaved?.();
+            }
+          } catch {
+            // fall through to the dialog
+          }
+        }
         if (!profile) {
           openConnect();
           result = { ok: false, detail: "Connect dialog opened — the user must pick/complete the connection." };
