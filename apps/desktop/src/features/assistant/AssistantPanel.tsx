@@ -67,6 +67,42 @@ const SUGGESTIONS: { icon: typeof Wand2; label: string; kind: "run" | "insert"; 
   { icon: Table2, label: "List my tables", kind: "run", payload: "List the tables in the current schema, one line each." },
 ];
 
+const SLASH_NAMES = SLASH_COMMANDS.map((c) => c.cmd);
+
+/** Render the composer text with the leading /command and @mentions colored.
+ *  Kept visually identical to the textarea so it can sit behind it. */
+function highlightInput(text: string): React.ReactNode {
+  if (!text) return null;
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  // Leading /command (only when it's a real command at the very start).
+  const lead = /^\/[a-z]+/i.exec(text);
+  if (lead && SLASH_NAMES.includes(lead[0].toLowerCase())) {
+    nodes.push(
+      <span key="cmd" className="rounded bg-primary/15 font-medium text-primary">
+        {lead[0]}
+      </span>,
+    );
+    i = lead[0].length;
+  }
+  // Remainder: color @mentions inline.
+  const rest = text.slice(i);
+  const re = /(^|\s)(@[a-z:_]+)/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest))) {
+    if (m.index > last) nodes.push(rest.slice(last, m.index + m[1].length));
+    nodes.push(
+      <span key={`at-${m.index}`} className="text-primary">
+        {m[2]}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  nodes.push(rest.slice(last));
+  return nodes;
+}
+
 export function AssistantPanel({
   contextSummary,
   editorSql,
@@ -651,15 +687,26 @@ export function AssistantPanel({
         ) : null}
 
         <div className="rounded-xl border border-border bg-editor transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
-          <textarea
-            ref={inputRef}
-            className="max-h-32 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] outline-none placeholder:text-muted-foreground"
-            placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
-            value={input}
-            rows={1}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-          />
+          <div className="relative">
+            {/* Highlight overlay: colors the leading /command and @mentions.
+                Mirrors the textarea's box exactly; textarea text is transparent
+                so only its caret/selection show over this. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden whitespace-pre-wrap break-words px-3 pt-2.5 pb-1 text-[13px] leading-[inherit]"
+            >
+              {highlightInput(input)}
+            </div>
+            <textarea
+              ref={inputRef}
+              className="relative max-h-32 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
+              placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
+              value={input}
+              rows={1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+            />
+          </div>
           <div className="flex items-center justify-between px-1.5 pb-1.5">
             {/* Model pill (opens upward) */}
             <div className="relative min-w-0" ref={pickerRef}>
