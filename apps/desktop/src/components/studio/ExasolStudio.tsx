@@ -1622,12 +1622,18 @@ export function ExasolStudio({
             return fillAnchor(id, value);
           };
           const openTab = (viaAnchor: string) => async () => {
+            // Idempotent: if the connect tab is already open, don't click again
+            // (a second click could toggle/duplicate it) — just proceed.
+            if (anchor("connect.name")) return true;
             const el = anchor(viaAnchor);
             if (!el) return false;
             await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode, avatar);
             openConnect();
-            await new Promise((r) => setTimeout(r, 350));
-            return true;
+            // Wait until the form is actually mounted (up to ~2s), not a fixed delay.
+            for (let i = 0; i < 20 && !anchor("connect.name"); i++) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            return Boolean(anchor("connect.name"));
           };
           g.node({ id: "connect.tab", verify: () => Boolean(anchor("connect.name")) });
           // Auto-permutations: everything users have ever done becomes a road.
