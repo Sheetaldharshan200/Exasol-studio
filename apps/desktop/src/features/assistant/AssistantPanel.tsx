@@ -48,6 +48,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "/fix", desc: "Find and fix errors", kind: "run", payload: "Find and fix any errors in the SQL in my editor." },
   { cmd: "/generate", desc: "Generate SQL from a description", kind: "insert", payload: "Generate an Exasol SQL query that " },
   { cmd: "/tables", desc: "List tables in the current schema", kind: "run", payload: "List the tables in the current schema, one line each." },
+  { cmd: "/dashboard", desc: "Build a live SQL dashboard", kind: "insert", payload: "/dashboard build a dashboard that " },
+  { cmd: "/artifact", desc: "Build an HTML insight report", kind: "insert", payload: "/artifact build an HTML report that " },
   { cmd: "/clear", desc: "Clear the conversation", kind: "clear" },
 ];
 

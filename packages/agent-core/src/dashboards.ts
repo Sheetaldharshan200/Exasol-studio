@@ -102,9 +102,15 @@ export class DashboardStore {
       raw.panels = (raw.panels as Record<string, unknown>[]).map((p, i) => {
         const viz = (p.viz ?? { type: "table" }) as Record<string, unknown>;
         if (viz.type === "echarts" && !viz.chart) viz.chart = "bar";
+        const sql = typeof p.sql === "string" ? p.sql : ((p.query as Record<string, unknown>)?.sql as string) ?? "";
         return {
           id: typeof p.id === "string" && p.id ? p.id : `p${i + 1}`,
-          title: typeof p.title === "string" && p.title ? p.title : typeof p.name === "string" ? p.name : "",
+          title:
+            typeof p.title === "string" && p.title
+              ? p.title
+              : typeof p.name === "string" && p.name
+                ? p.name
+                : deriveTitle(sql, String((viz as { type?: string }).type ?? "")),
           grid:
             p.grid && typeof p.grid === "object"
               ? p.grid
@@ -130,6 +136,20 @@ export class DashboardStore {
       return false;
     }
   }
+}
+
+/** A readable panel title from its SQL when the model didn't give one. */
+function deriveTitle(sql: string, vizType: string): string {
+  const humanize = (x: string) =>
+    x.replace(/^[A-Z]_/i, "").replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
+  const aliases = [...sql.matchAll(/\bAS\s+([A-Za-z_][\w]*)/gi)].map((m) => m[1]);
+  const measure = aliases.find((a) => !/^(year|month|day|date|name|city|category|segment)$/i.test(a)) ?? aliases[0];
+  const dim = [...sql.matchAll(/\bGROUP\s+BY\s+([A-Za-z_][\w.]*)/gi)][0]?.[1];
+  if (measure && dim) return `${humanize(measure)} by ${humanize(dim.split(".").pop() ?? dim)}`;
+  if (measure) return humanize(measure);
+  const tbl = /\bFROM\s+[\w".]*?([A-Za-z_]\w*)\b/i.exec(sql)?.[1];
+  if (tbl) return humanize(tbl);
+  return vizType === "kpi" ? "Metric" : vizType === "table" ? "Table" : "Chart";
 }
 
 function sanitize(id: string): string {
