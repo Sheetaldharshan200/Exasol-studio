@@ -7,6 +7,7 @@ import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
+import type { Skill } from "./skills.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
@@ -57,6 +58,7 @@ export function buildTools(ctx: {
   model?: LanguageModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
   readOnly?: boolean;
+  skills?: Skill[];
 }): ToolSet {
   const { db, session } = ctx;
 
@@ -73,6 +75,19 @@ export function buildTools(ctx: {
   };
 
   return {
+    ...(ctx.skills && ctx.skills.length
+      ? {
+          load_skill: tool({
+            description: "Load a skill's full step-by-step instructions before doing that kind of task.",
+            inputSchema: z.object({ name: z.string() }),
+            execute: async ({ name }) => {
+              const sk = ctx.skills!.find((x) => x.name === name || x.name.includes(name));
+              return sk ? { name: sk.name, instructions: sk.body } : { error: `No skill "${name}".`, available: ctx.skills!.map((x) => x.name) };
+            },
+          }),
+        }
+      : {}),
+
     ...(ctx.kb
       ? {
           kb_search: tool({

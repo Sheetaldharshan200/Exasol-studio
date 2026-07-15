@@ -9,6 +9,7 @@ import type { InsightStore } from "./insights.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
+import { loadSkills } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
 import { log } from "./log.ts";
 
@@ -24,7 +25,7 @@ EVIDENCE RULES — these are absolute:
 - If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
 - COMPLETENESS CHECK before finishing: every schema/table/number in your answer must trace to a tool result from THIS turn. If the question spans several objects, cover ALL of them — never describe an object you did not query, and never drop one you did. If anything is missing, call the tool instead of finishing.
 
-Artifacts: render_artifact({title, html}) opens a self-contained HTML page as a tab in the app — use it for rich insights, reports, or small interactive views that a chat message can't express (styled summaries, diagrams, an HTML table of findings). The html must be ONE complete document with inline CSS/JS (no external URLs). Prefer this over long text when the user wants a visual insight; use dashboards for live SQL-backed charts.
+Artifacts: for anything richer than a couple of sentences, call load_skill('artifact-builder') then render_artifact({title, html}) — a self-contained HTML page opens as a tab in the app — use it for rich insights, reports, or small interactive views that a chat message can't express (styled summaries, diagrams, an HTML table of findings). The html must be ONE complete document with inline CSS/JS (no external URLs). Prefer this over long text when the user wants a visual insight; use dashboards for live SQL-backed charts.
 
 Dashboards: you can BUILD live dashboards with dashboard_save (validated JSON spec: panels with SQL + bar/line/area/pie/scatter charts, KPI cards, tables, and 'explore' panels — an interactive pivot/chart studio the user can reshape — on a 12-column grid). When the user asks for a dashboard: find the tables (kb_search), verify columns, test each panel's SQL with run_sql, then save — the dashboard opens in the app's Dashboards view. Panel SQL MUST use fully schema-qualified names (WEATHER.WEATHER_DAILY, never bare WEATHER_DAILY) — panels run without a default schema. It MUST aggregate in the database (GROUP BY / LIMIT): Exasol crunches millions of rows server-side and a chart needs at most a few hundred — never chart raw row dumps. NEVER tell the user a dashboard exists unless dashboard_save returned ok:true with an id — on ok:false, read the hint, fix the spec, retry once, or report the failure honestly. For charts beyond the basic five, put a full ECharts option in viz.option with your own series (any ECharts series type) — the panel injects the query result as dataset.source (first row = column names).
 
@@ -94,6 +95,12 @@ export async function runTurn(opts: {
   if (settings.customInstructions.trim()) {
     system += `\n\nWorkspace instructions from the user:\n${settings.customInstructions.trim()}`;
   }
+  const skillList = loadSkills();
+  if (skillList.length) {
+    system += `\n\nSkills — load the full instructions with load_skill(name) before the matching task:\n${skillList
+      .map((sk) => `- ${sk.name}: ${sk.description}`)
+      .join("\n")}`;
+  }
 
   session.running = true;
   session.abort = new AbortController();
@@ -109,7 +116,8 @@ export async function runTurn(opts: {
     });
   }
 
-  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards, artifacts });
+  const skills = loadSkills();
+  const tools = buildTools({ db, session, connectionId: session.connectionId, insights, kb, model, settings, dashboards, artifacts, skills });
   const started = Date.now();
   const callCounts = new Map<string, number>();
   const DOOM_LIMIT = 3;
@@ -150,6 +158,15 @@ export async function runTurn(opts: {
         }
         case "reasoning-delta": {
           session.emit({ type: "reasoning-delta", messageId: part.id ? scoped(part.id) : fallbackId, delta: part.text });
+          break;
+        }
+        case "tool-input-start": {
+          // The model has STARTED producing a tool call (e.g. a big artifact
+          // HTML) — show activity now so it never looks stuck.
+          const p = part as { id?: string; toolName?: string };
+          if (p.id && p.toolName) {
+            session.emit({ type: "tool-start", callId: p.id, name: p.toolName, args: {} });
+          }
           break;
         }
         case "tool-call": {

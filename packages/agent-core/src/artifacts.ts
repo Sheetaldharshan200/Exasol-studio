@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -18,6 +18,24 @@ export class ArtifactStore {
     writeFileSync(join(this.dir, `${a.id}.json`), JSON.stringify(a));
     return a;
   }
+  list(): { id: string; title: string; createdAt: number }[] {
+    const out: { id: string; title: string; createdAt: number }[] = [];
+    try {
+      for (const f of readdirSync(this.dir)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          const a = JSON.parse(readFileSync(join(this.dir, f), "utf8")) as Artifact;
+          out.push({ id: a.id, title: a.title, createdAt: a.createdAt });
+        } catch {
+          /* skip */
+        }
+      }
+    } catch {
+      /* none */
+    }
+    return out.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
   get(id: string): Artifact | null {
     try {
       return JSON.parse(readFileSync(join(this.dir, `${id.replace(/[^\w-]/g, "")}.json`), "utf8")) as Artifact;

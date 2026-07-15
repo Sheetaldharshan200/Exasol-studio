@@ -113,6 +113,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts — list (newest first)
+      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
+        return json(res, 200, { artifacts: artifacts.list() });
+      }
+
       // GET /v1/artifacts/:id
       if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
         const a = artifacts.get(decodeURIComponent(parts[2]));
@@ -180,6 +185,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts — list (newest first)
+      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
+        return json(res, 200, { artifacts: artifacts.list() });
+      }
+
       // GET /v1/artifacts/:id
       if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
         const a = artifacts.get(decodeURIComponent(parts[2]));
@@ -230,6 +240,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts — list (newest first)
+      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
+        return json(res, 200, { artifacts: artifacts.list() });
+      }
+
       // GET /v1/artifacts/:id
       if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
         const a = artifacts.get(decodeURIComponent(parts[2]));
@@ -263,6 +278,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // GET /v1/artifacts — list (newest first)
+      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
+        return json(res, 200, { artifacts: artifacts.list() });
+      }
+
       // GET /v1/artifacts/:id
       if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
         const a = artifacts.get(decodeURIComponent(parts[2]));
@@ -274,6 +294,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const body = await readBody<{ id: string; ok: boolean; detail?: string }>(req);
         const found = session.answerUi(body.id, Boolean(body.ok), body.detail);
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending ui request" });
+      }
+
+      // GET /v1/artifacts — list (newest first)
+      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
+        return json(res, 200, { artifacts: artifacts.list() });
       }
 
       // GET /v1/artifacts/:id

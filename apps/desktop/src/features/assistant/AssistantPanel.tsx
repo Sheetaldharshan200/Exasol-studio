@@ -200,7 +200,11 @@ export function AssistantPanel({
         );
       });
     } else if (e.type === "tool-start") {
-      setItems((m) => [...m, { kind: "tool", id: e.callId, name: e.name, args: e.args, done: false }]);
+      setItems((m) =>
+        m.some((it) => it.kind === "tool" && it.id === e.callId)
+          ? m.map((it) => (it.kind === "tool" && it.id === e.callId ? { ...it, args: e.args ?? it.args } : it))
+          : [...m, { kind: "tool", id: e.callId, name: e.name, args: e.args, done: false }],
+      );
     } else if (e.type === "tool-end") {
       setItems((m) =>
         m.map((it) =>
@@ -817,6 +821,8 @@ const TOOL_LABELS: Record<string, string> = {
   ui_open: "Opening in app",
   ui_editor_insert: "Inserting SQL",
   dashboard_save: "Saving dashboard",
+  render_artifact: "Building artifact",
+  load_skill: "Reading skill",
   dashboard_list: "Listing dashboards",
   dashboard_get: "Reading dashboard",
   list_connections: "Checking connections",

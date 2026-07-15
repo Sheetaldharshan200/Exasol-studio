@@ -213,6 +213,10 @@ export type Dashboard = {
 export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
 
 export const artifacts = {
+  async list(): Promise<{ id: string; title: string; createdAt: number }[]> {
+    const { artifacts: a } = await api<{ artifacts: { id: string; title: string; createdAt: number }[] }>("/artifacts");
+    return a;
+  },
   async get(id: string): Promise<{ id: string; title: string; html: string }> {
     const { artifact } = await api<{ artifact: { id: string; title: string; html: string } }>(`/artifacts/${encodeURIComponent(id)}`);
     return artifact;

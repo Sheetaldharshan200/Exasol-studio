@@ -37,6 +37,8 @@ const TOOL_LABELS: Record<string, string> = {
   ui_open: "opening",
   ui_editor_insert: "writing SQL",
   dashboard_save: "building the dashboard",
+  render_artifact: "building the artifact",
+  load_skill: "reading a skill",
   list_connections: "checking connections",
   app_ui_locate: "finding my way",
 };

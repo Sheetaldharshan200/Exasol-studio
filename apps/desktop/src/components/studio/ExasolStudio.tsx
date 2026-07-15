@@ -2879,7 +2879,7 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
-              <ArtifactTab html={activeTab.artifactHtml ?? ""} />
+              <ArtifactTab title={activeTab.title} html={activeTab.artifactHtml ?? ""} onOpen={openArtifact} />
             </div>
           ) : activeTab.view === "bi" ? (
             <div className="min-h-0 flex-1">
