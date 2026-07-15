@@ -610,6 +610,11 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
     const chart = chartRef.current;
     if (!chart) return;
     const cols = result.columns.map((c) => c.name);
+    if (!result.rows.length) {
+      chart.clear();
+      chart.setOption({ title: { text: "No data", left: "center", top: "center", textStyle: { color: "#888", fontSize: 12 } } });
+      return;
+    }
     const styles0 = getComputedStyle(document.documentElement);
     const fg0 = styles0.getPropertyValue("--muted-foreground").trim() || "#888";
     // FULL ECharts mode: a custom option with its own `series` takes over
@@ -630,11 +635,33 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
       );
       return;
     }
-    const xIdx = viz.xField ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0) : 0;
-    const isNumCol = (i: number) => result.rows.some((r) => typeof r[i] === "number");
-    const yIdxs = viz.yFields?.length
-      ? viz.yFields.map((f) => cols.indexOf(f.toUpperCase())).filter((i) => i >= 0)
-      : cols.map((_, i) => i).filter((i) => i !== xIdx && isNumCol(i));
+    // Values come back as strings from the query layer — coerce, don't
+    // typeof-check, or every series comes out empty (blank chart).
+    const num = (v: unknown): number | null => {
+      if (v === null || v === "") return null;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const isNumCol = (i: number) => {
+      let seen = 0;
+      for (const r of result.rows) {
+        if (r[i] === null || r[i] === "") continue;
+        if (num(r[i]) === null) return false;
+        seen++;
+      }
+      return seen > 0;
+    };
+    // X axis = the explicit field, else the first NON-numeric column, else col 0.
+    const xIdx = viz.xField
+      ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0)
+      : Math.max(cols.findIndex((_, i) => !isNumCol(i)), 0);
+    const yIdxs = (
+      viz.yFields?.length
+        ? viz.yFields.map((f) => cols.indexOf(f.toUpperCase())).filter((i) => i >= 0)
+        : cols.map((_, i) => i).filter((i) => i !== xIdx && isNumCol(i))
+    );
+    // Nothing detected numeric? Plot every non-x column so it's never blank.
+    const yCols = yIdxs.length ? yIdxs : cols.map((_, i) => i).filter((i) => i !== xIdx);
     const styles = getComputedStyle(document.documentElement);
     const fg = styles.getPropertyValue("--muted-foreground").trim() || "#888";
     const border = styles.getPropertyValue("--border").trim() || "#333";
@@ -648,17 +675,20 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
               radius: ["35%", "70%"],
               itemStyle: { borderRadius: 4 },
               label: { color: fg, fontSize: 10 },
-              data: result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: Number(r[yIdxs[0] ?? 1]) || 0 })),
+              data: result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: num(r[yCols[0] ?? 1]) ?? 0 })),
             },
           ]
-        : yIdxs.map((yi) => ({
+        : yCols.map((yi) => ({
             name: cols[yi],
             type: (viz.chart === "area" ? "line" : viz.chart) as "line" | "bar" | "scatter",
-            ...(viz.chart === "area" ? { areaStyle: { opacity: 0.25 } } : {}),
+            ...(viz.chart === "area" ? { areaStyle: { opacity: 0.22 } } : {}),
             ...(viz.stacked ? { stack: "total" } : {}),
             smooth: viz.chart !== "bar",
-            symbolSize: viz.chart === "scatter" ? 8 : 4,
-            data: result.rows.map((r) => Number(r[yi]) || 0),
+            showSymbol: viz.chart === "scatter",
+            symbolSize: viz.chart === "scatter" ? 9 : 4,
+            itemStyle: { borderRadius: viz.chart === "bar" ? [3, 3, 0, 0] : 0 },
+            barMaxWidth: 40,
+            data: result.rows.map((r) => num(r[yi]) ?? 0),
           }));
 
     chart.setOption(
@@ -675,13 +705,14 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
               xAxis: {
                 type: "category",
                 data: categories,
-                axisLabel: { color: fg, fontSize: 10 },
+                axisLabel: { color: fg, fontSize: 10, hideOverlap: true, rotate: categories.length > 8 ? 30 : 0 },
                 axisLine: { lineStyle: { color: border } },
+                axisTick: { show: false },
               },
               yAxis: {
                 type: "value",
                 axisLabel: { color: fg, fontSize: 10 },
-                splitLine: { lineStyle: { color: border, opacity: 0.5 } },
+                splitLine: { lineStyle: { color: border, opacity: 0.4, type: "dashed" } },
               },
             }
           : {}),
