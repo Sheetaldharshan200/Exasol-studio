@@ -126,6 +126,7 @@ pub fn run() {
             history::sql_history_list,
             history::sql_history_clear,
             agent::agent_api,
+            agent::agent_grant_connection,
             agent::agent_stream,
         ])
         .run(tauri::generate_context!())

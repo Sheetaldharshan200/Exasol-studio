@@ -15,12 +15,15 @@
     "@ai-sdk/google": "^2.0.0",
     "@ai-sdk/openai": "^2.0.0",
     "@ai-sdk/openai-compatible": "^1.0.0",
+    "@exasol/exasol-driver-ts": "^0.4.1",
     "ai": "^5.0.0",
+    "ws": "^8.21.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.25.0",
-    "typescript": "^5.8.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.8.0"
   }
 }

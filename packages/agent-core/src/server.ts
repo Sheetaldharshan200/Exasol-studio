@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
+import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 
@@ -13,6 +14,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const token = randomBytes(24).toString("hex");
   const registry = new ProviderRegistry(config);
   const sessions = new SessionStore(config.dataDir);
+  const db = new DbRegistry();
 
   const server = createServer(async (req, res) => {
     try {
@@ -51,6 +53,20 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { ok: true });
       }
 
+      // PUT /v1/connections  (server-to-server from the app's Rust side —
+      // credentials are held in memory only and never returned by any route)
+      if (req.method === "PUT" && parts[1] === "connections") {
+        const info = await readBody<DbConnectionInfo>(req);
+        if (!info.id || !info.host || !info.user) return json(res, 400, { error: "id, host, user required" });
+        db.register(info);
+        return json(res, 200, { ok: true });
+      }
+
+      // GET /v1/connections — names only, no secrets.
+      if (req.method === "GET" && parts[1] === "connections") {
+        return json(res, 200, { connections: db.list() });
+      }
+
       // POST /v1/sessions
       if (req.method === "POST" && parts[1] === "sessions" && !parts[2]) {
         const s = sessions.create();
@@ -76,20 +92,29 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return;
       }
 
-      // POST /v1/sessions/:id/messages  {text, model, context?}
+      // POST /v1/sessions/:id/messages  {text, model, context?, connectionId?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "messages") {
-        const body = await readBody<{ text: string; model: string; context?: string }>(req);
+        const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string }>(req);
         if (!body.text || !body.model) return json(res, 400, { error: "text and model are required" });
         if (session.running) return json(res, 409, { error: "already generating" });
+        session.connectionId = body.connectionId ?? session.connectionId;
         // Fire the turn; the client watches the SSE stream.
         void runTurn({
           session,
           registry,
+          db,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
         });
         return json(res, 202, { ok: true });
+      }
+
+      // POST /v1/sessions/:id/permission  {id, allow}
+      if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "permission") {
+        const body = await readBody<{ id: string; allow: boolean }>(req);
+        const found = session.answerPermission(body.id, Boolean(body.allow));
+        return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending permission" });
       }
 
       // POST /v1/sessions/:id/abort

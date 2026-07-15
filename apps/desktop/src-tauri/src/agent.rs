@@ -138,6 +138,40 @@ fn ensure_agent(app: &AppHandle) -> AppResult<AgentInfo> {
     Ok(out)
 }
 
+/// Grant a saved connection to the agent: decrypt the profile server-side
+/// and register it with the sidecar over localhost. The password flows
+/// Rust → sidecar memory only — it never enters the webview.
+#[tauri::command]
+pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppResult<()> {
+    let profile = {
+        let state = app.state::<AppState>();
+        crate::profiles::find_profile(&state, &profile_id)?
+    };
+    let info = ensure_agent(&app)?;
+    let body = serde_json::json!({
+        "id": profile.id,
+        "name": profile.name,
+        "host": profile.host,
+        "port": profile.port,
+        "user": profile.username,
+        "password": profile.password,
+        "encryption": profile.ssl_mode != "disabled",
+        "schema": profile.schema,
+    });
+    let client = reqwest::Client::new();
+    let res = client
+        .put(format!("http://127.0.0.1:{}/v1/connections", info.port))
+        .bearer_auth(&info.token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::Assistant(format!("agent connection grant failed: {e}")))?;
+    if !res.status().is_success() {
+        return Err(AppError::Assistant("agent rejected the connection".into()));
+    }
+    Ok(())
+}
+
 /// Proxy a REST call to the sidecar (the webview cannot reach it directly).
 #[tauri::command]
 pub async fn agent_api(

@@ -5,13 +5,17 @@ import {
   Cpu,
   FileSearch,
   Gauge,
+  Loader2,
   PanelRightClose,
   RotateCcw,
   Send,
+  ShieldAlert,
   SlidersHorizontal,
   Square,
   Table2,
   Wand2,
+  Wrench,
+  X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
@@ -21,13 +25,10 @@ import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window"
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
-type DisplayMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  error?: boolean;
-  streaming?: boolean;
-};
+type ChatItem =
+  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean; streaming?: boolean }
+  | { kind: "tool"; id: string; name: string; args: unknown; done: boolean; ok?: boolean; summary?: string }
+  | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean };
 
 type SlashCommand = {
   cmd: string;
@@ -63,16 +64,19 @@ export function AssistantPanel({
   contextSummary,
   editorSql,
   pendingPrompt,
+  connectionId,
   onClose,
 }: {
   contextSummary: string;
   editorSql: string;
   /** An external prompt (e.g. "AI explain plan") to send automatically. */
   pendingPrompt?: { text: string; nonce: number } | null;
+  /** Active connection profile id — granted to the agent for tool use. */
+  connectionId?: string | null;
   /** Hide the AI side panel. */
   onClose?: () => void;
 }) {
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
@@ -114,30 +118,48 @@ export function AssistantPanel({
     };
   }, [refreshProviders]);
 
+  // Hand the active connection to the agent (password decrypts Rust-side).
+  useEffect(() => {
+    if (connectionId) void agent.grantConnection(connectionId).catch(() => undefined);
+  }, [connectionId]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, sending]);
+  }, [items, sending]);
 
   const handleEvent = useCallback((e: AgentEvent) => {
     if (e.type === "message-start") {
-      setMessages((m) => [...m, { id: e.messageId, role: "assistant", content: "", streaming: true }]);
-    } else if (e.type === "text-delta") {
-      setMessages((m) =>
-        m.map((msg) => (msg.id === e.messageId ? { ...msg, content: msg.content + e.delta } : msg)),
+      setItems((m) =>
+        m.some((it) => it.kind === "msg" && it.id === e.messageId)
+          ? m
+          : [...m, { kind: "msg", id: e.messageId, role: "assistant", content: "", streaming: true }],
       );
+    } else if (e.type === "text-delta") {
+      setItems((m) => {
+        if (!m.some((it) => it.kind === "msg" && it.id === e.messageId)) {
+          return [...m, { kind: "msg", id: e.messageId, role: "assistant", content: e.delta, streaming: true }];
+        }
+        return m.map((it) =>
+          it.kind === "msg" && it.id === e.messageId ? { ...it, content: it.content + e.delta } : it,
+        );
+      });
+    } else if (e.type === "tool-start") {
+      setItems((m) => [...m, { kind: "tool", id: e.callId, name: e.name, args: e.args, done: false }]);
+    } else if (e.type === "tool-end") {
+      setItems((m) =>
+        m.map((it) =>
+          it.kind === "tool" && it.id === e.callId ? { ...it, done: true, ok: e.ok, summary: e.summary } : it,
+        ),
+      );
+    } else if (e.type === "permission-ask") {
+      setItems((m) => [...m, { kind: "perm", id: e.id, tool: e.tool, summary: e.summary, detail: e.detail }]);
+    } else if (e.type === "permission-result") {
+      setItems((m) => (m.map((it) => (it.kind === "perm" && it.id === e.id ? { ...it, result: e.allow } : it))));
     } else if (e.type === "message-done") {
-      setMessages((m) => m.map((msg) => (msg.id === e.messageId ? { ...msg, streaming: false } : msg)));
+      setItems((m) => m.map((it) => (it.kind === "msg" ? { ...it, streaming: false } : it)));
       setSending(false);
     } else if (e.type === "error") {
-      setMessages((m) => {
-        const last = m[m.length - 1];
-        if (last?.streaming && !last.content) {
-          return m.map((msg) =>
-            msg.id === last.id ? { ...msg, content: e.message, error: true, streaming: false } : msg,
-          );
-        }
-        return [...m, { id: `e-${Date.now()}`, role: "assistant", content: e.message, error: true }];
-      });
+      setItems((m) => [...m, { kind: "msg", id: `e-${Date.now()}`, role: "assistant", content: e.message, error: true }]);
       setSending(false);
     }
   }, []);
@@ -151,7 +173,7 @@ export function AssistantPanel({
   }
 
   function newChat() {
-    setMessages([]);
+    setItems([]);
     setInput("");
     disposeRef.current?.();
     disposeRef.current = null;
@@ -233,7 +255,7 @@ export function AssistantPanel({
       void openAiProvidersWindow();
       return;
     }
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: "user", content: trimmed }]);
+    setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: trimmed }]);
     setInput("");
     setSending(true);
 
@@ -243,11 +265,11 @@ export function AssistantPanel({
 
     try {
       const sid = await ensureSession();
-      await agent.send(sid, trimmed, model, context || undefined);
+      await agent.send(sid, trimmed, model, context || undefined, connectionId);
     } catch (err) {
-      setMessages((m) => [
+      setItems((m) => [
         ...m,
-        { id: `e-${Date.now()}`, role: "assistant", content: errorMessage(err), error: true },
+        { kind: "msg", id: `e-${Date.now()}`, role: "assistant", content: errorMessage(err), error: true },
       ]);
       setSending(false);
     }
@@ -255,6 +277,11 @@ export function AssistantPanel({
 
   async function stop() {
     if (sessionRef.current) await agent.abort(sessionRef.current).catch(() => undefined);
+  }
+
+  async function answerPermission(id: string, allow: boolean) {
+    if (!sessionRef.current) return;
+    await agent.answerPermission(sessionRef.current, id, allow).catch(() => undefined);
   }
 
   function pickModel(ref: string) {
@@ -301,7 +328,7 @@ export function AssistantPanel({
 
   const isLocalModel = model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
   const ollama = providers.find((p) => p.id === "ollama");
-  const thinking = sending && !messages.some((m) => m.streaming && m.content);
+  const thinking = sending && !items.some((it) => it.kind === "msg" && it.streaming && it.content);
 
   return (
     <aside className="flex h-full min-w-0 flex-col border-l border-border bg-panel">
@@ -314,7 +341,7 @@ export function AssistantPanel({
           <span className="text-[13px] font-semibold text-foreground">Exasol AI</span>
         </div>
         <div className="flex items-center gap-0.5">
-          {messages.length > 0 ? (
+          {items.length > 0 ? (
             <button
               className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
               onClick={newChat}
@@ -352,7 +379,7 @@ export function AssistantPanel({
             {agentError}
           </div>
         ) : null}
-        {messages.length === 0 ? (
+        {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
             <div className="agent-hero-glow mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <AgentMark className="h-7 w-7" />
@@ -385,7 +412,15 @@ export function AssistantPanel({
             </div>
           </div>
         ) : (
-          messages.map((m) => <Bubble key={m.id} message={m} />)
+          items.map((it) =>
+            it.kind === "msg" ? (
+              <Bubble key={it.id} message={it} />
+            ) : it.kind === "tool" ? (
+              <ToolChip key={it.id} item={it} />
+            ) : (
+              <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
+            ),
+          )
         )}
         {thinking ? (
           <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
@@ -519,7 +554,107 @@ export function AssistantPanel({
   );
 }
 
-function Bubble({ message }: { message: DisplayMessage }) {
+const TOOL_LABELS: Record<string, string> = {
+  list_schemas: "Listing schemas",
+  list_tables: "Listing tables",
+  describe_table: "Describing table",
+  run_sql: "Running SQL",
+  profile_query: "Profiling query",
+  get_table_sample: "Sampling rows",
+};
+
+function argPreview(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const o = args as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const k of ["schema", "table", "sql", "purpose"]) {
+    const v = o[k];
+    if (typeof v === "string" && v.trim()) parts.push(k === "sql" ? v.replace(/\s+/g, " ").slice(0, 60) : v);
+    if (parts.length >= 2) break;
+  }
+  return parts.join(" · ");
+}
+
+function ToolChip({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
+  const label = TOOL_LABELS[item.name] ?? item.name;
+  const preview = argPreview(item.args);
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-1.5">
+      {item.done ? (
+        item.ok ? (
+          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+        ) : (
+          <X className="h-3.5 w-3.5 shrink-0 text-destructive" />
+        )
+      ) : (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+      )}
+      <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground">
+        {label}
+        {preview ? <span className="text-muted-foreground"> — {preview}</span> : null}
+      </span>
+      {item.done && item.summary ? (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.summary}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function PermissionCard({
+  item,
+  onAnswer,
+}: {
+  item: Extract<ChatItem, { kind: "perm" }>;
+  onAnswer: (id: string, allow: boolean) => void;
+}) {
+  const pending = item.result === undefined;
+  return (
+    <div
+      className={cn(
+        "rounded-xl border p-3",
+        pending ? "border-warning/50 bg-warning/8" : "border-border bg-panel/60",
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <ShieldAlert className={cn("h-3.5 w-3.5", pending ? "text-warning" : "text-muted-foreground")} />
+        <span className="text-[12px] font-semibold text-foreground">Approval needed</span>
+        {!pending ? (
+          <span
+            className={cn(
+              "ml-auto rounded px-1.5 py-px text-[9px] font-medium uppercase",
+              item.result ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive",
+            )}
+          >
+            {item.result ? "allowed" : "denied"}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-[11.5px] text-muted-foreground">{item.summary}</p>
+      <pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+        {item.detail}
+      </pre>
+      {pending ? (
+        <div className="mt-2 flex justify-end gap-1.5">
+          <button
+            onClick={() => onAnswer(item.id, false)}
+            className="flex h-7 items-center rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+          >
+            Deny
+          </button>
+          <button
+            onClick={() => onAnswer(item.id, true)}
+            className="flex h-7 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+          >
+            Allow & run
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">

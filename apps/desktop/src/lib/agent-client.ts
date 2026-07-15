@@ -30,6 +30,10 @@ export type AgentEvent =
   | { type: "reasoning-delta"; messageId: string; delta: string }
   | { type: "message-start"; messageId: string; role: "assistant" }
   | { type: "message-done"; messageId: string; usage?: { inputTokens?: number; outputTokens?: number } }
+  | { type: "tool-start"; callId: string; name: string; args: unknown }
+  | { type: "tool-end"; callId: string; name: string; ok: boolean; summary?: string }
+  | { type: "permission-ask"; id: string; tool: string; summary: string; detail: string }
+  | { type: "permission-result"; id: string; allow: boolean }
   | { type: "error"; message: string }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
@@ -55,8 +59,23 @@ export const agent = {
     return id;
   },
 
-  async send(sessionId: string, text: string, model: string, context?: string): Promise<void> {
-    await api(`/sessions/${sessionId}/messages`, "POST", { text, model, context });
+  async send(
+    sessionId: string,
+    text: string,
+    model: string,
+    context?: string,
+    connectionId?: string | null,
+  ): Promise<void> {
+    await api(`/sessions/${sessionId}/messages`, "POST", { text, model, context, connectionId });
+  },
+
+  async answerPermission(sessionId: string, id: string, allow: boolean): Promise<void> {
+    await api(`/sessions/${sessionId}/permission`, "POST", { id, allow });
+  },
+
+  /** Register a saved connection with the agent (decrypts server-side in Rust). */
+  async grantConnection(profileId: string): Promise<void> {
+    await invoke("agent_grant_connection", { profileId });
   },
 
   async abort(sessionId: string): Promise<void> {
