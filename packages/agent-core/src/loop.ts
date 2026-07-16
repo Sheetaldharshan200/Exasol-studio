@@ -433,7 +433,10 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card/, "dashboard_save", "dashboard_list", "dashboard_get");
   want(/artifact|report|infographic|render|html page|write.?up/, "render_artifact");
   want(/connect|open (the|a|my|up)|click|go to|navigat|panel|marketplace|settings|switch to|show me the/, "ui_connect", "ui_open", "ui_editor_insert", "app_ui_locate");
-  want(/everything|all (the )?tables|explore|overview|\bmap\b|understand the (db|database|schema)|whole (db|database|schema)|what.?s in/, "spawn_researcher");
+  want(
+    /everything|all (the )?tables|explore|overview|\bmap\b|understand the (db|database|schema)|whole (db|database|schema)|what.?s in|compare|versus|\bvs\b|across|breakdown|\btrends?\b|each of|both |multiple|analy|profile (these|the)|summar/,
+    "spawn_researcher",
+  );
   if (opts.hasDocuments) add("search_documents", "read_document");
   // Semantic-view tools only exist in `all` when the layer is ready; when they
   // do, they're the source of truth for analytics, so always surface them.
@@ -489,6 +492,7 @@ function summarize(output: unknown): string {
   if (output && typeof output === "object") {
     const o = output as Record<string, unknown>;
     if (o.denied) return "denied by user";
+    if (typeof o.report === "string") return `reported ${o.report.length > 120 ? "findings" : o.report.split("\n")[0].slice(0, 60)}`;
     if (typeof o.affectedRows === "number") return `${o.affectedRows} rows affected`;
     if (typeof o.rowCount === "number") return `${o.rowCount} rows`;
     if (o.columns && Array.isArray(o.columns)) return `${(o.columns as unknown[]).length} columns`;

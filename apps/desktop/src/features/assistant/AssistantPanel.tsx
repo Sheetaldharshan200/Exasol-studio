@@ -1014,10 +1014,16 @@ const TOOL_LABELS: Record<string, string> = {
   profile_query: "Profiling query",
   get_table_sample: "Sampling rows",
   remember_insight: "Saving insight",
-  spawn_researcher: "Researching",
+  spawn_researcher: "Researcher",
+  remember: "Saving to memory",
   kb_search: "Searching knowledge graph",
   kb_join_path: "Finding join path",
+  kb_subsystem: "Mapping subsystem",
   kb_refresh: "Rebuilding knowledge graph",
+  search_documents: "Searching documents",
+  read_document: "Reading document",
+  semantic_compile_request: "Compiling semantic query",
+  semantic_compile_sql: "Compiling semantic SQL",
   app_ui_locate: "Locating in app",
   ui_connect: "Connecting the app",
   ui_open: "Opening in app",
@@ -1034,7 +1040,7 @@ function argPreview(args: unknown): string {
   if (!args || typeof args !== "object") return "";
   const o = args as Record<string, unknown>;
   const parts: string[] = [];
-  for (const k of ["schema", "table", "sql", "purpose"]) {
+  for (const k of ["task", "near", "query", "schema", "table", "sql", "purpose", "note"]) {
     const v = o[k];
     if (typeof v === "string" && v.trim()) parts.push(k === "sql" ? v.replace(/\s+/g, " ").slice(0, 60) : v);
     if (parts.length >= 2) break;
