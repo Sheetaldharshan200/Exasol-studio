@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   Cpu,
+  Database,
   FileSearch,
   FileText,
   Gauge,
@@ -147,6 +148,7 @@ export function AssistantPanel({
   editorSql,
   pendingPrompt,
   connectionId,
+  connections = [],
   onClose,
   onUiAction,
   onDashboardSaved,
@@ -158,6 +160,8 @@ export function AssistantPanel({
   pendingPrompt?: { text: string; nonce: number } | null;
   /** Active connection profile id — granted to the agent for tool use. */
   connectionId?: string | null;
+  /** All currently-open connections, so the agent's target can be chosen. */
+  connections?: { id: string; name: string }[];
   /** Hide the AI side panel. */
   onClose?: () => void;
   /** Perform a UI action for the agent (pet/cursor drives it). */
@@ -173,6 +177,12 @@ export function AssistantPanel({
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<string>("");
   const [showPicker, setShowPicker] = useState(false);
+  const [showConnPicker, setShowConnPicker] = useState(false);
+  // User-chosen target DB (null = follow the app's active connection). Falls
+  // back to the active connection if the picked one closes.
+  const [pickedConn, setPickedConn] = useState<string | null>(null);
+  const targetConn = pickedConn && connections.some((c) => c.id === pickedConn) ? pickedConn : connectionId ?? null;
+  const targetConnName = connections.find((c) => c.id === targetConn)?.name ?? null;
   const [agentError, setAgentError] = useState<string | null>(null);
   const [menuIndex, setMenuIndex] = useState(0);
   const [title, setTitle] = useState("New chat");
@@ -233,10 +243,10 @@ export function AssistantPanel({
     [],
   );
 
-  // Hand the active connection to the agent (password decrypts Rust-side).
+  // Hand the target connection to the agent (password decrypts Rust-side).
   useEffect(() => {
-    if (connectionId) void agent.grantConnection(connectionId).catch(() => undefined);
-  }, [connectionId]);
+    if (targetConn) void agent.grantConnection(targetConn).catch(() => undefined);
+  }, [targetConn]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -266,7 +276,7 @@ export function AssistantPanel({
   // Dismiss the model picker on outside click or Escape; Escape also closes
   // the history view.
   useEffect(() => {
-    if (!showPicker && !showSessions) return;
+    if (!showPicker && !showSessions && !showConnPicker) return;
     const onDown = (e: MouseEvent) => {
       if (showPicker && pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
     };
@@ -274,6 +284,7 @@ export function AssistantPanel({
       if (e.key === "Escape") {
         setShowPicker(false);
         setShowSessions(false);
+        setShowConnPicker(false);
       }
     };
     document.addEventListener("mousedown", onDown);
@@ -282,7 +293,7 @@ export function AssistantPanel({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [showPicker, showSessions]);
+  }, [showPicker, showSessions, showConnPicker]);
 
   const handleEvent = useCallback((e: AgentEvent) => {
     if (e.type === "message-start") {
@@ -489,7 +500,7 @@ export function AssistantPanel({
       return;
     }
     // Commands that work on the database need a live connection first.
-    if (slash?.cmd.needsDb && !connectionId) {
+    if (slash?.cmd.needsDb && !targetConn) {
       setItems((m) => [
         ...m,
         { kind: "msg", id: `u-${Date.now()}`, role: "user", content: trimmed },
@@ -527,7 +538,7 @@ export function AssistantPanel({
 
     try {
       const sid = await ensureSession();
-      await agent.send(sid, agentText || "(see attached files)", model, context || undefined, connectionId, sentAttachments);
+      await agent.send(sid, agentText || "(see attached files)", model, context || undefined, targetConn, sentAttachments);
     } catch (err) {
       setItems((m) => [
         ...m,
@@ -934,6 +945,45 @@ export function AssistantPanel({
               <span className="truncate font-mono">{modelLabel}</span>
               <ChevronDown className="h-2.5 w-2.5 shrink-0" />
             </button>
+
+            {/* Target-connection pill: shows which DB the agent works on; a
+                picker when more than one connection is open. */}
+            {targetConn ? (
+              <div className="relative min-w-0">
+                <button
+                  type="button"
+                  onClick={() => connections.length > 1 && setShowConnPicker((s) => !s)}
+                  className="flex min-w-0 max-w-[150px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  title={connections.length > 1 ? "Choose which database the agent works on" : `Agent works on ${targetConnName}`}
+                >
+                  <Database className="h-3 w-3 shrink-0 text-primary" />
+                  <span className="truncate">{targetConnName}</span>
+                  {connections.length > 1 ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : null}
+                </button>
+                {showConnPicker && connections.length > 1 ? (
+                  <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+                    <div className="border-b border-border px-2.5 py-1.5 eyebrow-muted">Agent works on</div>
+                    {connections.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setPickedConn(c.id);
+                          setShowConnPicker(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
+                          c.id === targetConn && "bg-secondary",
+                        )}
+                      >
+                        <Database className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-[12px] text-foreground">{c.name}</span>
+                        {c.id === targetConn ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {sending ? (
               <button

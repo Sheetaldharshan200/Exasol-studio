@@ -3135,6 +3135,7 @@ export function ExasolStudio({
               editorSql={activeTab.sql}
               pendingPrompt={aiPrompt}
               connectionId={connection?.profile.id ?? null}
+              connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name }))}
               onClose={toggleAi}
               onUiAction={handleUiAction}
             />
