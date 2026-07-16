@@ -833,13 +833,16 @@ fn install_semantic_views(
     }
     match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
         0 => {}
-        3 => {
-            if run_streamed_env(app, JOB_ID, &python_s, &[&installer_s, "--example", "--skip-package"], &envs)? != 0
-                || run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? != 0
-            {
-                return Err(AppError::Storage("Semantic Views example did not become ready.".into()));
-            }
-        }
+        // Framework installed but no semantic model / demo data present. We do
+        // NOT seed the MART example — a fresh database stays clean and the user
+        // brings their own data. The semantic layer is ready to define models
+        // against real tables whenever they exist.
+        3 => emit_log(
+            app,
+            JOB_ID,
+            "Semantic Views framework installed (clean — no example dataset).",
+            "info",
+        ),
         4 => return Err(AppError::Storage("Existing SALES/MART objects are incomplete or user-owned; automatic setup refused to reset them.".into())),
         code => return Err(AppError::Storage(format!("Semantic Views readiness probe exited with code {code}."))),
     }
