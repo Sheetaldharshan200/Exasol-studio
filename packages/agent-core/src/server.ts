@@ -9,6 +9,7 @@ import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { DocumentStore } from "./documents.ts";
+import { CompassBridge } from "./compass.ts";
 import type { Attachment } from "./loop.ts";
 import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
@@ -27,6 +28,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const dashboards = new DashboardStore(config.dataDir);
   const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
+  const compass = new CompassBridge();
   const skills = new SkillStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
@@ -268,6 +270,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           artifacts,
           skills,
           documents,
+          compass,
           modelRef: body.model,
           userText: body.text,
           context: body.context,

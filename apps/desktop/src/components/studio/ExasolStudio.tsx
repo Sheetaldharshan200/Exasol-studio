@@ -809,13 +809,16 @@ function Sidebar({
   // retry when not. Always present so clearing saved connections never hides
   // it. Hidden only while the local DB is the active connection (it's in the
   // tree then).
-  const localReady = local?.state === "ready" || local?.localReady;
-  const localConnected = Boolean(local?.profileId && connectedIds.has(local.profileId));
-  const showLocalCard = activity === "databases" && !localConnected;
   // The managed local DB is always sys@127.0.0.1:8563 — its permanent card
   // represents that endpoint, so fold any duplicate profile (e.g. a hand-made
   // "sys@localhost") into it instead of listing it twice.
   const LOCAL_ENDPOINT = "127.0.0.1:8563:SYS";
+  const localReady = local?.state === "ready" || local?.localReady;
+  // Connected under the managed profile OR any profile at the local endpoint —
+  // either way the card is redundant (the live connection is in the tree).
+  const localConnected =
+    Boolean(local?.profileId && connectedIds.has(local.profileId)) || activeEndpoints.has(LOCAL_ENDPOINT);
+  const showLocalCard = activity === "databases" && !localConnected;
 
   const seenEndpoints = new Set<string>();
   const disconnected = profiles.filter((p) => {

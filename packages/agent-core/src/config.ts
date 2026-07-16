@@ -25,6 +25,9 @@ export type AgentSettings = {
   /** Graphical UI actions (agent drives the app: connect/open/insert). Beta,
    *  off by default — enable in AI Settings. */
   enableUiTools: boolean;
+  /** Use exasol-compass (org schema graph) for CLOUD models; local models
+   *  always use the native KB. */
+  useCompassForCloud: boolean;
   /** Pet companion mode for UI actions: pet, cursor-only, or background. */
   petMode: "pet" | "cursor" | "off";
   /** Which companion character to show. */
@@ -46,6 +49,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   enableInsights: true,
   enableCompaction: true,
   enableUiTools: false,
+  useCompassForCloud: true,
   petMode: "off",
   petAvatar: "exa",
   allowDestructiveUi: false,
