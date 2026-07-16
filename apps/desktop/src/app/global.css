@@ -233,9 +233,12 @@
   select {
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  input:focus-visible,
-  textarea:focus-visible,
-  select:focus-visible {
+  /* `data-bare` opts a control out — for borderless fields that live inside a
+     card which already provides the box (the chat composer, the pet input),
+     so they don't render a second inner border on focus. */
+  input:not([data-bare]):focus-visible,
+  textarea:not([data-bare]):focus-visible,
+  select:not([data-bare]):focus-visible {
     outline: none;
     border-color: color-mix(in srgb, var(--primary) 50%, transparent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent);

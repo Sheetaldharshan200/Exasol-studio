@@ -806,6 +806,7 @@ export function AssistantPanel({
             </div>
             <textarea
               ref={inputRef}
+              data-bare
               className="relative min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}

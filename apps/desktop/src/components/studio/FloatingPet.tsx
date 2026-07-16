@@ -422,6 +422,7 @@ export function FloatingPet({
           <div className="flex items-end gap-1.5 rounded-xl border border-border bg-editor p-1.5 transition-colors focus-within:border-muted-foreground/40">
             <textarea
               ref={inputRef}
+              data-bare
               value={text}
               rows={1}
               onChange={(e) => {
