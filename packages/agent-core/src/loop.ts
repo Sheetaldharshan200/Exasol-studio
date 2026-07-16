@@ -208,11 +208,20 @@ export async function runTurn(opts: {
     semanticViewsReady,
     semanticViewsConnectionId,
   });
+  // Progressive tool disclosure: small local models get confused when handed
+  // ~26 tools at once (wrong picks, hallucinated names, calls-as-text). Expose
+  // only a relevant subset for this message — a huge reliability win.
+  const relevantTools = selectTools(tools, {
+    text: userText,
+    connected: Boolean(session.connectionId),
+    hasDocuments: documents.list(session.id).length > 0,
+  });
+  log.info("tools selected", { of: Object.keys(tools).length, using: Object.keys(relevantTools).length });
   // Force forward progress: if the model repeats an identical tool call,
   // hand back a firm nudge instead of re-running (the first result is already
   // in the conversation). This resolves loops the model would otherwise get
   // stuck in far more gracefully than a hard abort.
-  const guardedTools = wrapForProgress(tools);
+  const guardedTools = wrapForProgress(relevantTools);
   const started = Date.now();
   const callCounts = new Map<string, number>();
   const DOOM_LIMIT = 5;
@@ -397,6 +406,42 @@ function buildRetrievedContext(kb: KnowledgeGraph, conn: string, userText: strin
   if (relevant) block += `\n\nMost relevant to this request:\n${relevant}`;
   block += `\n</retrieved_context>`;
   return block;
+}
+
+/**
+ * Progressive tool disclosure. Small models tool-call far more reliably with a
+ * short, relevant list than with the full ~26-tool set, so we keep a small
+ * always-on core and add optional groups only when the message signals intent.
+ * Unknown tools stay hidden — the model can still answer and ask.
+ */
+function selectTools(all: ToolSet, opts: { text: string; connected: boolean; hasDocuments: boolean }): ToolSet {
+  const t = opts.text.toLowerCase();
+  const keep = new Set<string>();
+  const add = (...names: string[]) => names.forEach((n) => all[n] && keep.add(n));
+
+  // Core — covers the great majority of data questions.
+  add("kb_search", "run_sql", "list_schemas", "list_tables", "describe_table", "get_table_sample", "remember");
+  // Not connected yet → give it the means to connect.
+  if (!opts.connected) add("list_connections", "ui_connect");
+
+  const want = (re: RegExp, ...names: string[]) => {
+    if (re.test(t)) add(...names);
+  };
+  want(/perform|slow|profile|optimi|speed|faster|tune|bottleneck|explain plan/, "profile_query");
+  want(/join|relation|related|connect|link|between|subsystem|\barea\b|star schema|foreign key|how do .* relate/, "kb_join_path", "kb_subsystem");
+  want(/refresh|re-?crawl|reload|changed schema|new table|just created|after creating/, "kb_refresh");
+  want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card/, "dashboard_save", "dashboard_list", "dashboard_get");
+  want(/artifact|report|infographic|render|html page|write.?up/, "render_artifact");
+  want(/connect|open (the|a|my|up)|click|go to|navigat|panel|marketplace|settings|switch to|show me the/, "ui_connect", "ui_open", "ui_editor_insert", "app_ui_locate");
+  want(/everything|all (the )?tables|explore|overview|\bmap\b|understand the (db|database|schema)|whole (db|database|schema)|what.?s in/, "spawn_researcher");
+  if (opts.hasDocuments) add("search_documents", "read_document");
+  // Semantic-view tools only exist in `all` when the layer is ready; when they
+  // do, they're the source of truth for analytics, so always surface them.
+  add("semantic_compile_request", "semantic_compile_sql");
+
+  const out: ToolSet = {};
+  for (const n of keep) out[n] = all[n];
+  return out;
 }
 
 /**
