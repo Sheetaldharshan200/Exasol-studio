@@ -114,6 +114,11 @@ export const agent = {
     await api(`/providers/${providerId}`, "PUT", cfg);
   },
 
+  /** Test-reach an OpenAI-compatible endpoint before saving it. */
+  async probeEndpoint(baseURL: string, apiKey?: string): Promise<{ ok: boolean; models?: number; error?: string }> {
+    return api("/providers/probe", "POST", { baseURL, apiKey });
+  },
+
   async setDefaultModel(model: string): Promise<void> {
     await api("/config", "PUT", { model });
   },

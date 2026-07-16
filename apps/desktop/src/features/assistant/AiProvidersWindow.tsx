@@ -458,6 +458,34 @@ function InDatabaseSection({
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function test() {
+    const url = baseURL.trim();
+    if (!url) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await agent.probeEndpoint(url, apiKey.trim() || undefined);
+      setTestResult(
+        r.ok
+          ? { ok: true, msg: `Reachable — ${r.models ?? 0} model${r.models === 1 ? "" : "s"} advertised.` }
+          : { ok: false, msg: r.error ?? "Could not reach the endpoint." },
+      );
+    } catch (e) {
+      setTestResult({ ok: false, msg: errorMessage(e) });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  function copy(cmd: string) {
+    void navigator.clipboard.writeText(cmd);
+    setCopied(cmd);
+    setTimeout(() => setCopied((c) => (c === cmd ? null : c)), 1500);
+  }
 
   async function save() {
     const url = baseURL.trim();
@@ -522,7 +550,22 @@ function InDatabaseSection({
           onChange={(e) => setApiKey(e.target.value)}
           className="h-7 text-xs"
         />
-        <div className="flex justify-end">
+        {testResult ? (
+          <div className={cn("flex items-center gap-1.5 text-[11px]", testResult.ok ? "text-primary" : "text-destructive")}>
+            {testResult.ok ? <Check className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+            {testResult.msg}
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            disabled={!baseURL.trim() || testing}
+            onClick={() => void test()}
+          >
+            {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test connection"}
+          </Button>
           <Button size="sm" className="h-7" disabled={!baseURL.trim() || !modelId.trim() || saving} onClick={() => void save()}>
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save endpoint"}
           </Button>
@@ -544,8 +587,22 @@ function InDatabaseSection({
             <p>
               Run an OpenAI-compatible server (vLLM, TGI, or Ollama) on a cluster node or a gateway host that can use the
               cluster's GPUs/RAM. Point the endpoint above at its <span className="font-mono">/v1</span> URL. This gives the
-              agent full streaming + tool-calling, entirely within your network.
+              agent full streaming + tool-calling, entirely within your network. No database privileges needed.
             </p>
+            {[
+              { label: "Ollama (simplest)", cmd: "ollama serve   # → http://localhost:11434/v1" },
+              { label: "vLLM (GPU, production)", cmd: "vllm serve meta-llama/Llama-3.3-70B-Instruct --port 8000   # → http://<host>:8000/v1" },
+            ].map((c) => (
+              <div key={c.label} className="mt-1">
+                <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
+                <div className="flex items-center gap-1.5 rounded-md border border-border bg-panel/60 px-2 py-1">
+                  <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[10.5px] text-foreground">{c.cmd}</code>
+                  <button onClick={() => copy(c.cmd)} className="shrink-0 text-[10px] text-primary hover:underline">
+                    {copied === c.cmd ? "copied" : "copy"}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
           <div>
             <p className="font-medium text-foreground">2 · In-database inference (Transformers Extension)</p>

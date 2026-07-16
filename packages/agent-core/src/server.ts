@@ -48,6 +48,28 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
       }
 
+      // POST /v1/providers/probe {baseURL, apiKey?} — test an OpenAI-compatible
+      // endpoint before saving it (the sidecar can reach any host; the webview
+      // can't). Returns reachability + how many models it advertises.
+      if (req.method === "POST" && parts[1] === "providers" && parts[2] === "probe") {
+        const body = await readBody<{ baseURL?: string; apiKey?: string }>(req);
+        const base = (body.baseURL ?? "").trim().replace(/\/+$/, "");
+        if (!base) return json(res, 400, { error: "baseURL is required" });
+        try {
+          const r = await fetch(`${base}/models`, {
+            headers: body.apiKey ? { authorization: `Bearer ${body.apiKey}` } : undefined,
+            signal: AbortSignal.timeout(8000),
+          });
+          if (!r.ok) return json(res, 200, { ok: false, error: `Endpoint returned HTTP ${r.status}` });
+          const payload = (await r.json().catch(() => ({}))) as { data?: unknown[] };
+          const models = Array.isArray(payload.data) ? payload.data.length : 0;
+          return json(res, 200, { ok: true, models });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return json(res, 200, { ok: false, error: /timeout|aborted/i.test(msg) ? "No response (timeout) — is the server running and reachable?" : msg });
+        }
+      }
+
       // PUT /v1/providers/:id  {apiKey?, baseURL?, models?}
       if (req.method === "PUT" && parts[1] === "providers" && parts[2]) {
         const body = await readBody<{ apiKey?: string; baseURL?: string; models?: { id: string; name?: string; context?: number }[] }>(req);
