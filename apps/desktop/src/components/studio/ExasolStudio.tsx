@@ -805,25 +805,31 @@ function Sidebar({
   const activeEndpoints = new Set(
     connections.map((c) => `${normHost(c.profile.host)}:${c.profile.port}:${c.profile.username.toUpperCase()}`),
   );
-  const seenEndpoints = new Set<string>();
-  const disconnected = profiles.filter((p) => {
-    if (connectedIds.has(p.id) || p.username.startsWith("STUDIO_MCP_")) return false;
-    // The managed local database has its own permanent card below.
-    if (local?.profileId && p.id === local.profileId) return false;
-    const key = `${normHost(p.host)}:${p.port}:${p.username.toUpperCase()}`;
-    if (activeEndpoints.has(key) || seenEndpoints.has(key)) return false;
-    seenEndpoints.add(key);
-    return true;
-  });
-
   // Permanent "Exasol Personal (local)" entry: connect when ready, set up/
   // retry when not. Always present so clearing saved connections never hides
   // it. Hidden only while the local DB is the active connection (it's in the
   // tree then).
   const localReady = local?.state === "ready" || local?.localReady;
   const localConnected = Boolean(local?.profileId && connectedIds.has(local.profileId));
-  const localCard =
-    activity === "databases" && !localConnected ? (
+  const showLocalCard = activity === "databases" && !localConnected;
+  // The managed local DB is always sys@127.0.0.1:8563 — its permanent card
+  // represents that endpoint, so fold any duplicate profile (e.g. a hand-made
+  // "sys@localhost") into it instead of listing it twice.
+  const LOCAL_ENDPOINT = "127.0.0.1:8563:SYS";
+
+  const seenEndpoints = new Set<string>();
+  const disconnected = profiles.filter((p) => {
+    if (connectedIds.has(p.id) || p.username.startsWith("STUDIO_MCP_")) return false;
+    // The managed local database has its own permanent card below.
+    if (local?.profileId && p.id === local.profileId) return false;
+    const key = `${normHost(p.host)}:${p.port}:${p.username.toUpperCase()}`;
+    if (showLocalCard && key === LOCAL_ENDPOINT) return false;
+    if (activeEndpoints.has(key) || seenEndpoints.has(key)) return false;
+    seenEndpoints.add(key);
+    return true;
+  });
+
+  const localCard = showLocalCard ? (
       <div className="border-b border-border/60 px-2 py-2">
         <button
           onClick={() => {

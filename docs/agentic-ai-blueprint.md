@@ -75,6 +75,37 @@ Decision: ship a **managed `llama-server` sidecar**, not FFI-embedded llama.cpp.
   in-process crashes kill the app, engine upgrades locked to app releases.
 - Ollama / LM Studio remain supported as bring-your-own options.
 
+## 2.2 exasol-compass (org alignment)
+
+`ranjanm-chn/exasol-compass` (leadership; Python, MCP server + CLI) builds a
+persistent schema knowledge graph and serves it over MCP with tools
+`get_neighbors` / `shortest_path` / `god_nodes` / `graph_stats` / `query_graph`
++ token-savings reporting. It is the SAME design as our in-app KB
+(`agent-core/kb.ts`), which independently converged on it:
+
+| compass | Ada's KB |
+|---|---|
+| query_graph | kb_search |
+| shortest_path | kb_join_path |
+| god_nodes | hubs() |
+| graph_stats (communities) | subsystems() |
+| get_neighbors / get_columns | table cards / describe_table |
+| system-schema filtering | isInternal() |
+
+**Org decision — they are complementary, not competing:**
+- **exasol-compass** is aimed at *external* CLI agents (Claude Code, Codex CLI)
+  as a standalone MCP server — its real audience. The org standardizes on it
+  there.
+- **Ada (Studio's embedded agent)** keeps the native KB as default: no extra
+  process, per-turn RAG injection (stronger than on-demand lookup for small
+  local models), already token-optimized, offline. Naming/approach are kept
+  consistent with compass so it's one mental model.
+- **Opt-in bridge (planned):** an OFF-by-default setting to point Ada at a
+  running compass MCP server and use its tools in place of the native KB, for
+  orgs that want a single graph source. Requires adding an MCP client
+  dependency + a reachable compass endpoint to build and verify — deferred
+  until we can test it end-to-end (won't ship blind into the agent loop).
+
 ## 3. Exasol knowledge — what we vendor (all MIT)
 
 | Source | What we take |
