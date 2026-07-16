@@ -51,6 +51,17 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "/fix", desc: "Find and fix errors", kind: "run", payload: "Find and fix any errors in the SQL in my editor." },
   { cmd: "/generate", desc: "Generate SQL from a description", kind: "insert", payload: "Generate an Exasol SQL query that " },
   { cmd: "/tables", desc: "List tables in the current schema", kind: "run", payload: "List the tables in the current schema, one line each." },
+  {
+    cmd: "/learn-my-db",
+    desc: "Learn my database & set up the semantic model",
+    kind: "run",
+    payload:
+      "Learn my database end to end. Steps: (1) call kb_refresh to re-crawl the live schema. " +
+      "(2) For every user schema, list its tables and describe the important ones — capture each table's purpose, row count, primary keys, and foreign/inferred join keys (use kb_search, kb_subsystem, and spawn_researcher to fan out efficiently). " +
+      "(3) Save the durable facts you verify — table meanings, join keys, and candidate business metrics — with the remember tool (scope: project) so they persist across sessions. " +
+      "(4) If the Semantic Views layer is ready, propose a starter semantic model grounded ONLY in the real tables you found: the entities, how they join, and the business metrics you'd define (with exact formulas), then ask me to confirm before creating anything. " +
+      "Finally, give me a concise map of my data: schemas, key entities and relationships, and the metrics you recommend. If there are no user data tables yet, tell me plainly and suggest loading data first — do not invent tables.",
+  },
   { cmd: "/dashboard", desc: "Build a live SQL dashboard", kind: "insert", payload: "/dashboard build a dashboard that " },
   { cmd: "/artifact", desc: "Build an HTML insight report", kind: "insert", payload: "/artifact build an HTML report that " },
   { cmd: "/clear", desc: "Clear the conversation", kind: "clear" },
