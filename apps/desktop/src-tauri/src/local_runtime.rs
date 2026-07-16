@@ -623,6 +623,34 @@ pub fn start_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> 
     ensure_runtime(app, id)
 }
 
+pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
+    if std::env::consts::OS != "macos" {
+        return Err(AppError::Storage(
+            "Native Exasol Personal recovery is only available on macOS.".into(),
+        ));
+    }
+    let cli = exasol_cli(app)?.to_string_lossy().to_string();
+    let deployment = personal_deployment_dir()?.to_string_lossy().to_string();
+    emit_log(
+        app,
+        id,
+        "The Personal endpoint is not query-ready; restarting the managed deployment once…",
+        "info",
+    );
+    if run_streamed(app, id, &cli, &["stop", "--deployment-dir", &deployment])? != 0 {
+        return Err(AppError::Storage(
+            "Could not stop Exasol Personal during query-readiness recovery.".into(),
+        ));
+    }
+    if run_streamed(app, id, &cli, &["start", "--deployment-dir", &deployment])? != 0 {
+        return Err(AppError::Storage(
+            "Could not restart Exasol Personal during query-readiness recovery.".into(),
+        ));
+    }
+    wait_for_port(app, id, Duration::from_secs(150))?;
+    read_personal_connection()
+}
+
 pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32> {
     if std::env::consts::OS == "macos" {
         let cli = exasol_cli(app)?.to_string_lossy().to_string();

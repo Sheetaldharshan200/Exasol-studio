@@ -1028,9 +1028,25 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
         return Err(e);
     }
 
+    if let Err(error) = crate::local_database::ensure_lifecycle_idle(&app, &action) {
+        emit_log(&app, ID, format!("✗ {error}"), "err");
+        let _ = app.emit(
+            "market:done",
+            json!({ "id": ID, "ok": false, "error": error.to_string() }),
+        );
+        return Err(error);
+    }
+
     let code = crate::local_runtime::control_runtime(&app, ID, &action)?;
     let ok = code == 0;
-    crate::local_database::record_lifecycle(&app, &action, ok);
+    if let Err(error) = crate::local_database::record_lifecycle(&app, &action, ok) {
+        emit_log(&app, ID, format!("✗ {error}"), "err");
+        let _ = app.emit(
+            "market:done",
+            json!({ "id": ID, "ok": false, "error": error.to_string() }),
+        );
+        return Err(error);
+    }
     if ok {
         emit_log(
             &app,

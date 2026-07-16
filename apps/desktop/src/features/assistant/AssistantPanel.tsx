@@ -618,7 +618,7 @@ export function AssistantPanel({
           )}
           <span className="truncate">
             {localStatus.state === "ready"
-              ? "Local Exasol + AI/data stack ready"
+              ? "Local Exasol + Semantic Views + AI tools ready"
               : localStatus.state === "failed"
                 ? `Local setup failed: ${localStatus.message}`
                 : localStatus.message}

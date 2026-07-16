@@ -189,17 +189,32 @@ fn validate_pyexasol_connection(
     python: &Path,
     runtime: &RuntimeConnection,
 ) -> AppResult<()> {
-    const SCRIPT: &str = r#"import os, ssl, pyexasol
-connection = pyexasol.connect(
-    dsn=os.environ["EXA_DSN"],
-    user=os.environ["EXA_USER"],
-    password=os.environ["EXA_PASSWORD"],
-    encryption=True,
-    websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
-)
-connection.execute("SELECT 1")
-connection.close()
-print("Authenticated PyExasol connection verified")
+    const SCRIPT: &str = r#"import os, ssl, time, pyexasol
+deadline = time.monotonic() + 60
+last_error = None
+while time.monotonic() < deadline:
+    connection = None
+    try:
+        connection = pyexasol.connect(
+            dsn=os.environ["EXA_DSN"],
+            user=os.environ["EXA_USER"],
+            password=os.environ["EXA_PASSWORD"],
+            encryption=True,
+            websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+        )
+        connection.execute("SELECT 1")
+        print("Authenticated PyExasol connection verified")
+        raise SystemExit(0)
+    except Exception as error:
+        last_error = error
+        time.sleep(5)
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+raise RuntimeError(f"Exasol did not accept an authenticated query before the readiness deadline: {last_error}")
 "#;
     let owned = runtime_env(runtime);
     let envs: Vec<(&str, &str)> = owned
@@ -209,11 +224,33 @@ print("Authenticated PyExasol connection verified")
     let python_s = python.to_string_lossy().to_string();
     if run_streamed_env(app, JOB_ID, &python_s, &["-c", SCRIPT], &envs)? != 0 {
         return Err(AppError::Storage(
-            "The managed runtime opened its port but rejected the generated database credential."
+            "The managed runtime opened its port but did not become query-ready with its generated database credential."
                 .into(),
         ));
     }
     Ok(())
+}
+
+fn query_ready_runtime(
+    app: &AppHandle,
+    python: &Path,
+    runtime: &RuntimeConnection,
+) -> AppResult<RuntimeConnection> {
+    match validate_pyexasol_connection(app, python, runtime) {
+        Ok(()) => Ok(runtime.clone()),
+        Err(first_error) if runtime.kind == "personal" => {
+            emit_log(
+                app,
+                JOB_ID,
+                format!("Initial authenticated readiness probe failed: {first_error}"),
+                "info",
+            );
+            let recovered = crate::local_runtime::restart_personal_runtime(app, JOB_ID)?;
+            validate_pyexasol_connection(app, python, &recovered)?;
+            Ok(recovered)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -457,7 +494,7 @@ fn validate_and_configure_mcp(
     runtime: &RuntimeConnection,
     credential_profile_id: &str,
 ) -> AppResult<()> {
-    const SCRIPT: &str = r#"import json, os, queue, subprocess, threading
+    const SCRIPT: &str = r#"import json, os, queue, subprocess, sys, threading, time
 process = subprocess.Popen(
     [os.environ["STUDIO_MCP_COMMAND"]],
     stdin=subprocess.PIPE,
@@ -468,6 +505,7 @@ process = subprocess.Popen(
 )
 lines = queue.Queue()
 threading.Thread(target=lambda: [lines.put(line) for line in process.stdout], daemon=True).start()
+threading.Thread(target=lambda: [sys.stderr.write(line) for line in process.stderr], daemon=True).start()
 request = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -475,20 +513,52 @@ request = {
     "params": {
         "protocolVersion": "2024-11-05",
         "capabilities": {},
-        "clientInfo": {"name": "exasol-studio", "version": env!("CARGO_PKG_VERSION")},
+        "clientInfo": {"name": "exasol-studio", "version": os.environ["STUDIO_APP_VERSION"]},
     },
 }
 process.stdin.write(json.dumps(request) + "\n")
 process.stdin.flush()
+initialize_received = False
 try:
-    for _ in range(20):
-        message = json.loads(lines.get(timeout=1))
-        if message.get("id") == 1 and "result" in message:
-            print("MCP initialize handshake verified")
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"MCP server exited before initialize (code {process.returncode})")
+        try:
+            line = lines.get(timeout=max(0, min(1, deadline - time.monotonic())))
+        except queue.Empty:
+            continue
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            print(f"Ignoring non-protocol MCP stdout: {line.rstrip()}", file=sys.stderr)
+            continue
+        if message.get("id") == 1 and "result" in message and not initialize_received:
+            initialize_received = True
+            process.stdin.write(json.dumps({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }) + "\n")
+            process.stdin.write(json.dumps({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            }) + "\n")
+            process.stdin.flush()
+            continue
+        if message.get("id") == 2 and isinstance(message.get("result", {}).get("tools"), list):
+            print("MCP initialize and tools/list handshake verified")
             raise SystemExit(0)
-    raise RuntimeError("initialize response not received")
+    raise RuntimeError("complete initialize and tools/list response not received")
 finally:
     process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 "#;
     let command = venv_mcp_server(data_dir);
     if !command.is_file() {
@@ -501,6 +571,10 @@ finally:
     owned.push((
         "STUDIO_MCP_COMMAND".into(),
         command.to_string_lossy().to_string(),
+    ));
+    owned.push((
+        "STUDIO_APP_VERSION".into(),
+        env!("CARGO_PKG_VERSION").into(),
     ));
     let envs: Vec<(&str, &str)> = owned
         .iter()
@@ -807,7 +881,7 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     );
     write_status(&app, &data_dir, status.clone())?;
     let python = ensure_python_stack(&app, &data_dir)?;
-    validate_pyexasol_connection(&app, &python, &runtime)?;
+    let runtime = query_ready_runtime(&app, &python, &runtime)?;
     status.local_ready = true;
     set_component(
         &mut status,
@@ -981,53 +1055,51 @@ pub fn personal_local_status(state: State<'_, AppState>) -> BootstrapStatus {
     read_status(&state.data_dir)
 }
 
-pub fn auto_start_if_installed(app: &AppHandle) {
-    let data_dir = app.state::<AppState>().data_dir.clone();
-    let mut status = read_status(&data_dir);
-    if !fully_ready(&status) || !crate::local_runtime::runtime_installed(app) {
-        return;
+pub fn ensure_lifecycle_idle(app: &AppHandle, action: &str) -> AppResult<()> {
+    if matches!(action, "start" | "stop" | "destroy")
+        && app
+            .state::<LocalBootstrap>()
+            .running
+            .load(Ordering::SeqCst)
+    {
+        return Err(AppError::Storage(
+            "Local runtime readiness verification is still in progress; wait for it to finish before starting, stopping, or destroying the deployment."
+                .into(),
+        ));
     }
+    Ok(())
+}
+
+fn verify_started_runtime(app: &AppHandle) -> AppResult<()> {
+    let runtime = crate::local_runtime::start_runtime(app, JOB_ID)?;
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let python = venv_python(&data_dir);
+    let runtime = query_ready_runtime(app, &python, &runtime)?;
+    let mut checking = read_status(&data_dir);
+    checking.step = "semantic-views".into();
+    checking.message = "Verifying Semantic Views after local runtime start…".into();
+    checking.semantic_views.state = "installing".into();
+    write_status(app, &data_dir, checking)?;
+    install_semantic_views(app, &data_dir, &runtime, &python)?;
+    let mut status = read_status(&data_dir);
+    status.state = "ready".into();
+    status.step = "complete".into();
+    status.message = "Local Exasol and the complete AI/data stack are ready.".into();
+    status.local_ready = true;
+    status.semantic_views.state = "ready".into();
+    status.semantic_views.error = None;
+    write_status(app, &data_dir, status)
+}
+
+fn spawn_runtime_verification(app: &AppHandle) {
     let bootstrap = app.state::<LocalBootstrap>();
     if bootstrap.running.swap(true, Ordering::SeqCst) {
         return;
     }
-    status.state = "installing".into();
-    status.step = "local-runtime".into();
-    status.message = "Starting the managed local Exasol runtime…".into();
-    status.local_ready = false;
-    let _ = write_status(app, &data_dir, status);
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        match crate::local_runtime::start_runtime(&app, JOB_ID) {
-            Ok(runtime) => {
-                let data_dir = app.state::<AppState>().data_dir.clone();
-                let mut checking = read_status(&data_dir);
-                checking.step = "semantic-views".into();
-                checking.message = "Verifying Semantic Views after local runtime start…".into();
-                checking.semantic_views.state = "installing".into();
-                let _ = write_status(&app, &data_dir, checking);
-                if let Err(error) =
-                    install_semantic_views(&app, &data_dir, &runtime, &venv_python(&data_dir))
-                {
-                    record_failure(
-                        &app,
-                        &format!("Semantic Views readiness check failed after start: {error}"),
-                    );
-                    app.state::<LocalBootstrap>()
-                        .running
-                        .store(false, Ordering::SeqCst);
-                    return;
-                }
-                let mut status = read_status(&data_dir);
-                status.state = "ready".into();
-                status.step = "complete".into();
-                status.message = "Local Exasol and the complete AI/data stack are ready.".into();
-                status.local_ready = true;
-                status.semantic_views.state = "ready".into();
-                status.semantic_views.error = None;
-                let _ = write_status(&app, &data_dir, status);
-            }
-            Err(error) => record_failure(&app, &format!("Automatic start failed: {error}")),
+        if let Err(error) = verify_started_runtime(&app) {
+            record_failure(&app, &format!("Runtime start readiness check failed: {error}"));
         }
         app.state::<LocalBootstrap>()
             .running
@@ -1035,18 +1107,32 @@ pub fn auto_start_if_installed(app: &AppHandle) {
     });
 }
 
-pub fn record_lifecycle(app: &AppHandle, action: &str, ok: bool) {
-    if !ok || !matches!(action, "start" | "stop" | "destroy") {
+pub fn auto_start_if_installed(app: &AppHandle) {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let mut status = read_status(&data_dir);
+    if !fully_ready(&status) || !crate::local_runtime::runtime_installed(app) {
         return;
+    }
+    status.state = "installing".into();
+    status.step = "local-runtime".into();
+    status.message = "Starting the managed local Exasol runtime…".into();
+    status.local_ready = false;
+    let _ = write_status(app, &data_dir, status);
+    spawn_runtime_verification(app);
+}
+
+pub fn record_lifecycle(app: &AppHandle, action: &str, ok: bool) -> AppResult<()> {
+    if !ok || !matches!(action, "start" | "stop" | "destroy") {
+        return Ok(());
     }
     let data_dir = app.state::<AppState>().data_dir.clone();
     let mut status = read_status(&data_dir);
     match action {
         "start" => {
-            status.state = "ready".into();
-            status.step = "complete".into();
-            status.message = "Local Exasol is running.".into();
-            status.local_ready = true;
+            status.state = "installing".into();
+            status.step = "local-runtime".into();
+            status.message = "Verifying the local database and Semantic Views…".into();
+            status.local_ready = false;
         }
         "stop" => {
             status.state = "stopped".into();
@@ -1059,9 +1145,27 @@ pub fn record_lifecycle(app: &AppHandle, action: &str, ok: bool) {
             status.message =
                 "The managed local Exasol runtime and its database data were removed.".into();
         }
-        _ => return,
+        _ => return Ok(()),
     }
-    let _ = write_status(app, &data_dir, status);
+    write_status(app, &data_dir, status)?;
+    if action == "start" {
+        let bootstrap = app.state::<LocalBootstrap>();
+        if bootstrap.running.swap(true, Ordering::SeqCst) {
+            return Err(AppError::Storage(
+                "Local runtime verification is already in progress.".into(),
+            ));
+        }
+        let result = verify_started_runtime(app);
+        bootstrap.running.store(false, Ordering::SeqCst);
+        if let Err(error) = &result {
+            record_failure(
+                app,
+                &format!("Runtime start readiness check failed: {error}"),
+            );
+        }
+        result?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
