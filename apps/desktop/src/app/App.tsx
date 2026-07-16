@@ -13,6 +13,7 @@ import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
+import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
 import { isAiProvidersWindow } from "@/lib/ai-window";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
@@ -188,6 +189,7 @@ function MainApp() {
       />
       {showTour ? <Tour steps={STUDIO_TOUR} onClose={endTour} /> : null}
       <UpdateBanner />
+      <LocalSetupFloating />
     </>
   );
 }

@@ -139,7 +139,6 @@ export function AssistantPanel({
   const [title, setTitle] = useState("New chat");
   const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [showSessions, setShowSessions] = useState(false);
-  const [localStatus, setLocalStatus] = useState<PersonalLocalStatus | null>(null);
   const sessionsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -182,16 +181,6 @@ export function AssistantPanel({
       void un.then((f) => f());
     };
   }, [refreshProviders]);
-
-  useEffect(() => {
-    void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void listen<PersonalLocalStatus>("personal-local:status", (event) => setLocalStatus(event.payload)).then(
-      (un) => (unlisten = un),
-    );
-    return () => unlisten?.();
-  }, []);
 
   // Follow sessions created elsewhere (the pet): switch this panel to them.
   useEffect(
@@ -623,31 +612,6 @@ export function AssistantPanel({
           ) : null}
         </div>
       </div>
-      {localStatus && localStatus.state !== "idle" ? (
-        <div
-          className={cn(
-            "flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-1 text-[10.5px]",
-            localStatus.state === "failed" ? "text-destructive" : "text-muted-foreground",
-          )}
-          title={localStatus.message}
-        >
-          {localStatus.state === "installing" ? (
-            <Loader2 className="h-3 w-3 animate-spin text-primary" />
-          ) : localStatus.state === "ready" ? (
-            <Check className="h-3 w-3 text-primary" />
-          ) : (
-            <ShieldAlert className="h-3 w-3" />
-          )}
-          <span className="truncate">
-            {localStatus.state === "ready"
-              ? "Local Exasol + Semantic Views + AI tools ready"
-              : localStatus.state === "failed"
-                ? `Local setup failed: ${localStatus.message}`
-                : localStatus.message}
-          </span>
-        </div>
-      ) : null}
-
       {/* ── Conversation ── */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {agentError ? (
