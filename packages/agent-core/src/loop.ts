@@ -8,7 +8,6 @@ import type { DbRegistry } from "./db.ts";
 import type { MemoryStore } from "./memory.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import type { DocumentStore } from "./documents.ts";
-import type { CompassBridge } from "./compass.ts";
 import { buildTools } from "./tools.ts";
 
 /** A file or image attached to a user message. */
@@ -87,7 +86,6 @@ export async function runTurn(opts: {
   artifacts: ArtifactStore;
   skills: SkillStore;
   documents: DocumentStore;
-  compass: CompassBridge;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
@@ -95,7 +93,7 @@ export async function runTurn(opts: {
   /** Files/images the user attached to this message. */
   attachments?: Attachment[];
 }): Promise<void> {
-  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, compass, modelRef, userText, context, attachments } = opts;
+  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, modelRef, userText, context, attachments } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -213,27 +211,15 @@ export async function runTurn(opts: {
   // Progressive tool disclosure: small local models get confused when handed
   // ~26 tools at once (wrong picks, hallucinated names, calls-as-text). Expose
   // only a relevant subset for this message — a huge reliability win.
+  // ONE graph for every model: the native KB is the single schema source of
+  // truth (per-turn RAG injection + kb_* tools), identical on local and cloud.
+  // exasol-compass is positioned as the external-CLI-agent tool and a future
+  // optional KB *backend* (compass extracts → KB stores), not a parallel path.
   const relevantTools = selectTools(tools, {
     text: userText,
     connected: Boolean(session.connectionId),
     hasDocuments: documents.list(session.id).length > 0,
   });
-
-  // Schema-graph source policy: LOCAL models keep the native KB (token-tight,
-  // injected per turn). CLOUD models use exasol-compass when it's installed —
-  // the org's shared graph. Best-effort: if compass isn't there, keep the KB.
-  const provider = modelRef.slice(0, modelRef.indexOf("/"));
-  const isLocalModel = ["builtin", "ollama", "lmstudio", "llamacpp"].includes(provider);
-  if (!isLocalModel && session.connectionId && settings.useCompassForCloud !== false) {
-    const conn = db.get(session.connectionId);
-    const compassTools = conn ? await compass.tools(conn) : null;
-    if (compassTools) {
-      for (const k of ["kb_search", "kb_join_path", "kb_subsystem", "kb_refresh"]) delete relevantTools[k];
-      Object.assign(relevantTools, compassTools);
-      system += `\n\nSchema graph: use the exasol-compass tools (query_graph, shortest_path, god_nodes, graph_stats, get_neighbors, get_columns) to explore the schema and find join paths — they return exactly the tables you need with minimal tokens.`;
-    }
-  }
-
   log.info("tools selected", { of: Object.keys(tools).length, using: Object.keys(relevantTools).length });
   // Force forward progress: if the model repeats an identical tool call,
   // hand back a firm nudge instead of re-running (the first result is already

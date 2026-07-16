@@ -92,7 +92,20 @@ persistent schema knowledge graph and serves it over MCP with tools
 | get_neighbors / get_columns | table cards / describe_table |
 | system-schema filtering | isInternal() |
 
-**Org decision — they are complementary, not competing:**
+**Final architecture (2026-07-16) — one graph, KB is the single source:**
+Ada uses the native KB for EVERY model (local and cloud) — per-turn RAG
+injection + kb_* tools, identical behavior, no drift, one code path. The
+earlier cloud→compass / local→KB split was retired (it gated on the wrong
+axis and created two schema representations). compass is positioned by its
+real strengths:
+- **External CLI agents** (Claude Code / Codex) — its design and audience; the
+  org standardizes on compass there.
+- **Optional KB backend (planned):** compass extracts → KB stores/injects, via
+  a documented import path (`KnowledgeGraph` load from an external graph). Ada
+  still serves it the same way. To be wired when we can verify against a real
+  compass graph — we don't ship a blind graph.json parser.
+
+**Original notes — complementary, not competing:**
 - **exasol-compass** is aimed at *external* CLI agents (Claude Code, Codex CLI)
   as a standalone MCP server — its real audience. The org standardizes on it
   there.
