@@ -247,6 +247,31 @@ export class KnowledgeGraph {
     return picked.map((h) => this.card(conn, h.schema, h.tbl)).filter((c): c is TableCard => Boolean(c));
   }
 
+  /**
+   * Compact landscape of the database: each schema with its highest-row
+   * tables. Injected every turn so the model always knows what exists
+   * (grounding for generic asks) without a list_schemas round-trip.
+   */
+  overview(conn: string, perSchema = 8): { schema: string; tables: { name: string; rows: number | null; meaning: string | null }[] }[] {
+    let rows: { schema: string; name: string; rows: number | null; semantic: string | null }[] = [];
+    try {
+      rows = this.db
+        .prepare(
+          "SELECT schema, name, rows, semantic FROM kb_tables WHERE conn=? ORDER BY schema, COALESCE(rows,0) DESC",
+        )
+        .all(conn) as { schema: string; name: string; rows: number | null; semantic: string | null }[];
+    } catch {
+      return [];
+    }
+    const bySchema = new Map<string, { name: string; rows: number | null; meaning: string | null }[]>();
+    for (const r of rows) {
+      const list = bySchema.get(r.schema) ?? [];
+      if (list.length < perSchema) list.push({ name: r.name, rows: r.rows, meaning: r.semantic });
+      bySchema.set(r.schema, list);
+    }
+    return [...bySchema.entries()].map(([schema, tables]) => ({ schema, tables }));
+  }
+
   /** Compact single-table card: columns + join edges. */
   card(conn: string, schema: string, table: string): TableCard | null {
     const t = this.db

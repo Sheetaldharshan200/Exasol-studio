@@ -124,6 +124,19 @@ export async function runTurn(opts: {
     system += `\n\nWorkspace instructions from the user (these take precedence over built-in skill defaults when they conflict):\n${settings.customInstructions.trim()}`;
   }
 
+  // RAG grounding: retrieve the relevant slice of the schema knowledge graph
+  // for THIS message and inject it, rather than depending on the model to
+  // call kb_search or on its own memory (which varies model to model). The
+  // model still verifies with tools before acting on anything critical.
+  if (session.connectionId) {
+    try {
+      const grounding = buildRetrievedContext(kb, session.connectionId, userText);
+      if (grounding) system += grounding;
+    } catch (e) {
+      log.warn("rag grounding failed", { error: String(e) });
+    }
+  }
+
   session.running = true;
   session.abort = new AbortController();
   session.emit({ type: "status", state: "thinking" });
@@ -290,6 +303,42 @@ export async function runTurn(opts: {
       void kb.annotateMissing(session.connectionId, model).catch(() => undefined);
     }
   }
+}
+
+/**
+ * Retrieval-augmented grounding for one message: a compact landscape of the
+ * database plus the tables most relevant to the user's text (columns + join
+ * conditions from the knowledge graph). Injected into the system prompt so
+ * the answer is grounded in real schema facts regardless of the model.
+ */
+function buildRetrievedContext(kb: KnowledgeGraph, conn: string, userText: string): string | null {
+  const overview = kb.overview(conn, 8);
+  if (!overview.length) return null; // KB not crawled yet — tools will do the work
+
+  const landscape = overview
+    .map((s) => {
+      const tables = s.tables
+        .map((t) => `${t.name}${t.rows != null ? ` (${t.rows} rows)` : ""}${t.meaning ? ` — ${t.meaning}` : ""}`)
+        .join(", ");
+      return `  ${s.schema}: ${tables}`;
+    })
+    .join("\n");
+
+  const cards = kb.search(conn, userText, 6);
+  const relevant = cards
+    .map((c) => {
+      const cols = c.columns.map((col) => `${col.name} ${col.type}`).join(", ");
+      const joins = c.joins.length ? `\n    joins: ${c.joins.join("; ")}` : "";
+      const meaning = c.meaning ? `\n    meaning: ${c.meaning}` : "";
+      const more = c.columnCount && c.columnCount > c.columns.length ? ` (+${c.columnCount - c.columns.length} more columns)` : "";
+      return `  ${c.schema}.${c.table} [${c.kind}]${meaning}\n    columns: ${cols}${more}${joins}`;
+    })
+    .join("\n");
+
+  let block = `\n\n<retrieved_context>\nRetrieved from the schema knowledge graph for THIS message. Use it to write correct SQL directly; you still verify with tools before acting on anything critical, and you never invent names not shown here.\n\nDatabase landscape:\n${landscape}`;
+  if (relevant) block += `\n\nMost relevant to this request:\n${relevant}`;
+  block += `\n</retrieved_context>`;
+  return block;
 }
 
 /**
