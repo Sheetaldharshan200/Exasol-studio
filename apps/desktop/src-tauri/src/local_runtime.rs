@@ -60,6 +60,11 @@ fn port_ready() -> bool {
     .is_ok()
 }
 
+/// Whether the local database is currently accepting connections.
+pub fn runtime_running() -> bool {
+    port_ready()
+}
+
 fn wait_for_port(app: &AppHandle, id: &str, timeout: Duration) -> AppResult<()> {
     let started = Instant::now();
     let mut last_report = 0;

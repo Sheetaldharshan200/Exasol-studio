@@ -1035,7 +1035,37 @@ pub fn personal_local_bootstrap(
 ) -> AppResult<Value> {
     let existing = read_status(&app.state::<AppState>().data_dir);
     if fully_ready(&existing) && crate::local_runtime::runtime_installed(&app) {
-        return Ok(json!({ "started": false, "reason": "already-ready" }));
+        // Already installed and set up. If the database is actually running,
+        // nothing to do. If it's installed-but-stopped (e.g. after a machine
+        // restart), start it on launch — no reinstall — so it's ready to use.
+        if crate::local_runtime::runtime_running() {
+            return Ok(json!({ "started": false, "reason": "already-running" }));
+        }
+        if bootstrap.running.swap(true, Ordering::SeqCst) {
+            return Ok(json!({ "started": false, "reason": "already-running" }));
+        }
+        let app2 = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let data_dir = app2.state::<AppState>().data_dir.clone();
+            let mut status = read_status(&data_dir);
+            status.state = "installing".into();
+            status.step = "local-runtime".into();
+            status.message = "Starting your local Exasol database…".into();
+            status.local_ready = false;
+            let _ = write_status(&app2, &data_dir, status.clone());
+            match crate::local_runtime::ensure_runtime(&app2, JOB_ID) {
+                Ok(_) => {
+                    status.state = "ready".into();
+                    status.message = "Local Exasol is ready.".into();
+                    status.local_ready = true;
+                    let _ = write_status(&app2, &data_dir, status);
+                    spawn_runtime_verification(&app2);
+                }
+                Err(error) => record_failure(&app2, &error.to_string()),
+            }
+            app2.state::<LocalBootstrap>().running.store(false, Ordering::SeqCst);
+        });
+        return Ok(json!({ "started": true, "reason": "starting" }));
     }
     if bootstrap.running.swap(true, Ordering::SeqCst) {
         return Ok(json!({ "started": false, "reason": "already-running" }));

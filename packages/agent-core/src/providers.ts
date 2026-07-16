@@ -80,11 +80,36 @@ const LOCAL_SERVERS: LocalServer[] = [
 export class ProviderRegistry {
   private catalog: Record<string, ModelInfo[]> = EMBEDDED_CATALOG;
   private readonly catalogFile: string;
+  // Ollama capabilities per model (from /api/show), cached so we probe each
+  // model once. Any model the user pulls is classified accurately on next list.
+  private ollamaCaps = new Map<string, { toolCall: boolean; image: boolean }>();
 
   constructor(private readonly config: ConfigStore) {
     this.catalogFile = join(config.dataDir, "models-catalog.json");
     this.loadCachedCatalog();
     void this.refreshCatalog();
+  }
+
+  /** Ask Ollama what a model can do (tools/vision). Cached per model name. */
+  private async ollamaCapabilities(name: string): Promise<{ toolCall: boolean; image: boolean } | undefined> {
+    const cached = this.ollamaCaps.get(name);
+    if (cached) return cached;
+    try {
+      const res = await fetch("http://127.0.0.1:11434/api/show", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: name }),
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { capabilities?: string[] };
+      const caps = Array.isArray(body.capabilities) ? body.capabilities : [];
+      const result = { toolCall: caps.includes("tools"), image: caps.includes("vision") };
+      this.ollamaCaps.set(name, result);
+      return result;
+    } catch {
+      return undefined;
+    }
   }
 
   // -- catalog ----------------------------------------------------------
@@ -153,7 +178,7 @@ export class ProviderRegistry {
       const res = await fetch(probe, { signal: AbortSignal.timeout(1_200) });
       if (!res.ok) return null;
       const body = (await res.json()) as { models?: { name?: string; model?: string }[]; data?: { id: string }[] };
-      const models: ModelInfo[] = (
+      let models: ModelInfo[] = (
         server.id === "ollama"
           ? (body.models ?? []).map((m) => ({ id: m.model ?? m.name ?? "", name: m.name ?? m.model ?? "" }))
           : (body.data ?? []).map((m) => ({ id: m.id, name: m.id }))
@@ -161,9 +186,18 @@ export class ProviderRegistry {
         .filter((m) => m.id)
         // The built-in engine runs llama-server with --jinja and we only ship
         // tool-capable GGUFs, so its models are known to support tool calling.
-        // External local runtimes (Ollama/LM Studio) vary per model+template,
-        // so we leave the flag unknown and warn in the UI.
         .map((m) => (server.id === "builtin" ? { ...m, toolCall: true } : m));
+
+      // Ollama reports real capabilities per model — use them so tool/vision
+      // support is accurate for whatever the user has pulled.
+      if (server.id === "ollama") {
+        models = await Promise.all(
+          models.map(async (m) => {
+            const caps = await this.ollamaCapabilities(m.id);
+            return caps ? { ...m, toolCall: caps.toolCall, image: caps.image } : m;
+          }),
+        );
+      }
       return {
         id: server.id,
         name: server.name,
