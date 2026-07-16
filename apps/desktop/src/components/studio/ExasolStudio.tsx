@@ -141,6 +141,7 @@ import {
   ipc,
   isTauri,
   type ConnectionProfile,
+  type PersonalLocalStatus,
   type DriverInfo,
   type ExecuteResponse,
   type HistoryEntry,
@@ -732,11 +733,13 @@ function Sidebar({
   activity,
   connections,
   profiles,
+  local,
   activeProfileId,
   treeKeys,
   onOpenObject,
   onConnect,
   onConnectProfile,
+  onInstallLocal,
   onFocusConnection,
   onDisconnect,
   onRefreshConnection,
@@ -761,11 +764,13 @@ function Sidebar({
   activity: ActivityId;
   connections: ActiveConnection[];
   profiles: ConnectionProfile[];
+  local: PersonalLocalStatus | null;
   activeProfileId: string | null;
   treeKeys: Record<string, number>;
   onOpenObject: (profileId: string, schema: string, name: string) => void;
   onConnect: () => void;
   onConnectProfile: (profileId: string) => void;
+  onInstallLocal: () => void;
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
@@ -803,11 +808,51 @@ function Sidebar({
   const seenEndpoints = new Set<string>();
   const disconnected = profiles.filter((p) => {
     if (connectedIds.has(p.id) || p.username.startsWith("STUDIO_MCP_")) return false;
+    // The managed local database has its own permanent card below.
+    if (local?.profileId && p.id === local.profileId) return false;
     const key = `${normHost(p.host)}:${p.port}:${p.username.toUpperCase()}`;
     if (activeEndpoints.has(key) || seenEndpoints.has(key)) return false;
     seenEndpoints.add(key);
     return true;
   });
+
+  // Permanent "Exasol Personal (local)" entry: connect when ready, set up/
+  // retry when not. Always present so clearing saved connections never hides
+  // it. Hidden only while the local DB is the active connection (it's in the
+  // tree then).
+  const localReady = local?.state === "ready" || local?.localReady;
+  const localConnected = Boolean(local?.profileId && connectedIds.has(local.profileId));
+  const localCard =
+    activity === "databases" && !localConnected ? (
+      <div className="border-b border-border/60 px-2 py-2">
+        <button
+          onClick={() => {
+            if (localReady && local?.profileId) onConnectProfile(local.profileId);
+            else onInstallLocal();
+          }}
+          disabled={local?.state === "installing"}
+          className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60 disabled:opacity-70"
+          title="Exasol Personal — local database"
+        >
+          <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12.5px] font-medium text-foreground">Exasol Personal (local)</div>
+            <div className="truncate text-[10.5px] text-muted-foreground">
+              {local?.state === "installing"
+                ? local.message || "Setting up…"
+                : local?.state === "failed"
+                  ? "Setup failed — tap to retry"
+                  : localReady
+                    ? "127.0.0.1:8563 · ready"
+                    : "Not installed — tap to set up"}
+            </div>
+          </div>
+          <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground">
+            {local?.state === "installing" ? "…" : local?.state === "failed" ? "retry" : localReady ? "connect" : "install"}
+          </span>
+        </button>
+      </div>
+    ) : null;
   const savedRows = disconnected.length ? (
     <div className="border-t border-border/60 px-2 py-2">
       {hasConnections ? <div className="px-1 pb-1 eyebrow-muted">Saved connections</div> : null}
@@ -914,12 +959,15 @@ function Sidebar({
       </div>
 
       {!hasConnections ? (
-        disconnected.length ? (
+        localCard || disconnected.length ? (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="px-3 pt-3 pb-1 text-xs leading-relaxed text-muted-foreground">
-              Tap a connection to open it{disconnected.some((p) => p.host === "127.0.0.1" || p.host === "localhost") ? " — your local Exasol is ready" : ""}.
-            </div>
+            {localCard}
             {savedRows}
+            {!disconnected.length ? (
+              <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+                Use the <span className="font-semibold text-primary">+</span> button above to add another connection.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
@@ -944,6 +992,7 @@ function Sidebar({
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto py-0.5">
+          {localCard}
           {connections.map((conn) => (
             <ConnectionSection
               key={conn.profile.id}
@@ -1282,6 +1331,18 @@ export function ExasolStudio({
   const [aiOpen, setAiOpen] = useState(true);
   const [treeKeys, setTreeKeys] = useState<Record<string, number>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Local Exasol status drives the permanent "Exasol Personal (local)" entry
+  // in the Databases panel (connect when ready, install when not).
+  const [localStatus, setLocalStatus] = useState<PersonalLocalStatus | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
+    let un: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      un = await listen<PersonalLocalStatus>("personal-local:status", (e) => setLocalStatus(e.payload));
+    });
+    return () => un?.();
+  }, []);
 
   // Query state — tabs and the active tab are kept per connection, so each
   // database keeps its own workspace. A "__none__" bucket covers the
@@ -2574,11 +2635,13 @@ export function ExasolStudio({
               activity={activity}
               connections={connections}
               profiles={profiles}
+              local={localStatus}
               activeProfileId={connection?.profile.id ?? null}
               treeKeys={treeKeys}
               onOpenObject={openObject}
               onConnect={openConnect}
               onConnectProfile={(id) => void connectSaved(id)}
+              onInstallLocal={() => void ipc.personalLocalBootstrap().catch(() => undefined)}
               onFocusConnection={onFocusConnection}
               onDisconnect={onDisconnect}
               onRefreshConnection={refreshConnection}
