@@ -178,7 +178,6 @@ export function AssistantPanel({
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [attachHint, setAttachHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sessionsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -261,12 +260,12 @@ export function AssistantPanel({
     if (overlayRef.current && inputRef.current) overlayRef.current.scrollTop = inputRef.current.scrollTop;
   };
 
-  // Dismiss popovers on outside click or Escape.
+  // Dismiss the model picker on outside click or Escape; Escape also closes
+  // the history view.
   useEffect(() => {
     if (!showPicker && !showSessions) return;
     const onDown = (e: MouseEvent) => {
       if (showPicker && pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
-      if (showSessions && sessionsRef.current && !sessionsRef.current.contains(e.target as Node)) setShowSessions(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -632,67 +631,33 @@ export function AssistantPanel({
   const thinking = sending && !items.some((it) => it.kind === "msg" && it.streaming && it.content);
 
   return (
-    <aside className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border bg-panel">
+    <aside className="relative flex h-full min-w-0 flex-col overflow-hidden border-l border-border bg-panel">
       {/* ── Header ── */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2" ref={sessionsRef}>
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary/12">
             <AgentMark className="h-4 w-4" active={sending} />
           </span>
-          <div className="relative min-w-0">
-            <button
-              onClick={() => void openSessionsMenu()}
-              className="flex max-w-[180px] items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-semibold text-foreground hover:bg-secondary"
-              title="Chats"
-            >
-              <span className="truncate">{title}</span>
-              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-            </button>
-            {showSessions ? (
-              <div className="absolute left-0 top-full z-30 mt-1 flex max-h-80 w-72 flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-                <button
-                  onClick={newChat}
-                  className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-[12px] font-medium text-foreground hover:bg-secondary/60"
-                >
-                  <Plus className="h-3.5 w-3.5 text-primary" /> New chat
-                </button>
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {sessionList.length === 0 ? (
-                    <p className="px-3 py-3 text-[11.5px] text-muted-foreground">No previous chats yet.</p>
-                  ) : (
-                    sessionList.map((sess) => (
-                      <div
-                        key={sess.id}
-                        className={cn(
-                          "group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left",
-                          sess.id === sessionRef.current ? "bg-secondary" : "hover:bg-secondary/60",
-                        )}
-                        onClick={() => void switchSession(sess.id)}
-                      >
-                        <History className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[12px] text-foreground">{sess.title}</div>
-                          <div className="text-[10px] text-muted-foreground">{relTime(sess.updatedAt)}</div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void removeSession(sess.id);
-                          }}
-                          className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground group-hover:flex hover:text-destructive"
-                          aria-label="Delete chat"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <span className="truncate text-[13px] font-semibold text-foreground" title={title}>
+            {showSessions ? "Chat history" : title}
+          </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md hover:text-foreground",
+              showSessions ? "text-primary" : "text-muted-foreground",
+            )}
+            onClick={() => {
+              const next = !showSessions;
+              setShowSessions(next);
+              if (next) void openSessionsMenu();
+            }}
+            aria-label="Chat history"
+            title="Chat history"
+          >
+            <History className="h-3.5 w-3.5" />
+          </button>
           <button
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
             onClick={newChat}
@@ -728,6 +693,56 @@ export function AssistantPanel({
             This model may not reliably use tools, so database actions (connect, query, dashboards) can fail. For the
             agent, use a <span className="font-medium">Built-in AI</span> model or a cloud model.
           </span>
+        </div>
+      ) : null}
+
+      {/* ── History (full-panel overlay below the header; never clipped) ── */}
+      {showSessions ? (
+        <div className="absolute inset-x-0 bottom-0 top-10 z-20 flex flex-col overflow-hidden bg-panel">
+          <button
+            onClick={() => {
+              newChat();
+              setShowSessions(false);
+            }}
+            className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 text-left text-[12.5px] font-medium text-foreground hover:bg-secondary/60"
+          >
+            <Plus className="h-4 w-4 text-primary" /> New chat
+          </button>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {sessionList.length === 0 ? (
+              <p className="px-3 py-4 text-[12px] text-muted-foreground">No previous chats yet.</p>
+            ) : (
+              sessionList.map((sess) => (
+                <div
+                  key={sess.id}
+                  className={cn(
+                    "group flex w-full cursor-pointer items-center gap-2.5 border-b border-border/50 px-3 py-2.5 text-left",
+                    sess.id === sessionRef.current ? "bg-secondary" : "hover:bg-secondary/60",
+                  )}
+                  onClick={() => {
+                    void switchSession(sess.id);
+                    setShowSessions(false);
+                  }}
+                >
+                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12.5px] text-foreground">{sess.title}</div>
+                    <div className="text-[10.5px] text-muted-foreground">{relTime(sess.updatedAt)}</div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void removeSession(sess.id);
+                    }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                    aria-label="Delete chat"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
 

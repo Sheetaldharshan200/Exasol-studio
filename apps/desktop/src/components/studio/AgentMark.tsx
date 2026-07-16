@@ -1,24 +1,28 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The Exasol AI mark: a tri-node graph converging into a core — a nod to the
- * knowledge graph that grounds the assistant. Uses currentColor throughout so
- * it inherits any text color; pass `active` for a gentle thinking pulse.
+ * The Exasol AI mark — "Spark Human": a head dot, the Exasol X as the body, and
+ * an AI spark. The brand green is fixed (reads on both themes); the darker
+ * structural half uses currentColor so it adapts to light/dark. Pass `active`
+ * for a gentle thinking pulse on the head + spark.
  */
 export function AgentMark({ className, active = false }: { className?: string; active?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={cn(className, active && "agent-mark-active")} aria-hidden>
+    <svg viewBox="0 0 250 250" fill="none" className={cn(className, active && "agent-mark-active")} aria-hidden>
+      {/* head */}
+      <circle className="agent-mark-core" cx="125" cy="42" r="19" fill="#5FC33B" />
+      {/* AI spark */}
       <path
-        d="M12 7.2v2.9M17.2 15.5l-2.8-1.6M6.8 15.5l2.8-1.6"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        opacity="0.55"
+        className="agent-mark-node"
+        d="M191 33L194.8 42.2L204 46L194.8 49.8L191 59L187.2 49.8L178 46L187.2 42.2L191 33Z"
+        fill="var(--foreground)"
       />
-      <circle className="agent-mark-core" cx="12" cy="12.4" r="2.7" fill="currentColor" />
-      <circle className="agent-mark-node" cx="12" cy="5.1" r="1.75" fill="currentColor" opacity="0.85" />
-      <circle className="agent-mark-node" cx="18.6" cy="16.6" r="1.75" fill="currentColor" opacity="0.85" />
-      <circle className="agent-mark-node" cx="5.4" cy="16.6" r="1.75" fill="currentColor" opacity="0.85" />
+      {/* body — Exasol X (green half) */}
+      <path d="M35 213H82.5L126.4 155.5L102.6 124.5L35 213Z" fill="#5FC33B" />
+      <path d="M35.5 69H83L215 213H167.6L35.5 69Z" fill="#5FC33B" />
+      {/* body — Exasol X (structural half, theme-aware) */}
+      <path d="M167 69H215L147.3 157.5L123.5 126.5L167 69Z" fill="var(--foreground)" />
+      <path d="M123.6 155.6L147.4 124.6L215 213H167.5L123.6 155.6Z" fill="var(--foreground)" />
     </svg>
   );
 }
