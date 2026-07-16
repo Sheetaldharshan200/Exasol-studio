@@ -793,12 +793,21 @@ function Sidebar({
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
   const connectedIds = new Set(connections.map((c) => c.profile.id));
   // Saved profiles not currently connected — shown as one-tap connect rows
-  // (the managed local database lands here, so it's always reachable). The
-  // Studio-managed AI read-only identity is internal (the agent uses it
-  // server-side) so it's hidden from the user's connection list.
-  const disconnected = profiles.filter(
-    (p) => !connectedIds.has(p.id) && !p.username.startsWith("STUDIO_MCP_"),
+  // (the managed local database lands here, so it's always reachable). Hide:
+  // the internal AI read-only identity, any profile whose database is already
+  // connected (under any profile), and duplicate profiles for the same DB.
+  const normHost = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+  const activeEndpoints = new Set(
+    connections.map((c) => `${normHost(c.profile.host)}:${c.profile.port}:${c.profile.username.toUpperCase()}`),
   );
+  const seenEndpoints = new Set<string>();
+  const disconnected = profiles.filter((p) => {
+    if (connectedIds.has(p.id) || p.username.startsWith("STUDIO_MCP_")) return false;
+    const key = `${normHost(p.host)}:${p.port}:${p.username.toUpperCase()}`;
+    if (activeEndpoints.has(key) || seenEndpoints.has(key)) return false;
+    seenEndpoints.add(key);
+    return true;
+  });
   const savedRows = disconnected.length ? (
     <div className="border-t border-border/60 px-2 py-2">
       {hasConnections ? <div className="px-1 pb-1 eyebrow-muted">Saved connections</div> : null}
@@ -1552,6 +1561,24 @@ export function ExasolStudio({
   async function connectSaved(profileId: string) {
     const p = profiles.find((x) => x.id === profileId);
     if (!p) return openConnect();
+    // Already open under this profile → just focus it, never reconnect (a
+    // second pool to the same DB is what caused the "opened new then went
+    // down" behavior).
+    if (connections.some((c) => c.profile.id === profileId)) {
+      onFocusConnection(profileId);
+      return;
+    }
+    // Already connected to the SAME endpoint under a different profile (e.g.
+    // the managed "Local Exasol" vs a hand-made "sys@localhost") → focus that
+    // one. One database = one live connection.
+    const norm = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+    const same = connections.find(
+      (c) => norm(c.profile.host) === norm(p.host) && c.profile.port === p.port && c.profile.username === p.username,
+    );
+    if (same) {
+      onFocusConnection(same.profile.id);
+      return;
+    }
     try {
       const server = await ipc.connect(p.id);
       await onConnected(p, server);
@@ -2916,7 +2943,22 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <WelcomeScreen
                 connected={!!connection}
-                recents={profiles.map((p) => ({ id: p.id, label: p.name, sub: `${p.host}:${p.port}` }))}
+                recents={(() => {
+                  // Hide the internal AI read-only identity, and collapse
+                  // profiles that point at the same database (host/port/user)
+                  // to a single entry so one DB shows once.
+                  const norm = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+                  const seen = new Set<string>();
+                  return profiles
+                    .filter((p) => !p.username.startsWith("STUDIO_MCP_"))
+                    .filter((p) => {
+                      const key = `${norm(p.host)}:${p.port}:${p.username.toUpperCase()}`;
+                      if (seen.has(key)) return false;
+                      seen.add(key);
+                      return true;
+                    })
+                    .map((p) => ({ id: p.id, label: p.name, sub: `${p.host}:${p.port}` }));
+                })()}
                 onNewQuery={addTab}
                 onOpenFile={() => void openSqlFile()}
                 onConnect={openConnect}
