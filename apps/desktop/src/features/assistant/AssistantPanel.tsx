@@ -579,7 +579,7 @@ export function AssistantPanel({
   const thinking = sending && !items.some((it) => it.kind === "msg" && it.streaming && it.content);
 
   return (
-    <aside className="flex h-full min-w-0 flex-col border-l border-border bg-panel">
+    <aside className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border bg-panel">
       {/* ── Header ── */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2" ref={sessionsRef}>
@@ -669,7 +669,7 @@ export function AssistantPanel({
         </div>
       </div>
       {/* ── Conversation ── */}
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3">
         {agentError ? (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-foreground">
             {agentError}
