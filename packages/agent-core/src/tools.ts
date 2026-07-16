@@ -252,7 +252,13 @@ export function buildTools(ctx: {
         const started = Date.now();
         const affected = await db.execute(id, sql);
         session.record({ kind: "tool.run_sql", mode: "write-done", sql, affected, ms: Date.now() - started });
-        return { ok: true, affectedRows: affected };
+        // DDL (CREATE/DROP/ALTER) reports 0 rows — say so explicitly so the
+        // model doesn't mistake success for a no-op and re-verify in a loop.
+        return {
+          ok: true,
+          affectedRows: affected,
+          message: `Statement executed successfully${affected > 0 ? ` (${affected} row(s) affected)` : " (DDL — no rows affected, this is normal)"}. The change is applied; do not re-verify by listing everything.`,
+        };
       },
     }),
 

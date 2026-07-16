@@ -533,6 +533,8 @@ try:
         except json.JSONDecodeError:
             print(f"Ignoring non-protocol MCP stdout: {line.rstrip()}", file=sys.stderr)
             continue
+        if message.get("id") == 1 and "error" in message:
+            raise RuntimeError(f"MCP initialize was rejected by the server: {message['error']}")
         if message.get("id") == 1 and "result" in message and not initialize_received:
             initialize_received = True
             process.stdin.write(json.dumps({

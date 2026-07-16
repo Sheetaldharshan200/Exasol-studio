@@ -143,6 +143,7 @@ export function AssistantPanel({
   const sessionsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<string | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -210,6 +211,27 @@ export function AssistantPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [items, sending]);
+
+  // Auto-grow the composer up to a max height, then scroll internally. The
+  // highlight overlay is kept in sync so mentions/commands stay aligned, and
+  // the caret line is kept visible as the box grows.
+  const MAX_COMPOSER = 200;
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const next = Math.min(ta.scrollHeight, MAX_COMPOSER);
+    ta.style.height = `${next}px`;
+    ta.style.overflowY = ta.scrollHeight > MAX_COMPOSER ? "auto" : "hidden";
+    if (overlayRef.current) overlayRef.current.style.height = `${next}px`;
+    // Keep the caret visible while typing at the bottom of a tall box.
+    ta.scrollTop = ta.scrollHeight;
+    if (overlayRef.current) overlayRef.current.scrollTop = ta.scrollTop;
+  }, [input]);
+
+  const syncOverlayScroll = () => {
+    if (overlayRef.current && inputRef.current) overlayRef.current.scrollTop = inputRef.current.scrollTop;
+  };
 
   // Dismiss popovers on outside click or Escape.
   useEffect(() => {
@@ -727,19 +749,21 @@ export function AssistantPanel({
                 Mirrors the textarea's box exactly; textarea text is transparent
                 so only its caret/selection show over this. */}
             <div
+              ref={overlayRef}
               aria-hidden
-              className="pointer-events-none absolute inset-0 max-h-32 overflow-hidden whitespace-pre-wrap break-words px-3 pt-2.5 pb-1 text-[13px] leading-[inherit]"
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-3 pt-2.5 pb-1 text-[13px] leading-[inherit]"
             >
               {highlightInput(input)}
             </div>
             <textarea
               ref={inputRef}
-              className="relative max-h-32 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
+              className="relative min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}
               rows={1}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+              onScroll={syncOverlayScroll}
             />
           </div>
           <div className="flex items-center justify-between px-1.5 pb-1.5">

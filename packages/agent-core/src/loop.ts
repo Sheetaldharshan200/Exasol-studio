@@ -1,4 +1,4 @@
-import { stepCountIs, streamText, type ModelMessage } from "ai";
+import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
 import type { DashboardStore } from "./dashboards.ts";
@@ -152,9 +152,14 @@ export async function runTurn(opts: {
     semanticViewsReady,
     semanticViewsConnectionId,
   });
+  // Force forward progress: if the model repeats an identical tool call,
+  // hand back a firm nudge instead of re-running (the first result is already
+  // in the conversation). This resolves loops the model would otherwise get
+  // stuck in far more gracefully than a hard abort.
+  const guardedTools = wrapForProgress(tools);
   const started = Date.now();
   const callCounts = new Map<string, number>();
-  const DOOM_LIMIT = 3;
+  const DOOM_LIMIT = 5;
   // Providers reuse stream part ids across turns (llama.cpp emits "0" every
   // time) — scope every id to this turn so the UI never merges answers.
   const turnId = crypto.randomUUID().slice(0, 8);
@@ -168,7 +173,7 @@ export async function runTurn(opts: {
       model,
       system,
       messages: session.messages as ModelMessage[],
-      tools,
+      tools: guardedTools,
       stopWhen: stepCountIs(Math.min(Math.max(settings.maxSteps, 2), 24)),
       temperature: Math.min(Math.max(settings.temperature, 0), 1),
       abortSignal: session.abort.signal,
@@ -285,6 +290,46 @@ export async function runTurn(opts: {
       void kb.annotateMissing(session.connectionId, model).catch(() => undefined);
     }
   }
+}
+
+/**
+ * Wrap tools so an identical (name + args) call doesn't silently re-run and
+ * loop. The first result is already in the conversation, so on repeat we
+ * return a firm, escalating instruction to move on. This keeps weaker local
+ * models from spinning on the same call (e.g. re-listing schemas after a
+ * successful CREATE) while never fabricating a different answer.
+ */
+function wrapForProgress(tools: ToolSet): ToolSet {
+  const counts = new Map<string, number>();
+  const out: ToolSet = {};
+  for (const [name, def] of Object.entries(tools)) {
+    const original = (def as { execute?: (a: unknown, o: unknown) => Promise<unknown> }).execute;
+    if (typeof original !== "function") {
+      out[name] = def;
+      continue;
+    }
+    out[name] = {
+      ...def,
+      execute: async (args: unknown, opts: unknown) => {
+        const sig = `${name}:${JSON.stringify(args ?? {})}`;
+        const n = (counts.get(sig) ?? 0) + 1;
+        counts.set(sig, n);
+        if (n >= 2) {
+          return {
+            repeated: true,
+            note:
+              `You have already called \`${name}\` with these exact arguments ${n} time(s) this turn; ` +
+              `its result is already above in the conversation and has not changed. ` +
+              `Do NOT call it again. Use that result to answer now, or take a DIFFERENT action ` +
+              `(a different tool or different arguments). If the information you need is genuinely ` +
+              `not available, say so plainly instead of retrying.`,
+          };
+        }
+        return original(args, opts);
+      },
+    } as ToolSet[string];
+  }
+  return out;
 }
 
 /** Tiny, model-free summary of a tool result for the UI chip. */
