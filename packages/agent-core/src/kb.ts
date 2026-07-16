@@ -25,6 +25,15 @@ export type TableCard = {
 
 const JOIN_HINT_RE = /(ID|KEY|CODE|NR|NUM)$/i;
 
+// Internal/system schemas: Exasol's own catalog plus the Semantic Views
+// machinery. These are reached through dedicated tools (semantic_*), never by
+// browsing their physical tables, so they must not pollute the agent's
+// "what is what" view of the user's actual data.
+const INTERNAL_SCHEMA = /^(SYS|EXA_STATISTICS|SYS_SEMANTIC|SEMANTIC_CATALOG|SEMANTIC_AGENT)$/i;
+function isInternal(schema: string): boolean {
+  return INTERNAL_SCHEMA.test(schema);
+}
+
 export class KnowledgeGraph {
   private db: DatabaseSync;
 
@@ -237,6 +246,7 @@ export class KnowledgeGraph {
     const seen = new Set<string>();
     const picked: { schema: string; tbl: string }[] = [];
     for (const h of hits) {
+      if (isInternal(h.schema)) continue;
       const key = `${h.schema}.${h.tbl}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -265,6 +275,7 @@ export class KnowledgeGraph {
     }
     const bySchema = new Map<string, { name: string; rows: number | null; meaning: string | null }[]>();
     for (const r of rows) {
+      if (isInternal(r.schema)) continue;
       const list = bySchema.get(r.schema) ?? [];
       if (list.length < perSchema) list.push({ name: r.name, rows: r.rows, meaning: r.semantic });
       bySchema.set(r.schema, list);
@@ -359,5 +370,73 @@ export class KnowledgeGraph {
       }
     }
     return null;
+  }
+
+  /** Undirected join adjacency (schema.table → neighbors) over fk + hint edges. */
+  private adjacency(conn: string): Map<string, Set<string>> {
+    const edges = this.db
+      .prepare("SELECT src_schema, src_table, dst_schema, dst_table FROM kb_edges WHERE conn=?")
+      .all(conn) as { src_schema: string; src_table: string; dst_schema: string; dst_table: string }[];
+    const adj = new Map<string, Set<string>>();
+    for (const e of edges) {
+      if (isInternal(e.src_schema) || isInternal(e.dst_schema)) continue;
+      const a = `${e.src_schema}.${e.src_table}`;
+      const b = `${e.dst_schema}.${e.dst_table}`;
+      if (a === b) continue;
+      if (!adj.has(a)) adj.set(a, new Set());
+      if (!adj.has(b)) adj.set(b, new Set());
+      adj.get(a)!.add(b);
+      adj.get(b)!.add(a);
+    }
+    return adj;
+  }
+
+  /**
+   * Hub ("god node") tables — the most join-connected tables, which are the
+   * natural anchors of the schema. Cheap degree ranking, no embeddings.
+   */
+  hubs(conn: string, limit = 6): { table: string; degree: number }[] {
+    const adj = this.adjacency(conn);
+    return [...adj.entries()]
+      .map(([table, nbrs]) => ({ table, degree: nbrs.size }))
+      .filter((h) => h.degree > 0)
+      .sort((a, b) => b.degree - a.degree)
+      .slice(0, limit);
+  }
+
+  /**
+   * Subsystems — connected components over the join graph, each named after
+   * its most-connected (hub) table. Gives the agent the schema's macro-
+   * structure so it can reason about, and pull, a whole area at once. This is
+   * the deterministic, dependency-free stand-in for community detection.
+   */
+  subsystems(conn: string, minSize = 2): { name: string; tables: string[] }[] {
+    const adj = this.adjacency(conn);
+    const seen = new Set<string>();
+    const groups: string[][] = [];
+    for (const start of adj.keys()) {
+      if (seen.has(start)) continue;
+      const comp: string[] = [];
+      const stack = [start];
+      seen.add(start);
+      while (stack.length) {
+        const at = stack.pop()!;
+        comp.push(at);
+        for (const nb of adj.get(at) ?? []) {
+          if (!seen.has(nb)) {
+            seen.add(nb);
+            stack.push(nb);
+          }
+        }
+      }
+      if (comp.length >= minSize) groups.push(comp);
+    }
+    return groups
+      .map((tables) => {
+        // Name the subsystem after its highest-degree member.
+        const name = [...tables].sort((a, b) => (adj.get(b)?.size ?? 0) - (adj.get(a)?.size ?? 0))[0];
+        return { name, tables: tables.sort() };
+      })
+      .sort((a, b) => b.tables.length - a.tables.length);
   }
 }

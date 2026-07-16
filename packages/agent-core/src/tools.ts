@@ -131,6 +131,28 @@ export function buildTools(ctx: {
             },
           }),
 
+          kb_subsystem: tool({
+            description:
+              "Pull a whole join-connected area of the schema at once (e.g. the 'orders' subsystem). Give a table name or subsystem keyword; " +
+              "returns every table in that connected area with its join edges — the efficient way to understand a domain without many describe_table calls.",
+            inputSchema: z.object({
+              near: z.string().describe("A table name or keyword in the area of interest"),
+            }),
+            execute: async ({ near }) => {
+              const id = requireConn();
+              const key = near.toUpperCase();
+              const subs = ctx.kb!.subsystems(id);
+              const match =
+                subs.find((s) => s.tables.some((t) => t.toUpperCase().includes(key))) ??
+                subs.find((s) => s.name.toUpperCase().includes(key));
+              if (!match) return { note: `No connected subsystem found near "${near}". Try kb_search.` };
+              const cards = match.tables
+                .map((t) => ctx.kb!.card(id, t.split(".")[0], t.split(".")[1]))
+                .filter(Boolean);
+              return { subsystem: match.name, tableCount: match.tables.length, tables: cards };
+            },
+          }),
+
           kb_refresh: tool({
             description: "Re-crawl the database schema into the knowledge graph (after DDL changes).",
             inputSchema: z.object({}),

@@ -378,7 +378,22 @@ function buildRetrievedContext(kb: KnowledgeGraph, conn: string, userText: strin
     })
     .join("\n");
 
-  let block = `\n\n<retrieved_context>\nRetrieved from the schema knowledge graph for THIS message. Use it to write correct SQL directly; you still verify with tools before acting on anything critical, and you never invent names not shown here.\n\nDatabase landscape:\n${landscape}`;
+  // Macro-structure: hub tables (schema anchors) and subsystems (join-connected
+  // areas) — gives the model the shape of the schema and cuts tokens by letting
+  // it reason about whole areas instead of re-discovering them.
+  const hubs = kb.hubs(conn, 6);
+  const hubLine = hubs.length ? `\n\nCentral tables (most connected — schema anchors): ${hubs.map((h) => `${h.table} (${h.degree})`).join(", ")}` : "";
+  const subs = kb.subsystems(conn).slice(0, 6);
+  const subLine = subs.length
+    ? `\n\nSubsystems (join-connected areas — kb_subsystem pulls one whole):\n${subs
+        .map((s) => {
+          const names = [...new Set(s.tables.map((t) => t.split(".").pop()))];
+          return `  ${s.name.split(".").pop()}: ${names.slice(0, 10).join(", ")}${names.length > 10 ? ", …" : ""}`;
+        })
+        .join("\n")}`
+    : "";
+
+  let block = `\n\n<retrieved_context>\nRetrieved from the schema knowledge graph for THIS message. Use it to write correct SQL directly; you still verify with tools before acting on anything critical, and you never invent names not shown here.\n\nDatabase landscape:\n${landscape}${hubLine}${subLine}`;
   if (relevant) block += `\n\nMost relevant to this request:\n${relevant}`;
   block += `\n</retrieved_context>`;
   return block;
