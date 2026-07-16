@@ -101,7 +101,7 @@ export function ActivityRail({
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              aria-label="Ada"
+              aria-label="Exa"
               onClick={onToggleAi}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
@@ -111,7 +111,7 @@ export function ActivityRail({
               <AgentMark className="h-[19px] w-[19px]" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">Ada</TooltipContent>
+          <TooltipContent side="right">Exa</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>

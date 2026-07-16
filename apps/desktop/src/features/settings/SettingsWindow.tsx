@@ -19,7 +19,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "ai",
-    label: "AI Assistant (Ada)",
+    label: "AI Assistant (Exa)",
     desc: "Models, providers, memory, and behavior for the built-in assistant.",
     controls: [],
   },

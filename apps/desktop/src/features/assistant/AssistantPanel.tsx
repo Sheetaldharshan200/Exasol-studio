@@ -787,7 +787,7 @@ export function AssistantPanel({
           <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
             <AgentMark className="mb-3 h-12 w-12" />
 
-            <p className="text-[14.5px] font-semibold text-foreground">Ask Ada anything</p>
+            <p className="text-[14.5px] font-semibold text-foreground">Ask Exa anything</p>
             <p className="text-[11.5px] leading-relaxed text-muted-foreground">
               SQL generation, tuning and answers — grounded in Exasol.
               {ollama?.running ? " Running on your local models." : ""}
@@ -923,7 +923,7 @@ export function AssistantPanel({
               onScroll={syncOverlayScroll}
             />
           </div>
-          <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <div className="flex min-w-0 items-center gap-1 px-1.5 pb-1.5">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -934,8 +934,9 @@ export function AssistantPanel({
               <Paperclip className="h-3.5 w-3.5" />
             </button>
 
-            {/* Model + connection pills share the middle and truncate to fit. */}
-            <div className="flex min-w-0 flex-1 items-center gap-0.5">
+            {/* Model + connection pills share the middle and truncate to fit —
+                bounded + clipped so they can never reach the send button. */}
+            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
               <button
                 type="button"
                 onClick={() => {
@@ -943,7 +944,7 @@ export function AssistantPanel({
                   setShowSessions(false);
                   setShowPicker((s) => !s);
                 }}
-                className="flex min-w-0 max-w-[60%] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                className="flex min-w-0 max-w-[55%] shrink items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 title={modelLabel}
               >
                 {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
@@ -952,7 +953,7 @@ export function AssistantPanel({
               </button>
 
               {targetConn ? (
-                <div className="relative min-w-0">
+                <div className="relative min-w-0 max-w-[45%] shrink">
                   <button
                     type="button"
                     onClick={() => {
@@ -961,7 +962,7 @@ export function AssistantPanel({
                       setShowSessions(false);
                       setShowConnPicker((s) => !s);
                     }}
-                    className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    className="flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                     title={connections.length > 1 ? "Choose which database the agent works on" : `Agent works on ${targetConnName}`}
                   >
                     <Database className="h-3 w-3 shrink-0 text-primary" />
