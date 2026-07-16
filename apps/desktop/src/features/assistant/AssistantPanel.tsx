@@ -10,10 +10,10 @@ import {
   History,
   Image as ImageIcon,
   Loader2,
+  ArrowRight,
   PanelRightClose,
   Paperclip,
   Plus,
-  Send,
   ShieldAlert,
   SlidersHorizontal,
   Square,
@@ -666,9 +666,7 @@ export function AssistantPanel({
       {/* ── Header ── */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary/12">
-            <AgentMark className="h-4 w-4" active={sending} />
-          </span>
+          <AgentMark className="h-4.5 w-4.5 shrink-0" active={sending} />
           <span className="truncate text-[13px] font-semibold text-foreground" title={title}>
             {showSessions ? "Chat history" : title}
           </span>
@@ -681,6 +679,8 @@ export function AssistantPanel({
             )}
             onClick={() => {
               const next = !showSessions;
+              setShowPicker(false);
+              setShowConnPicker(false);
               setShowSessions(next);
               if (next) void openSessionsMenu();
             }}
@@ -786,9 +786,8 @@ export function AssistantPanel({
         ) : null}
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
-            <div className="agent-hero-glow mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <AgentMark className="h-7 w-7" />
-            </div>
+            <AgentMark className="mb-3 h-12 w-12" />
+
             <p className="text-[14.5px] font-semibold text-foreground">Ask your data anything</p>
             <p className="text-[11.5px] leading-relaxed text-muted-foreground">
               SQL generation, tuning and answers — grounded in Exasol.
@@ -925,72 +924,83 @@ export function AssistantPanel({
               onScroll={syncOverlayScroll}
             />
           </div>
-          <div className="flex items-center justify-between px-1.5 pb-1.5">
+          <div className="flex items-center gap-1 px-1.5 pb-1.5">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="mr-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               aria-label="Attach files"
               title={modelSupportsImages ? "Attach files or images" : "Attach files (this model can't read images)"}
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
-            {/* Model pill (picker opens upward, spanning the composer) */}
-            <button
-              type="button"
-              onClick={() => setShowPicker((s) => !s)}
-              className="flex min-w-0 max-w-[190px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
-              <span className="truncate font-mono">{modelLabel}</span>
-              <ChevronDown className="h-2.5 w-2.5 shrink-0" />
-            </button>
 
-            {/* Target-connection pill: shows which DB the agent works on; a
-                picker when more than one connection is open. */}
-            {targetConn ? (
-              <div className="relative min-w-0">
-                <button
-                  type="button"
-                  onClick={() => connections.length > 1 && setShowConnPicker((s) => !s)}
-                  className="flex min-w-0 max-w-[150px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                  title={connections.length > 1 ? "Choose which database the agent works on" : `Agent works on ${targetConnName}`}
-                >
-                  <Database className="h-3 w-3 shrink-0 text-primary" />
-                  <span className="truncate">{targetConnName}</span>
-                  {connections.length > 1 ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : null}
-                </button>
-                {showConnPicker && connections.length > 1 ? (
-                  <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
-                    <div className="border-b border-border px-2.5 py-1.5 eyebrow-muted">Agent works on</div>
-                    {connections.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setPickedConn(c.id);
-                          setShowConnPicker(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
-                          c.id === targetConn && "bg-secondary",
-                        )}
-                      >
-                        <Database className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-[12px] text-foreground">{c.name}</span>
-                        {c.id === targetConn ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            {/* Model + connection pills share the middle and truncate to fit. */}
+            <div className="flex min-w-0 flex-1 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConnPicker(false);
+                  setShowSessions(false);
+                  setShowPicker((s) => !s);
+                }}
+                className="flex min-w-0 max-w-[60%] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                title={modelLabel}
+              >
+                {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
+                <span className="truncate font-mono">{modelLabel}</span>
+                <ChevronDown className="h-2.5 w-2.5 shrink-0" />
+              </button>
+
+              {targetConn ? (
+                <div className="relative min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (connections.length <= 1) return;
+                      setShowPicker(false);
+                      setShowSessions(false);
+                      setShowConnPicker((s) => !s);
+                    }}
+                    className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    title={connections.length > 1 ? "Choose which database the agent works on" : `Agent works on ${targetConnName}`}
+                  >
+                    <Database className="h-3 w-3 shrink-0 text-primary" />
+                    <span className="truncate">{targetConnName}</span>
+                    {connections.length > 1 ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : null}
+                  </button>
+                  {showConnPicker && connections.length > 1 ? (
+                    <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+                      <div className="border-b border-border px-2.5 py-1.5 eyebrow-muted">Agent works on</div>
+                      {connections.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            setPickedConn(c.id);
+                            setShowConnPicker(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-secondary/60",
+                            c.id === targetConn && "bg-secondary",
+                          )}
+                        >
+                          <Database className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate text-[12px] text-foreground">{c.name}</span>
+                          {c.id === targetConn ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
 
             {sending ? (
               <button
                 type="button"
                 onClick={() => void stop()}
                 aria-label="Stop generating"
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
               >
                 <Square className="h-3 w-3" />
               </button>
@@ -1000,9 +1010,9 @@ export function AssistantPanel({
                 onClick={() => void send(input)}
                 disabled={!input.trim()}
                 aria-label="Send"
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-all hover:bg-primary/85 disabled:opacity-35"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-30"
               >
-                <Send className="h-3.5 w-3.5" />
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

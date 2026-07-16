@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Cloud,
   Cpu,
+  Database,
   Download,
   Loader2,
   MoreHorizontal,
@@ -86,7 +87,8 @@ export function ModelPicker({
 
   const builtinProvider = providers.find((p) => p.id === "builtin");
   const locals = providers.filter((p) => p.kind === "local" && p.id !== "builtin" && (p.running || p.installedOnly));
-  const clouds = providers.filter((p) => p.kind === "cloud");
+  const clouds = providers.filter((p) => p.kind === "cloud" && p.id !== "in-database");
+  const inDb = providers.find((p) => p.id === "in-database");
 
   const builtinModels = useMemo(
     () => (llmState?.models ?? []).filter((m) => !q || m.name.toLowerCase().includes(q)),
@@ -349,6 +351,45 @@ export function ModelPicker({
             </Group>
           );
         })()}
+
+        {/* ── In-Database / Enterprise AI (always shown so it's discoverable) ── */}
+        {!searching || inDb?.configured ? (
+          <Group
+            label="In-Database AI"
+            icon={Database}
+            count={inDb?.configured ? inDb.models.length : undefined}
+            open={isOpen("in-database")}
+            onToggle={() => toggle("in-database")}
+          >
+            {inDb?.configured && inDb.models.length ? (
+              inDb.models
+                .filter((m) => !q || m.name.toLowerCase().includes(q))
+                .map((m) => {
+                  const ref = `in-database/${m.id}`;
+                  return (
+                    <button
+                      key={ref}
+                      onClick={() => onPick(ref)}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-left",
+                        model === ref ? "bg-secondary" : "hover:bg-secondary/60",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{m.name}</span>
+                      {model === ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
+                    </button>
+                  );
+                })
+            ) : (
+              <button
+                onClick={onManage}
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11.5px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+              >
+                <SlidersHorizontal className="h-3 w-3" /> Set up your own / cluster LLM endpoint…
+              </button>
+            )}
+          </Group>
+        ) : null}
       </div>
 
       <button
