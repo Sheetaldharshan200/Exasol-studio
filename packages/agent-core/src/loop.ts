@@ -5,7 +5,7 @@ import type { DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
 import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
-import type { InsightStore } from "./insights.ts";
+import type { MemoryStore } from "./memory.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { buildTools } from "./tools.ts";
 import uiMap from "../data/ui-map.json" with { type: "json" };
@@ -68,7 +68,7 @@ export async function runTurn(opts: {
   session: Session;
   registry: ProviderRegistry;
   db: DbRegistry;
-  insights: InsightStore;
+  memory: MemoryStore;
   kb: KnowledgeGraph;
   store: SessionStore;
   config: ConfigStore;
@@ -80,7 +80,7 @@ export async function runTurn(opts: {
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
 }): Promise<void> {
-  const { session, registry, db, insights, kb, store, config, dashboards, artifacts, skills: skillStore, modelRef, userText, context } = opts;
+  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, modelRef, userText, context } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -92,9 +92,9 @@ export async function runTurn(opts: {
   session.emit({ type: "user-message", text: userText });
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
-  const known = settings.enableInsights ? insights.recent(session.connectionId) : [];
-  let system = known.length
-    ? `${SYSTEM_PROMPT}\n\nVerified workspace knowledge from earlier sessions (still confirm anything critical):\n${known.map((k) => `- ${k}`).join("\n")}`
+  const remembered = settings.enableInsights ? memory.context(session.connectionId) : "";
+  let system = remembered
+    ? `${SYSTEM_PROMPT}\n\nMemory — durable facts about the user and this database (still confirm anything critical before acting):\n${remembered}`
     : SYSTEM_PROMPT;
   const skillList = skillStore.list();
   const defaultSkills = [...new Set(settings.defaultSkills)]
@@ -155,7 +155,7 @@ export async function runTurn(opts: {
     db,
     session,
     connectionId: session.connectionId,
-    insights,
+    memory,
     kb,
     model,
     settings,

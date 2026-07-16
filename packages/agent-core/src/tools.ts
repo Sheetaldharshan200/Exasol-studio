@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
-import type { InsightStore } from "./insights.ts";
+import type { MemoryStore } from "./memory.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
@@ -49,7 +49,7 @@ export function buildTools(ctx: {
   db: DbRegistry;
   session: Session;
   connectionId: string | null;
-  insights?: InsightStore;
+  memory?: MemoryStore;
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
   dashboards?: DashboardStore;
@@ -524,19 +524,22 @@ export function buildTools(ctx: {
       },
     }),
 
-    remember_insight: tool({
+    remember: tool({
       description:
-        "Save a short, verified fact about this database for future sessions (join keys, table meanings, business definitions). " +
-        "Only save facts confirmed by tool results — never assumptions.",
+        "Save a short, durable fact to memory so it carries across sessions. " +
+        "scope 'project' = a verified fact about this database (join keys, table meanings, business definitions — only save what tool results confirmed). " +
+        "scope 'user' = a stable preference or fact about the user (how they like answers, their role, naming conventions they use). " +
+        "Never save assumptions or one-off conversational noise.",
       inputSchema: z.object({
-        fact: z.string().max(300).describe("One concise, verified fact"),
+        scope: z.enum(["project", "user"]).describe("'project' for database facts, 'user' for user preferences"),
+        note: z.string().max(300).describe("One concise fact or preference"),
       }),
-      execute: async ({ fact }) => {
+      execute: async ({ scope, note }) => {
         if (ctx.settings && !ctx.settings.enableInsights) {
-          return { saved: false, note: "Cross-session insights are disabled in settings." };
+          return { saved: false, note: "Memory is disabled in settings." };
         }
-        ctx.insights?.add(ctx.connectionId, fact);
-        session.record({ kind: "insight.saved", fact });
+        ctx.memory?.remember(scope, scope === "user" ? null : ctx.connectionId, note);
+        session.record({ kind: "memory.saved", scope, note });
         return { saved: true };
       },
     }),
@@ -555,7 +558,7 @@ export function buildTools(ctx: {
                 db,
                 session,
                 connectionId: ctx.connectionId,
-                insights: ctx.insights,
+                memory: ctx.memory,
                 kb: ctx.kb,
                 settings: ctx.settings,
                 readOnly: true,

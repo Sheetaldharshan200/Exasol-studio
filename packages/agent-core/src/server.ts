@@ -4,7 +4,7 @@ import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
-import { InsightStore } from "./insights.ts";
+import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
 import { ArtifactStore } from "./artifacts.ts";
@@ -20,7 +20,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const registry = new ProviderRegistry(config);
   const sessions = new SessionStore(config.dataDir);
   const db = new DbRegistry();
-  const insights = new InsightStore(config.dataDir);
+  const memory = new MemoryStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
   const dashboards = new DashboardStore(config.dataDir);
   const artifacts = new ArtifactStore(config.dataDir);
@@ -235,7 +235,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           session,
           registry,
           db,
-          insights,
+          memory,
           kb,
           store: sessions,
           config,
