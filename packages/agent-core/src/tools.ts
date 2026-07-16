@@ -443,7 +443,7 @@ export function buildTools(ctx: {
         }
       : {}),
 
-    ...(!ctx.readOnly
+    ...(!ctx.readOnly && ctx.settings?.enableUiTools
       ? {
           ui_connect: tool({
             description:

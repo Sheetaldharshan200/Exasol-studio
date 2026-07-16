@@ -82,6 +82,7 @@ export type AgentSettings = {
   enableResearcher: boolean;
   enableInsights: boolean;
   enableCompaction: boolean;
+  enableUiTools: boolean;
   petMode: "pet" | "cursor" | "off";
   petAvatar: "exa" | "byte" | "pixel" | "quill" | "dot";
   allowDestructiveUi: boolean;

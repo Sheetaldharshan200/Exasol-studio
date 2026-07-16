@@ -22,6 +22,9 @@ export type AgentSettings = {
   enableInsights: boolean;
   /** Auto-compact near the context window. */
   enableCompaction: boolean;
+  /** Graphical UI actions (agent drives the app: connect/open/insert). Beta,
+   *  off by default — enable in AI Settings. */
+  enableUiTools: boolean;
   /** Pet companion mode for UI actions: pet, cursor-only, or background. */
   petMode: "pet" | "cursor" | "off";
   /** Which companion character to show. */
@@ -42,6 +45,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   enableResearcher: true,
   enableInsights: true,
   enableCompaction: true,
+  enableUiTools: false,
   petMode: "off",
   petAvatar: "exa",
   allowDestructiveUi: false,

@@ -673,11 +673,20 @@ function GuardrailsSection({
       <section>
         <div className="mb-1 flex items-center gap-1.5">
           <h2 className="text-[13px] font-semibold">Pet & app control</h2>
+          <span className="rounded bg-syntax-function/15 px-1.5 py-px text-[9px] font-medium uppercase text-syntax-function">beta</span>
         </div>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
-          The AI can operate the app for you (connect, open views, prepare SQL). Off by default — enable it here if you want the pet or cursor to click around; Off runs everything silently in the background.
+          Let the AI operate the app for you (connect, open views, prepare SQL) by driving the real UI. This is a beta
+          capability and is <span className="font-medium text-foreground">off by default</span> — turn it on to allow it.
         </p>
         <div className="space-y-2">
+          <ToggleRow
+            label="Graphical UI actions (beta)"
+            desc="Master switch: allow the agent to click and drive the app. When off, the AI answers and prepares SQL but never touches the UI."
+            checked={settings.enableUiTools}
+            onChange={(v) => void patch({ enableUiTools: v })}
+          />
+          <div className={cn("space-y-2 transition-opacity", settings.enableUiTools ? "" : "pointer-events-none opacity-50")}>
           <ChoiceRow
             label="When the AI acts in the app"
             desc="Pet: a companion + cursor perform actions visibly. Cursor: just the cursor. Off: actions run silently."
@@ -723,6 +732,7 @@ function GuardrailsSection({
             checked={settings.allowFileAccess}
             onChange={(v) => void patch({ allowFileAccess: v })}
           />
+          </div>
         </div>
       </section>
 
