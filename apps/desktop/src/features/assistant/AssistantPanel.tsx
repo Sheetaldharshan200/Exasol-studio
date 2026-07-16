@@ -41,31 +41,53 @@ type ChatItem =
 type SlashCommand = {
   cmd: string;
   desc: string;
-  kind: "run" | "insert" | "clear";
-  payload?: string;
+  /** Placeholder hint shown after the command, e.g. "the orders query". */
+  hint?: string;
+  /** Clears the conversation instead of sending. */
+  clears?: boolean;
+  /** Turn the command + the user's argument into the prompt sent to the agent.
+   *  Not needed for `clears`. */
+  expand?: (arg: string) => string;
 };
 
+const LEARN_DB_PROMPT =
+  "Learn my database end to end. Steps: (1) call kb_refresh to re-crawl the live schema. " +
+  "(2) For every user schema, list its tables and describe the important ones — capture each table's purpose, row count, primary keys, and foreign/inferred join keys (use kb_search, kb_subsystem, and spawn_researcher to fan out efficiently). " +
+  "(3) Save the durable facts you verify — table meanings, join keys, and candidate business metrics — with the remember tool (scope: project) so they persist across sessions. " +
+  "(4) If the Semantic Views layer is ready, propose a starter semantic model grounded ONLY in the real tables you found: the entities, how they join, and the business metrics you'd define (with exact formulas), then ask me to confirm before creating anything. " +
+  "Finally, give me a concise map of my data: schemas, key entities and relationships, and the metrics you recommend. If there are no user data tables yet, tell me plainly and suggest loading data first — do not invent tables.";
+
+// Every command carries an argument. Selecting one inserts "/cmd " so you can
+// type your text; on send, expand() builds the real prompt (falling back to a
+// sensible default when you give no argument). The raw "/cmd …" is what shows
+// in the conversation, with the command highlighted.
 const SLASH_COMMANDS: SlashCommand[] = [
-  { cmd: "/explain", desc: "Explain the SQL in my editor", kind: "run", payload: "Explain the SQL in my editor, step by step." },
-  { cmd: "/optimize", desc: "Suggest optimizations for Exasol", kind: "run", payload: "Suggest ways to optimize the SQL in my editor for Exasol." },
-  { cmd: "/fix", desc: "Find and fix errors", kind: "run", payload: "Find and fix any errors in the SQL in my editor." },
-  { cmd: "/generate", desc: "Generate SQL from a description", kind: "insert", payload: "Generate an Exasol SQL query that " },
-  { cmd: "/tables", desc: "List tables in the current schema", kind: "run", payload: "List the tables in the current schema, one line each." },
-  {
-    cmd: "/learn-my-db",
-    desc: "Learn my database & set up the semantic model",
-    kind: "run",
-    payload:
-      "Learn my database end to end. Steps: (1) call kb_refresh to re-crawl the live schema. " +
-      "(2) For every user schema, list its tables and describe the important ones — capture each table's purpose, row count, primary keys, and foreign/inferred join keys (use kb_search, kb_subsystem, and spawn_researcher to fan out efficiently). " +
-      "(3) Save the durable facts you verify — table meanings, join keys, and candidate business metrics — with the remember tool (scope: project) so they persist across sessions. " +
-      "(4) If the Semantic Views layer is ready, propose a starter semantic model grounded ONLY in the real tables you found: the entities, how they join, and the business metrics you'd define (with exact formulas), then ask me to confirm before creating anything. " +
-      "Finally, give me a concise map of my data: schemas, key entities and relationships, and the metrics you recommend. If there are no user data tables yet, tell me plainly and suggest loading data first — do not invent tables.",
-  },
-  { cmd: "/dashboard", desc: "Build a live SQL dashboard", kind: "insert", payload: "/dashboard build a dashboard that " },
-  { cmd: "/artifact", desc: "Build an HTML insight report", kind: "insert", payload: "/artifact build an HTML report that " },
-  { cmd: "/clear", desc: "Clear the conversation", kind: "clear" },
+  { cmd: "/explain", desc: "Explain SQL — yours, or the editor's", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Explain this Exasol SQL, step by step:\n\n${a}` : "Explain the SQL in my editor, step by step.") },
+  { cmd: "/optimize", desc: "Optimize a query for Exasol", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Suggest ways to optimize this Exasol SQL:\n\n${a}` : "Suggest ways to optimize the SQL in my editor for Exasol.") },
+  { cmd: "/fix", desc: "Find and fix SQL errors", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Find and fix any errors in this Exasol SQL:\n\n${a}` : "Find and fix any errors in the SQL in my editor.") },
+  { cmd: "/generate", desc: "Generate SQL from a description", hint: "what the query should do",
+    expand: (a) => `Generate an Exasol SQL query that ${a || "…"}`.trim() },
+  { cmd: "/tables", desc: "List tables in a schema", hint: "schema name (optional)",
+    expand: (a) => (a ? `List the tables and views in the ${a.toUpperCase()} schema, one line each.` : "List the tables in the current schema, one line each.") },
+  { cmd: "/learn-my-db", desc: "Learn my database & set up the semantic model", hint: "just press Enter",
+    expand: () => LEARN_DB_PROMPT },
+  { cmd: "/dashboard", desc: "Build a live SQL dashboard", hint: "what it should show",
+    expand: (a) => `Build a live SQL dashboard that ${a || "…"}`.trim() },
+  { cmd: "/artifact", desc: "Build an HTML insight report", hint: "what the report should cover",
+    expand: (a) => `Build a self-contained HTML report that ${a || "…"}`.trim() },
+  { cmd: "/clear", desc: "Clear the conversation", clears: true },
 ];
+
+/** Parse a leading slash command from composer text, if any. */
+function parseSlash(text: string): { cmd: SlashCommand; arg: string } | null {
+  const m = /^(\/[a-z-]+)(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  if (!m) return null;
+  const cmd = SLASH_COMMANDS.find((c) => c.cmd === m[1].toLowerCase());
+  return cmd ? { cmd, arg: (m[2] ?? "").trim() } : null;
+}
 
 const MENTIONS: { at: string; desc: string }[] = [
   { at: "@schema", desc: "Current schema" },
@@ -90,7 +112,7 @@ function highlightInput(text: string): React.ReactNode {
   const nodes: React.ReactNode[] = [];
   let i = 0;
   // Leading /command (only when it's a real command at the very start).
-  const lead = /^\/[a-z]+/i.exec(text);
+  const lead = /^\/[a-z-]+/i.exec(text);
   if (lead && SLASH_NAMES.includes(lead[0].toLowerCase())) {
     nodes.push(
       <span key="cmd" className="rounded bg-primary/15 font-medium text-primary">
@@ -391,7 +413,7 @@ export function AssistantPanel({
 
   // Detect a "/" command at the start or a trailing "@" mention token.
   const trigger = useMemo(() => {
-    if (/^\/[a-z]*$/i.test(input)) {
+    if (/^\/[a-z-]*$/i.test(input)) {
       return { type: "slash" as const, token: input.toLowerCase() };
     }
     const at = input.match(/(^|\s)(@[a-z:_]*)$/i);
@@ -404,7 +426,7 @@ export function AssistantPanel({
     if (trigger.type === "slash") {
       return SLASH_COMMANDS.filter((c) => c.cmd.startsWith(trigger.token)).map((c) => ({
         key: c.cmd,
-        title: c.cmd,
+        title: c.hint && !c.clears ? `${c.cmd} <${c.hint}>` : c.cmd,
         desc: c.desc,
       }));
     }
@@ -428,16 +450,13 @@ export function AssistantPanel({
   }, [pendingPrompt]);
 
   function applySlash(cmd: SlashCommand) {
-    if (cmd.kind === "clear") {
+    if (cmd.clears) {
       newChat();
       return;
     }
-    if (cmd.kind === "run" && cmd.payload) {
-      setInput("");
-      void send(cmd.payload);
-      return;
-    }
-    setInput(cmd.payload ?? "");
+    // Insert "/cmd " so the user can add their argument and press Enter — never
+    // fire a canned prompt on selection.
+    setInput(`${cmd.cmd} `);
     inputRef.current?.focus();
   }
 
@@ -459,10 +478,20 @@ export function AssistantPanel({
   async function send(text: string) {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || sending) return;
+
+    // A slash command: /clear acts immediately; others expand into the real
+    // prompt for the agent while the raw "/cmd …" stays as the shown message.
+    const slash = parseSlash(trimmed);
+    if (slash?.cmd.clears) {
+      newChat();
+      return;
+    }
     if (!model) {
       void openAiProvidersWindow();
       return;
     }
+    const agentText = slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed;
+
     const sentAttachments = attachments;
     const attachLine = sentAttachments.length
       ? `\n\n📎 ${sentAttachments.map((a) => a.name).join(", ")}`
@@ -479,7 +508,7 @@ export function AssistantPanel({
 
     try {
       const sid = await ensureSession();
-      await agent.send(sid, trimmed || "(see attached files)", model, context || undefined, connectionId, sentAttachments);
+      await agent.send(sid, agentText || "(see attached files)", model, context || undefined, connectionId, sentAttachments);
     } catch (err) {
       setItems((m) => [
         ...m,
@@ -1132,7 +1161,7 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
     return (
       <div className="flex justify-end">
         <div className="[overflow-wrap:anywhere] max-w-[85%] min-w-0 whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-[13px] leading-relaxed break-words text-foreground">
-          {message.content}
+          {highlightInput(message.content)}
         </div>
       </div>
     );
