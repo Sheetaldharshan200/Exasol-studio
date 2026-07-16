@@ -20,6 +20,8 @@ export type ModelInfo = {
   context?: number;
   toolCall?: boolean;
   reasoning?: boolean;
+  /** Model accepts image input (from models.dev modalities). */
+  image?: boolean;
 };
 
 export type ProviderInfo = {
@@ -51,17 +53,17 @@ const CLOUD_PROVIDERS: { id: string; name: string; envKey: string }[] = [
 /** Offline fallback so the picker is never empty before the catalog loads. */
 const EMBEDDED_CATALOG: Record<string, ModelInfo[]> = {
   anthropic: [
-    { id: "claude-opus-4-8", name: "Claude Opus 4.8", context: 200_000, toolCall: true, reasoning: true },
-    { id: "claude-sonnet-5", name: "Claude Sonnet 5", context: 200_000, toolCall: true, reasoning: true },
+    { id: "claude-opus-4-8", name: "Claude Opus 4.8", context: 200_000, toolCall: true, reasoning: true, image: true },
+    { id: "claude-sonnet-5", name: "Claude Sonnet 5", context: 200_000, toolCall: true, reasoning: true, image: true },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", context: 200_000, toolCall: true },
   ],
   openai: [
-    { id: "gpt-5", name: "GPT-5", context: 400_000, toolCall: true, reasoning: true },
+    { id: "gpt-5", name: "GPT-5", context: 400_000, toolCall: true, reasoning: true, image: true },
     { id: "gpt-5-mini", name: "GPT-5 mini", context: 400_000, toolCall: true },
   ],
   google: [
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", context: 1_000_000, toolCall: true, reasoning: true },
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", context: 1_000_000, toolCall: true },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", context: 1_000_000, toolCall: true, reasoning: true, image: true },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", context: 1_000_000, toolCall: true, image: true },
   ],
   openrouter: [],
 };
@@ -116,7 +118,7 @@ export class ProviderRegistry {
       if (!res.ok) throw new Error(`models.dev ${res.status}`);
       const api = (await res.json()) as Record<
         string,
-        { models?: Record<string, { name?: string; limit?: { context?: number }; tool_call?: boolean; reasoning?: boolean; status?: string }> }
+        { models?: Record<string, { name?: string; limit?: { context?: number }; tool_call?: boolean; reasoning?: boolean; status?: string; modalities?: { input?: string[] } }> }
       >;
       const next: Record<string, ModelInfo[]> = {};
       for (const p of CLOUD_PROVIDERS) {
@@ -130,6 +132,7 @@ export class ProviderRegistry {
             context: m.limit?.context,
             toolCall: m.tool_call,
             reasoning: m.reasoning,
+            image: Array.isArray(m.modalities?.input) ? m.modalities!.input!.includes("image") : undefined,
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
       }
@@ -246,6 +249,15 @@ export class ProviderRegistry {
     // Local servers: builtin runs llama-server with -c 16384; Ollama defaults
     // vary — 16k is a safe floor that triggers compaction before truncation.
     return 16_000;
+  }
+
+  /** Whether the model accepts image input (unknown local models → false). */
+  supportsImages(modelRef: string): boolean {
+    const slash = modelRef.indexOf("/");
+    if (slash < 0) return false;
+    const providerId = modelRef.slice(0, slash);
+    const modelId = modelRef.slice(slash + 1);
+    return this.catalog[providerId]?.find((m) => m.id === modelId)?.image === true;
   }
 
   /** Resolve "provider/model_id" into an AI SDK LanguageModel. */

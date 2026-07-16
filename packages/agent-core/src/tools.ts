@@ -4,6 +4,7 @@ import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { MemoryStore } from "./memory.ts";
+import type { DocumentStore } from "./documents.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
@@ -50,6 +51,7 @@ export function buildTools(ctx: {
   session: Session;
   connectionId: string | null;
   memory?: MemoryStore;
+  documents?: DocumentStore;
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
   dashboards?: DashboardStore;
@@ -523,6 +525,43 @@ export function buildTools(ctx: {
         return scored.length ? { places: scored } : { places: [], note: "Nothing matched — describe the goal and I can suggest the closest surface." };
       },
     }),
+
+    ...(ctx.documents
+      ? {
+          search_documents: tool({
+            description:
+              "Search the files the user attached to this chat. Returns the most relevant sections (with source + section number). " +
+              "Use this instead of assuming a file's contents — read only what you need.",
+            inputSchema: z.object({
+              query: z.string().describe("What to look for in the attached files"),
+            }),
+            execute: async ({ query }) => {
+              const hits = ctx.documents!.search(session.id, query, 5);
+              if (!hits.length) {
+                const docs = ctx.documents!.list(session.id);
+                return docs.length
+                  ? { hits: [], note: `No matching sections. Attached files: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ")}. Try read_document to browse one.` }
+                  : { hits: [], note: "No files are attached to this chat." };
+              }
+              return {
+                hits: hits.map((h) => ({ docId: h.docId, docName: h.docName, section: h.index, heading: h.heading, text: h.text })),
+              };
+            },
+          }),
+          read_document: tool({
+            description: "Read a specific attached document, or one section of it by number. Use search_documents first to find the right section.",
+            inputSchema: z.object({
+              docId: z.string().describe("The document id from search_documents or the attachment note"),
+              section: z.number().int().optional().describe("A specific section number; omit to read the whole file"),
+            }),
+            execute: async ({ docId, section }) => {
+              const parts = ctx.documents!.read(session.id, docId, section);
+              if (!parts.length) return { error: "No such document or section in this chat." };
+              return { docName: parts[0].docName, sections: parts.map((p) => ({ section: p.index, heading: p.heading, text: p.text })) };
+            },
+          }),
+        }
+      : {}),
 
     remember: tool({
       description:

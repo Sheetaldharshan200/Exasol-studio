@@ -8,6 +8,8 @@ import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
 import { ArtifactStore } from "./artifacts.ts";
+import { DocumentStore } from "./documents.ts";
+import type { Attachment } from "./loop.ts";
 import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
@@ -24,6 +26,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const kb = new KnowledgeGraph(config.dataDir);
   const dashboards = new DashboardStore(config.dataDir);
   const artifacts = new ArtifactStore(config.dataDir);
+  const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
 
   const server = createServer(async (req, res) => {
@@ -226,7 +229,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
 
       // POST /v1/sessions/:id/messages  {text, model, context?, connectionId?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "messages") {
-        const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string }>(req);
+        const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string; attachments?: Attachment[] }>(req);
         if (!body.text || !body.model) return json(res, 400, { error: "text and model are required" });
         if (session.running) return json(res, 409, { error: "already generating" });
         session.connectionId = body.connectionId ?? session.connectionId;
@@ -242,9 +245,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           dashboards,
           artifacts,
           skills,
+          documents,
           modelRef: body.model,
           userText: body.text,
           context: body.context,
+          attachments: body.attachments,
         });
         return json(res, 202, { ok: true });
       }

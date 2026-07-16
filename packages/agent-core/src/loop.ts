@@ -7,7 +7,17 @@ import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
 import type { MemoryStore } from "./memory.ts";
 import type { KnowledgeGraph } from "./kb.ts";
+import type { DocumentStore } from "./documents.ts";
 import { buildTools } from "./tools.ts";
+
+/** A file or image attached to a user message. */
+export type Attachment = {
+  name: string;
+  mime: string;
+  kind: "text" | "image";
+  /** text: the file's text content; image: a data: URL. */
+  data: string;
+};
 import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
@@ -75,20 +85,52 @@ export async function runTurn(opts: {
   dashboards: DashboardStore;
   artifacts: ArtifactStore;
   skills: SkillStore;
+  documents: DocumentStore;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
   context?: string;
+  /** Files/images the user attached to this message. */
+  attachments?: Attachment[];
 }): Promise<void> {
-  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, modelRef, userText, context } = opts;
+  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, modelRef, userText, context, attachments } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
   const model = registry.resolve(modelRef);
-  const content = context ? `<context>\n${context}\n</context>\n\n${userText}` : userText;
+  const modelSupportsImages = registry.supportsImages(modelRef);
+
+  // Handle attachments: text/docs go into the session document store for
+  // just-in-time retrieval (never dumped whole into context); images are
+  // attached inline only when the model accepts image input.
+  const imageParts: { type: "image"; image: string }[] = [];
+  const docNotes: string[] = [];
+  const skippedImages: string[] = [];
+  for (const att of attachments ?? []) {
+    if (att.kind === "image") {
+      if (modelSupportsImages) imageParts.push({ type: "image", image: att.data });
+      else skippedImages.push(att.name);
+    } else {
+      const meta = documents.add(session.id, att.name, att.mime, att.data);
+      docNotes.push(`- ${meta.name} (id: ${meta.id}, ${meta.chunks} section${meta.chunks === 1 ? "" : "s"})`);
+    }
+  }
+
+  let text = userText;
+  if (docNotes.length) {
+    text += `\n\n[Attached documents — do NOT assume their contents; use search_documents / read_document to read the relevant parts:\n${docNotes.join("\n")}]`;
+  }
+  if (skippedImages.length) {
+    text += `\n\n[Note: ${skippedImages.length} image(s) were attached but the current model can't read images, so they were skipped: ${skippedImages.join(", ")}. Ask the user to switch to a vision model if the images matter.]`;
+  }
+  const withContext = context ? `<context>\n${context}\n</context>\n\n${text}` : text;
+  const content = imageParts.length
+    ? [{ type: "text" as const, text: withContext }, ...imageParts]
+    : withContext;
+
   session.autoTitle(userText);
-  session.messages.push({ role: "user", content });
-  session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId });
+  session.messages.push({ role: "user", content } as ModelMessage);
+  session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId, attachments: (attachments ?? []).map((a) => ({ name: a.name, kind: a.kind })) });
   session.emit({ type: "user-message", text: userText });
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
@@ -162,6 +204,7 @@ export async function runTurn(opts: {
     dashboards,
     artifacts,
     skills: skillList,
+    documents,
     semanticViewsReady,
     semanticViewsConnectionId,
   });

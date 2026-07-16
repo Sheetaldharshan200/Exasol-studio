@@ -4,10 +4,13 @@ import {
   ChevronDown,
   Cpu,
   FileSearch,
+  FileText,
   Gauge,
   History,
+  Image as ImageIcon,
   Loader2,
   PanelRightClose,
+  Paperclip,
   Plus,
   Send,
   ShieldAlert,
@@ -23,7 +26,7 @@ import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
-import { agent, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
+import { agent, type AgentAttachment, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { sessionBus } from "@/lib/session-bus";
 import { errorMessage, ipc, isTauri, type PersonalLocalStatus } from "@/lib/ipc";
@@ -139,6 +142,9 @@ export function AssistantPanel({
   const [title, setTitle] = useState("New chat");
   const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [showSessions, setShowSessions] = useState(false);
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [attachHint, setAttachHint] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -441,13 +447,19 @@ export function AssistantPanel({
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if ((!trimmed && attachments.length === 0) || sending) return;
     if (!model) {
       void openAiProvidersWindow();
       return;
     }
-    setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: trimmed }]);
+    const sentAttachments = attachments;
+    const attachLine = sentAttachments.length
+      ? `\n\n📎 ${sentAttachments.map((a) => a.name).join(", ")}`
+      : "";
+    setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: (trimmed || "(attached files)") + attachLine }]);
     setInput("");
+    setAttachments([]);
+    setAttachHint(null);
     setSending(true);
 
     const context = [contextSummary, editorSql ? `Editor SQL:\n${editorSql}` : ""]
@@ -456,7 +468,7 @@ export function AssistantPanel({
 
     try {
       const sid = await ensureSession();
-      await agent.send(sid, trimmed, model, context || undefined, connectionId);
+      await agent.send(sid, trimmed || "(see attached files)", model, context || undefined, connectionId, sentAttachments);
     } catch (err) {
       setItems((m) => [
         ...m,
@@ -468,6 +480,43 @@ export function AssistantPanel({
 
   async function stop() {
     if (sessionRef.current) await agent.abort(sessionRef.current).catch(() => undefined);
+  }
+
+  // Read picked files: text-like → text (for document RAG); images → data URL
+  // (only when the model can read images, else rejected with a hint).
+  async function addFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    const next: AgentAttachment[] = [];
+    let rejected = false;
+    for (const f of list) {
+      const isImage = f.type.startsWith("image/");
+      if (isImage) {
+        if (!modelSupportsImages) {
+          rejected = true;
+          continue;
+        }
+        if (f.size > 6 * 1024 * 1024) {
+          setAttachHint(`${f.name} is too large (max 6 MB).`);
+          continue;
+        }
+        const data = await new Promise<string>((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result));
+          r.readAsDataURL(f);
+        });
+        next.push({ name: f.name, mime: f.type, kind: "image", data });
+      } else {
+        if (f.size > 2 * 1024 * 1024) {
+          setAttachHint(`${f.name} is too large (max 2 MB for text files).`);
+          continue;
+        }
+        const data = await f.text();
+        next.push({ name: f.name, mime: f.type || "text/plain", kind: "text", data });
+      }
+    }
+    if (rejected) setAttachHint("This model can't read images — switch to a vision model to attach images.");
+    else if (next.length) setAttachHint(null);
+    if (next.length) setAttachments((a) => [...a, ...next]);
   }
 
   async function answerPermission(id: string, allow: boolean) {
@@ -515,6 +564,13 @@ export function AssistantPanel({
     const mid = rest.join("/");
     const p = providers.find((x) => x.id === pid);
     return p?.models.find((m) => m.id === mid)?.name ?? mid;
+  }, [model, providers]);
+
+  const modelSupportsImages = useMemo(() => {
+    if (!model) return false;
+    const [pid, ...rest] = model.split("/");
+    const mid = rest.join("/");
+    return providers.find((x) => x.id === pid)?.models.find((m) => m.id === mid)?.image === true;
   }, [model, providers]);
 
   const isLocalModel =
@@ -708,6 +764,35 @@ export function AssistantPanel({
         ) : null}
 
         <div className="rounded-xl border border-border bg-editor transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={modelSupportsImages ? undefined : ".txt,.md,.markdown,.csv,.tsv,.json,.sql,.log,.yaml,.yml,.xml,.html,.js,.ts,.py,.java,text/*"}
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          {attachments.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 px-2 pt-2">
+              {attachments.map((a, i) => (
+                <span key={i} className="flex items-center gap-1 rounded-md border border-border bg-panel/60 py-0.5 pl-1.5 pr-1 text-[10.5px] text-foreground">
+                  {a.kind === "image" ? <ImageIcon className="h-3 w-3 text-primary" /> : <FileText className="h-3 w-3 text-muted-foreground" />}
+                  <span className="max-w-[140px] truncate">{a.name}</span>
+                  <button
+                    onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    aria-label={`Remove ${a.name}`}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {attachHint ? <div className="px-3 pt-1.5 text-[10.5px] text-muted-foreground">{attachHint}</div> : null}
           <div className="relative">
             {/* Highlight overlay: colors the leading /command and @mentions.
                 Mirrors the textarea's box exactly; textarea text is transparent
@@ -731,6 +816,15 @@ export function AssistantPanel({
             />
           </div>
           <div className="flex items-center justify-between px-1.5 pb-1.5">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mr-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              aria-label="Attach files"
+              title={modelSupportsImages ? "Attach files or images" : "Attach files (this model can't read images)"}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </button>
             {/* Model pill (opens upward) */}
             <div className="relative min-w-0" ref={pickerRef}>
               <button

@@ -12,6 +12,17 @@ export type AgentModelInfo = {
   context?: number;
   toolCall?: boolean;
   reasoning?: boolean;
+  /** Model accepts image input. */
+  image?: boolean;
+};
+
+/** A file or image attached to a message. */
+export type AgentAttachment = {
+  name: string;
+  mime: string;
+  kind: "text" | "image";
+  /** text: the file's text; image: a data: URL. */
+  data: string;
 };
 
 export type AgentProviderInfo = {
@@ -123,8 +134,9 @@ export const agent = {
     model: string,
     context?: string,
     connectionId?: string | null,
+    attachments?: AgentAttachment[],
   ): Promise<void> {
-    await api(`/sessions/${sessionId}/messages`, "POST", { text, model, context, connectionId });
+    await api(`/sessions/${sessionId}/messages`, "POST", { text, model, context, connectionId, attachments });
   },
 
   async answerPermission(sessionId: string, id: string, allow: boolean): Promise<void> {
