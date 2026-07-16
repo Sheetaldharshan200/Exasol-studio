@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   Cpu,
+  Database,
   Download,
   ExternalLink,
   Loader2,
@@ -210,6 +213,11 @@ export function AiProvidersWindow() {
                 setDrafts={setDrafts}
                 saving={saving}
                 saveKey={saveKey}
+                inDb={providers.find((p) => p.id === "in-database")}
+                onChanged={async () => {
+                  await refresh();
+                  await emit(EV_AI_PROVIDERS_CHANGED);
+                }}
               />
             ) : section === "guardrails" ? (
               <GuardrailsSection settings={settings} patch={patchSettings} />
@@ -243,8 +251,10 @@ function ProvidersSection(props: {
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   saving: string | null;
   saveKey: (id: string) => Promise<void>;
+  inDb?: AgentProviderInfo;
+  onChanged: () => Promise<void>;
 }) {
-  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey } = props;
+  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey, inDb, onChanged } = props;
   return (
     <>
       {llmState?.supported ? (
@@ -427,7 +437,135 @@ function ProvidersSection(props: {
           })}
         </div>
       </section>
+
+      <InDatabaseSection provider={inDb} onChanged={onChanged} />
     </>
+  );
+}
+
+/* ───────────────────── In-Database / Enterprise AI ───────────────────── */
+
+function InDatabaseSection({
+  provider,
+  onChanged,
+}: {
+  provider?: AgentProviderInfo;
+  onChanged: () => Promise<void>;
+}) {
+  const configured = Boolean(provider?.configured);
+  const [baseURL, setBaseURL] = useState("");
+  const [modelId, setModelId] = useState(provider?.models[0]?.id ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+
+  async function save() {
+    const url = baseURL.trim();
+    const mid = modelId.trim();
+    if (!url || !mid) return;
+    setSaving(true);
+    try {
+      await agent.setProvider("in-database", {
+        baseURL: url,
+        apiKey: apiKey.trim() || undefined,
+        models: [{ id: mid, name: mid }],
+      });
+      setBaseURL("");
+      setApiKey("");
+      await onChanged();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <div className="mb-1 flex items-center gap-1.5">
+        <Database className="h-3.5 w-3.5 text-primary" />
+        <h2 className="text-[13px] font-semibold">In-Database / Enterprise AI</h2>
+        {configured ? (
+          <span className="ml-auto flex items-center gap-0.5 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">
+            <Check className="h-2.5 w-2.5" /> connected
+          </span>
+        ) : null}
+      </div>
+      <p className="mb-2.5 text-[11.5px] text-muted-foreground">
+        Use your own LLM served on the cluster or a private gateway (vLLM, TGI, Ollama, any OpenAI-compatible endpoint).
+        Data and prompts stay inside your infrastructure.
+      </p>
+
+      <div className="space-y-2 rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+        {configured && provider?.models[0] ? (
+          <div className="text-[11px] text-muted-foreground">
+            Current: <span className="font-mono text-foreground">{provider.models[0].id}</span> — pick it in the model list. Re-enter below to change.
+          </div>
+        ) : null}
+        <label className="block text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">Endpoint URL</label>
+        <Input
+          placeholder="https://ai.your-company.internal/v1"
+          value={baseURL}
+          onChange={(e) => setBaseURL(e.target.value)}
+          className="h-7 text-xs"
+        />
+        <label className="block text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">Model ID</label>
+        <Input
+          placeholder="e.g. llama-3.3-70b-instruct"
+          value={modelId}
+          onChange={(e) => setModelId(e.target.value)}
+          className="h-7 text-xs"
+        />
+        <label className="block text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">API key (optional)</label>
+        <Input
+          type="password"
+          placeholder="Only if your endpoint requires one"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          className="h-7 text-xs"
+        />
+        <div className="flex justify-end">
+          <Button size="sm" className="h-7" disabled={!baseURL.trim() || !modelId.trim() || saving} onClick={() => void save()}>
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save endpoint"}
+          </Button>
+        </div>
+      </div>
+
+      <button
+        onClick={() => setShowGuide((v) => !v)}
+        className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+      >
+        {showGuide ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        How to set up AI inside Exasol
+      </button>
+      {showGuide ? (
+        <div className="mt-1.5 space-y-2 rounded-lg border border-border bg-editor px-3 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="text-foreground">Two ways to run AI on your Exasol infrastructure:</p>
+          <div>
+            <p className="font-medium text-foreground">1 · Serve your own LLM for this chat (recommended)</p>
+            <p>
+              Run an OpenAI-compatible server (vLLM, TGI, or Ollama) on a cluster node or a gateway host that can use the
+              cluster's GPUs/RAM. Point the endpoint above at its <span className="font-mono">/v1</span> URL. This gives the
+              agent full streaming + tool-calling, entirely within your network.
+            </p>
+          </div>
+          <div>
+            <p className="font-medium text-foreground">2 · In-database inference (Transformers Extension)</p>
+            <p>
+              For embeddings, classification, and batch text generation that run <em>as UDFs across every cluster node in
+              parallel</em>: install the Transformers Extension, upload the model to BucketFS, and call it from SQL. Best for
+              scoring millions of rows in-place — not for interactive chat (UDF calls aren't low-latency streaming).
+            </p>
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              <button onClick={() => void ipc.openExternal("https://github.com/exasol/transformers-extension")} className="flex items-center gap-1 text-primary hover:underline">
+                Transformers Extension <ExternalLink className="h-2.5 w-2.5" />
+              </button>
+              <button onClick={() => void ipc.openExternal("https://github.com/exasol/ai-lab")} className="flex items-center gap-1 text-primary hover:underline">
+                Exasol AI Lab <ExternalLink className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

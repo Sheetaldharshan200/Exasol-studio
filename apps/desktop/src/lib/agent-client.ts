@@ -106,6 +106,14 @@ export const agent = {
     await api(`/providers/${providerId}`, "PUT", { apiKey });
   },
 
+  /** Configure a custom / in-database OpenAI-compatible provider. */
+  async setProvider(
+    providerId: string,
+    cfg: { baseURL?: string; apiKey?: string; models?: { id: string; name?: string; context?: number }[] },
+  ): Promise<void> {
+    await api(`/providers/${providerId}`, "PUT", cfg);
+  },
+
   async setDefaultModel(model: string): Promise<void> {
     await api("/config", "PUT", { model });
   },

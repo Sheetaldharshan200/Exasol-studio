@@ -48,9 +48,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
       }
 
-      // PUT /v1/providers/:id  {apiKey?, baseURL?}
+      // PUT /v1/providers/:id  {apiKey?, baseURL?, models?}
       if (req.method === "PUT" && parts[1] === "providers" && parts[2]) {
-        const body = await readBody<{ apiKey?: string; baseURL?: string }>(req);
+        const body = await readBody<{ apiKey?: string; baseURL?: string; models?: { id: string; name?: string; context?: number }[] }>(req);
         config.update((cfg) => {
           cfg.providers[parts[2]] = { ...cfg.providers[parts[2]], ...body };
         });

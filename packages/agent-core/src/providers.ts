@@ -224,12 +224,13 @@ export class ProviderRegistry {
       });
     }
 
-    // User-declared custom providers (any OpenAI-compatible endpoint).
+    // User-declared custom providers (any OpenAI-compatible endpoint), incl.
+    // the In-Database / Enterprise AI endpoint an org hosts on its own cluster.
     for (const [id, pc] of Object.entries(cfg.providers)) {
       if (out.some((o) => o.id === id) || !pc.baseURL) continue;
       out.push({
         id,
-        name: id,
+        name: id === "in-database" ? "In-Database / Enterprise AI" : id,
         kind: pc.baseURL.includes("127.0.0.1") || pc.baseURL.includes("localhost") ? "local" : "cloud",
         configured: true,
         models: (pc.models ?? []).map((m) => ({ id: m.id, name: m.name ?? m.id, context: m.context })),
