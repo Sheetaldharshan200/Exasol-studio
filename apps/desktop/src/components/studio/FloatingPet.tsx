@@ -468,7 +468,7 @@ export function FloatingPet({
         onPointerMove={onPetPointerMove}
         onPointerUp={onPetPointerUp}
         role="button"
-        aria-label="Your Exasol AI pet — click to ask, drag to move"
+        aria-label="Ada — click to ask, drag to move"
         title="Click to ask · drag to move"
         className={cn("group/pet relative cursor-grab touch-none select-none active:cursor-grabbing")}
         style={{ width: size, height: size }}

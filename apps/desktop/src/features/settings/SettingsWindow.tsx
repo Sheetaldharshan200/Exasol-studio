@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Settings2, X } from "lucide-react";
+import { Search, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { ipc, isTauri } from "@/lib/ipc";
+import { openAiProvidersWindow } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
 
 type SettingValue = string | number | boolean;
@@ -15,6 +16,13 @@ type Category = { tab: "general" | "database"; key: string; label: string; desc:
 
 // Curated, DBVisualizer-informed settings that map to real Exasol Studio behavior.
 const CATEGORIES: Category[] = [
+  {
+    tab: "general",
+    key: "ai",
+    label: "AI Assistant (Ada)",
+    desc: "Models, providers, memory, and behavior for the built-in assistant.",
+    controls: [],
+  },
   {
     tab: "general",
     key: "appearance",
@@ -378,12 +386,28 @@ export function SettingsWindow() {
             <div className="mx-auto max-w-xl">
               <h2 className="text-[15px] font-bold">{current.label}</h2>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{current.desc}</p>
-              <div className="mt-5 space-y-5">
-                {current.controls.map((ct) => (
-                  <ControlRow key={ct.key} ctrl={ct} value={values[ct.key]} onChange={(v) => update(ct.key, v)} />
-                ))}
-              </div>
-              <SettingPreview catKey={current.key} values={values} />
+              {current.key === "ai" ? (
+                <div className="mt-5">
+                  <button
+                    onClick={() => void openAiProvidersWindow()}
+                    className="cta-glow flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/85"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" /> Open AI settings
+                  </button>
+                  <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                    Opens the assistant's own settings — the same panel used from the AI panel — so everything stays in one place.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="mt-5 space-y-5">
+                    {current.controls.map((ct) => (
+                      <ControlRow key={ct.key} ctrl={ct} value={values[ct.key]} onChange={(v) => update(ct.key, v)} />
+                    ))}
+                  </div>
+                  <SettingPreview catKey={current.key} values={values} />
+                </>
+              )}
             </div>
           ) : null}
         </div>

@@ -387,9 +387,8 @@ export function AssistantPanel({
     sessionBus.set(null);
   }
 
+  // Load the session list (the History button owns the open/close toggle).
   async function openSessionsMenu() {
-    setShowSessions((v) => !v);
-    setShowPicker(false);
     try {
       setSessionList(await agent.listSessions());
     } catch {
@@ -788,7 +787,7 @@ export function AssistantPanel({
           <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
             <AgentMark className="mb-3 h-12 w-12" />
 
-            <p className="text-[14.5px] font-semibold text-foreground">Ask your data anything</p>
+            <p className="text-[14.5px] font-semibold text-foreground">Ask Ada anything</p>
             <p className="text-[11.5px] leading-relaxed text-muted-foreground">
               SQL generation, tuning and answers — grounded in Exasol.
               {ollama?.running ? " Running on your local models." : ""}
