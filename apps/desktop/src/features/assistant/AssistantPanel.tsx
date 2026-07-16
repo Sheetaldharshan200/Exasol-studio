@@ -45,6 +45,9 @@ type SlashCommand = {
   hint?: string;
   /** Clears the conversation instead of sending. */
   clears?: boolean;
+  /** Requires an active database connection — we ask the user to connect first
+   *  instead of firing a prompt whose tools would just fail. */
+  needsDb?: boolean;
   /** Turn the command + the user's argument into the prompt sent to the agent.
    *  Not needed for `clears`. */
   expand?: (arg: string) => string;
@@ -70,9 +73,9 @@ const SLASH_COMMANDS: SlashCommand[] = [
     expand: (a) => (a ? `Find and fix any errors in this Exasol SQL:\n\n${a}` : "Find and fix any errors in the SQL in my editor.") },
   { cmd: "/generate", desc: "Generate SQL from a description", hint: "what the query should do",
     expand: (a) => `Generate an Exasol SQL query that ${a || "…"}`.trim() },
-  { cmd: "/tables", desc: "List tables in a schema", hint: "schema name (optional)",
+  { cmd: "/tables", desc: "List tables in a schema", hint: "schema name (optional)", needsDb: true,
     expand: (a) => (a ? `List the tables and views in the ${a.toUpperCase()} schema, one line each.` : "List the tables in the current schema, one line each.") },
-  { cmd: "/learn-my-db", desc: "Learn my database & set up the semantic model", hint: "just press Enter",
+  { cmd: "/learn-my-db", desc: "Learn my database & set up the semantic model", hint: "just press Enter", needsDb: true,
     expand: () => LEARN_DB_PROMPT },
   { cmd: "/dashboard", desc: "Build a live SQL dashboard", hint: "what it should show",
     expand: (a) => `Build a live SQL dashboard that ${a || "…"}`.trim() },
@@ -483,6 +486,23 @@ export function AssistantPanel({
     const slash = parseSlash(trimmed);
     if (slash?.cmd.clears) {
       newChat();
+      return;
+    }
+    // Commands that work on the database need a live connection first.
+    if (slash?.cmd.needsDb && !connectionId) {
+      setItems((m) => [
+        ...m,
+        { kind: "msg", id: `u-${Date.now()}`, role: "user", content: trimmed },
+        {
+          kind: "msg",
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content:
+            `**Connect to a database first.** \`${slash.cmd.cmd}\` needs a live connection to read your schema.\n\n` +
+            "Open the **Databases** tab (left rail) and tap your connection — your local Exasol shows there once it's running — then run this command again.",
+        },
+      ]);
+      setInput("");
       return;
     }
     if (!model) {
