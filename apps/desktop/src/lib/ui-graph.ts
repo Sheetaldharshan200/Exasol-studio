@@ -121,7 +121,23 @@ export class UiGraph {
         } catch (err) {
           // A thrown error is a DOMAIN failure (bad credentials, DB rejected)
           // — not a wrong turn. Rerouting won't help; report it truthfully.
-          return { ok: false, at: current, detail: err instanceof Error ? err.message : String(err) };
+          // Extract a real message (IPC rejects with plain objects/strings, so
+          // String(err) alone gives "[object Object]").
+          const detail =
+            err instanceof Error
+              ? err.message
+              : typeof err === "string"
+                ? err
+                : typeof err === "object" && err && "message" in err && typeof (err as { message: unknown }).message === "string"
+                  ? (err as { message: string }).message
+                  : (() => {
+                      try {
+                        return JSON.stringify(err);
+                      } catch {
+                        return "unknown error";
+                      }
+                    })();
+          return { ok: false, at: current, detail };
         }
         const verified = ok && (this.nodes.get(e.to)?.verify?.() ?? true);
         if (!verified) {

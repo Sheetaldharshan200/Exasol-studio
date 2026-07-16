@@ -573,6 +573,19 @@ export function AssistantPanel({
     return providers.find((x) => x.id === pid)?.models.find((m) => m.id === mid)?.image === true;
   }, [model, providers]);
 
+  // Warn when the selected model can't reliably call tools — the agent's DB
+  // actions (connect, query, dashboards) all depend on tool calling.
+  const toolRisk = useMemo(() => {
+    if (!model) return false;
+    const [pid, ...rest] = model.split("/");
+    if (pid === "builtin") return false;
+    const info = providers.find((x) => x.id === pid)?.models.find((m) => m.id === rest.join("/"));
+    if (info?.toolCall === false) return true;
+    // External local runtimes (Ollama/LM Studio/llama.cpp): reliability varies
+    // by model + chat template, and we can't confirm it — flag as a caution.
+    return (pid === "ollama" || pid === "lmstudio" || pid === "llamacpp") && info?.toolCall !== true;
+  }, [model, providers]);
+
   const isLocalModel =
     model.startsWith("builtin/") || model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
   const ollama = providers.find((p) => p.id === "ollama");
@@ -668,10 +681,20 @@ export function AssistantPanel({
           ) : null}
         </div>
       </div>
+      {toolRisk ? (
+        <div className="flex shrink-0 items-start gap-1.5 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-foreground">
+          <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
+          <span>
+            This model may not reliably use tools, so database actions (connect, query, dashboards) can fail. For the
+            agent, use a <span className="font-medium">Built-in AI</span> model or a cloud model.
+          </span>
+        </div>
+      ) : null}
+
       {/* ── Conversation ── */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3">
         {agentError ? (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-foreground">
+          <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] break-words text-foreground">
             {agentError}
           </div>
         ) : null}
@@ -1028,7 +1051,7 @@ function ToolChip({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
         {preview ? <span className="text-muted-foreground"> — {preview}</span> : null}
       </span>
       {item.done && item.summary ? (
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.summary}</span>
+        <span className="max-w-[45%] shrink-0 truncate font-mono text-[10px] text-muted-foreground" title={item.summary}>{item.summary}</span>
       ) : null}
     </div>
   );
@@ -1091,7 +1114,7 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-[13px] leading-relaxed text-foreground">
+        <div className="[overflow-wrap:anywhere] max-w-[85%] min-w-0 whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-[13px] leading-relaxed break-words text-foreground">
           {message.content}
         </div>
       </div>
@@ -1099,7 +1122,7 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   }
   if (message.error) {
     return (
-      <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-foreground">
+      <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed break-words text-foreground">
         {message.content}
       </div>
     );

@@ -157,7 +157,13 @@ export class ProviderRegistry {
         server.id === "ollama"
           ? (body.models ?? []).map((m) => ({ id: m.model ?? m.name ?? "", name: m.name ?? m.model ?? "" }))
           : (body.data ?? []).map((m) => ({ id: m.id, name: m.id }))
-      ).filter((m) => m.id);
+      )
+        .filter((m) => m.id)
+        // The built-in engine runs llama-server with --jinja and we only ship
+        // tool-capable GGUFs, so its models are known to support tool calling.
+        // External local runtimes (Ollama/LM Studio) vary per model+template,
+        // so we leave the flag unknown and warn in the UI.
+        .map((m) => (server.id === "builtin" ? { ...m, toolCall: true } : m));
       return {
         id: server.id,
         name: server.name,

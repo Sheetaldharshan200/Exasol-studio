@@ -546,6 +546,7 @@
 }
 
 /* ── Assistant markdown ──────────────────────────────────────────────── */
+.assistant-markdown { overflow-wrap: anywhere; word-break: break-word; }
 .assistant-markdown > *:first-child { margin-top: 0; }
 .assistant-markdown > *:last-child { margin-bottom: 0; }
 .assistant-markdown p { margin: 0.4rem 0; }
