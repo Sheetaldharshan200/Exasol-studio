@@ -731,10 +731,12 @@ function VisualizerPanel({
 function Sidebar({
   activity,
   connections,
+  profiles,
   activeProfileId,
   treeKeys,
   onOpenObject,
   onConnect,
+  onConnectProfile,
   onFocusConnection,
   onDisconnect,
   onRefreshConnection,
@@ -758,10 +760,12 @@ function Sidebar({
 }: {
   activity: ActivityId;
   connections: ActiveConnection[];
+  profiles: ConnectionProfile[];
   activeProfileId: string | null;
   treeKeys: Record<string, number>;
   onOpenObject: (profileId: string, schema: string, name: string) => void;
   onConnect: () => void;
+  onConnectProfile: (profileId: string) => void;
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
@@ -787,6 +791,38 @@ function Sidebar({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const hasConnections = connections.length > 0;
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
+  const connectedIds = new Set(connections.map((c) => c.profile.id));
+  // Saved profiles not currently connected — shown as one-tap connect rows
+  // (the managed local database lands here, so it's always reachable).
+  const disconnected = profiles.filter((p) => !connectedIds.has(p.id));
+  const savedRows = disconnected.length ? (
+    <div className="border-t border-border/60 px-2 py-2">
+      {hasConnections ? <div className="px-1 pb-1 eyebrow-muted">Saved connections</div> : null}
+      {disconnected.map((p) => {
+        const isLocal = p.host === "127.0.0.1" || p.host === "localhost";
+        return (
+          <button
+            key={p.id}
+            data-agent-id={`sidebar.saved.${p.id}`}
+            onClick={() => onConnectProfile(p.id)}
+            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
+            title={`Connect to ${p.name} (${p.host}:${p.port})`}
+          >
+            <Database className={cn("h-3.5 w-3.5 shrink-0", isLocal ? "text-primary" : "text-muted-foreground")} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12.5px] text-foreground">{p.name}</div>
+              <div className="truncate text-[10.5px] text-muted-foreground">
+                {p.username}@{p.host}:{p.port}
+              </div>
+            </div>
+            <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground">
+              connect
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
 
   const title =
     activity === "databases"
@@ -865,18 +901,27 @@ function Sidebar({
       </div>
 
       {!hasConnections ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
-            <Database className="h-5 w-5" />
+        disconnected.length ? (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className="px-3 pt-3 pb-1 text-xs leading-relaxed text-muted-foreground">
+              Tap a connection to open it{disconnected.some((p) => p.host === "127.0.0.1" || p.host === "localhost") ? " — your local Exasol is ready" : ""}.
+            </div>
+            {savedRows}
           </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">No connections yet</p>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Use the <span className="font-semibold text-primary">+</span> button above to configure
-              a connection and browse schemas, tables, scripts, and virtual schemas.
-            </p>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">No connections yet</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Use the <span className="font-semibold text-primary">+</span> button above to configure
+                a connection and browse schemas, tables, scripts, and virtual schemas.
+              </p>
+            </div>
           </div>
-        </div>
+        )
       ) : showSearch && searchProfileId ? (
         <ObjectSearch
           key={searchProfileId}
@@ -921,6 +966,7 @@ function Sidebar({
               onOpenDetails={(node) => onOpenDetails?.(conn.profile.id, node)}
             />
           ))}
+          {savedRows}
         </div>
       )}
     </aside>
@@ -2496,10 +2542,12 @@ export function ExasolStudio({
             <Sidebar
               activity={activity}
               connections={connections}
+              profiles={profiles}
               activeProfileId={connection?.profile.id ?? null}
               treeKeys={treeKeys}
               onOpenObject={openObject}
               onConnect={openConnect}
+              onConnectProfile={(id) => void connectSaved(id)}
               onFocusConnection={onFocusConnection}
               onDisconnect={onDisconnect}
               onRefreshConnection={refreshConnection}
