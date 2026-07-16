@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -198,26 +198,37 @@ fn server_binary_name() -> &'static str {
     if cfg!(windows) { "llama-server.exe" } else { "llama-server" }
 }
 
-/// Find the extracted llama-server executable (layouts vary across releases).
-fn find_server(state: &AppState) -> Option<PathBuf> {
-    fn walk(dir: &Path, name: &str, depth: u8) -> Option<PathBuf> {
-        if depth > 4 {
-            return None;
-        }
-        for entry in fs::read_dir(dir).ok()?.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                if let Some(found) = walk(&p, name, depth + 1) {
-                    return Some(found);
-                }
-            } else if p.file_name().and_then(|n| n.to_str()) == Some(name) {
-                return Some(p);
-            }
-        }
-        None
+fn walk_for(dir: &Path, name: &str, depth: u8) -> Option<PathBuf> {
+    if depth > 4 {
+        return None;
     }
-    let dir = engine_dir(state);
-    walk(&dir, server_binary_name(), 0)
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            if let Some(found) = walk_for(&p, name, depth + 1) {
+                return Some(found);
+            }
+        } else if p.file_name().and_then(|n| n.to_str()) == Some(name) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// The engine bundled into the app resources (placed by the release workflow),
+/// if present. Absent in dev builds.
+fn bundled_engine(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app
+        .path()
+        .resolve("runtime/llama", tauri::path::BaseDirectory::Resource)
+        .ok()?;
+    walk_for(&dir, server_binary_name(), 0)
+}
+
+/// Find the llama-server executable: bundled with the app first (shipping
+/// builds), else the on-demand download dir (dev / user-installed).
+fn find_server(app: &AppHandle, state: &AppState) -> Option<PathBuf> {
+    bundled_engine(app).or_else(|| walk_for(&engine_dir(state), server_binary_name(), 0))
 }
 
 fn emit(app: &AppHandle, stage: &str, pct: Option<u8>, msg: &str) {
@@ -228,7 +239,7 @@ fn emit(app: &AppHandle, stage: &str, pct: Option<u8>, msg: &str) {
 }
 
 #[tauri::command]
-pub async fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> AppResult<LlmStatus> {
+pub async fn llm_status(app: AppHandle, state: State<'_, AppState>, engine: State<'_, LlmEngine>) -> AppResult<LlmStatus> {
     let mut running_model = engine
         .child
         .lock()
@@ -261,7 +272,7 @@ pub async fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>
     let mdir = models_dir(&state);
     Ok(LlmStatus {
         supported: asset_fragment().is_some(),
-        engine_installed: find_server(&state).is_some(),
+        engine_installed: find_server(&app, &state).is_some(),
         engine_version: version,
         running_model,
         auto_start: prefs.auto_start,
@@ -280,6 +291,11 @@ pub async fn llm_status(state: State<'_, AppState>, engine: State<'_, LlmEngine>
 /// Download + extract the llama-server engine for this platform.
 #[tauri::command]
 pub async fn llm_engine_install(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    // A shipping build already carries the engine — nothing to download.
+    if bundled_engine(&app).is_some() {
+        emit(&app, "engine", Some(100), "Engine bundled with the app");
+        return Ok(());
+    }
     let fragment = asset_fragment().ok_or_else(|| {
         AppError::Assistant(format!(
             "Built-in AI is not available for {}/{} yet.",
@@ -369,7 +385,7 @@ pub async fn llm_engine_install(app: AppHandle, state: State<'_, AppState>) -> A
     }
     let _ = fs::remove_file(&archive);
 
-    let server = find_server(&state)
+    let server = find_server(&app, &state)
         .ok_or_else(|| AppError::Assistant("llama-server not found in the engine archive".into()))?;
     #[cfg(unix)]
     {
@@ -418,7 +434,7 @@ pub async fn start_model(app: &AppHandle, model_id: &str) -> AppResult<()> {
         .iter()
         .find(|m| m.id == model_id)
         .ok_or_else(|| AppError::Assistant(format!("unknown model {model_id}")))?;
-    let server = find_server(&state)
+    let server = find_server(app, &state)
         .ok_or_else(|| AppError::Assistant("engine not installed".into()))?;
     let gguf = models_dir(&state).join(model.file);
     if !gguf.exists() {
@@ -530,7 +546,7 @@ pub fn auto_start_if_enabled(app: &AppHandle) {
     let model_id = {
         let state = app.state::<AppState>();
         let prefs = load_prefs(&state);
-        if !prefs.auto_start || find_server(&state).is_none() {
+        if !prefs.auto_start || find_server(app, &state).is_none() {
             return;
         }
         let mdir = models_dir(&state);

@@ -63,8 +63,20 @@ fn script_path(app: &AppHandle) -> AppResult<PathBuf> {
     ))
 }
 
+/// A Node runtime bundled into the app resources (placed by the release
+/// workflow's fetch-runtime step). Absent in dev builds → returns None and we
+/// fall back to system Node.
+fn bundled_node(app: &AppHandle) -> Option<PathBuf> {
+    let rel = if cfg!(windows) { "runtime/node/node.exe" } else { "runtime/node/bin/node" };
+    app.path()
+        .resolve(rel, tauri::path::BaseDirectory::Resource)
+        .ok()
+        .filter(|p| p.exists())
+}
+
 fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentInfo)> {
-    let node = resolve_bin("node").ok_or_else(|| {
+    // Prefer the bundled Node (shipping builds), fall back to system Node (dev).
+    let node = bundled_node(app).or_else(|| resolve_bin("node")).ok_or_else(|| {
         AppError::Assistant(
             "Node.js is required for the AI assistant but was not found. Install it from nodejs.org or via Homebrew.".into(),
         )

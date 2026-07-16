@@ -793,8 +793,12 @@ function Sidebar({
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
   const connectedIds = new Set(connections.map((c) => c.profile.id));
   // Saved profiles not currently connected — shown as one-tap connect rows
-  // (the managed local database lands here, so it's always reachable).
-  const disconnected = profiles.filter((p) => !connectedIds.has(p.id));
+  // (the managed local database lands here, so it's always reachable). The
+  // Studio-managed AI read-only identity is internal (the agent uses it
+  // server-side) so it's hidden from the user's connection list.
+  const disconnected = profiles.filter(
+    (p) => !connectedIds.has(p.id) && !p.username.startsWith("STUDIO_MCP_"),
+  );
   const savedRows = disconnected.length ? (
     <div className="border-t border-border/60 px-2 py-2">
       {hasConnections ? <div className="px-1 pb-1 eyebrow-muted">Saved connections</div> : null}

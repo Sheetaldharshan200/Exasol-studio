@@ -57,3 +57,7 @@ docs/foundation/graphify/rendered/
 
 # Claude Code session exports (date-time prefixed transcripts)
 **/????-??-??-??????-*.txt
+
+# CI-fetched app runtime (Node + llama engine) — bundled at release time only
+apps/desktop/src-tauri/resources/runtime/*
+!apps/desktop/src-tauri/resources/runtime/.gitkeep
