@@ -763,7 +763,7 @@ export function AssistantPanel({
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-border bg-editor transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
+        <div ref={pickerRef} className="relative rounded-xl border border-border bg-editor transition-colors focus-within:border-muted-foreground/40">
           <input
             ref={fileInputRef}
             type="file"
@@ -825,30 +825,16 @@ export function AssistantPanel({
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
-            {/* Model pill (opens upward) */}
-            <div className="relative min-w-0" ref={pickerRef}>
-              <button
-                type="button"
-                onClick={() => setShowPicker((s) => !s)}
-                className="flex max-w-[190px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
-                <span className="truncate font-mono">{modelLabel}</span>
-                <ChevronDown className="h-2.5 w-2.5 shrink-0" />
-              </button>
-              {showPicker ? (
-                <ModelPicker
-                  providers={providers}
-                  model={model}
-                  onPick={pickModel}
-                  onManage={() => {
-                    setShowPicker(false);
-                    void openAiProvidersWindow();
-                  }}
-                  onRefresh={() => void refreshProviders()}
-                />
-              ) : null}
-            </div>
+            {/* Model pill (picker opens upward, spanning the composer) */}
+            <button
+              type="button"
+              onClick={() => setShowPicker((s) => !s)}
+              className="flex min-w-0 max-w-[190px] items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              {isLocalModel ? <Cpu className="h-3 w-3 shrink-0 text-primary" /> : null}
+              <span className="truncate font-mono">{modelLabel}</span>
+              <ChevronDown className="h-2.5 w-2.5 shrink-0" />
+            </button>
 
             {sending ? (
               <button
@@ -871,6 +857,21 @@ export function AssistantPanel({
               </button>
             )}
           </div>
+
+          {showPicker ? (
+            <div className="absolute bottom-full left-1.5 right-1.5 z-30 mb-1.5">
+              <ModelPicker
+                providers={providers}
+                model={model}
+                onPick={pickModel}
+                onManage={() => {
+                  setShowPicker(false);
+                  void openAiProvidersWindow();
+                }}
+                onRefresh={() => void refreshProviders()}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </aside>

@@ -94,7 +94,7 @@ export function ModelPicker({
   );
 
   return (
-    <div className="absolute bottom-full left-0 z-30 mb-1.5 flex max-h-[420px] w-[300px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+    <div className="flex max-h-[420px] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
       {/* Search */}
       <div className="relative border-b border-border p-1.5">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />

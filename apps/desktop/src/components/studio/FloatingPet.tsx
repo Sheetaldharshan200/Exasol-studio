@@ -419,7 +419,7 @@ export function FloatingPet({
             </div>
           ) : null}
 
-          <div className="flex items-end gap-1.5 rounded-xl border border-border bg-editor p-1.5 transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
+          <div className="flex items-end gap-1.5 rounded-xl border border-border bg-editor p-1.5 transition-colors focus-within:border-muted-foreground/40">
             <textarea
               ref={inputRef}
               value={text}
