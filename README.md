@@ -6,16 +6,16 @@ Ask questions in plain words. Exa (the assistant) finds the right tables, writes
 
 ---
 
-## 🚀 Get it (2 minutes)
+## Get it (2 minutes)
 
 1. Go to **[Releases](../../releases/latest)** and download the one file for your computer:
 
    | Your computer | File to download |
    |---|---|
-   | 🍎 Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
-   | 🍎 Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
-   | 🪟 Windows | `ExasolStudio-Windows-64bit-setup.exe` |
-   | 🐧 Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
+   | Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
+   | Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
+   | Windows | `ExasolStudio-Windows-64bit-setup.exe` |
+   | Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
 
 2. **Mac:** open the DMG, drag the app into **~/Applications** — no admin password needed.
    **Windows:** run the installer — it installs just for you, no admin prompt.
@@ -25,7 +25,7 @@ Ask questions in plain words. Exa (the assistant) finds the right tables, writes
 
 That's it. Updates arrive automatically.
 
-## 💬 What can I do with it?
+## What can I do with it?
 
 Type things like this into the AI panel:
 
@@ -39,7 +39,7 @@ Exa runs on **local AI models by default** (a built-in one is a click away — y
 
 Everything else you'd expect is here too: a SQL editor, schema browser, dashboards you can edit by hand, data import/export, and connection management with encrypted password storage.
 
-## ⌨️ Prefer a terminal?
+## ⌨Prefer a terminal?
 
 Install the CLI from **AI Settings → Terminal CLI → Install command**, then:
 
@@ -51,13 +51,13 @@ exa-agent --continue      # pick up where you left off
 
 Same brain as the app — it shares your models, memory, and knowledge of your schemas. Paste a file path to attach it; press `/` to see all commands.
 
-## 🔒 Privacy, in one paragraph
+## Privacy, in one paragraph
 
 Local-first by design: the app, the AI runtime, the local database, and your data all live on your machine. Cloud AI models are used **only** if you add an API key and pick one. Connection passwords are encrypted in a local vault and are never shown to the AI.
 
 ---
 
-## 🛠 For developers
+## For developers
 
 Monorepo: **Tauri 2 + Rust** shell, **React 19** frontend, and a TypeScript agent runtime (`packages/agent-core`) built on **LangGraph + LangChain** — shipped both as the app's sidecar and as the `exa-agent` CLI.
 
