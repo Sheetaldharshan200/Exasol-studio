@@ -81,6 +81,8 @@ pub fn run() {
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
             files::write_text_file,
+            files::save_attachment,
+            files::install_cli,
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,

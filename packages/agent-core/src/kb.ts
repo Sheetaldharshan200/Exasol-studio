@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { generateText, type LanguageModel } from "ai";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { generateText } from "./llm.ts";
 import type { DbRegistry } from "./db.ts";
 import { log } from "./log.ts";
 
@@ -74,7 +75,7 @@ export class KnowledgeGraph {
    * batched model call. Cheap, incremental, and it makes kb_search cards
    * far smaller — the meaning replaces walls of column lists.
    */
-  async annotateMissing(conn: string, model: LanguageModel, cap = 12): Promise<number> {
+  async annotateMissing(conn: string, model: BaseChatModel, cap = 12): Promise<number> {
     if (this.annotating.has(conn)) return 0;
     this.annotating.add(conn);
     try {
@@ -93,7 +94,6 @@ export class KnowledgeGraph {
         system:
           'For each database table, write ONE short line describing what it holds and what it is used for, based only on its name and columns. Reply as strict JSON: {"SCHEMA.TABLE": "meaning", ...}. No other text.',
         prompt: specs.join("\n"),
-        temperature: 0.1,
       });
       const jsonMatch = res.text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return 0;

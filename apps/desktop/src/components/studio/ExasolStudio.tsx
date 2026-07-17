@@ -2166,6 +2166,39 @@ export function ExasolStudio({
     }
   }
 
+  // Open a chat attachment in the workbench: tabular data (CSV/TSV/Parquet)
+  // gets the interactive preview tab, other text opens as an editor tab, and
+  // images open in the system viewer.
+  async function openChatAttachment(f: { name: string; mime: string; kind: string; data: string }) {
+    try {
+      if (/\.(csv|tsv|parquet)$/i.test(f.name)) {
+        let b64: string;
+        if (f.kind === "binary") {
+          b64 = f.data;
+        } else {
+          // Chunked encode — a spread would overflow the stack on big files.
+          const bytes = new TextEncoder().encode(f.data);
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          }
+          b64 = btoa(bin);
+        }
+        const path = await ipc.saveAttachment(f.name, b64);
+        openData(f.name, path);
+      } else if (f.kind === "image") {
+        const b64 = f.data.slice(f.data.indexOf(",") + 1);
+        const path = await ipc.saveAttachment(f.name, b64);
+        const { openPath } = await import("@tauri-apps/plugin-opener");
+        await openPath(path);
+      } else {
+        openFile(f.name, f.data);
+      }
+    } catch (e) {
+      console.error("open attachment failed", e);
+    }
+  }
+
   // Open a tabular file (CSV / TSV / Parquet) as a read-only preview tab.
   function openData(name: string, path: string) {
     tabCounter.current += 1;
@@ -3210,6 +3243,7 @@ export function ExasolStudio({
               connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name }))}
               onClose={toggleAi}
               onUiAction={handleUiAction}
+              onOpenAttachment={openChatAttachment}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

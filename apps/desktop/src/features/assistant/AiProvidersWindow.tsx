@@ -15,6 +15,7 @@ import {
   Sparkles,
   SlidersHorizontal,
   Square,
+  Terminal,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -219,18 +220,20 @@ export function AiProvidersWindow() {
                   await emit(EV_AI_PROVIDERS_CHANGED);
                 }}
               />
-            ) : section === "guardrails" ? (
+            ) : null}
+            {section === "providers" ? <CliCard /> : null}
+            {section === "guardrails" ? (
               <GuardrailsSection settings={settings} patch={patchSettings} />
             ) : section === "skills" ? (
               <SkillsSection />
-            ) : (
+            ) : section === "behavior" ? (
               <BehaviorSection
                 settings={settings}
                 patch={patchSettings}
                 instructionsDraft={instructionsDraft}
                 setInstructionsDraft={setInstructionsDraft}
               />
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -1096,5 +1099,50 @@ function LlmProgressBar({ p }: { p: LlmProgress }) {
       </div>
       <div className="mt-1 text-[10.5px] text-muted-foreground">{p.msg}</div>
     </div>
+  );
+}
+
+/** Install the exa-agent terminal command (same brain as the panel, in a shell). */
+function CliCard() {
+  const [state, setState] = useState<{ busy: boolean; path?: string; error?: string }>({ busy: false });
+  return (
+    <section className="mt-4 rounded-xl border border-border bg-card/60 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Terminal className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-medium text-foreground">Terminal CLI</div>
+            <div className="text-[11px] text-muted-foreground">
+              Chat with Exa from any terminal — same models, memory and knowledge graph as this app.
+            </div>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={state.busy}
+          onClick={async () => {
+            setState({ busy: true });
+            try {
+              const path = await ipc.installCli();
+              setState({ busy: false, path });
+            } catch (e) {
+              setState({ busy: false, error: e instanceof Error ? e.message : String(e) });
+            }
+          }}
+        >
+          {state.busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+          Install command
+        </Button>
+      </div>
+      {state.path ? (
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          Installed to <code className="text-foreground">{state.path}</code> (PATH set up automatically). Open a{" "}
+          <span className="text-foreground">new terminal</span> and run <code className="text-foreground">exa-agent</code>, then{" "}
+          <code>/connect exa://user:pass@host:8563</code>.
+        </div>
+      ) : null}
+      {state.error ? <div className="mt-2 text-[11px] text-destructive">{state.error}</div> : null}
+    </section>
   );
 }

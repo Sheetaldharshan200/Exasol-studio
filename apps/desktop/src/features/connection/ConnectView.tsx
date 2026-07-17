@@ -51,7 +51,10 @@ const SSL_MODES = [
 
 function emptyDraft(): Draft {
   return {
-    name: "",
+    // The default draft IS the local database, so name it that way up front —
+    // a real value in the box, not placeholder text. Typing replaces it; we
+    // never overwrite what the user sees.
+    name: "Exasol Personal (local)",
     host: "localhost",
     port: 8563,
     username: "sys",

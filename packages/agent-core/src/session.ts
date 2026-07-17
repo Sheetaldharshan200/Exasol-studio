@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ModelMessage } from "ai";
+import { AIMessage, HumanMessage, mapChatMessagesToStoredMessages, mapStoredMessagesToChatMessages, type BaseMessage, type StoredMessage } from "@langchain/core/messages";
 
 /** SSE event pushed to attached clients. */
 export type AgentEvent =
@@ -43,7 +43,7 @@ export class Session {
   readonly id: string;
   readonly createdAt: number;
   title = "New chat";
-  messages: ModelMessage[] = [];
+  messages: BaseMessage[] = [];
   running = false;
   abort: AbortController | null = null;
   /** Connection granted to this session's tools (set per message). */
@@ -52,6 +52,7 @@ export class Session {
   private pendingPermissions = new Map<string, (allow: boolean) => void>();
   private pendingUi = new Map<string, (r: { ok: boolean; detail?: string }) => void>();
   private readonly transcriptFile: string;
+  private readonly checkpointFile: string;
 
   constructor(dataDir: string, id?: string, createdAt?: number) {
     this.id = id ?? randomUUID();
@@ -59,6 +60,71 @@ export class Session {
     const dir = join(dataDir, "sessions");
     mkdirSync(dir, { recursive: true });
     this.transcriptFile = join(dir, `${this.id}.jsonl`);
+    this.checkpointFile = join(dir, `${this.id}.turn.json`);
+  }
+
+  /**
+   * Durable turn state: after every agent STEP the partial exchange is
+   * snapshotted to disk. Tools have side effects (DDL ran, files loaded) —
+   * if the process dies mid-turn, the work must not vanish from history.
+   */
+  checkpoint(userText: string, messages: BaseMessage[]) {
+    try {
+      writeFileSync(this.checkpointFile, JSON.stringify({ ts: Date.now(), userText, messages: mapChatMessagesToStoredMessages(messages) }));
+    } catch {
+      // Checkpointing must never break the turn.
+    }
+  }
+
+  /** Turn ended normally (messages were persisted the regular way). */
+  clearCheckpoint() {
+    try {
+      if (existsSync(this.checkpointFile)) unlinkSync(this.checkpointFile);
+    } catch {
+      // best-effort
+    }
+  }
+
+  /**
+   * Crash recovery: if a checkpoint survives, the previous turn died
+   * mid-execution. Fold its REAL completed steps back into the message
+   * history (with a note the model can act on), then consume the file.
+   */
+  recoverInterruptedTurn(): boolean {
+    try {
+      if (!existsSync(this.checkpointFile)) return false;
+      const cp = JSON.parse(readFileSync(this.checkpointFile, "utf8")) as {
+        userText?: string;
+        messages?: StoredMessage[];
+      };
+      unlinkSync(this.checkpointFile);
+      if (!cp.messages?.length) return false;
+      const recovered = mapStoredMessagesToChatMessages(cp.messages);
+      // The transcript replay usually restored the user message already —
+      // only add it when it's genuinely missing (crash before any record).
+      const lastRestored = this.messages.at(-1);
+      const alreadyThere =
+        lastRestored?._getType() === "human" && typeof lastRestored.content === "string" && lastRestored.content === cp.userText;
+      if (!alreadyThere) this.messages.push(new HumanMessage(cp.userText ?? "(interrupted request)"));
+      this.messages.push(...recovered);
+      // A write may have been AWAITING APPROVAL when the process died — the
+      // ask must survive the restart (LangGraph-style durable interrupt, but
+      // safe: the model re-asks; nothing ever auto-executes on recovery).
+      const pending = this.replay()
+        .filter((i): i is Extract<ReplayItem, { kind: "perm" }> => i.kind === "perm")
+        .filter((i) => i.result === undefined)
+        .at(-1);
+      this.messages.push(new HumanMessage(
+          "[Recovered] The previous turn was interrupted mid-execution (the app closed). The tool steps above DID run — their side effects are real. When I ask something next, continue from that state; do not redo completed work." +
+          (pending
+            ? `\nA permission request was still awaiting the user's answer when the app closed: "${pending.summary}" — statement: ${pending.detail.slice(0, 400)}. It did NOT run. If it is still needed, ask the user and re-run it through run_sql on approval.`
+            : ""),
+      ));
+      this.record({ kind: "turn.recovered", steps: cp.messages.length, pendingPermission: Boolean(pending) });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   subscribe(fn: (e: AgentEvent) => void): () => void {
@@ -137,6 +203,20 @@ export class Session {
     return true;
   }
 
+  /**
+   * Time-travel one step: drop the last user↔assistant exchange from the
+   * model's context so the next message retries from the earlier state.
+   * (Side effects that already ran are NOT undone — the transcript keeps
+   * the full audit trail.)
+   */
+  undoLastExchange(): boolean {
+    const lastUser = this.messages.map((m) => m._getType()).lastIndexOf("human");
+    if (lastUser < 0) return false;
+    this.messages.length = lastUser;
+    this.record({ kind: "undo" });
+    return true;
+  }
+
   /** Append an audit record to the JSONL transcript. */
   record(entry: Record<string, unknown>) {
     try {
@@ -176,6 +256,14 @@ export class Session {
         case "error":
           items.push({ kind: "msg", id: `e${n}`, role: "assistant", content: String(e.error ?? "error"), error: true });
           break;
+        case "turn.recovered":
+          items.push({
+            kind: "msg",
+            id: `r${n}`,
+            role: "assistant",
+            content: "_Recovered an interrupted turn — the steps above completed before the app closed, and their results are preserved._",
+          });
+          break;
         case "tool.call":
           items.push({ kind: "tool", id: `t${n}`, name: String(e.name ?? "tool"), args: e.args, done: true, ok: true });
           break;
@@ -209,7 +297,7 @@ export class Session {
   restoreMessages() {
     for (const item of this.replay()) {
       if (item.kind !== "msg" || item.error) continue;
-      this.messages.push({ role: item.role, content: item.content });
+      this.messages.push(item.role === "user" ? new HumanMessage(item.content) : new AIMessage(item.content));
     }
   }
 
@@ -227,7 +315,12 @@ export class SessionStore {
   private readonly indexFile: string;
   private index: SessionMeta[] = [];
 
-  constructor(private readonly dataDir: string) {
+  // Plain field (not a TS parameter property) so node --experimental-strip-types
+  // can import this file — the eval harness depends on it.
+  private readonly dataDir: string;
+
+  constructor(dataDir: string) {
+    this.dataDir = dataDir;
     this.indexFile = join(dataDir, "sessions", "index.json");
     try {
       this.index = JSON.parse(readFileSync(this.indexFile, "utf8")) as SessionMeta[];
@@ -284,6 +377,7 @@ export class SessionStore {
     const s = new Session(this.dataDir, meta.id, meta.createdAt);
     s.title = meta.title;
     s.restoreMessages();
+    s.recoverInterruptedTurn(); // fold in work from a turn that died mid-run
     this.sessions.set(s.id, s);
     return s;
   }

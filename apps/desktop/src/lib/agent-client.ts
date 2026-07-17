@@ -20,8 +20,8 @@ export type AgentModelInfo = {
 export type AgentAttachment = {
   name: string;
   mime: string;
-  kind: "text" | "image";
-  /** text: the file's text; image: a data: URL. */
+  kind: "text" | "image" | "binary";
+  /** text: the file's text; image: a data: URL; binary: base64 (e.g. Parquet). */
   data: string;
 };
 
@@ -221,12 +221,14 @@ export type DashPanel = {
   id: string;
   title: string;
   grid: { x: number; y: number; w: number; h: number };
-  query: { sql: string };
+  /** Absent on markdown text panels. */
+  query?: { sql: string };
   viz:
     | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
     | { type: "kpi"; valueField?: string; unit?: string }
     | { type: "table" }
-    | { type: "explore"; config?: Record<string, unknown> };
+    | { type: "explore"; config?: Record<string, unknown> }
+    | { type: "markdown"; content: string };
 };
 
 export type Dashboard = {

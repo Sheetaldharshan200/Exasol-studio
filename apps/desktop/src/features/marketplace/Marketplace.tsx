@@ -218,6 +218,15 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
 // Marketplace sections (ordered). Every catalog item maps to exactly one.
 type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
 // Left category rail — one entry per view.
+// Driver runtimes: marketplace item id → the driver id the connect dialog uses.
+// These install the SAME on-demand runtime, so "installed" here == usable there.
+const DRIVER_RUNTIME: Record<string, string> = {
+  pyexasol: "pyexasol",
+  "sqlalchemy-exasol": "sqlalchemy",
+  "driver-jdbc": "jdbc",
+  "driver-odbc": "odbc",
+};
+
 const NAV: { key: string; label: string; icon: LucideIcon }[] = [
   { key: "all", label: "All", icon: Store },
   { key: "recommended", label: "Recommended", icon: Sparkles },
@@ -474,15 +483,18 @@ export function Marketplace() {
     [installOne, refreshInstalled],
   );
 
-  // Start the pending pack once releases are ready.
+  // Start the pending pack once releases are ready. Anything already
+  // installed or detected on the system is skipped — packs fill gaps, they
+  // never reinstall over a working setup.
   useEffect(() => {
     if (!pendingPack || loadingReleases) return;
     const items = pendingPack
       .map((id) => CATALOG.find((c) => c.id === id))
-      .filter((c): c is CatalogItem => !!c && c.install !== "reference");
+      .filter((c): c is CatalogItem => !!c && c.install !== "reference")
+      .filter((c) => !installedMap[c.id] && !detected[c.id]);
     setPendingPack(null);
     if (items.length) enqueue(items);
-  }, [pendingPack, loadingReleases, enqueue]);
+  }, [pendingPack, loadingReleases, enqueue, installedMap, detected]);
 
   const queueBusy = queue.some((q) => q.status === "pending" || q.status === "installing");
   const installingIds = useMemo(() => new Set(queue.filter((q) => q.status === "installing").map((q) => q.id)), [queue]);
@@ -497,11 +509,13 @@ export function Marketplace() {
     enqueue([item]);
   }
 
-  // Install every item in a recommended pack, in parallel.
+  // Install every item in a recommended pack, in parallel — skipping what the
+  // user already has (explicit per-item Reinstall still bypasses this).
   function installPack(pack: Pack) {
     const items = pack.items
       .map((it) => CATALOG.find((c) => c.id === it.id))
-      .filter((c): c is CatalogItem => !!c && c.install !== "reference");
+      .filter((c): c is CatalogItem => !!c && c.install !== "reference")
+      .filter((c) => !installedMap[c.id] && !detected[c.id]);
     enqueue(items);
   }
 
@@ -536,10 +550,21 @@ export function Marketplace() {
     );
   }, [query]);
 
+  // Driver runtime state lives above navItems — the memo below reads it.
+  const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});
+  const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
+
   // Items to show for the selected category (flat lists; "all" is grouped below).
   const navItems = useMemo(() => {
     if (nav === "installed") return visible.filter((i) => installedMap[i.id] || detected[i.id]);
-    if (nav === "installing") return visible.filter((i) => queue.some((x) => x.id === i.id));
+    if (nav === "installing")
+      // Only ACTIVE installs — finished/failed ones leave the list. Driver
+      // runtimes install through their own path, so include busy ones too.
+      return visible.filter(
+        (i) =>
+          queue.some((x) => x.id === i.id && (x.status === "pending" || x.status === "installing")) ||
+          (DRIVER_RUNTIME[i.id] ? driverBusy[DRIVER_RUNTIME[i.id]] : false),
+      );
     if (nav === "updates")
       return visible.filter((i) => {
         const inst = installedMap[i.id];
@@ -549,20 +574,10 @@ export function Marketplace() {
     if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
       return visible.filter((i) => sectionOf(i.kind) === nav);
     return visible;
-  }, [nav, visible, installedMap, detected, queue, catalog, releases]);
+  }, [nav, visible, installedMap, detected, queue, catalog, releases, driverBusy]);
 
   const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
-  // Driver runtimes: marketplace item id → the driver id the connect dialog uses.
-  // These install the SAME on-demand runtime, so "installed" here == usable there.
-  const DRIVER_RUNTIME: Record<string, string> = {
-    pyexasol: "pyexasol",
-    "sqlalchemy-exasol": "sqlalchemy",
-    "driver-jdbc": "jdbc",
-    "driver-odbc": "odbc",
-  };
-  const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});
-  const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
   const refreshDrivers = useCallback(() => {
     for (const did of new Set(Object.values(DRIVER_RUNTIME))) {
       ipc.driverStatus(did).then((s) => setDriverReady((r) => ({ ...r, [did]: s.ready }))).catch(() => undefined);
@@ -632,8 +647,14 @@ export function Marketplace() {
                   <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
                 </span>
               )}
-              <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
-                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Reinstall
+              <button
+                onClick={() => void installDriverRuntime(did)}
+                disabled={driverBusy[did]}
+                title="Reinstall"
+                aria-label={`Reinstall ${item.name}`}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
+              >
+                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
               </button>
             </>
           ) : (
@@ -669,8 +690,15 @@ export function Marketplace() {
             <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
               <Check className="h-3.5 w-3.5" /> Already on your system
             </span>
-            <button onClick={() => startInstall(item)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
-              <RefreshCcw className="h-3.5 w-3.5" /> Reinstall
+            {/* Reinstall stays available but quiet — nothing here needs doing. */}
+            <button
+              onClick={() => startInstall(item)}
+              disabled={isInstalling}
+              title="Reinstall"
+              aria-label={`Reinstall ${item.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
             </button>
           </>
         ) : item.install === "reference" ? (
@@ -697,8 +725,8 @@ export function Marketplace() {
         <div key={item.id} className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3 py-2">
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-[12.5px] font-semibold text-foreground">{item.name}</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="break-words text-[12.5px] font-semibold text-foreground">{item.name}</span>
               {badges}
             </div>
             <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
@@ -716,8 +744,8 @@ export function Marketplace() {
             <Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-[13px] font-semibold text-foreground">{item.name}</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="break-words leading-snug text-[13px] font-semibold text-foreground">{item.name}</span>
               {badges}
             </div>
             {did ? (
@@ -800,7 +828,13 @@ export function Marketplace() {
               const Icon = n.icon;
               const active = nav === n.key;
               const count =
-                n.key === "installed" ? installedCount : n.key === "installing" ? installingIds.size : n.key === "updates" ? updatesAvailable : 0;
+                n.key === "installed"
+                  ? installedCount
+                  : n.key === "installing"
+                    ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
+                    : n.key === "updates"
+                      ? updatesAvailable
+                      : 0;
               return (
                 <button
                   key={n.key}
@@ -911,8 +945,16 @@ export function Marketplace() {
               <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-                <Search className="h-6 w-6 opacity-40" />
-                <p className="text-sm">{query ? "No items match “" + query + "”." : "Nothing here yet."}</p>
+                {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
+                <p className="text-sm">
+                  {query
+                    ? "No items match “" + query + "”."
+                    : nav === "installing"
+                      ? "Nothing installing right now — active installs (including drivers) show up here live."
+                      : nav === "updates"
+                        ? "Everything is up to date."
+                        : "Nothing here yet."}
+                </p>
               </div>
             )}
           </div>

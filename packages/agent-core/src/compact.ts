@@ -1,4 +1,6 @@
-import { generateText, type LanguageModel, type ModelMessage } from "ai";
+import { AIMessage, HumanMessage, type BaseMessage } from "@langchain/core/messages";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { contentText, generateText } from "./llm.ts";
 import type { Session } from "./session.ts";
 import { log } from "./log.ts";
 
@@ -7,7 +9,7 @@ import { log } from "./log.ts";
 // conversation continues seamlessly — the session never hits the wall.
 
 /** Rough token estimate: ~4 chars/token holds well enough for budgeting. */
-export function estimateTokens(messages: ModelMessage[], system = ""): number {
+export function estimateTokens(messages: BaseMessage[], system = ""): number {
   let chars = system.length;
   for (const m of messages) {
     if (typeof m.content === "string") {
@@ -38,7 +40,7 @@ Be dense and factual. Do not invent anything not in the transcript.`;
 
 export async function maybeCompact(opts: {
   session: Session;
-  model: LanguageModel;
+  model: BaseChatModel;
   contextLimit: number;
   system: string;
 }): Promise<boolean> {
@@ -54,15 +56,7 @@ export async function maybeCompact(opts: {
 
   try {
     const transcript = older
-      .map((m) => {
-        const body =
-          typeof m.content === "string"
-            ? m.content
-            : m.content
-                .map((p) => (typeof p === "object" && p && "text" in p ? String((p as { text: unknown }).text) : `[${(p as { type?: string }).type ?? "part"}]`))
-                .join(" ");
-        return `${m.role}: ${body}`;
-      })
+      .map((m) => `${m._getType()}: ${contentText(m.content) || "[tool activity]"}`)
       .join("\n")
       // The summary call itself must fit — hard-cap the transcript.
       .slice(-Math.max(8_000, limit * 2));
@@ -71,7 +65,6 @@ export async function maybeCompact(opts: {
       model,
       system: SUMMARY_PROMPT,
       prompt: transcript,
-      temperature: 0.1,
       abortSignal: session.abort?.signal,
     });
 
@@ -79,11 +72,8 @@ export async function maybeCompact(opts: {
     if (!summary) return false;
 
     session.messages = [
-      {
-        role: "user",
-        content: `<conversation-summary>\nEarlier parts of this conversation were compacted. Summary:\n\n${summary}\n</conversation-summary>`,
-      },
-      { role: "assistant", content: "Understood — continuing from the summary." },
+      new HumanMessage(`<conversation-summary>\nEarlier parts of this conversation were compacted. Summary:\n\n${summary}\n</conversation-summary>`),
+      new AIMessage("Understood — continuing from the summary."),
       ...recent,
     ];
     session.record({ kind: "compacted", foldedMessages: older.length, summaryChars: summary.length, estTokensBefore: used });

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The Exasol AI mark — "Spark Human": a head dot, the Exasol X as the body, and
+ * Exa's mark — "Spark Human": a head dot, the Exasol X as the body, and
  * an AI spark. The brand green is fixed (reads on both themes); the darker
  * structural half uses currentColor so it adapts to light/dark. Pass `active`
  * for a gentle thinking pulse on the head + spark.

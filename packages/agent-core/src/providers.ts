@@ -1,10 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ConfigStore } from "./config.ts";
 import { log } from "./log.ts";
 
@@ -84,7 +83,10 @@ export class ProviderRegistry {
   // model once. Any model the user pulls is classified accurately on next list.
   private ollamaCaps = new Map<string, { toolCall: boolean; image: boolean }>();
 
-  constructor(private readonly config: ConfigStore) {
+  private readonly config: ConfigStore;
+
+  constructor(config: ConfigStore) {
+    this.config = config;
     this.catalogFile = join(config.dataDir, "models-catalog.json");
     this.loadCachedCatalog();
     void this.refreshCatalog();
@@ -301,38 +303,53 @@ export class ProviderRegistry {
     return this.catalog[providerId]?.find((m) => m.id === modelId)?.image === true;
   }
 
-  /** Resolve "provider/model_id" into an AI SDK LanguageModel. */
-  resolve(modelRef: string): LanguageModel {
+  /**
+   * Whether the model can call tools. Only a KNOWN false (e.g. Ollama caps
+   * without "tools") disables them — unknown models get the benefit of the
+   * doubt so custom providers aren't crippled.
+   */
+  supportsTools(modelRef: string): boolean {
+    const slash = modelRef.indexOf("/");
+    if (slash < 0) return true;
+    const providerId = modelRef.slice(0, slash);
+    const modelId = modelRef.slice(slash + 1);
+    return this.catalog[providerId]?.find((m) => m.id === modelId)?.toolCall !== false;
+  }
+
+  /** Resolve "provider/model_id" into a LangChain chat model. */
+  resolve(modelRef: string, opts: { temperature?: number } = {}): BaseChatModel {
     const slash = modelRef.indexOf("/");
     if (slash < 0) throw new Error(`Model must be "provider/model", got "${modelRef}"`);
     const providerId = modelRef.slice(0, slash);
     const modelId = modelRef.slice(slash + 1);
     const cfg = this.config.get();
     const pc = cfg.providers[providerId] ?? {};
+    const temperature = opts.temperature;
 
     switch (providerId) {
       case "anthropic":
-        return createAnthropic({ apiKey: pc.apiKey ?? process.env.ANTHROPIC_API_KEY })(modelId);
+        return new ChatAnthropic({ model: modelId, apiKey: pc.apiKey ?? process.env.ANTHROPIC_API_KEY, temperature });
       case "openai":
-        return createOpenAI({ apiKey: pc.apiKey ?? process.env.OPENAI_API_KEY })(modelId);
+        return new ChatOpenAI({ model: modelId, apiKey: pc.apiKey ?? process.env.OPENAI_API_KEY, temperature });
       case "google":
-        return createGoogleGenerativeAI({ apiKey: pc.apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY })(modelId);
+        return new ChatGoogleGenerativeAI({ model: modelId, apiKey: pc.apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY, temperature });
       case "openrouter":
-        return createOpenAICompatible({
-          name: "openrouter",
-          baseURL: "https://openrouter.ai/api/v1",
-          apiKey: pc.apiKey ?? process.env.OPENROUTER_API_KEY,
-        })(modelId);
+        return new ChatOpenAI({
+          model: modelId,
+          apiKey: pc.apiKey ?? process.env.OPENROUTER_API_KEY ?? "not-needed",
+          temperature,
+          configuration: { baseURL: "https://openrouter.ai/api/v1" },
+        });
       case "builtin":
       case "ollama":
       case "lmstudio":
       case "llamacpp": {
         const base = pc.baseURL ?? LOCAL_SERVERS.find((s) => s.id === providerId)!.baseURL;
-        return createOpenAICompatible({ name: providerId, baseURL: base })(modelId);
+        return new ChatOpenAI({ model: modelId, apiKey: "not-needed", temperature, configuration: { baseURL: base } });
       }
       default: {
         if (!pc.baseURL) throw new Error(`Unknown provider "${providerId}"`);
-        return createOpenAICompatible({ name: providerId, baseURL: pc.baseURL, apiKey: pc.apiKey })(modelId);
+        return new ChatOpenAI({ model: modelId, apiKey: pc.apiKey ?? "not-needed", temperature, configuration: { baseURL: pc.baseURL } });
       }
     }
   }

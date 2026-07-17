@@ -7,6 +7,13 @@ agent-editable BI module.
 
 All research verified July 2026. Everything we reuse is MIT-licensed.
 
+Runtime decision record: **[runtime-vs-langgraph.md](./runtime-vs-langgraph.md)** —
+the evidence-based comparison against LangChain/LangGraph/LangSmith, what we
+built natively to close their genuine advantages (durable turns, durable
+permission asks, typed multi-agent state, live subagent streaming, /undo,
+two-tier eval harness), where they still win, and the concrete triggers that
+would reopen the decision.
+
 ---
 
 ## 1. Module layout (separate module, shippable as CLI)
@@ -33,8 +40,24 @@ apps/desktop/                 # Tauri app = thin client; spawns agent-core as si
 - **Desktop:** Tauri spawns the compiled agent-core binary as a sidecar; the React panel
   talks HTTP + SSE. Connection credentials never enter the agent config — the Rust vault
   hands the sidecar a per-session DSN over stdin at spawn.
-- **CLI:** the same binary with a terminal chat UI (`exa-agent`), connecting with a DSN.
-  One codebase, two shells — exactly opencode's proven split.
+- **CLI (SHIPPED):** `exa-agent` — `src/cli.ts` bundled to `dist/exa-agent.cjs`
+  (esbuild, shebang, `bin` entry; `pnpm build:cli`). Runs the SAME loop/tools/KB
+  in-process and shares the app's data dir by default, so config, keys, memory and
+  the schema graph carry over both ways. `exa-agent` (chat: `/connect
+  exa://user:pass@host:port [name]`, `/model`, `/models`, `/new`), `exa-agent models`,
+  `exa-agent serve` (sidecar mode). Terminal renderer streams text, shows dim ⚙ tool
+  lines, prompts y/N for permissions, and auto-denies ui_* requests. Ships inside the
+  app bundle (`Resources/exa-agent.cjs`); AI Settings → Providers → "Terminal CLI →
+  Install command" writes a `~/.local/bin/exa-agent` wrapper that prefers the bundled
+  Node. One codebase, two shells — exactly opencode's proven split.
+  **TUI:** Claude Code's / opencode's visual vocabulary, hand-rolled zero-dep in
+  `src/tui.ts` (they use Ink/React and Bubble Tea respectively; we stay
+  dependency-free): rounded banner + dialog boxes, bordered `❯` input with
+  persisted ↑-history and tab completion, braille spinner with elapsed time and
+  esc-to-interrupt, line-buffered streaming markdown (colored code fences,
+  headers, bullets, bold/inline-code), `⏺ tool(args)` → `⎿ ✓ result` step lines,
+  yellow boxed y/N permission dialogs, and a dim `model · seconds · tokens`
+  footer per turn.
 - Permission prompts are **async server→client events over SSE** (approve/deny round
   trip), so both GUI and CLI get identical human-in-the-loop behavior.
 
@@ -83,7 +106,7 @@ persistent schema knowledge graph and serves it over MCP with tools
 + token-savings reporting. It is the SAME design as our in-app KB
 (`agent-core/kb.ts`), which independently converged on it:
 
-| compass | Ada's KB |
+| compass | Exa's KB |
 |---|---|
 | query_graph | kb_search |
 | shortest_path | kb_join_path |
@@ -93,7 +116,7 @@ persistent schema knowledge graph and serves it over MCP with tools
 | system-schema filtering | isInternal() |
 
 **Final architecture (2026-07-16) — one graph, KB is the single source:**
-Ada uses the native KB for EVERY model (local and cloud) — per-turn RAG
+Exa uses the native KB for EVERY model (local and cloud) — per-turn RAG
 injection + kb_* tools, identical behavior, no drift, one code path. The
 earlier cloud→compass / local→KB split was retired (it gated on the wrong
 axis and created two schema representations). compass is positioned by its
@@ -101,7 +124,7 @@ real strengths:
 - **External CLI agents** (Claude Code / Codex) — its design and audience; the
   org standardizes on compass there.
 - **Optional KB backend (planned):** compass extracts → KB stores/injects, via
-  a documented import path (`KnowledgeGraph` load from an external graph). Ada
+  a documented import path (`KnowledgeGraph` load from an external graph). Exa
   still serves it the same way. To be wired when we can verify against a real
   compass graph — we don't ship a blind graph.json parser.
 
@@ -109,11 +132,11 @@ real strengths:
 - **exasol-compass** is aimed at *external* CLI agents (Claude Code, Codex CLI)
   as a standalone MCP server — its real audience. The org standardizes on it
   there.
-- **Ada (Studio's embedded agent)** keeps the native KB as default: no extra
+- **Exa (Studio's embedded agent)** keeps the native KB as default: no extra
   process, per-turn RAG injection (stronger than on-demand lookup for small
   local models), already token-optimized, offline. Naming/approach are kept
   consistent with compass so it's one mental model.
-- **Opt-in bridge (planned):** an OFF-by-default setting to point Ada at a
+- **Opt-in bridge (planned):** an OFF-by-default setting to point Exa at a
   running compass MCP server and use its tools in place of the native KB, for
   orgs that want a single graph source. Requires adding an MCP client
   dependency + a reachable compass endpoint to build and verify — deferred

@@ -11,6 +11,7 @@ import "react-grid-layout/css/styles.css";
 import {
   ArrowLeft,
   BarChart3,
+  FileDown,
   Loader2,
   Pencil,
   Play,
@@ -19,6 +20,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { dashboards, type Dashboard, type DashPanel } from "@/lib/agent-client";
 import { dashboardBus } from "@/lib/dashboard-bus";
@@ -210,6 +213,73 @@ function DashboardView({
   const [dash, setDash] = useState<Dashboard>(initial);
   const [editing, setEditing] = useState<DashPanel | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+
+  function note(msg: string) {
+    setExportNote(msg);
+    setTimeout(() => setExportNote(null), 6000);
+  }
+
+  /** Fresh data for every data panel (reading order), capped for reports. */
+  async function collectPanelData(): Promise<Map<string, StatementResult | null>> {
+    const out = new Map<string, StatementResult | null>();
+    for (const p of dash.panels) {
+      const sql = p.query?.sql?.trim();
+      if (p.viz.type === "markdown" || !sql || !profileId) {
+        out.set(p.id, null);
+        continue;
+      }
+      try {
+        const res = await ipc.executeSql(profileId, connectionName, sql, 500, false);
+        const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
+        out.set(p.id, first && !first.error ? first : null);
+      } catch {
+        out.set(p.id, null);
+      }
+    }
+    return out;
+  }
+
+  const readingOrder = () => [...dash.panels].sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
+
+  async function doExport(kind: "markdown" | "html" | "pdf") {
+    setExporting(true);
+    try {
+      const data = await collectPanelData();
+      if (kind === "markdown") {
+        const md = buildMarkdownReport(dash, readingOrder(), data);
+        const path = await saveDialog({
+          defaultPath: `${slugify(dash.title)}.md`,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (path) {
+          await ipc.writeTextFile(path, md);
+          note(`Saved ${path}`);
+        }
+      } else {
+        const html = buildHtmlReport(dash, readingOrder(), data);
+        if (kind === "html") {
+          const path = await saveDialog({
+            defaultPath: `${slugify(dash.title)}.html`,
+            filters: [{ name: "HTML", extensions: ["html"] }],
+          });
+          if (path) {
+            await ipc.writeTextFile(path, html);
+            note(`Saved ${path}`);
+          }
+        } else {
+          printHtml(html);
+          note("Print dialog opened — choose “Save as PDF”. (No dialog? Export HTML and print it from your browser.)");
+        }
+      }
+    } catch (e) {
+      note(`Export failed: ${errorMessage(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function saveDash(next: Dashboard) {
     setDash(next);
@@ -279,6 +349,38 @@ function DashboardView({
         >
           <Plus className="h-3.5 w-3.5" /> Panel
         </button>
+        <div className="relative">
+          <button
+            onClick={() => setExportOpen((v) => !v)}
+            disabled={exporting}
+            className="flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            title="Export as a report"
+          >
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />} Export
+          </button>
+          {exportOpen ? (
+            <div className="absolute right-0 top-7 z-30 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl">
+              {(
+                [
+                  ["markdown", "Markdown (.md)"],
+                  ["html", "HTML report (.html)"],
+                  ["pdf", "PDF (print…)"],
+                ] as const
+              ).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  onClick={() => {
+                    setExportOpen(false);
+                    void doExport(kind);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground hover:bg-secondary"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <button
           onClick={() => setNonce((n) => n + 1)}
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
@@ -288,35 +390,12 @@ function DashboardView({
           <RefreshCcw className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto p-2">
-        <GridLayout
-          layout={layout}
-          width={width - 8}
-          gridConfig={{ cols: 12, rowHeight: 44, margin: [8, 8] }}
-          dragConfig={{ handle: ".dash-panel-title" }}
-          onLayoutChange={persistLayout}
-        >
-          {dash.panels.map((p) => (
-            <div key={p.id} className="group/panel overflow-hidden rounded-xl border border-border bg-panel/70">
-              <Panel
-                panel={p}
-                profileId={profileId}
-                connectionName={connectionName}
-                nonce={nonce}
-                onVizChange={(viz) => {
-                  void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === p.id ? { ...x, viz } : x)) });
-                }}
-                onEdit={() => setEditing(p)}
-                onDelete={() => {
-                  if (dash.panels.length <= 1) return;
-                  void saveDash({ ...dash, panels: dash.panels.filter((x) => x.id !== p.id) });
-                }}
-              />
-            </div>
-          ))}
-        </GridLayout>
-      </div>
+      {exportNote ? (
+        <div className="border-b border-border bg-secondary/40 px-3 py-1 text-[11px] text-muted-foreground">{exportNote}</div>
+      ) : null}
       {editing ? (
+        // Panel editing happens INSIDE the tab — the editor takes the grid's
+        // place instead of floating over it as a dialog.
         <PanelEditor
           panel={editing}
           profileId={profileId}
@@ -328,7 +407,36 @@ function DashboardView({
             setNonce((n) => n + 1);
           }}
         />
-      ) : null}
+      ) : (
+        <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto p-2">
+          <GridLayout
+            layout={layout}
+            width={width - 8}
+            gridConfig={{ cols: 12, rowHeight: 44, margin: [8, 8] }}
+            dragConfig={{ handle: ".dash-panel-title" }}
+            onLayoutChange={persistLayout}
+          >
+            {dash.panels.map((p) => (
+              <div key={p.id} className="group/panel overflow-hidden rounded-xl border border-border bg-panel/70">
+                <Panel
+                  panel={p}
+                  profileId={profileId}
+                  connectionName={connectionName}
+                  nonce={nonce}
+                  onVizChange={(viz) => {
+                    void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === p.id ? { ...x, viz } : x)) });
+                  }}
+                  onEdit={() => setEditing(p)}
+                  onDelete={() => {
+                    if (dash.panels.length <= 1) return;
+                    void saveDash({ ...dash, panels: dash.panels.filter((x) => x.id !== p.id) });
+                  }}
+                />
+              </div>
+            ))}
+          </GridLayout>
+        </div>
+      )}
     </div>
   );
 }
@@ -355,13 +463,14 @@ function Panel({
   const [result, setResult] = useState<StatementResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const sql = panel.query?.sql ?? "";
 
   useEffect(() => {
-    if (!profileId) return;
+    if (!profileId || panel.viz.type === "markdown" || !sql.trim()) return;
     let cancelled = false;
     setLoading(true);
     ipc
-      .executeSql(profileId, connectionName, panel.query.sql, panel.viz.type === "table" ? 50000 : 5000, false)
+      .executeSql(profileId, connectionName, sql, panel.viz.type === "table" ? 50000 : 5000, false)
       .then((res) => {
         if (cancelled) return;
         const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
@@ -376,7 +485,7 @@ function Panel({
     return () => {
       cancelled = true;
     };
-  }, [profileId, connectionName, panel.query.sql, nonce]);
+  }, [profileId, connectionName, sql, panel.viz.type, nonce]);
 
   return (
     <div className="flex h-full flex-col">
@@ -407,7 +516,11 @@ function Panel({
         </span>
       </div>
       <div className="min-h-0 flex-1">
-        {!profileId ? (
+        {panel.viz.type === "markdown" ? (
+          <div className="h-full overflow-y-auto px-3.5 py-2.5 text-[12.5px] leading-relaxed text-foreground [&_a]:text-primary [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_code]:text-[11px] [&_h1]:mb-1 [&_h1]:text-[16px] [&_h1]:font-bold [&_h2]:mb-1 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1.5 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-4">
+            <ReactMarkdown>{panel.viz.content}</ReactMarkdown>
+          </div>
+        ) : !profileId ? (
           <Hint text="Connect to a database to load this panel." />
         ) : error ? (
           <Hint text={error} error />
@@ -588,6 +701,119 @@ function TablePanel({ result }: { result: StatementResult }) {
   );
 }
 
+/**
+ * Build the ECharts option(s) for a chart panel — shared by live panels and
+ * export snapshots. `primary` replaces the chart; `override` (the human/agent
+ * viz.option) deep-merges on top via a second setOption.
+ */
+function buildChartOption(
+  viz: Extract<DashPanel["viz"], { type: "echarts" }>,
+  result: StatementResult,
+  theme?: { fg: string; border: string },
+): { primary: Record<string, unknown>; override?: Record<string, unknown> } | null {
+  const cols = result.columns.map((c) => c.name);
+  if (!result.rows.length) return null;
+  const styles = getComputedStyle(document.documentElement);
+  const fg = theme?.fg ?? (styles.getPropertyValue("--muted-foreground").trim() || "#888");
+  const border = theme?.border ?? (styles.getPropertyValue("--border").trim() || "#333");
+  // FULL ECharts mode: a custom option with its own `series` takes over
+  // completely — we inject the query result as dataset.source so any
+  // series type (heatmap, funnel, gauge, radar, sankey, candlestick…)
+  // can reference it. Everything ECharts can do, a panel can do.
+  const custom = viz.option as { series?: unknown } | undefined;
+  if (custom?.series) {
+    return {
+      primary: {
+        color: PALETTE,
+        tooltip: {},
+        textStyle: { color: fg },
+        dataset: { source: [cols, ...result.rows] },
+        ...custom,
+      },
+    };
+  }
+  // Values come back as strings from the query layer — coerce, don't
+  // typeof-check, or every series comes out empty (blank chart).
+  const num = (v: unknown): number | null => {
+    if (v === null || v === "") return null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const isNumCol = (i: number) => {
+    let seen = 0;
+    for (const r of result.rows) {
+      if (r[i] === null || r[i] === "") continue;
+      if (num(r[i]) === null) return false;
+      seen++;
+    }
+    return seen > 0;
+  };
+  // X axis = the explicit field, else the first NON-numeric column, else col 0.
+  const xIdx = viz.xField
+    ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0)
+    : Math.max(cols.findIndex((_, i) => !isNumCol(i)), 0);
+  const yIdxs = viz.yFields?.length
+    ? viz.yFields.map((f) => cols.indexOf(f.toUpperCase())).filter((i) => i >= 0)
+    : cols.map((_, i) => i).filter((i) => i !== xIdx && isNumCol(i));
+  // Nothing detected numeric? Plot every non-x column so it's never blank.
+  const yCols = yIdxs.length ? yIdxs : cols.map((_, i) => i).filter((i) => i !== xIdx);
+
+  const categories = result.rows.map((r) => String(r[xIdx] ?? ""));
+  const series =
+    viz.chart === "pie"
+      ? [
+          {
+            type: "pie" as const,
+            radius: ["35%", "70%"],
+            itemStyle: { borderRadius: 4 },
+            label: { color: fg, fontSize: 10 },
+            data: result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: num(r[yCols[0] ?? 1]) ?? 0 })),
+          },
+        ]
+      : yCols.map((yi) => ({
+          name: cols[yi],
+          type: (viz.chart === "area" ? "line" : viz.chart) as "line" | "bar" | "scatter",
+          ...(viz.chart === "area" ? { areaStyle: { opacity: 0.22 } } : {}),
+          ...(viz.stacked ? { stack: "total" } : {}),
+          smooth: viz.chart !== "bar",
+          showSymbol: viz.chart === "scatter",
+          symbolSize: viz.chart === "scatter" ? 9 : 4,
+          itemStyle: { borderRadius: viz.chart === "bar" ? [3, 3, 0, 0] : 0 },
+          barMaxWidth: 40,
+          data: result.rows.map((r) => num(r[yi]) ?? 0),
+        }));
+
+  const primary: Record<string, unknown> = {
+    color: PALETTE,
+    grid: { left: 44, right: 12, top: 24, bottom: 26 },
+    tooltip: { trigger: viz.chart === "pie" ? "item" : "axis" },
+    legend:
+      series.length > 1 && viz.chart !== "pie"
+        ? { top: 2, textStyle: { color: fg, fontSize: 10 }, icon: "circle" }
+        : undefined,
+    ...(viz.chart !== "pie"
+      ? {
+          xAxis: {
+            type: "category",
+            data: categories,
+            axisLabel: { color: fg, fontSize: 10, hideOverlap: true, rotate: categories.length > 8 ? 30 : 0 },
+            axisLine: { lineStyle: { color: border } },
+            axisTick: { show: false },
+          },
+          yAxis: {
+            type: "value",
+            axisLabel: { color: fg, fontSize: 10 },
+            splitLine: { lineStyle: { color: border, opacity: 0.4, type: "dashed" } },
+          },
+        }
+      : {}),
+    series,
+  };
+  // Full-control overrides: whatever the human (or agent) put in viz.option
+  // merges over the generated chart.
+  return { primary, override: viz.option as Record<string, unknown> | undefined };
+}
+
 function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResult }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -609,120 +835,14 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const cols = result.columns.map((c) => c.name);
-    if (!result.rows.length) {
+    const built = buildChartOption(viz, result);
+    if (!built) {
       chart.clear();
       chart.setOption({ title: { text: "No data", left: "center", top: "center", textStyle: { color: "#888", fontSize: 12 } } });
       return;
     }
-    const styles0 = getComputedStyle(document.documentElement);
-    const fg0 = styles0.getPropertyValue("--muted-foreground").trim() || "#888";
-    // FULL ECharts mode: a custom option with its own `series` takes over
-    // completely — we inject the query result as dataset.source so any
-    // series type (heatmap, funnel, gauge, radar, sankey, candlestick…)
-    // can reference it. Everything ECharts can do, a panel can do.
-    const custom = viz.option as { series?: unknown } | undefined;
-    if (custom?.series) {
-      chart.setOption(
-        {
-          color: PALETTE,
-          tooltip: {},
-          textStyle: { color: fg0 },
-          dataset: { source: [cols, ...result.rows] },
-          ...custom,
-        } as Parameters<typeof chart.setOption>[0],
-        true,
-      );
-      return;
-    }
-    // Values come back as strings from the query layer — coerce, don't
-    // typeof-check, or every series comes out empty (blank chart).
-    const num = (v: unknown): number | null => {
-      if (v === null || v === "") return null;
-      const n = typeof v === "number" ? v : Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
-    const isNumCol = (i: number) => {
-      let seen = 0;
-      for (const r of result.rows) {
-        if (r[i] === null || r[i] === "") continue;
-        if (num(r[i]) === null) return false;
-        seen++;
-      }
-      return seen > 0;
-    };
-    // X axis = the explicit field, else the first NON-numeric column, else col 0.
-    const xIdx = viz.xField
-      ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0)
-      : Math.max(cols.findIndex((_, i) => !isNumCol(i)), 0);
-    const yIdxs = (
-      viz.yFields?.length
-        ? viz.yFields.map((f) => cols.indexOf(f.toUpperCase())).filter((i) => i >= 0)
-        : cols.map((_, i) => i).filter((i) => i !== xIdx && isNumCol(i))
-    );
-    // Nothing detected numeric? Plot every non-x column so it's never blank.
-    const yCols = yIdxs.length ? yIdxs : cols.map((_, i) => i).filter((i) => i !== xIdx);
-    const styles = getComputedStyle(document.documentElement);
-    const fg = styles.getPropertyValue("--muted-foreground").trim() || "#888";
-    const border = styles.getPropertyValue("--border").trim() || "#333";
-
-    const categories = result.rows.map((r) => String(r[xIdx] ?? ""));
-    const series =
-      viz.chart === "pie"
-        ? [
-            {
-              type: "pie" as const,
-              radius: ["35%", "70%"],
-              itemStyle: { borderRadius: 4 },
-              label: { color: fg, fontSize: 10 },
-              data: result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: num(r[yCols[0] ?? 1]) ?? 0 })),
-            },
-          ]
-        : yCols.map((yi) => ({
-            name: cols[yi],
-            type: (viz.chart === "area" ? "line" : viz.chart) as "line" | "bar" | "scatter",
-            ...(viz.chart === "area" ? { areaStyle: { opacity: 0.22 } } : {}),
-            ...(viz.stacked ? { stack: "total" } : {}),
-            smooth: viz.chart !== "bar",
-            showSymbol: viz.chart === "scatter",
-            symbolSize: viz.chart === "scatter" ? 9 : 4,
-            itemStyle: { borderRadius: viz.chart === "bar" ? [3, 3, 0, 0] : 0 },
-            barMaxWidth: 40,
-            data: result.rows.map((r) => num(r[yi]) ?? 0),
-          }));
-
-    chart.setOption(
-      {
-        color: PALETTE,
-        grid: { left: 44, right: 12, top: 24, bottom: 26 },
-        tooltip: { trigger: viz.chart === "pie" ? "item" : "axis" },
-        legend:
-          series.length > 1 && viz.chart !== "pie"
-            ? { top: 2, textStyle: { color: fg, fontSize: 10 }, icon: "circle" }
-            : undefined,
-        ...(viz.chart !== "pie"
-          ? {
-              xAxis: {
-                type: "category",
-                data: categories,
-                axisLabel: { color: fg, fontSize: 10, hideOverlap: true, rotate: categories.length > 8 ? 30 : 0 },
-                axisLine: { lineStyle: { color: border } },
-                axisTick: { show: false },
-              },
-              yAxis: {
-                type: "value",
-                axisLabel: { color: fg, fontSize: 10 },
-                splitLine: { lineStyle: { color: border, opacity: 0.4, type: "dashed" } },
-              },
-            }
-          : {}),
-        series,
-      },
-      true,
-    );
-    // Full-control overrides: whatever the human (or agent) put in viz.option
-    // merges over the generated chart.
-    if (viz.option) chart.setOption(viz.option as Parameters<typeof chart.setOption>[0]);
+    chart.setOption(built.primary as Parameters<typeof chart.setOption>[0], true);
+    if (built.override) chart.setOption(built.override as Parameters<typeof chart.setOption>[0]);
   }, [result, viz]);
 
   return <div ref={ref} className="h-full w-full" />;
@@ -744,8 +864,9 @@ function PanelEditor({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(panel.title);
-  const [sql, setSql] = useState(panel.query.sql);
-  const [vizType, setVizType] = useState<"echarts" | "kpi" | "table" | "explore">(panel.viz.type);
+  const [sql, setSql] = useState(panel.query?.sql ?? "");
+  const [vizType, setVizType] = useState<"echarts" | "kpi" | "table" | "explore" | "markdown">(panel.viz.type);
+  const [content, setContent] = useState(panel.viz.type === "markdown" ? panel.viz.content : "");
   const ev = panel.viz.type === "echarts" ? panel.viz : null;
   const [chart, setChart] = useState<"bar" | "line" | "area" | "pie" | "scatter">(ev?.chart ?? "bar");
   const [xField, setXField] = useState(ev?.xField ?? "");
@@ -824,31 +945,35 @@ function PanelEditor({
       }
     }
     const viz: DashPanel["viz"] =
-      vizType === "kpi"
-        ? { type: "kpi", valueField: kpiField || undefined, unit: kpiUnit || undefined }
-        : vizType === "table"
-          ? { type: "table" }
-          : vizType === "explore"
-            ? { type: "explore", config: panel.viz.type === "explore" ? panel.viz.config : undefined }
-            : {
-              type: "echarts",
-              chart,
-              xField: xField || undefined,
-              yFields: yFields
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-              stacked: stacked || undefined,
-              option,
-            };
-    onSave({ ...panel, title, query: { sql }, viz });
+      vizType === "markdown"
+        ? { type: "markdown", content: content || "*…*" }
+        : vizType === "kpi"
+          ? { type: "kpi", valueField: kpiField || undefined, unit: kpiUnit || undefined }
+          : vizType === "table"
+            ? { type: "table" }
+            : vizType === "explore"
+              ? { type: "explore", config: panel.viz.type === "explore" ? panel.viz.config : undefined }
+              : {
+                type: "echarts",
+                chart,
+                xField: xField || undefined,
+                yFields: yFields
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+                stacked: stacked || undefined,
+                option,
+              };
+    onSave({ ...panel, title, query: vizType === "markdown" ? undefined : { sql }, viz });
   }
 
   const cols = preview?.columns.map((c) => c.name) ?? [];
 
   return (
-    <div className="fixed inset-0 z-[9996] flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
-      <div className="flex max-h-[85vh] w-[620px] flex-col rounded-2xl border border-border bg-popover shadow-2xl">
+    // Inline editing surface — takes the grid's place inside the dashboard
+    // tab (no floating dialog).
+    <div className="flex min-h-0 flex-1 flex-col bg-editor">
+      <div className="mx-auto flex h-full w-full max-w-[720px] flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
           <BarChart3 className="h-4 w-4 text-primary" />
           <span className="text-[13px] font-semibold text-foreground">Edit panel</span>
@@ -871,7 +996,28 @@ function PanelEditor({
             />
           </label>
 
-          <div>
+          {vizType === "markdown" ? (
+            <div>
+              <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Text (markdown)
+              </span>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={8}
+                spellCheck
+                placeholder={"## Summary\n\nRevenue grew **12%** month over month, driven by…"}
+                className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 text-[12.5px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+              />
+              {content.trim() ? (
+                <div className="mt-2 rounded-lg border border-border/60 bg-panel/50 px-3 py-2 text-[12px] leading-relaxed text-foreground [&_a]:text-primary [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_h1]:font-bold [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-4 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-4">
+                  <ReactMarkdown>{content}</ReactMarkdown>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className={vizType === "markdown" ? "hidden" : undefined}>
             <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Start from a template
             </span>
@@ -903,7 +1049,7 @@ function PanelEditor({
             </div>
           </div>
 
-          <div>
+          <div className={vizType === "markdown" ? "hidden" : undefined}>
             <div className="mb-0.5 flex items-center justify-between">
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL (the dataset)</span>
               <button
@@ -934,14 +1080,16 @@ function PanelEditor({
           <div>
             <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Visualize as</span>
             <div className="flex flex-wrap gap-1.5">
-              {(["bar", "line", "area", "pie", "scatter", "kpi", "table", "explore"] as const).map((t) => {
+              {(["bar", "line", "area", "pie", "scatter", "kpi", "table", "explore", "text"] as const).map((t) => {
+                const direct = t === "kpi" || t === "table" || t === "explore";
                 const active =
-                  t === "kpi" || t === "table" || t === "explore" ? vizType === t : vizType === "echarts" && chart === t;
+                  t === "text" ? vizType === "markdown" : direct ? vizType === t : vizType === "echarts" && chart === t;
                 return (
                   <button
                     key={t}
                     onClick={() => {
-                      if (t === "kpi" || t === "table" || t === "explore") setVizType(t);
+                      if (t === "text") setVizType("markdown");
+                      else if (direct) setVizType(t);
                       else {
                         setVizType("echarts");
                         setChart(t);
@@ -1076,3 +1224,180 @@ const TEMPLATES: { label: string; hint: string; viz: "bar" | "line" | "area" | "
   { label: "Top-N table", hint: "Ranked records", viz: "table", sql: (ds) => `SELECT *\nFROM ${ds}\nORDER BY <value_column> DESC LIMIT 100` },
   { label: "Pivot studio", hint: "Drag-drop explore (Perspective)", viz: "explore", sql: (ds) => `SELECT *\nFROM ${ds}\nLIMIT 20000` },
 ];
+
+/* ────────────────────────── Report export (md / html / pdf) ─────────────── */
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "dashboard";
+}
+
+function fmtNumber(raw: unknown): string {
+  const num = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(num)) return String(raw ?? "—");
+  if (Math.abs(num) >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
+  if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
+  if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
+  return Number.isInteger(num) ? String(num) : num.toFixed(2);
+}
+
+function kpiText(panel: DashPanel, result: StatementResult): string {
+  const viz = panel.viz as Extract<DashPanel["viz"], { type: "kpi" }>;
+  const field = viz.valueField?.toUpperCase();
+  const idx = field ? result.columns.findIndex((c) => c.name === field) : 0;
+  const value = fmtNumber(result.rows[0]?.[Math.max(idx, 0)]);
+  return viz.unit ? `${value} ${viz.unit}` : value;
+}
+
+const MD_ROW_CAP = 50;
+
+function mdTable(result: StatementResult): string {
+  const esc = (v: unknown) => String(v ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const cols = result.columns.map((c) => c.name);
+  const rows = result.rows.slice(0, MD_ROW_CAP);
+  const lines = [
+    `| ${cols.join(" | ")} |`,
+    `| ${cols.map(() => "---").join(" | ")} |`,
+    ...rows.map((r) => `| ${r.map(esc).join(" | ")} |`),
+  ];
+  if (result.rows.length > MD_ROW_CAP) lines.push("", `_…${result.rows.length - MD_ROW_CAP} more rows not shown._`);
+  return lines.join("\n");
+}
+
+function buildMarkdownReport(dash: Dashboard, panels: DashPanel[], data: Map<string, StatementResult | null>): string {
+  const parts: string[] = [`# ${dash.title}`, ""];
+  if (dash.description) parts.push(dash.description, "");
+  parts.push(`_Exported from Exasol Studio · ${new Date().toLocaleString()}_`, "");
+  for (const p of panels) {
+    if (p.viz.type === "markdown") {
+      parts.push(p.viz.content, "");
+      continue;
+    }
+    parts.push(`## ${p.title || "Panel"}`, "");
+    const r = data.get(p.id);
+    if (!r) {
+      parts.push("_No data (not connected or the query failed)._", "");
+      continue;
+    }
+    if (p.viz.type === "kpi") parts.push(`**${kpiText(p, r)}**`, "");
+    else parts.push(mdTable(r), "");
+    if (p.query?.sql) parts.push("```sql", p.query.sql.trim(), "```", "");
+  }
+  return parts.join("\n");
+}
+
+/** Render one chart offscreen and snapshot it as a PNG data URL. */
+function chartPng(viz: Extract<DashPanel["viz"], { type: "echarts" }>, result: StatementResult): string | null {
+  const built = buildChartOption(viz, result, { fg: "#555", border: "#ddd" });
+  if (!built) return null;
+  const div = document.createElement("div");
+  div.style.cssText = "position:fixed;left:-10000px;top:0;width:840px;height:420px";
+  document.body.appendChild(div);
+  try {
+    const chart = echarts.init(div, undefined, { renderer: "canvas" });
+    chart.setOption({ ...built.primary, animation: false } as Parameters<typeof chart.setOption>[0], true);
+    if (built.override) chart.setOption(built.override as Parameters<typeof chart.setOption>[0]);
+    const url = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#ffffff" });
+    chart.dispose();
+    return url;
+  } catch {
+    return null;
+  } finally {
+    div.remove();
+  }
+}
+
+/** Minimal markdown→HTML for narrative panels in exported reports. */
+function mdToHtml(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out: string[] = [];
+  let inList = false;
+  for (const line of md.split("\n")) {
+    const h = line.match(/^(#{1,4})\s+(.*)/);
+    const li = line.match(/^\s*[-*]\s+(.*)/);
+    if (li) {
+      if (!inList) {
+        out.push("<ul>");
+        inList = true;
+      }
+      out.push(`<li>${inline(li[1])}</li>`);
+      continue;
+    }
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+    if (h) out.push(`<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (inList) out.push("</ul>");
+  return out.join("\n");
+}
+
+function buildHtmlReport(dash: Dashboard, panels: DashPanel[], data: Map<string, StatementResult | null>): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const sections: string[] = [];
+  for (const p of panels) {
+    if (p.viz.type === "markdown") {
+      sections.push(`<section class="md">${mdToHtml(p.viz.content)}</section>`);
+      continue;
+    }
+    const r = data.get(p.id);
+    let body: string;
+    if (!r) body = `<p class="muted">No data (not connected or the query failed).</p>`;
+    else if (p.viz.type === "kpi") body = `<p class="kpi">${esc(kpiText(p, r))}</p>`;
+    else if (p.viz.type === "echarts") {
+      const png = chartPng(p.viz, r);
+      body = png ? `<img src="${png}" alt="${esc(p.title)}" />` : `<p class="muted">No data.</p>`;
+    } else {
+      const cols = r.columns.map((c) => `<th>${esc(c.name)}</th>`).join("");
+      const rows = r.rows
+        .slice(0, MD_ROW_CAP)
+        .map((row) => `<tr>${row.map((v) => `<td>${esc(String(v ?? ""))}</td>`).join("")}</tr>`)
+        .join("\n");
+      const more = r.rows.length > MD_ROW_CAP ? `<p class="muted">…${r.rows.length - MD_ROW_CAP} more rows not shown.</p>` : "";
+      body = `<table><thead><tr>${cols}</tr></thead><tbody>${rows}</tbody></table>${more}`;
+    }
+    sections.push(`<section><h2>${esc(p.title || "Panel")}</h2>${body}</section>`);
+  }
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${esc(dash.title)}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1c1c1e;max-width:880px;margin:32px auto;padding:0 24px;line-height:1.5}
+  h1{font-size:26px;margin-bottom:2px} h2{font-size:16px;margin:26px 0 8px;border-bottom:1px solid #e5e5ea;padding-bottom:4px}
+  .sub{color:#6e6e73;font-size:12px;margin-bottom:24px}
+  .kpi{font-size:30px;font-weight:700;margin:6px 0}
+  img{max-width:100%;border:1px solid #e5e5ea;border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:12px} th,td{border:1px solid #e5e5ea;padding:5px 8px;text-align:left}
+  th{background:#f5f5f7} .muted{color:#6e6e73;font-size:12px}
+  code{background:#f5f5f7;border-radius:4px;padding:1px 4px;font-size:12px}
+  section.md{margin:18px 0}
+  @media print { body{margin:0 auto} section{break-inside:avoid} }
+</style></head>
+<body>
+<h1>${esc(dash.title)}</h1>
+<p class="sub">${esc(dash.description || "")}${dash.description ? " · " : ""}Exported from Exasol Studio · ${new Date().toLocaleString()}</p>
+${sections.join("\n")}
+</body></html>`;
+}
+
+/** Print an HTML report via a hidden iframe (macOS print dialog → Save as PDF). */
+function printHtml(html: string) {
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  document.body.appendChild(frame);
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    } catch {
+      /* surfaced via the export note */
+    }
+    setTimeout(() => frame.remove(), 120_000);
+  };
+  frame.srcdoc = html;
+}

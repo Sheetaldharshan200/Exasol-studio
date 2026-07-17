@@ -469,6 +469,9 @@ export const ipc = {
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  saveAttachment: (name: string, base64Data: string) =>
+    call<string>("save_attachment", { name, base64Data }),
+  installCli: () => call<string>("install_cli"),
   fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
   fsReadText: (path: string) => call<string>("fs_read_text", { path }),
   fsReadTable: (path: string, limit?: number) =>

@@ -1,4 +1,5 @@
-import { generateText, stepCountIs, tool, type LanguageModel, type ToolSet } from "ai";
+import { generateText, tool, type ToolSet } from "./llm.ts";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
 import type { Session } from "./session.ts";
@@ -9,6 +10,9 @@ import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
 import type { Skill } from "./skills.ts";
+import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
+import type { TurnBoard, Finding } from "./board.ts";
+import { parquetReadObjects } from "hyparquet";
 import uiMap from "../data/ui-map.json" with { type: "json" };
 
 // The agent's Exasol tools. Metadata queries are ported from the official
@@ -37,10 +41,17 @@ function lit(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/** Cap a single cell so one huge VARCHAR/JSON value can't flood the context. */
+const CELL_CAP = 300;
+function capCell(v: unknown): unknown {
+  if (typeof v === "string" && v.length > CELL_CAP) return v.slice(0, CELL_CAP) + `… [+${v.length - CELL_CAP} chars]`;
+  return v;
+}
+
 function shape(out: QueryOutput) {
   return {
     columns: out.columns,
-    rows: out.rows,
+    rows: out.rows.map((r) => r.map(capCell)),
     rowCount: out.rowCount,
     ...(out.truncated ? { note: `Only the first ${out.rows.length} rows are shown.` } : {}),
   };
@@ -57,7 +68,7 @@ export function buildTools(ctx: {
   dashboards?: DashboardStore;
   artifacts?: ArtifactStore;
   /** Model for sub-agents; omitting disables spawn_researcher. */
-  model?: LanguageModel;
+  model?: BaseChatModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
   readOnly?: boolean;
   skills?: Skill[];
@@ -65,12 +76,21 @@ export function buildTools(ctx: {
   semanticViewsReady?: boolean;
   /** Connection profile that owns the ready Semantic Views installation. */
   semanticViewsConnectionId?: string;
+  /** Where this session runs — the guidance for "not connected" differs. */
+  surface?: "app" | "cli";
+  /** Shared per-turn findings board for multi-agent work. */
+  board?: TurnBoard;
 }): ToolSet {
   const { db, session } = ctx;
 
   const requireConn = (): string => {
     if (!ctx.connectionId) {
       const saved = db.list();
+      if (ctx.surface === "cli") {
+        throw new Error(
+          "No database connection is active in this terminal session. Tell the user to run /connect (a guided form) or restart with --db exa://user:pass@host:port. Do not ask for credentials in chat.",
+        );
+      }
       throw new Error(
         saved.length
           ? `No connection is active in this chat. Saved connections exist (${saved.map((c) => c.name).join(", ")}) — tell the user to connect via the Connect button in the title bar, then retry. Do not ask for credentials.`
@@ -410,6 +430,7 @@ export function buildTools(ctx: {
             description:
               "Create or update a dashboard. Panels live on a 12-column grid; each has SQL and a viz " +
               "(echarts bar/line/area/pie/scatter with xField/yFields, kpi with valueField, or table). " +
+              'Markdown text panels — {viz:{type:"markdown",content:"…"}, NO query} — add narrative: a summary up top, insight notes beside charts. Use them to make report-style dashboards. ' +
               "TEST each panel's SQL with run_sql before saving. Omit id to create.",
             inputSchema: z.object({
               dashboard: z.object({
@@ -421,7 +442,7 @@ export function buildTools(ctx: {
                   .min(1)
                   .max(24)
                   .describe(
-                    'Each panel: {id, title, grid:{x(0-11),y,w(2-12),h(2-24)}, query:{sql}, viz:{type:"echarts",chart:"bar|line|area|pie|scatter",xField?,yFields?} | {type:"kpi",valueField?,unit?} | {type:"table"}}',
+                    'Each panel: {id, title, grid:{x(0-11),y,w(2-12),h(2-24)}, query:{sql}, viz:{type:"echarts",chart:"bar|line|area|pie|scatter",xField?,yFields?} | {type:"kpi",valueField?,unit?} | {type:"table"} | {type:"markdown",content} (markdown panels take NO query)}',
                   ),
               }),
             }),
@@ -561,9 +582,19 @@ export function buildTools(ctx: {
               const hits = ctx.documents!.search(session.id, query, 5);
               if (!hits.length) {
                 const docs = ctx.documents!.list(session.id);
-                return docs.length
-                  ? { hits: [], note: `No matching sections. Attached files: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ")}. Try read_document to browse one.` }
-                  : { hits: [], note: "No files are attached to this chat." };
+                if (!docs.length) return { hits: [], note: "No files are attached to this chat." };
+                // Forgiving by design: with exactly ONE attached text file, an
+                // empty search returns its opening sections — an empty result
+                // is what makes weak models hallucinate file contents.
+                const readable = docs.filter((d) => !d.binary);
+                if (readable.length === 1) {
+                  const parts = ctx.documents!.read(session.id, readable[0].id).slice(0, 3);
+                  return {
+                    hits: parts.map((p) => ({ docId: p.docId, docName: p.docName, section: p.index, heading: p.heading, text: p.text })),
+                    note: `No keyword match — showing the start of the only attached file (${readable[0].name}). Use read_document(docId: "${readable[0].id}") for the rest. Answer ONLY from this real content.`,
+                  };
+                }
+                return { hits: [], note: `No matching sections. Attached files: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ")}. Use read_document with a docId — do NOT guess file contents.` };
               }
               return {
                 hits: hits.map((h) => ({ docId: h.docId, docName: h.docName, section: h.index, heading: h.heading, text: h.text })),
@@ -580,6 +611,114 @@ export function buildTools(ctx: {
               const parts = ctx.documents!.read(session.id, docId, section);
               if (!parts.length) return { error: "No such document or section in this chat." };
               return { docName: parts[0].docName, sections: parts.map((p) => ({ section: p.index, heading: p.heading, text: p.text })) };
+            },
+          }),
+          import_csv: tool({
+            description:
+              "Load an attached data file (CSV, TSV, other delimited text, or Parquet) into a REAL Exasol table. This is the correct way to 'add', 'load', 'import', or 'pump' an uploaded data file into the database — never write IMPORT/EXA_PUMP SQL by hand. " +
+              "It auto-detects the format and delimiter, infers column names and types (tolerating messy rows), creates the schema and table if needed, and bulk-inserts the rows (one approval covers the whole load). Repeat per file to load several into the same schema.",
+            inputSchema: z.object({
+              docId: z.string().describe("The attached file's id (from the attachment note or search_documents)"),
+              schema: z.string().describe("Target schema, e.g. 'TPCH' (created if missing)"),
+              table: z.string().optional().describe("Target table; defaults to the file name without extension"),
+              replace: z.boolean().optional().describe("Drop and recreate the table first (default: create if missing, then append)"),
+            }),
+            execute: async ({ docId, schema, table, replace }) => {
+              const id = requireConn();
+              if (ctx.readOnly) {
+                return { denied: true, message: "This researcher context is read-only; it cannot load data." };
+              }
+              if (ctx.settings?.writePolicy === "deny") {
+                return { denied: true, message: "Writes are disabled in this workspace's AI guardrails, so files can't be loaded." };
+              }
+              const file = ctx.documents!.raw(session.id, docId);
+              if (!file) {
+                const docs = ctx.documents!.list(session.id);
+                return { error: `No attached file with id "${docId}". Attached: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ") || "none"}.` };
+              }
+              const isParquet = file.binary || /\.parquet$/i.test(file.name) || /parquet/i.test(file.mime);
+              let csv: CsvTable;
+              let assumeHeader = false;
+              if (isParquet) {
+                try {
+                  const bytes = Buffer.from(file.text, "base64");
+                  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                  const asyncBuffer = { byteLength: ab.byteLength, slice: (s: number, e?: number) => ab.slice(s, e) };
+                  const objs = await parquetReadObjects({ file: asyncBuffer, utf8: true });
+                  if (!objs.length) return { error: `"${file.name}" is an empty Parquet file.` };
+                  csv = objectsToTable(objs as Record<string, unknown>[]);
+                  assumeHeader = true;
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  return { error: `Could not read Parquet "${file.name}": ${msg}. Snappy and uncompressed Parquet are supported; for other codecs (zstd/brotli) re-export as CSV or Snappy.` };
+                }
+              } else {
+                csv = parseCsv(file.text);
+                if (!csv.header.length || !csv.rows.length) {
+                  return { error: `"${file.name}" has no parseable rows — is it a delimited or Parquet file?` };
+                }
+              }
+              const tableName = table || file.name.replace(/\.[^.]+$/, "");
+              const plan = buildPlan(csv, schema, tableName, { replace, assumeHeader });
+
+              const fmt = isParquet ? "Parquet" : `delimiter "${csv.delimiter === "\t" ? "\\t" : csv.delimiter}"`;
+              const detail =
+                `File: ${file.name} (${plan.rowCount} rows, ${fmt})\n` +
+                `Target: ${plan.schema}.${plan.table}${replace ? " (replace)" : ""}\n\n` +
+                plan.columns.map((c) => `  ${c.name} ${typeToSql(c.type)}`).join("\n");
+              const allowed = await session.askPermission({
+                tool: "import_csv",
+                summary: `Load ${plan.rowCount} rows into ${plan.schema}.${plan.table}`,
+                detail,
+              });
+              session.record({ kind: "tool.import_csv", file: file.name, target: `${plan.schema}.${plan.table}`, rows: plan.rowCount, allowed });
+              if (!allowed) {
+                return { denied: true, message: "The user declined the import. Do not retry; ask what they want instead." };
+              }
+
+              const started = Date.now();
+              try {
+                await db.execute(id, plan.createSchemaSql);
+                if (plan.dropSql) await db.execute(id, plan.dropSql);
+                await db.execute(id, plan.createTableSql);
+                // Bulk-load in batches; if a batch fails (one malformed row in
+                // messy data), fall back to row-by-row for that batch so one bad
+                // line never sinks the whole import — skip and count the failures.
+                const BATCH = 500;
+                let inserted = 0;
+                let skipped = 0;
+                for (let i = 0; i < plan.rows.length; i += BATCH) {
+                  const slice = plan.rows.slice(i, i + BATCH);
+                  try {
+                    inserted += await db.execute(id, buildInsert(plan, slice));
+                  } catch {
+                    for (const row of slice) {
+                      try {
+                        inserted += await db.execute(id, buildInsert(plan, [row]));
+                      } catch {
+                        skipped += 1;
+                      }
+                    }
+                  }
+                }
+                session.record({ kind: "tool.import_csv.done", target: `${plan.schema}.${plan.table}`, inserted, skipped, ms: Date.now() - started });
+                return {
+                  ok: true,
+                  schema: plan.schema,
+                  table: plan.table,
+                  columns: plan.columns.map((c) => ({ name: c.name, type: typeToSql(c.type) })),
+                  rowsInserted: inserted,
+                  rowsSkipped: skipped,
+                  message:
+                    `Loaded ${inserted} row(s) into ${plan.schema}.${plan.table}` +
+                    (skipped ? `; ${skipped} malformed row(s) were skipped` : "") +
+                    `. The data is in the database now — do not re-verify by re-listing everything.`,
+                };
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                session.record({ kind: "tool.import_csv.error", target: `${plan.schema}.${plan.table}`, error: msg });
+                return { error: `Import failed while loading ${plan.schema}.${plan.table}: ${msg}` };
+              }
             },
           }),
         }
@@ -610,35 +749,103 @@ export function buildTools(ctx: {
           spawn_researcher: tool({
             description:
               "Spawn a parallel read-only researcher to explore part of the database (schemas, tables, sampling, read queries) and report findings. " +
-              "Use MULTIPLE calls in one turn to fan out across independent questions — they run concurrently and keep your own context small.",
+              "Use MULTIPLE calls in one turn to fan out across independent questions — they run concurrently, share a findings board, and keep your own context small.",
             inputSchema: z.object({
               task: z.string().describe("A focused research question, e.g. 'Map the tables and join keys related to orders'"),
             }),
             execute: async ({ task }) => {
-              const subTools = buildTools({
-                db,
-                session,
-                connectionId: ctx.connectionId,
-                memory: ctx.memory,
-                kb: ctx.kb,
-                settings: ctx.settings,
-                readOnly: true,
-                semanticViewsReady: ctx.semanticViewsReady,
-                semanticViewsConnectionId: ctx.semanticViewsConnectionId,
-              });
+              const taskId = ctx.board?.begin(task);
+              // Typed handoff: the researcher ends by SUBMITTING structured
+              // findings (tables, tested SQL, facts) — not just prose. They
+              // land on the shared board every later spawn can see.
+              let submitted: { summary: string; findings: Finding[] } | null = null;
+              const subTools: ToolSet = {
+                ...buildTools({
+                  db,
+                  session,
+                  connectionId: ctx.connectionId,
+                  memory: ctx.memory,
+                  kb: ctx.kb,
+                  settings: ctx.settings,
+                  readOnly: true,
+                  surface: ctx.surface,
+                  semanticViewsReady: ctx.semanticViewsReady,
+                  semanticViewsConnectionId: ctx.semanticViewsConnectionId,
+                }),
+                submit_report: tool({
+                  description:
+                    "Submit your final research report as STRUCTURED findings. Call this exactly once, at the end, then stop.",
+                  inputSchema: z.object({
+                    summary: z.string().describe("2-4 sentence factual summary of what you found"),
+                    findings: z
+                      .array(
+                        z.object({
+                          kind: z.enum(["table", "sql", "fact"]),
+                          schema: z.string().optional(),
+                          table: z.string().optional(),
+                          columns: z.array(z.string()).optional(),
+                          purpose: z.string().optional().describe("What an sql finding is for"),
+                          sql: z.string().optional().describe("The exact SELECT, schema-qualified"),
+                          tested: z.boolean().optional().describe("true only if you ran it successfully"),
+                          rows: z.number().optional(),
+                          note: z.string().optional(),
+                        }),
+                      )
+                      .max(20),
+                  }),
+                  execute: async ({ summary, findings }) => {
+                    submitted = { summary, findings: findings as Finding[] };
+                    return { ok: true, note: "Report recorded. You are done — do not call more tools." };
+                  },
+                }),
+              };
+              const known = ctx.board?.digest();
               const res = await generateText({
                 model: ctx.model!,
                 system:
-                  "You are a read-only database researcher inside Exasol Studio. Investigate the task with tools, then reply with a dense, factual report. " +
-                  "Every claim must come from a tool result — if something is unknown, state that plainly. Exasol dialect: LIMIT n, UPPERCASE identifiers, SYS.EXA_ALL_* metadata.",
+                  "You are a read-only database researcher inside Exasol Studio. Investigate the task with tools, then FINISH by calling submit_report with structured findings (tables with columns, tested SQL with purpose, facts). " +
+                  "Every claim must come from a tool result — if something is unknown, state that plainly. Exasol dialect: LIMIT n, UPPERCASE identifiers, SYS.EXA_ALL_* metadata." +
+                  (known ? `\n\nAlready gathered by other researchers this turn (build on it, do not redo):\n${known}` : ""),
                 prompt: task,
                 tools: subTools,
-                stopWhen: stepCountIs(6),
-                temperature: 0.1,
+                maxSteps: 6,
                 abortSignal: session.abort?.signal,
+                // REALTIME: surface the researcher's inner tool activity as it
+                // happens — parallel subagents render live in the app and CLI
+                // (↳-prefixed steps) instead of a silent multi-second blob.
+                onEvent: (e) => {
+                  try {
+                    if (e.type === "tool-call" && e.toolName !== "submit_report") {
+                      session.emit({ type: "tool-start", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, args: e.input });
+                    } else if (e.type === "tool-result" && e.toolName !== "submit_report") {
+                      const out = e.output as { rowCount?: number; error?: unknown } | undefined;
+                      const summary =
+                        out && typeof out === "object"
+                          ? typeof out.rowCount === "number"
+                            ? `${out.rowCount} rows`
+                            : out.error
+                              ? String(out.error).slice(0, 80)
+                              : "done"
+                          : "done";
+                      session.emit({ type: "tool-end", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, ok: !out?.error, summary });
+                    } else if (e.type === "tool-error" && e.toolName !== "submit_report") {
+                      session.emit({ type: "tool-end", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, ok: false, summary: e.error.slice(0, 80) });
+                    }
+                  } catch {
+                    /* progress display must never break research */
+                  }
+                },
               });
-              session.record({ kind: "subagent", task, report: res.text.slice(0, 2000) });
-              return { report: res.text };
+              const sub = submitted as { summary: string; findings: Finding[] } | null;
+              const report = sub?.summary ?? res.text;
+              const findings = sub?.findings ?? [];
+              if (taskId !== undefined) ctx.board?.complete(taskId, true, findings, report.slice(0, 300));
+              session.record({ kind: "subagent", task, report: report.slice(0, 2000), findings: findings.length });
+              return {
+                report,
+                findings,
+                ...(ctx.board && ctx.board.size > 1 ? { sharedBoard: ctx.board.digest() } : {}),
+              };
             },
           }),
         }

@@ -76,6 +76,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Regression bank: every field-captured agent failure, replayed. A red
+      # here means a reliability fix regressed — the build must not ship.
+      - name: Agent evals
+        run: pnpm --filter @exasol-studio/agent-core evals
+
       # Bundle the platform runtime (Node + llama.cpp engine) into the app so a
       # shipped build needs zero runtime downloads. All platform specifics live
       # in scripts/fetch-runtime.mjs — a new target only needs a matrix entry

@@ -9,7 +9,6 @@ import {
   Loader2,
   MoreHorizontal,
   Play,
-  Search,
   SlidersHorizontal,
   Square,
   Zap,
@@ -40,17 +39,20 @@ export function ModelPicker({
   onManage: () => void;
   onRefresh: () => void;
 }) {
-  const [query, setQuery] = useState("");
   const [llmState, setLlmState] = useState<LlmStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<LlmProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    // Collapsed by default — only the group holding the ACTIVE model opens,
+    // and Built-in AI stays collapsed always (it's a setup surface, not a
+    // list the user browses every time).
     const pid = model.split("/")[0] ?? "";
     return {
-      builtin: true,
+      builtin: false,
       local: ["ollama", "lmstudio", "llamacpp"].includes(pid),
       cloud: ["anthropic", "openai", "google", "openrouter"].includes(pid),
+      "in-database": pid === "in-database",
     };
   });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -63,9 +65,11 @@ export function ModelPicker({
     return () => void un.then((f) => f());
   }, []);
 
-  const q = query.trim().toLowerCase();
-  const searching = q.length > 0;
-  const isOpen = (key: string) => searching || Boolean(open[key]);
+  // Search removed by design: the list is short and grouped — groups are the
+  // navigation. These constants keep the row filters inert.
+  const q = "";
+  const searching = false;
+  const isOpen = (key: string) => Boolean(open[key]);
   const toggle = (key: string) => setOpen((o) => ({ ...o, [key]: !o[key] }));
 
   async function run(key: string, fn: () => Promise<unknown>, after?: () => void) {
@@ -97,18 +101,6 @@ export function ModelPicker({
 
   return (
     <div className="flex max-h-[420px] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-      {/* Search */}
-      <div className="relative border-b border-border p-1.5">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search models…"
-          className="h-7 w-full rounded-md bg-secondary/60 pl-7 pr-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
-        />
-      </div>
-
       <div className="min-h-0 flex-1 overflow-y-auto">
         {error ? (
           <div className="mx-2 mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px] text-foreground">

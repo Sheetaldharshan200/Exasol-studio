@@ -6,19 +6,23 @@ import { z } from "zod";
 // Dashboards-as-JSON: the agent (and the user) edit the same declarative
 // spec; the app renders it with ECharts + a grid. No Superset, no server.
 
-export const PanelSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().default(""),
-  grid: z.object({
-    x: z.number().int().min(0).max(11),
-    y: z.number().int().min(0),
-    w: z.number().int().min(2).max(12),
-    h: z.number().int().min(2).max(24),
-  }),
-  query: z.object({
-    sql: z.string().min(1).describe("A SELECT producing the panel's data"),
-  }),
-  viz: z.discriminatedUnion("type", [
+export const PanelSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().default(""),
+    grid: z.object({
+      x: z.number().int().min(0).max(11),
+      y: z.number().int().min(0),
+      w: z.number().int().min(2).max(12),
+      h: z.number().int().min(2).max(24),
+    }),
+    /** Required for data panels; markdown panels carry no query. */
+    query: z
+      .object({
+        sql: z.string().describe("A SELECT producing the panel's data"),
+      })
+      .optional(),
+    viz: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("echarts"),
       /** Constrained ECharts option: data is injected as dataset.source. */
@@ -37,14 +41,25 @@ export const PanelSchema = z.object({
       valueField: z.string().optional(),
       unit: z.string().optional(),
     }),
-    z.object({ type: z.literal("table") }),
-    z.object({
-      type: z.literal("explore"),
-      /** Perspective viewer config (group_by, split_by, aggregates, plugin…). */
-      config: z.record(z.string(), z.unknown()).optional(),
-    }),
-  ]),
-});
+      z.object({ type: z.literal("table") }),
+      z.object({
+        type: z.literal("explore"),
+        /** Perspective viewer config (group_by, split_by, aggregates, plugin…). */
+        config: z.record(z.string(), z.unknown()).optional(),
+      }),
+      z.object({
+        type: z.literal("markdown"),
+        /** Narrative text rendered as markdown — headings, insight notes,
+         *  methodology. Turns a dashboard into a sendable report. */
+        content: z.string().min(1),
+      }),
+    ]),
+  })
+  .superRefine((p, ctx) => {
+    if (p.viz.type !== "markdown" && !p.query?.sql?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "query.sql is required for every panel except markdown text panels" });
+    }
+  });
 
 export const DashboardSchema = z.object({
   version: z.literal(1).default(1),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
   Check,
   ChevronDown,
   Cpu,
@@ -153,6 +154,7 @@ export function AssistantPanel({
   onUiAction,
   onDashboardSaved,
   onArtifact,
+  onOpenAttachment,
 }: {
   contextSummary: string;
   editorSql: string;
@@ -170,6 +172,8 @@ export function AssistantPanel({
   onDashboardSaved?: (id: string) => void;
   /** Open an HTML artifact the agent rendered. */
   onArtifact?: (id: string, title: string) => void;
+  /** Open a sent attachment in a workbench preview tab. */
+  onOpenAttachment?: (file: AgentAttachment) => void;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -189,6 +193,9 @@ export function AssistantPanel({
   const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [showSessions, setShowSessions] = useState(false);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  // Files already sent in THIS chat — pinned above the conversation so the
+  // user can reopen any of them in a preview tab at any time.
+  const [sessionFiles, setSessionFiles] = useState<AgentAttachment[]>([]);
   const [attachHint, setAttachHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -384,6 +391,7 @@ export function AssistantPanel({
     sessionRef.current = null;
     setSending(false);
     setShowSessions(false);
+    setSessionFiles([]);
     sessionBus.set(null);
   }
 
@@ -409,6 +417,7 @@ export function AssistantPanel({
       setItems(replay as ReplayItem[] as ChatItem[]);
       setTitle(t);
       setSending(false);
+      setSessionFiles([]); // attachment payloads live in panel memory, per chat
       sessionBus.set(id);
     } catch (err) {
       setAgentError(errorMessage(err));
@@ -526,6 +535,10 @@ export function AssistantPanel({
       ? `\n\n📎 ${sentAttachments.map((a) => a.name).join(", ")}`
       : "";
     setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: (trimmed || "(attached files)") + attachLine }]);
+    if (sentAttachments.length) {
+      // Pin sent files (dedup by name — a re-send replaces the payload).
+      setSessionFiles((prev) => [...prev.filter((p) => !sentAttachments.some((a) => a.name === p.name)), ...sentAttachments]);
+    }
     setInput("");
     setAttachments([]);
     setAttachHint(null);
@@ -574,9 +587,28 @@ export function AssistantPanel({
           r.readAsDataURL(f);
         });
         next.push({ name: f.name, mime: f.type, kind: "image", data });
+      } else if (/\.parquet$/i.test(f.name) || /parquet/i.test(f.type)) {
+        // Parquet is binary/columnar — read bytes and ship as base64 for import.
+        if (f.size > 100 * 1024 * 1024) {
+          setAttachHint(`${f.name} is too large (max 100 MB).`);
+          continue;
+        }
+        const data = await new Promise<string>((resolve) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const res = String(r.result);
+            resolve(res.slice(res.indexOf(",") + 1)); // strip "data:...;base64,"
+          };
+          r.readAsDataURL(f);
+        });
+        next.push({ name: f.name, mime: f.type || "application/vnd.apache.parquet", kind: "binary", data });
       } else {
-        if (f.size > 2 * 1024 * 1024) {
-          setAttachHint(`${f.name} is too large (max 2 MB for text files).`);
+        // Delimited data files can be loaded into a table (import_csv), so they
+        // get a much larger budget than a text doc read for RAG.
+        const isData = /\.(csv|tsv|txt)$/i.test(f.name) || /csv|tab-separated/i.test(f.type);
+        const cap = isData ? 60 * 1024 * 1024 : 4 * 1024 * 1024;
+        if (f.size > cap) {
+          setAttachHint(`${f.name} is too large (max ${Math.round(cap / (1024 * 1024))} MB).`);
           continue;
         }
         const data = await f.text();
@@ -754,10 +786,13 @@ export function AssistantPanel({
                     setShowSessions(false);
                   }}
                 >
-                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <SessionGlyph id={sess.id} title={sess.title} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[12.5px] text-foreground">{sess.title}</div>
-                    <div className="text-[10.5px] text-muted-foreground">{relTime(sess.updatedAt)}</div>
+                    <div className="text-[10.5px] text-muted-foreground">
+                      {relTime(sess.updatedAt)}
+                      {sess.messageCount ? ` · ${sess.messageCount} messages` : ""}
+                    </div>
                   </div>
                   <button
                     onClick={(e) => {
@@ -773,6 +808,28 @@ export function AssistantPanel({
               ))
             )}
           </div>
+        </div>
+      ) : null}
+
+      {/* ── Pinned files: everything sent this chat, click to open a preview tab ── */}
+      {sessionFiles.length > 0 ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+          {sessionFiles.map((f) => (
+            <button
+              key={f.name}
+              type="button"
+              onClick={() => onOpenAttachment?.(f)}
+              title={`Open ${f.name} in a tab`}
+              className="group flex max-w-[46%] items-center gap-1.5 rounded-full border border-border bg-muted/40 py-1 pr-2.5 pl-2 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:bg-primary/10"
+            >
+              {f.kind === "image" ? (
+                <ImageIcon className="h-3 w-3 shrink-0 text-primary" />
+              ) : (
+                <FileText className="h-3 w-3 shrink-0 text-muted-foreground group-hover:text-primary" />
+              )}
+              <span className="truncate">{f.name}</span>
+            </button>
+          ))}
         </div>
       ) : null}
 
@@ -875,7 +932,7 @@ export function AssistantPanel({
             ref={fileInputRef}
             type="file"
             multiple
-            accept={modelSupportsImages ? undefined : ".txt,.md,.markdown,.csv,.tsv,.json,.sql,.log,.yaml,.yml,.xml,.html,.js,.ts,.py,.java,text/*"}
+            accept={modelSupportsImages ? undefined : ".txt,.md,.markdown,.csv,.tsv,.json,.sql,.log,.yaml,.yml,.xml,.html,.js,.ts,.py,.java,.parquet,text/*"}
             className="hidden"
             onChange={(e) => {
               if (e.target.files) void addFiles(e.target.files);
@@ -1034,6 +1091,35 @@ export function AssistantPanel({
         </div>
       </div>
     </aside>
+  );
+}
+
+/**
+ * A visual identity for each chat in selection lists: a deterministic
+ * gradient tile (hashed from the session id, stable forever) with an icon
+ * matching what the chat is about, or the title's initial.
+ */
+function SessionGlyph({ id, title }: { id: string; title: string }) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  const hue = hash % 360;
+  const t = title.toLowerCase();
+  const Icon = /dashboard|chart|graph|kpi|visuali|report/.test(t)
+    ? BarChart3
+    : /csv|parquet|import|load|upload|pump/.test(t)
+      ? FileText
+      : /sql|query|select|table|schema|join|optimi/.test(t)
+        ? Database
+        : null;
+  const initial = (title.trim()[0] ?? "?").toUpperCase();
+  return (
+    <div
+      aria-hidden
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+      style={{ background: `linear-gradient(135deg, hsl(${hue} 55% 42%), hsl(${(hue + 40) % 360} 60% 30%))` }}
+    >
+      {Icon ? <Icon className="h-3.5 w-3.5" /> : <span className="text-[12px] font-semibold">{initial}</span>}
+    </div>
   );
 }
 

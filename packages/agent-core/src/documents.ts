@@ -21,6 +21,8 @@ export type DocMeta = {
   mime: string;
   chunks: number;
   chars: number;
+  /** True for binary files (e.g. Parquet) stored as base64 for loading only. */
+  binary?: boolean;
 };
 
 const MAX_CHUNK = 1500;
@@ -54,7 +56,7 @@ function chunk(text: string): { heading: string | null; text: string }[] {
 }
 
 export class DocumentStore {
-  private bySession = new Map<string, { meta: DocMeta; chunks: DocChunk[] }[]>();
+  private bySession = new Map<string, { meta: DocMeta; chunks: DocChunk[]; raw: string; binary: boolean }[]>();
 
   add(sessionId: string, name: string, mime: string, text: string): DocMeta {
     const id = randomUUID().slice(0, 8);
@@ -68,13 +70,31 @@ export class DocumentStore {
     }));
     const meta: DocMeta = { id, name, mime, chunks: chunks.length, chars: text.length };
     const list = this.bySession.get(sessionId) ?? [];
-    list.push({ meta, chunks });
+    // Keep the untouched original too — chunking is lossy (trims blank lines),
+    // and structured loaders (CSV import) need the file exactly as uploaded.
+    list.push({ meta, chunks, raw: text, binary: false });
+    this.bySession.set(sessionId, list);
+    return meta;
+  }
+
+  /** Store a binary file (base64) — not chunked/searchable, only loadable. */
+  addBinary(sessionId: string, name: string, mime: string, base64: string): DocMeta {
+    const id = randomUUID().slice(0, 8);
+    const meta: DocMeta = { id, name, mime, chunks: 0, chars: base64.length, binary: true };
+    const list = this.bySession.get(sessionId) ?? [];
+    list.push({ meta, chunks: [], raw: base64, binary: true });
     this.bySession.set(sessionId, list);
     return meta;
   }
 
   list(sessionId: string): DocMeta[] {
     return (this.bySession.get(sessionId) ?? []).map((d) => d.meta);
+  }
+
+  /** The original file payload — text for CSV, base64 for binary (Parquet). */
+  raw(sessionId: string, docId: string): { name: string; mime: string; text: string; binary: boolean } | undefined {
+    const doc = (this.bySession.get(sessionId) ?? []).find((d) => d.meta.id === docId);
+    return doc ? { name: doc.meta.name, mime: doc.meta.mime, text: doc.raw, binary: doc.binary } : undefined;
   }
 
   /** Keyword-overlap search across all chunks in the session. */
@@ -85,7 +105,9 @@ export class DocumentStore {
     const scored = docs
       .flatMap((d) => d.chunks)
       .map((c) => {
-        const hay = `${c.heading ?? ""} ${c.text}`.toLowerCase();
+        // The file NAME is part of the haystack — models search for
+        // "customers.csv" and must find the file's own chunks.
+        const hay = `${c.docName} ${c.heading ?? ""} ${c.text}`.toLowerCase();
         let score = 0;
         for (const t of terms) {
           const hits = hay.split(t).length - 1;
