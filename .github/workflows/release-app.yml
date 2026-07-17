@@ -106,3 +106,18 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  # Humans pick downloads by NAME — rename the published assets to plain
+  # names (ExasolStudio-Mac-AppleSilicon.dmg, …) and patch latest.json so the
+  # auto-updater follows. Idempotent; updater payloads keep Tauri names.
+  friendly-names:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Rename release assets for humans
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/friendly_release_names.py "${GITHUB_REPOSITORY}" "${{ github.event.inputs.tag || github.ref_name }}"

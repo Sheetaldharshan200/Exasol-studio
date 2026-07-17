@@ -12,10 +12,10 @@ Ask questions in plain words. Exa (the assistant) finds the right tables, writes
 
    | Your computer | File to download |
    |---|---|
-   | 🍎 Mac (Apple Silicon — M1/M2/M3/M4) | `...aarch64.dmg` |
-   | 🍎 Mac (Intel) | `...x64.dmg` |
-   | 🪟 Windows | `...x64-setup.exe` |
-   | 🐧 Linux | `...amd64.AppImage` (or `.deb` / `.rpm`) |
+   | 🍎 Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
+   | 🍎 Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
+   | 🪟 Windows | `ExasolStudio-Windows-64bit-setup.exe` |
+   | 🐧 Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
 
 2. **Mac:** open the DMG, drag the app into **~/Applications** — no admin password needed.
    **Windows:** run the installer — it installs just for you, no admin prompt.
