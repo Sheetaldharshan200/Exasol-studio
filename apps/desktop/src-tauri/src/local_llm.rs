@@ -546,6 +546,9 @@ pub async fn llm_start(app: AppHandle, model_id: String) -> AppResult<()> {
     }
     // Panels listen for this app-wide and refresh their model pickers.
     let _ = app.emit("ai-providers-changed", serde_json::json!({}));
+    // Embeddings ride along with the local runtime — fetch + start silently.
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move { ensure_embedder_auto(&app2).await });
     Ok(())
 }
 
@@ -593,8 +596,8 @@ pub fn auto_start_if_enabled(app: &AppHandle) {
         if start_model(&app, &model_id).await.is_ok() {
             let _ = app.emit("ai-providers-changed", serde_json::json!({}));
         }
-        // Bring the local embedder up too, if its model is present.
-        let _ = ensure_embedder(&app).await;
+        // Bring the local embedder up too (download the tiny model if needed).
+        ensure_embedder_auto(&app).await;
     });
 }
 
@@ -626,6 +629,32 @@ pub async fn llm_embed_install(app: AppHandle, state: State<'_, AppState>) -> Ap
     ensure_embedder(&app).await?;
     let _ = app.emit("ai-providers-changed", serde_json::json!({}));
     Ok(())
+}
+
+/// Silently make embeddings available: download the tiny model if missing,
+/// then start it. Embeddings ride along with the local runtime — the user
+/// never picks them separately. Best-effort; failures degrade to lexical.
+pub async fn ensure_embedder_auto(app: &AppHandle) {
+    if embed_alive_blocking() {
+        return;
+    }
+    let needs_download = {
+        let state = app.state::<AppState>();
+        find_server(app, &state).is_some() && !models_dir(&state).join(EMBED_FILE).exists()
+    };
+    if needs_download {
+        let target = {
+            let state = app.state::<AppState>();
+            models_dir(&state).join(EMBED_FILE)
+        };
+        let _ = fs::create_dir_all(target.parent().unwrap_or(&target));
+        if let Ok(client) = reqwest::Client::builder().user_agent("exasol-studio").build() {
+            // "embed" stage — no visible UI unless the settings card is open.
+            let _ = download_with_progress(app, &client, EMBED_URL, &target, "embed").await;
+        }
+    }
+    let _ = ensure_embedder(app).await;
+    let _ = app.emit("ai-providers-changed", serde_json::json!({}));
 }
 
 /// Start the embeddings server (second llama-server, --embeddings) if the model

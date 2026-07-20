@@ -347,34 +347,17 @@ function ProvidersSection(props: {
                   </div>
                 );
               })}
-              {/* Local semantic embeddings — a tiny second model so memory
-                  recall, skills, and session search work fully offline. */}
-              <div className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <span className={cn("h-2 w-2 shrink-0 rounded-full", llmState.embeddingReady ? "bg-primary" : "bg-muted-foreground/40")} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] font-medium">Local embeddings <span className="font-mono text-[10px] text-muted-foreground">21 MB · all-MiniLM</span></div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {llmState.embeddingReady
-                        ? "Running — semantic memory, skills & session search are sharp offline."
-                        : "Optional. Without it these features use a lexical fallback."}
-                    </div>
-                  </div>
-                  {llmState.embeddingReady ? (
-                    <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">ready</span>
-                  ) : (
-                    <button
-                      onClick={() => void llmAction("embed", () => llm.installEmbed())}
-                      disabled={busyLlm !== null}
-                      className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
-                    >
-                      {busyLlm === "embed" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                      {llmState.embeddingDownloaded ? "Start" : "Enable"}
-                    </button>
-                  )}
-                </div>
-                {busyLlm === "embed" && progress ? <LlmProgressBar p={progress} /> : null}
-              </div>
+              {/* Embeddings ride along automatically with the local runtime —
+                  shown as passive status, never a separate choice. */}
+              {llmState.runningModel ? (
+                <p className="px-1 text-[10.5px] text-muted-foreground">
+                  {llmState.embeddingReady
+                    ? "✓ Memory, skills & session search running fully on-device."
+                    : busyLlm === "embed" || progress?.stage === "embed"
+                      ? "Setting up on-device memory (21 MB, one time)…"
+                      : "On-device memory will finish setting up shortly."}
+                </p>
+              ) : null}
             </div>
           )}
         </section>
