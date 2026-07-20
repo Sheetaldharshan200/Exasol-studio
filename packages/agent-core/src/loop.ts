@@ -190,9 +190,19 @@ export async function runTurn(opts: {
       .map((skill) => `\n<skill name="${skill.name}">\n${skill.body}\n</skill>`)
       .join("\n")}`;
   }
+  // Semantic auto-activation: surface the skill whose meaning matches THIS
+  // turn (jcode-style embedding hit) and inject its full body, so the right
+  // playbook is live without the model remembering to call load_skill.
+  const autoSkills = (await skillStore.recall(userText, 1)).filter((sk) => !defaultSkills.includes(sk));
+  if (autoSkills.length) {
+    system += `\n\nRelevant skill for this request (auto-activated):\n${autoSkills
+      .map((sk) => `## ${sk.name}\n${sk.body}`)
+      .join("\n\n")}`;
+  }
   if (skillList.length) {
-    system += `\n\nSkills — default skills above are already active; use load_skill(name) before a matching non-default task:\n${skillList
-      .map((sk) => `- ${sk.name}${defaultSkills.includes(sk) ? " (active default)" : ""}: ${sk.description}`)
+    const covered = new Set([...defaultSkills, ...autoSkills]);
+    system += `\n\nSkills — default + auto-activated ones above are already active; use load_skill(name) before a matching non-active task:\n${skillList
+      .map((sk) => `- ${sk.name}${covered.has(sk) ? " (active)" : ""}: ${sk.description}`)
       .join("\n")}`;
   }
   const capabilities = readAgentCapabilities(config.dataDir);

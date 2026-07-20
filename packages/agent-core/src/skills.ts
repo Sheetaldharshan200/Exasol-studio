@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
+import { createHash } from "node:crypto";
+import { cosine, embed, embedOne } from "./embed.ts";
 
 // Claude-style skills: markdown packs with name+description frontmatter.
 // Two sources — BUILT-IN (shipped, read-only) and USER (added in-app, editable).
@@ -97,6 +99,32 @@ export class SkillStore {
 
   get(name: string): Skill | undefined {
     return this.list().find((s) => s.name === name || s.name.includes(name));
+  }
+
+  private vecCache = new Map<string, number[]>();
+
+  /**
+   * Semantic skill selection (jcode-style): embed each skill's name +
+   * description and return those whose meaning matches the current turn —
+   * so the right playbook auto-activates without the model guessing to call
+   * load_skill. Cached per skill by content hash.
+   */
+  async recall(query: string, k = 1, threshold = 0.22): Promise<Skill[]> {
+    const skills = this.list();
+    if (!skills.length) return [];
+    const key = (sk: Skill) => createHash("sha1").update(sk.name + sk.description).digest("hex").slice(0, 16);
+    const missing = skills.filter((sk) => !this.vecCache.has(key(sk)));
+    if (missing.length) {
+      const vecs = await embed(missing.map((sk) => `${sk.name}. ${sk.description}`));
+      missing.forEach((sk, i) => this.vecCache.set(key(sk), vecs[i]));
+    }
+    const qv = await embedOne(query);
+    return skills
+      .map((sk) => ({ sk, score: cosine(qv, this.vecCache.get(key(sk)) ?? []) }))
+      .filter((x) => x.score >= threshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k)
+      .map((x) => x.sk);
   }
 
   save(name: string, description: string, body: string): Skill {

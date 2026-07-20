@@ -264,5 +264,23 @@ console.log("\nhybrid document retrieval");
     `got: ${hits[0]?.heading}`);
 }
 
+// ─── Semantic skill auto-activation (jcode: embedding hit → load skill). ─────
+console.log("\nskill auto-activation");
+{
+  const { SkillStore } = await import("../src/skills.ts");
+  const { mkdtempSync } = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "exa-skills-"));
+  const store = new SkillStore(dir);
+  store.save("chart-builder", "Build charts and dashboards from SQL results", "# charts\nMake dashboards.");
+  store.save("email-parser", "Extract and validate email addresses from text", "# email\nParse emails.");
+  const hit = await store.recall("make me a dashboard of revenue", 1);
+  check("recall returns a skill", hit.length === 1);
+  // Should surface a chart/dashboard skill (built-in dashboard-builder or ours),
+  // never the unrelated email parser.
+  check("recall picks a dashboard skill, not email", /dashboard|chart/.test(hit[0]?.name ?? "") && hit[0]?.name !== "email-parser", `got: ${hit[0]?.name}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed${fail ? `: ${failures.join("; ")}` : ""}`);
 process.exit(fail ? 1 : 0);
