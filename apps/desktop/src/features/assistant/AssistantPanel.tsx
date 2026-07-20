@@ -34,7 +34,6 @@ import { Conversation, ConversationContent } from "@/components/ai-elements/conv
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
-import { Loader } from "@/components/ai-elements/loader";
 import { PromptInputTools, PromptInputButton, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
 import { CodeBlock } from "@/components/ai-elements/code-block";
@@ -941,7 +940,10 @@ export function AssistantPanel({
           )}
           {thinking ? (
             <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
-              <Loader size={14} />
+              <span className="relative inline-flex h-4 w-4 items-center justify-center">
+                <span className="absolute inset-[-3px] animate-pulse rounded-full bg-primary/15 blur-[3px]" aria-hidden />
+                <AgentMark active className="relative h-4 w-4" />
+              </span>
               <span className="agent-shimmer">Thinking…</span>
             </div>
           ) : null}

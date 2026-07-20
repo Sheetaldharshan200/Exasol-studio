@@ -121,6 +121,22 @@ export function ConnectView({
   const [recentHidden, setRecentHidden] = useState(
     () => window.localStorage.getItem("exasol-recent-hidden") === "1",
   );
+  // Recents the user has dismissed from THIS list only — screen-level, never a
+  // profile or live-connection deletion. Persisted so they stay hidden.
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem("exasol-recent-dismissed") || "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const dismissRecents = (ids: string[]) =>
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      window.localStorage.setItem("exasol-recent-dismissed", JSON.stringify([...next]));
+      return next;
+    });
   const [overlay, setOverlay] = useState<{ open: boolean; mode: "test" | "connect"; runId: number }>({
     open: false,
     mode: "test",
@@ -151,6 +167,7 @@ export function ConnectView({
     });
   }
 
+  const visibleProfiles = useMemo(() => profiles.filter((p) => !dismissed.has(p.id)), [profiles, dismissed]);
   const dsn = useMemo(() => buildDsn(draft), [draft]);
   const selectedDriver = drivers.find((d) => d.id === draft.driverId);
   const canRun = Boolean(draft.host.trim() && draft.username.trim());
@@ -257,33 +274,57 @@ export function ConnectView({
       <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="64%" minSize="140px" className="min-h-0">
           <div className="h-full overflow-y-auto p-5">
-            {profiles.length > 0 ? (
+            {visibleProfiles.length > 0 ? (
               <div className="mb-5 max-w-2xl">
                 <div className="flex items-center justify-between">
                   <span className="eyebrow-muted">Recent connections</span>
-                  <button
-                    onClick={toggleRecent}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {recentHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                    {recentHidden ? "Show" : "Hide"}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={toggleRecent}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {recentHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      {recentHidden ? "Show" : "Hide"}
+                    </button>
+                    {!recentHidden ? (
+                      <button
+                        onClick={() => dismissRecents(visibleProfiles.map((p) => p.id))}
+                        title="Remove all from this list (your saved connections aren't deleted)"
+                        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                        Clear all
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {recentHidden ? null : (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {profiles.map((profile) => (
-                    <button
+                  {visibleProfiles.map((profile) => (
+                    <div
                       key={profile.id}
-                      onClick={() => setDraft({ ...profile })}
-                      title="Click to fill the form with these details"
-                      className="group flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-3 py-1.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary"
+                      className="group flex items-center gap-1 rounded-lg border border-border bg-secondary/30 py-1.5 pr-1.5 pl-3 transition-colors hover:border-primary/40 hover:bg-secondary"
                     >
-                      <Database className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-[13px] font-medium text-foreground">{profile.name}</span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        {profile.host}:{profile.port}
-                      </span>
-                    </button>
+                      <button
+                        onClick={() => setDraft({ ...profile })}
+                        title="Click to fill the form with these details"
+                        className="flex items-center gap-2 text-left"
+                      >
+                        <Database className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-[13px] font-medium text-foreground">{profile.name}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {profile.host}:{profile.port}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => dismissRecents([profile.id])}
+                        aria-label={`Remove ${profile.name} from this list`}
+                        title="Remove from this list (doesn't delete the saved connection)"
+                        className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
                   ))}
                 </div>
                 )}
