@@ -1982,6 +1982,22 @@ export function ExasolStudio({
     updateTabs(connKey, (list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
   }
 
+  // Bulk tab actions for the tab-bar overflow menu. Pinned tabs are always kept.
+  function closeAllTabs() {
+    const kept = tabsFor(connKey).filter((t) => t.pinned);
+    updateTabs(connKey, () => kept);
+    setActiveTabId(kept[kept.length - 1]?.id ?? "");
+    const live = new Set(kept.map((t) => t.groupId).filter(Boolean) as string[]);
+    setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
+  }
+  function closeOtherTabs(keepId: string) {
+    const kept = tabsFor(connKey).filter((t) => t.id === keepId || t.pinned);
+    updateTabs(connKey, () => kept);
+    setActiveTabId(keepId);
+    const live = new Set(kept.map((t) => t.groupId).filter(Boolean) as string[]);
+    setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
+  }
+
   // ── Tab groups ────────────────────────────────────────────────────────────
   const groups = groupsByConn[connKey] ?? [];
   const setGroups = useCallback(
@@ -2795,6 +2811,41 @@ export function ExasolStudio({
                 <Plus className="h-4 w-4" />
               </button>
             </div>
+            {/* Fixed tab-actions menu, always visible at the right of the strip */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="Tab actions"
+                  title="Tab actions"
+                  className="mr-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={addTab}>
+                  <Plus className="h-3.5 w-3.5" /> New query tab
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => togglePin(activeTabId)} disabled={!activeTabId}>
+                  <Pin className="h-3.5 w-3.5" /> {tabs.find((t) => t.id === activeTabId)?.pinned ? "Unpin tab" : "Pin tab"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => closeTab(activeTabId)} disabled={!activeTabId}>
+                  <X className="h-3.5 w-3.5" /> Close tab
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => closeOtherTabs(activeTabId)} disabled={tabs.length <= 1}>
+                  <X className="h-3.5 w-3.5" /> Close other tabs
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={closeAllTabs}
+                  disabled={tabs.every((t) => t.pinned)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Close all tabs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {/* Right (AI) sidebar toggle, pinned to the end of the tab bar */}
             <button
               data-tour="ai-toggle"

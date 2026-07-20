@@ -257,30 +257,25 @@ function Row({
   // Hover tooltip: friendly type + full name + any inline meta.
   const kindLabel = node.kind.replace(/-/g, " ");
   const tip = [kindLabel, node.label, node.meta].filter(Boolean).join(" · ");
-  // Debounce single vs double tap: single tap shows info, double tap opens the
-  // dropdown. Hold the single action briefly so a double never triggers both.
-  const clickTimer = useRef<number | null>(null);
+  // Single tap shows info (instant); a second tap within 300ms opens the
+  // dropdown (expand/collapse). Detection is timestamp-based rather than the
+  // browser's dblclick — that fires only when both clicks land on the very same
+  // element, which re-renders here can break. The double tap also re-runs the
+  // single (info) action, which is harmless.
+  const lastClickAt = useRef(0);
   const handleClick = () => {
-    if (clickTimer.current != null) return; // second click of a double — let onDoubleClick run
-    clickTimer.current = window.setTimeout(() => {
-      clickTimer.current = null;
+    const now = Date.now();
+    if (now - lastClickAt.current < 300) {
+      lastClickAt.current = 0;
+      onExpand();
+    } else {
+      lastClickAt.current = now;
       onOpen();
-    }, 220);
-  };
-  const handleDouble = () => {
-    if (clickTimer.current != null) {
-      window.clearTimeout(clickTimer.current);
-      clickTimer.current = null;
     }
-    onExpand();
   };
-  useEffect(() => () => {
-    if (clickTimer.current != null) window.clearTimeout(clickTimer.current);
-  }, []);
   return (
     <div
       onClick={handleClick}
-      onDoubleClick={handleDouble}
       title={tip}
       onContextMenu={
         onContext

@@ -30,6 +30,21 @@ export function useConnections() {
     ]);
     setProfiles(nextProfiles);
     setDrivers(nextDrivers);
+    // Reconcile the open connections with the profiles that still exist.
+    // Deleting a profile (Clear / Remove on the Connect tab) closes its backend
+    // pool, so a lingering ActiveConnection would fail every later call with
+    // "connection … is not open". Drop any whose profile was removed, and move
+    // focus off it if it was the active one.
+    const validIds = new Set(nextProfiles.map((p) => p.id));
+    setConnections((list) => {
+      const kept = list.filter((c) => validIds.has(c.profile.id));
+      if (kept.length !== list.length) {
+        setActiveProfileId((prev) =>
+          prev && validIds.has(prev) ? prev : (kept.at(-1)?.profile.id ?? null),
+        );
+      }
+      return kept;
+    });
   }, []);
 
   useEffect(() => {
