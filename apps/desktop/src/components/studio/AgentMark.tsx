@@ -26,3 +26,35 @@ export function AgentMark({ className, active = false }: { className?: string; a
     </svg>
   );
 }
+
+/**
+ * Brand loader: the Exa mark breathing at the center of a spinning
+ * brand-green arc. Transparent — no background disc — so it sits cleanly on
+ * any surface. Size it via className (h-5 w-5 etc.).
+ */
+export function AgentLoader({ className }: { className?: string }) {
+  return (
+    <span
+      role="status"
+      aria-label="Thinking"
+      className={cn("relative inline-flex items-center justify-center", className)}
+    >
+      <svg viewBox="0 0 24 24" className="agent-loader-ring absolute inset-0 h-full w-full" aria-hidden>
+        {/* faint full track */}
+        <circle cx="12" cy="12" r="10.5" fill="none" stroke="var(--border)" strokeWidth="1.6" opacity="0.4" />
+        {/* brand-green arc that sweeps around */}
+        <circle
+          cx="12"
+          cy="12"
+          r="10.5"
+          fill="none"
+          stroke="#5FC33B"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeDasharray="18 48"
+        />
+      </svg>
+      <AgentMark active className="agent-loader-mark h-[58%] w-[58%]" />
+    </span>
+  );
+}

@@ -26,16 +26,17 @@ import {
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { extractTableDataFromElement, tableDataToCSV, tableDataToMarkdown } from "streamdown";
 import type { BundledLanguage } from "shiki";
 import ReactMarkdown from "react-markdown";
-import { AgentMark } from "@/components/studio/AgentMark";
+import { AgentMark, AgentLoader } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
 import { Conversation, ConversationContent } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { PromptInputTools, PromptInputButton, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
-import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
 import { agent, type AgentAttachment, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
@@ -182,15 +183,42 @@ function highlightInput(text: string): React.ReactNode {
     i = lead[0].length;
   }
   const rest = text.slice(i);
-  splitFences(rest).forEach((part, idx) => {
+  // Fences that start on their own line render as a full-width block box
+  // (Slack/Teams style). A block element implies a line break before and
+  // after it, so the \n that delimited the fence in the raw text is dropped
+  // from the neighboring prose — this keeps the overlay's line count identical
+  // to the textarea's, which is what keeps the caret pixel-aligned.
+  const segs = splitFences(rest).map((p) => ({ ...p, block: false }));
+  for (let k = 0; k < segs.length; k++) {
+    const p = segs[k];
+    if (!p.code) continue;
+    const prev = k > 0 ? segs[k - 1] : null;
+    const next = segs[k + 1];
+    const atLineStart = k === 0 ? i === 0 : !prev!.code && (prev!.text.endsWith("\n") || prev!.text === "");
+    // The fence must also END its line — a block implies a break after it, so
+    // trailing same-line text ("'''…'''more") must stay inline to keep the
+    // overlay's line count matching the textarea's.
+    const endsLine = !next || (!next.code && next.text.startsWith("\n"));
+    if (!atLineStart || !endsLine) continue; // mid-line fence → inline tint
+    p.block = true;
+    if (prev && !prev.code && prev.text.endsWith("\n")) prev.text = prev.text.slice(0, -1);
+    if (next && !next.code && next.text.startsWith("\n")) next.text = next.text.slice(1);
+  }
+  segs.forEach((part, idx) => {
     if (part.code) {
       nodes.push(
-        <span
-          key={`code-${idx}`}
-          className="rounded-sm bg-primary/15 text-syntax-type ring-1 ring-primary/25"
-        >
-          {part.text}
-        </span>,
+        part.block ? (
+          <span
+            key={`code-${idx}`}
+            className="-mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-wrap break-words rounded-md bg-secondary/80 px-1 text-syntax-type ring-1 ring-border"
+          >
+            {part.text}
+          </span>
+        ) : (
+          <span key={`code-${idx}`} className="rounded-sm bg-primary/15 text-syntax-type ring-1 ring-primary/25">
+            {part.text}
+          </span>
+        ),
       );
     } else {
       pushProse(nodes, part.text, idx);
@@ -378,11 +406,23 @@ export function AssistantPanel({
         );
       });
     } else if (e.type === "tool-start") {
-      setItems((m) =>
-        m.some((it) => it.kind === "tool" && it.id === e.callId)
-          ? m.map((it) => (it.kind === "tool" && it.id === e.callId ? { ...it, args: e.args ?? it.args } : it))
-          : [...m, { kind: "tool", id: e.callId, name: e.name, args: e.args, done: false }],
-      );
+      setItems((m) => {
+        if (m.some((it) => it.kind === "tool" && it.id === e.callId)) {
+          return m.map((it) => (it.kind === "tool" && it.id === e.callId ? { ...it, args: e.args ?? it.args } : it));
+        }
+        // Tool activity reads best ABOVE the answer. When the model's text
+        // already streamed (text-rescue runs tools after the fact), insert
+        // the tool card before the trailing assistant bubbles so the order
+        // stays: tools first, answer last.
+        const tool = { kind: "tool", id: e.callId, name: e.name, args: e.args, done: false } as ChatItem;
+        let at = m.length;
+        while (at > 0) {
+          const it = m[at - 1];
+          if (it.kind === "msg" && it.role === "assistant" && !it.error) at--;
+          else break;
+        }
+        return [...m.slice(0, at), tool, ...m.slice(at)];
+      });
     } else if (e.type === "tool-end") {
       setItems((m) =>
         m.map((it) =>
@@ -943,10 +983,7 @@ export function AssistantPanel({
           )}
           {thinking ? (
             <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
-              <span className="relative inline-flex h-4 w-4 items-center justify-center">
-                <span className="absolute inset-[-3px] animate-pulse rounded-full bg-primary/15 blur-[3px]" aria-hidden />
-                <AgentMark active className="relative h-4 w-4" />
-              </span>
+              <AgentLoader className="h-5 w-5" />
               <span className="agent-shimmer">Thinking…</span>
             </div>
           ) : null}
@@ -1036,9 +1073,14 @@ export function AssistantPanel({
             >
               {highlightInput(input)}
             </div>
-            <InputGroupTextarea
+            {/* Plain textarea (not the shadcn one): its metrics must be
+                byte-identical to the overlay above or the caret drifts —
+                shadcn's Textarea adds md:text-sm and field-sizing which
+                misalign at desktop widths. */}
+            <textarea
               ref={inputRef}
-              className="relative min-h-[40px] resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground shadow-none outline-none [field-sizing:fixed] selection:bg-primary/20 placeholder:text-muted-foreground focus-visible:ring-0"
+              data-bare
+              className="relative min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}
               rows={1}
@@ -1119,6 +1161,7 @@ export function AssistantPanel({
 
             <PromptInputSubmit
               status={sending ? "streaming" : undefined}
+              variant={sending ? "outline" : "default"}
               disabled={!sending && !input.trim()}
               onClick={(e) => {
                 if (sending) {
@@ -1126,7 +1169,12 @@ export function AssistantPanel({
                   void stop();
                 }
               }}
-              className="shrink-0 rounded-full"
+              className={cn(
+                "shrink-0 rounded-full",
+                sending
+                  ? "border-border bg-transparent text-muted-foreground hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                  : "bg-primary text-primary-foreground hover:bg-primary/85",
+              )}
               aria-label={sending ? "Stop generating" : "Send"}
             />
           </InputGroupAddon>
@@ -1390,30 +1438,36 @@ const SHIKI_LANGS = new Set([
   "c", "cpp", "csharp", "php", "ruby", "kotlin", "swift", "scala", "r", "dart", "diff", "text",
 ]);
 
+/** Clipboard write that works in every webview (async API + textarea fallback). */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function ChatCodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
   // Raw label for the download extension; safe (shiki-bundled) lang for render.
   const lang = language || "text";
   const safeLang = (SHIKI_LANGS.has(lang.toLowerCase()) ? lang.toLowerCase() : "text") as BundledLanguage;
   const copy = async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
-      } else {
-        // Fallback for any webview where the async clipboard API is missing.
-        const ta = document.createElement("textarea");
-        ta.value = code;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
+    if (await copyText(code)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
-    } catch {
-      /* ignore */
     }
   };
   const download = async () => {
@@ -1454,6 +1508,67 @@ function ChatCodeBlock({ code, language }: { code: string; language: string }) {
   );
 }
 
+/**
+ * Table for assistant replies with Tauri-native copy (markdown → clipboard)
+ * and download (CSV → native save dialog). Replaces streamdown's built-in
+ * table controls, whose dropdown clips inside the scroll container and whose
+ * blob download no-ops in the Tauri webview.
+ */
+function ChatTable({ children }: { children?: React.ReactNode }) {
+  const ref = useRef<HTMLTableElement>(null);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!ref.current) return;
+    const data = extractTableDataFromElement(ref.current);
+    if (await copyText(tableDataToMarkdown(data))) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    }
+  };
+  const download = async () => {
+    if (!ref.current) return;
+    const data = extractTableDataFromElement(ref.current);
+    try {
+      const path = await saveDialog({
+        defaultPath: "table.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (path) await ipc.writeTextFile(path, tableDataToCSV(data));
+    } catch {
+      /* user cancelled */
+    }
+  };
+  return (
+    <div className="group/table my-2">
+      <div className="flex justify-end gap-1 pb-1 opacity-0 transition-opacity group-hover/table:opacity-100">
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy table"
+          title="Copy as markdown"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => void download()}
+          aria-label="Download table"
+          title="Download as CSV"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table ref={ref} className="w-full border-collapse text-[12px]">
+          {children}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /** Extract raw text + language from react-markdown's <pre><code> children. */
 function extractCode(children: unknown): { code: string; language: string } {
   const el = (Array.isArray(children) ? children[0] : children) as
@@ -1480,6 +1595,7 @@ const CHAT_MD_COMPONENTS = {
     }
     return <ChatCodeBlock code={code} language={language} />;
   },
+  table: ({ children }: { children?: React.ReactNode }) => <ChatTable>{children}</ChatTable>,
 } as const;
 
 function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
@@ -1504,7 +1620,9 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   return (
     <Message from="assistant">
       <MessageContent className="min-w-0 bg-transparent p-0">
-        <MessageResponse components={CHAT_MD_COMPONENTS}>{cleanAssistant(message.content)}</MessageResponse>
+        <MessageResponse components={CHAT_MD_COMPONENTS} controls={{ table: false }}>
+          {cleanAssistant(message.content)}
+        </MessageResponse>
         {message.streaming ? (
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
         ) : null}

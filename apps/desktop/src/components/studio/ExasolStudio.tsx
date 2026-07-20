@@ -1782,10 +1782,11 @@ export function ExasolStudio({
           : profiles.length === 1
             ? profiles[0]
             : profiles.find((p) => p.host === "localhost" || p.host === "127.0.0.1") ?? null;
-        const ping = !profile && !params.host ? await ipc.pingServer("localhost", 8563).catch(() => null) : null;
+        const ping = !profile && !params.host ? await ipc.pingServer("127.0.0.1", 8563).catch(() => null) : null;
         const draft = {
           name: String(params.name ?? profile?.name ?? "Exasol Personal"),
-          host: String(params.host ?? profile?.host ?? "localhost"),
+          // 127.0.0.1 over "localhost" — avoids ::1-first resolution stalls.
+          host: String(params.host ?? profile?.host ?? "127.0.0.1"),
           port: Number(params.port ?? profile?.port ?? 8563),
           username: String(params.username ?? profile?.username ?? "sys"),
           password: String(params.password ?? profile?.password ?? (ping?.reachable ? "exasol" : "")),

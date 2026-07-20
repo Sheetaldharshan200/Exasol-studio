@@ -48,7 +48,7 @@ function parseDbUrl(raw: string): { host: string; port: number; user: string; pa
   const u = new URL(raw);
   if (u.protocol !== "exa:") throw new Error(`--db must be exa://user:pass@host:port, got "${raw}"`);
   return {
-    host: u.hostname || "localhost",
+    host: u.hostname || "127.0.0.1",
     port: u.port ? Number(u.port) : 8563,
     user: decodeURIComponent(u.username || "sys"),
     password: decodeURIComponent(u.password || ""),
@@ -372,7 +372,7 @@ async function interactive(dataDir: string, args: string[]): Promise<void> {
   async function connectGuided(urlArg?: string, nameArg?: string) {
     // Field values persist across the whole flow, so going BACK (esc) to fix
     // a field — or retrying after a failed connect — never retypes anything.
-    const values: string[] = ["localhost", "8563", "sys", "", "", ""];
+    const values: string[] = ["127.0.0.1", "8563", "sys", "", "", ""];
     const steps: { label: string; mask?: boolean; placeholder?: string }[] = [
       { label: "Host" },
       { label: "Port" },
@@ -392,7 +392,7 @@ async function interactive(dataDir: string, args: string[]): Promise<void> {
         let i = 0;
         while (i < steps.length) {
           // Name suggests itself from what's already filled in.
-          if (i === 5 && !values[5]) values[5] = `${values[2] || "sys"}@${values[0] || "localhost"}`;
+          if (i === 5 && !values[5]) values[5] = `${values[2] || "sys"}@${values[0] || "127.0.0.1"}`;
           const res = await textInput({
             ...steps[i],
             initial: values[i],
@@ -408,7 +408,7 @@ async function interactive(dataDir: string, args: string[]): Promise<void> {
           i++;
         }
         info = {
-          host: values[0] || "localhost",
+          host: values[0] || "127.0.0.1",
           port: Number(values[1]) || 8563,
           user: values[2] || "sys",
           password: values[3] ?? "",

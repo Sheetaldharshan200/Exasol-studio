@@ -55,7 +55,9 @@ function emptyDraft(): Draft {
     // a real value in the box, not placeholder text. Typing replaces it; we
     // never overwrite what the user sees.
     name: "Exasol Personal (local)",
-    host: "localhost",
+    // 127.0.0.1 over "localhost": some setups resolve localhost to ::1 first,
+    // where Exasol Personal isn't listening, and the connect times out.
+    host: "127.0.0.1",
     port: 8563,
     username: "sys",
     password: "",
