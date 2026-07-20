@@ -611,7 +611,7 @@ export function buildTools(ctx: {
               query: z.string().describe("What to look for in the attached files"),
             }),
             execute: async ({ query }) => {
-              const hits = ctx.documents!.search(session.id, query, 5);
+              const hits = await ctx.documents!.hybrid(session.id, query, 5);
               if (!hits.length) {
                 const docs = ctx.documents!.list(session.id);
                 if (!docs.length) return { hits: [], note: "No files are attached to this chat." };

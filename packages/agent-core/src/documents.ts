@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { cosine, embed, embedOne } from "./embed.ts";
 
 /**
  * Session-scoped uploaded documents with just-in-time retrieval. We never
@@ -56,7 +57,7 @@ function chunk(text: string): { heading: string | null; text: string }[] {
 }
 
 export class DocumentStore {
-  private bySession = new Map<string, { meta: DocMeta; chunks: DocChunk[]; raw: string; binary: boolean }[]>();
+  private bySession = new Map<string, { meta: DocMeta; chunks: DocChunk[]; raw: string; binary: boolean; vecs?: number[][] }[]>();
 
   add(sessionId: string, name: string, mime: string, text: string): DocMeta {
     const id = randomUUID().slice(0, 8);
@@ -119,6 +120,60 @@ export class DocumentStore {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
     return scored.map((x) => x.c);
+  }
+
+  /** Lazily embed a document's chunks (once), cached on the record. */
+  private async ensureVecs(doc: { chunks: DocChunk[]; vecs?: number[][] }): Promise<number[][]> {
+    if (doc.vecs) return doc.vecs;
+    doc.vecs = doc.chunks.length
+      ? await embed(doc.chunks.map((c) => `${c.heading ? c.heading + " — " : ""}${c.text}`))
+      : [];
+    return doc.vecs;
+  }
+
+  /**
+   * LightRAG-style hybrid retrieval: fuse a DENSE pass (embedding cosine —
+   * catches semantic matches keyword search misses) with the SPARSE keyword
+   * pass, via Reciprocal Rank Fusion. Best of both: exact hits and "means the
+   * same thing" hits. Falls back to keyword-only if embedding is unavailable.
+   */
+  async hybrid(sessionId: string, query: string, limit = 5): Promise<DocChunk[]> {
+    const docs = this.bySession.get(sessionId) ?? [];
+    const allChunks = docs.flatMap((d) => d.chunks);
+    if (allChunks.length <= limit) return allChunks;
+
+    const keywordRanked = this.search(sessionId, query, Math.max(limit * 3, 15));
+
+    let denseRanked: DocChunk[] = [];
+    try {
+      const qv = await embedOne(query);
+      const scored: { c: DocChunk; s: number }[] = [];
+      for (const d of docs) {
+        const vecs = await this.ensureVecs(d as { chunks: DocChunk[]; vecs?: number[][] });
+        d.chunks.forEach((c, i) => vecs[i] && scored.push({ c, s: cosine(qv, vecs[i]) }));
+      }
+      denseRanked = scored.sort((a, b) => b.s - a.s).slice(0, Math.max(limit * 3, 15)).map((x) => x.c);
+    } catch {
+      denseRanked = [];
+    }
+
+    // Reciprocal Rank Fusion (k=60) over the two ranked lists.
+    const K = 60;
+    const key = (c: DocChunk) => `${c.docId}:${c.index}`;
+    const rrf = new Map<string, { c: DocChunk; score: number }>();
+    const fuse = (list: DocChunk[]) => {
+      list.forEach((c, rank) => {
+        const k = key(c);
+        const prev = rrf.get(k);
+        const add = 1 / (K + rank);
+        if (prev) prev.score += add;
+        else rrf.set(k, { c, score: add });
+      });
+    };
+    fuse(keywordRanked);
+    fuse(denseRanked);
+    if (!rrf.size) return keywordRanked.slice(0, limit);
+    return [...rrf.values()].sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.c);
   }
 
   read(sessionId: string, docId: string, section?: number): DocChunk[] {

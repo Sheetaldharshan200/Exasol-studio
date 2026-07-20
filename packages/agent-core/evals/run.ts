@@ -249,5 +249,20 @@ console.log("\nsemantic recall (offline hashed embeddings)");
   check("related > unrelated", cosine(a, b) > cosine(a, c), `rev/sales=${cosine(a, b).toFixed(3)} rev/weather=${cosine(a, c).toFixed(3)}`);
 }
 
+// ─── LightRAG-style hybrid doc retrieval — dense catches a paraphrase. ───────
+console.log("\nhybrid document retrieval");
+{
+  const { DocumentStore } = await import("../src/documents.ts");
+  const ds = new DocumentStore();
+  ds.add("s", "notes.md", "text/markdown",
+    "# Earnings\nQuarterly revenue and profit figures for the fiscal year.\n\n# Weather\nDaily rainfall and temperature readings by station.\n\n# Staffing\nHeadcount and hiring plans across departments.");
+  // "income" appears in NO chunk verbatim — only dense embedding links it to
+  // the revenue/profit chunk. Keyword-only would miss or mis-rank it.
+  const hits = await ds.hybrid("s", "income and earnings", 1);
+  check("hybrid returns a chunk", hits.length === 1);
+  check("hybrid picks the earnings section", (hits[0]?.heading ?? "").toLowerCase().includes("earnings"),
+    `got: ${hits[0]?.heading}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed${fail ? `: ${failures.join("; ")}` : ""}`);
 process.exit(fail ? 1 : 0);
