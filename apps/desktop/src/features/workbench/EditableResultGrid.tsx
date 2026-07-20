@@ -52,7 +52,12 @@ export function EditableResultGrid({
   const [inserts, setInserts] = useState<Record<string, string>[]>([]);
   const [review, setReview] = useState<string[] | null>(null);
 
-  const pkIdx = useMemo(() => pk.map((n) => columns.findIndex((c) => c.name === n)), [pk, columns]);
+  // Row identity for UPDATE/DELETE WHERE clauses. Prefer the primary key; when
+  // the table has none (common in Exasol), fall back to matching on every
+  // selected column value.
+  const noPk = pk.length === 0;
+  const identity = useMemo(() => (noPk ? columns.map((c) => c.name) : pk), [noPk, pk, columns]);
+  const pkIdx = useMemo(() => identity.map((n) => columns.findIndex((c) => c.name === n)), [identity, columns]);
   const t = qualify(schema, table);
 
   const dirty =
@@ -63,7 +68,7 @@ export function EditableResultGrid({
   }
 
   function where(row: Cell[]): string {
-    return pk
+    return identity
       .map((name, i) => `"${name}" = ${lit(row[pkIdx[i]], columns[pkIdx[i]]?.typeName ?? "")}`)
       .join(" AND ");
   }
@@ -106,6 +111,14 @@ export function EditableResultGrid({
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-1">
         <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">Editing</span>
         <span className="font-mono text-[11px] text-muted-foreground">{t}</span>
+        {noPk ? (
+          <span
+            className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+            title="This table has no primary key — edits match rows on all selected column values, so rows that are identical across those columns update together."
+          >
+            no PK · matches all columns
+          </span>
+        ) : null}
         <button
           onClick={() => setInserts((v) => [...v, {}])}
           className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"

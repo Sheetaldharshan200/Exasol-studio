@@ -3,8 +3,10 @@ import {
   BarChart3,
   Check,
   ChevronDown,
+  Copy,
   Cpu,
   Database,
+  Download,
   FileSearch,
   FileText,
   Gauge,
@@ -23,6 +25,8 @@ import {
   X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import type { BundledLanguage } from "shiki";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
@@ -1271,14 +1275,107 @@ function cleanAssistant(raw: string): string {
   let t = raw;
   const hadToolJson = /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"(?:arguments|parameters|args|input)"/.test(t);
   t = t.replace(TOOL_JSON, "");
-  const fences = (t.match(/```/g) || []).length;
-  // Unbalanced fences or a confirmed tool-call misfire means the fencing is
-  // untrustworthy — remove fence markers so lists/prose read as chat.
-  if (hadToolJson || fences % 2 === 1) {
+  // Only when a tool-call misfire happened do we distrust the fences (the model
+  // tangled prose inside them) and strip fence markers so lists/prose read as
+  // chat. Normal answers keep their fences — streamdown renders proper code
+  // blocks (with our copy/download panel), even while a fence is still open.
+  if (hadToolJson) {
     t = t.replace(/```[a-zA-Z0-9]*\n?/g, "");
   }
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
+
+const LANG_EXT: Record<string, string> = {
+  sql: "sql", javascript: "js", js: "js", typescript: "ts", ts: "ts", tsx: "tsx", jsx: "jsx",
+  python: "py", py: "py", json: "json", html: "html", css: "css", bash: "sh", sh: "sh",
+  shell: "sh", yaml: "yaml", yml: "yaml", xml: "xml", markdown: "md", md: "md", java: "java",
+};
+
+/**
+ * Code block for assistant replies: shiki-highlighted body (AI Elements
+ * CodeBlock) with copy + download that actually work inside the Tauri webview.
+ * streamdown's built-in download uses a browser blob anchor that no-ops here,
+ * so we route copy through navigator.clipboard and download through the native
+ * save dialog + Rust file write.
+ */
+const SHIKI_LANGS = new Set([
+  "sql", "javascript", "js", "typescript", "ts", "tsx", "jsx", "python", "py", "json", "html",
+  "css", "bash", "sh", "shell", "yaml", "yml", "xml", "markdown", "md", "java", "go", "rust",
+  "c", "cpp", "csharp", "php", "ruby", "kotlin", "swift", "scala", "r", "dart", "diff", "text",
+]);
+
+function ChatCodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+  // Raw label for the download extension; safe (shiki-bundled) lang for render.
+  const lang = language || "text";
+  const safeLang = (SHIKI_LANGS.has(lang.toLowerCase()) ? lang.toLowerCase() : "text") as BundledLanguage;
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(code)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1400);
+      })
+      .catch(() => undefined);
+  };
+  const download = async () => {
+    const ext = LANG_EXT[lang.toLowerCase()] ?? "txt";
+    try {
+      const path = await saveDialog({
+        defaultPath: `snippet.${ext}`,
+        filters: [{ name: lang.toUpperCase(), extensions: [ext] }],
+      });
+      if (path) await ipc.writeTextFile(path, code);
+    } catch {
+      /* user cancelled or save failed — nothing to do */
+    }
+  };
+  return (
+    <div className="group relative my-2">
+      <CodeBlock code={code} language={safeLang}>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy code"
+          title="Copy"
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-background/70 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => void download()}
+          aria-label="Download code"
+          title="Download"
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-background/70 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      </CodeBlock>
+    </div>
+  );
+}
+
+/** Extract raw text + language from react-markdown's <pre><code> children. */
+function extractCode(children: unknown): { code: string; language: string } {
+  const el = (Array.isArray(children) ? children[0] : children) as
+    | { props?: { className?: string; children?: unknown } }
+    | undefined;
+  const className = el?.props?.className ?? "";
+  const language = /language-(\S+)/.exec(className)?.[1] ?? "";
+  const raw = el?.props?.children;
+  const code = (typeof raw === "string" ? raw : Array.isArray(raw) ? raw.join("") : String(raw ?? "")).replace(/\n$/, "");
+  return { code, language };
+}
+
+// streamdown/react-markdown component overrides for assistant replies: render
+// fenced code blocks with our Tauri-native copy + download panel.
+const CHAT_MD_COMPONENTS = {
+  pre: ({ children }: { children?: unknown }) => {
+    const { code, language } = extractCode(children);
+    return <ChatCodeBlock code={code} language={language} />;
+  },
+} as const;
 
 function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   if (message.role === "user") {
@@ -1302,7 +1399,7 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   return (
     <Message from="assistant">
       <MessageContent className="min-w-0 bg-transparent p-0">
-        <MessageResponse>{cleanAssistant(message.content)}</MessageResponse>
+        <MessageResponse components={CHAT_MD_COMPONENTS}>{cleanAssistant(message.content)}</MessageResponse>
         {message.streaming ? (
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
         ) : null}

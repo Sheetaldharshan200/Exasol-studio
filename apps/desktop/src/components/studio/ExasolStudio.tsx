@@ -1139,7 +1139,7 @@ function ResultsGrid({
       </div>
     );
   }
-  const canEdit = Boolean(editable && editable.pk.length && onCommitEdits);
+  const canEdit = Boolean(editable && onCommitEdits);
   if (editing && editable && onCommitEdits) {
     return (
       <EditableResultGrid
@@ -1469,7 +1469,9 @@ export function ExasolStudio({
       if (s.theme === "light" || s.theme === "dark") setTheme(s.theme);
       else if (s.theme === "system" && typeof window !== "undefined")
         setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      if (typeof s.maxRows === "number") setMaxRows(s.maxRows);
+      // Only accept a persisted value that's one of the offered options, so the
+      // dropdown always reflects a real default (never a blank/invalid value).
+      if (typeof s.maxRows === "number" && MAX_ROWS_OPTIONS.includes(s.maxRows)) setMaxRows(s.maxRows);
       if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
       if (typeof s.wordWrap === "boolean") setEditorWordWrap(s.wordWrap);
       if (typeof s.gridFontSize === "number") setGridFontSize(s.gridFontSize);
@@ -1513,7 +1515,9 @@ export function ExasolStudio({
         if (!alive) return;
         const pk =
           d.constraints.find((c) => c.constraintType === "PRIMARY KEY")?.columns.map((c) => c.column) ?? [];
-        setEditTable(pk.length ? { schema, table: t.table, pk } : null);
+        // Editable even without a PK — most Exasol tables have none. The grid
+        // falls back to matching rows on all selected column values.
+        setEditTable({ schema, table: t.table, pk });
       })
       .catch(() => alive && setEditTable(null));
     return () => {
@@ -2991,7 +2995,7 @@ export function ExasolStudio({
                   <span>Max rows</span>
                   <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
                     <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
-                      <SelectValue />
+                      <SelectValue placeholder="1,000" />
                     </SelectTrigger>
                     <SelectContent>
                       {MAX_ROWS_OPTIONS.map((n) => (
