@@ -1110,6 +1110,8 @@ function ResultsGrid({
   zebra?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  // The cell the user double-tapped — edit mode opens with THAT cell focused.
+  const [focusCell, setFocusCell] = useState<{ row: number; col: number } | null>(null);
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -1149,8 +1151,12 @@ function ResultsGrid({
         table={editable.table}
         pk={editable.pk}
         busy={Boolean(editBusy)}
+        initialFocus={focusCell}
         onApply={onCommitEdits}
-        onExit={() => setEditing(false)}
+        onExit={() => {
+          setEditing(false);
+          setFocusCell(null);
+        }}
       />
     );
   }
@@ -1203,8 +1209,7 @@ function ResultsGrid({
             {result.rows.map((row, rowIndex) => (
               <tr
                 key={rowIndex}
-                onDoubleClick={canEdit ? () => setEditing(true) : undefined}
-                title={canEdit ? "Double-click to edit rows" : undefined}
+                title={canEdit ? "Double-click a cell to edit it" : undefined}
                 className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", canEdit && "cursor-cell")}
               >
                 <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
@@ -1213,6 +1218,14 @@ function ResultsGrid({
                 {row.map((cell, cellIndex) => (
                   <td
                     key={cellIndex}
+                    onDoubleClick={
+                      canEdit
+                        ? () => {
+                            setFocusCell({ row: rowIndex, col: cellIndex });
+                            setEditing(true);
+                          }
+                        : undefined
+                    }
                     className="max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground"
                   >
                     {cell === null ? <span className="text-muted-foreground italic">null</span> : String(cell)}

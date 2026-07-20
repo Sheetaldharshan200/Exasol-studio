@@ -34,6 +34,7 @@ export function EditableResultGrid({
   table,
   pk,
   busy,
+  initialFocus,
   onApply,
   onExit,
 }: {
@@ -43,11 +44,20 @@ export function EditableResultGrid({
   table: string;
   pk: string[];
   busy: boolean;
+  /** Cell to focus when the grid opens (the one the user double-tapped). */
+  initialFocus?: { row: number; col: number } | null;
   onApply: (statements: string[]) => void;
   onExit: () => void;
 }) {
   // edits: rowIndex -> colIndex -> new value (string)
   const [edits, setEdits] = useState<Record<number, Record<number, string>>>({});
+  // Focus + select the double-tapped cell once, when the grid mounts.
+  const focusOnce = (el: HTMLInputElement | null) => {
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  };
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
   const [inserts, setInserts] = useState<Record<string, string>[]>([]);
   const [review, setReview] = useState<string[] | null>(null);
@@ -184,12 +194,13 @@ export function EditableResultGrid({
                     const edited = edits[r]?.[c];
                     const val = edited ?? (row[c] === null ? "" : String(row[c]));
                     return (
-                      <td key={c} className={cn("border-b border-r border-border p-0", edited !== undefined && "bg-amber-400/15")}>
+                      <td key={c} className={cn("border-b border-r border-border p-0.5", edited !== undefined && "bg-amber-400/15")}>
                         <input
+                          ref={initialFocus && initialFocus.row === r && initialFocus.col === c ? focusOnce : undefined}
                           value={val}
                           disabled={del}
                           onChange={(e) => setCell(r, c, e.target.value)}
-                          className="w-full min-w-[80px] max-w-[380px] bg-transparent px-3 py-1 text-foreground outline-none focus:bg-primary/10"
+                          className="w-full min-w-[80px] max-w-[380px] rounded-sm border border-border/50 bg-background/40 px-2.5 py-0.5 text-foreground outline-none transition-colors hover:border-border focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary/30 disabled:border-transparent disabled:bg-transparent"
                         />
                       </td>
                     );
@@ -205,14 +216,14 @@ export function EditableResultGrid({
                   </button>
                 </td>
                 {columns.map((col, c) => (
-                  <td key={c} className="border-b border-r border-border p-0">
+                  <td key={c} className="border-b border-r border-border p-0.5">
                     <input
                       value={rec[col.name] ?? ""}
                       placeholder="NULL"
                       onChange={(e) =>
                         setInserts((v) => v.map((x, j) => (j === i ? { ...x, [col.name]: e.target.value } : x)))
                       }
-                      className="w-full min-w-[80px] max-w-[380px] bg-transparent px-3 py-1 text-foreground outline-none placeholder:text-muted-foreground/50 focus:bg-primary/10"
+                      className="w-full min-w-[80px] max-w-[380px] rounded-sm border border-border/50 bg-background/40 px-2.5 py-0.5 text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-border focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary/30"
                     />
                   </td>
                 ))}
