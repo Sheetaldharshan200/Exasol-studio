@@ -1249,6 +1249,29 @@ function PermissionCard({
   );
 }
 
+// Small local models often print a tool call as fenced JSON inside their text
+// (chat-template misfire). The rescue layer already extracts + EXECUTES those
+// for real, so the raw JSON must never render as a chat code box. Strip the
+// tool-call JSON and, when the misfire tangled the fences, drop stray fence
+// markers so the prose/list renders as normal chat — the tool shows only as a
+// tool card. Well-formed answers (balanced fences, no tool JSON) pass untouched.
+const TOOL_JSON =
+  /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"(?:arguments|parameters|args|input)"\s*:\s*(?:\{(?:[^{}]|\{[^{}]*\})*\}|\[[\s\S]*?\]|null)\s*\}/g;
+
+function cleanAssistant(raw: string): string {
+  if (!raw) return raw;
+  let t = raw;
+  const hadToolJson = /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"(?:arguments|parameters|args|input)"/.test(t);
+  t = t.replace(TOOL_JSON, "");
+  const fences = (t.match(/```/g) || []).length;
+  // Unbalanced fences or a confirmed tool-call misfire means the fencing is
+  // untrustworthy — remove fence markers so lists/prose read as chat.
+  if (hadToolJson || fences % 2 === 1) {
+    t = t.replace(/```[a-zA-Z0-9]*\n?/g, "");
+  }
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   if (message.role === "user") {
     return (
@@ -1271,7 +1294,7 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   return (
     <Message from="assistant">
       <MessageContent className="min-w-0 bg-transparent p-0">
-        <MessageResponse>{message.content}</MessageResponse>
+        <MessageResponse>{cleanAssistant(message.content)}</MessageResponse>
         {message.streaming ? (
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
         ) : null}

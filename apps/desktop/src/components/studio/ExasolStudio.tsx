@@ -1201,7 +1201,12 @@ function ResultsGrid({
           </thead>
           <tbody className="font-mono">
             {result.rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30")}>
+              <tr
+                key={rowIndex}
+                onDoubleClick={canEdit ? () => setEditing(true) : undefined}
+                title={canEdit ? "Double-click to edit rows" : undefined}
+                className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", canEdit && "cursor-cell")}
+              >
                 <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
                   {rowIndex + 1}
                 </td>

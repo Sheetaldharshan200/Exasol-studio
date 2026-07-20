@@ -131,8 +131,8 @@ export function DatabaseTree({
             setSelected(node.id);
             toggle(node);
           }}
-          // Single click: open the detail tab if this node has one; otherwise
-          // run the object, else fall back to expanding (folders/connections).
+          // Single tap: show info — open the detail tab if this node has one;
+          // otherwise run the object, else fall back to expanding.
           onOpen={() => {
             setSelected(node.id);
             if (hasDetails) {
@@ -142,6 +142,12 @@ export function DatabaseTree({
             } else if (node.expandable) {
               toggle(node);
             }
+          }}
+          // Double tap: open the dropdown (expand/collapse the branch).
+          onExpand={() => {
+            setSelected(node.id);
+            if (node.expandable) toggle(node);
+            else if (node.selectable) onOpenObject(node.selectable.schema, node.selectable.name);
           }}
           onContext={
             node.ctx
@@ -234,6 +240,7 @@ function Row({
   selected,
   onToggle,
   onOpen,
+  onExpand,
   onContext,
 }: {
   node: TreeNode;
@@ -243,16 +250,37 @@ function Row({
   selected: boolean;
   onToggle: () => void;
   onOpen: () => void;
+  onExpand: () => void;
   onContext?: (x: number, y: number) => void;
 }) {
   const Icon = iconFor(node.kind);
   // Hover tooltip: friendly type + full name + any inline meta.
   const kindLabel = node.kind.replace(/-/g, " ");
   const tip = [kindLabel, node.label, node.meta].filter(Boolean).join(" · ");
+  // Debounce single vs double tap: single tap shows info, double tap opens the
+  // dropdown. Hold the single action briefly so a double never triggers both.
+  const clickTimer = useRef<number | null>(null);
+  const handleClick = () => {
+    if (clickTimer.current != null) return; // second click of a double — let onDoubleClick run
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      onOpen();
+    }, 220);
+  };
+  const handleDouble = () => {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    onExpand();
+  };
+  useEffect(() => () => {
+    if (clickTimer.current != null) window.clearTimeout(clickTimer.current);
+  }, []);
   return (
     <div
-      onClick={onOpen}
-      onDoubleClick={onOpen}
+      onClick={handleClick}
+      onDoubleClick={handleDouble}
       title={tip}
       onContextMenu={
         onContext
