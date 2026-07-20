@@ -1042,7 +1042,16 @@ export function AssistantPanel({
               e.target.value = "";
             }}
           />
-          <InputGroup className="flex-col items-stretch rounded-xl border-border bg-editor focus-within:border-muted-foreground/40">
+          <InputGroup
+            // Tap anywhere on the box (not just the text area) → focus, and
+            // focus alone lights the box up — not only once typing starts.
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest("button, textarea, input, select, [role=button]")) {
+                inputRef.current?.focus();
+              }
+            }}
+            className="flex-col items-stretch rounded-xl border-border bg-editor transition-colors focus-within:border-muted-foreground/60 focus-within:ring-1 focus-within:ring-muted-foreground/25"
+          >
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
               {attachments.map((a, i) => (
