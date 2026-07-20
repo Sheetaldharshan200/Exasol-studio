@@ -28,6 +28,11 @@ import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
+import { Conversation, ConversationContent } from "@/components/ai-elements/conversation";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
+import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
+import { Loader } from "@/components/ai-elements/loader";
 import { agent, type AgentAttachment, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { sessionBus } from "@/lib/session-bus";
@@ -833,28 +838,27 @@ export function AssistantPanel({
         </div>
       ) : null}
 
-      {/* ── Conversation ── */}
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3">
-        {agentError ? (
-          <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] break-words text-foreground">
-            {agentError}
-          </div>
-        ) : null}
-        {items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
-            <AgentMark className="mb-3 h-12 w-12" />
-
-            <p className="text-[14.5px] font-semibold text-foreground">Ask Exa anything</p>
-            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-              SQL generation, tuning and answers — grounded in Exasol.
-              {ollama?.running ? " Running on your local models." : ""}
-            </p>
-            <div className="mt-4 grid w-full max-w-[260px] grid-cols-2 gap-1.5">
-              {SUGGESTIONS.map((s) => {
-                const Icon = s.icon;
-                return (
-                  <button
+      {/* ── Conversation (shadcn AI Elements) ── */}
+      <Conversation className="min-h-0 flex-1">
+        <ConversationContent className="space-y-3">
+          {agentError ? (
+            <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] break-words text-foreground">
+              {agentError}
+            </div>
+          ) : null}
+          {items.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-1 px-2 pb-10 text-center">
+              <AgentMark className="mb-3 h-12 w-12" />
+              <p className="text-[14.5px] font-semibold text-foreground">Ask Exa anything</p>
+              <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+                SQL generation, tuning and answers — grounded in Exasol.
+                {ollama?.running ? " Running on your local models." : ""}
+              </p>
+              <Suggestions className="mt-4 justify-center">
+                {SUGGESTIONS.map((s) => (
+                  <Suggestion
                     key={s.label}
+                    suggestion={s.label}
                     onClick={() => {
                       if (s.kind === "run") void send(s.payload);
                       else {
@@ -862,37 +866,35 @@ export function AssistantPanel({
                         inputRef.current?.focus();
                       }
                     }}
-                    className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-panel/60 p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/50"
-                  >
-                    <Icon className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-[11px] font-medium leading-tight text-foreground">{s.label}</span>
-                  </button>
-                );
-              })}
+                  />
+                ))}
+              </Suggestions>
             </div>
-          </div>
-        ) : (
-          clusterItems(items).map((c) =>
-            c.kind === "cluster" ? (
-              <StepCluster key={c.id} items={c.items} />
-            ) : c.item.kind === "note" ? (
-              <div key={c.item.id} className="flex items-center gap-2 py-0.5">
-                <span className="h-px flex-1 bg-border" />
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{c.item.text}</span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-            ) : (
-              <Bubble key={c.item.id} message={c.item} />
-            ),
-          )
-        )}
-        {thinking ? (
-          <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
-            <AgentMark className="h-4 w-4 text-primary" active />
-            <span className="agent-shimmer">Thinking…</span>
-          </div>
-        ) : null}
-      </div>
+          ) : (
+            items.map((it) =>
+              it.kind === "msg" ? (
+                <Bubble key={it.id} message={it} />
+              ) : it.kind === "tool" ? (
+                <ToolView key={it.id} item={it} />
+              ) : it.kind === "perm" ? (
+                <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
+              ) : (
+                <div key={it.id} className="flex items-center gap-2 py-0.5">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{it.text}</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+              ),
+            )
+          )}
+          {thinking ? (
+            <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
+              <Loader size={14} />
+              <span className="agent-shimmer">Thinking…</span>
+            </div>
+          ) : null}
+        </ConversationContent>
+      </Conversation>
 
       {/* ── Composer ── */}
       <div className="relative shrink-0 p-2.5 pt-0">
@@ -1131,91 +1133,6 @@ function relTime(ts: number): string {
   return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
-type Cluster =
-  | { kind: "item"; item: Extract<ChatItem, { kind: "msg" | "note" }> }
-  | { kind: "cluster"; id: string; items: Extract<ChatItem, { kind: "tool" | "perm" }>[] };
-
-/** Group consecutive tool/permission items into one visual "steps" block. */
-function clusterItems(items: ChatItem[]): Cluster[] {
-  const out: Cluster[] = [];
-  for (const it of items) {
-    if (it.kind === "msg" || it.kind === "note") {
-      out.push({ kind: "item", item: it });
-    } else {
-      const last = out[out.length - 1];
-      if (last && last.kind === "cluster") last.items.push(it);
-      else out.push({ kind: "cluster", id: it.id, items: [it] });
-    }
-  }
-  return out;
-}
-
-function StepCluster({
-  items,
-}: {
-  items: Extract<ChatItem, { kind: "tool" | "perm" }>[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const active = items.some((it) => (it.kind === "tool" ? !it.done : it.result === undefined));
-  const steps = items.length;
-  const current = [...items].reverse().find((it) => it.kind === "tool" && !it.done) as
-    | Extract<ChatItem, { kind: "tool" }>
-    | undefined;
-  return (
-    <div className="rounded-xl border border-border/70 bg-panel/40">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
-      >
-        <ChevronDown
-          className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !expanded && "-rotate-90")}
-        />
-        {active ? (
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
-        ) : (
-          <Check className="h-3 w-3 shrink-0 text-primary" />
-        )}
-        <span className={cn("text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground", active && "agent-shimmer")}>
-          {active ? (current ? TOOL_LABELS[current.name] ?? "Working" : "Working") : "Done"} · {steps} step{steps === 1 ? "" : "s"}
-        </span>
-      </button>
-      {expanded ? (
-        <div className="space-y-1 border-t border-border/50 p-1.5">
-          {items.map((it) =>
-            it.kind === "tool" ? (
-              <ToolChip key={it.id} item={it} />
-            ) : (
-              <PermRow key={it.id} item={it} />
-            ),
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** Compact record of an answered (or pending) permission inside the steps list. */
-function PermRow({ item }: { item: Extract<ChatItem, { kind: "perm" }> }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-1.5">
-      <ShieldAlert className={cn("h-3 w-3 shrink-0", item.result === undefined ? "text-warning" : "text-muted-foreground")} />
-      <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground">{item.summary}</span>
-      <span
-        className={cn(
-          "shrink-0 rounded px-1.5 py-px text-[9px] font-medium uppercase",
-          item.result === undefined
-            ? "bg-warning/15 text-warning"
-            : item.result
-              ? "bg-primary/15 text-primary"
-              : "bg-destructive/15 text-destructive",
-        )}
-      >
-        {item.result === undefined ? "waiting" : item.result ? "allowed" : "denied"}
-      </span>
-    </div>
-  );
-}
-
 const TOOL_LABELS: Record<string, string> = {
   list_schemas: "Listing schemas",
   list_tables: "Listing tables",
@@ -1258,32 +1175,27 @@ function argPreview(args: unknown): string {
   return parts.join(" · ");
 }
 
-function ToolChip({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
+function ToolView({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
   const label = TOOL_LABELS[item.name] ?? item.name;
   const preview = argPreview(item.args);
+  const state = !item.done ? "input-available" : item.ok ? "output-available" : "output-error";
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-1.5">
-      {item.done ? (
-        item.ok ? (
-          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-        ) : (
-          <X className="h-3.5 w-3.5 shrink-0 text-destructive" />
-        )
-      ) : (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-      )}
-      <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground">
-        {label}
-        {preview ? <span className="text-muted-foreground"> — {preview}</span> : null}
-      </span>
-      {item.done && item.summary ? (
-        <span className="max-w-[45%] shrink-0 truncate font-mono text-[10px] text-muted-foreground" title={item.summary}>{item.summary}</span>
-      ) : null}
-    </div>
+    <Tool>
+      <ToolHeader type={`tool-${item.name}`} title={preview ? `${label} — ${preview}` : label} state={state} />
+      <ToolContent>
+        {item.args && typeof item.args === "object" && Object.keys(item.args).length ? (
+          <ToolInput input={item.args} />
+        ) : null}
+        {item.done ? (
+          <ToolOutput
+            output={item.ok ? item.summary : undefined}
+            errorText={item.ok ? undefined : item.summary}
+          />
+        ) : null}
+      </ToolContent>
+    </Tool>
   );
 }
-
 function PermissionCard({
   item,
   onAnswer,
@@ -1340,29 +1252,30 @@ function PermissionCard({
 function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="[overflow-wrap:anywhere] max-w-[85%] min-w-0 whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-[13px] leading-relaxed break-words text-foreground">
-          {highlightInput(message.content)}
-        </div>
-      </div>
+      <Message from="user">
+        <MessageContent className="[overflow-wrap:anywhere] whitespace-pre-wrap break-words">
+          {message.content}
+        </MessageContent>
+      </Message>
     );
   }
   if (message.error) {
     return (
-      <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed break-words text-foreground">
-        {message.content}
-      </div>
+      <Message from="assistant">
+        <MessageContent className="[overflow-wrap:anywhere] break-words text-destructive">
+          {message.content}
+        </MessageContent>
+      </Message>
     );
   }
   return (
-    <div className="flex gap-2">
-      <AgentMark className="mt-1 h-4 w-4 shrink-0 text-primary" />
-      <div className="assistant-markdown min-w-0 flex-1 text-[13px] leading-relaxed text-foreground">
-        <ReactMarkdown>{message.content}</ReactMarkdown>
+    <Message from="assistant">
+      <MessageContent className="min-w-0 bg-transparent p-0">
+        <MessageResponse>{message.content}</MessageResponse>
         {message.streaming ? (
           <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
         ) : null}
-      </div>
-    </div>
+      </MessageContent>
+    </Message>
   );
 }
