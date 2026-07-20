@@ -5,6 +5,7 @@ import { log } from "./log.ts";
 // fall back to a deterministic hashed bag-of-words vector so recall ALWAYS
 // works offline with zero extra dependencies or downloads.
 
+const BUILTIN_EMBED = "http://127.0.0.1:41415"; // llama-server --embeddings
 const OLLAMA = "http://127.0.0.1:11434";
 const EMBED_MODELS = ["nomic-embed-text", "mxbai-embed-large", "all-minilm", "bge-m3"];
 const DIM = 384;
@@ -61,8 +62,41 @@ export function cosine(a: number[], b: number[]): number {
 }
 
 /** Embed a batch of texts. Uses Ollama if available, else hashed fallback. */
+let builtinEmbed: boolean | undefined;
+async function detectBuiltinEmbedder(): Promise<boolean> {
+  if (builtinEmbed !== undefined) return builtinEmbed;
+  try {
+    const r = await fetch(`${BUILTIN_EMBED}/health`, { signal: AbortSignal.timeout(600) });
+    builtinEmbed = r.ok;
+  } catch {
+    builtinEmbed = false;
+  }
+  if (builtinEmbed) log.info("embeddings: using built-in engine (all-MiniLM)");
+  return builtinEmbed;
+}
+
 export async function embed(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
+  // 1) Built-in local embedder (self-sufficient, no Ollama needed).
+  if (await detectBuiltinEmbedder()) {
+    try {
+      const res = await fetch(`${BUILTIN_EMBED}/v1/embeddings`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: texts }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { data?: { embedding: number[] }[] };
+        const vecs = (body.data ?? []).map((d) => normalize(d.embedding));
+        if (vecs.length === texts.length) return vecs;
+      }
+      throw new Error("bad built-in embed response");
+    } catch (e) {
+      log.warn("built-in embed failed; trying Ollama/hashed", { error: String(e) });
+      builtinEmbed = false;
+    }
+  }
   const model = await detectOllamaEmbedder();
   if (model) {
     try {

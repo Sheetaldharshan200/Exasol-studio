@@ -19,6 +19,12 @@ use crate::state::AppState;
 // same way it detects Ollama.
 
 pub const BUILTIN_PORT: u16 = 41414;
+pub const EMBED_PORT: u16 = 41415;
+// Tiny (21 MB) 384-dim sentence embedder — runs as a SECOND llama-server in
+// --embeddings mode so the built-in runtime is fully self-sufficient for
+// semantic memory/skills/session search without needing Ollama.
+const EMBED_FILE: &str = "all-MiniLM-L6-v2.Q4_K_M.gguf";
+const EMBED_URL: &str = "https://huggingface.co/leliuga/all-MiniLM-L6-v2-GGUF/resolve/main/all-MiniLM-L6-v2.Q4_K_M.gguf";
 const RELEASES_LATEST: &str = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
 const PROGRESS_EVENT: &str = "llm-progress";
 
@@ -68,12 +74,18 @@ const MODELS: &[LlmModel] = &[
 #[derive(Default)]
 pub struct LlmEngine {
     child: Mutex<Option<(Child, String)>>, // (process, model id)
+    embed: Mutex<Option<Child>>,           // the embeddings server
 }
 
 impl LlmEngine {
     pub fn kill(&self) {
         if let Ok(mut guard) = self.child.lock() {
             if let Some((mut child, _)) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+        if let Ok(mut guard) = self.embed.lock() {
+            if let Some(mut child) = guard.take() {
                 let _ = child.kill();
             }
         }
@@ -86,9 +98,11 @@ impl LlmEngine {
 fn kill_port_orphans() {
     #[cfg(unix)]
     {
-        if let Ok(out) = Command::new("lsof").args(["-ti", &format!(":{BUILTIN_PORT}")]).output() {
-            for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
-                let _ = Command::new("kill").args(["-9", pid]).status();
+        for port in [BUILTIN_PORT, EMBED_PORT] {
+            if let Ok(out) = Command::new("lsof").args(["-ti", &format!(":{port}")]).output() {
+                for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+                    let _ = Command::new("kill").args(["-9", pid]).status();
+                }
             }
         }
     }
@@ -121,6 +135,9 @@ pub struct LlmStatus {
     pub last_model: Option<String>,
     pub port: u16,
     pub models: Vec<LlmModelStatus>,
+    pub embed_port: u16,
+    pub embedding_downloaded: bool,
+    pub embedding_ready: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -278,6 +295,9 @@ pub async fn llm_status(app: AppHandle, state: State<'_, AppState>, engine: Stat
         auto_start: prefs.auto_start,
         last_model: prefs.model,
         port: BUILTIN_PORT,
+        embed_port: EMBED_PORT,
+        embedding_downloaded: models_dir(&state).join(EMBED_FILE).exists(),
+        embedding_ready: embed_alive_blocking(),
         models: MODELS
             .iter()
             .map(|m| LlmModelStatus {
@@ -573,12 +593,84 @@ pub fn auto_start_if_enabled(app: &AppHandle) {
         if start_model(&app, &model_id).await.is_ok() {
             let _ = app.emit("ai-providers-changed", serde_json::json!({}));
         }
+        // Bring the local embedder up too, if its model is present.
+        let _ = ensure_embedder(&app).await;
     });
 }
 
 #[tauri::command]
 pub fn llm_stop(engine: State<'_, LlmEngine>) -> AppResult<()> {
     engine.kill();
+    Ok(())
+}
+
+/// Blocking health probe for the embeddings server (used in sync llm_status).
+fn embed_alive_blocking() -> bool {
+    std::net::TcpStream::connect_timeout(
+        &format!("127.0.0.1:{EMBED_PORT}").parse().unwrap(),
+        Duration::from_millis(200),
+    )
+    .is_ok()
+}
+
+/// Download the tiny embedding model (~21 MB) for the built-in runtime.
+#[tauri::command]
+pub async fn llm_embed_install(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    let dir = models_dir(&state);
+    fs::create_dir_all(&dir).map_err(|e| AppError::Assistant(e.to_string()))?;
+    let target = dir.join(EMBED_FILE);
+    if !target.exists() {
+        let client = reqwest::Client::builder().user_agent("exasol-studio").build().map_err(|e| AppError::Assistant(e.to_string()))?;
+        download_with_progress(&app, &client, EMBED_URL, &target, "embed").await?;
+    }
+    ensure_embedder(&app).await?;
+    let _ = app.emit("ai-providers-changed", serde_json::json!({}));
+    Ok(())
+}
+
+/// Start the embeddings server (second llama-server, --embeddings) if the model
+/// is present and it isn't already up. Idempotent.
+pub async fn ensure_embedder(app: &AppHandle) -> AppResult<()> {
+    if embed_alive_blocking() {
+        return Ok(());
+    }
+    let (server, gguf) = {
+        let state = app.state::<AppState>();
+        let gguf = models_dir(&state).join(EMBED_FILE);
+        if !gguf.exists() {
+            return Err(AppError::Assistant("embedding model not downloaded".into()));
+        }
+        let server = find_server(app, &state).ok_or_else(|| AppError::Assistant("engine not installed".into()))?;
+        (server, gguf)
+    };
+    let child = Command::new(&server)
+        .args([
+            "-m", gguf.to_str().unwrap_or(""),
+            "--host", "127.0.0.1",
+            "--port", &EMBED_PORT.to_string(),
+            "--embeddings",
+            "--pooling", "mean",
+            "-c", "512",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| AppError::Assistant(format!("failed to start embedder: {e}")))?;
+    {
+        let engine = app.state::<LlmEngine>();
+        let mut g = engine.embed.lock().map_err(|_| AppError::Assistant("engine state poisoned".into()))?;
+        *g = Some(child);
+        drop(g);
+    }
+    // Wait until it answers (embedding models load fast).
+    let client = reqwest::Client::new();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if client.get(format!("http://127.0.0.1:{EMBED_PORT}/health")).timeout(Duration::from_secs(1)).send().await.map(|r| r.status().is_success()).unwrap_or(false) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
     Ok(())
 }
 

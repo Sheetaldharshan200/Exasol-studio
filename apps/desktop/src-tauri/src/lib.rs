@@ -138,6 +138,7 @@ pub fn run() {
             local_llm::llm_status,
             local_llm::llm_engine_install,
             local_llm::llm_model_install,
+            local_llm::llm_embed_install,
             local_llm::llm_start,
             local_llm::llm_stop,
             local_llm::llm_set_auto_start,

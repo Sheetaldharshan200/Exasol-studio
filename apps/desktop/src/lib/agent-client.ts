@@ -200,14 +200,18 @@ export type LlmStatus = {
   lastModel: string | null;
   port: number;
   models: LlmModelStatus[];
+  embedPort: number;
+  embeddingDownloaded: boolean;
+  embeddingReady: boolean;
 };
 
-export type LlmProgress = { stage: "engine" | "model" | "start"; pct: number | null; msg: string };
+export type LlmProgress = { stage: "engine" | "model" | "start" | "embed"; pct: number | null; msg: string };
 
 export const llm = {
   status: () => invoke<LlmStatus>("llm_status"),
   installEngine: () => invoke<null>("llm_engine_install"),
   installModel: (modelId: string) => invoke<null>("llm_model_install", { modelId }),
+  installEmbed: () => invoke<null>("llm_embed_install"),
   start: (modelId: string) => invoke<null>("llm_start", { modelId }),
   stop: () => invoke<null>("llm_stop"),
   setAutoStart: (enabled: boolean) => invoke<null>("llm_set_auto_start", { enabled }),
