@@ -282,5 +282,23 @@ console.log("\nskill auto-activation");
   check("recall picks a dashboard skill, not email", /dashboard|chart/.test(hit[0]?.name ?? "") && hit[0]?.name !== "email-parser", `got: ${hit[0]?.name}`);
 }
 
+// ─── Memory consolidation merges near-duplicate notes. ──────────────────────
+console.log("\nmemory consolidation");
+{
+  const { MemoryStore } = await import("../src/memory.ts");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { mkdtempSync } = await import("node:fs");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "exa-mem-"));
+  const mem = new MemoryStore(dir);
+  mem.remember("project", null, "ORDERS joins CUSTOMER on the O_CUSTKEY column");
+  mem.remember("project", null, "ORDERS joins CUSTOMER on O_CUSTKEY column key");
+  mem.remember("project", null, "Currency for all amounts is EUR");
+  const merged = await mem.consolidate(null);
+  check("near-duplicate notes are merged", merged >= 1, `merged=${merged}`);
+  const hits = await mem.recall(null, "how do orders relate to customers", 5);
+  check("distinct facts survive consolidation", hits.some((h) => /EUR/.test(h.text)) && hits.some((h) => /CUSTKEY/i.test(h.text)));
+}
+
 console.log(`\n${pass} passed, ${fail} failed${fail ? `: ${failures.join("; ")}` : ""}`);
 process.exit(fail ? 1 : 0);

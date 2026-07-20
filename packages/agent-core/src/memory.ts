@@ -139,6 +139,56 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * Merge near-duplicate notes (jcode-style consolidation) — pure embeddings,
+   * no LLM. Notes that mean the same thing (cosine >= 0.9) collapse to the
+   * longer/more-specific one, so recall stays sharp and the file doesn't bloat
+   * with restatements. Cheap enough to run opportunistically after writes.
+   */
+  async consolidate(conn: string | null): Promise<number> {
+    let merged = 0;
+    for (const scope of ["user", "project"] as const) {
+      const path = this.file(scope, conn);
+      const raw = this.read(path);
+      if (!raw) continue;
+      const header = raw.split("\n").filter((l) => !l.trim().startsWith("- ")).join("\n").trimEnd();
+      const bullets = raw.split("\n").filter((l) => l.trim().startsWith("- ")).map((l) => l.trim().slice(2).trim()).filter(Boolean);
+      if (bullets.length < 3) continue;
+      let vecs: number[][];
+      try {
+        vecs = await embed(bullets);
+      } catch {
+        continue;
+      }
+      const keep: string[] = [];
+      const keepVecs: number[][] = [];
+      // Newest first so, on a near-dup, we keep the most recent phrasing but
+      // prefer the longer (more specific) of the pair.
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const dupIdx = keepVecs.findIndex((v) => cosine(v, vecs[i]) >= 0.85);
+        if (dupIdx >= 0) {
+          if (bullets[i].length > keep[dupIdx].length) {
+            keep[dupIdx] = bullets[i];
+            keepVecs[dupIdx] = vecs[i];
+          }
+          merged++;
+        } else {
+          keep.push(bullets[i]);
+          keepVecs.push(vecs[i]);
+        }
+      }
+      if (merged) {
+        keep.reverse(); // restore chronological order
+        try {
+          writeFileSync(path, `${header}\n\n${keep.map((b) => `- ${b}`).join("\n")}\n`);
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+    return merged;
+  }
+
   /** Relevance-ranked memory block for a turn (used by the loop). */
   async contextFor(conn: string | null, query: string): Promise<string> {
     const hits = await this.recall(conn, query);

@@ -22,6 +22,7 @@ export type Attachment = {
 import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
+import { extractMemories } from "./memory-extract.ts";
 import { repairCall, extractTextToolCalls, resolveToolName, repairArgs, zodSchemaish } from "./tool-repair.ts";
 import { TurnBoard } from "./board.ts";
 import { Command } from "@langchain/langgraph";
@@ -265,6 +266,7 @@ export async function runTurn(opts: {
     semanticViewsConnectionId,
     surface,
     board,
+    store,
   });
   // Progressive tool disclosure: small local models get confused when handed
   // ~26 tools at once (wrong picks, hallucinated names, calls-as-text). Expose
@@ -569,6 +571,15 @@ export async function runTurn(opts: {
     session.abort = null;
     session.clearCheckpoint(); // turn ended (ok, error, or abort) — history is persisted normally
     store.touch(session);
+    // jcode-style ambient extraction: mine the conversation for durable facts
+    // every few turns, in the BACKGROUND (never delays the answer). Small,
+    // cheap, grounded — see memory-extract.ts.
+    session.turnCount = (session.turnCount ?? 0) + 1;
+    if (settings.enableInsights && session.turnCount % 4 === 0) {
+      const snapshot = [...session.messages];
+      const existing = memory.context(session.connectionId);
+      void extractMemories({ model, messages: snapshot, memory, connectionId: session.connectionId, existing }).catch(() => 0);
+    }
     session.emit({ type: "status", state: "idle" });
     // Background: enrich the schema graph with AI semantics (batched, capped,
     // deduplicated inside annotateMissing) — reduces future token usage.

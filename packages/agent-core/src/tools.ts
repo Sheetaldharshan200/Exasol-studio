@@ -6,6 +6,7 @@ import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { MemoryStore } from "./memory.ts";
 import type { DocumentStore } from "./documents.ts";
+import type { SessionStore } from "./session.ts";
 import type { KnowledgeGraph } from "./kb.ts";
 import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
@@ -63,6 +64,7 @@ export function buildTools(ctx: {
   connectionId: string | null;
   memory?: MemoryStore;
   documents?: DocumentStore;
+  store?: SessionStore;
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
   dashboards?: DashboardStore;
@@ -600,6 +602,22 @@ export function buildTools(ctx: {
         return scored.length ? { places: scored } : { places: [], note: "Nothing matched — describe the goal and I can suggest the closest surface." };
       },
     }),
+
+    ...(ctx.store && !ctx.readOnly
+      ? {
+          search_sessions: tool({
+            description:
+              "Search your PAST chat sessions semantically — recall earlier work (\"what did we explore about revenue before?\"). Returns matching sessions with a snippet.",
+            inputSchema: z.object({ query: z.string() }),
+            execute: async ({ query }) => {
+              const hits = await ctx.store!.search(query, session.id, 4);
+              return hits.length
+                ? { sessions: hits.map((h) => ({ title: h.title, when: new Date(h.updatedAt).toISOString().slice(0, 10), about: h.snippet.slice(0, 160) })) }
+                : { sessions: [], note: "No earlier sessions match." };
+            },
+          }),
+        }
+      : {}),
 
     ...(ctx.documents
       ? {

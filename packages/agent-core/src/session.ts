@@ -45,6 +45,7 @@ export class Session {
   title = "New chat";
   messages: BaseMessage[] = [];
   running = false;
+  turnCount = 0;
   abort: AbortController | null = null;
   /** Connection granted to this session's tools (set per message). */
   connectionId: string | null = null;
@@ -310,6 +311,8 @@ export class Session {
   }
 }
 
+type SessionHit = { id: string; title: string; updatedAt: number; snippet: string; score: number };
+
 export class SessionStore {
   private sessions = new Map<string, Session>();
   private readonly indexFile: string;
@@ -356,6 +359,47 @@ export class SessionStore {
       });
     }
     this.saveIndex();
+  }
+
+  /**
+   * Semantic search over PAST sessions (jcode-style session RAG) — embeddings
+   * only, no LLM. Each session is represented by its title + first user ask;
+   * results let the agent recall "we did this before". Cached per session by
+   * updatedAt so re-embedding only happens when a session changes.
+   */
+  async search(query: string, currentId: string | null, k = 4): Promise<SessionHit[]> {
+    const { embed, embedOne, cosine } = await import("./embed.ts");
+    const idxPath = join(this.dataDir, "sessions", "search-index.json");
+    let cache: Record<string, { at: number; snippet: string; vec: number[] }> = {};
+    try {
+      cache = JSON.parse(readFileSync(idxPath, "utf8"));
+    } catch {
+      cache = {};
+    }
+    const metas = this.index.filter((m) => m.id !== currentId).slice(0, 80);
+    const stale = metas.filter((m) => !cache[m.id] || cache[m.id].at !== m.updatedAt);
+    if (stale.length) {
+      const snippets = stale.map((m) => {
+        const s = this.get(m.id);
+        const firstUser = s?.replay().find((it) => it.kind === "msg" && it.role === "user");
+        const snip = firstUser && firstUser.kind === "msg" ? firstUser.content : "";
+        return `${m.title}. ${snip}`.slice(0, 400);
+      });
+      const vecs = await embed(snippets);
+      stale.forEach((m, i) => (cache[m.id] = { at: m.updatedAt, snippet: snippets[i], vec: vecs[i] }));
+      for (const id of Object.keys(cache)) if (!this.index.some((m) => m.id === id)) delete cache[id];
+      try {
+        writeFileSync(idxPath, JSON.stringify(cache));
+      } catch {
+        /* best-effort */
+      }
+    }
+    const qv = await embedOne(query);
+    return metas
+      .map((m) => ({ id: m.id, title: m.title, updatedAt: m.updatedAt, snippet: cache[m.id]?.snippet ?? m.title, score: cosine(qv, cache[m.id]?.vec ?? []) }))
+      .filter((h) => h.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k);
   }
 
   list(): SessionMeta[] {
