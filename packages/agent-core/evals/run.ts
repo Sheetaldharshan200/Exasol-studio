@@ -235,5 +235,19 @@ console.log("\nturn board");
   check("findings are typed and retrievable", b.allFindings()[0]?.kind === "sql");
 }
 
+// ─── Semantic recall — hashed embeddings are deterministic + rank sensibly. ──
+console.log("\nsemantic recall (offline hashed embeddings)");
+{
+  const { embed, cosine } = await import("../src/embed.ts");
+  const [a, b, c] = await embed([
+    "revenue by market segment from orders",
+    "total sales grouped by customer segment",
+    "average daily temperature per city",
+  ]);
+  check("embedding is deterministic", (await embed(["x"]))[0].join(",") === (await embed(["x"]))[0].join(","));
+  check("self-similarity is 1", Math.abs(cosine(a, a) - 1) < 1e-6);
+  check("related > unrelated", cosine(a, b) > cosine(a, c), `rev/sales=${cosine(a, b).toFixed(3)} rev/weather=${cosine(a, c).toFixed(3)}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed${fail ? `: ${failures.join("; ")}` : ""}`);
 process.exit(fail ? 1 : 0);

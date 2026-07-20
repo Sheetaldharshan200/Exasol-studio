@@ -136,6 +136,38 @@ export function buildTools(ctx: {
             },
           }),
 
+          find_columns: tool({
+            description:
+              "Locate WHERE data lives without reading tables: search every column across the database by keyword " +
+              "(name or comment) and get each match's table, type, and row count. Like grep for the schema — " +
+              "use it to find which table holds 'revenue', 'email', 'timestamp', etc. before writing SQL.",
+            inputSchema: z.object({
+              keyword: z.string().describe("Substring to match in column or table names, e.g. 'price', 'date', 'email'"),
+            }),
+            execute: async ({ keyword }) => {
+              const id = requireConn();
+              const kw = keyword.replace(/'/g, "''").toUpperCase();
+              const out = await db.query(
+                id,
+                `SELECT c.COLUMN_SCHEMA AS SCHEMA, c.COLUMN_TABLE AS TABLE_NAME, c.COLUMN_NAME AS COLUMN_NAME,
+                        c.COLUMN_TYPE AS TYPE, t.TABLE_ROW_COUNT AS ROWS, c.COLUMN_COMMENT AS REMARKS
+                   FROM SYS.EXA_ALL_COLUMNS c
+                   LEFT JOIN SYS.EXA_ALL_TABLES t
+                     ON t.TABLE_SCHEMA = c.COLUMN_SCHEMA AND t.TABLE_NAME = c.COLUMN_TABLE
+                  WHERE c.COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS')
+                    AND (UPPER(c.COLUMN_NAME) LIKE '%' || '${kw}' || '%'
+                         OR UPPER(c.COLUMN_TABLE) LIKE '%' || '${kw}' || '%'
+                         OR UPPER(NVL(c.COLUMN_COMMENT,'')) LIKE '%' || '${kw}' || '%')
+                  ORDER BY t.TABLE_ROW_COUNT DESC NULLS LAST
+                  LIMIT 60`,
+              );
+              session.record({ kind: "tool.find_columns", keyword, hits: out.rowCount });
+              return out.rowCount
+                ? { columns: shape(out) }
+                : { columns: [], note: `No column or table matches "${keyword}". Try kb_search with the concept, or list_schemas.` };
+            },
+          }),
+
           kb_join_path: tool({
             description: "Find how two tables join (shortest path over foreign keys and inferred keys).",
             inputSchema: z.object({

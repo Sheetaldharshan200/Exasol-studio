@@ -153,7 +153,7 @@ export async function runTurn(opts: {
   session.emit({ type: "user-message", text: userText });
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
-  const remembered = settings.enableInsights ? memory.context(session.connectionId) : "";
+  const remembered = settings.enableInsights ? await memory.contextFor(session.connectionId, userText) : "";
   let system = remembered
     ? `${SYSTEM_PROMPT}\n\nMemory — durable facts about the user and this database (still confirm anything critical before acting):\n${remembered}`
     : SYSTEM_PROMPT;
