@@ -151,22 +151,6 @@ export function ConnectView({
     });
   }
 
-  async function removeProfile(id: string) {
-    await ipc.deleteConnectionProfile(id);
-    await onSaved();
-    if (draft.id === id) setDraft(emptyDraft());
-  }
-
-  async function clearAllProfiles() {
-    for (const p of profiles) {
-      await ipc.deleteConnectionProfile(p.id);
-    }
-    await onSaved();
-    // Only reset the form if it was showing one of the deleted profiles —
-    // never wipe details the user is currently typing.
-    if (draft.id) setDraft(emptyDraft());
-  }
-
   const dsn = useMemo(() => buildDsn(draft), [draft]);
   const selectedDriver = drivers.find((d) => d.id === draft.driverId);
   const canRun = Boolean(draft.host.trim() && draft.username.trim());
@@ -277,51 +261,29 @@ export function ConnectView({
               <div className="mb-5 max-w-2xl">
                 <div className="flex items-center justify-between">
                   <span className="eyebrow-muted">Recent connections</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={toggleRecent}
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {recentHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                      {recentHidden ? "Show" : "Hide"}
-                    </button>
-                    {!recentHidden ? (
-                      <button
-                        onClick={clearAllProfiles}
-                        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
-                      >
-                        <X className="h-3 w-3" />
-                        Clear all
-                      </button>
-                    ) : null}
-                  </div>
+                  <button
+                    onClick={toggleRecent}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {recentHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                    {recentHidden ? "Show" : "Hide"}
+                  </button>
                 </div>
                 {recentHidden ? null : (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {profiles.map((profile) => (
-                    <div
+                    <button
                       key={profile.id}
-                      className="group flex items-center gap-2 rounded-lg border border-border bg-secondary/30 py-1.5 pr-1.5 pl-3 transition-colors hover:border-primary/40 hover:bg-secondary"
+                      onClick={() => setDraft({ ...profile })}
+                      title="Click to fill the form with these details"
+                      className="group flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-3 py-1.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary"
                     >
-                      <button
-                        onClick={() => setDraft({ ...profile })}
-                        className="flex items-center gap-2 text-left"
-                      >
-                        <Database className="h-3.5 w-3.5 text-primary" />
-                        <span className="text-[13px] font-medium text-foreground">{profile.name}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {profile.host}:{profile.port}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => removeProfile(profile.id)}
-                        aria-label={`Remove ${profile.name}`}
-                        title="Remove connection"
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
+                      <Database className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-[13px] font-medium text-foreground">{profile.name}</span>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {profile.host}:{profile.port}
+                      </span>
+                    </button>
                   ))}
                 </div>
                 )}

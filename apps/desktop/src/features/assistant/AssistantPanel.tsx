@@ -121,8 +121,53 @@ const SUGGESTIONS: { icon: typeof Wand2; label: string; kind: "run" | "insert"; 
 
 const SLASH_NAMES = SLASH_COMMANDS.map((c) => c.cmd);
 
-/** Render the composer text with the leading /command and @mentions colored.
- *  Kept visually identical to the textarea so it can sit behind it. */
+/** Split text into prose and fenced-code regions. A fence is ``` or ''' and
+ *  runs until the matching marker (or end-of-text while the user is still
+ *  typing). The markers are kept inside the code region so they highlight too. */
+function splitFences(s: string): { code: boolean; text: string }[] {
+  const out: { code: boolean; text: string }[] = [];
+  const re = /(```|''')/g;
+  let last = 0;
+  let open: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    const marker = m[1];
+    if (open === null) {
+      if (m.index > last) out.push({ code: false, text: s.slice(last, m.index) });
+      open = marker;
+      last = m.index;
+    } else if (marker === open) {
+      out.push({ code: true, text: s.slice(last, m.index + marker.length) });
+      open = null;
+      last = m.index + marker.length;
+    }
+  }
+  if (open !== null) out.push({ code: true, text: s.slice(last) });
+  else if (last < s.length) out.push({ code: false, text: s.slice(last) });
+  return out;
+}
+
+/** Color @mentions within a prose fragment. */
+function pushProse(nodes: React.ReactNode[], rest: string, keyBase: number): void {
+  const re = /(^|\s)(@[a-z:_]+)/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest))) {
+    if (m.index + m[1].length > last) nodes.push(rest.slice(last, m.index + m[1].length));
+    nodes.push(
+      <span key={`at-${keyBase}-${m.index}`} className="text-primary">
+        {m[2]}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  nodes.push(rest.slice(last));
+}
+
+/** Render the composer text with the leading /command, @mentions, and fenced
+ *  code (``` or ''') tinted so pasted code reads distinctly from prose. Only
+ *  color/background changes — never font/size — so it stays pixel-aligned with
+ *  the transparent textarea sitting on top. */
 function highlightInput(text: string): React.ReactNode {
   if (!text) return null;
   const nodes: React.ReactNode[] = [];
@@ -137,21 +182,18 @@ function highlightInput(text: string): React.ReactNode {
     );
     i = lead[0].length;
   }
-  // Remainder: color @mentions inline.
   const rest = text.slice(i);
-  const re = /(^|\s)(@[a-z:_]+)/gi;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(rest))) {
-    if (m.index > last) nodes.push(rest.slice(last, m.index + m[1].length));
-    nodes.push(
-      <span key={`at-${m.index}`} className="text-primary">
-        {m[2]}
-      </span>,
-    );
-    last = m.index + m[0].length;
-  }
-  nodes.push(rest.slice(last));
+  splitFences(rest).forEach((part, idx) => {
+    if (part.code) {
+      nodes.push(
+        <span key={`code-${idx}`} className="rounded-sm bg-secondary/70 text-syntax-type">
+          {part.text}
+        </span>,
+      );
+    } else {
+      pushProse(nodes, part.text, idx);
+    }
+  });
   return nodes;
 }
 
