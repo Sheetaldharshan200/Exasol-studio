@@ -185,7 +185,10 @@ function highlightInput(text: string): React.ReactNode {
   splitFences(rest).forEach((part, idx) => {
     if (part.code) {
       nodes.push(
-        <span key={`code-${idx}`} className="rounded-sm bg-secondary/70 text-syntax-type">
+        <span
+          key={`code-${idx}`}
+          className="rounded-sm bg-primary/15 text-syntax-type ring-1 ring-primary/25"
+        >
           {part.text}
         </span>,
       );
@@ -1306,26 +1309,65 @@ function PermissionCard({
 }
 
 // Small local models often print a tool call as fenced JSON inside their text
-// (chat-template misfire). The rescue layer already extracts + EXECUTES those
-// for real, so the raw JSON must never render as a chat code box. Strip the
-// tool-call JSON and, when the misfire tangled the fences, drop stray fence
-// markers so the prose/list renders as normal chat — the tool shows only as a
-// tool card. Well-formed answers (balanced fences, no tool JSON) pass untouched.
-const TOOL_JSON =
-  /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"(?:arguments|parameters|args|input)"\s*:\s*(?:\{(?:[^{}]|\{[^{}]*\})*\}|\[[\s\S]*?\]|null)\s*\}/g;
+// (chat-template misfire) — e.g. `{"name":"list_tables","arguments":{}}` — and
+// tangle the closing fence into the prose, so the whole reply renders as one
+// JSON code box. The rescue layer already extracts + EXECUTES those calls, so
+// the raw JSON must never reach the chat. We detect a leaked tool call, remove
+// its JSON object with real brace-matching (regex can't handle nesting or a
+// streaming cut-off), and drop the now-untrustworthy fences so the prose reads
+// as chat. Gated on the name being a KNOWN tool so genuine JSON answers pass
+// through untouched.
+
+/** True if the text contains a leaked call to a tool this UI knows about. */
+function hasLeakedToolCall(s: string): boolean {
+  const m = /\{\s*"name"\s*:\s*"([a-zA-Z0-9_]+)"/.exec(s);
+  if (!m) return false;
+  return m[1] in TOOL_LABELS || /"(?:arguments|parameters|args|input)"\s*:/.test(s);
+}
+
+/** Remove every `{"name":...}` tool-call object via brace-aware scanning; an
+ *  unterminated one (streaming cut-off) drops everything from its start. */
+function stripToolJson(s: string): string {
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    const m = /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"/.exec(s.slice(i));
+    if (!m) return out + s.slice(i);
+    const start = i + m.index;
+    out += s.slice(i, start);
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let closed = false;
+    let j = start;
+    for (; j < s.length; j++) {
+      const ch = s[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) { j++; closed = true; break; }
+      }
+    }
+    if (!closed) return out; // truncated tool call — drop the tail
+    i = j;
+  }
+  return out;
+}
 
 function cleanAssistant(raw: string): string {
   if (!raw) return raw;
-  let t = raw;
-  const hadToolJson = /\{\s*"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"(?:arguments|parameters|args|input)"/.test(t);
-  t = t.replace(TOOL_JSON, "");
-  // Only when a tool-call misfire happened do we distrust the fences (the model
-  // tangled prose inside them) and strip fence markers so lists/prose read as
-  // chat. Normal answers keep their fences — streamdown renders proper code
-  // blocks (with our copy/download panel), even while a fence is still open.
-  if (hadToolJson) {
-    t = t.replace(/```[a-zA-Z0-9]*\n?/g, "");
-  }
+  if (!hasLeakedToolCall(raw)) return raw;
+  let t = stripToolJson(raw);
+  // The misfire tangled the fences (JSON + prose in one block) — strip fence
+  // markers so the remaining prose/list renders as normal chat. Remove opening
+  // fences (```lang\n) first, then any bare ``` / '''. The two-step order keeps
+  // a prose word glued to a closing fence (```It) intact.
+  t = t.replace(/```[a-zA-Z0-9]+\n/g, "").replace(/```/g, "").replace(/'''/g, "");
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -1353,14 +1395,26 @@ function ChatCodeBlock({ code, language }: { code: string; language: string }) {
   // Raw label for the download extension; safe (shiki-bundled) lang for render.
   const lang = language || "text";
   const safeLang = (SHIKI_LANGS.has(lang.toLowerCase()) ? lang.toLowerCase() : "text") as BundledLanguage;
-  const copy = () => {
-    navigator.clipboard
-      ?.writeText(code)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1400);
-      })
-      .catch(() => undefined);
+  const copy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        // Fallback for any webview where the async clipboard API is missing.
+        const ta = document.createElement("textarea");
+        ta.value = code;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* ignore */
+    }
   };
   const download = async () => {
     const ext = LANG_EXT[lang.toLowerCase()] ?? "txt";
@@ -1417,6 +1471,13 @@ function extractCode(children: unknown): { code: string; language: string } {
 const CHAT_MD_COMPONENTS = {
   pre: ({ children }: { children?: unknown }) => {
     const { code, language } = extractCode(children);
+    // Backstop: if a leaked tool call still reached a code block (e.g. a fence
+    // the sanitizer couldn't untangle), strip the JSON and show only leftover
+    // prose — never a raw JSON box.
+    if (hasLeakedToolCall(code)) {
+      const rest = stripToolJson(code).replace(/```/g, "").replace(/'''/g, "").trim();
+      return rest ? <p className="whitespace-pre-wrap">{rest}</p> : null;
+    }
     return <ChatCodeBlock code={code} language={language} />;
   },
 } as const;
