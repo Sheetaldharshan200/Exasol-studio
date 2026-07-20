@@ -11,13 +11,11 @@ import {
   History,
   Image as ImageIcon,
   Loader2,
-  ArrowRight,
   PanelRightClose,
   Paperclip,
   Plus,
   ShieldAlert,
   SlidersHorizontal,
-  Square,
   Table2,
   Trash2,
   Wand2,
@@ -33,6 +31,10 @@ import { Message, MessageContent, MessageResponse } from "@/components/ai-elemen
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Loader } from "@/components/ai-elements/loader";
+import { PromptInputTools, PromptInputButton, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { CodeBlock } from "@/components/ai-elements/code-block";
+import { Button } from "@/components/ui/button";
 import { agent, type AgentAttachment, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
 import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
 import { sessionBus } from "@/lib/session-bus";
@@ -208,7 +210,7 @@ export function AssistantPanel({
   const overlayRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<string | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLFormElement>(null);
   const uiActionRef = useRef(onUiAction);
   uiActionRef.current = onUiAction;
   const onDashboardSavedRef = useRef(onDashboardSaved);
@@ -271,6 +273,10 @@ export function AssistantPanel({
   useEffect(() => {
     const ta = inputRef.current;
     if (!ta) return;
+    // The shadcn textarea ships `field-sizing: content` (CSS auto-grow) which
+    // would override our measured height and bypass the max-height cap — pin it
+    // to fixed so this JS sizing stays authoritative.
+    ta.style.setProperty("field-sizing", "fixed");
     ta.style.height = "auto";
     const next = Math.min(ta.scrollHeight, MAX_COMPOSER);
     ta.style.height = `${next}px`;
@@ -929,7 +935,14 @@ export function AssistantPanel({
           </div>
         ) : null}
 
-        <div ref={pickerRef} className="relative rounded-xl border border-border bg-editor transition-colors focus-within:border-muted-foreground/40">
+        <form
+          ref={pickerRef}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!sending && input.trim()) void send(input);
+          }}
+          className="relative"
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -941,6 +954,7 @@ export function AssistantPanel({
               e.target.value = "";
             }}
           />
+          <InputGroup className="flex-col items-stretch rounded-xl border-border bg-editor focus-within:border-muted-foreground/40">
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
               {attachments.map((a, i) => (
@@ -948,6 +962,7 @@ export function AssistantPanel({
                   {a.kind === "image" ? <ImageIcon className="h-3 w-3 text-primary" /> : <FileText className="h-3 w-3 text-muted-foreground" />}
                   <span className="max-w-[140px] truncate">{a.name}</span>
                   <button
+                    type="button"
                     onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
                     className="flex h-3.5 w-3.5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
                     aria-label={`Remove ${a.name}`}
@@ -970,10 +985,9 @@ export function AssistantPanel({
             >
               {highlightInput(input)}
             </div>
-            <textarea
+            <InputGroupTextarea
               ref={inputRef}
-              data-bare
-              className="relative min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
+              className="relative min-h-[40px] resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground shadow-none outline-none [field-sizing:fixed] selection:bg-primary/20 placeholder:text-muted-foreground focus-visible:ring-0"
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}
               rows={1}
@@ -982,20 +996,18 @@ export function AssistantPanel({
               onScroll={syncOverlayScroll}
             />
           </div>
-          <div className="flex min-w-0 items-center gap-1 px-1.5 pb-1.5">
-            <button
-              type="button"
+          <InputGroupAddon align="block-end" className="gap-1">
+            <PromptInputButton
               onClick={() => fileInputRef.current?.click()}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               aria-label="Attach files"
               title={modelSupportsImages ? "Attach files or images" : "Attach files (this model can't read images)"}
             >
               <Paperclip className="h-3.5 w-3.5" />
-            </button>
+            </PromptInputButton>
 
             {/* Model + connection pills share the middle and truncate to fit —
                 bounded + clipped so they can never reach the send button. */}
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+            <PromptInputTools className="min-w-0 flex-1 gap-0.5 overflow-hidden">
               <button
                 type="button"
                 onClick={() => {
@@ -1052,29 +1064,21 @@ export function AssistantPanel({
                   ) : null}
                 </div>
               ) : null}
-            </div>
+            </PromptInputTools>
 
-            {sending ? (
-              <button
-                type="button"
-                onClick={() => void stop()}
-                aria-label="Stop generating"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
-              >
-                <Square className="h-3 w-3" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void send(input)}
-                disabled={!input.trim()}
-                aria-label="Send"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-30"
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+            <PromptInputSubmit
+              status={sending ? "streaming" : undefined}
+              disabled={!sending && !input.trim()}
+              onClick={(e) => {
+                if (sending) {
+                  e.preventDefault();
+                  void stop();
+                }
+              }}
+              className="shrink-0 rounded-full"
+              aria-label={sending ? "Stop generating" : "Send"}
+            />
+          </InputGroupAddon>
 
           {showPicker ? (
             <div className="absolute bottom-full left-1.5 right-1.5 z-30 mb-1.5">
@@ -1090,7 +1094,8 @@ export function AssistantPanel({
               />
             </div>
           ) : null}
-        </div>
+          </InputGroup>
+        </form>
       </div>
     </aside>
   );
@@ -1226,23 +1231,26 @@ function PermissionCard({
         ) : null}
       </div>
       <p className="mt-1 text-[11.5px] text-muted-foreground">{item.summary}</p>
-      <pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground">
-        {item.detail}
-      </pre>
+      {item.detail ? (
+        <CodeBlock code={item.detail} language="sql" className="mt-2 border-border text-[11px]" />
+      ) : null}
       {pending ? (
         <div className="mt-2 flex justify-end gap-1.5">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onAnswer(item.id, false)}
-            className="flex h-7 items-center rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+            className="h-7 text-[12px] hover:border-destructive/50 hover:text-destructive"
           >
             Deny
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={() => onAnswer(item.id, true)}
-            className="flex h-7 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+            className="h-7 text-[12px]"
           >
-            Allow & run
-          </button>
+            Allow &amp; run
+          </Button>
         </div>
       ) : null}
     </div>
