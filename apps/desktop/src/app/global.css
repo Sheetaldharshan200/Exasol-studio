@@ -602,22 +602,6 @@
 .agent-mark-active .agent-mark-node:nth-of-type(3) { animation-delay: 0.22s; }
 .agent-mark-active .agent-mark-node:nth-of-type(4) { animation-delay: 0.44s; }
 
-/* Brand loader: green arc sweeps around the mark while the mark breathes. */
-@keyframes agent-loader-spin {
-  to { transform: rotate(360deg); }
-}
-.agent-loader-ring {
-  animation: agent-loader-spin 1s linear infinite;
-  transform-origin: center;
-}
-@keyframes agent-loader-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(0.86); }
-}
-.agent-loader-mark {
-  animation: agent-loader-breathe 1.4s ease-in-out infinite;
-}
-
 .agent-hero-glow {
   box-shadow: 0 0 34px color-mix(in srgb, var(--primary) 28%, transparent);
 }
@@ -642,8 +626,6 @@
 @media (prefers-reduced-motion: reduce) {
   .agent-mark-active .agent-mark-core,
   .agent-mark-active .agent-mark-node,
-  .agent-loader-ring,
-  .agent-loader-mark,
   .agent-shimmer { animation: none; }
 }
 

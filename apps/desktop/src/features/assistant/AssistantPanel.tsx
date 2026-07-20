@@ -1596,6 +1596,13 @@ const CHAT_MD_COMPONENTS = {
     return <ChatCodeBlock code={code} language={language} />;
   },
   table: ({ children }: { children?: React.ReactNode }) => <ChatTable>{children}</ChatTable>,
+  // Tailwind's reset strips list markers — restore 1. / • for reply lists.
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="my-1 list-decimal space-y-0.5 pl-5">{children}</ol>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="my-1 list-disc space-y-0.5 pl-5">{children}</ul>
+  ),
 } as const;
 
 function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
