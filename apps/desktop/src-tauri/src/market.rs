@@ -636,6 +636,29 @@ async fn download_and_place(
     Ok(file.to_string_lossy().to_string())
 }
 
+/// AI Lab is NOT a PyPI package (the old `uv pip install exasol-ai-lab`
+/// failed forever — no such package). It ships as the exasol/ai-lab Docker
+/// image (JupyterLab on port 49494). Pull it with whichever engine exists.
+fn install_ai_lab(app: &AppHandle, id: &str) -> AppResult<String> {
+    let engine = ["docker", "podman"]
+        .iter()
+        .find_map(|name| resolve_bin(name).map(|p| p.to_string_lossy().to_string()))
+        .ok_or_else(|| AppError::Storage(
+            "Exasol AI Lab ships as a Docker image (exasol/ai-lab). Install Docker Desktop or Podman first, then retry.".into(),
+        ))?;
+    emit_log(app, id, "Pulling docker.io/exasol/ai-lab:latest…", "info");
+    if run_streamed(app, id, &engine, &["pull", "docker.io/exasol/ai-lab:latest"])? != 0 {
+        return Err(AppError::Storage("Could not pull the exasol/ai-lab image.".into()));
+    }
+    emit_log(
+        app,
+        id,
+        "AI Lab image ready. Start it with: docker run --detach --name exasol-ai-lab -p 127.0.0.1:49494:49494 exasol/ai-lab:latest — then open http://localhost:49494 (JupyterLab).",
+        "info",
+    );
+    Ok("exasol/ai-lab image pulled".into())
+}
+
 fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String> {
     let uv = ensure_uv(app, id)?;
     let venv = market_dir(app)?.join(id).join("venv");
@@ -966,7 +989,7 @@ pub async fn market_install_run(
             .map(|_| "Bundled Exasol agent skills are ready.".into()),
         "pyexasol" => install_uv_pip(&app, &id, &pyexasol_package),
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
-        "ai-lab" => install_uv_pip(&app, &id, "exasol-ai-lab"),
+        "ai-lab" => install_ai_lab(&app, &id),
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
@@ -1171,7 +1194,15 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     );
     map.insert(
         "ai-lab".into(),
-        json!(managed_exists(&app, "ai-lab", "venv") || python_import_ok("exasol.ai_lab")),
+        json!(["docker", "podman"].iter().any(|name| {
+            resolve_bin(name).is_some_and(|p| {
+                std::process::Command::new(p)
+                    .args(["image", "inspect", "exasol/ai-lab:latest"])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            })
+        })),
     );
     map.insert(
         "json-tables".into(),
