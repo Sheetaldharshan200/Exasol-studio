@@ -3329,6 +3329,25 @@ export function ExasolStudio({
                         }),
                       });
                     }
+                    // Right-click context menu (reliable everywhere, unlike the
+                    // lightbulb's display heuristics) + keybinding for the most
+                    // used one.
+                    const menuActs = [
+                      { id: "exa.ctx.explainPlan", label: "AI: Explain the plan", kind: "explain-plan" as const, order: 1.1, keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE] },
+                      { id: "exa.ctx.explain", label: "AI: Explain what this does", kind: "explain" as const, order: 1.2 },
+                      { id: "exa.ctx.optimize", label: "AI: Optimize", kind: "optimize" as const, order: 1.3 },
+                      { id: "exa.ctx.edit", label: "AI: Edit with instruction…", kind: "edit" as const, order: 1.4 },
+                    ];
+                    for (const a of menuActs) {
+                      editor.addAction({
+                        id: a.id,
+                        label: a.label,
+                        contextMenuGroupId: "0_exa_ai",
+                        contextMenuOrder: a.order,
+                        keybindings: a.keys,
+                        run: () => aiAskSqlRef.current(a.kind),
+                      });
+                    }
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
