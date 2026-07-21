@@ -1272,18 +1272,27 @@ function ResultsGrid({
   );
 }
 
-function ConsolePanel({ onRun }: { onRun: (sql: string) => Promise<string> }) {
+function ConsolePanel({ onRun, clearSignal }: { onRun: (sql: string) => Promise<string>; clearSignal?: number }) {
   const [lines, setLines] = useState<{ kind: "in" | "out" | "err"; text: string }[]>([]);
   const [input, setInputVal] = useState("");
   const [hist, setHist] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
   const [running, setRunning] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [lines]);
+  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [lines, running]);
+  useEffect(() => {
+    if (clearSignal) setLines([]);
+  }, [clearSignal]);
 
   async function run() {
     const sql = input.trim();
     if (!sql || running) return;
+    if (/^(clear|cls)$/i.test(sql)) {
+      setLines([]);
+      setInputVal("");
+      return;
+    }
     setLines((l) => [...l, { kind: "in", text: sql }]);
     setHist((h) => [sql, ...h.slice(0, 99)]);
     setHistIdx(-1);
@@ -1296,34 +1305,50 @@ function ConsolePanel({ onRun }: { onRun: (sql: string) => Promise<string> }) {
       setLines((l) => [...l, { kind: "err", text: errorMessage(e) }]);
     } finally {
       setRunning(false);
+      inputRef.current?.focus();
     }
   }
 
+  // Click anywhere in the terminal focuses the prompt — like a real terminal.
   return (
-    <div className="flex h-full min-h-0 flex-col font-mono text-[11.5px]">
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
-        {lines.length === 0 ? (
-          <p className="py-2 text-muted-foreground">SQL console — type a statement, Enter to run. ↑/↓ recalls history; results land here and in SQL History.</p>
-        ) : (
-          lines.map((ln, i) => (
+    <div
+      className="h-full cursor-text overflow-y-auto bg-editor px-3 py-2 font-mono text-[12px] leading-[1.55]"
+      onMouseUp={() => {
+        if (!window.getSelection()?.toString()) inputRef.current?.focus();
+      }}
+    >
+      {lines.length === 0 ? (
+        <p className="text-muted-foreground">
+          Exasol SQL terminal — statements run on the active connection. ↑/↓ history · `clear` resets · results also land in SQL History.
+        </p>
+      ) : (
+        lines.map((ln, i) =>
+          ln.kind === "in" ? (
+            <div key={i} className="flex gap-2 whitespace-pre-wrap break-words">
+              <span className="shrink-0 select-none text-primary">exasol ❯</span>
+              <span className="text-foreground">{ln.text}</span>
+            </div>
+          ) : (
             <pre
               key={i}
               className={cn(
-                "whitespace-pre-wrap break-words leading-relaxed",
-                ln.kind === "in" ? "text-primary" : ln.kind === "err" ? "text-destructive" : "text-foreground",
+                "whitespace-pre-wrap break-words",
+                ln.kind === "err" ? "text-destructive" : "text-foreground/90",
               )}
             >
-              {ln.kind === "in" ? `> ${ln.text}` : ln.text}
+              {ln.text}
             </pre>
-          ))
-        )}
-        <div ref={endRef} />
-      </div>
-      <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1.5">
-        <span className="text-primary">{running ? "…" : ">"}</span>
+          ),
+        )
+      )}
+      {running ? <div className="animate-pulse text-muted-foreground">running…</div> : null}
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 select-none text-primary">exasol ❯</span>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInputVal(e.target.value)}
+          disabled={running}
           onKeyDown={(e) => {
             if (e.key === "Enter") void run();
             else if (e.key === "ArrowUp") {
@@ -1338,14 +1363,20 @@ function ConsolePanel({ onRun }: { onRun: (sql: string) => Promise<string> }) {
               setHistIdx(Math.max(n, -1));
               setInputVal(n >= 0 ? hist[n] : "");
               e.preventDefault();
+            } else if (e.key === "l" && (e.ctrlKey || e.metaKey)) {
+              setLines([]);
+              e.preventDefault();
             }
           }}
-          placeholder="SELECT …"
           spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
           data-bare
-          className="h-6 w-full bg-transparent outline-none placeholder:text-muted-foreground/50"
+          aria-label="SQL terminal input"
+          className="w-full bg-transparent caret-primary outline-none disabled:opacity-50"
         />
       </div>
+      <div ref={endRef} />
     </div>
   );
 }
@@ -1367,47 +1398,71 @@ function HistoryDock({
   onRefresh: () => void;
   onRunConsole: (sql: string) => Promise<string>;
 }) {
-  const [mode, setMode] = useState<"history" | "console">("history");
+  const [mode, setMode] = useState<"terminal" | "history">("history");
+  const [termClear, setTermClear] = useState(0);
+  // VS Code-style bottom panel: uppercase tab strip in the header, active tab
+  // underlined; actions on the right are contextual to the active tab.
+  const TABS: { id: "terminal" | "history"; label: string }[] = [
+    { id: "terminal", label: "Terminal" },
+    { id: "history", label: "SQL History" },
+  ];
   return (
     <section className="flex h-full min-h-0 flex-col border-t border-border bg-panel">
       <div className={cn("flex h-9 shrink-0 items-center justify-between pr-1 pl-2", open && "border-b border-border")}>
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-2 rounded-md px-1 py-1 text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")} />
-          <History className="h-3.5 w-3.5" />
-          <span className="eyebrow-muted">SQL History</span>
-          <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">
-            {entries.length}
-          </span>
-        </button>
+        <div className="flex h-full items-center gap-1">
+          <button
+            onClick={onToggle}
+            aria-label={open ? "Collapse panel" : "Expand panel"}
+            className="flex items-center rounded-md px-1 py-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")} />
+          </button>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                if (!open) onToggle();
+                setMode(tab.id);
+              }}
+              className={cn(
+                "relative flex h-full items-center gap-1.5 px-2 text-[10.5px] font-medium tracking-wider uppercase",
+                open && mode === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.label}
+              {tab.id === "history" ? (
+                <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[9.5px] normal-case text-muted-foreground">
+                  {entries.length}
+                </span>
+              ) : null}
+              {open && mode === tab.id ? (
+                <span className="absolute inset-x-2 bottom-0 h-px bg-primary" />
+              ) : null}
+            </button>
+          ))}
+        </div>
         {open ? (
           <div className="flex items-center gap-0.5">
-            {(["history", "console"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "h-6 rounded-md px-2 text-[11px] capitalize",
-                  mode === m ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-            <IconButton label="Refresh history" onClick={onRefresh}>
-              <RefreshCcw className="h-3.5 w-3.5" />
-            </IconButton>
-            <IconButton label="Clear history" onClick={onClear}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </IconButton>
+            {mode === "history" ? (
+              <>
+                <IconButton label="Refresh history" onClick={onRefresh}>
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Clear history" onClick={onClear}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </IconButton>
+              </>
+            ) : (
+              <IconButton label="Clear terminal" onClick={() => setTermClear((n) => n + 1)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
           </div>
         ) : null}
       </div>
       <div className={cn("min-h-0 flex-1 overflow-auto", !open && "hidden")}>
-        {mode === "console" ? (
-          <ConsolePanel onRun={onRunConsole} />
+        {mode === "terminal" ? (
+          <ConsolePanel onRun={onRunConsole} clearSignal={termClear} />
         ) : entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             No queries run yet.
