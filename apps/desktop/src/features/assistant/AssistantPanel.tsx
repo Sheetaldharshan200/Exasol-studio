@@ -46,7 +46,7 @@ import { errorMessage, ipc, isTauri, type PersonalLocalStatus } from "@/lib/ipc"
 import { cn } from "@/lib/utils";
 
 type ChatItem =
-  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean; streaming?: boolean }
+  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean; streaming?: boolean; attachments?: string[] }
   | { kind: "tool"; id: string; name: string; args: unknown; done: boolean; ok?: boolean; summary?: string }
   | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean }
   | { kind: "note"; id: string; text: string };
@@ -630,10 +630,13 @@ export function AssistantPanel({
     const agentText = slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed;
 
     const sentAttachments = attachments;
-    const attachLine = sentAttachments.length
-      ? `\n\n📎 ${sentAttachments.map((a) => a.name).join(", ")}`
-      : "";
-    setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: (trimmed || "(attached files)") + attachLine }]);
+    setItems((m) => [...m, {
+      kind: "msg",
+      id: `u-${Date.now()}`,
+      role: "user",
+      content: trimmed || "(attached files)",
+      attachments: sentAttachments.length ? sentAttachments.map((a) => a.name) : undefined,
+    }]);
     if (sentAttachments.length) {
       // Pin sent files (dedup by name — a re-send replaces the payload).
       setSessionFiles((prev) => [...prev.filter((p) => !sentAttachments.some((a) => a.name === p.name)), ...sentAttachments]);
@@ -1621,6 +1624,19 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
         <MessageContent className="[overflow-wrap:anywhere] whitespace-pre-wrap break-words">
           {message.content}
         </MessageContent>
+        {message.attachments?.length ? (
+          <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
+            {message.attachments.map((name) => (
+              <span
+                key={name}
+                title={name}
+                className="max-w-[180px] truncate rounded-md border border-border bg-secondary/50 px-2 py-0.5 text-[10.5px] text-muted-foreground"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </Message>
     );
   }

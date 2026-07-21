@@ -235,7 +235,10 @@ export function buildPlan(
   // Parquet/JSON carry real field names — trust them; only CSV needs sniffing.
   const { header, rows } = opts.assumeHeader ? { header: csv.header, rows: csv.rows } : resolveHeader(csv);
   const names = normalizeColumns(header);
-  const sample = rows.slice(0, opts.sampleSize ?? 500);
+  // Infer from ALL rows by default (capped for pathological files): sampling
+  // the head under-sizes types on sorted data — e.g. customer.csv sorted by
+  // custkey inferred DECIMAL(3,0) and every key ≥ 1000 was then "malformed".
+  const sample = rows.slice(0, opts.sampleSize ?? 500_000);
   const columns = names.map((name, i) => ({
     name,
     type: inferType(sample.map((r) => r[i] ?? "")),

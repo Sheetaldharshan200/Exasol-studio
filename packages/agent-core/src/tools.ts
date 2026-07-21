@@ -12,6 +12,7 @@ import { PanelSchema, type DashboardStore } from "./dashboards.ts";
 import type { ArtifactStore } from "./artifacts.ts";
 import type { Skill } from "./skills.ts";
 import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
+import { TaskManager } from "./a2a.ts";
 import type { TurnBoard, Finding } from "./board.ts";
 import { parquetReadObjects } from "hyparquet";
 import uiMap from "../data/ui-map.json" with { type: "json" };
@@ -769,6 +770,124 @@ export function buildTools(ctx: {
                 session.record({ kind: "tool.import_csv.error", target: `${plan.schema}.${plan.table}`, error: msg });
                 return { error: `Import failed while loading ${plan.schema}.${plan.table}: ${msg}` };
               }
+            },
+          }),
+
+          import_attachments: tool({
+            description:
+              "Load ALL attached data files (CSV/TSV/Parquet) into a schema in ONE call — the correct tool when the user attached SEVERAL files. " +
+              "Each file becomes its own table (named after the file) and runs as an A2A task; this tool WAITS until every task completes and reports per-file results. " +
+              "One approval covers the whole batch. Never import multiple files one-by-one with import_csv.",
+            inputSchema: z.object({
+              schema: z.string().describe("Target schema, e.g. 'TPCH' (created if missing)"),
+              replace: z.boolean().optional().describe("Drop and recreate each table first"),
+            }),
+            execute: async ({ schema, replace }) => {
+              const id = requireConn();
+              if (ctx.readOnly) return { denied: true, message: "This researcher context is read-only; it cannot load data." };
+              if (ctx.settings?.writePolicy === "deny") {
+                return { denied: true, message: "Writes are disabled in this workspace's AI guardrails, so files can't be loaded." };
+              }
+              const docs = ctx.documents!.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+              if (!docs.length) return { error: "No attached data files found." };
+
+              // Parse + plan every file up front so ONE approval shows the
+              // whole batch (files, row counts, tables).
+              const plans: { doc: (typeof docs)[number]; plan: ReturnType<typeof buildPlan> }[] = [];
+              const unreadable: string[] = [];
+              for (const d of docs) {
+                const file = ctx.documents!.raw(session.id, d.id)!;
+                try {
+                  let csv: CsvTable;
+                  let assumeHeader = false;
+                  if (file.binary || /\.parquet$/i.test(file.name)) {
+                    const bytes = Buffer.from(file.text, "base64");
+                    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                    const objs = await parquetReadObjects({ file: { byteLength: ab.byteLength, slice: (s: number, e?: number) => ab.slice(s, e) }, utf8: true });
+                    csv = objectsToTable(objs as Record<string, unknown>[]);
+                    assumeHeader = true;
+                  } else {
+                    csv = parseCsv(file.text);
+                  }
+                  if (!csv.header.length || !csv.rows.length) throw new Error("no parseable rows");
+                  plans.push({ doc: d, plan: buildPlan(csv, schema, d.name.replace(/\.[^.]+$/, ""), { replace, assumeHeader }) });
+                } catch (e) {
+                  unreadable.push(`${d.name}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+              }
+              if (!plans.length) return { error: `None of the attached files were readable: ${unreadable.join("; ")}` };
+
+              const totalRows = plans.reduce((n, p) => n + p.plan.rowCount, 0);
+              const allowed = await session.askPermission({
+                tool: "import_csv",
+                summary: `Load ${plans.length} files (${totalRows} rows) into ${plans[0].plan.schema}`,
+                detail: plans.map((p) => `${p.doc.name} → ${p.plan.schema}.${p.plan.table} (${p.plan.rowCount} rows)`).join("\n"),
+              });
+              session.record({ kind: "tool.import_attachments", schema, files: plans.length, rows: totalRows, allowed });
+              if (!allowed) return { denied: true, message: "The user declined the batch import. Do not retry; ask what they want instead." };
+
+              // One A2A task per file; drain sequentially (single DB pool) and
+              // stream each task as its own tool card so the UI shows the
+              // whole swarm running until the last file lands.
+              const manager = new TaskManager();
+              for (const { doc, plan } of plans) {
+                manager.submit(doc.name, async (report) => {
+                  await db.execute(id, plan.createSchemaSql);
+                  if (plan.dropSql) await db.execute(id, plan.dropSql);
+                  await db.execute(id, plan.createTableSql);
+                  const BATCH = 500;
+                  let inserted = 0;
+                  let skipped = 0;
+                  for (let i = 0; i < plan.rows.length; i += BATCH) {
+                    const slice = plan.rows.slice(i, i + BATCH);
+                    try {
+                      inserted += await db.execute(id, buildInsert(plan, slice));
+                    } catch {
+                      for (const row of slice) {
+                        try {
+                          inserted += await db.execute(id, buildInsert(plan, [row]));
+                        } catch {
+                          skipped += 1;
+                        }
+                      }
+                    }
+                    report(`${Math.min(i + BATCH, plan.rows.length)}/${plan.rows.length} rows`);
+                  }
+                  return { table: `${plan.schema}.${plan.table}`, rowsInserted: inserted, rowsSkipped: skipped };
+                });
+              }
+              const emitted = new Set<string>();
+              const results = await manager.drain(1, (t) => {
+                const callId = `a2a-${t.id}`;
+                if (t.state === "working" && !emitted.has(callId)) {
+                  emitted.add(callId);
+                  session.emit({ type: "tool-start", callId, name: "import_csv", args: { file: t.title, schema } });
+                } else if (t.state === "completed" || t.state === "failed") {
+                  const r = t.result as { table?: string; rowsInserted?: number; rowsSkipped?: number } | undefined;
+                  session.emit({
+                    type: "tool-end",
+                    callId,
+                    name: "import_csv",
+                    ok: t.state === "completed",
+                    summary: t.state === "completed"
+                      ? `loaded ${r?.rowsInserted ?? 0} rows into ${r?.table}${r?.rowsSkipped ? ` (${r.rowsSkipped} skipped)` : ""}`
+                      : t.error ?? "failed",
+                  });
+                }
+              });
+              const done = results.filter((t) => t.state === "completed");
+              const failed = results.filter((t) => t.state === "failed");
+              session.record({ kind: "tool.import_attachments.done", completed: done.length, failed: failed.length });
+              return {
+                ok: failed.length === 0,
+                completed: done.map((t) => ({ file: t.title, ...(t.result as object) })),
+                failed: failed.map((t) => ({ file: t.title, error: t.error })),
+                unreadable,
+                message:
+                  `Batch finished: ${done.length}/${results.length} files loaded into ${plans[0].plan.schema}.` +
+                  (failed.length ? ` Failed: ${failed.map((t) => t.title).join(", ")}.` : "") +
+                  " Report the per-file tables and row counts to the user now — every file above is already in the database.",
+              };
             },
           }),
         }
