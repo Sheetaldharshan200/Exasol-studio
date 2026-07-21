@@ -1228,6 +1228,94 @@ export function buildTools(ctx: {
       },
     }),
 
+    run_pipeline: tool({
+      description:
+        "Compose a MULTI-STAGE plan into one orchestrated run: stages execute in order, each stage is either a parallel research fan-out (`research`: list of questions) or an agent step (`instruction`: e.g. 'run the SELECTs the research suggests via run_sql_batch', 'render an artifact from the gathered data'). " +
+        "Each stage sees a digest of everything earlier stages produced. Use for jobs like research → batch-query → render artifact/dashboard, done end-to-end in one call.",
+      inputSchema: z.object({
+        goal: z.string().describe("What the whole pipeline should accomplish"),
+        stages: z
+          .array(z.object({
+            title: z.string().describe("Short stage name, e.g. 'Map the schema'"),
+            research: z.array(z.string()).max(10).optional().describe("Parallel research questions (research stage)"),
+            instruction: z.string().optional().describe("What the agent step must do with prior results (agent stage)"),
+          }))
+          .min(2)
+          .max(6),
+      }),
+      execute: async ({ goal, stages }) => {
+        if (!ctx.model) return { error: "Pipelines need a model for agent stages; unavailable in this context." };
+        if (ctx.readOnly) return { error: "Pipelines are unavailable in read-only researcher contexts." };
+        const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s);
+        let context = "";
+        const stageSummaries: { title: string; ok: boolean; summary: string }[] = [];
+        // Agent stages get the real toolset minus recursion/swarm-of-swarms.
+        const stageTools: ToolSet = Object.fromEntries(
+          Object.entries(tools).filter(([name]) => !["run_pipeline", "spawn_researcher", "spawn_researchers"].includes(name)),
+        );
+        const mirror = (e: { type: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; error?: string }) => {
+          try {
+            if (e.type === "tool-call") {
+              session.emit({ type: "tool-start", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, args: e.input });
+            } else if (e.type === "tool-result") {
+              const out = e.output as { rowCount?: number; error?: unknown } | undefined;
+              session.emit({ type: "tool-end", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, ok: !out?.error, summary: typeof out?.rowCount === "number" ? `${out.rowCount} rows` : out?.error ? String(out.error).slice(0, 80) : "done" });
+            } else if (e.type === "tool-error") {
+              session.emit({ type: "tool-end", callId: `sub-${e.toolCallId}`, name: `↳ ${e.toolName}`, ok: false, summary: (e.error ?? "").slice(0, 80) });
+            }
+          } catch { /* progress display must never break the pipeline */ }
+        };
+        for (const [i, stage] of stages.entries()) {
+          const callId = `pipe-${Date.now()}-${i}`;
+          session.emit({ type: "tool-start", callId, name: "run_pipeline", args: { stage: `${i + 1}/${stages.length}`, title: stage.title } });
+          try {
+            if (stage.research?.length) {
+              const swarm = tools["spawn_researchers"] as { execute?: (a: unknown, o: unknown) => Promise<unknown> };
+              const res = (await swarm.execute!({ tasks: stage.research }, { toolCallId: callId, messages: [] })) as { reports?: unknown };
+              context += `\n\n## Stage ${i + 1}: ${stage.title} (research findings)\n${cap(JSON.stringify(res.reports ?? res), 8000)}`;
+              stageSummaries.push({ title: stage.title, ok: true, summary: `${stage.research.length} researchers reported` });
+              session.emit({ type: "tool-end", callId, name: "run_pipeline", ok: true, summary: `${stage.title}: research complete` });
+            } else if (stage.instruction) {
+              const res = await generateText({
+                model: ctx.model!,
+                system:
+                  "You are ONE STAGE of a data pipeline inside Exasol Studio. Do your stage's job with tools invoked natively (prefer batch tools like run_sql_batch/profile_tables for many statements; render_artifact/dashboard_save for outputs), then finish with a short factual summary of what you produced. " +
+                  "Exasol dialect: LIMIT n, UPPERCASE identifiers, schema-qualified names. Never print tool calls as text.",
+                prompt: `Pipeline goal: ${goal}\n${cap(context, 9000)}\n\nYOUR STAGE (${i + 1}/${stages.length} — ${stage.title}): ${stage.instruction}`,
+                tools: stageTools,
+                maxSteps: 10,
+                abortSignal: session.abort?.signal,
+                onEvent: mirror,
+              });
+              context += `\n\n## Stage ${i + 1}: ${stage.title}\n${cap(res.text, 4000)}`;
+              stageSummaries.push({ title: stage.title, ok: true, summary: cap(res.text.replace(/\s+/g, " "), 160) });
+              session.emit({ type: "tool-end", callId, name: "run_pipeline", ok: true, summary: `${stage.title}: done` });
+            } else {
+              stageSummaries.push({ title: stage.title, ok: false, summary: "stage had neither research nor instruction" });
+              session.emit({ type: "tool-end", callId, name: "run_pipeline", ok: false, summary: `${stage.title}: empty stage skipped` });
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            stageSummaries.push({ title: stage.title, ok: false, summary: msg.slice(0, 160) });
+            session.emit({ type: "tool-end", callId, name: "run_pipeline", ok: false, summary: `${stage.title}: ${msg.slice(0, 60)}` });
+            session.record({ kind: "tool.run_pipeline.stage_error", stage: stage.title, error: msg });
+            // Later stages depend on this one — stop rather than cascade garbage.
+            return {
+              ok: false,
+              stages: stageSummaries,
+              message: `Pipeline stopped at stage "${stage.title}": ${msg}. Report what completed and ask how to proceed.`,
+            };
+          }
+        }
+        session.record({ kind: "tool.run_pipeline.done", goal, stages: stageSummaries.length });
+        return {
+          ok: stageSummaries.every((s) => s.ok),
+          stages: stageSummaries,
+          message: "Pipeline complete. Report each stage's outcome and where the final output lives (artifact/dashboard/tables).",
+        };
+      },
+    }),
+
     spawn_researchers: tool({
       description:
         "Spawn a SWARM of parallel read-only researcher agents in one call (A2A tasks) — use when a job decomposes into several independent questions (e.g. 'profile each schema', 'investigate these 6 subsystems'). " +
