@@ -148,3 +148,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 .github/scripts/friendly_release_names.py "${GITHUB_REPOSITORY}" "${{ github.event.inputs.tag || github.ref_name }}"
+
+  # Publish the Homebrew cask for this release. Best-effort: needs a
+  # HOMEBREW_TAP_TOKEN secret (a PAT with write access to the homebrew-tap
+  # repo — the default GITHUB_TOKEN can't push cross-repo). Skips cleanly when
+  # the secret is absent, so a demo release still works and the maintainer can
+  # run scripts/update-homebrew-cask.sh locally instead.
+  homebrew-cask:
+    needs: friendly-names
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Update tap cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping cask publish (run scripts/update-homebrew-cask.sh locally)."
+            exit 0
+          fi
+          bash scripts/update-homebrew-cask.sh "$TAG"
