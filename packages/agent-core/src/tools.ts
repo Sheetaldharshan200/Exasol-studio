@@ -1433,7 +1433,10 @@ export function buildTools(ctx: {
           detail: JSON.stringify(args, null, 2),
         });
         session.record({ kind: "tool.mcp", server: mt.serverId, tool: mt.name, args, allowed });
-        if (!allowed) return { denied: true, message: "The user declined this external call. Do not retry it." };
+        if (!allowed) {
+          ctx.mcp!.auditDenied(mt.serverId, mt.name);
+          return { denied: true, message: "The user declined this external call. Do not retry it." };
+        }
         try {
           const text = await ctx.mcp!.call(mt.serverId, mt.name, args as Record<string, unknown>);
           return { ok: true, result: text.length > 12_000 ? text.slice(0, 12_000) + `… [+${text.length - 12_000} chars]` : text };

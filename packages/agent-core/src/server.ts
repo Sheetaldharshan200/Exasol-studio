@@ -124,7 +124,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "audit") {
+        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
+        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
+      }
       if (parts[1] === "mcp") {
+        if (req.method === "GET" && parts[2] === "catalog") {
+          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
+          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
+        }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
           const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
@@ -234,7 +242,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "audit") {
+        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
+        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
+      }
       if (parts[1] === "mcp") {
+        if (req.method === "GET" && parts[2] === "catalog") {
+          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
+          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
+        }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
           const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
@@ -348,7 +364,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "audit") {
+        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
+        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
+      }
       if (parts[1] === "mcp") {
+        if (req.method === "GET" && parts[2] === "catalog") {
+          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
+          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
+        }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
           const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
@@ -424,7 +448,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "audit") {
+        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
+        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
+      }
       if (parts[1] === "mcp") {
+        if (req.method === "GET" && parts[2] === "catalog") {
+          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
+          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
+        }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
           const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
