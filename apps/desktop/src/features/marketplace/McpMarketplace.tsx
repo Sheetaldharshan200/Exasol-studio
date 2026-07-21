@@ -61,6 +61,13 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
         </div>
       ) : null}
 
+      <button
+        onClick={() => onOpenConfig?.("audit", "Audit log")}
+        className="mb-3 text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      >
+        View audit log →
+      </button>
+
       <div className="grid gap-1.5">
         {MCP_PRESETS.map((p) => (
           <button

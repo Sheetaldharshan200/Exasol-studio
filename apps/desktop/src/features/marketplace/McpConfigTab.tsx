@@ -9,7 +9,55 @@ import { cn } from "@/lib/utils";
  * credentials (API tokens), per the MCP spec's pattern for local stdio
  * servers — with per-service guidance on creating a revocable token.
  */
+function AuditView() {
+  const [events, setEvents] = useState<Record<string, unknown>[]>([]);
+  useEffect(() => {
+    agent.auditTail(200).then(setEvents).catch(() => undefined);
+    const t = window.setInterval(() => agent.auditTail(200).then(setEvents).catch(() => undefined), 10_000);
+    return () => window.clearInterval(t);
+  }, []);
+  return (
+    <div className="h-full overflow-y-auto bg-editor">
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        <h1 className="mb-1 text-[18px] font-semibold text-foreground">Audit log</h1>
+        <p className="mb-4 text-[12.5px] text-muted-foreground">
+          Every connector lifecycle change, external tool call (with your allow/deny), duration and errors — the
+          machine-wide account of what touched the outside world. Newest last.
+        </p>
+        {events.length === 0 ? (
+          <p className="text-[12.5px] text-muted-foreground">No events yet — connect an MCP server and make a call.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-[11.5px]">
+              <thead className="bg-secondary text-left">
+                <tr>
+                  {["time", "event", "target", "outcome"].map((h) => (
+                    <th key={h} className="px-2.5 py-1.5 font-medium capitalize">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {events.map((e, i) => (
+                  <tr key={i} className="border-t border-border/60">
+                    <td className="whitespace-nowrap px-2.5 py-1 text-muted-foreground">{String(e.ts ?? "").replace("T", " ").slice(0, 19)}</td>
+                    <td className="px-2.5 py-1">{String(e.kind ?? "")}</td>
+                    <td className="px-2.5 py-1">{[e.server ?? e.id ?? "", e.tool ?? ""].filter(Boolean).join(" → ")}</td>
+                    <td className="px-2.5 py-1">
+                      {e.denied ? <span className="text-warning">denied</span> : e.ok === false || e.error ? <span className="text-destructive">{String(e.error ?? "failed").slice(0, 60)}</span> : <span className="text-primary">ok{e.ms ? ` · ${e.ms}ms` : ""}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function McpConfigTab({ presetId }: { presetId: string }) {
+  if (presetId === "audit") return <AuditView />;
   const preset: McpPreset = MCP_PRESETS.find((p) => p.id === presetId) ?? MCP_PRESETS[MCP_PRESETS.length - 1];
   const isCustom = preset.id === "custom";
   const [envVals, setEnvVals] = useState<Record<string, string>>({});
@@ -35,7 +83,9 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
     try {
       const name = isCustom ? custom.name.trim() : preset.name;
       const command = isCustom ? custom.command.trim() : preset.command;
-      const args = isCustom ? custom.args.trim().split(/\s+/).filter(Boolean) : preset.args;
+      const args = isCustom
+        ? custom.args.trim().split(/\s+/).filter(Boolean)
+        : [...preset.args, ...(preset.argInputs ?? []).map((a) => envVals[`arg:${a.key}`] ?? "")];
       const env = preset.env.length
         ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
         : undefined;
@@ -53,7 +103,8 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
 
   const canConnect = isCustom
     ? custom.name.trim() && custom.command.trim()
-    : preset.env.every((e) => !e.secret || envVals[e.key]?.trim());
+    : preset.env.every((e) => !e.secret || envVals[e.key]?.trim()) &&
+      (preset.argInputs ?? []).every((a) => envVals[`arg:${a.key}`]?.trim());
 
   return (
     <div className="h-full overflow-y-auto bg-editor">
@@ -143,6 +194,22 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
                 </>
               )}
             </section>
+            {preset.argInputs?.length ? (
+              <section className="mb-6 space-y-3">
+                {preset.argInputs.map((a) => (
+                  <label key={a.key} className="block">
+                    <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{a.label}</span>
+                    <input
+                      value={envVals[`arg:${a.key}`] ?? ""}
+                      onChange={(ev) => setEnvVals((v) => ({ ...v, [`arg:${a.key}`]: ev.target.value }))}
+                      type={a.secret ? "password" : "text"}
+                      placeholder={a.hint ?? ""}
+                      className="h-9 w-full rounded-lg border border-border bg-panel px-3 font-mono text-[12.5px] outline-none"
+                    />
+                  </label>
+                ))}
+              </section>
+            ) : null}
             <section className="mb-6">
               <h2 className="mb-1 text-[13px] font-semibold text-foreground">Runs as</h2>
               <code className="block rounded-lg border border-border bg-panel px-3 py-2 font-mono text-[12px] text-muted-foreground">

@@ -124,6 +124,10 @@ export const agent = {
     await api("/config", "PUT", { model });
   },
 
+  async auditTail(limit = 100): Promise<Record<string, unknown>[]> {
+    const { events } = await api<{ events: Record<string, unknown>[] }>(`/audit?limit=${limit}`);
+    return events;
+  },
   async mcpList(): Promise<{ id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number; tools?: string[] }[]> {
     const { servers } = await api<{ servers: { id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number; tools?: string[] }[] }>("/mcp");
     return servers;

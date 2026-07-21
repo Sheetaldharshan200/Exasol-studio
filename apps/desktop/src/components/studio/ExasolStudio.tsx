@@ -127,7 +127,10 @@ import { openSettingsWindow } from "@/lib/settings-window";
 
 /** Detect a simple single-table SELECT (safe to edit inline). Null otherwise. */
 function parseSingleTable(sql: string): { schema?: string; table: string } | null {
-  const s = sql.trim().replace(/;+\s*$/, "");
+  // Normalize whitespace FIRST: builder/tree SQL is multi-line ("SELECT *\nFROM…")
+  // and the single-space " from " probe below never matched it — which is why
+  // query-builder results weren't editable while hand-typed one-liners were.
+  const s = sql.trim().replace(/;+\s*$/, "").replace(/\s+/g, " ");
   if (!/^select\b/i.test(s)) return null;
   if (/\bjoin\b|\bgroup\s+by\b|\bunion\b|\bhaving\b|\bdistinct\b/i.test(s)) return null;
   const fromIdx = s.toLowerCase().indexOf(" from ");
@@ -1269,6 +1272,84 @@ function ResultsGrid({
   );
 }
 
+function ConsolePanel({ onRun }: { onRun: (sql: string) => Promise<string> }) {
+  const [lines, setLines] = useState<{ kind: "in" | "out" | "err"; text: string }[]>([]);
+  const [input, setInputVal] = useState("");
+  const [hist, setHist] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const [running, setRunning] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [lines]);
+
+  async function run() {
+    const sql = input.trim();
+    if (!sql || running) return;
+    setLines((l) => [...l, { kind: "in", text: sql }]);
+    setHist((h) => [sql, ...h.slice(0, 99)]);
+    setHistIdx(-1);
+    setInputVal("");
+    setRunning(true);
+    try {
+      const out = await onRun(sql);
+      setLines((l) => [...l, { kind: "out", text: out }]);
+    } catch (e) {
+      setLines((l) => [...l, { kind: "err", text: errorMessage(e) }]);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col font-mono text-[11.5px]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
+        {lines.length === 0 ? (
+          <p className="py-2 text-muted-foreground">SQL console — type a statement, Enter to run. ↑/↓ recalls history; results land here and in SQL History.</p>
+        ) : (
+          lines.map((ln, i) => (
+            <pre
+              key={i}
+              className={cn(
+                "whitespace-pre-wrap break-words leading-relaxed",
+                ln.kind === "in" ? "text-primary" : ln.kind === "err" ? "text-destructive" : "text-foreground",
+              )}
+            >
+              {ln.kind === "in" ? `> ${ln.text}` : ln.text}
+            </pre>
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
+      <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1.5">
+        <span className="text-primary">{running ? "…" : ">"}</span>
+        <input
+          value={input}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void run();
+            else if (e.key === "ArrowUp") {
+              const n = Math.min(histIdx + 1, hist.length - 1);
+              if (hist[n] !== undefined) {
+                setHistIdx(n);
+                setInputVal(hist[n]);
+              }
+              e.preventDefault();
+            } else if (e.key === "ArrowDown") {
+              const n = histIdx - 1;
+              setHistIdx(Math.max(n, -1));
+              setInputVal(n >= 0 ? hist[n] : "");
+              e.preventDefault();
+            }
+          }}
+          placeholder="SELECT …"
+          spellCheck={false}
+          data-bare
+          className="h-6 w-full bg-transparent outline-none placeholder:text-muted-foreground/50"
+        />
+      </div>
+    </div>
+  );
+}
+
 function HistoryDock({
   entries,
   open,
@@ -1276,6 +1357,7 @@ function HistoryDock({
   onPick,
   onClear,
   onRefresh,
+  onRunConsole,
 }: {
   entries: HistoryEntry[];
   open: boolean;
@@ -1283,7 +1365,9 @@ function HistoryDock({
   onPick: (sql: string) => void;
   onClear: () => void;
   onRefresh: () => void;
+  onRunConsole: (sql: string) => Promise<string>;
 }) {
+  const [mode, setMode] = useState<"history" | "console">("history");
   return (
     <section className="flex h-full min-h-0 flex-col border-t border-border bg-panel">
       <div className={cn("flex h-9 shrink-0 items-center justify-between pr-1 pl-2", open && "border-b border-border")}>
@@ -1300,6 +1384,18 @@ function HistoryDock({
         </button>
         {open ? (
           <div className="flex items-center gap-0.5">
+            {(["history", "console"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "h-6 rounded-md px-2 text-[11px] capitalize",
+                  mode === m ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m}
+              </button>
+            ))}
             <IconButton label="Refresh history" onClick={onRefresh}>
               <RefreshCcw className="h-3.5 w-3.5" />
             </IconButton>
@@ -1310,7 +1406,9 @@ function HistoryDock({
         ) : null}
       </div>
       <div className={cn("min-h-0 flex-1 overflow-auto", !open && "hidden")}>
-        {entries.length === 0 ? (
+        {mode === "console" ? (
+          <ConsolePanel onRun={onRunConsole} />
+        ) : entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             No queries run yet.
           </div>
@@ -3620,6 +3718,21 @@ export function ExasolStudio({
             setHistoryOpen(false);
           }}
           onClear={() => ipc.sqlHistoryClear().then(loadHistory)}
+          onRunConsole={async (sql) => {
+            if (!connection) throw new Error("Connect to a database first.");
+            const res = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, 200, true);
+            loadHistory();
+            refreshSqlCatalog();
+            const r = res.results[0];
+            if (!r) return "(no result)";
+            if (r.error) throw new Error(r.error);
+            if (r.kind === "rowCount") return `${r.rowCount} row(s) affected · ${r.elapsedMs} ms`;
+            const cols = r.columns.map((c) => c.name);
+            const head = cols.join("\t");
+            const rows = r.rows.slice(0, 15).map((row) => row.map((v) => (v === null ? "NULL" : String(v))).join("\t"));
+            const more = r.rowCount > 15 ? `\n… ${r.rowCount - 15} more rows (open a query tab for the full grid)` : "";
+            return `${head}\n${rows.join("\n")}${more}\n(${r.rowCount} rows · ${r.elapsedMs} ms)`;
+          }}
           onRefresh={loadHistory}
         />
       </div>

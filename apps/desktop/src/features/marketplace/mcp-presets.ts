@@ -11,6 +11,8 @@ export type McpPreset = {
   command: string;
   args: string[];
   env: { key: string; label: string; secret: boolean; hint?: string }[];
+  /** Positional arguments the user supplies (appended to args in order). */
+  argInputs?: { key: string; label: string; secret: boolean; hint?: string }[];
   /** Where the user creates the credential. */
   tokenUrl?: string;
   tokenHint?: string;
@@ -56,6 +58,25 @@ export const MCP_PRESETS: McpPreset[] = [
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"],
     env: [],
+  },
+  {
+    id: "postgres",
+    name: "Postgres",
+    desc: "Query an operational Postgres database — compare or migrate data into Exasol.",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-postgres"],
+    env: [],
+    argInputs: [{ key: "url", label: "Connection string", secret: true, hint: "postgresql://user:pass@host:5432/db" }],
+    tokenHint: "Use a READ-ONLY database role where possible — the connection string is sealed at rest like every connector credential.",
+  },
+  {
+    id: "sqlite",
+    name: "SQLite",
+    desc: "Read a local SQLite file — app data and exports straight into Exasol.",
+    command: "uvx",
+    args: ["mcp-server-sqlite", "--db-path"],
+    env: [],
+    argInputs: [{ key: "path", label: "Database file path", secret: false, hint: "/Users/you/data/app.db" }],
   },
   {
     id: "custom",
