@@ -11,15 +11,29 @@ import type { languages } from "monaco-editor";
 export type SqlCatalog = {
   /** schema → table → columns (name + type) */
   schemas: Map<string, Map<string, { name: string; type: string }[]>>;
+  /** User UDFs / Lua / adapter scripts from SYS.EXA_ALL_SCRIPTS. */
+  scripts: { schema: string; name: string; type: string }[];
 };
 
-export const emptyCatalog = (): SqlCatalog => ({ schemas: new Map() });
+export const emptyCatalog = (): SqlCatalog => ({ schemas: new Map(), scripts: [] });
 
 const KEYWORDS =
-  `SELECT FROM WHERE GROUP BY ORDER HAVING LIMIT DISTINCT JOIN INNER LEFT RIGHT FULL OUTER CROSS ON AS AND OR NOT IN EXISTS BETWEEN LIKE IS NULL CASE WHEN THEN ELSE END UNION ALL WITH INSERT INTO VALUES UPDATE SET DELETE MERGE CREATE TABLE VIEW SCHEMA OR REPLACE IF EXISTS DROP ALTER ADD COLUMN RENAME TO TRUNCATE GRANT REVOKE COMMIT ROLLBACK EXPLAIN VIRTUAL USING PARTITION PRELOAD DESC ASC NULLS FIRST LAST`.split(" ");
+  `SELECT FROM WHERE GROUP BY ORDER HAVING LIMIT DISTINCT JOIN INNER LEFT RIGHT FULL OUTER CROSS ON AS AND OR NOT IN EXISTS BETWEEN LIKE IS NULL CASE WHEN THEN ELSE END UNION ALL WITH INSERT INTO VALUES UPDATE SET DELETE MERGE CREATE TABLE VIEW SCHEMA OR REPLACE IF EXISTS DROP ALTER ADD COLUMN RENAME TO TRUNCATE GRANT REVOKE COMMIT ROLLBACK EXPLAIN VIRTUAL USING PARTITION PRELOAD DESC ASC NULLS FIRST LAST IMPORT EXPORT CONNECTION IDENTIFIED BY SCRIPT SCALAR RETURNS EMITS LUA PYTHON3 JAVA R ADAPTER CONSUMER GROUP PRIORITY SESSION SYSTEM ROLE USER PASSWORD FORCE CASCADE RESTRICT DEFAULT COMMENT CONSTRAINT PRIMARY KEY FOREIGN REFERENCES ENABLE DISABLE DISTRIBUTE REORGANIZE FLUSH STATISTICS AUDIT KILL RECOMPRESS PROFILE OVER ROWS RANGE PRECEDING FOLLOWING UNBOUNDED CURRENT ROW QUALIFY REGEXP_LIKE MINUS INTERSECT EXCEPT LOCAL FILE SECURE CSV FBV`.split(" ");
+
+// Exasol-specific statement templates — the fastest way to write the
+// statements the generic grammar can't predict.
+const SNIPPETS: { label: string; text: string }[] = [
+  { label: "IMPORT FROM CSV AT", text: "IMPORT INTO ${1:SCHEMA.TABLE} FROM CSV AT '${2:https://…}' FILE '${3:data.csv}'" },
+  { label: "EXPORT INTO CSV AT", text: "EXPORT ${1:SCHEMA.TABLE} INTO CSV AT '${2:https://…}' FILE '${3:out.csv}'" },
+  { label: "CREATE PYTHON3 UDF", text: "CREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:SCHEMA.MY_UDF}(${2:x DOUBLE}) RETURNS DOUBLE AS\ndef run(ctx):\n    return ctx.${2:x}\n/" },
+  { label: "CREATE LUA SCRIPT", text: "CREATE OR REPLACE LUA SCRIPT ${1:SCHEMA.MY_SCRIPT}() RETURNS TABLE AS\n${2:-- body}\n/" },
+  { label: "CREATE VIRTUAL SCHEMA", text: "CREATE VIRTUAL SCHEMA ${1:VS_NAME} USING ${2:ADAPTER.SCRIPT} WITH ${3:CONNECTION_NAME = '…'}" },
+  { label: "CREATE CONNECTION", text: "CREATE OR REPLACE CONNECTION ${1:CONN_NAME} TO '${2:https://…}' USER '${3:user}' IDENTIFIED BY '${4:secret}'" },
+  { label: "MERGE INTO", text: "MERGE INTO ${1:TARGET} t USING ${2:SOURCE} s ON t.${3:ID} = s.${3:ID}\nWHEN MATCHED THEN UPDATE SET ${4:col} = s.${4:col}\nWHEN NOT MATCHED THEN INSERT VALUES (s.*)" },
+];
 
 const FUNCTIONS =
-  `COUNT SUM AVG MIN MAX MEDIAN STDDEV VARIANCE CAST COALESCE NVL NVL2 DECODE NULLIF GREATEST LEAST ABS ROUND TRUNC FLOOR CEIL MOD POWER SQRT LN LOG EXP SIGN RANDOM UPPER LOWER INITCAP TRIM LTRIM RTRIM LPAD RPAD LENGTH SUBSTR INSTR REPLACE TRANSLATE CONCAT REGEXP_SUBSTR REGEXP_REPLACE REGEXP_INSTR TO_CHAR TO_DATE TO_TIMESTAMP TO_NUMBER CURRENT_DATE CURRENT_TIMESTAMP CURRENT_USER CURRENT_SCHEMA ADD_DAYS ADD_MONTHS ADD_YEARS ADD_HOURS ADD_MINUTES ADD_SECONDS DAYS_BETWEEN MONTHS_BETWEEN YEARS_BETWEEN EXTRACT DATE_TRUNC POSIX_TIME HASH_MD5 HASH_SHA256 ROW_NUMBER RANK DENSE_RANK LAG LEAD FIRST_VALUE LAST_VALUE LISTAGG GROUP_CONCAT ANY_VALUE`.split(" ");
+  `COUNT SUM AVG MIN MAX MEDIAN STDDEV VARIANCE CAST COALESCE NVL NVL2 DECODE NULLIF GREATEST LEAST ABS ROUND TRUNC FLOOR CEIL MOD POWER SQRT LN LOG EXP SIGN RANDOM UPPER LOWER INITCAP TRIM LTRIM RTRIM LPAD RPAD LENGTH SUBSTR INSTR REPLACE TRANSLATE CONCAT REGEXP_SUBSTR REGEXP_REPLACE REGEXP_INSTR TO_CHAR TO_DATE TO_TIMESTAMP TO_NUMBER CURRENT_DATE CURRENT_TIMESTAMP CURRENT_USER CURRENT_SCHEMA ADD_DAYS ADD_MONTHS ADD_YEARS ADD_HOURS ADD_MINUTES ADD_SECONDS DAYS_BETWEEN MONTHS_BETWEEN YEARS_BETWEEN EXTRACT DATE_TRUNC POSIX_TIME HASH_MD5 HASH_SHA256 ROW_NUMBER RANK DENSE_RANK LAG LEAD FIRST_VALUE LAST_VALUE LISTAGG GROUP_CONCAT ANY_VALUE ZEROIFNULL NULLIFZERO FROM_POSIX_TIME CONVERT_TZ SECONDS_BETWEEN MINUTES_BETWEEN HOURS_BETWEEN WEEK YEAR MONTH DAY HOUR MINUTE SECOND DAYOFWEEK DAYOFYEAR CORR COVAR_POP COVAR_SAMP PERCENTILE_CONT PERCENTILE_DISC RATIO_TO_REPORT NTILE PERCENT_RANK CUME_DIST BIT_AND BIT_OR BIT_XOR BIT_NOT BIT_SET BIT_CHECK JSON_VALUE JSON_EXTRACT IS_NUMBER IS_DATE IS_TIMESTAMP IS_BOOLEAN CHAR_LENGTH UNICODE UNICODECHR ASCII CHR REVERSE SPACE REPEAT EDIT_DISTANCE SOUNDEX COLOGNE_PHONETIC IPROC NPROC VALUE2PROC SYS_GUID SESSION_PARAMETER TYPEOF MIN_SCALE APPROXIMATE_COUNT_DISTINCT ST_DISTANCE ST_INTERSECTS ST_CONTAINS`.split(" ");
 
 let registered = false;
 
@@ -93,6 +107,24 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
         S.push({ label, kind, insertText, range, detail, sortText: sortPrefix + label } as languages.CompletionItem);
 
       const K = monaco.languages.CompletionItemKind;
+      const pushSnippets = () => {
+        for (const sn of SNIPPETS) {
+          S.push({
+            label: sn.label,
+            kind: K.Snippet,
+            insertText: sn.text,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            detail: "Exasol template",
+            sortText: "6" + sn.label,
+          } as languages.CompletionItem);
+        }
+      };
+      const pushScripts = (prefix: string) => {
+        for (const s of cat.scripts) {
+          push(`${s.schema}.${s.name}`, K.Function, `${s.schema}.${s.name}(`, `${s.type} script/UDF`, prefix);
+        }
+      };
 
       // Tables referenced in this statement: FROM/JOIN/INTO/UPDATE targets
       // with optional aliases → alias/table → columns.
@@ -161,7 +193,10 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
             }
           }
         }
-        if (hints.func) for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
+        if (hints.func) {
+          for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
+          pushScripts("2");
+        }
         // Only the keywords the grammar says are VALID here.
         for (const k of hints.keywords) push(k, K.Keyword, k, undefined, "3");
         if (S.length) return { suggestions: S };
@@ -179,8 +214,9 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
       }
       for (const k of KEYWORDS) push(k, K.Keyword, k, undefined, "3");
       for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
+      pushScripts("4");
       for (const schema of cat.schemas.keys()) push(schema, K.Module, schema, "schema", "5");
-      push("SELECT * FROM", K.Snippet, "SELECT *\nFROM ", "snippet", "0");
+      pushSnippets();
       return { suggestions: S };
     },
   });

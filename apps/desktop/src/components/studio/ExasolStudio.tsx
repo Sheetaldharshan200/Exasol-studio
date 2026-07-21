@@ -1440,6 +1440,27 @@ export function ExasolStudio({
         if (table?.rows) sqlCatalogRef.current = buildCatalog(table.rows as unknown[][]);
       })
       .catch(() => undefined);
+    // User UDFs / Lua / adapter scripts → suggested like built-in functions.
+    ipc
+      .executeSql(
+        connection.profile.id,
+        connection.profile.name,
+        "SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000",
+        2000,
+        false,
+      )
+      .then((res) => {
+        if (!alive) return;
+        const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
+        if (table?.rows) {
+          sqlCatalogRef.current.scripts = (table.rows as unknown[][]).map((r) => ({
+            schema: String(r[0] ?? ""),
+            name: String(r[1] ?? ""),
+            type: String(r[2] ?? "SCRIPT"),
+          }));
+        }
+      })
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
