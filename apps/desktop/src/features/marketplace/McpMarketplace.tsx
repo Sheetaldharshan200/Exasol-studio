@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { PlugZap, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, RefreshCw, Trash2 } from "lucide-react";
 import { agent } from "@/lib/agent-client";
+import { McpMark } from "@/components/brand/McpMark";
 import { MCP_PRESETS } from "@/features/marketplace/mcp-presets";
 import { ConnectorLogo } from "@/features/marketplace/ConnectorLogo";
 import { cn } from "@/lib/utils";
@@ -22,9 +23,9 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
   }, []);
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-y-auto p-3">
+    <section className="flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto p-3">
       <div className="mb-1 flex items-center gap-2">
-        <PlugZap className="h-4 w-4 shrink-0 text-primary" />
+        <McpMark className="h-4 w-4 shrink-0 text-primary" />
         <h2 className="text-[13px] font-semibold text-foreground">Connect external tools</h2>
       </div>
       <p className="mb-3 text-[11.5px] text-muted-foreground">
@@ -77,19 +78,24 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
         View audit log →
       </button>
 
+      <p className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        Connectors
+      </p>
       <div className="grid gap-1">
         {MCP_PRESETS.map((p) => (
           <button
             key={p.id}
             onClick={() => onOpenConfig?.(p.id, p.name)}
             title={p.desc}
-            className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-secondary/50"
+            className="group flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-secondary/50"
           >
             <ConnectorLogo logo={p.logo} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-medium text-foreground">{p.name}</div>
-              <div className="truncate text-[10.5px] text-muted-foreground">{p.desc}</div>
+              {/* Clamp to 2 lines and never let it push the panel wider. */}
+              <div className="line-clamp-2 break-words text-[10.5px] leading-snug text-muted-foreground">{p.desc}</div>
             </div>
+            <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted-foreground/50 transition-colors group-hover:text-primary" />
           </button>
         ))}
       </div>

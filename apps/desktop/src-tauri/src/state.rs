@@ -14,7 +14,7 @@ pub struct AppState {
     /// Set on vault unlock; cleared on lock/quit. Used to encrypt/decrypt
     /// connection passwords at rest. A std lock so sync code can read it.
     pub vault_key: std::sync::RwLock<Option<[u8; 32]>>,
-    /// The master password itself, memory-only for this session (pgAdmin
+    /// The master password itself, memory-only for this session (unified
     /// model): the local Personal database's SYS password is kept equal to
     /// it, so setup after unlock can apply it. Never persisted anywhere.
     pub master_secret: std::sync::RwLock<Option<String>>,

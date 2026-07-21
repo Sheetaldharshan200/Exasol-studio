@@ -20,6 +20,7 @@ import {
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { ScrollProgress } from "@/components/ui/scroll-progress";
 
 type DocItem = { id: string; name: string; repo: string; icon: LucideIcon; labs?: boolean };
 
@@ -74,6 +75,7 @@ export function Docs() {
   // When following a relative link into another repo file (e.g. CONTRIBUTING.md),
   // this holds that file's repo-relative path; null means we're on the README.
   const [subPath, setSubPath] = useState<string | null>(null);
+  const docScrollRef = useRef<HTMLDivElement>(null);
   // Guards against out-of-order responses (clicking B then A must not let A's
   // slower response overwrite B's content).
   const reqId = useRef<string>(DOCS[0].id);
@@ -223,7 +225,9 @@ export function Docs() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto px-6 py-5 [scrollbar-width:thin]">
+        <div ref={docScrollRef} className="relative flex-1 overflow-auto [scrollbar-width:thin]">
+          <ScrollProgress containerRef={docScrollRef} />
+          <div className="px-6 py-5">
           {loading ? (
             <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading documentation…
@@ -265,6 +269,7 @@ export function Docs() {
               </ReactMarkdown>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

@@ -88,6 +88,31 @@ export function DatabaseTree({
     setExpanded(new Set());
   }, [collapseSignal]);
 
+  // Stay live: when the catalog changes (a CREATE/DROP/import ran), drop the
+  // cached children and reload whatever is currently expanded.
+  useEffect(() => {
+    const onChanged = () => {
+      // Snapshot every known node (roots + already-loaded children) BEFORE
+      // clearing the cache, so we can re-load the ones that are expanded.
+      const known = new Map<string, TreeNode>();
+      const collect = (nodes: TreeNode[]) => {
+        for (const n of nodes) {
+          known.set(n.id, n);
+          const kids = cache.current.get(n.id);
+          if (kids) collect(kids);
+        }
+      };
+      collect(roots);
+      cache.current.clear();
+      for (const id of expanded) {
+        const node = known.get(id);
+        if (node) load(node);
+      }
+    };
+    window.addEventListener("studio:catalog-changed", onChanged);
+    return () => window.removeEventListener("studio:catalog-changed", onChanged);
+  }, [roots, load, expanded]);
+
   const toggle = useCallback(
     (node: TreeNode) => {
       if (!node.expandable) return;

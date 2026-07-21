@@ -149,59 +149,80 @@ export function AiProvidersWindow() {
   const locals = providers.filter((p) => p.kind === "local" && p.id !== "builtin");
   const clouds = providers.filter((p) => p.kind === "cloud" && CLOUD_META[p.id]);
 
+  const activeSection = SECTIONS.find((s) => s.key === section) ?? SECTIONS[0];
+  const ActiveIcon = activeSection.icon;
   return (
     <div className="flex h-screen flex-col bg-editor text-foreground">
       {/* Title bar (draggable) */}
-      <div data-tauri-drag-region className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
         <AgentMark className="h-4 w-4 text-primary" />
-        <span className="text-[13px] font-semibold">AI Settings</span>
+        <span className="text-[13px] font-semibold tracking-tight">AI Settings</span>
         <button
           onClick={() => {
             void refresh();
             void refreshLlm();
           }}
-          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           aria-label="Refresh"
-          title="Re-detect"
+          title="Re-detect providers and models"
         >
           <RefreshCcw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
         </button>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* ── Sidebar ── */}
-        <nav className="w-52 shrink-0 space-y-0.5 overflow-y-auto border-r border-border bg-panel/40 p-2">
-          {SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const active = section === s.key;
-            return (
-              <button
-                key={s.key}
-                onClick={() => setSection(s.key)}
-                className={cn(
-                  "flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
-                  active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-                )}
-              >
-                <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", active && "text-primary")} />
-                <span className="min-w-0">
-                  <span className="block text-[12px] font-medium">{s.label}</span>
-                  <span className="block truncate text-[10px] text-muted-foreground">{s.desc}</span>
-                </span>
-              </button>
-            );
-          })}
+        {/* ── Sidebar: names only. Descriptions live in the section header. ── */}
+        <nav className="w-56 shrink-0 overflow-y-auto border-r border-border bg-panel/30 px-2.5 py-3">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+            Settings
+          </p>
+          <div className="space-y-0.5">
+            {SECTIONS.map((s) => {
+              const Icon = s.icon;
+              const active = section === s.key;
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => setSection(s.key)}
+                  className={cn(
+                    "relative flex w-full items-center gap-2.5 rounded-md py-1.5 pl-3 pr-2 text-left text-[12.5px] transition-colors",
+                    active
+                      ? "bg-secondary font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
+                  )}
+                >
+                  {active ? (
+                    <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />
+                  ) : null}
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground/80")} />
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         {/* ── Content ── */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-xl space-y-6 px-6 py-5">
+          <div className="mx-auto w-full max-w-2xl px-8 py-7">
+            {/* Section header — the description belongs here, not crammed into the rail. */}
+            <header className="mb-6 flex items-start gap-3 border-b border-border pb-5">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <ActiveIcon className="h-[18px] w-[18px]" />
+              </span>
+              <div>
+                <h1 className="font-heading text-[17px] font-semibold tracking-tight text-foreground">{activeSection.label}</h1>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{activeSection.desc}</p>
+              </div>
+            </header>
+
             {error ? (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px]">
+              <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
                 {error}
               </div>
             ) : null}
 
+            <div className="space-y-6">
             {section === "providers" ? (
               <ProvidersSection
                 llmState={llmState}
@@ -234,6 +255,7 @@ export function AiProvidersWindow() {
                 setInstructionsDraft={setInstructionsDraft}
               />
             ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -745,6 +767,12 @@ function GuardrailsSection({
             desc="Reading and editing workspace files. Off by default."
             checked={settings.allowFileAccess}
             onChange={(v) => void patch({ allowFileAccess: v })}
+          />
+          <ToggleRow
+            label="Auto-commit workspace to git"
+            desc="After each agent turn, commit changes in your ~/ExasolStudio folder to git so every AI change is tracked and reversible."
+            checked={settings.autoCommit}
+            onChange={(v) => void patch({ autoCommit: v })}
           />
           </div>
         </div>

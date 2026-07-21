@@ -87,6 +87,7 @@ export type AgentSettings = {
   petAvatar: "exa" | "byte" | "pixel" | "quill" | "dot";
   allowDestructiveUi: boolean;
   allowFileAccess: boolean;
+  autoCommit: boolean;
 };
 
 export const agent = {
@@ -101,6 +102,16 @@ export const agent = {
 
   async models(): Promise<{ providers: AgentProviderInfo[]; defaultModel: string | null }> {
     return api("/models");
+  },
+
+  /** One-shot SQL rewrite for the editor's inline diff (no chat session). */
+  async rewriteSql(
+    sql: string,
+    action: "optimize" | "fix" | "edit",
+    instruction?: string,
+  ): Promise<string> {
+    const { sql: out } = await api<{ sql: string }>("/rewrite", "POST", { sql, action, instruction });
+    return out;
   },
 
   async setProviderKey(providerId: string, apiKey: string): Promise<void> {

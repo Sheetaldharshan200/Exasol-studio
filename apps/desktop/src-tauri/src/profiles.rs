@@ -170,7 +170,7 @@ pub fn save_profile(
     Ok(profile)
 }
 
-/// Create or reconcile the pgAdmin-style built-in local connection. Studio
+/// Create or reconcile the built-in local connection. Studio
 /// refreshes the generated SYS secret while preserving the user's display
 /// settings.
 pub fn ensure_personal_local_profile(

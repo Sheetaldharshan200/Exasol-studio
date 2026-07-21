@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 
 export type ActiveConnection = {
@@ -22,6 +22,13 @@ export function useConnections() {
     () => connections.find((c) => c.profile.id === activeProfileId) ?? null,
     [connections, activeProfileId],
   );
+
+  // Mirror the focused id in a ref so disconnect() reads the CURRENT value
+  // rather than a value captured when the callback was created.
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeProfileId;
+  }, [activeProfileId]);
 
   const refresh = useCallback(async () => {
     const [nextProfiles, nextDrivers] = await Promise.all([
@@ -90,19 +97,20 @@ export function useConnections() {
     [refresh, adopt],
   );
 
-  const disconnect = useCallback(
-    async (profileId?: string) => {
-      const id = profileId ?? activeProfileId;
-      if (!id) return;
-      await ipc.disconnect(id).catch(() => undefined);
-      const remaining = connections.filter((c) => c.profile.id !== id);
-      setConnections(remaining);
-      setActiveProfileId((prev) =>
-        prev === id ? (remaining.at(-1)?.profile.id ?? null) : prev,
-      );
-    },
-    [activeProfileId, connections],
-  );
+  const disconnect = useCallback(async (profileId?: string) => {
+    const id = profileId ?? activeIdRef.current;
+    if (!id) return;
+    // Close the backend pool first, then update UI from the CURRENT list via a
+    // functional update — no stale-closure snapshot, so one click both closes
+    // the connection and updates the view (previously the first click was a
+    // no-op because `remaining` was computed from a stale `connections`).
+    await ipc.disconnect(id).catch(() => undefined);
+    setConnections((list) => {
+      const remaining = list.filter((c) => c.profile.id !== id);
+      setActiveProfileId((prev) => (prev === id ? (remaining.at(-1)?.profile.id ?? null) : prev));
+      return remaining;
+    });
+  }, []);
 
   const focus = useCallback((profileId: string) => setActiveProfileId(profileId), []);
 

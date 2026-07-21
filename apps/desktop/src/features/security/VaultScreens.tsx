@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Check, Copy, Download, Eye, EyeOff } from "lucide-react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -91,13 +92,17 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
 
   if (codes) {
     const text = codes.join("\n");
-    const download = () => {
-      const blob = new Blob([`Exasol Studio — recovery keys\nEach one can reset your master password once. Keep them safe.\n\n${codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n`], { type: "text/plain" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "exasol-studio-recovery-keys.txt";
-      a.click();
-      URL.revokeObjectURL(a.href);
+    const download = async () => {
+      const body = `Exasol Studio — recovery keys\nEach one can reset your master password once. Keep them safe.\n\n${codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n`;
+      try {
+        const path = await saveDialog({
+          defaultPath: "exasol-studio-recovery-keys.txt",
+          filters: [{ name: "Text", extensions: ["txt"] }],
+        });
+        if (path) await ipc.writeTextFile(path, body);
+      } catch {
+        /* cancelled or write failed */
+      }
     };
     return (
       <Shell title="Recovery keys" subtitle="Shown once. Any one resets your password if you forget it.">
@@ -122,7 +127,7 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy"}
           </button>
-          <button onClick={download} className="flex items-center gap-1.5 text-primary hover:underline">
+          <button onClick={() => void download()} className="flex items-center gap-1.5 text-primary hover:underline">
             <Download className="h-3.5 w-3.5" /> Download
           </button>
         </div>
@@ -151,7 +156,7 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
         <div className="rounded-lg border border-primary/25 bg-primary/8 px-3 py-2 text-[11.5px] text-muted-foreground">
           This is also the password for your local Exasol database — sign in there
           as <span className="font-medium text-foreground">SYS</span> with this same
-          master password (like pgAdmin). Studio keeps them in sync.
+          master password. Studio keeps them in sync.
         </div>
         {confirm && pw !== confirm ? <p className="text-[11.5px] text-destructive">Passwords don't match.</p> : null}
         {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}

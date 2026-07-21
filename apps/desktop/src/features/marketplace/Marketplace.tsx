@@ -239,7 +239,7 @@ const DRIVER_RUNTIME: Record<string, string> = {
 
 const NAV: { key: string; label: string; icon: LucideIcon }[] = [
   { key: "all", label: "All", icon: Store },
-  { key: "recommended", label: "Recommended", icon: Sparkles },
+  { key: "recommended", label: "Kit packs", icon: Sparkles },
   { key: "database", label: "Databases", icon: Database },
   { key: "load", label: "Data & tools", icon: Cpu },
   { key: "drivers", label: "Drivers", icon: Plug },
@@ -1008,7 +1008,7 @@ export function Marketplace() {
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             {queueBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Check className="h-3.5 w-3.5 text-primary" />}
             <span className="flex-1 text-[12.5px] font-semibold text-foreground">
-              {queueBusy ? "Installing your starter pack…" : "Starter pack installed"}
+              {queueBusy ? "Installing your kit pack…" : "Kit pack installed"}
             </span>
             {!queueBusy ? (
               <button onClick={() => setQueue([])} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
-import { attachAiBulb } from "@/lib/editor-ai-bulb";
+import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
 import {
   Activity,
   BarChart3,
@@ -1438,15 +1438,8 @@ function HistoryDock({
               className="z-10 -mr-1 w-1.5 shrink-0 cursor-col-resize hover:bg-primary/40"
             />
             <div className="flex shrink-0 flex-col border-l border-border bg-panel/70" style={{ width: railW }}>
-              <div className="flex h-7 shrink-0 items-center justify-between border-b border-border/60 px-2">
+              <div className="flex h-7 shrink-0 items-center border-b border-border/60 px-2">
                 <span className="text-[9.5px] font-medium tracking-wider text-muted-foreground uppercase">Terminals</span>
-                <button
-                  onClick={() => void newTerminal()}
-                  aria-label="New terminal"
-                  className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
                 {terms.map((tm) => (
@@ -1808,6 +1801,11 @@ export function ExasolStudio({
       patchTab(activeTab.id, { response: res, execError: null });
       loadHistory();
       refreshSqlCatalog();
+      // Tell live views (Visualizer, tree) the catalog may have changed so they
+      // re-read schemas/tables — a CREATE/DROP/import just ran.
+      window.dispatchEvent(
+        new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }),
+      );
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e) });
       setResultTab("messages");
@@ -1914,6 +1912,34 @@ export function ExasolStudio({
 
   // 2) Tab drag & drop: reorder chips; dropping ON a grouped chip adopts its
   // group; dropping on a group header joins that group.
+  // Pointer-drag state for tab reordering (see renderTabChip's onPointerDown).
+  const tabDrag = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
+  const moveTabRef = useRef<(dragId: string, targetId: string | null) => void>(() => undefined);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = tabDrag.current;
+      if (!drag) return;
+      if (!drag.moved && Math.abs(e.clientX - drag.startX) < 5) return;
+      drag.moved = true;
+      // Which tab is the pointer over? Reorder live (VS Code style).
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-tab-id]");
+      const overId = el?.dataset.tabId;
+      if (overId && overId !== drag.id) moveTabRef.current(drag.id, overId);
+    };
+    const onUp = () => {
+      // Keep `moved` briefly so the click handler can suppress the activate.
+      const drag = tabDrag.current;
+      if (drag?.moved) window.setTimeout(() => (tabDrag.current = null), 0);
+      else tabDrag.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
   function moveTab(dragId: string, targetId: string | null) {
     if (dragId === targetId) return;
     updateTabs(connKey, (list) => {
@@ -1933,6 +1959,7 @@ export function ExasolStudio({
       return next;
     });
   }
+  moveTabRef.current = moveTab;
 
   // Connect to a saved profile from the Welcome "Recent" list (or fall back to
   // the connect form if it can't connect straight away).
@@ -2357,23 +2384,19 @@ export function ExasolStudio({
     return (
       <div
         key={tab.id}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData("text/exa-tab", tab.id);
-          e.dataTransfer.effectAllowed = "move";
+        data-tab-id={tab.id}
+        // Pointer-based drag reorder — HTML5 DnD is unreliable inside the
+        // WKWebView titlebar region, so we track the pointer ourselves.
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          tabDrag.current = { id: tab.id, startX: e.clientX, moved: false };
         }}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes("text/exa-tab")) e.preventDefault();
+        onClick={() => {
+          // A drag just happened → the pointerup already handled it; don't
+          // also treat it as a plain activate-click.
+          if (tabDrag.current?.moved) return;
+          setActiveTabId(tab.id);
         }}
-        onDrop={(e) => {
-          const dragId = e.dataTransfer.getData("text/exa-tab");
-          if (dragId) {
-            e.preventDefault();
-            e.stopPropagation();
-            moveTab(dragId, tab.id);
-          }
-        }}
-        onClick={() => setActiveTabId(tab.id)}
         onDoubleClick={() => {
           if (tab.view === "sql" || tab.view === "visualizer") startRename(tab.id, tab.title);
         }}
@@ -2925,8 +2948,50 @@ export function ExasolStudio({
     const p = AI_SQL_PROMPTS[kind](sql);
     setAiPrompt({ text: p.text, nonce: Date.now(), send: p.send });
   }
-  const aiAskSqlRef = useRef(aiAskSql);
-  aiAskSqlRef.current = aiAskSql;
+
+  // Inline AI edits (optimize / fix / edit) → a review diff in the editor with
+  // Accept/Decline, instead of routing to the chat. The reviewed range is the
+  // current selection, or the whole buffer when nothing is selected.
+  const [inlineDiff, setInlineDiff] = useState<InlineDiffState | null>(null);
+  const inlineRangeRef = useRef<import("monaco-editor").IRange | null>(null);
+
+  function applyInlineEdit(next: string) {
+    const editor = editorRef.current;
+    const range = inlineRangeRef.current;
+    if (!editor || !range) return;
+    editor.executeEdits("ai-inline-edit", [{ range, text: next, forceMoveMarkers: true }]);
+    editor.focus();
+  }
+
+  async function aiInlineEdit(action: "optimize" | "fix" | "edit") {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model) return;
+    const sel = editor.getSelection();
+    const hasSel = sel && !sel.isEmpty();
+    const range = hasSel ? sel : model.getFullModelRange();
+    const sql = model.getValueInRange(range).trim();
+    if (!sql) return;
+    let instruction: string | undefined;
+    if (action === "edit") {
+      instruction = window.prompt("Describe the change to make to this SQL:")?.trim();
+      if (!instruction) return;
+    }
+    inlineRangeRef.current = range;
+    setInlineDiff({ action, before: sql, after: null, error: null });
+    try {
+      const out = await agentClient.rewriteSql(sql, action, instruction);
+      setInlineDiff((cur) => (cur ? { ...cur, after: out } : cur));
+    } catch (e) {
+      setInlineDiff((cur) => (cur ? { ...cur, error: errorMessage(e) } : cur));
+    }
+  }
+
+  const aiAskSqlRef = useRef<(k: string) => void>(() => undefined);
+  aiAskSqlRef.current = (k: string) => {
+    if (k === "optimize" || k === "fix" || k === "edit") void aiInlineEdit(k);
+    else aiAskSql(k as keyof typeof AI_SQL_PROMPTS);
+  };
 
   function aiExplain() {
     aiAskSql("explain-plan");
@@ -3577,7 +3642,12 @@ export function ExasolStudio({
               ) : activeTab.view === "dba" ? (
                 <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} />
               ) : (
+                // Key by tab id so every Visualizer tab is its OWN independent
+                // instance — a new tab starts fresh and never inherits the
+                // previous tab's schema, selection, or query-builder state.
                 <Visualizer
+                  key={activeTab.id}
+                  instanceId={activeTab.id}
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
                   onOpenSql={openBuiltSql}
@@ -3587,7 +3657,17 @@ export function ExasolStudio({
             </div>
           ) : (
             <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel defaultSize="55%" minSize="120px" className="min-h-0">
+              <ResizablePanel defaultSize="55%" minSize="120px" className="relative min-h-0">
+                {inlineDiff ? (
+                  <InlineSqlDiff
+                    state={inlineDiff}
+                    onAccept={(next) => {
+                      applyInlineEdit(next);
+                      setInlineDiff(null);
+                    }}
+                    onDecline={() => setInlineDiff(null)}
+                  />
+                ) : null}
                 <Editor
                   beforeMount={defineMonacoThemes}
                   defaultLanguage="sql"
@@ -3605,8 +3685,9 @@ export function ExasolStudio({
                       const acts = [
                         { id: "exasol.ai.explainPlan", title: "AI: Explain the plan", kind: "explain-plan" },
                         { id: "exasol.ai.explain", title: "AI: Explain what this does", kind: "explain" },
-                        { id: "exasol.ai.optimize", title: "AI: Optimize", kind: "optimize" },
-                        { id: "exasol.ai.edit", title: "AI: Edit with instruction…", kind: "edit" },
+                        { id: "exasol.ai.optimize", title: "AI: Optimize (review diff)", kind: "optimize" },
+                        { id: "exasol.ai.fix", title: "AI: Fix errors (review diff)", kind: "fix" },
+                        { id: "exasol.ai.edit", title: "AI: Edit with instruction… (review diff)", kind: "edit" },
                       ] as const;
                       for (const a of acts) {
                         monaco.editor.registerCommand(a.id, () => aiAskSqlRef.current(a.kind));
@@ -3628,8 +3709,9 @@ export function ExasolStudio({
                     const menuActs = [
                       { id: "exa.ctx.explainPlan", label: "AI: Explain the plan", kind: "explain-plan" as const, order: 1.1, keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE] },
                       { id: "exa.ctx.explain", label: "AI: Explain what this does", kind: "explain" as const, order: 1.2 },
-                      { id: "exa.ctx.optimize", label: "AI: Optimize", kind: "optimize" as const, order: 1.3 },
-                      { id: "exa.ctx.edit", label: "AI: Edit with instruction…", kind: "edit" as const, order: 1.4 },
+                      { id: "exa.ctx.optimize", label: "AI: Optimize (review diff)", kind: "optimize" as const, order: 1.3 },
+                      { id: "exa.ctx.fix", label: "AI: Fix errors (review diff)", kind: "fix" as const, order: 1.4 },
+                      { id: "exa.ctx.edit", label: "AI: Edit with instruction… (review diff)", kind: "edit" as const, order: 1.5 },
                     ];
                     for (const a of menuActs) {
                       editor.addAction({
@@ -3641,7 +3723,6 @@ export function ExasolStudio({
                         run: () => aiAskSqlRef.current(a.kind),
                       });
                     }
-                    attachAiBulb(editor, monaco, (k) => aiAskSqlRef.current(k));
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,

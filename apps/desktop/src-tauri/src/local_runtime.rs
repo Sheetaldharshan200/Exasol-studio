@@ -445,6 +445,52 @@ pub(crate) fn persist_personal_password(app: &AppHandle, password: &str) -> AppR
     write_secret(&path, &serde_json::to_string_pretty(&secrets)?)
 }
 
+/// When our deployment dir is gone but the port is still held by OUR OWN
+/// orphaned runtime daemon (e.g. the data dir was cleared while the DB ran),
+/// kill that process so setup can proceed. Only kills processes whose command
+/// path points inside Studio's managed runtime dir — never a foreign server.
+/// Returns true if it freed the port. Unix only (Windows uses containers).
+#[cfg(unix)]
+fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
+    let Ok(runtime) = runtime_dir(app) else { return false };
+    let marker = runtime.to_string_lossy().to_string();
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+    else {
+        return false;
+    };
+    let mut killed = false;
+    for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+        let cmd = Command::new("ps")
+            .args(["-p", pid, "-o", "command="])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        // Only ours: the executable must live under our managed runtime dir.
+        if cmd.contains(&marker) {
+            emit_log(
+                app,
+                id,
+                format!("Reclaiming port {port} from an orphaned Studio database process (pid {pid})…"),
+                "info",
+            );
+            let _ = Command::new("kill").arg(pid).output();
+            killed = true;
+        }
+    }
+    if killed {
+        std::thread::sleep(Duration::from_millis(1500));
+        return !port_ready(port);
+    }
+    false
+}
+
+#[cfg(not(unix))]
+fn reclaim_orphaned_port(_app: &AppHandle, _id: &str, _port: u16) -> bool {
+    false
+}
+
 fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     let cli = ensure_personal_launcher(app, id)?;
     let cli = cli.to_string_lossy().to_string();
@@ -460,9 +506,9 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
                 "info",
             );
         }
-        if port_ready(STUDIO_DB_PORT) {
+        if port_ready(STUDIO_DB_PORT) && !reclaim_orphaned_port(app, id, STUDIO_DB_PORT) {
             return Err(AppError::Storage(format!(
-                "Port {STUDIO_DB_PORT} is already in use and is not the managed Exasol Personal deployment."
+                "Port {STUDIO_DB_PORT} is already in use by another program. Close whatever is using it, then retry setup."
             )));
         }
         let ports = format!("db:{STUDIO_DB_PORT},ssh:{STUDIO_SSH_PORT}");

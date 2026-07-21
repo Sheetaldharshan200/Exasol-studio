@@ -141,7 +141,7 @@ pub struct VaultStatus {
     pub recovery_remaining: usize,
 }
 
-/// pgAdmin model: remember the master password in memory for this session and
+/// Unified-credential model: remember the master password in memory for this session and
 /// keep the local Personal database's SYS credential equal to it. The sync is
 /// best-effort in a background thread — vault operations never block on the
 /// database, and a stopped DB picks the password up on its next bootstrap.

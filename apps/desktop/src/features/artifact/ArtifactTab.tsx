@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, History } from "lucide-react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { artifacts } from "@/lib/agent-client";
+import { ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,14 +27,18 @@ export function ArtifactTab({
     if (ref.current) ref.current.srcdoc = html;
   }, [html]);
 
-  function download() {
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title.replace(/[^\w.-]+/g, "_") || "artifact"}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function download() {
+    // Open the native Save dialog so the user picks the folder and name, then
+    // write there (a browser blob-anchor no-ops inside the Tauri webview).
+    try {
+      const path = await saveDialog({
+        defaultPath: `${title.replace(/[^\w.-]+/g, "_") || "artifact"}.html`,
+        filters: [{ name: "HTML", extensions: ["html"] }],
+      });
+      if (path) await ipc.writeTextFile(path, html);
+    } catch {
+      /* cancelled or write failed */
+    }
   }
 
   return (
@@ -54,7 +60,7 @@ export function ArtifactTab({
             <History className="h-3.5 w-3.5" /> Artifacts
           </button>
           <button
-            onClick={download}
+            onClick={() => void download()}
             className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11.5px] text-foreground hover:bg-secondary"
             title="Download HTML"
           >

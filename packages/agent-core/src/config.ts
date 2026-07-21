@@ -33,6 +33,9 @@ export type AgentSettings = {
   allowDestructiveUi: boolean;
   /** Allow the agent to read/edit workspace files. */
   allowFileAccess: boolean;
+  /** Commit workspace changes to git after each agent turn (deterministic —
+   *  the app does it, not the model). */
+  autoCommit: boolean;
 };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -50,6 +53,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   petAvatar: "exa",
   allowDestructiveUi: false,
   allowFileAccess: false,
+  autoCommit: true,
 };
 
 /** Persistent agent configuration: provider keys, default model, options. */

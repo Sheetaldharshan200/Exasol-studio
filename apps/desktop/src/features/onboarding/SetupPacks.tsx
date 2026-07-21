@@ -89,10 +89,11 @@ export function SetupPacks({ onDone }: { onDone: (packItemIds: string[] | null) 
           <Package className="h-4 w-4" />
           <span className="font-mono text-[11px] font-semibold uppercase tracking-widest">Set up your workspace</span>
         </div>
-        <h1 className="font-heading text-[26px] font-bold text-foreground">Choose a starter pack</h1>
+        <h1 className="font-heading text-[26px] font-bold text-foreground">Choose a kit pack</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Studio is already preparing the platform-native local database, PyExasol, Semantic Views, Fable Method, ExaPump,
-          the MCP server, and Exasol agent skills. Choose a pack only for additional tools, or skip and add them later.
+          Studio already sets up your local Exasol database, PyExasol, ExaPump, the MCP server, and the Exasol agent
+          skills automatically. Kit packs are <span className="font-medium text-foreground">optional</span> extras —
+          pick one to add more tools, or skip and add them anytime from the Marketplace.
         </p>
 
         <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2">

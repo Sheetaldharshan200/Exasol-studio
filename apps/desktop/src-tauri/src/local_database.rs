@@ -967,7 +967,7 @@ fn install_semantic_views(
     Ok(())
 }
 
-/// pgAdmin model: the local database's SYS password is the Studio master
+/// Unified-credential model: the local database's SYS password is the Studio master
 /// password. Applies ALTER USER against the running database, then persists
 /// the credential in the deployment secrets and the vault profile. Returns
 /// false when there is nothing to sync (no personal deployment).
@@ -1068,7 +1068,7 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     write_status(&app, &data_dir, status.clone())?;
     let python = ensure_python_stack(&app, &data_dir)?;
     let mut runtime = query_ready_runtime(&app, &python, &runtime)?;
-    // pgAdmin model: keep the local SYS credential equal to the master
+    // Unified-credential model: keep the local SYS credential equal to the master
     // password whenever the vault is unlocked this session.
     let master = app.state::<AppState>().master_secret.read().unwrap().clone();
     if let Some(master) = master {

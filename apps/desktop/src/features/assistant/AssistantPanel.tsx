@@ -14,6 +14,7 @@ import {
   Gauge,
   History,
   Image as ImageIcon,
+  GitCommitVertical,
   Loader2,
   PanelRightClose,
   Paperclip,
@@ -289,6 +290,14 @@ export function AssistantPanel({
   const [mcpPanel, setMcpPanel] = useState<
     { name: string; connected: boolean; toolCount: number; tools?: string[]; command: string; args: string[] }[] | null
   >(null);
+  // Git auto-commit of workspace changes after each agent turn. Deterministic
+  // (the app does it — not the model), gated by the autoCommit setting.
+  const autoCommitRef = useRef(true);
+  const lastRequestRef = useRef<string>("");
+  const [committing, setCommitting] = useState(false);
+  useEffect(() => {
+    agent.getSettings().then(({ settings }) => (autoCommitRef.current = settings.autoCommit)).catch(() => undefined);
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -475,11 +484,48 @@ export function AssistantPanel({
     } else if (e.type === "message-done") {
       setItems((m) => m.map((it) => (it.kind === "msg" ? { ...it, streaming: false } : it)));
       setSending(false);
+      // Deterministically snapshot the workspace after the agent finishes.
+      if (autoCommitRef.current) void commitWorkspaceRef.current(lastRequestRef.current, true);
     } else if (e.type === "error") {
       setItems((m) => [...m, { kind: "msg", id: `e-${Date.now()}`, role: "assistant", content: e.message, error: true }]);
       setSending(false);
     }
   }, []);
+
+  /**
+   * Commit the workspace folder (~/ExasolStudio) to git. Ensures a repo exists,
+   * commits only when there are changes. `silent` = auto-commit after a turn
+   * (no note when nothing changed); manual button always reports the outcome.
+   */
+  async function commitWorkspace(summary: string, silent: boolean) {
+    if (!isTauri() || committing) return;
+    setCommitting(true);
+    try {
+      let status = await ipc.gitStatus().catch(() => null);
+      if (status && status.hasGit && !status.isRepo) {
+        await ipc.gitInit().catch(() => undefined); // first commit → init the workspace repo
+        status = await ipc.gitStatus().catch(() => status);
+      }
+      if (!status?.hasGit) {
+        if (!silent) setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: "Git isn't installed, so workspace changes weren't committed." }]);
+        return;
+      }
+      const n = status.files.length;
+      if (n === 0) {
+        if (!silent) setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: "Workspace already up to date — nothing to commit." }]);
+        return;
+      }
+      const clean = (summary || "workspace update").replace(/\s+/g, " ").trim().slice(0, 72);
+      await ipc.gitCommit(`Exa: ${clean}`, true);
+      setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: `Committed ${n} workspace change${n === 1 ? "" : "s"} to git.` }]);
+    } catch (e) {
+      if (!silent) setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: `Git commit skipped: ${errorMessage(e)}` }]);
+    } finally {
+      setCommitting(false);
+    }
+  }
+  const commitWorkspaceRef = useRef(commitWorkspace);
+  commitWorkspaceRef.current = commitWorkspace;
 
   async function ensureSession(): Promise<string> {
     if (sessionRef.current) return sessionRef.current;
@@ -648,6 +694,7 @@ export function AssistantPanel({
       return;
     }
     const agentText = slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed;
+    lastRequestRef.current = trimmed || "workspace update"; // for the auto-commit message
 
     const sentAttachments = attachments;
     setItems((m) => [...m, {
@@ -882,6 +929,15 @@ export function AssistantPanel({
             title="Chat history"
           >
             <History className="h-3.5 w-3.5" />
+          </button>
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={() => void commitWorkspace(lastRequestRef.current || "manual snapshot", false)}
+            disabled={committing}
+            aria-label="Commit workspace changes to git"
+            title="Commit workspace changes to git"
+          >
+            {committing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommitVertical className="h-3.5 w-3.5" />}
           </button>
           <button
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"

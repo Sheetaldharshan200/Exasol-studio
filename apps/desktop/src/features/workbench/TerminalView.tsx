@@ -29,7 +29,7 @@ export function TerminalView({ ptyId, active }: { ptyId: number; active: boolean
       fontFamily: "JetBrains Mono, ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.35,
-      cursorBlink: true,
+      cursorBlink: false,
       allowProposedApi: true,
       theme: themeColors(),
     });

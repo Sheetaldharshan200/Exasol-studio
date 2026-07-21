@@ -105,6 +105,39 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { ok: true });
       }
 
+      // POST /v1/rewrite  {sql, action, instruction?} → { sql }
+      // One-shot SQL rewrite for the editor's inline diff (optimize / fix /
+      // free-form edit). No tools, no chat session — returns ONLY the rewritten
+      // statement so the editor can show an accept/decline diff.
+      if (req.method === "POST" && parts[1] === "rewrite") {
+        const body = await readBody<{ sql?: string; action?: string; instruction?: string }>(req);
+        const sql = (body.sql ?? "").trim();
+        if (!sql) return json(res, 400, { error: "sql is required" });
+        const modelRef = config.get().model;
+        if (!modelRef) return json(res, 400, { error: "No AI model is configured." });
+        const model = registry.resolve(modelRef, { temperature: 0 });
+        const goal =
+          body.action === "optimize"
+            ? "Rewrite the SQL to run faster on Exasol while returning identical results (better join order, projection, avoiding needless scans/CTEs)."
+            : body.action === "fix"
+              ? "Fix any syntax or semantic errors so the SQL runs on Exasol. Change as little as possible."
+              : `Apply this instruction to the SQL: ${body.instruction ?? ""}`;
+        const { generateText } = await import("./llm.ts");
+        const out = await generateText({
+          model,
+          system:
+            "You are an Exasol SQL rewriter. Return ONLY the rewritten SQL — no prose, no explanation, no markdown fences. Preserve the user's formatting style. If nothing should change, return the SQL unchanged.",
+          prompt: `${goal}\n\nSQL:\n${sql}`,
+          maxSteps: 1,
+        });
+        // Strip any stray fences the model adds despite instructions.
+        const cleaned = out.text
+          .replace(/^\s*```(?:sql)?\s*/i, "")
+          .replace(/\s*```\s*$/i, "")
+          .trim();
+        return json(res, 200, { sql: cleaned || sql });
+      }
+
       // PUT /v1/connections  (server-to-server from the app's Rust side —
       // credentials are held in memory only and never returned by any route)
       if (req.method === "PUT" && parts[1] === "connections") {

@@ -34,6 +34,7 @@ import {
   KeyRound,
   Link2,
   Loader2,
+  RotateCw,
   Play,
   Plus,
   Search,
@@ -98,6 +99,8 @@ type EdgeStyle = {
   width: number;
   from: string;
   to: string;
+  /** The travelling pulse/beam color — distinct from the static link color. */
+  pulseColor: string;
 };
 
 const DEFAULT_EDGE_STYLE: EdgeStyle = {
@@ -107,6 +110,8 @@ const DEFAULT_EDGE_STYLE: EdgeStyle = {
   width: 2,
   from: "#a78bfa",
   to: "#7c3aed",
+  // Cyan pulse over the purple link — reads clearly as "flow" vs. the link.
+  pulseColor: "#22d3ee",
 };
 
 const EdgeStyleContext = createContext<EdgeStyle>(DEFAULT_EDGE_STYLE);
@@ -118,6 +123,15 @@ const COLOR_PRESETS: { label: string; from: string; to: string }[] = [
   { label: "Amber", from: "#fcd34d", to: "#d97706" },
   { label: "Pink", from: "#f9a8d4", to: "#db2777" },
   { label: "Green", from: "#86efac", to: "#16a34a" },
+];
+
+const PULSE_PRESETS: { label: string; color: string }[] = [
+  { label: "Cyan", color: "#22d3ee" },
+  { label: "Green", color: "#4ade80" },
+  { label: "Amber", color: "#fbbf24" },
+  { label: "Pink", color: "#f472b6" },
+  { label: "White", color: "#f8fafc" },
+  { label: "Match link", color: "" }, // empty → use the link's `to` color
 ];
 
 function dashFor(line: EdgeStyle["line"], w: number): string | undefined {
@@ -264,15 +278,19 @@ function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
   const dash = dashFor(cfg.line, width);
   const opacity = active ? 1 : inferred ? 0.55 : 0.85;
   const animate = cfg.pulse && (active || !inferred);
+  // Empty pulseColor means "match the link color".
+  const pulse = cfg.pulseColor || cfg.to;
 
   return (
     <>
-      {/* Always-visible coloured line so links read clearly in both themes. */}
+      {/* Always-visible line. When this link is pulsing (active/real flow) the
+          WHOLE line takes the pulse color, so it reads as clearly different
+          from static (non-pulsing) links; otherwise it uses the link color. */}
       <path
         id={pathId}
         d={path}
         fill="none"
-        stroke={cfg.to}
+        stroke={animate ? pulse : cfg.to}
         strokeWidth={width}
         strokeLinecap={cfg.line === "dotted" ? "round" : "butt"}
         strokeDasharray={dash}
@@ -280,9 +298,9 @@ function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
       />
       {animate ? (
         <>
-          {/* Moving gradient beam + travelling pulse dot on top. */}
-          <path d={path} fill="none" stroke={`url(#${gid})`} strokeWidth={width + 1} strokeLinecap="round" />
-          <circle r={width + 2} fill={cfg.to}>
+          {/* Brighter moving highlight + travelling dot on top of the pulse line. */}
+          <path d={path} fill="none" stroke={`url(#${gid})`} strokeWidth={width + 1.5} strokeLinecap="round" />
+          <circle r={width + 2} fill={pulse}>
             <animateMotion dur="2.4s" repeatCount="indefinite" rotate="auto">
               <mpath xlinkHref={`#${pathId}`} href={`#${pathId}`} />
             </animateMotion>
@@ -294,9 +312,10 @@ function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
               animate={{ x1: ["-25%", "100%"], x2: ["0%", "125%"] }}
               transition={{ duration: 2.4, repeat: Infinity, ease: "linear" }}
             >
-              <stop stopColor={cfg.from} stopOpacity="0" />
-              <stop offset="0.5" stopColor={cfg.from} />
-              <stop offset="1" stopColor={cfg.to} stopOpacity="0" />
+              {/* White shimmer travelling along the pulse-colored line. */}
+              <stop stopColor="#ffffff" stopOpacity="0" />
+              <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.85" />
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
             </motion.linearGradient>
           </defs>
         </>
@@ -453,16 +472,23 @@ export function Visualizer({
   connectionName,
   onOpenSql,
   onNewVs,
+  instanceId,
 }: {
   profileId: string;
   connectionName: string;
   onOpenSql?: (sql: string, run: boolean) => void;
   onNewVs?: () => void;
+  /** Unique per Visualizer tab — scopes the "which schema" memory so a new
+   *  tab starts independent of previous tabs. Defaults to the profile. */
+  instanceId?: string;
 }) {
+  // Per-tab schema memory (independent tabs); the heavier graph/schema-list
+  // caches stay keyed by profile since they're the same database.
+  const schemaKey = instanceId ?? profileId;
   const [schemas, setSchemas] = useState<string[]>(() => schemaCache.get(profileId) ?? []);
-  const [schema, setSchema] = useState<string>(() => lastSchema.get(profileId) ?? "");
+  const [schema, setSchema] = useState<string>(() => lastSchema.get(schemaKey) ?? "");
   const [graph, setGraph] = useState<SchemaGraph | null>(
-    () => graphCache.get(`${profileId}:${lastSchema.get(profileId) ?? ""}`) ?? null,
+    () => graphCache.get(`${profileId}:${lastSchema.get(schemaKey) ?? ""}`) ?? null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -473,6 +499,28 @@ export function Visualizer({
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
+  // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
+  // change elsewhere in the app — new schema/table).
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const reload = useCallback(() => {
+    schemaCache.delete(profileId);
+    for (const key of Array.from(graphCache.keys())) {
+      if (key.startsWith(`${profileId}:`)) graphCache.delete(key);
+    }
+    setRefreshTick((t) => t + 1);
+  }, [profileId]);
+
+  // Keep the diagram live: when tables/schemas change anywhere in the app
+  // (a CREATE/DROP ran, data was loaded), refetch this connection's graph.
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ profileId?: string }>).detail;
+      if (!detail?.profileId || detail.profileId === profileId) reload();
+    };
+    window.addEventListener("studio:catalog-changed", onChanged);
+    return () => window.removeEventListener("studio:catalog-changed", onChanged);
+  }, [profileId, reload]);
 
   // Query builder state
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -503,7 +551,7 @@ export function Visualizer({
     const cached = schemaCache.get(profileId);
     if (cached) {
       setSchemas(cached);
-      setSchema((cur) => cur || lastSchema.get(profileId) || cached[0] || "");
+      setSchema((cur) => cur || lastSchema.get(schemaKey) || cached[0] || "");
       return;
     }
     ipc
@@ -515,11 +563,11 @@ export function Visualizer({
         setSchema((cur) => cur || names[0] || "");
       })
       .catch((e) => setError(errorMessage(e)));
-  }, [profileId]);
+  }, [profileId, refreshTick]);
 
   useEffect(() => {
     if (!schema) return;
-    lastSchema.set(profileId, schema);
+    lastSchema.set(schemaKey, schema);
     setPicked(new Set());
     setWhere({ combinator: "and", rules: [] });
     setOrderKey(null);
@@ -545,7 +593,7 @@ export function Visualizer({
     return () => {
       alive = false;
     };
-  }, [profileId, schema]);
+  }, [profileId, schema, refreshTick]);
 
   // Rebuild layout when the graph or filter changes.
   useEffect(() => {
@@ -762,14 +810,15 @@ export function Visualizer({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
-        <div className="flex items-center gap-2">
+      <header className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-3 [scrollbar-width:thin]">
+        <div className="flex shrink-0 items-center gap-2">
           <Link2 className="h-4 w-4 text-[#a78bfa]" />
           <span className="font-heading text-[14px] font-bold text-foreground">Visualizer</span>
           <span className="text-xs text-muted-foreground">{connectionName}</span>
         </div>
-        {/* Diagram ↔ Build */}
-        <div className="ml-1 flex items-center rounded-md border border-border p-0.5">
+        {/* Diagram ↔ Build — Build (visual query builder) is promoted with an
+            accent + label so users discover they can build SQL without typing. */}
+        <div className="ml-1 flex shrink-0 items-center rounded-md border border-border p-0.5">
           <button
             onClick={() => setMode("diagram")}
             className={cn(
@@ -781,15 +830,27 @@ export function Visualizer({
           </button>
           <button
             onClick={() => setMode("build")}
+            title="Build a query visually — pick columns, filters and joins, no SQL typing"
             className={cn(
-              "flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
-              mode === "build" ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              "relative flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
+              mode === "build"
+                ? "bg-primary text-primary-foreground"
+                : "text-primary hover:bg-primary/10",
             )}
           >
             <SquarePen className="h-3.5 w-3.5" /> Build
+            {mode !== "build" && picked.size === 0 ? (
+              <span className="ml-0.5 rounded bg-primary/15 px-1 py-px text-[8.5px] font-semibold uppercase tracking-wide text-primary">
+                no-SQL
+              </span>
+            ) : picked.size > 0 ? (
+              <span className="ml-0.5 rounded-full bg-primary px-1.5 py-px font-mono text-[9px] text-primary-foreground">
+                {picked.size}
+              </span>
+            ) : null}
           </button>
         </div>
-        <div className="ml-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           <span>Schema</span>
           <Select value={schema} onValueChange={setSchema} disabled={schemas.length === 0}>
             <SelectTrigger className="h-7 min-w-[130px] text-xs" size="sm">
@@ -803,6 +864,14 @@ export function Visualizer({
               ))}
             </SelectContent>
           </Select>
+          <button
+            onClick={reload}
+            title="Refresh — re-read schemas and tables from the database"
+            aria-label="Refresh diagram"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <RotateCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </button>
         </div>
         <button
           onClick={() => setShowInferred((s) => !s)}
@@ -1004,7 +1073,7 @@ export function Visualizer({
                   />
                 </div>
                 <div>
-                  <p className="mb-1 text-[11px] text-muted-foreground">Color</p>
+                  <p className="mb-1 text-[11px] text-muted-foreground">Link color</p>
                   <div className="flex flex-wrap gap-1.5">
                     {COLOR_PRESETS.map((c) => (
                       <button
@@ -1020,6 +1089,37 @@ export function Visualizer({
                     ))}
                   </div>
                 </div>
+                {edgeStyle.pulse ? (
+                  <div>
+                    <p className="mb-1 text-[11px] text-muted-foreground">Pulse color</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PULSE_PRESETS.map((p) => {
+                        const swatch = p.color || edgeStyle.to;
+                        const selected = edgeStyle.pulseColor === p.color;
+                        return (
+                          <button
+                            key={p.label}
+                            title={p.label}
+                            onClick={() => setEdgeStyle((s) => ({ ...s, pulseColor: p.color }))}
+                            className={cn(
+                              "flex h-6 w-6 items-center justify-center rounded-full border-2 transition-transform hover:scale-110",
+                              selected ? "border-foreground" : "border-transparent",
+                            )}
+                            style={{ background: p.color ? swatch : "transparent" }}
+                          >
+                            {/* "Match link" preset shows a ring instead of a solid dot. */}
+                            {!p.color ? (
+                              <span
+                                className="h-4 w-4 rounded-full border-2 border-dashed"
+                                style={{ borderColor: swatch }}
+                              />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </>

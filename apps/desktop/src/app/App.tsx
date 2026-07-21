@@ -85,8 +85,8 @@ function MainApp() {
     return () => unlisten?.();
   }, []);
 
-  // Match the out-of-box pgAdmin experience: open the managed connection as
-  // soon as the database/profile are ready; Semantic Views may keep loading.
+  // Zero-setup experience: open the managed connection as soon as the
+  // database/profile are ready; Semantic Views may keep loading.
   useEffect(() => {
     const profileId = localStatus?.localReady ? localStatus.profileId : null;
     if (!profileId || localConnectAttempt.current === profileId || connections.some((c) => c.profile.id === profileId)) return;
@@ -162,11 +162,15 @@ function MainApp() {
       <SetupPacks
         onDone={(packItemIds) => {
           // The complete local data/AI stack is handled by the durable native
-          // bootstrap; setup packs only queue genuinely optional additions.
+          // bootstrap; kit packs only queue genuinely optional additions.
           const core = new Set(["exasol-personal", "pyexasol", "exapump", "mcp-server", "agent-skills"]);
           const optionalItems = packItemIds?.filter((id) => !core.has(id));
           if (optionalItems?.length) {
             window.localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(optionalItems));
+          } else {
+            // Skip (or a pack with only core items) → make sure nothing is queued,
+            // clearing any stale selection from a previous run.
+            window.localStorage.removeItem(PENDING_PACK_KEY);
           }
           window.localStorage.setItem(SETUP_KEY, "1");
           setSetupDone(true);

@@ -18,14 +18,30 @@ export function LocalSetupFloating() {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const prevState = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isTauri()) return;
-    void ipc.personalLocalStatus().then(setStatus).catch(() => undefined);
+    void ipc
+      .personalLocalStatus()
+      .then((s) => {
+        setStatus(s);
+        prevState.current = s.state;
+        // Already ready (or idle) at startup → don't nag; the card shows only
+        // while installing or right after a real completion.
+        if (s.state === "ready" || s.state === "idle") setDismissed(true);
+      })
+      .catch(() => undefined);
     const uns: Array<() => void> = [];
     void listen<PersonalLocalStatus>("personal-local:status", (e) => {
-      setStatus(e.payload);
-      setDismissed(false); // a new state change re-shows the card
+      const s = e.payload;
+      const prev = prevState.current;
+      prevState.current = s.state;
+      setStatus(s);
+      // Show for active work or a failure, and once when setup actually
+      // finishes (installing → ready) — NOT on repeated ready re-polls.
+      if (s.state === "installing" || s.state === "failed") setDismissed(false);
+      else if (s.state === "ready" && prev === "installing") setDismissed(false);
     }).then((u) => uns.push(u));
     void listen<{ id: string; line: string; level: string }>("market:log", (e) => {
       if (e.payload.id !== "personal-local-bootstrap") return;
@@ -67,7 +83,7 @@ export function LocalSetupFloating() {
             {failed ? "Local setup failed" : status.state === "ready" ? "Local Exasol ready" : "Setting up local Exasol"}
           </div>
           <div className="truncate text-[11px] text-muted-foreground" title={status.message}>
-            {status.state === "ready" ? "Database, Semantic Views, and AI tools are ready." : status.message}
+            {status.state === "ready" ? "Your local database and AI tools are ready." : status.message}
           </div>
         </div>
         {logs.length > 0 ? (
