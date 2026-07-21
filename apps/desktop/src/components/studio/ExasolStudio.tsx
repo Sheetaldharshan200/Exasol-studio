@@ -1410,7 +1410,7 @@ export function ExasolStudio({
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [historyIdx, setHistoryIdx] = useState(-1);
-  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number } | null>(null);
+  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
@@ -2612,7 +2612,36 @@ export function ExasolStudio({
   }
 
   // Send the current selection (or whole buffer) to the AI for a plan explainer.
-  function aiExplain() {
+  // Professional, KISS prompt library for editor AI actions — every prompt
+  // demands evidence (profile_query) and forbids invented plan stages.
+  const AI_SQL_PROMPTS: Record<string, (sql: string) => { text: string; send: boolean }> = {
+    "explain-plan": (sql) => ({
+      send: true,
+      text:
+        `Explain the execution plan of this SQL in plain language.\n\n` +
+        `1) Run profile_query on the statement to get the REAL plan — never guess stages.\n` +
+        `2) Explain in at most 6 short bullets: what runs first, join order and join types, where most rows/time go, and any full scans or network redistributions.\n` +
+        `3) Finish with exactly ONE improvement backed by the profile (filter, join order, projection, rewrite) — or state plainly that the plan is already efficient.\n\n` +
+        `Rules: short sentences; define any jargon in brackets; cite real numbers from the profile; no speculation.\n\n\`\`\`sql\n${sql}\n\`\`\``,
+    }),
+    explain: (sql) => ({
+      send: true,
+      text:
+        `Explain what this SQL does, for a colleague who didn't write it.\n\n` +
+        `At most 5 short bullets: the question it answers, the tables it touches (check the knowledge graph if a name is unclear), how they connect, any filters/grouping that change the meaning. One-line plain-English summary at the end. No jargon without a bracketed definition.\n\n\`\`\`sql\n${sql}\n\`\`\``,
+    }),
+    optimize: (sql) => ({
+      send: true,
+      text:
+        `Optimize this SQL. First run profile_query to find the REAL bottleneck; then propose ONE optimized rewrite in a sql block with at most 3 bullets on why it is faster. Only claim what the profile supports; if it is already efficient, say so and stop.\n\n\`\`\`sql\n${sql}\n\`\`\``,
+    }),
+    edit: (sql) => ({
+      send: false, // prefill the composer — the user types the instruction
+      text: `Edit this SQL: `.concat("\n\n```sql\n", sql, "\n```\n\nInstruction: "),
+    }),
+  };
+
+  function aiAskSql(kind: keyof typeof AI_SQL_PROMPTS) {
     const editor = editorRef.current;
     const sel = editor?.getSelection();
     const selected = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
@@ -2620,10 +2649,14 @@ export function ExasolStudio({
     if (!sql) return;
     setAiOpen(true);
     aiPanelRef.current?.expand();
-    setAiPrompt({
-      text: `Explain the execution plan and performance of this query, and suggest optimizations:\n\n\`\`\`sql\n${sql}\n\`\`\``,
-      nonce: Date.now(),
-    });
+    const p = AI_SQL_PROMPTS[kind](sql);
+    setAiPrompt({ text: p.text, nonce: Date.now(), send: p.send });
+  }
+  const aiAskSqlRef = useRef(aiAskSql);
+  aiAskSqlRef.current = aiAskSql;
+
+  function aiExplain() {
+    aiAskSql("explain-plan");
   }
 
   // Open (or focus) the Dashboards tab — agent-built dashboards rendered
@@ -3265,6 +3298,29 @@ export function ExasolStudio({
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
+                    // Lightbulb AI actions on the current line/selection.
+                    if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
+                      (window as unknown as Record<string, unknown>).__exaSqlAiActions = true;
+                      const acts = [
+                        { id: "exasol.ai.explainPlan", title: "AI: Explain the plan", kind: "explain-plan" },
+                        { id: "exasol.ai.explain", title: "AI: Explain what this does", kind: "explain" },
+                        { id: "exasol.ai.optimize", title: "AI: Optimize", kind: "optimize" },
+                        { id: "exasol.ai.edit", title: "AI: Edit with instruction…", kind: "edit" },
+                      ] as const;
+                      for (const a of acts) {
+                        monaco.editor.registerCommand(a.id, () => aiAskSqlRef.current(a.kind));
+                      }
+                      monaco.languages.registerCodeActionProvider("sql", {
+                        provideCodeActions: () => ({
+                          actions: acts.map((a) => ({
+                            title: a.title,
+                            kind: "quickfix",
+                            command: { id: a.id, title: a.title },
+                          })),
+                          dispose: () => undefined,
+                        }),
+                      });
+                    }
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
@@ -3273,6 +3329,7 @@ export function ExasolStudio({
                   }}
                   options={{
                     automaticLayout: true,
+                    lightbulb: { enabled: "on" as never },
                     fontFamily: "JetBrains Mono",
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",

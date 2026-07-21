@@ -242,7 +242,7 @@ export function AssistantPanel({
   contextSummary: string;
   editorSql: string;
   /** An external prompt (e.g. "AI explain plan") to send automatically. */
-  pendingPrompt?: { text: string; nonce: number } | null;
+  pendingPrompt?: { text: string; nonce: number; send?: boolean } | null;
   /** Active connection profile id — granted to the agent for tool use. */
   connectionId?: string | null;
   /** All currently-open connections, so the agent's target can be chosen. */
@@ -564,7 +564,11 @@ export function AssistantPanel({
   useEffect(() => {
     if (pendingPrompt && pendingPrompt.nonce !== lastNonce.current) {
       lastNonce.current = pendingPrompt.nonce;
-      void send(pendingPrompt.text);
+      if (pendingPrompt.send === false) {
+        // Prefill only (e.g. "Edit with AI"): the user finishes the instruction.
+        setInput(pendingPrompt.text);
+        inputRef.current?.focus();
+      } else void send(pendingPrompt.text);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPrompt]);
