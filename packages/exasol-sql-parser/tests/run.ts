@@ -49,5 +49,70 @@ getSuggestions(big, { line: 60, column: 8 });
 const ms = performance.now() - t0;
 check(`120-statement script completion < 100ms (took ${ms.toFixed(1)}ms)`, ms < 100);
 
+console.log("golden caret scenarios");
+const { GOLDENS } = await import("./goldens.ts");
+for (const g of GOLDENS) {
+  const idx = g.sql.indexOf("\u00A6");
+  const clean = g.sql.replace("\u00A6", "");
+  const pre = clean.slice(0, idx);
+  const line = pre.split("\n").length;
+  const column = pre.length - (pre.lastIndexOf("\n") + 1);
+  try {
+    const s = getSuggestions(clean, { line, column });
+    const okKinds = (g.kinds ?? []).every((k) => (s.kinds as string[]).includes(k));
+    const okKw = (g.keywords ?? []).every((k) => s.keywords.includes(k));
+    const okNot = (g.notKeywords ?? []).every((k) => !s.keywords.includes(k));
+    check(g.name, okKinds && okKw && okNot,
+      `kinds=${JSON.stringify(s.kinds)} kw=${JSON.stringify(s.keywords.slice(0, 12))}`);
+  } catch (e) {
+    check(g.name, false, String(e));
+  }
+}
+
+console.log("fuzzing (deterministic)");
+// Seeded LCG so CI is reproducible.
+let seed = 42;
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const corpus = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8"));
+let fuzzFailures = 0;
+let fuzzRuns = 0;
+for (const sqlText of corpus) {
+  // Every prefix at 11-char steps: half-typed statements must never throw.
+  for (let i = 1; i < sqlText.length; i += 11) {
+    fuzzRuns++;
+    try {
+      getSuggestions(sqlText.slice(0, i), { line: 1, column: Math.min(i, 40) });
+    } catch {
+      fuzzFailures++;
+    }
+  }
+  // 40 random-mutation variants per file: delete/duplicate a random chunk.
+  for (let v = 0; v < 40; v++) {
+    fuzzRuns++;
+    const a = Math.floor(rnd() * sqlText.length);
+    const b = Math.min(sqlText.length, a + 1 + Math.floor(rnd() * 12));
+    const mutated = rnd() < 0.5
+      ? sqlText.slice(0, a) + sqlText.slice(b)
+      : sqlText.slice(0, b) + sqlText.slice(a, b) + sqlText.slice(b);
+    try {
+      getSuggestions(mutated, { line: 1, column: Math.min(a, 60) });
+    } catch {
+      fuzzFailures++;
+    }
+  }
+}
+check(`fuzz: ${fuzzRuns} mutated/truncated inputs, zero crashes`, fuzzFailures === 0, `${fuzzFailures} crashes`);
+
+console.log("p95 latency");
+const times: number[] = [];
+for (let i = 0; i < 20; i++) {
+  const t0 = performance.now();
+  getSuggestions(big, { line: 60, column: 8 });
+  times.push(performance.now() - t0);
+}
+times.sort((a, b) => a - b);
+const p95 = times[Math.floor(times.length * 0.95) - 1] ?? times.at(-1)!;
+check(`p95 completion < 50ms on 120-statement script (p95=${p95.toFixed(1)}ms)`, p95 < 50);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

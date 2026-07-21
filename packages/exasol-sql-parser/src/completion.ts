@@ -119,6 +119,12 @@ export function getSuggestions(sql: string, caret: { line: number; column: numbe
     const endCol = (t.column ?? 0) + (t.text?.length ?? 0);
     if (t.line > caret.line || (t.line === caret.line && endCol >= caret.column)) {
       caretIndex = t.tokenIndex;
+      // Caret flush against the END of a non-word token ("(¦", ",¦"): the
+      // user finished that token — candidates belong AFTER it. For words the
+      // current index is right (mid-word completion).
+      if (t.line === caret.line && endCol === caret.column && !/[A-Za-z0-9_"$]$/.test(t.text ?? "")) {
+        caretIndex = t.tokenIndex + 1;
+      }
       break;
     }
   }
