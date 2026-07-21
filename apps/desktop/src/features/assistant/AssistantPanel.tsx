@@ -1088,8 +1088,6 @@ export function AssistantPanel({
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               onScroll={syncOverlayScroll}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
             />
           </div>
           <InputGroupAddon align="block-end" className="gap-1">
