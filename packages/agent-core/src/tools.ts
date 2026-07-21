@@ -718,7 +718,8 @@ export function buildTools(ctx: {
               const fmt = isParquet ? "Parquet" : `delimiter "${csv.delimiter === "\t" ? "\\t" : csv.delimiter}"`;
               const detail =
                 `File: ${file.name} (${plan.rowCount} rows, ${fmt})\n` +
-                `Target: ${plan.schema}.${plan.table}${replace ? " (replace)" : ""}\n\n` +
+                `Target: ${plan.schema}.${plan.table}${replace ? " (replace)" : ""}\n` +
+                `Creates schema ${plan.schema} and table ${plan.table} if missing.\n\n` +
                 plan.columns.map((c) => `  ${c.name} ${typeToSql(c.type)}`).join("\n");
               const allowed = await session.askPermission({
                 tool: "import_csv",
@@ -827,7 +828,9 @@ export function buildTools(ctx: {
               const allowed = await session.askPermission({
                 tool: "import_csv",
                 summary: `Load ${plans.length} files (${totalRows} rows) into ${plans[0].plan.schema}`,
-                detail: plans.map((p) => `${p.doc.name} → ${p.plan.schema}.${p.plan.table} (${p.plan.rowCount} rows)`).join("\n"),
+                detail:
+                  `Creates schema ${plans[0].plan.schema} and each table if missing.\n` +
+                  plans.map((p) => `${p.doc.name} → ${p.plan.schema}.${p.plan.table} (${p.plan.rowCount} rows)`).join("\n"),
               });
               session.record({ kind: "tool.import_attachments", schema, files: plans.length, rows: totalRows, allowed });
               if (!allowed) return { denied: true, message: "The user declined the batch import. Do not retry; ask what they want instead." };
