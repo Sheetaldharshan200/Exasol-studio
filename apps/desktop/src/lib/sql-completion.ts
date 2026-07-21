@@ -184,15 +184,6 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
         return { suggestions: S };
       }
 
-      // After FROM/JOIN/INTO/UPDATE → schemas and schema-qualified tables.
-      if (/\b(FROM|JOIN|INTO|UPDATE)\s+"?[\w$]*$/i.test(stmt)) {
-        for (const [schema, tables] of cat.schemas) {
-          push(schema, K.Module, schema, `${tables.size} tables`, "1");
-          for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
-        }
-        return { suggestions: S };
-      }
-
       // Layer 0: true Exasol grammar engine.
       const eng = await getExasolEngine();
       if (eng) {
@@ -226,6 +217,15 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
         } catch {
           /* engine choked on this input — fall through to the next layer */
         }
+      }
+
+      // After FROM/JOIN/INTO/UPDATE → schemas and schema-qualified tables.
+      if (/\b(FROM|JOIN|INTO|UPDATE)\s+"?[\w$]*$/i.test(stmt)) {
+        for (const [schema, tables] of cat.schemas) {
+          push(schema, K.Module, schema, `${tables.size} tables`, "1");
+          for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+        }
+        return { suggestions: S };
       }
 
       // Grammar-driven: ask the parser what belongs at the caret.
