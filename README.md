@@ -29,9 +29,10 @@ Locked-down machine, can't get admin, or the installer is blocked? These install
 into **your user space — no admin rights needed** — and are a clean way to just
 try it. **One command each** — no separate tap/bucket step.
 
-**macOS** (needs [Homebrew](https://brew.sh)):
+**macOS** (needs [Homebrew](https://brew.sh)) — installs into `~/Applications`,
+**no admin password**:
 ```sh
-brew install --cask sheetaldharshan200/tap/exasol-studio
+brew install --cask --appdir="$HOME/Applications" sheetaldharshan200/tap/exasol-studio
 ```
 Upgrade: `brew upgrade --cask exasol-studio` · Remove: `brew uninstall --cask exasol-studio`
 
@@ -42,7 +43,9 @@ scoop install https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/
 Update: `scoop update exasol-studio` · Remove: `scoop uninstall exasol-studio`
 
 > The one macOS command **auto-adds the tap and installs in a single step**, so
-> `brew upgrade` keeps working — no `brew tap` line needed.
+> `brew upgrade` keeps working — no `brew tap` line needed. `--appdir` keeps it
+> in your home folder so it never asks for an admin password. (Drop `--appdir`
+> to install to `/Applications` instead — that one asks for admin once.)
 
 > Don't have Homebrew / Scoop? One-time, no admin —
 > macOS: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` ·

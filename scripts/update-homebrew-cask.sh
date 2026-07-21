@@ -43,7 +43,13 @@ echo "  macos arm64  $ARM_SHA"
 echo "  macos intel  $INTEL_SHA"
 echo "  windows x64  ${WIN_SHA:-<none>}"
 
-gh repo clone "$TAP_REPO" "$WORK/tap" -- -q
+# Clone the tap: over SSH when a deploy key is configured (CI), else via gh
+# (local, uses your gh auth). TAP_SSH=1 selects the deploy-key path.
+if [ "${TAP_SSH:-0}" = "1" ]; then
+  git clone -q "git@github.com:${TAP_REPO}.git" "$WORK/tap"
+else
+  gh repo clone "$TAP_REPO" "$WORK/tap" -- -q
+fi
 mkdir -p "$WORK/tap/Casks" "$WORK/tap/bucket"
 cat > "$WORK/tap/Casks/exasol-studio.rb" <<RUBY
 cask "exasol-studio" do
