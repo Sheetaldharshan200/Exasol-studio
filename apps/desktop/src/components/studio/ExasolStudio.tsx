@@ -110,6 +110,7 @@ import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-t
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { TerminalView } from "@/features/workbench/TerminalView";
 import { invoke } from "@tauri-apps/api/core";
+import { termBusReady } from "@/lib/term-bus";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
@@ -1298,6 +1299,7 @@ function HistoryDock({
   const [activeTerm, setActiveTerm] = useState(0);
   async function newTerminal() {
     try {
+      await termBusReady(); // listener first, so the shell's first prompt isn't lost
       const pty = await invoke<number>("term_create", { cols: 100, rows: 24 });
       termCounter.current += 1;
       const id = termCounter.current;

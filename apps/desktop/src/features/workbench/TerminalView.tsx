@@ -2,8 +2,20 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { attachTermSink } from "@/lib/term-bus";
 import "@xterm/xterm/css/xterm.css";
+
+function themeColors() {
+  const css = getComputedStyle(document.documentElement);
+  const dark = document.documentElement.classList.contains("dark");
+  return {
+    background: css.getPropertyValue("--editor").trim() || (dark ? "#0a0a0b" : "#ffffff"),
+    foreground: css.getPropertyValue("--foreground").trim() || (dark ? "#f4f4f5" : "#18181b"),
+    cursor: css.getPropertyValue("--primary").trim() || "#5fc33b",
+    cursorAccent: css.getPropertyValue("--editor").trim() || (dark ? "#0a0a0b" : "#ffffff"),
+    selectionBackground: "rgba(95, 195, 59, 0.25)",
+  };
+}
 
 /** One real PTY-backed terminal (xterm.js ⇄ Rust portable-pty). */
 export function TerminalView({ ptyId, active }: { ptyId: number; active: boolean }) {
@@ -13,19 +25,13 @@ export function TerminalView({ ptyId, active }: { ptyId: number; active: boolean
 
   useEffect(() => {
     if (!hostRef.current) return;
-    const css = getComputedStyle(document.documentElement);
     const term = new Terminal({
       fontFamily: "JetBrains Mono, ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.35,
       cursorBlink: true,
       allowProposedApi: true,
-      theme: {
-        background: css.getPropertyValue("--editor").trim() || "#0a0a0b",
-        foreground: css.getPropertyValue("--foreground").trim() || "#f4f4f5",
-        cursor: css.getPropertyValue("--primary").trim() || "#5fc33b",
-        selectionBackground: "rgba(95, 195, 59, 0.25)",
-      },
+      theme: themeColors(),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -48,22 +54,21 @@ export function TerminalView({ ptyId, active }: { ptyId: number; active: boolean
     const onData = term.onData((data) => {
       void invoke("term_write", { id: ptyId, data }).catch(() => undefined);
     });
-    let unData: UnlistenFn | undefined;
-    let unExit: UnlistenFn | undefined;
-    void listen<{ id: number; data: string }>("term-data", (e) => {
-      if (e.payload.id === ptyId) term.write(e.payload.data);
-    }).then((u) => (unData = u));
-    void listen<{ id: number }>("term-exit", (e) => {
-      if (e.payload.id === ptyId) term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n");
-    }).then((u) => (unExit = u));
+    const detach = attachTermSink(ptyId, (data) => term.write(data));
 
     const ro = new ResizeObserver(safeFit);
     ro.observe(hostRef.current);
+    // Light/dark toggle flips a class on <html>; re-read tokens live so a
+    // terminal opened in one theme follows the switch.
+    const mo = new MutationObserver(() => {
+      term.options.theme = themeColors();
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => {
+      mo.disconnect();
       ro.disconnect();
       onData.dispose();
-      unData?.();
-      unExit?.();
+      detach();
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
