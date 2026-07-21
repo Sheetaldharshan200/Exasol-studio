@@ -61,10 +61,7 @@ export function attachAiBulb(editor: Ed, monaco: Monaco, onAction: (kind: AiBulb
       pos
         ? {
             position: pos,
-            preference: [
-              monaco.editor.ContentWidgetPositionPreference.ABOVE,
-              monaco.editor.ContentWidgetPositionPreference.BELOW,
-            ],
+            preference: [monaco.editor.ContentWidgetPositionPreference.EXACT],
           }
         : null,
   };
@@ -74,7 +71,9 @@ export function attachAiBulb(editor: Ed, monaco: Monaco, onAction: (kind: AiBulb
       pos = null;
       menu.style.display = "none";
     } else {
-      pos = { lineNumber: e.selection.startLineNumber, column: e.selection.startColumn };
+      // Anchor at the LEFT END of the active line (VS Code style), not
+      // floating above/below the selection.
+      pos = { lineNumber: e.selection.startLineNumber, column: 1 };
     }
     editor.layoutContentWidget(widget);
   });
