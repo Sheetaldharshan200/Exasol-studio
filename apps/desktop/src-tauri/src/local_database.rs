@@ -287,18 +287,63 @@ fn load_or_create_mcp_identity(
                     .into(),
             ));
         }
-        let profile = profiles::find_profile(&app.state::<AppState>(), &identity.profile_id)?;
-        if profile.username != identity.username
-            || profile.host != administrator.host
-            || profile.port != administrator.port
-            || profile.notes.as_deref() != Some(NOTE)
-        {
-            return Err(AppError::Storage(
-                "The managed MCP profile does not match its ownership marker; refusing to reconcile credentials."
-                    .into(),
-            ));
+        match profiles::find_profile(&app.state::<AppState>(), &identity.profile_id) {
+            Ok(profile) => {
+                if profile.username != identity.username
+                    || profile.host != administrator.host
+                    || profile.port != administrator.port
+                    || profile.notes.as_deref() != Some(NOTE)
+                {
+                    return Err(AppError::Storage(
+                        "The managed MCP profile does not match its ownership marker; refusing to reconcile credentials."
+                            .into(),
+                    ));
+                }
+                return Ok((identity, profile));
+            }
+            Err(AppError::InvalidSettings(_)) => {
+                // The vault profile the marker points at was deleted (e.g. the
+                // user cleared their saved connections). The database user may
+                // still exist; keep its username, mint a fresh credential, and
+                // let provisioning ALTER the password idempotently. Setup must
+                // recover here, not fail forever on a dangling marker.
+                let password = format!(
+                    "StudioMcp{}",
+                    rand::thread_rng()
+                        .sample_iter(&Alphanumeric)
+                        .take(24)
+                        .map(char::from)
+                        .collect::<String>()
+                );
+                let saved = profiles::save_profile(
+                    &app.state::<AppState>(),
+                    profiles::ConnectionProfile {
+                        id: String::new(),
+                        name: "Local Exasol (AI read-only)".into(),
+                        host: administrator.host.clone(),
+                        port: administrator.port,
+                        username: identity.username.clone(),
+                        password,
+                        schema: None,
+                        notes: Some(NOTE.into()),
+                        ssl_mode: "preferred".into(),
+                        compression: true,
+                        driver_id: "sqlx-exasol".into(),
+                        created_at: None,
+                        last_used_at: None,
+                    },
+                )?;
+                let identity = McpIdentity {
+                    version: 1,
+                    profile_id: saved.id.clone(),
+                    username: identity.username,
+                };
+                persist_marker(&identity)?;
+                let profile = profiles::find_profile(&app.state::<AppState>(), &saved.id)?;
+                return Ok((identity, profile));
+            }
+            Err(other) => return Err(other),
         }
-        return Ok((identity, profile));
     }
 
     // Recover the exact vault profile if a previous run persisted it but was
@@ -1041,7 +1086,7 @@ pub fn personal_local_bootstrap(
         // Already installed and set up. If the database is actually running,
         // nothing to do. If it's installed-but-stopped (e.g. after a machine
         // restart), start it on launch — no reinstall — so it's ready to use.
-        if crate::local_runtime::runtime_running() {
+        if crate::local_runtime::runtime_running(&app) {
             return Ok(json!({ "started": false, "reason": "already-running" }));
         }
         if bootstrap.running.swap(true, Ordering::SeqCst) {

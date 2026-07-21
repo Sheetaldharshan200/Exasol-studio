@@ -22,6 +22,11 @@ use crate::market::{emit_log, resolve_bin, run_streamed};
 const NANO_CONTAINER: &str = "exasol-studio-nano";
 const NANO_VOLUME: &str = "exasol-studio-nano-data";
 const PORT: u16 = 8563;
+// Studio's OWN Personal deployment listens off the standard port so it can
+// coexist with (and never be broken by) any other local Exasol — the starter
+// kit's Docker DB or a user-managed `exasol` deployment, both usually on 8563.
+const STUDIO_DB_PORT: u16 = 8565;
+const STUDIO_SSH_PORT: u16 = 2224;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,24 +57,40 @@ fn command_ok(program: &str, args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-fn port_ready() -> bool {
+fn port_ready(port: u16) -> bool {
     TcpStream::connect_timeout(
-        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), PORT),
+        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
         Duration::from_secs(1),
     )
     .is_ok()
 }
 
-/// Whether the local database is currently accepting connections.
-pub fn runtime_running() -> bool {
-    port_ready()
+/// Whether Studio's managed local database is currently accepting connections.
+pub fn runtime_running(app: &AppHandle) -> bool {
+    port_ready(expected_db_port(app))
 }
 
-fn wait_for_port(app: &AppHandle, id: &str, timeout: Duration) -> AppResult<()> {
+/// The port Studio's managed database listens on: the deployment's recorded
+/// dbPort when installed, otherwise the platform default for a fresh install.
+fn expected_db_port(app: &AppHandle) -> u16 {
+    if std::env::consts::OS == "macos" {
+        personal_deployment_dir(app)
+            .ok()
+            .and_then(|dir| std::fs::read(dir.join("deployment.json")).ok())
+            .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+            .and_then(|v| v.get("connection")?.get("dbPort")?.as_u64())
+            .map(|p| p as u16)
+            .unwrap_or(STUDIO_DB_PORT)
+    } else {
+        PORT
+    }
+}
+
+fn wait_for_port(app: &AppHandle, id: &str, port: u16, timeout: Duration) -> AppResult<()> {
     let started = Instant::now();
     let mut last_report = 0;
     while started.elapsed() < timeout {
-        if port_ready() {
+        if port_ready(port) {
             return Ok(());
         }
         let elapsed = started.elapsed().as_secs();
@@ -85,7 +106,7 @@ fn wait_for_port(app: &AppHandle, id: &str, timeout: Duration) -> AppResult<()> 
         std::thread::sleep(Duration::from_secs(5));
     }
     Err(AppError::Storage(format!(
-        "Local Exasol did not open 127.0.0.1:{PORT} within {} seconds.",
+        "Local Exasol did not open 127.0.0.1:{port} within {} seconds.",
         timeout.as_secs()
     )))
 }
@@ -308,15 +329,22 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-fn personal_deployment_dir() -> AppResult<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| AppError::Storage("Could not resolve HOME for Exasol Personal.".into()))?;
-    Ok(home.join(".exasol/personal/deployments/default"))
+/// Studio's OWN deployment directory, inside app-data. Fully isolated: the
+/// shared `~/.exasol/personal/deployments/default` (used by the starter kit or
+/// manual `exasol` runs) is never read, started, stopped, or destroyed by
+/// Studio — destroying that one can no longer break Studio's database.
+fn personal_deployment_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(runtime_dir(app)?.join("deployment"))
 }
 
-fn read_personal_connection() -> AppResult<RuntimeConnection> {
-    let dir = personal_deployment_dir()?;
+/// The shared default-dir deployment other tools manage. Detection only —
+/// Studio never operates on it.
+fn legacy_deployment_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".exasol/personal/deployments/default"))
+}
+
+fn read_personal_connection(app: &AppHandle) -> AppResult<RuntimeConnection> {
+    let dir = personal_deployment_dir(app)?;
     let deployment: Value = serde_json::from_slice(&std::fs::read(dir.join("deployment.json"))?)?;
     let secrets: Value = serde_json::from_slice(&std::fs::read(dir.join("secrets.json"))?)?;
     let connection = deployment.get("connection").unwrap_or(&Value::Null);
@@ -337,7 +365,7 @@ fn read_personal_connection() -> AppResult<RuntimeConnection> {
         port: connection
             .get("dbPort")
             .and_then(Value::as_u64)
-            .unwrap_or(PORT as u64) as u16,
+            .unwrap_or(STUDIO_DB_PORT as u64) as u16,
         user: connection
             .get("username")
             .and_then(Value::as_str)
@@ -351,26 +379,48 @@ fn read_personal_connection() -> AppResult<RuntimeConnection> {
 fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     let cli = ensure_personal_launcher(app, id)?;
     let cli = cli.to_string_lossy().to_string();
-    let deployment_exists = personal_deployment_dir()?.join("deployment.json").is_file();
+    let dir = personal_deployment_dir(app)?;
+    let ddir = dir.to_string_lossy().to_string();
+    let deployment_exists = dir.join("deployment.json").is_file();
     if !deployment_exists {
-        if port_ready() {
+        if legacy_deployment_dir().is_some_and(|d| d.join("deployment.json").is_file()) {
+            emit_log(
+                app,
+                id,
+                "A default-directory Exasol Personal deployment exists on this machine. Studio installs its OWN isolated database (port 8565) and leaves that one untouched.",
+                "info",
+            );
+        }
+        if port_ready(STUDIO_DB_PORT) {
             return Err(AppError::Storage(format!(
-                "Port {PORT} is already in use and is not the managed Exasol Personal deployment."
+                "Port {STUDIO_DB_PORT} is already in use and is not the managed Exasol Personal deployment."
             )));
         }
-        if run_streamed(app, id, &cli, &["install", "local"])? != 0 {
+        let ports = format!("db:{STUDIO_DB_PORT},ssh:{STUDIO_SSH_PORT}");
+        if run_streamed(
+            app,
+            id,
+            &cli,
+            &["install", "local", "--deployment-dir", &ddir, "--ports", &ports],
+        )? != 0
+        {
             return Err(AppError::Storage("`exasol install local` failed.".into()));
         }
-    } else if !port_ready() && run_streamed(app, id, &cli, &["start"])? != 0 {
-        return Err(AppError::Storage("`exasol start` failed.".into()));
+    } else {
+        let port = expected_db_port(app);
+        if !port_ready(port)
+            && run_streamed(app, id, &cli, &["start", "--deployment-dir", &ddir])? != 0
+        {
+            return Err(AppError::Storage("`exasol start` failed.".into()));
+        }
     }
-    wait_for_port(app, id, Duration::from_secs(150))?;
-    if !command_ok(&cli, &["info"]) {
+    wait_for_port(app, id, expected_db_port(app), Duration::from_secs(150))?;
+    if !command_ok(&cli, &["info", "--deployment-dir", &ddir]) {
         return Err(AppError::Storage(
             "Exasol Personal is listening but `exasol info` failed.".into(),
         ));
     }
-    read_personal_connection()
+    read_personal_connection(app)
 }
 
 fn engine_owner_path(app: &AppHandle) -> AppResult<PathBuf> {
@@ -581,7 +631,7 @@ fn ensure_nano(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
             }
         }
     } else {
-        if port_ready() {
+        if port_ready(PORT) {
             return Err(AppError::Storage(format!("Port {PORT} is already in use.")));
         }
         let image = crate::component_lock::components().nano.immutable_image();
@@ -590,7 +640,7 @@ fn ensure_nano(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
         }
         run_nano_container(app, id, &engine, Some(&password_file))?;
     }
-    wait_for_port(app, id, Duration::from_secs(600))?;
+    wait_for_port(app, id, PORT, Duration::from_secs(600))?;
     persist_engine_owner(app, &engine)?;
     Ok(RuntimeConnection {
         kind: "nano".into(),
@@ -612,7 +662,7 @@ pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection>
 
 pub fn runtime_installed(app: &AppHandle) -> bool {
     if std::env::consts::OS == "macos" {
-        personal_deployment_dir()
+        personal_deployment_dir(app)
             .map(|dir| dir.join("deployment.json").is_file())
             .unwrap_or(false)
     } else {
@@ -635,7 +685,7 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
         ));
     }
     let cli = exasol_cli(app)?.to_string_lossy().to_string();
-    let deployment = personal_deployment_dir()?.to_string_lossy().to_string();
+    let deployment = personal_deployment_dir(app)?.to_string_lossy().to_string();
     emit_log(
         app,
         id,
@@ -652,19 +702,24 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
             "Could not restart Exasol Personal during query-readiness recovery.".into(),
         ));
     }
-    wait_for_port(app, id, Duration::from_secs(150))?;
-    read_personal_connection()
+    wait_for_port(app, id, expected_db_port(app), Duration::from_secs(150))?;
+    read_personal_connection(app)
 }
 
 pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32> {
     if std::env::consts::OS == "macos" {
         let cli = exasol_cli(app)?.to_string_lossy().to_string();
+        // Every action targets Studio's OWN deployment dir — never the shared
+        // default one, so Studio can't destroy a deployment it doesn't own.
+        let ddir = personal_deployment_dir(app)?.to_string_lossy().to_string();
         match action {
             "status" => {
                 emit_log(
                     app,
                     id,
-                    if port_ready() && command_ok(&cli, &["info"]) {
+                    if port_ready(expected_db_port(app))
+                        && command_ok(&cli, &["info", "--deployment-dir", &ddir])
+                    {
                         "running"
                     } else {
                         "stopped"
@@ -673,13 +728,18 @@ pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32
                 );
                 Ok(0)
             }
-            "info" => run_streamed(app, id, &cli, &["info"]),
+            "info" => run_streamed(app, id, &cli, &["info", "--deployment-dir", &ddir]),
             "start" => {
                 ensure_personal(app, id)?;
                 Ok(0)
             }
-            "stop" => run_streamed(app, id, &cli, &["stop"]),
-            "destroy" => run_streamed(app, id, &cli, &["destroy", "--remove", "--auto-approve"]),
+            "stop" => run_streamed(app, id, &cli, &["stop", "--deployment-dir", &ddir]),
+            "destroy" => run_streamed(
+                app,
+                id,
+                &cli,
+                &["destroy", "--remove", "--auto-approve", "--deployment-dir", &ddir],
+            ),
             _ => Err(AppError::Storage(format!("Unsupported action: {action}"))),
         }
     } else {

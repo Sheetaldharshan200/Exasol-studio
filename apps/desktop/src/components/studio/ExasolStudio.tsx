@@ -809,10 +809,14 @@ function Sidebar({
   // retry when not. Always present so clearing saved connections never hides
   // it. Hidden only while the local DB is the active connection (it's in the
   // tree then).
-  // The managed local DB is always sys@127.0.0.1:8563 — its permanent card
-  // represents that endpoint, so fold any duplicate profile (e.g. a hand-made
-  // "sys@localhost") into it instead of listing it twice.
-  const LOCAL_ENDPOINT = "127.0.0.1:8563:SYS";
+  // The managed local DB's endpoint comes from its profile (Studio's isolated
+  // Personal deployment runs on its own port, e.g. 8565; Nano uses 8563). The
+  // permanent card represents that endpoint, so fold any duplicate profile
+  // (e.g. a hand-made "sys@localhost") into it instead of listing it twice.
+  const localProfile = local?.profileId ? profiles.find((p) => p.id === local.profileId) : undefined;
+  const LOCAL_ENDPOINT = localProfile
+    ? `${normHost(localProfile.host)}:${localProfile.port}:${localProfile.username.toUpperCase()}`
+    : "127.0.0.1:8563:SYS";
   const localReady = local?.state === "ready" || local?.localReady;
   // Connected under the managed profile OR any profile at the local endpoint —
   // either way the card is redundant (the live connection is in the tree).
@@ -852,7 +856,7 @@ function Sidebar({
                 : local?.state === "failed"
                   ? "Setup failed — tap to retry"
                   : localReady
-                    ? "127.0.0.1:8563 · ready"
+                    ? `${localProfile ? `${localProfile.host}:${localProfile.port}` : "127.0.0.1"} · ready`
                     : "Not installed — tap to set up"}
             </div>
           </div>
