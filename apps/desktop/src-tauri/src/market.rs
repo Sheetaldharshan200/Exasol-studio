@@ -1149,41 +1149,62 @@ fn managed_exists(app: &AppHandle, id: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Probe the real system for tools that may already be installed (in PATH, as a
-/// uv tool, as a python package, or in our managed folder). Returns id → bool.
+/// A file inside the app-data dir (Studio's managed runtime area).
+fn data_file_exists(app: &AppHandle, rel: &str) -> bool {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join(rel).is_file())
+        .unwrap_or(false)
+}
+
+/// Authoritative install/run state for every Marketplace item. The managed
+/// components (Personal, ExaPump, MCP server, Semantic Views) are read from the
+/// bootstrap status manifest and their real on-disk paths — NOT from PATH or
+/// guesses — so the badges always match what setup actually did. Returns
+/// id → bool, plus `exasol-personal:running` for the DB's live state.
 #[tauri::command]
 pub fn market_detect(app: AppHandle) -> AppResult<Value> {
+    use crate::local_database as db;
     let mut map = serde_json::Map::new();
-    // Native Personal is local on macOS; Docker/Podman Nano is local elsewhere.
-    let launcher = bin_present("exasol");
+
+    // Exasol Personal is a DATABASE: installed vs. actually running are distinct.
     map.insert(
         "exasol-personal".into(),
         json!(crate::local_runtime::runtime_installed(&app)),
     );
-    map.insert("exasol-cloud".into(), json!(launcher));
+    map.insert(
+        "exasol-personal:running".into(),
+        json!(crate::local_runtime::runtime_running(&app)),
+    );
+    map.insert("exasol-cloud".into(), json!(bin_present("exasol")));
+
+    // ExaPump: prebundled/installed at the managed path, or verified in the
+    // manifest. (It lives in personal-local/bin, never on the user's PATH.)
+    let exapump_name = if cfg!(windows) { "personal-local/bin/exapump.exe" } else { "personal-local/bin/exapump" };
     map.insert(
         "exapump".into(),
-        json!(bin_present("exapump") || managed_exists(&app, "exapump", "exapump")),
+        json!(data_file_exists(&app, exapump_name) || db::component_ready(&app, "exapump")),
     );
+
+    // MCP server: managed venv binary present, or verified in the manifest.
+    let mcp_name = if cfg!(windows) {
+        "personal-local/python/Scripts/exasol-mcp-server.exe"
+    } else {
+        "personal-local/python/bin/exasol-mcp-server"
+    };
     map.insert(
         "mcp-server".into(),
-        json!(
-            uv_tool_installed("exasol-mcp-server")
-                || bin_present("exasol-mcp-server")
-                || app
-                    .path()
-                    .app_data_dir()
-                    .map(|dir| dir
-                        .join(if cfg!(windows) {
-                            "personal-local/python/Scripts/exasol-mcp-server.exe"
-                        } else {
-                            "personal-local/python/bin/exasol-mcp-server"
-                        })
-                        .is_file())
-                    .unwrap_or(false)
-        ),
+        json!(data_file_exists(&app, mcp_name) || db::component_ready(&app, "mcp-server")),
     );
-    map.insert("agent-skills".into(), json!(true));
+
+    // Semantic Views is OPT-IN — installed ONLY when its readiness marker exists.
+    map.insert("semantic-views".into(), json!(db::semantic_views_installed(&app)));
+
+    // Bundled agent skills are always present in the app; the manifest confirms.
+    map.insert(
+        "agent-skills".into(),
+        json!(db::component_ready(&app, "agent-skills") || true),
+    );
     map.insert(
         "pyexasol".into(),
         json!(managed_exists(&app, "pyexasol", "venv") || python_import_ok("pyexasol")),

@@ -407,6 +407,18 @@ export function Marketplace() {
     return () => un?.();
   }, [refreshInstalled]);
 
+  // The DB starting/stopping or a component finishing setup changes what's
+  // "installed"/"running" — re-detect whenever the bootstrap status changes so
+  // the badges stay in lockstep with reality.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: UnlistenFn | undefined;
+    listen("personal-local:status", () => refreshInstalled())
+      .then((u) => (un = u))
+      .catch(() => undefined);
+    return () => un?.();
+  }, [refreshInstalled]);
+
   const installedMap = useMemo(() => {
     const m: Record<string, InstalledItem> = {};
     installed.forEach((i) => (m[i.id] = i));
@@ -628,6 +640,9 @@ export function Marketplace() {
     const runtimeReady = did ? driverReady[did] : false;
     const comingSoon = !did && item.install === "reference";
 
+    // The DB is a running service, not just a file — show live state.
+    const dbRunning = item.id === "exasol-personal" && detected["exasol-personal:running"] === true;
+
     const badges = (
       <>
         {item.labs ? (
@@ -635,6 +650,15 @@ export function Marketplace() {
         ) : (
           <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
         )}
+        {item.id === "exasol-personal" && (inst || onSystem) ? (
+          <span className={cn(
+            "flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-medium uppercase",
+            dbRunning ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
+          )}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", dbRunning ? "bg-primary" : "bg-muted-foreground/60")} />
+            {dbRunning ? "running" : "stopped"}
+          </span>
+        ) : null}
         {inst || (did && runtimeReady) ? (
           <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
             <Check className="h-2.5 w-2.5" /> installed

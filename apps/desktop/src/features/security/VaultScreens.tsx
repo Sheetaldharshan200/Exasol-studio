@@ -148,6 +148,11 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
           {ok ? <Check className="h-3.5 w-3.5" /> : null}
           10+ characters, with a letter and a number.
         </p>
+        <div className="rounded-lg border border-primary/25 bg-primary/8 px-3 py-2 text-[11.5px] text-muted-foreground">
+          This is also the password for your local Exasol database — sign in there
+          as <span className="font-medium text-foreground">SYS</span> with this same
+          master password (like pgAdmin). Studio keeps them in sync.
+        </div>
         {confirm && pw !== confirm ? <p className="text-[11.5px] text-destructive">Passwords don't match.</p> : null}
         {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}
         <div className="pt-1.5">

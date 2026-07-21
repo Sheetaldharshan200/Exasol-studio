@@ -381,6 +381,14 @@ export function ConnectView({
                         {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       </button>
                     </div>
+                    {draft.host.trim() === "127.0.0.1" &&
+                    draft.port === 8565 &&
+                    draft.username.trim().toLowerCase() === "sys" ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        This is your local Exasol — use your{" "}
+                        <span className="font-medium text-foreground">Studio master password</span>.
+                      </p>
+                    ) : null}
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

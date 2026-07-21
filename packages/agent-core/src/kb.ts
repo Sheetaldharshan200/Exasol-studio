@@ -56,10 +56,27 @@ export class KnowledgeGraph {
         dst_schema TEXT, dst_table TEXT, dst_col TEXT
       );
       CREATE TABLE IF NOT EXISTS kb_meta(conn TEXT PRIMARY KEY, crawled_at INTEGER);
-      CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
-        conn UNINDEXED, schema UNINDEXED, tbl UNINDEXED, body
-      );
     `);
+    // kb_fts is FTS5 when the SQLite build has it (fast full-text search), else
+    // a plain table (search() already falls back from MATCH to LIKE). Some
+    // bundled Node runtimes compile node:sqlite WITHOUT fts5 — the agent must
+    // still start, just with LIKE-based table search.
+    try {
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
+          conn UNINDEXED, schema UNINDEXED, tbl UNINDEXED, body
+        );
+      `);
+    } catch (e) {
+      if (String(e).includes("fts5")) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS kb_fts(conn TEXT, schema TEXT, tbl TEXT, body TEXT);
+        `);
+        log.warn("kb: SQLite has no fts5 — using LIKE-based table search");
+      } else {
+        throw e;
+      }
+    }
     // Additive migration for AI semantics.
     try {
       this.db.exec("ALTER TABLE kb_tables ADD COLUMN semantic TEXT");
