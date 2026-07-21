@@ -12,8 +12,9 @@ import { log } from "./log.ts";
  */
 
 const CANDIDATES = [
+  join(homedir(), "Library/Application Support/com.exasol.studio/personal-local/bin/exapump"),
   join(homedir(), ".local/bin/exapump"),
-  join(homedir(), "Library/Application Support/com.exasol.studio/market/bin/exapump"),
+  join(homedir(), ".exasol-starter-kit/bin/exapump"),
   "/opt/homebrew/bin/exapump",
 ];
 

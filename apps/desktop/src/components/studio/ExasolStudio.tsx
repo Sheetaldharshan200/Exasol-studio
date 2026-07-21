@@ -1292,6 +1292,30 @@ function HistoryDock({
   onRefresh: () => void;
 }) {
   const [mode, setMode] = useState<"terminal" | "history">("history");
+  // Drag-resizable like VS Code: panel height (top edge) and terminals-rail
+  // width (inner edge), both remembered across restarts.
+  const [height, setHeight] = useState(() => Number(localStorage.getItem("studio.dock.h")) || 240);
+  const [railW, setRailW] = useState(() => Number(localStorage.getItem("studio.dock.railW")) || 160);
+  function dragAxis(e: React.PointerEvent, axis: "y" | "x") {
+    e.preventDefault();
+    const startPos = axis === "y" ? e.clientY : e.clientX;
+    const startVal = axis === "y" ? height : railW;
+    const move = (ev: PointerEvent) => {
+      const delta = startPos - (axis === "y" ? ev.clientY : ev.clientX);
+      if (axis === "y") setHeight(Math.min(Math.max(startVal + delta, 120), Math.round(window.innerHeight * 0.8)));
+      else setRailW(Math.min(Math.max(startVal + delta, 120), 480));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = axis === "y" ? "row-resize" : "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  useEffect(() => localStorage.setItem("studio.dock.h", String(height)), [height]);
+  useEffect(() => localStorage.setItem("studio.dock.railW", String(railW)), [railW]);
   // VS Code-style terminal instances: right-side list, + to create, per-
   // terminal scrollback kept alive (hidden, not unmounted) when switching.
   const termCounter = useRef(0);
@@ -1331,7 +1355,19 @@ function HistoryDock({
     { id: "history", label: "SQL History" },
   ];
   return (
-    <section className="flex h-full min-h-0 flex-col border-t border-border bg-panel">
+    <section
+      className="relative flex min-h-0 flex-col border-t border-border bg-panel"
+      style={{ height: open ? height : 36 }}
+    >
+      {open ? (
+        <div
+          onPointerDown={(e) => dragAxis(e, "y")}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize panel"
+          className="absolute inset-x-0 -top-0.5 z-20 h-1.5 cursor-row-resize hover:bg-primary/40"
+        />
+      ) : null}
       <div className={cn("flex h-9 shrink-0 items-center justify-between pr-1 pl-2", open && "border-b border-border")}>
         <div className="flex h-full items-center gap-1">
           <button
@@ -1394,7 +1430,14 @@ function HistoryDock({
                 </div>
               ))}
             </div>
-            <div className="flex w-40 shrink-0 flex-col border-l border-border bg-panel/70">
+            <div
+              onPointerDown={(e) => dragAxis(e, "x")}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize terminals list"
+              className="z-10 -mr-1 w-1.5 shrink-0 cursor-col-resize hover:bg-primary/40"
+            />
+            <div className="flex shrink-0 flex-col border-l border-border bg-panel/70" style={{ width: railW }}>
               <div className="flex h-7 shrink-0 items-center justify-between border-b border-border/60 px-2">
                 <span className="text-[9.5px] font-medium tracking-wider text-muted-foreground uppercase">Terminals</span>
                 <button
@@ -3734,7 +3777,7 @@ export function ExasolStudio({
           onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}
         />
       ))}
-      <div className={cn("shrink-0 transition-all", historyOpen ? "h-[240px]" : "h-9")}>
+      <div className="shrink-0">
         <HistoryDock
           entries={history}
           open={historyOpen}

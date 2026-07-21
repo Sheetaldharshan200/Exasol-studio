@@ -32,13 +32,18 @@ pub fn term_create(app: AppHandle, state: State<'_, TermRegistry>, cols: u16, ro
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
-    // GUI apps inherit a restricted PATH — give the shell the usual user dirs.
+    // GUI apps inherit a restricted PATH — give the shell the usual user dirs
+    // plus Studio's own bundled tools (exapump, exasol/c4, MCP server).
     if let Some(home) = dirs::home_dir() {
         cmd.cwd(&home);
+        let h = home.display();
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.env(
             "PATH",
-            format!("{}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}", home.display()),
+            format!(
+                "{h}/Library/Application Support/com.exasol.studio/personal-local/bin:\
+{h}/.local/bin:{h}/.exasol-starter-kit/bin:/opt/homebrew/bin:/usr/local/bin:{path}"
+            ),
         );
     }
     let child = pty
