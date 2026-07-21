@@ -58,7 +58,7 @@ function emptyDraft(): Draft {
     // 127.0.0.1 over "localhost": some setups resolve localhost to ::1 first,
     // where Exasol Personal isn't listening, and the connect times out.
     host: "127.0.0.1",
-    port: 8563,
+    port: 8565,
     username: "sys",
     password: "",
     schema: "",
@@ -351,7 +351,7 @@ export function ConnectView({
                     <Input
                       inputMode="numeric"
                       value={draft.port}
-                      onChange={(e) => patch({ port: Number(e.target.value) || 8563 })}
+                      onChange={(e) => patch({ port: Number(e.target.value) || 8565 })}
                     />
                   </Field>
                 </div>
