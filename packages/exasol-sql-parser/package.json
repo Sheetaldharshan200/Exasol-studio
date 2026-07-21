@@ -6,7 +6,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "generate": "antlr4ng -Dlanguage=TypeScript -o src/generated -visitor -listener src/grammar/ExasolLexer.g4 src/grammar/ExasolParser.g4",
+    "generate": "antlr4ng -Dlanguage=TypeScript -o src/generated -visitor -listener -Xexact-output-dir src/grammar/ExasolLexer.g4 && antlr4ng -Dlanguage=TypeScript -o src/generated -visitor -listener -Xexact-output-dir -lib src/generated src/grammar/ExasolParser.g4 && node scripts/postgen.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types tests/run.ts"
   },
@@ -15,6 +15,7 @@
     "antlr4ng": "^3.0.16"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "antlr4ng-cli": "^2.0.0",
     "typescript": "^5.6.0"
   }

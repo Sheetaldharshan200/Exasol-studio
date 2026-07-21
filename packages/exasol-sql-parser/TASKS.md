@@ -11,6 +11,8 @@ architecture as dt-sql-parser's dialects, but with a true Exasol grammar.
 - [x] Starter `ExasolLexer.g4` + `ExasolParser.g4` (SELECT-family skeleton)
 - [x] Completion engine skeleton (`src/completion.ts`) on antlr4-c3
 - [x] Test harness layout (`tests/`)
+- [x] Codegen verified (Java 26 via Homebrew; two-step antlr4ng + postgen normalization)
+- [x] Phase 5 v0 WORKING: antlr4-c3 caret suggestions over the real grammar - 5 golden tests green (corpus parse, FROM->table/schema, select-list/WHERE->column, GROUP->BY)
 
 ## Phase 1 — Lexer completeness
 - [ ] Full keyword inventory from Exasol docs "Reserved words" + SYS.EXA_SQL_KEYWORDS (reserved vs non-reserved split — non-reserved must stay usable as identifiers)
