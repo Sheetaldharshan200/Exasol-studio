@@ -16,11 +16,14 @@ export type McpPreset = {
   /** Where the user creates the credential. */
   tokenUrl?: string;
   tokenHint?: string;
+  /** Brand mark id (BrandMarks) or a lucide fallback keyword. */
+  logo?: string;
 };
 
 export const MCP_PRESETS: McpPreset[] = [
   {
     id: "jira",
+    logo: "jira",
     name: "Jira & Confluence",
     desc: "Search and read issues, pages, and sprints — then land them in Exasol for analysis.",
     command: "uvx",
@@ -35,6 +38,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "github",
+    logo: "github",
     name: "GitHub",
     desc: "Repos, issues, and pull requests — analyze engineering data next to your business data.",
     command: "npx",
@@ -45,6 +49,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "excel",
+    logo: "microsoftexcel",
     name: "Excel workbooks",
     desc: "Read and write .xlsx files — sheets straight into Exasol tables.",
     command: "uvx",
@@ -53,6 +58,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "files",
+    logo: "files",
     name: "Local files",
     desc: "Read files and folders (CSV, JSON, logs) for the agent to import.",
     command: "npx",
@@ -61,6 +67,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "postgres",
+    logo: "postgresql",
     name: "Postgres",
     desc: "Query an operational Postgres database — compare or migrate data into Exasol.",
     command: "npx",
@@ -71,6 +78,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "sqlite",
+    logo: "sqlite",
     name: "SQLite",
     desc: "Read a local SQLite file — app data and exports straight into Exasol.",
     command: "uvx",
@@ -80,6 +88,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "custom",
+    logo: "custom",
     name: "Custom server",
     desc: "Any stdio MCP server — your own or from the community.",
     command: "",

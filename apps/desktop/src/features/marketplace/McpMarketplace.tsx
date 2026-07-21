@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Plug, PlugZap, RefreshCw, Trash2 } from "lucide-react";
+import { PlugZap, RefreshCw, Trash2 } from "lucide-react";
 import { agent } from "@/lib/agent-client";
 import { MCP_PRESETS } from "@/features/marketplace/mcp-presets";
+import { ConnectorLogo } from "@/features/marketplace/ConnectorLogo";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,7 +36,15 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
         <div className="mb-4 space-y-1.5">
           {servers.map((s) => (
             <div key={s.id} className="flex items-center gap-2 rounded-lg border border-border bg-panel/60 px-2.5 py-2">
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", s.connected ? "bg-primary" : "bg-destructive/70")} />
+              <span className="relative shrink-0">
+                <ConnectorLogo logo={MCP_PRESETS.find((p) => p.name === s.name)?.logo} className="h-6 w-6" />
+                <span
+                  className={cn(
+                    "absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ring-panel",
+                    s.connected ? "bg-primary" : "bg-destructive/70",
+                  )}
+                />
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-medium text-foreground">{s.name}</div>
                 <div className="truncate text-[10.5px] text-muted-foreground">
@@ -74,9 +83,9 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
             key={p.id}
             onClick={() => onOpenConfig?.(p.id, p.name)}
             title={p.desc}
-            className="flex items-center gap-2 rounded-lg border border-border bg-panel/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40"
+            className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-panel"
           >
-            <Plug className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ConnectorLogo logo={p.logo} />
             <div className="min-w-0">
               <div className="text-[12px] font-medium text-foreground">{p.name}</div>
               <div className="truncate text-[10.5px] text-muted-foreground">{p.desc}</div>

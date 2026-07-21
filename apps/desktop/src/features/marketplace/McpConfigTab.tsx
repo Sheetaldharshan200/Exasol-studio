@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, ShieldCheck } from "lucide-react";
 import { agent } from "@/lib/agent-client";
 import { MCP_PRESETS, type McpPreset } from "@/features/marketplace/mcp-presets";
+import { ConnectorLogo } from "@/features/marketplace/ConnectorLogo";
 import { cn } from "@/lib/utils";
 
 /**
@@ -109,8 +110,8 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
   return (
     <div className="h-full overflow-y-auto bg-editor">
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <div className="mb-1 flex items-center gap-2">
-          <PlugZap className="h-5 w-5 text-primary" />
+        <div className="mb-1 flex items-center gap-2.5">
+          <ConnectorLogo logo={preset.logo} className="h-9 w-9 rounded-lg" />
           <h1 className="text-[18px] font-semibold text-foreground">{preset.name}</h1>
         </div>
         <p className="mb-6 text-[13px] text-muted-foreground">{preset.desc}</p>
