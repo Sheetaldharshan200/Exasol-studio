@@ -300,5 +300,69 @@ console.log("\nmemory consolidation");
   check("distinct facts survive consolidation", hits.some((h) => /EUR/.test(h.text)) && hits.some((h) => /CUSTKEY/i.test(h.text)));
 }
 
+// ─── Incident 2026-07-21: multi-file TPC-H upload imported one file and
+// stopped; batch work must run as A2A tasks that ALL reach a terminal state. ──
+{
+  console.log("\nA2A task orchestration");
+  const { TaskManager } = await import("../src/a2a.ts");
+
+  // 1) drain waits for EVERY task — none left non-terminal, results ordered.
+  const m1 = new TaskManager();
+  const done: string[] = [];
+  for (const name of ["customer", "orders", "lineitem", "nation"]) {
+    m1.submit(name, async () => {
+      await new Promise((r) => setTimeout(r, name === "customer" ? 30 : 5));
+      done.push(name);
+      return `${name}-ok`;
+    });
+  }
+  const r1 = await m1.drain(2, () => {});
+  check("drain waits for every task (all terminal)", r1.length === 4 && r1.every((t) => t.state === "completed"));
+  check("slow tasks still complete (no early return)", done.includes("customer") && done.length === 4);
+
+  // 2) one failing task never sinks the batch — others complete, failure isolated.
+  const m2 = new TaskManager();
+  m2.submit("good-1", async () => 1);
+  m2.submit("bad", async () => { throw new Error("column overflow"); });
+  m2.submit("good-2", async () => 2);
+  const r2 = await m2.drain(4, () => {});
+  check("a failed task is isolated", r2.filter((t) => t.state === "completed").length === 2 && r2.find((t) => t.title === "bad")?.state === "failed");
+  check("failure carries the real error", /column overflow/.test(r2.find((t) => t.title === "bad")?.error ?? ""));
+
+  // 3) concurrency is bounded — never more workers in flight than lanes.
+  const m3 = new TaskManager();
+  let inFlight = 0;
+  let peak = 0;
+  for (let i = 0; i < 10; i++) {
+    m3.submit(`t${i}`, async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return i;
+    });
+  }
+  await m3.drain(3, () => {});
+  check("concurrency stays within lanes", peak <= 3, `peak=${peak}`);
+
+  // 4) lifecycle is observable while running (A2A tasks/get semantics):
+  //    every task passes through working before terminal, and status
+  //    progress lines surface through onUpdate.
+  const m4 = new TaskManager();
+  const states: string[] = [];
+  m4.submit("import", async (report) => {
+    report("500/3000 rows");
+    report("3000/3000 rows");
+    return "ok";
+  });
+  const statuses: string[] = [];
+  await m4.drain(1, (t) => {
+    states.push(t.state);
+    if (t.status) statuses.push(t.status);
+  });
+  check("tasks pass through working → completed", states.includes("working") && states.at(-1) === "completed");
+  check("progress polls stream through updates", statuses.includes("500/3000 rows") && statuses.includes("3000/3000 rows"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed${fail ? `: ${failures.join("; ")}` : ""}`);
 process.exit(fail ? 1 : 0);
