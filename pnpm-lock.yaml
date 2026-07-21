@@ -236,6 +236,22 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  packages/exasol-sql-parser:
+    dependencies:
+      antlr4-c3:
+        specifier: ^3.4.1
+        version: 3.4.4
+      antlr4ng:
+        specifier: ^3.0.16
+        version: 3.0.16
+    devDependencies:
+      antlr4ng-cli:
+        specifier: ^2.0.0
+        version: 2.0.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
 packages:
 
   '@ai-sdk/gateway@4.0.23':
@@ -2537,8 +2553,16 @@ packages:
   antlr4-c3@3.3.7:
     resolution: {integrity: sha512-F3ndE38wwA6z6AjUbL3heSdEGl4TxulGDPf9xB0/IY4dbRHWBh6XNaqFwur8vHKQk9FS5yNABHeg2wqlqIYO0w==}
 
+  antlr4-c3@3.4.4:
+    resolution: {integrity: sha512-ixp1i17ypbRzZnffdarIfCVEXJwPydtDt61SHMGkc+UCD7rrbfvHESTMTgx8jFhUgKAgcHyt9060kQ8nU3vlxA==}
+
   antlr4ng-cli@1.0.7:
     resolution: {integrity: sha512-qN2FsDBmLvsQcA5CWTrPz8I8gNXeS1fgXBBhI78VyxBSBV/EJgqy8ks6IDTC9jyugpl40csCQ4sL5K4i2YZ/2w==}
+    deprecated: 'This package is deprecated and will no longer be updated. Please use the new antlr-ng package instead: https://github.com/mike-lischke/antlr-ng'
+    hasBin: true
+
+  antlr4ng-cli@2.0.0:
+    resolution: {integrity: sha512-oAt5OSSYhRQn1PgahtpAP4Vp3BApCoCqlzX7Q8ZUWWls4hX59ryYuu0t7Hwrnfk796OxP/vgIJaqxdltd/oEvQ==}
     deprecated: 'This package is deprecated and will no longer be updated. Please use the new antlr-ng package instead: https://github.com/mike-lischke/antlr-ng'
     hasBin: true
 
@@ -2546,6 +2570,9 @@ packages:
     resolution: {integrity: sha512-9jM91VVtHSqHkAHQsXHaoaiewFETMvUTI1/tXvwTiFw4f7zke3IGlwEyoKN9NS0FqIwDKFvUNW2e1cKPniTkVQ==}
     peerDependencies:
       antlr4ng-cli: 1.0.7
+
+  antlr4ng@3.0.16:
+    resolution: {integrity: sha512-DQuJkC7kX3xunfF4K2KsWTSvoxxslv+FQp/WHQZTJSsH2Ec3QfFmrxC3Nky2ok9yglXn6nHM4zUaVDxcN5f6kA==}
 
   argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
@@ -7324,11 +7351,19 @@ snapshots:
     transitivePeerDependencies:
       - antlr4ng-cli
 
+  antlr4-c3@3.4.4:
+    dependencies:
+      antlr4ng: 3.0.16
+
   antlr4ng-cli@1.0.7: {}
+
+  antlr4ng-cli@2.0.0: {}
 
   antlr4ng@2.0.11(antlr4ng-cli@1.0.7):
     dependencies:
       antlr4ng-cli: 1.0.7
+
+  antlr4ng@3.0.16: {}
 
   argparse@2.0.1: {}
 
