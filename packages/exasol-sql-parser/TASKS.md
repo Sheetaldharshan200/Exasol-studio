@@ -16,19 +16,19 @@ architecture as dt-sql-parser's dialects, but with a true Exasol grammar.
 
 ## Phase 1 — Lexer completeness
 - [ ] Full keyword inventory from Exasol docs "Reserved words" + SYS.EXA_SQL_KEYWORDS (reserved vs non-reserved split — non-reserved must stay usable as identifiers)
-- [ ] Literals: string (with '' escape), numeric (incl. exponent), DATE/TIMESTAMP/INTERVAL literals, boolean
+- [x] Literals: string (with '' escape), numeric (incl. exponent), DATE/TIMESTAMP/INTERVAL literals, boolean
 - [ ] Identifiers: regular vs "quoted" (case rules), unicode identifiers
 - [ ] Comments (`--`, `/* */`), statement terminator, `/` script terminator
 - Acceptance: lexes every statement in `tests/corpus/*.sql` with zero errors
 
 ## Phase 2 — Query grammar (the 80% path)
-- [ ] `SELECT`: select list, FROM (tables, subqueries, VALUES), all JOIN forms, WHERE, GROUP BY (+ CUBE/ROLLUP/GROUPING SETS), HAVING, QUALIFY, ORDER BY (NULLS FIRST/LAST), LIMIT/OFFSET, WITH (CTEs), UNION/INTERSECT/MINUS/EXCEPT
-- [ ] Expressions: full operator precedence, CASE, CAST, window functions (OVER, frames), aggregate DISTINCT, subquery predicates (IN/EXISTS/ANY/ALL), `CONNECT BY` hierarchical queries
-- Acceptance: parses the full TPC-H + TPC-DS query sets adapted to Exasol dialect
+- [x] `SELECT`: select list, FROM (tables, subqueries, VALUES), all JOIN forms, WHERE, GROUP BY (+ CUBE/ROLLUP/GROUPING SETS), HAVING, QUALIFY, ORDER BY (NULLS FIRST/LAST), LIMIT/OFFSET, WITH (CTEs), UNION/INTERSECT/MINUS/EXCEPT
+- [x] Expressions: precedence chain, CASE, CAST, EXTRACT/POSITION, window functions (OVER + ROWS/RANGE frames), aggregate DISTINCT, subquery predicates (IN/EXISTS/ANY/SOME/ALL), `CONNECT BY [NOCYCLE]`/`START WITH`/`PRIOR`
+- Acceptance (partial): TPC-H Q1/Q3 + Exasol-features corpus parse cleanly; full TPC-H/TPC-DS sweep still open
 
 ## Phase 3 — DML + DDL
-- [ ] INSERT / UPDATE / DELETE / MERGE / TRUNCATE
-- [ ] CREATE/ALTER/DROP: SCHEMA, TABLE (constraints, DISTRIBUTE BY, PARTITION BY, identity), VIEW, FUNCTION, CONNECTION, USER, ROLE, CONSUMER GROUP
+- [x] INSERT (multi-row, DEFAULT) / UPDATE (+FROM) / DELETE / MERGE (matched update/delete, not-matched insert) / TRUNCATE
+- [~] CREATE SCHEMA / CREATE TABLE (columns+types incl. INTERVAL/HASHTYPE/GEOMETRY, constraints, DISTRIBUTE BY, AS SELECT) / DROP — ALTER, VIEW/FUNCTION/CONNECTION/USER/ROLE/CONSUMER GROUP still open
 - [ ] COMMENT ON, RENAME, GRANT/REVOKE matrix
 
 ## Phase 4 — Exasol-specific surface

@@ -38,6 +38,9 @@ export function getSuggestions(sql: string, caret: { line: number; column: numbe
     syntaxError: () => {
       errors++;
     },
+    reportAmbiguity: () => {},
+    reportAttemptingFullContext: () => {},
+    reportContextSensitivity: () => {},
   } as never);
   parser.program();
 
@@ -91,6 +94,9 @@ export function parseErrors(sql: string): number {
     syntaxError: () => {
       errors++;
     },
+    reportAmbiguity: () => {},
+    reportAttemptingFullContext: () => {},
+    reportContextSensitivity: () => {},
   } as never);
   parser.program();
   return errors;

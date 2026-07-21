@@ -7,29 +7,49 @@ import type { ParseTreeListener } from "antlr4ng";
 import { ProgramContext } from "./ExasolParser.ts";
 import { StatementContext } from "./ExasolParser.ts";
 import { SelectStatementContext } from "./ExasolParser.ts";
+import { QueryExpressionContext } from "./ExasolParser.ts";
+import { QuerySpecContext } from "./ExasolParser.ts";
 import { WithClauseContext } from "./ExasolParser.ts";
 import { CteItemContext } from "./ExasolParser.ts";
 import { SelectListContext } from "./ExasolParser.ts";
 import { SelectItemContext } from "./ExasolParser.ts";
 import { FromClauseContext } from "./ExasolParser.ts";
 import { TableRefContext } from "./ExasolParser.ts";
+import { TablePrimaryContext } from "./ExasolParser.ts";
 import { JoinClauseContext } from "./ExasolParser.ts";
 import { WhereClauseContext } from "./ExasolParser.ts";
+import { ConnectByClauseContext } from "./ExasolParser.ts";
 import { GroupByClauseContext } from "./ExasolParser.ts";
+import { GroupItemContext } from "./ExasolParser.ts";
 import { HavingClauseContext } from "./ExasolParser.ts";
 import { QualifyClauseContext } from "./ExasolParser.ts";
 import { OrderByClauseContext } from "./ExasolParser.ts";
 import { OrderItemContext } from "./ExasolParser.ts";
 import { LimitClauseContext } from "./ExasolParser.ts";
 import { InsertStatementContext } from "./ExasolParser.ts";
+import { InsertValueContext } from "./ExasolParser.ts";
 import { UpdateStatementContext } from "./ExasolParser.ts";
 import { DeleteStatementContext } from "./ExasolParser.ts";
+import { MergeStatementContext } from "./ExasolParser.ts";
+import { MergeWhenContext } from "./ExasolParser.ts";
+import { TruncateStatementContext } from "./ExasolParser.ts";
+import { CreateSchemaStatementContext } from "./ExasolParser.ts";
+import { CreateTableStatementContext } from "./ExasolParser.ts";
+import { TableElementContext } from "./ExasolParser.ts";
+import { DropStatementContext } from "./ExasolParser.ts";
+import { DataTypeContext } from "./ExasolParser.ts";
 import { ExpressionContext } from "./ExasolParser.ts";
 import { PredicateContext } from "./ExasolParser.ts";
 import { ValueExprContext } from "./ExasolParser.ts";
+import { PrimaryExprContext } from "./ExasolParser.ts";
 import { CaseExprContext } from "./ExasolParser.ts";
+import { CastExprContext } from "./ExasolParser.ts";
+import { ExtractExprContext } from "./ExasolParser.ts";
+import { PositionExprContext } from "./ExasolParser.ts";
 import { FunctionCallContext } from "./ExasolParser.ts";
 import { OverClauseContext } from "./ExasolParser.ts";
+import { WindowFrameContext } from "./ExasolParser.ts";
+import { FrameBoundContext } from "./ExasolParser.ts";
 import { SchemaQualifiedTableContext } from "./ExasolParser.ts";
 import { ColumnRefContext } from "./ExasolParser.ts";
 import { SchemaNameContext } from "./ExasolParser.ts";
@@ -37,6 +57,7 @@ import { TableNameContext } from "./ExasolParser.ts";
 import { ColumnNameContext } from "./ExasolParser.ts";
 import { FunctionNameContext } from "./ExasolParser.ts";
 import { AliasContext } from "./ExasolParser.ts";
+import { IdentifierContext } from "./ExasolParser.ts";
 import { LiteralContext } from "./ExasolParser.ts";
 
 
@@ -75,6 +96,26 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitSelectStatement?: (ctx: SelectStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.queryExpression`.
+     * @param ctx the parse tree
+     */
+    enterQueryExpression?: (ctx: QueryExpressionContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.queryExpression`.
+     * @param ctx the parse tree
+     */
+    exitQueryExpression?: (ctx: QueryExpressionContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.querySpec`.
+     * @param ctx the parse tree
+     */
+    enterQuerySpec?: (ctx: QuerySpecContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.querySpec`.
+     * @param ctx the parse tree
+     */
+    exitQuerySpec?: (ctx: QuerySpecContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.withClause`.
      * @param ctx the parse tree
@@ -136,6 +177,16 @@ export class ExasolParserListener implements ParseTreeListener {
      */
     exitTableRef?: (ctx: TableRefContext) => void;
     /**
+     * Enter a parse tree produced by `ExasolParser.tablePrimary`.
+     * @param ctx the parse tree
+     */
+    enterTablePrimary?: (ctx: TablePrimaryContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.tablePrimary`.
+     * @param ctx the parse tree
+     */
+    exitTablePrimary?: (ctx: TablePrimaryContext) => void;
+    /**
      * Enter a parse tree produced by `ExasolParser.joinClause`.
      * @param ctx the parse tree
      */
@@ -156,6 +207,16 @@ export class ExasolParserListener implements ParseTreeListener {
      */
     exitWhereClause?: (ctx: WhereClauseContext) => void;
     /**
+     * Enter a parse tree produced by `ExasolParser.connectByClause`.
+     * @param ctx the parse tree
+     */
+    enterConnectByClause?: (ctx: ConnectByClauseContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.connectByClause`.
+     * @param ctx the parse tree
+     */
+    exitConnectByClause?: (ctx: ConnectByClauseContext) => void;
+    /**
      * Enter a parse tree produced by `ExasolParser.groupByClause`.
      * @param ctx the parse tree
      */
@@ -165,6 +226,16 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitGroupByClause?: (ctx: GroupByClauseContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.groupItem`.
+     * @param ctx the parse tree
+     */
+    enterGroupItem?: (ctx: GroupItemContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.groupItem`.
+     * @param ctx the parse tree
+     */
+    exitGroupItem?: (ctx: GroupItemContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.havingClause`.
      * @param ctx the parse tree
@@ -226,6 +297,16 @@ export class ExasolParserListener implements ParseTreeListener {
      */
     exitInsertStatement?: (ctx: InsertStatementContext) => void;
     /**
+     * Enter a parse tree produced by `ExasolParser.insertValue`.
+     * @param ctx the parse tree
+     */
+    enterInsertValue?: (ctx: InsertValueContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.insertValue`.
+     * @param ctx the parse tree
+     */
+    exitInsertValue?: (ctx: InsertValueContext) => void;
+    /**
      * Enter a parse tree produced by `ExasolParser.updateStatement`.
      * @param ctx the parse tree
      */
@@ -245,6 +326,86 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitDeleteStatement?: (ctx: DeleteStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.mergeStatement`.
+     * @param ctx the parse tree
+     */
+    enterMergeStatement?: (ctx: MergeStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.mergeStatement`.
+     * @param ctx the parse tree
+     */
+    exitMergeStatement?: (ctx: MergeStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.mergeWhen`.
+     * @param ctx the parse tree
+     */
+    enterMergeWhen?: (ctx: MergeWhenContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.mergeWhen`.
+     * @param ctx the parse tree
+     */
+    exitMergeWhen?: (ctx: MergeWhenContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.truncateStatement`.
+     * @param ctx the parse tree
+     */
+    enterTruncateStatement?: (ctx: TruncateStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.truncateStatement`.
+     * @param ctx the parse tree
+     */
+    exitTruncateStatement?: (ctx: TruncateStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.createSchemaStatement`.
+     * @param ctx the parse tree
+     */
+    enterCreateSchemaStatement?: (ctx: CreateSchemaStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.createSchemaStatement`.
+     * @param ctx the parse tree
+     */
+    exitCreateSchemaStatement?: (ctx: CreateSchemaStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.createTableStatement`.
+     * @param ctx the parse tree
+     */
+    enterCreateTableStatement?: (ctx: CreateTableStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.createTableStatement`.
+     * @param ctx the parse tree
+     */
+    exitCreateTableStatement?: (ctx: CreateTableStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.tableElement`.
+     * @param ctx the parse tree
+     */
+    enterTableElement?: (ctx: TableElementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.tableElement`.
+     * @param ctx the parse tree
+     */
+    exitTableElement?: (ctx: TableElementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.dropStatement`.
+     * @param ctx the parse tree
+     */
+    enterDropStatement?: (ctx: DropStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.dropStatement`.
+     * @param ctx the parse tree
+     */
+    exitDropStatement?: (ctx: DropStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.dataType`.
+     * @param ctx the parse tree
+     */
+    enterDataType?: (ctx: DataTypeContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.dataType`.
+     * @param ctx the parse tree
+     */
+    exitDataType?: (ctx: DataTypeContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.expression`.
      * @param ctx the parse tree
@@ -276,6 +437,16 @@ export class ExasolParserListener implements ParseTreeListener {
      */
     exitValueExpr?: (ctx: ValueExprContext) => void;
     /**
+     * Enter a parse tree produced by `ExasolParser.primaryExpr`.
+     * @param ctx the parse tree
+     */
+    enterPrimaryExpr?: (ctx: PrimaryExprContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.primaryExpr`.
+     * @param ctx the parse tree
+     */
+    exitPrimaryExpr?: (ctx: PrimaryExprContext) => void;
+    /**
      * Enter a parse tree produced by `ExasolParser.caseExpr`.
      * @param ctx the parse tree
      */
@@ -285,6 +456,36 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitCaseExpr?: (ctx: CaseExprContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.castExpr`.
+     * @param ctx the parse tree
+     */
+    enterCastExpr?: (ctx: CastExprContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.castExpr`.
+     * @param ctx the parse tree
+     */
+    exitCastExpr?: (ctx: CastExprContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.extractExpr`.
+     * @param ctx the parse tree
+     */
+    enterExtractExpr?: (ctx: ExtractExprContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.extractExpr`.
+     * @param ctx the parse tree
+     */
+    exitExtractExpr?: (ctx: ExtractExprContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.positionExpr`.
+     * @param ctx the parse tree
+     */
+    enterPositionExpr?: (ctx: PositionExprContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.positionExpr`.
+     * @param ctx the parse tree
+     */
+    exitPositionExpr?: (ctx: PositionExprContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.functionCall`.
      * @param ctx the parse tree
@@ -305,6 +506,26 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitOverClause?: (ctx: OverClauseContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.windowFrame`.
+     * @param ctx the parse tree
+     */
+    enterWindowFrame?: (ctx: WindowFrameContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.windowFrame`.
+     * @param ctx the parse tree
+     */
+    exitWindowFrame?: (ctx: WindowFrameContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.frameBound`.
+     * @param ctx the parse tree
+     */
+    enterFrameBound?: (ctx: FrameBoundContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.frameBound`.
+     * @param ctx the parse tree
+     */
+    exitFrameBound?: (ctx: FrameBoundContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.schemaQualifiedTable`.
      * @param ctx the parse tree
@@ -375,6 +596,16 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitAlias?: (ctx: AliasContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.identifier`.
+     * @param ctx the parse tree
+     */
+    enterIdentifier?: (ctx: IdentifierContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.identifier`.
+     * @param ctx the parse tree
+     */
+    exitIdentifier?: (ctx: IdentifierContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.literal`.
      * @param ctx the parse tree
