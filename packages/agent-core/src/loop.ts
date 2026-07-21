@@ -656,8 +656,17 @@ export async function runTurn(opts: {
       return {};
     };
 
+    // Attached data files the model started but didn't finish importing —
+    // must route through recover even when native tool calls DID happen
+    // (loading 1 of 8 files is a successful tool call and an unfinished job).
+    const importsIncomplete = (): boolean => {
+      if (importedAll || importedDocs.size === 0) return false;
+      const tabular = documents.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+      return tabular.length > 1 && tabular.some((d) => !importedDocs.has(d.id));
+    };
+
     const route = (s: TurnGraphState): "recover" | "continuation" | "finalize" => {
-      if (canRetry() && s.toolCalls === 0) return "recover";
+      if (canRetry() && (s.toolCalls === 0 || importsIncomplete())) return "recover";
       if (canRetry() && continuations < 2 && s.toolCalls > 0 && looksUnfinished(s.text)) return "continuation";
       return "finalize";
     };
