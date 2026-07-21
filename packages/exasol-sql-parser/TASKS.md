@@ -32,10 +32,10 @@ architecture as dt-sql-parser's dialects, but with a true Exasol grammar.
 - [ ] COMMENT ON, RENAME, GRANT/REVOKE matrix
 
 ## Phase 4 — Exasol-specific surface
-- [ ] `IMPORT INTO … FROM CSV|FBV|JDBC|EXA|LOCAL AT …` / `EXPORT … INTO …` (full option clauses: FILE, SECURE, ROW SEPARATOR, COLUMN options, reject clauses)
-- [ ] UDF scripts: `CREATE (PYTHON3|LUA|JAVA|R) (SCALAR|SET) SCRIPT … (EMITS|RETURNS) … AS <body> /` — body captured as opaque island (lexer mode)
-- [ ] Adapter scripts + `CREATE VIRTUAL SCHEMA … USING … WITH …`
-- [ ] Lua scripts (`CREATE SCRIPT … AS`), EXECUTE SCRIPT
+- [x] `IMPORT INTO … FROM CSV|FBV|JDBC|EXA|LOCAL [SECURE] AT …` / `EXPORT … INTO …` (FILE clauses, connection refs with USER/IDENTIFIED BY, ENCODING/SKIP/ROW/COLUMN options, REJECT LIMIT)
+- [x] UDF scripts: `CREATE (PYTHON3|LUA|JAVA|R) (SCALAR|SET) SCRIPT … (EMITS|RETURNS) … AS <body> /` — body captured as opaque island (SCRIPT-armed lexer mode; bodies with SQL-looking content verified)
+- [x] Adapter scripts + `CREATE VIRTUAL SCHEMA … USING … WITH key='v' …`
+- [x] Lua scripts (`CREATE SCRIPT … AS`), EXECUTE SCRIPT with arguments
 - [ ] Session/system: ALTER SESSION/SYSTEM, KILL, FLUSH STATISTICS, RECOMPRESS, REORGANIZE, PRELOAD
 
 ## Phase 5 — Completion engine

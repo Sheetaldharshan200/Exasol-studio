@@ -1,5 +1,12 @@
 lexer grammar ExasolLexer;
 
+@members {
+// CREATE ... SCRIPT ... AS <body> / — the body is an opaque island (Python/
+// Lua/Java/R code does not lex as SQL). SCRIPT arms it; AS enters the island
+// mode; ';' disarms (non-script AS usage everywhere else stays untouched).
+scriptPending = false;
+}
+
 // ── Phase 1 starter: core keyword set. Extend from SYS.EXA_SQL_KEYWORDS
 // (reserved vs non-reserved) per TASKS.md before Phase 2. ──────────────────
 
@@ -12,7 +19,7 @@ IMPORT: 'IMPORT'; EXPORT: 'EXPORT'; EXECUTE: 'EXECUTE'; EXPLAIN: 'EXPLAIN';
 // Clauses
 FROM: 'FROM'; WHERE: 'WHERE'; GROUP: 'GROUP'; BY: 'BY'; HAVING: 'HAVING';
 QUALIFY: 'QUALIFY'; ORDER: 'ORDER'; LIMIT: 'LIMIT'; OFFSET: 'OFFSET';
-WITH: 'WITH'; AS: 'AS'; INTO: 'INTO'; VALUES: 'VALUES'; SET: 'SET';
+WITH: 'WITH'; AS: 'AS' { if (this.scriptPending) { this.scriptPending = false; this.pushMode(ExasolLexer.SCRIPT_ISLAND); } }; INTO: 'INTO'; VALUES: 'VALUES'; SET: 'SET';
 UNION: 'UNION'; INTERSECT: 'INTERSECT'; MINUS: 'MINUS'; EXCEPT: 'EXCEPT';
 ALL: 'ALL'; DISTINCT: 'DISTINCT';
 
@@ -31,7 +38,7 @@ NULLS: 'NULLS'; FIRST: 'FIRST'; LAST: 'LAST'; ASC: 'ASC'; DESC: 'DESC';
 
 // Objects
 SCHEMA: 'SCHEMA'; TABLE: 'TABLE'; VIEW: 'VIEW'; FUNCTION: 'FUNCTION';
-SCRIPT: 'SCRIPT'; CONNECTION: 'CONNECTION'; USER: 'USER'; ROLE: 'ROLE';
+SCRIPT: 'SCRIPT' { this.scriptPending = true; }; CONNECTION: 'CONNECTION'; USER: 'USER'; ROLE: 'ROLE';
 VIRTUAL: 'VIRTUAL'; ADAPTER: 'ADAPTER'; IF: 'IF'; REPLACE: 'REPLACE';
 COLUMN: 'COLUMN'; CONSTRAINT: 'CONSTRAINT'; PRIMARY: 'PRIMARY'; KEY: 'KEY';
 FOREIGN: 'FOREIGN'; REFERENCES: 'REFERENCES'; DEFAULT: 'DEFAULT';
@@ -56,6 +63,9 @@ DECIMAL_T: 'DECIMAL'; VARCHAR_T: 'VARCHAR'; CHAR_T: 'CHAR'; BOOLEAN_T: 'BOOLEAN'
 DOUBLE_T: 'DOUBLE'; PRECISION: 'PRECISION'; GEOMETRY: 'GEOMETRY'; HASHTYPE: 'HASHTYPE';
 CHARACTER: 'CHARACTER'; VARYING: 'VARYING'; UTF8: 'UTF8'; ASCII_CS: 'ASCII';
 
+STATEMENT: 'STATEMENT'; ERRORS: 'ERRORS'; REJECT_KW: 'REJECT'; SKIP_KW: 'SKIP';
+ENCODING: 'ENCODING';
+
 // Literals & identifiers
 STRING: '\'' ('\'\'' | ~'\'')* '\'';
 NUMBER: [0-9]+ ('.' [0-9]*)? ([eE] [+-]? [0-9]+)?;
@@ -63,7 +73,7 @@ QUOTED_IDENT: '"' ('""' | ~'"')* '"';
 IDENT: [A-Za-z_] [A-Za-z0-9_$#]*;
 
 // Punctuation
-LPAREN: '('; RPAREN: ')'; COMMA: ','; DOT: '.'; SEMI: ';'; STAR: '*';
+LPAREN: '('; RPAREN: ')'; COMMA: ','; DOT: '.'; SEMI: ';' { this.scriptPending = false; }; STAR: '*';
 EQ: '='; NEQ: '!=' | '<>'; LT: '<'; LTE: '<='; GT: '>'; GTE: '>=';
 PLUS: '+'; MINUS_OP: '-'; SLASH: '/'; CONCAT_OP: '||'; PARAM: '?' | ':' IDENT;
 
@@ -71,3 +81,7 @@ PLUS: '+'; MINUS_OP: '-'; SLASH: '/'; CONCAT_OP: '||'; PARAM: '?' | ':' IDENT;
 LINE_COMMENT: '--' ~[\r\n]* -> channel(HIDDEN);
 BLOCK_COMMENT: '/*' .*? '*/' -> channel(HIDDEN);
 WS: [ \t\r\n]+ -> channel(HIDDEN);
+
+// Script body island: everything up to the first line that starts with '/'.
+mode SCRIPT_ISLAND;
+SCRIPT_BODY: .+? [\r\n] '/' -> popMode;

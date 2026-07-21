@@ -6,6 +6,19 @@ import type { ParseTreeListener } from "antlr4ng";
 
 import { ProgramContext } from "./ExasolParser.ts";
 import { StatementContext } from "./ExasolParser.ts";
+import { ImportStatementContext } from "./ExasolParser.ts";
+import { ImportSourceContext } from "./ExasolParser.ts";
+import { ExportStatementContext } from "./ExasolParser.ts";
+import { ExportTargetContext } from "./ExasolParser.ts";
+import { ConnectionRefContext } from "./ExasolParser.ts";
+import { FileClauseContext } from "./ExasolParser.ts";
+import { ImportOptionContext } from "./ExasolParser.ts";
+import { ErrorsClauseContext } from "./ExasolParser.ts";
+import { ScriptStatementContext } from "./ExasolParser.ts";
+import { ScriptLangContext } from "./ExasolParser.ts";
+import { ScriptParamContext } from "./ExasolParser.ts";
+import { ExecuteScriptStatementContext } from "./ExasolParser.ts";
+import { CreateVirtualSchemaStatementContext } from "./ExasolParser.ts";
 import { SelectStatementContext } from "./ExasolParser.ts";
 import { QueryExpressionContext } from "./ExasolParser.ts";
 import { QuerySpecContext } from "./ExasolParser.ts";
@@ -86,6 +99,136 @@ export class ExasolParserListener implements ParseTreeListener {
      * @param ctx the parse tree
      */
     exitStatement?: (ctx: StatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.importStatement`.
+     * @param ctx the parse tree
+     */
+    enterImportStatement?: (ctx: ImportStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.importStatement`.
+     * @param ctx the parse tree
+     */
+    exitImportStatement?: (ctx: ImportStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.importSource`.
+     * @param ctx the parse tree
+     */
+    enterImportSource?: (ctx: ImportSourceContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.importSource`.
+     * @param ctx the parse tree
+     */
+    exitImportSource?: (ctx: ImportSourceContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.exportStatement`.
+     * @param ctx the parse tree
+     */
+    enterExportStatement?: (ctx: ExportStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.exportStatement`.
+     * @param ctx the parse tree
+     */
+    exitExportStatement?: (ctx: ExportStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.exportTarget`.
+     * @param ctx the parse tree
+     */
+    enterExportTarget?: (ctx: ExportTargetContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.exportTarget`.
+     * @param ctx the parse tree
+     */
+    exitExportTarget?: (ctx: ExportTargetContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.connectionRef`.
+     * @param ctx the parse tree
+     */
+    enterConnectionRef?: (ctx: ConnectionRefContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.connectionRef`.
+     * @param ctx the parse tree
+     */
+    exitConnectionRef?: (ctx: ConnectionRefContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.fileClause`.
+     * @param ctx the parse tree
+     */
+    enterFileClause?: (ctx: FileClauseContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.fileClause`.
+     * @param ctx the parse tree
+     */
+    exitFileClause?: (ctx: FileClauseContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.importOption`.
+     * @param ctx the parse tree
+     */
+    enterImportOption?: (ctx: ImportOptionContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.importOption`.
+     * @param ctx the parse tree
+     */
+    exitImportOption?: (ctx: ImportOptionContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.errorsClause`.
+     * @param ctx the parse tree
+     */
+    enterErrorsClause?: (ctx: ErrorsClauseContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.errorsClause`.
+     * @param ctx the parse tree
+     */
+    exitErrorsClause?: (ctx: ErrorsClauseContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.scriptStatement`.
+     * @param ctx the parse tree
+     */
+    enterScriptStatement?: (ctx: ScriptStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.scriptStatement`.
+     * @param ctx the parse tree
+     */
+    exitScriptStatement?: (ctx: ScriptStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.scriptLang`.
+     * @param ctx the parse tree
+     */
+    enterScriptLang?: (ctx: ScriptLangContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.scriptLang`.
+     * @param ctx the parse tree
+     */
+    exitScriptLang?: (ctx: ScriptLangContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.scriptParam`.
+     * @param ctx the parse tree
+     */
+    enterScriptParam?: (ctx: ScriptParamContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.scriptParam`.
+     * @param ctx the parse tree
+     */
+    exitScriptParam?: (ctx: ScriptParamContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.executeScriptStatement`.
+     * @param ctx the parse tree
+     */
+    enterExecuteScriptStatement?: (ctx: ExecuteScriptStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.executeScriptStatement`.
+     * @param ctx the parse tree
+     */
+    exitExecuteScriptStatement?: (ctx: ExecuteScriptStatementContext) => void;
+    /**
+     * Enter a parse tree produced by `ExasolParser.createVirtualSchemaStatement`.
+     * @param ctx the parse tree
+     */
+    enterCreateVirtualSchemaStatement?: (ctx: CreateVirtualSchemaStatementContext) => void;
+    /**
+     * Exit a parse tree produced by `ExasolParser.createVirtualSchemaStatement`.
+     * @param ctx the parse tree
+     */
+    exitCreateVirtualSchemaStatement?: (ctx: CreateVirtualSchemaStatementContext) => void;
     /**
      * Enter a parse tree produced by `ExasolParser.selectStatement`.
      * @param ctx the parse tree

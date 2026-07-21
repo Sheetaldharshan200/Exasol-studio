@@ -17,6 +17,57 @@ statement
     | createSchemaStatement
     | createTableStatement
     | dropStatement
+    | importStatement
+    | exportStatement
+    | scriptStatement
+    | executeScriptStatement
+    | createVirtualSchemaStatement
+    ;
+
+// ── Phase 4: Exasol-specific surface ────────────────────────────────────
+importStatement
+    : IMPORT INTO schemaQualifiedTable (LPAREN columnName (COMMA columnName)* RPAREN)?
+      FROM importSource importOption* errorsClause?
+    ;
+importSource
+    : LOCAL SECURE? (CSV | FBV) fileClause+
+    | (CSV | FBV) AT_KW connectionRef fileClause+
+    | (JDBC | EXA) AT_KW connectionRef (TABLE schemaQualifiedTable | STATEMENT STRING+)
+    ;
+exportStatement
+    : EXPORT (schemaQualifiedTable | LPAREN selectStatement RPAREN)
+      INTO exportTarget importOption* errorsClause?
+    ;
+exportTarget
+    : LOCAL SECURE? (CSV | FBV) fileClause+
+    | (CSV | FBV) AT_KW connectionRef fileClause+
+    | (JDBC | EXA) AT_KW connectionRef (TABLE schemaQualifiedTable | STATEMENT STRING+)
+    ;
+connectionRef: (identifier | STRING) (USER STRING IDENTIFIED BY STRING)?;
+fileClause: FILE_KW STRING;
+importOption
+    : ENCODING EQ? STRING
+    | SKIP_KW EQ? NUMBER
+    | ROW IDENT EQ? STRING
+    | COLUMN IDENT EQ? STRING
+    | identifier EQ (STRING | NUMBER | identifier)
+    ;
+errorsClause: REJECT_KW LIMIT (NUMBER | IDENT) ERRORS?;
+
+scriptStatement
+    : CREATE (OR REPLACE)? scriptLang? (SCALAR | SET)? SCRIPT schemaQualifiedTable
+      (LPAREN scriptParam (COMMA scriptParam)* RPAREN | LPAREN RPAREN)?
+      (RETURNS (dataType | TABLE) | EMITS LPAREN scriptParam (COMMA scriptParam)* RPAREN)?
+      AS SCRIPT_BODY
+    ;
+scriptLang: PYTHON3 | LUA | JAVA | R_LANG | ADAPTER;
+scriptParam: columnName dataType?;
+executeScriptStatement
+    : EXECUTE SCRIPT schemaQualifiedTable (LPAREN (expression (COMMA expression)*)? RPAREN)?
+    ;
+createVirtualSchemaStatement
+    : CREATE VIRTUAL SCHEMA (IF NOT EXISTS)? schemaName
+      USING schemaQualifiedTable (WITH (identifier EQ literal)+)?
     ;
 
 // ── Query expression with set operators ─────────────────────────────────

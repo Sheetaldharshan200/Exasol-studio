@@ -25,5 +25,10 @@ check("after GROUP → BY keyword only", s3.keywords.includes("BY"), JSON.string
 const s4 = getSuggestions("SELECT A FROM T WHERE ", { line: 1, column: 22 });
 check("in WHERE → column kind", s4.kinds.includes("column"), JSON.stringify(s4.kinds));
 
+const s5 = getSuggestions("IMPORT INTO ", { line: 1, column: 12 });
+check("IMPORT INTO → table kind", s5.kinds.includes("table"), JSON.stringify(s5.kinds));
+const s6 = getSuggestions("IMPORT INTO T FROM ", { line: 1, column: 19 });
+check("import FROM → CSV/FBV/JDBC/EXA/LOCAL keywords", ["CSV","FBV","JDBC","EXA","LOCAL"].every(k => s6.keywords.includes(k)), JSON.stringify(s6.keywords));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

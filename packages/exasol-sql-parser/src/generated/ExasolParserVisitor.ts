@@ -5,6 +5,19 @@ import { AbstractParseTreeVisitor } from "antlr4ng";
 
 import { ProgramContext } from "./ExasolParser.ts";
 import { StatementContext } from "./ExasolParser.ts";
+import { ImportStatementContext } from "./ExasolParser.ts";
+import { ImportSourceContext } from "./ExasolParser.ts";
+import { ExportStatementContext } from "./ExasolParser.ts";
+import { ExportTargetContext } from "./ExasolParser.ts";
+import { ConnectionRefContext } from "./ExasolParser.ts";
+import { FileClauseContext } from "./ExasolParser.ts";
+import { ImportOptionContext } from "./ExasolParser.ts";
+import { ErrorsClauseContext } from "./ExasolParser.ts";
+import { ScriptStatementContext } from "./ExasolParser.ts";
+import { ScriptLangContext } from "./ExasolParser.ts";
+import { ScriptParamContext } from "./ExasolParser.ts";
+import { ExecuteScriptStatementContext } from "./ExasolParser.ts";
+import { CreateVirtualSchemaStatementContext } from "./ExasolParser.ts";
 import { SelectStatementContext } from "./ExasolParser.ts";
 import { QueryExpressionContext } from "./ExasolParser.ts";
 import { QuerySpecContext } from "./ExasolParser.ts";
@@ -80,6 +93,84 @@ export class ExasolParserVisitor<Result> extends AbstractParseTreeVisitor<Result
      * @return the visitor result
      */
     visitStatement?: (ctx: StatementContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.importStatement`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitImportStatement?: (ctx: ImportStatementContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.importSource`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitImportSource?: (ctx: ImportSourceContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.exportStatement`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitExportStatement?: (ctx: ExportStatementContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.exportTarget`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitExportTarget?: (ctx: ExportTargetContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.connectionRef`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitConnectionRef?: (ctx: ConnectionRefContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.fileClause`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitFileClause?: (ctx: FileClauseContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.importOption`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitImportOption?: (ctx: ImportOptionContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.errorsClause`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitErrorsClause?: (ctx: ErrorsClauseContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.scriptStatement`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitScriptStatement?: (ctx: ScriptStatementContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.scriptLang`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitScriptLang?: (ctx: ScriptLangContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.scriptParam`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitScriptParam?: (ctx: ScriptParamContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.executeScriptStatement`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitExecuteScriptStatement?: (ctx: ExecuteScriptStatementContext) => Result;
+    /**
+     * Visit a parse tree produced by `ExasolParser.createVirtualSchemaStatement`.
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    visitCreateVirtualSchemaStatement?: (ctx: CreateVirtualSchemaStatementContext) => Result;
     /**
      * Visit a parse tree produced by `ExasolParser.selectStatement`.
      * @param ctx the parse tree
