@@ -23,13 +23,49 @@ const FUNCTIONS =
 
 let registered = false;
 
+// Grammar-driven core (world-standard approach, same family as DataGrip/Hue):
+// dt-sql-parser's ANTLR grammar tells us WHAT belongs at the caret (table,
+// column, schema, function, and the exact keywords that are grammatically
+// valid next) — our live catalog supplies the actual names. Lazy-loaded so the
+// heavy parse tables never block editor startup; on Exasol-specific syntax the
+// parser fails soft and the heuristic layer below still answers.
+type GrammarHints = { keywords: string[]; table: boolean; column: boolean; schema: boolean; func: boolean };
+let parserPromise: Promise<{ getSuggestionAtCaretPosition: (sql: string, pos: { lineNumber: number; column: number }) => unknown } | null> | null = null;
+const getParser = () =>
+  (parserPromise ??= import("dt-sql-parser")
+    .then((m) => new m.PostgreSQL() as never)
+    .catch(() => null));
+
+async function grammarHints(sql: string, pos: { lineNumber: number; column: number }): Promise<GrammarHints | null> {
+  const parser = await getParser();
+  if (!parser) return null;
+  try {
+    const res = parser.getSuggestionAtCaretPosition(sql, pos) as
+      | { keywords?: string[]; syntax?: { syntaxContextType?: unknown }[] }
+      | null;
+    if (!res) return null;
+    const hints: GrammarHints = { keywords: res.keywords ?? [], table: false, column: false, schema: false, func: false };
+    for (const s of res.syntax ?? []) {
+      const t = String(s.syntaxContextType ?? "").toLowerCase();
+      if (t.includes("table") || t.includes("view")) hints.table = true;
+      if (t.includes("column")) hints.column = true;
+      if (t.includes("database") || t.includes("schema") || t.includes("catalog")) hints.schema = true;
+      if (t.includes("function")) hints.func = true;
+    }
+    return hints;
+  } catch {
+    return null;
+  }
+}
+
 export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCatalog): void {
   if (registered) return;
   registered = true;
+  void getParser(); // warm the grammar in the background
 
   monaco.languages.registerCompletionItemProvider("sql", {
     triggerCharacters: [".", " "],
-    provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
+    async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
       const cat = getCatalog();
       const before = model.getValueInRange({
         startLineNumber: 1,
@@ -106,8 +142,33 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
         return { suggestions: S };
       }
 
-      // General: columns of referenced tables first, then keywords/functions,
-      // then schemas.
+      // Grammar-driven: ask the parser what belongs at the caret.
+      const hints = await grammarHints(model.getValue(), { lineNumber: position.lineNumber, column: position.column });
+      if (hints && (hints.keywords.length || hints.table || hints.column || hints.schema || hints.func)) {
+        if (hints.table || hints.schema) {
+          for (const [schema, tables] of cat.schemas) {
+            push(schema, K.Module, schema, `${tables.size} tables`, "1");
+            if (hints.table) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+          }
+        }
+        if (hints.column) {
+          const seen = new Set<string>();
+          for (const { schema, table } of refs.values()) {
+            for (const c of columnsOf(schema, table)) {
+              if (seen.has(c.name)) continue;
+              seen.add(c.name);
+              push(c.name, K.Field, c.name, `${table} · ${c.type}`, "0");
+            }
+          }
+        }
+        if (hints.func) for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
+        // Only the keywords the grammar says are VALID here.
+        for (const k of hints.keywords) push(k, K.Keyword, k, undefined, "3");
+        if (S.length) return { suggestions: S };
+      }
+
+      // Heuristic fallback (parser unavailable or Exasol-specific syntax):
+      // columns of referenced tables first, then keywords/functions/schemas.
       const seen = new Set<string>();
       for (const { schema, table } of refs.values()) {
         for (const c of columnsOf(schema, table)) {
