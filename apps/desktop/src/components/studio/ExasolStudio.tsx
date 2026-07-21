@@ -1430,35 +1430,36 @@ export function ExasolStudio({
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
   const sqlCatalogRef = useRef<SqlCatalog>(emptyCatalog());
-  useEffect(() => {
-    sqlCatalogRef.current = emptyCatalog();
-    if (!connection) return;
-    let alive = true;
+  const refreshSqlCatalog = useCallback(() => {
+    const conn = connectionRef.current;
+    if (!conn) return;
     ipc
       .executeSql(
-        connection.profile.id,
-        connection.profile.name,
+        conn.profile.id,
+        conn.profile.name,
         "SELECT COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS') ORDER BY 1, 2 LIMIT 20000",
         20000,
         false,
       )
       .then((res) => {
-        if (!alive) return;
         const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
-        if (table?.rows) sqlCatalogRef.current = buildCatalog(table.rows as unknown[][]);
+        if (table?.rows) {
+          const scripts = sqlCatalogRef.current.scripts;
+          sqlCatalogRef.current = buildCatalog(table.rows as unknown[][]);
+          sqlCatalogRef.current.scripts = scripts;
+        }
       })
       .catch(() => undefined);
     // User UDFs / Lua / adapter scripts → suggested like built-in functions.
     ipc
       .executeSql(
-        connection.profile.id,
-        connection.profile.name,
+        conn.profile.id,
+        conn.profile.name,
         "SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000",
         2000,
         false,
       )
       .then((res) => {
-        if (!alive) return;
         const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
         if (table?.rows) {
           sqlCatalogRef.current.scripts = (table.rows as unknown[][]).map((r) => ({
@@ -1469,10 +1470,19 @@ export function ExasolStudio({
         }
       })
       .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [connection]);
+  }, []);
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  // Fresh on connect, after every statement run, and on a slow freshness tick
+  // (catches agent-driven DDL/imports) — so new schemas/tables complete
+  // immediately instead of only after reconnecting.
+  useEffect(() => {
+    sqlCatalogRef.current = emptyCatalog();
+    if (!connection) return;
+    refreshSqlCatalog();
+    const timer = window.setInterval(refreshSqlCatalog, 45_000);
+    return () => window.clearInterval(timer);
+  }, [connection, refreshSqlCatalog]);
   const tabCounter = useRef(1);
   // Imperative handles for the collapsible side panels.
   const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -1616,6 +1626,7 @@ export function ExasolStudio({
       );
       patchTab(activeTab.id, { response: res, execError: null });
       loadHistory();
+      refreshSqlCatalog();
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e) });
       setResultTab("messages");
@@ -1634,6 +1645,7 @@ export function ExasolStudio({
       await ipc.executeSql(profileId, conn.profile.name, sql, 1, false);
       setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
       loadHistory();
+      refreshSqlCatalog();
       setObjAction(null);
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e) });
@@ -2256,6 +2268,7 @@ export function ExasolStudio({
         );
         if (!result.success) setResultTab("messages");
         loadHistory();
+      refreshSqlCatalog();
       } catch (e) {
         updateTabs(key, (list) => list.map((t) => (t.id === tab.id ? { ...t, execError: errorMessage(e) } : t)));
         setResultTab("messages");
@@ -2553,6 +2566,7 @@ export function ExasolStudio({
           });
         }
         loadHistory();
+      refreshSqlCatalog();
       } catch (err) {
         patchTab(activeTab.id, {
           execError: errorMessage(err),
@@ -2714,6 +2728,7 @@ export function ExasolStudio({
     try {
       await ipc.executeSql(connection.profile.id, connection.profile.name, action, maxRows, false);
       loadHistory();
+      refreshSqlCatalog();
     } catch {
       /* ignore */
     }
