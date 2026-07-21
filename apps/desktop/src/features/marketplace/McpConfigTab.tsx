@@ -1,0 +1,170 @@
+import { useEffect, useState } from "react";
+import { CheckCircle2, ExternalLink, Loader2, PlugZap, ShieldCheck } from "lucide-react";
+import { agent } from "@/lib/agent-client";
+import { MCP_PRESETS, type McpPreset } from "@/features/marketplace/mcp-presets";
+import { cn } from "@/lib/utils";
+
+/**
+ * Full-page configuration tab for one MCP connector. Auth = environment
+ * credentials (API tokens), per the MCP spec's pattern for local stdio
+ * servers — with per-service guidance on creating a revocable token.
+ */
+export function McpConfigTab({ presetId }: { presetId: string }) {
+  const preset: McpPreset = MCP_PRESETS.find((p) => p.id === presetId) ?? MCP_PRESETS[MCP_PRESETS.length - 1];
+  const isCustom = preset.id === "custom";
+  const [envVals, setEnvVals] = useState<Record<string, string>>({});
+  const [custom, setCustom] = useState({ name: "", command: "", args: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [connected, setConnected] = useState<{ toolCount: number; tools?: string[] } | null>(null);
+
+  // Already connected? Show live status.
+  useEffect(() => {
+    agent
+      .mcpList()
+      .then((list) => {
+        const hit = list.find((s) => s.name === preset.name && s.connected);
+        if (hit) setConnected({ toolCount: hit.toolCount, tools: hit.tools });
+      })
+      .catch(() => undefined);
+  }, [preset.name]);
+
+  async function connect() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const name = isCustom ? custom.name.trim() : preset.name;
+      const command = isCustom ? custom.command.trim() : preset.command;
+      const args = isCustom ? custom.args.trim().split(/\s+/).filter(Boolean) : preset.args;
+      const env = preset.env.length
+        ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
+        : undefined;
+      await agent.mcpAdd({ name, command, args, env });
+      const list = await agent.mcpList();
+      const hit = list.find((s) => s.name === name);
+      if (hit?.connected) setConnected({ toolCount: hit.toolCount, tools: hit.tools });
+      else setErr("The server was saved but did not connect — check the credentials and command, then retry from the sidebar.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canConnect = isCustom
+    ? custom.name.trim() && custom.command.trim()
+    : preset.env.every((e) => !e.secret || envVals[e.key]?.trim());
+
+  return (
+    <div className="h-full overflow-y-auto bg-editor">
+      <div className="mx-auto max-w-2xl px-6 py-8">
+        <div className="mb-1 flex items-center gap-2">
+          <PlugZap className="h-5 w-5 text-primary" />
+          <h1 className="text-[18px] font-semibold text-foreground">{preset.name}</h1>
+        </div>
+        <p className="mb-6 text-[13px] text-muted-foreground">{preset.desc}</p>
+
+        {connected ? (
+          <div className="mb-6 rounded-xl border border-primary/40 bg-primary/8 p-4">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+              <CheckCircle2 className="h-4 w-4 text-primary" /> Connected — {connected.toolCount} tools available to the agent
+            </div>
+            {connected.tools?.length ? (
+              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                {connected.tools.map((t) => `\`${t}\``.replace(/`/g, "")).join(" · ")}
+                {connected.toolCount > (connected.tools?.length ?? 0) ? " · …" : ""}
+              </p>
+            ) : null}
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              Try it in the chat — e.g. “{preset.id === "jira" ? "pull my open Jira issues and load them into Exasol" : preset.id === "files" ? "list the CSV files in my Documents folder" : `use ${preset.name} to fetch data and load it into Exasol`}”. Every call asks your approval.
+            </p>
+          </div>
+        ) : null}
+
+        {isCustom ? (
+          <section className="mb-6 space-y-3">
+            {(
+              [
+                ["name", "Name", "My data source"],
+                ["command", "Command", "npx | uvx | /path/to/binary"],
+                ["args", "Arguments (space-separated)", "-y some-mcp-server --flag"],
+              ] as const
+            ).map(([k, label, ph]) => (
+              <label key={k} className="block">
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+                <input
+                  value={custom[k]}
+                  onChange={(e) => setCustom((c) => ({ ...c, [k]: e.target.value }))}
+                  placeholder={ph}
+                  className="h-9 w-full rounded-lg border border-border bg-panel px-3 font-mono text-[12.5px] outline-none"
+                />
+              </label>
+            ))}
+          </section>
+        ) : (
+          <>
+            <section className="mb-6">
+              <h2 className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Authentication
+              </h2>
+              {preset.env.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">No credentials needed — this connector works with local resources only.</p>
+              ) : (
+                <>
+                  <p className="mb-3 text-[12px] text-muted-foreground">
+                    Uses a revocable API token (the standard for locally-running MCP servers — credentials stay on this
+                    machine as environment variables and are never shown again after saving).
+                    {preset.tokenHint ? ` ${preset.tokenHint}` : ""}
+                  </p>
+                  {preset.tokenUrl ? (
+                    <a
+                      href={preset.tokenUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mb-3 inline-flex items-center gap-1 text-[12px] text-primary hover:underline"
+                    >
+                      Create a token <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                  <div className="space-y-3">
+                    {preset.env.map((e) => (
+                      <label key={e.key} className="block">
+                        <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{e.label}</span>
+                        <input
+                          value={envVals[e.key] ?? ""}
+                          onChange={(ev) => setEnvVals((v) => ({ ...v, [e.key]: ev.target.value }))}
+                          type={e.secret ? "password" : "text"}
+                          placeholder={e.hint ?? ""}
+                          className="h-9 w-full rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+            <section className="mb-6">
+              <h2 className="mb-1 text-[13px] font-semibold text-foreground">Runs as</h2>
+              <code className="block rounded-lg border border-border bg-panel px-3 py-2 font-mono text-[12px] text-muted-foreground">
+                {preset.command} {preset.args.join(" ")}
+              </code>
+            </section>
+          </>
+        )}
+
+        {err ? <p className="mb-3 text-[12px] text-destructive">{err}</p> : null}
+        <button
+          disabled={busy || !canConnect}
+          onClick={() => void connect()}
+          className={cn(
+            "flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground",
+            "hover:bg-primary/85 disabled:opacity-50",
+          )}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
+          {connected ? "Reconnect with new settings" : "Connect"}
+        </button>
+      </div>
+    </div>
+  );
+}

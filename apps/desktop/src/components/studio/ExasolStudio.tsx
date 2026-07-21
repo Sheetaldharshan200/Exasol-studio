@@ -112,6 +112,7 @@ import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
 import { McpMarketplace } from "@/features/marketplace/McpMarketplace";
+import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
@@ -157,7 +158,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig";
 
 type SqlTab = {
   id: string;
@@ -173,6 +174,8 @@ type SqlTab = {
   fileMissing?: boolean;
   /** Membership in a collapsible tab group (see TabGroup). */
   groupId?: string;
+  /** For mcpConfig tabs — which connector preset to configure. */
+  mcpPreset?: string;
   /** For object tabs — the database object being inspected. */
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
@@ -208,6 +211,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   connect: Plug,
   visualizer: Eye,
   filePreview: Table2,
+  mcpConfig: PlugZap,
   marketplace: Store,
   guides: BookOpen,
   object: Table2,
@@ -754,6 +758,7 @@ function Sidebar({
   onContext,
   onOpenDetails,
   onOpenFavorite,
+  onOpenMcpConfig,
   onCollapse,
   onOpenFile,
   onOpenData,
@@ -785,6 +790,7 @@ function Sidebar({
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onOpenDetails: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode) => void;
   onOpenFavorite?: (fav: Favorite) => void;
+  onOpenMcpConfig?: (presetId: string, presetName: string) => void;
   onCollapse: () => void;
   onOpenFile: (name: string, content: string, path?: string) => void;
   onOpenData: (name: string, path: string) => void;
@@ -922,7 +928,7 @@ function Sidebar({
         </div>
         {activity === "mcp" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <McpMarketplace />
+            <McpMarketplace onOpenConfig={onOpenMcpConfig} />
           </div>
         ) : activity === "files" ? (
           <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} onFileDeleted={onFileDeleted} refreshSignal={filesRefresh} />
@@ -2094,6 +2100,27 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  function openMcpConfig(presetId: string, presetName: string) {
+    const key = connKey;
+    const existing = tabsFor(key).find((x) => x.view === "mcpConfig" && x.mcpPreset === presetId);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-mcp-${Date.now()}-${tabCounter.current}`,
+      title: `MCP · ${presetName}`,
+      view: "mcpConfig",
+      mcpPreset: presetId,
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(key, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
+  }
+
   function closeTab(id: string) {
     const list = tabsFor(connKey);
     const next = list.filter((t) => t.id !== id);
@@ -2904,6 +2931,7 @@ export function ExasolStudio({
                   openObjectDetails(fav.profileId, { type: fav.type, schema: fav.schema, name: fav.name });
                 }
               }}
+              onOpenMcpConfig={openMcpConfig}
               onCollapse={() => {
                 sidebarPanelRef.current?.collapse();
                 setSidebarOpen(false);
@@ -3069,6 +3097,7 @@ export function ExasolStudio({
           activeTab.view !== "guides" &&
           activeTab.view !== "bi" &&
           activeTab.view !== "welcome" &&
+          activeTab.view !== "mcpConfig" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
@@ -3274,6 +3303,10 @@ export function ExasolStudio({
                   await agentClient.grantConnection(p.id).catch(() => undefined);
                 }}
               />
+            </div>
+          ) : activeTab.view === "mcpConfig" ? (
+            <div className="min-h-0 flex-1">
+              <McpConfigTab presetId={activeTab.mcpPreset ?? "custom"} />
             </div>
           ) : activeTab.view === "filePreview" ? (
             <div className="min-h-0 flex-1">
