@@ -5,6 +5,8 @@ import {
   ChevronDown,
   Copy,
   Cpu,
+  GitFork,
+  RotateCcw,
   Database,
   Download,
   FileSearch,
@@ -728,6 +730,41 @@ export function AssistantPanel({
     if (next.length) setAttachments((a) => [...a, ...next]);
   }
 
+  const itemsRef = useRef<ChatItem[]>([]);
+  itemsRef.current = items;
+  // Industry-standard message actions: copy / revert-to-here / fork-from-here.
+  // Revert and fork are REAL: the sidecar truncates or branches the transcript
+  // and rebuilds the model context — not a UI illusion.
+  const userAction = async (action: "copy" | "revert" | "fork", messageId: string) => {
+    const all = itemsRef.current;
+    const abs = all.findIndex((it) => it.kind === "msg" && it.id === messageId);
+    if (abs < 0) return;
+    const item = all[abs] as Extract<ChatItem, { kind: "msg" }>;
+    const userIndex = all.slice(0, abs + 1).filter((it) => it.kind === "msg" && it.role === "user").length - 1;
+    const sid = sessionRef.current;
+    if (action === "copy") {
+      navigator.clipboard?.writeText(item.content).catch(() => undefined);
+      return;
+    }
+    if (!sid) return;
+    if (action === "revert") {
+      const removed = await agent.revertSession(sid, userIndex).catch(() => null);
+      setItems(all.slice(0, abs));
+      setInput(removed ?? item.content);
+      inputRef.current?.focus();
+    } else {
+      const meta = await agent.forkSession(sid, userIndex).catch(() => null);
+      if (meta) {
+        await switchSession(meta.id);
+        setInput(item.content);
+        inputRef.current?.focus();
+      }
+    }
+  };
+  const userActionRef = useRef(userAction);
+  userActionRef.current = userAction;
+  const onUserAction = useCallback((a: "copy" | "revert" | "fork", id: string) => void userActionRef.current(a, id), []);
+
   const openAttachmentByName = useCallback((name: string) => {
     const f = sessionFilesRef.current.find((x) => x.name === name);
     if (f) onOpenAttachment?.(f);
@@ -960,7 +997,7 @@ export function AssistantPanel({
           ) : (
             items.map((it) =>
               it.kind === "msg" ? (
-                <BubbleMemo key={it.id} message={it} onOpenAttachmentName={openAttachmentByName} />
+                <BubbleMemo key={it.id} message={it} onOpenAttachmentName={openAttachmentByName} onUserAction={onUserAction} />
               ) : it.kind === "tool" ? (
                 <ToolViewMemo key={it.id} item={it} />
               ) : it.kind === "perm" ? (
@@ -1608,9 +1645,11 @@ const CHAT_MD_COMPONENTS = {
 function Bubble({
   message,
   onOpenAttachmentName,
+  onUserAction,
 }: {
   message: Extract<ChatItem, { kind: "msg" }>;
   onOpenAttachmentName?: (name: string) => void;
+  onUserAction?: (action: "copy" | "revert" | "fork", id: string) => void;
 }) {
   if (message.role === "user") {
     return (
@@ -1629,6 +1668,23 @@ function Bubble({
             ),
           )}
         </MessageContent>
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          {([
+            ["copy", Copy, "Copy message"],
+            ["revert", RotateCcw, "Revert to here — rewinds the chat (and the model's memory) to before this message"],
+            ["fork", GitFork, "Fork from here — branch into a new chat with the history up to this point"],
+          ] as const).map(([action, Icon, tip]) => (
+            <button
+              key={action}
+              type="button"
+              title={tip}
+              onClick={() => onUserAction?.(action, message.id)}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <Icon className="h-3 w-3" />
+            </button>
+          ))}
+        </div>
         {message.attachments?.length ? (
           <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
             {message.attachments.map((name) => (

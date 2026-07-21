@@ -52,7 +52,7 @@ export class Session {
   private listeners = new Set<(e: AgentEvent) => void>();
   private pendingPermissions = new Map<string, (allow: boolean) => void>();
   private pendingUi = new Map<string, (r: { ok: boolean; detail?: string }) => void>();
-  private readonly transcriptFile: string;
+  readonly transcriptFile: string;
   private readonly checkpointFile: string;
 
   constructor(dataDir: string, id?: string, createdAt?: number) {
@@ -216,6 +216,49 @@ export class Session {
     this.messages.length = lastUser;
     this.record({ kind: "undo" });
     return true;
+  }
+
+  /** Raw transcript text (for fork/copy operations). */
+  transcriptRaw(): string {
+    try {
+      return readFileSync(this.transcriptFile, "utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Industry-standard "revert to here": cut the transcript just BEFORE the
+   * userIndex-th user message (0-based) and rebuild the model context from
+   * what remains. Returns the removed user text so the UI can put it back
+   * into the composer for editing.
+   */
+  truncateAtUser(userIndex: number): string | null {
+    const lines = this.transcriptRaw().split("\n").filter(Boolean);
+    let count = -1;
+    let cut = -1;
+    let removed: string | null = null;
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const e = JSON.parse(lines[i]) as { kind?: string; text?: string };
+        if (e.kind === "user") {
+          count++;
+          if (count === userIndex) {
+            cut = i;
+            removed = String(e.text ?? "");
+            break;
+          }
+        }
+      } catch {
+        /* skip malformed line */
+      }
+    }
+    if (cut < 0) return null;
+    writeFileSync(this.transcriptFile, lines.slice(0, cut).join("\n") + (cut ? "\n" : ""));
+    this.messages = [];
+    this.restoreMessages();
+    this.record({ kind: "revert", userIndex });
+    return removed;
   }
 
   /** Append an audit record to the JSONL transcript. */
@@ -417,6 +460,39 @@ export class SessionStore {
   create(): Session {
     const s = new Session(this.dataDir);
     this.sessions.set(s.id, s);
+    return s;
+  }
+
+  /**
+   * Fork a session at the userIndex-th user message: the new session gets the
+   * history BEFORE that message (transcript copy) and a live model context
+   * rebuilt from it — a true branch, not a UI illusion.
+   */
+  fork(id: string, userIndex: number): Session | null {
+    const src = this.get(id);
+    if (!src) return null;
+    const lines = src.transcriptRaw().split("\n").filter(Boolean);
+    let count = -1;
+    let cut = lines.length;
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const e = JSON.parse(lines[i]) as { kind?: string };
+        if (e.kind === "user") {
+          count++;
+          if (count === userIndex) {
+            cut = i;
+            break;
+          }
+        }
+      } catch {
+        /* skip */
+      }
+    }
+    const s = this.create();
+    writeFileSync(s.transcriptFile, lines.slice(0, cut).join("\n") + (cut ? "\n" : ""));
+    s.title = `${src.title || "Chat"} (fork)`;
+    s.restoreMessages();
+    this.touch(s);
     return s;
   }
 

@@ -188,7 +188,7 @@ type TabGroup = { id: string; name: string; collapsed: boolean };
 function newTab(index: number): SqlTab {
   return {
     id: `tab-${Date.now()}-${index}`,
-    title: `Query ${index}`,
+    title: `Untitled-${index}`,
     view: "sql",
     sql:
       index === 1
@@ -1720,14 +1720,14 @@ export function ExasolStudio({
     // everything the next tab is "Query 1" again, never "Query 8".
     const used = new Set(
       tabsFor(connKey)
-        .map((x) => /^Query (\d+)$/.exec(x.title)?.[1])
+        .map((x) => /^Untitled-(\d+)$/.exec(x.title)?.[1])
         .filter(Boolean)
         .map(Number),
     );
     let n = 1;
     while (used.has(n)) n++;
     const tab = newTab(tabCounter.current);
-    tab.title = `Query ${n}`;
+    tab.title = `Untitled-${n}`;
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
   }
@@ -2292,7 +2292,7 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-q-${Date.now()}-${tabCounter.current}`,
-      title: "Query",
+      title: "Untitled",
       view: "sql",
       sql,
       response: null,

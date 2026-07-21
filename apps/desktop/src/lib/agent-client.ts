@@ -124,6 +124,15 @@ export const agent = {
     await api("/config", "PUT", { model });
   },
 
+  async revertSession(id: string, userIndex: number): Promise<string | null> {
+    const { removedText } = await api<{ removedText: string | null }>(
+      `/sessions/${encodeURIComponent(id)}/revert`, "POST", { userIndex },
+    );
+    return removedText;
+  },
+  async forkSession(id: string, userIndex: number): Promise<{ id: string; title: string }> {
+    return api<{ id: string; title: string }>(`/sessions/${encodeURIComponent(id)}/fork`, "POST", { userIndex });
+  },
   async createSession(): Promise<string> {
     const { id } = await api<{ id: string }>("/sessions", "POST");
     return id;

@@ -265,6 +265,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
       }
 
+      // POST /v1/sessions/:id/revert {userIndex} — cut history before that user message
+      if (req.method === "POST" && parts[1] === "sessions" && parts[2] && parts[3] === "revert") {
+        const session = sessions.get(decodeURIComponent(parts[2]));
+        if (!session) return json(res, 404, { error: "no such session" });
+        const body = (await readBody(req)) as { userIndex?: number };
+        const removedText = session.truncateAtUser(body.userIndex ?? 0);
+        sessions.touch(session);
+        return json(res, 200, { removedText });
+      }
+      // POST /v1/sessions/:id/fork {userIndex} — branch into a new session
+      if (req.method === "POST" && parts[1] === "sessions" && parts[2] && parts[3] === "fork") {
+        const body = (await readBody(req)) as { userIndex?: number };
+        const forked = sessions.fork(decodeURIComponent(parts[2]), body.userIndex ?? 0);
+        return forked
+          ? json(res, 200, { id: forked.id, title: forked.title })
+          : json(res, 404, { error: "no such session" });
+      }
       // POST /v1/sessions/:id/messages  {text, model, context?, connectionId?}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "messages") {
         const body = await readBody<{ text: string; model: string; context?: string; connectionId?: string; attachments?: Attachment[] }>(req);
