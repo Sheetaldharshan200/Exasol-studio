@@ -156,7 +156,7 @@ export async function runTurn(opts: {
   // Cross-session knowledge, verified facts saved by earlier sessions.
   const remembered = settings.enableInsights ? await memory.contextFor(session.connectionId, userText) : "";
   let system = remembered
-    ? `${SYSTEM_PROMPT}\n\nMemory — durable facts about the user and this database (still confirm anything critical before acting):\n${remembered}`
+    ? `${SYSTEM_PROMPT}\n\nMemory — background about the user and this database. NEVER answer data questions (schemas, tables, columns, counts, values) from this memory — always call the live tools to check; memory only tells you where to look:\n${remembered}`
     : SYSTEM_PROMPT;
 
   // Surface truth: only describe abilities that EXIST this turn. Telling a
@@ -320,7 +320,7 @@ export async function runTurn(opts: {
   // never burns more than this many steps of tokens in one user turn.
   const MAX_TOTAL_STEPS = 30;
   let stepsTotal = 0;
-  let nudged = false;
+  let nudges = 0; // corrective re-runs after unacted plans (max 2)
   let continuations = 0; // turns resumed after the model stopped mid-plan
 
   try {
@@ -467,8 +467,8 @@ export async function runTurn(opts: {
         // The model reached for a tool that does not exist this turn (usually
         // ui_* while UI automation is off, or in the CLI). Correct it once —
         // silence here leaves the user with a dead "please confirm" ending.
-        if (!executed.length && phantoms.length && !nudged) {
-          nudged = true;
+        if (!executed.length && phantoms.length && nudges < 2) {
+          nudges++;
           session.record({ kind: "nudge", reason: "phantom-tool", tools: phantoms });
           session.messages.push(new HumanMessage(
               `You wrote a call to ${phantoms.map((p) => `\`${p}\``).join(", ")} — but no such tool exists in this session` +
@@ -493,8 +493,46 @@ export async function runTurn(opts: {
           return new Command({ goto: "attempt" });
         }
 
-        if (actionable && !nudged && looksLikeUnacted(text)) {
-          nudged = true;
+        // (1b) It wrote a runnable read-only statement into its reply and
+        // stalled ("Here's the SQL … let me check the result"). Execute it
+        // for real via the guarded run_sql, feed the rows back, and let it
+        // answer with data instead of dying mid-plan.
+        if (!executed.length && !phantoms.length && actionable && (looksLikeUnacted(text) || looksUnfinished(text))) {
+          const runSql = guardedTools["run_sql"] as
+            | { execute?: (a: unknown, o: unknown) => Promise<unknown> }
+            | undefined;
+          const sql = extractReadSql(text);
+          if (sql && typeof runSql?.execute === "function") {
+            const callId = `sql-${crypto.randomUUID().slice(0, 8)}`;
+            session.emit({ type: "tool-start", callId, name: "run_sql", args: { sql } });
+            session.record({ kind: "tool.call", name: "run_sql", args: { sql }, via: "sql-rescue" });
+            try {
+              const output = await runSql.execute(
+                { sql, purpose: "running the SQL the assistant wrote as text" },
+                { toolCallId: callId, messages: [] },
+              );
+              session.emit({ type: "tool-end", callId, name: "run_sql", ok: true, summary: summarize(output) });
+              session.messages.push(new HumanMessage(
+                  `You wrote SQL in your reply but never invoked run_sql — it was executed for you. Result:\n${JSON.stringify(output).slice(0, 2000)}\n\n` +
+                  `The user's request was: "${userText.slice(0, 300)}". Answer it NOW with the CONCRETE data above — actual names, rows, values. ` +
+                  "If more steps are needed, invoke tools natively through the tool-calling mechanism — never print them into your message text.",
+              ));
+              return new Command({ goto: "attempt" });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              session.record({ kind: "tool.error", name: "run_sql", error: msg });
+              session.emit({ type: "tool-end", callId, name: "run_sql", ok: false, summary: msg });
+              session.messages.push(new HumanMessage(
+                  `You wrote SQL in your reply but never invoked run_sql. It was executed for you and FAILED: ${msg}. ` +
+                  "Fix the statement and invoke run_sql natively, or report the real error to the user.",
+              ));
+              return new Command({ goto: "attempt" });
+            }
+          }
+        }
+
+        if (actionable && nudges < 2 && looksLikeUnacted(text)) {
+          nudges++;
           session.record({ kind: "nudge", reason: "plan-without-tools" });
           session.messages.push(new HumanMessage(
               "You described steps, wrote SQL, or printed a tool call as plain text — but did NOT actually invoke any tool, so nothing happened. " +
@@ -740,10 +778,31 @@ export function looksLikeUnacted(text: string): boolean {
     return true;
   const hasSql = /```sql|CREATE\s+(SCHEMA|TABLE)\b|INSERT\s+INTO\b|IMPORT\s+INTO\b|\bSELECT\b[\s\S]*\bFROM\b/i.test(text);
   const hasPlanLanguage =
-    /\bstep\s*\d|we'?ll (use|run|load|create|check|verify)|let'?s (start|begin|check|create|load)|here'?s (the|my) plan|first,? (let|we)|i (will|'ll) (run|load|create|use)/i.test(
+    /\bstep\s*\d|we'?ll (use|run|load|create|check|verify)|let'?s (start|begin|check|create|load)|here'?s (the|my) (plan|sql)|first,? (let|we)|i(?:'|’)?(?:ll| will) (run|load|create|use|check|query|list|execute)|let me (check|run|verify|see|query|list|execute)/i.test(
       text,
     );
   return hasSql && hasPlanLanguage;
+}
+
+/**
+ * Pull the first runnable READ-ONLY statement out of assistant text — the
+ * "here's the SQL … let me check" stall. Prefers a fenced ```sql block; falls
+ * back to a bare SELECT/WITH. Never returns DDL/DML (those need explicit user
+ * intent, not a rescue).
+ */
+export function extractReadSql(text: string): string | null {
+  const fence = /```(?:sql)?\s*([\s\S]*?)```/i.exec(text);
+  const source = fence ? fence[1] : text;
+  // Statement must START a line — "you can select a table from the tree" is
+  // prose, not SQL. Ends at the first semicolon, blank line, or end-of-text.
+  const m = /^[ \t]*(?:SELECT|WITH)\b[\s\S]*?(?=;|\n[ \t]*\n|$)/im.exec(source);
+  if (!m) return null;
+  const sql = m[0].trim();
+  // A real query, not prose that happens to contain "select": SELECT needs a
+  // FROM (Exasol scalar SELECTs without FROM are rare enough to skip).
+  if (/^SELECT/i.test(sql) && !/\bFROM\b/i.test(sql)) return null;
+  if (/\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|IMPORT|EXPORT)\b/i.test(sql)) return null;
+  return sql.length >= 12 && sql.length <= 4000 ? sql : null;
 }
 
 /**
