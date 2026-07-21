@@ -59,4 +59,4 @@ architecture as dt-sql-parser's dialects, but with a true Exasol grammar.
 ## Phase 8 — Extraction as team repo
 - [ ] Move to own repo (`exasol-labs/exasol-sql-parser` proposal), MIT license, README with API docs
 - [ ] npm publish pipeline; Studio consumes the published package
-- [ ] Studio integration flag: prefer Exasol engine, dt-sql-parser fallback removed
+- [~] Studio integration DONE (editor uses the Exasol engine as layer 0, alias-resolved refs feed the live catalog; dt-sql-parser + heuristics remain as fallbacks). Removing the fallback awaits Phase 7 gates

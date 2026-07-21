@@ -17,6 +17,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@exasol-studio/exasol-sql-parser':
+        specifier: workspace:*
+        version: link:../../packages/exasol-sql-parser
       '@fontsource-variable/figtree':
         specifier: ^5.2.10
         version: 5.2.10

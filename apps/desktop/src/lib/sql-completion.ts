@@ -50,6 +50,25 @@ const getParser = () =>
     .then((m) => new m.PostgreSQL() as never)
     .catch(() => null));
 
+// Layer 0 — the TRUE Exasol grammar engine (workspace package): a real
+// Exasol ANTLR grammar (QUALIFY, CONNECT BY, IMPORT/EXPORT, UDF script
+// islands) answering kinds, grammar-valid keywords, and alias-resolved
+// tableRefs scoped to the caret statement. Lazy chunk; falls through to the
+// PG-dialect engine, then heuristics.
+type ExasolEngine = {
+  getSuggestions: (sql: string, caret: { line: number; column: number }) => {
+    kinds: ("schema" | "table" | "column" | "function")[];
+    keywords: string[];
+    tableRefs: { schema?: string; table: string; alias?: string }[];
+    ctes: string[];
+  };
+};
+let exasolEnginePromise: Promise<ExasolEngine | null> | null = null;
+const getExasolEngine = () =>
+  (exasolEnginePromise ??= import("@exasol-studio/exasol-sql-parser")
+    .then((m) => m as ExasolEngine)
+    .catch(() => null));
+
 async function grammarHints(sql: string, pos: { lineNumber: number; column: number }): Promise<GrammarHints | null> {
   const parser = await getParser();
   if (!parser) return null;
@@ -172,6 +191,41 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
           for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
         }
         return { suggestions: S };
+      }
+
+      // Layer 0: true Exasol grammar engine.
+      const eng = await getExasolEngine();
+      if (eng) {
+        try {
+          const s = eng.getSuggestions(model.getValue(), { line: position.lineNumber, column: position.column - 1 });
+          if (s.kinds.length || s.keywords.length) {
+            if (s.kinds.includes("table") || s.kinds.includes("schema")) {
+              for (const cte of s.ctes) push(cte, K.Class, cte, "CTE", "1");
+              for (const [schema, tables] of cat.schemas) {
+                push(schema, K.Module, schema, `${tables.size} tables`, "1");
+                if (s.kinds.includes("table")) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+              }
+            }
+            if (s.kinds.includes("column")) {
+              const seenCols = new Set<string>();
+              for (const ref of s.tableRefs) {
+                for (const c of columnsOf((ref.schema ?? "").toUpperCase(), ref.table.toUpperCase())) {
+                  if (seenCols.has(c.name)) continue;
+                  seenCols.add(c.name);
+                  push(c.name, K.Field, c.name, `${ref.alias ?? ref.table} · ${c.type}`, "0");
+                }
+              }
+            }
+            if (s.kinds.includes("function")) {
+              for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
+              pushScripts("2");
+            }
+            for (const k of s.keywords) push(k, K.Keyword, k, undefined, "3");
+            if (S.length) return { suggestions: S };
+          }
+        } catch {
+          /* engine choked on this input — fall through to the next layer */
+        }
       }
 
       // Grammar-driven: ask the parser what belongs at the caret.
