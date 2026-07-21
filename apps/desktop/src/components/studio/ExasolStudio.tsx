@@ -45,6 +45,7 @@ import {
   Square,
   Star,
   Store,
+  SquareTerminal,
   Table2,
   Terminal,
   Trash2,
@@ -1399,7 +1400,30 @@ function HistoryDock({
   onRunConsole: (sql: string) => Promise<string>;
 }) {
   const [mode, setMode] = useState<"terminal" | "history">("history");
-  const [termClear, setTermClear] = useState(0);
+  // VS Code-style terminal instances: right-side list, + to create, per-
+  // terminal scrollback kept alive (hidden, not unmounted) when switching.
+  const termCounter = useRef(1);
+  const [terms, setTerms] = useState<{ id: number; name: string }[]>([{ id: 1, name: "exasol 1" }]);
+  const [activeTerm, setActiveTerm] = useState(1);
+  const [termClears, setTermClears] = useState<Record<number, number>>({});
+  function newTerminal() {
+    termCounter.current += 1;
+    const id = termCounter.current;
+    setTerms((l) => [...l, { id, name: `exasol ${id}` }]);
+    setActiveTerm(id);
+    setMode("terminal");
+  }
+  function killTerminal(id: number) {
+    setTerms((l) => {
+      const next = l.filter((x) => x.id !== id);
+      if (!next.length) {
+        termCounter.current += 1;
+        next.push({ id: termCounter.current, name: `exasol ${termCounter.current}` });
+      }
+      if (id === activeTerm) setActiveTerm(next[next.length - 1].id);
+      return next;
+    });
+  }
   // VS Code-style bottom panel: uppercase tab strip in the header, active tab
   // underlined; actions on the right are contextual to the active tab.
   const TABS: { id: "terminal" | "history"; label: string }[] = [
@@ -1453,16 +1477,71 @@ function HistoryDock({
                 </IconButton>
               </>
             ) : (
-              <IconButton label="Clear terminal" onClick={() => setTermClear((n) => n + 1)}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </IconButton>
+              <>
+                <IconButton label="New terminal" onClick={newTerminal}>
+                  <Plus className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton
+                  label="Clear active terminal"
+                  onClick={() => setTermClears((c) => ({ ...c, [activeTerm]: (c[activeTerm] ?? 0) + 1 }))}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </IconButton>
+              </>
             )}
           </div>
         ) : null}
       </div>
       <div className={cn("min-h-0 flex-1 overflow-auto", !open && "hidden")}>
         {mode === "terminal" ? (
-          <ConsolePanel onRun={onRunConsole} clearSignal={termClear} />
+          <div className="flex h-full min-h-0">
+            <div className="min-w-0 flex-1">
+              {terms.map((tm) => (
+                <div key={tm.id} className={cn("h-full", tm.id !== activeTerm && "hidden")}>
+                  <ConsolePanel onRun={onRunConsole} clearSignal={termClears[tm.id] ?? 0} />
+                </div>
+              ))}
+            </div>
+            <div className="flex w-40 shrink-0 flex-col border-l border-border bg-panel/70">
+              <div className="flex h-7 shrink-0 items-center justify-between border-b border-border/60 px-2">
+                <span className="text-[9.5px] font-medium tracking-wider text-muted-foreground uppercase">Terminals</span>
+                <button
+                  onClick={newTerminal}
+                  aria-label="New terminal"
+                  className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
+                {terms.map((tm) => (
+                  <div
+                    key={tm.id}
+                    onClick={() => setActiveTerm(tm.id)}
+                    className={cn(
+                      "group flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[11.5px]",
+                      tm.id === activeTerm
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+                    )}
+                  >
+                    <SquareTerminal className="h-3.5 w-3.5 shrink-0 text-primary/80" />
+                    <span className="min-w-0 flex-1 truncate font-mono">{tm.name}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        killTerminal(tm.id);
+                      }}
+                      aria-label={`Kill ${tm.name}`}
+                      className="rounded p-0.5 opacity-0 hover:text-destructive group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         ) : entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             No queries run yet.
