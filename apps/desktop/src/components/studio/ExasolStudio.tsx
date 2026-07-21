@@ -1715,10 +1715,43 @@ export function ExasolStudio({
   }
 
   function addTab() {
-    tabCounter.current += 1;
+    tabCounter.current += 1; // still salts ids for uniqueness
+    // Title takes the LOWEST free number among current tabs — after closing
+    // everything the next tab is "Query 1" again, never "Query 8".
+    const used = new Set(
+      tabsFor(connKey)
+        .map((x) => /^Query (\d+)$/.exec(x.title)?.[1])
+        .filter(Boolean)
+        .map(Number),
+    );
+    let n = 1;
+    while (used.has(n)) n++;
     const tab = newTab(tabCounter.current);
+    tab.title = `Query ${n}`;
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
+  }
+
+  // 2) Tab drag & drop: reorder chips; dropping ON a grouped chip adopts its
+  // group; dropping on a group header joins that group.
+  function moveTab(dragId: string, targetId: string | null) {
+    if (dragId === targetId) return;
+    updateTabs(connKey, (list) => {
+      const from = list.findIndex((x) => x.id === dragId);
+      if (from < 0) return list;
+      const next = [...list];
+      const [moved] = next.splice(from, 1);
+      if (targetId) {
+        const to = next.findIndex((x) => x.id === targetId);
+        if (to < 0) return list;
+        moved.groupId = next[to].groupId; // adopt target's group (or none)
+        next.splice(to, 0, moved);
+      } else {
+        moved.groupId = undefined;
+        next.push(moved);
+      }
+      return next;
+    });
   }
 
   // Connect to a saved profile from the Welcome "Recent" list (or fall back to
@@ -2123,6 +2156,22 @@ export function ExasolStudio({
     return (
       <div
         key={tab.id}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/exa-tab", tab.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("text/exa-tab")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          const dragId = e.dataTransfer.getData("text/exa-tab");
+          if (dragId) {
+            e.preventDefault();
+            e.stopPropagation();
+            moveTab(dragId, tab.id);
+          }
+        }}
         onClick={() => setActiveTabId(tab.id)}
         onDoubleClick={() => {
           if (tab.view === "sql" || tab.view === "visualizer") startRename(tab.id, tab.title);
@@ -2880,6 +2929,16 @@ export function ExasolStudio({
                 // Double-click empty tab-bar space opens a new query (VS Code style).
                 if (e.target === e.currentTarget) addTab();
               }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("text/exa-tab")) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                const dragId = e.dataTransfer.getData("text/exa-tab");
+                if (dragId && e.target === e.currentTarget) {
+                  e.preventDefault();
+                  moveTab(dragId, null);
+                }
+              }}
               title="Double-click to open a new query"
             >
               {(() => {
@@ -2900,6 +2959,17 @@ export function ExasolStudio({
                     <div key={g.id} className="flex h-9 shrink-0 items-center border-r border-border">
                       <button
                         onClick={() => toggleGroup(g.id)}
+                        onDragOver={(e) => {
+                          if (e.dataTransfer.types.includes("text/exa-tab")) e.preventDefault();
+                        }}
+                        onDrop={(e) => {
+                          const dragId = e.dataTransfer.getData("text/exa-tab");
+                          if (dragId) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addTabToGroup(dragId, g.id);
+                          }
+                        }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           const name = window.prompt("Rename group", g.name);

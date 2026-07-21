@@ -13,6 +13,7 @@ import type { ArtifactStore } from "./artifacts.ts";
 import type { Skill } from "./skills.ts";
 import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
 import { TaskManager } from "./a2a.ts";
+import { exapumpLoad, findExapump } from "./exapump.ts";
 import { writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -733,6 +734,29 @@ export function buildTools(ctx: {
 
               const started = Date.now();
               try {
+                // BEST path when available: exapump (native bulk IMPORT via
+                // HTTP transport — the production tool for this job). CLI is
+                // verified before use; any miss falls back to inserts.
+                const pumpBin = await findExapump();
+                const info = db.get(id);
+                if (pumpBin && info && !isParquet) {
+                  await db.execute(id, plan.createSchemaSql);
+                  if (plan.dropSql) await db.execute(id, plan.dropSql);
+                  await db.execute(id, plan.createTableSql);
+                  const rows = await exapumpLoad(file.text, {
+                    host: info.host, port: info.port, user: info.user, password: info.password,
+                    schema: plan.schema, table: plan.table,
+                  });
+                  if (rows !== null) {
+                    session.record({ kind: "tool.import_csv.done", target: `${plan.schema}.${plan.table}`, inserted: rows, skipped: 0, ms: Date.now() - started, engine: "exapump" });
+                    return {
+                      ok: true, schema: plan.schema, table: plan.table,
+                      columns: plan.columns.map((c) => ({ name: c.name, type: typeToSql(c.type) })),
+                      rowsInserted: rows, rowsSkipped: 0, engine: "exapump",
+                      message: `Loaded ${rows} row(s) into ${plan.schema}.${plan.table} via exapump (native bulk IMPORT — the production path for this job).`,
+                    };
+                  }
+                }
                 // Production path: ONE dedicated autocommit-off connection —
                 // all batches join a single transaction with one COMMIT
                 // (fewer fsyncs, atomic load); batch-level row fallback kept.
@@ -770,7 +794,8 @@ export function buildTools(ctx: {
                   message:
                     `Loaded ${inserted} row(s) into ${plan.schema}.${plan.table}` +
                     (skipped ? `; ${skipped} malformed row(s) were skipped` : "") +
-                    `. The data is in the database now — do not re-verify by re-listing everything.`,
+                    `. The data is in the database now — do not re-verify by re-listing everything.` +
+                    ` Note: for bulk loads, exapump is the best tool for this kind of job (native IMPORT, much faster on large files) — it isn't installed, so the standard insert path was used; it can be installed from the Marketplace.`,
                 };
               } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
@@ -844,6 +869,22 @@ export function buildTools(ctx: {
               const manager = new TaskManager();
               for (const { doc, plan } of plans) {
                 manager.submit(doc.name, async (report) => {
+                  const pumpBin = await findExapump();
+                  const info = db.get(id);
+                  const rawFile = ctx.documents!.raw(session.id, doc.id);
+                  if (pumpBin && info && rawFile && !rawFile.binary && !/\.parquet$/i.test(rawFile.name)) {
+                    await db.execute(id, plan.createSchemaSql);
+                    if (plan.dropSql) await db.execute(id, plan.dropSql);
+                    await db.execute(id, plan.createTableSql);
+                    const rows = await exapumpLoad(rawFile.text, {
+                      host: info.host, port: info.port, user: info.user, password: info.password,
+                      schema: plan.schema, table: plan.table,
+                    });
+                    if (rows !== null) {
+                      report(`${rows} rows via exapump`);
+                      return { table: `${plan.schema}.${plan.table}`, rowsInserted: rows, rowsSkipped: 0, engine: "exapump" };
+                    }
+                  }
                   const BATCH = 1000;
                   return db.bulkLoad(id, async (exec) => {
                     await exec(plan.createSchemaSql);
