@@ -321,6 +321,11 @@ export async function runTurn(opts: {
   const MAX_TOTAL_STEPS = 30;
   let stepsTotal = 0;
   let nudges = 0; // corrective re-runs after unacted plans (max 2)
+  // Multi-file follow-through: which attached docs actually got imported this
+  // turn, so a model that loads one file and stops gets sent back for the rest.
+  const importedDocs = new Set<string>();
+  let importedAll = false;
+  let lastImportSchema: string | null = null;
   let continuations = 0; // turns resumed after the model stopped mid-plan
 
   try {
@@ -373,6 +378,13 @@ export async function runTurn(opts: {
               break;
             }
             case "tool-call": {
+              if (part.toolName === "import_csv") {
+                const a = part.input as { docId?: string; schema?: string };
+                if (a?.docId) importedDocs.add(a.docId);
+                if (a?.schema) lastImportSchema = a.schema;
+              } else if (part.toolName === "import_attachments") {
+                importedAll = true;
+              }
               session.record({ kind: "tool.call", name: part.toolName, args: part.input });
               session.emit({ type: "tool-start", callId: part.toolCallId, name: part.toolName, args: part.input });
               // Doom-loop breaker: the same tool with identical input N times
@@ -539,6 +551,26 @@ export async function runTurn(opts: {
               "Invoke the tools now through the tool-calling mechanism (never write them into your message text): " +
               "import_csv to load an attached file, run_sql to run a statement, list_schemas/list_tables/describe_table to inspect. " +
               "Do not reply with another plan, and never invent commands (there is no EXA_PUMP) or system tables (there is no SYS.EXA_ATTACHED_FILES). Act, then report the real results.",
+          ));
+          return new Command({ goto: "attempt" });
+        }
+      }
+
+      // Multi-file follow-through: the user attached SEVERAL data files, the
+      // model imported some but not all, then stopped (often drifting into a
+      // greeting). Send it back with the exact remaining files — batch tool,
+      // one call. Enforced here because descriptions alone don't hold small
+      // models to completion.
+      if (!importedAll && importedDocs.size > 0 && nudges < 2) {
+        const tabular = documents.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+        const remaining = tabular.filter((d) => !importedDocs.has(d.id)).map((d) => d.name);
+        if (tabular.length > 1 && remaining.length > 0) {
+          nudges++;
+          session.record({ kind: "nudge", reason: "imports-incomplete", remaining });
+          session.messages.push(new HumanMessage(
+              `You loaded only ${tabular.length - remaining.length} of the ${tabular.length} attached data files and stopped. ` +
+              `Finish the job NOW: call import_attachments with schema "${lastImportSchema ?? "the same schema"}" and files ${JSON.stringify(remaining)} to load the rest in one batch. ` +
+              "Do not greet the user, do not ask what to do — load them, then report every table with its row count.",
           ));
           return new Command({ goto: "attempt" });
         }

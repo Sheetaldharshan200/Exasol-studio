@@ -784,14 +784,17 @@ export function buildTools(ctx: {
             inputSchema: z.object({
               schema: z.string().describe("Target schema, e.g. 'TPCH' (created if missing)"),
               replace: z.boolean().optional().describe("Drop and recreate each table first"),
+              files: z.array(z.string()).optional().describe("Only these attached file names (default: every attached data file)"),
             }),
-            execute: async ({ schema, replace }) => {
+            execute: async ({ schema, replace, files }) => {
               const id = requireConn();
               if (ctx.readOnly) return { denied: true, message: "This researcher context is read-only; it cannot load data." };
               if (ctx.settings?.writePolicy === "deny") {
                 return { denied: true, message: "Writes are disabled in this workspace's AI guardrails, so files can't be loaded." };
               }
-              const docs = ctx.documents!.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+              const docs = ctx.documents!.list(session.id)
+                .filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name))
+                .filter((d) => !files?.length || files.some((f) => f.toLowerCase() === d.name.toLowerCase()));
               if (!docs.length) return { error: "No attached data files found." };
 
               // Parse + plan every file up front so ONE approval shows the
