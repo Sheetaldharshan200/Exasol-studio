@@ -1,0 +1,78 @@
+import type { Monaco } from "@monaco-editor/react";
+
+type Ed = import("monaco-editor").editor.IStandaloneCodeEditor;
+export type AiBulbKind = "explain-plan" | "explain" | "optimize" | "edit";
+
+/**
+ * Custom floating 💡 that follows the SELECTION (not Monaco's finicky
+ * lightbulb): select SQL → bulb appears at the selection's first line →
+ * click → menu of AI actions that operate on that selection only.
+ */
+export function attachAiBulb(editor: Ed, monaco: Monaco, onAction: (kind: AiBulbKind) => void): void {
+  const node = document.createElement("div");
+  node.className = "exa-ai-bulb-wrap";
+  const bulb = document.createElement("button");
+  bulb.type = "button";
+  bulb.className = "exa-ai-bulb";
+  bulb.textContent = "💡";
+  bulb.title = "AI actions for this selection";
+  const menu = document.createElement("div");
+  menu.className = "exa-ai-menu";
+  menu.style.display = "none";
+  const ACTIONS: [AiBulbKind, string][] = [
+    ["explain-plan", "Explain the plan"],
+    ["explain", "Explain what this does"],
+    ["optimize", "Optimize"],
+    ["edit", "Edit with instruction…"],
+  ];
+  for (const [kind, label] of ACTIONS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    // preventDefault on mousedown keeps the editor selection alive.
+    b.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      menu.style.display = "none";
+      onAction(kind);
+    });
+    menu.appendChild(b);
+  }
+  bulb.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  bulb.addEventListener("click", () => {
+    menu.style.display = menu.style.display === "none" ? "block" : "none";
+  });
+  node.append(bulb, menu);
+
+  let pos: import("monaco-editor").IPosition | null = null;
+  const widget: import("monaco-editor").editor.IContentWidget = {
+    getId: () => "exa.ai.bulb",
+    getDomNode: () => node,
+    getPosition: () =>
+      pos
+        ? {
+            position: pos,
+            preference: [
+              monaco.editor.ContentWidgetPositionPreference.ABOVE,
+              monaco.editor.ContentWidgetPositionPreference.BELOW,
+            ],
+          }
+        : null,
+  };
+  editor.addContentWidget(widget);
+  editor.onDidChangeCursorSelection((e) => {
+    if (e.selection.isEmpty()) {
+      pos = null;
+      menu.style.display = "none";
+    } else {
+      pos = { lineNumber: e.selection.startLineNumber, column: e.selection.startColumn };
+    }
+    editor.layoutContentWidget(widget);
+  });
+}

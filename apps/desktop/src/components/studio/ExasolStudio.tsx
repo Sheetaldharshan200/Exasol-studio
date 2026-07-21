@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
+import { attachAiBulb } from "@/lib/editor-ai-bulb";
 import {
   Activity,
   BarChart3,
@@ -3363,6 +3364,7 @@ export function ExasolStudio({
                         run: () => aiAskSqlRef.current(a.kind),
                       });
                     }
+                    attachAiBulb(editor, monaco, (k) => aiAskSqlRef.current(k));
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,

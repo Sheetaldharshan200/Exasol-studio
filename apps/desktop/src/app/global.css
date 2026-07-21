@@ -692,3 +692,23 @@
 }
 .pet-svg-dizzy { transform-origin: 24px 24px; animation: pet-dizzy-wobble 0.35s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pet-svg-dizzy { animation: none; } }
+
+/* ── Editor AI bulb (selection-following) ─────────────────────────────── */
+.exa-ai-bulb-wrap { position: relative; z-index: 60; }
+.exa-ai-bulb {
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 5px;
+  border-radius: 7px; border: 1px solid var(--border);
+  background: var(--popover); box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+  transform: translateY(-2px);
+}
+.exa-ai-bulb:hover { border-color: color-mix(in oklch, var(--primary), transparent 40%); }
+.exa-ai-menu {
+  position: absolute; top: 24px; left: 0; min-width: 215px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--popover);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+}
+.exa-ai-menu button {
+  display: block; width: 100%; text-align: left; padding: 5px 9px;
+  border-radius: 6px; font-size: 12px; color: var(--foreground);
+}
+.exa-ai-menu button:hover { background: var(--secondary); }
