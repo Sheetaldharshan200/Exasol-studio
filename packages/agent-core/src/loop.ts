@@ -852,20 +852,22 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   const want = (re: RegExp, ...names: string[]) => {
     if (re.test(t)) add(...names);
   };
-  want(/perform|slow|profile|optimi|speed|faster|tune|bottleneck|explain plan/, "profile_query");
+  want(/perform|slow|profile|optimi|speed|faster|tune|bottleneck|explain plan/, "profile_query", "profile_tables");
   want(/join|relation|related|connect|link|between|subsystem|\barea\b|star schema|foreign key|how do .* relate/, "kb_join_path", "kb_subsystem");
   want(/refresh|re-?crawl|reload|changed schema|new table|just created|after creating/, "kb_refresh");
   // Dashboards get the researcher too: panel discovery/SQL-testing fans out.
-  want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card|report/, "dashboard_save", "dashboard_list", "dashboard_get", "spawn_researcher");
+  want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card|report/, "dashboard_save", "dashboard_list", "dashboard_get", "spawn_researcher", "run_sql_batch");
   want(/artifact|report|infographic|render|html page|write.?up/, "render_artifact");
   want(/connect|open (the|a|my|up)|click|go to|navigat|panel|marketplace|settings|switch to|show me the/, "ui_connect", "ui_open", "ui_editor_insert", "app_ui_locate");
   want(
     /everything|all (the )?tables|explore|overview|\bmap\b|understand the (db|database|schema)|whole (db|database|schema)|what.?s in|compare|versus|\bvs\b|across|breakdown|\btrends?\b|each of|both |multiple|analy|profile (these|the)|summar/,
-    "spawn_researcher",
+    "spawn_researcher", "spawn_researchers", "run_sql_batch", "profile_tables", "run_pipeline",
   );
-  if (opts.hasDocuments) add("search_documents", "read_document", "import_csv");
-  // Loading/ingest intent surfaces the importer even before the file lands.
-  want(/\bimport\b|\bload\b|\bpump\b|ingest|upload|add (this|these|the).*(data|csv|file|table)|\bcsv\b|into a? ?(schema|table)/, "import_csv");
+  if (opts.hasDocuments) add("search_documents", "read_document", "import_csv", "import_attachments");
+  // Loading/ingest intent surfaces the importers even before the file lands.
+  want(/\bimport\b|\bload\b|\bpump\b|ingest|upload|add (this|these|the).*(data|csv|file|table)|\bcsv\b|into a? ?(schema|table)/, "import_csv", "import_attachments");
+  want(/\bexport\b|download.*(table|schema|csv)|backup/, "export_tables");
+  add("load_skill");
   // Semantic-view tools only exist in `all` when the layer is ready; when they
   // do, they're the source of truth for analytics, so always surface them.
   add("semantic_compile_request", "semantic_compile_sql");
