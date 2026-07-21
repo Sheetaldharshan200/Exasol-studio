@@ -46,9 +46,9 @@ def sha256_file(path: pathlib.Path) -> str:
 def fetch(name: str, url: str, expected: str) -> None:
     target = DEST / name
     if target.is_file() and sha256_file(target) == expected.lower():
-        print(f"✓ {name} (already bundled)")
+        print(f"[ok] {name} (already bundled)")
         return
-    print(f"↓ {name}")
+    print(f"[fetch] {name}")
     partial = target.with_suffix(target.suffix + ".partial")
     request = urllib.request.Request(url, headers={"User-Agent": "exasol-studio-build"})
     with urllib.request.urlopen(request) as response, partial.open("wb") as out:
@@ -59,7 +59,7 @@ def fetch(name: str, url: str, expected: str) -> None:
         partial.unlink(missing_ok=True)
         raise SystemExit(f"checksum mismatch for {name}: expected {expected}, got {actual}")
     partial.replace(target)
-    print(f"✓ {name}")
+    print(f"[ok] {name}")
 
 
 def main() -> None:
@@ -70,7 +70,7 @@ def main() -> None:
         component = lock[component_name]
         artifact = component["artifacts"].get(key)
         if not artifact:
-            print(f"! {component_name} {component['version']} has no artifact for {key} — skipping")
+            print(f"[skip] {component_name} {component['version']} has no artifact for {key} — skipping")
             continue
         fetch(artifact["name"], artifact["url"], artifact["sha256"])
 

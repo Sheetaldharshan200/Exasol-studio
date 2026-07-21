@@ -4,6 +4,11 @@ name: Release app (all platforms)
 # Windows (x64 + arm64) and Linux (x64 + arm64). Runs only on a version tag or
 # a manual dispatch — never on ordinary pushes — so the pricey macOS/Windows
 # runners are used sparingly. Rust + pnpm caches keep repeat builds cheap.
+#
+# One platform failed? Two cheap ways to redo JUST that one:
+#   • gh run rerun <run-id> --failed        (same commit, failed jobs only)
+#   • workflow_dispatch with `only` set to its target triple (new commit OK) —
+#     the plan job then emits a matrix containing only those targets.
 
 on:
   push:
@@ -13,6 +18,10 @@ on:
       tag:
         description: "Release tag to publish (e.g. v0.1.0)"
         required: true
+      only:
+        description: "Optional: comma-separated target triples to (re)build, e.g. x86_64-pc-windows-msvc. Empty = all."
+        required: false
+        default: ""
 
 concurrency:
   group: release-app-${{ github.event.inputs.tag || github.ref }}
@@ -22,32 +31,43 @@ permissions:
   contents: write
 
 jobs:
+  # Emits the build matrix, filtered by the `only` input on manual dispatch —
+  # so a single failed distribution can be rebuilt without paying for all six.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.emit.outputs.matrix }}
+    steps:
+      - id: emit
+        env:
+          ONLY: ${{ github.event.inputs.only || '' }}
+        run: |
+          cat > /tmp/all.json <<'EOF'
+          [
+            {"label": "macOS (Apple Silicon)", "os": "macos-14", "target": "aarch64-apple-darwin", "args": "--target aarch64-apple-darwin"},
+            {"label": "macOS (Intel)", "os": "macos-15-intel", "target": "x86_64-apple-darwin", "args": "--target x86_64-apple-darwin"},
+            {"label": "Linux x64", "os": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "args": ""},
+            {"label": "Linux arm64", "os": "ubuntu-22.04-arm", "target": "aarch64-unknown-linux-gnu", "args": ""},
+            {"label": "Windows x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "args": ""}
+          ]
+          EOF
+          if [ -z "$ONLY" ]; then
+            matrix=$(jq -c . /tmp/all.json)
+          else
+            matrix=$(jq -c --arg only "$ONLY" '[.[] | select(.target as $t | ($only | split(",") | map(gsub("^\\s+|\\s+$"; "")) | index($t)) != null)]' /tmp/all.json)
+          fi
+          count=$(jq 'length' <<<"$matrix")
+          echo "Building $count target(s): $(jq -r '[.[].target] | join(", ")' <<<"$matrix")"
+          if [ "$count" = "0" ]; then echo "::error::\`only\` matched no targets"; exit 1; fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.label }}
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - label: macOS (Apple Silicon)
-            os: macos-14
-            target: aarch64-apple-darwin
-            args: "--target aarch64-apple-darwin"
-          - label: macOS (Intel)
-            os: macos-15-intel
-            target: x86_64-apple-darwin
-            args: "--target x86_64-apple-darwin"
-          - label: Linux x64
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            args: ""
-          - label: Linux arm64
-            os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-            args: ""
-          - label: Windows x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            args: ""
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
