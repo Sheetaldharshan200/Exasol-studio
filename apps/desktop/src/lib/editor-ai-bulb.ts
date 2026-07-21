@@ -55,6 +55,9 @@ export function attachAiBulb(editor: Ed, monaco: Monaco, onAction: (kind: AiBulb
 
   let pos: import("monaco-editor").IPosition | null = null;
   const widget: import("monaco-editor").editor.IContentWidget = {
+    // The bulb hangs LEFT of column 1 (into the gutter gap) — without this
+    // flag Monaco clips content widgets to the text area and it vanishes.
+    allowEditorOverflow: true,
     getId: () => "exa.ai.bulb",
     getDomNode: () => node,
     getPosition: () =>
