@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Check,
@@ -279,6 +279,8 @@ export function AssistantPanel({
   // Files already sent in THIS chat — pinned above the conversation so the
   // user can reopen any of them in a preview tab at any time.
   const [sessionFiles, setSessionFiles] = useState<AgentAttachment[]>([]);
+  const sessionFilesRef = useRef<AgentAttachment[]>([]);
+  sessionFilesRef.current = sessionFiles;
   const [attachHint, setAttachHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -726,6 +728,12 @@ export function AssistantPanel({
     if (next.length) setAttachments((a) => [...a, ...next]);
   }
 
+  const openAttachmentByName = useCallback((name: string) => {
+    const f = sessionFilesRef.current.find((x) => x.name === name);
+    if (f) onOpenAttachment?.(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onOpenAttachment]);
+
   async function answerPermission(id: string, allow: boolean) {
     if (!sessionRef.current) return;
     await agent.answerPermission(sessionRef.current, id, allow).catch(() => undefined);
@@ -952,16 +960,9 @@ export function AssistantPanel({
           ) : (
             items.map((it) =>
               it.kind === "msg" ? (
-                <Bubble
-                  key={it.id}
-                  message={it}
-                  onOpenAttachmentName={(name) => {
-                    const f = sessionFiles.find((x) => x.name === name);
-                    if (f) onOpenAttachment?.(f);
-                  }}
-                />
+                <BubbleMemo key={it.id} message={it} onOpenAttachmentName={openAttachmentByName} />
               ) : it.kind === "tool" ? (
-                <ToolView key={it.id} item={it} />
+                <ToolViewMemo key={it.id} item={it} />
               ) : it.kind === "perm" ? (
                 <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
               ) : (
@@ -1657,3 +1658,6 @@ function Bubble({
     </Message>
   );
 }
+
+const BubbleMemo = memo(Bubble);
+const ToolViewMemo = memo(ToolView);

@@ -324,6 +324,62 @@ export async function runTurn(opts: {
   // in the conversation). This resolves loops the model would otherwise get
   // stuck in far more gracefully than a hard abort.
   const guardedTools = wrapForProgress(relevantTools);
+
+  // Deterministic multi-file load (research-backed: small local models must
+  // not orchestrate multi-step loops — they stall mid-job and fabricate
+  // results). When several data files are attached with load intent, run the
+  // batch tool DIRECTLY: one approval, A2A drain, deterministic summary. The
+  // model never enters the control path.
+  if (session.connectionId) {
+    const tabular = documents.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+    const wantsLoad = /\b(load|import|upload|pump|ingest)\b/i.test(userText);
+    const batch = guardedTools["import_attachments"] as
+      | { execute?: (a: unknown, o: unknown) => Promise<unknown> }
+      | undefined;
+    if (tabular.length > 1 && wantsLoad && typeof batch?.execute === "function") {
+      const m = /(?:in|into|to)\s+(?:the\s+|a\s+)?"?([A-Za-z_][\w]*)"?\s+schema|schema\s+"?([A-Za-z_][\w]*)"?/i.exec(userText);
+      const schema = (m?.[1] ?? m?.[2])?.toUpperCase();
+      const finish = (text: string) => {
+        const mid = `batch-${Date.now()}`;
+        session.emit({ type: "message-start", messageId: mid, role: "assistant" });
+        session.emit({ type: "text-delta", messageId: mid, delta: text });
+        session.messages.push(new AIMessage(text));
+        session.record({ kind: "assistant", model: modelRef, text, steps: 0, usage: null, durationMs: 0, gated: "deterministic-batch-load" });
+        session.running = false;
+        session.abort = null;
+        store.touch(session);
+        session.emit({ type: "status", state: "idle" });
+      };
+      if (!schema) {
+        finish(`I have ${tabular.length} data files ready. Which schema should they go into? Say e.g. "load these into the TPCH schema".`);
+        return;
+      }
+      session.record({ kind: "gate", reason: "deterministic-batch-load", schema, files: tabular.length });
+      try {
+        const out = (await batch.execute(
+          { schema, replace: /\breplac/i.test(userText) },
+          { toolCallId: `batch-${Date.now()}`, messages: [] },
+        )) as { completed?: { file: string; table?: string; rowsInserted?: number; rowsSkipped?: number }[]; failed?: { file: string; error?: string }[]; denied?: boolean; message?: string };
+        if (out?.denied) {
+          finish("Okay — the batch load was declined. Tell me how you'd like to proceed.");
+          return;
+        }
+        const lines = [
+          `Loaded ${out?.completed?.length ?? 0} of ${tabular.length} files into ${schema}:`,
+          ...(out?.completed ?? []).map((c) => `- ${c.table ?? c.file}: ${c.rowsInserted ?? "?"} rows${c.rowsSkipped ? ` (${c.rowsSkipped} skipped)` : ""}`),
+          ...(out?.failed ?? []).map((f) => `- ${f.file}: FAILED — ${f.error ?? "unknown error"}`),
+        ];
+        finish(lines.join("\n"));
+        return;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        session.record({ kind: "tool.error", name: "import_attachments", error: msg });
+        finish(`The batch load failed before completing: ${msg}`);
+        return;
+      }
+    }
+  }
+
   const started = Date.now();
   const callCounts = new Map<string, number>();
   const DOOM_LIMIT = 5;
