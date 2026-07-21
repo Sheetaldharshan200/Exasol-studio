@@ -103,7 +103,7 @@ export function buildTools(ctx: {
     return ctx.connectionId;
   };
 
-  return {
+  const tools: ToolSet = {
     ...(ctx.skills && ctx.skills.length
       ? {
           load_skill: tool({
@@ -1036,5 +1036,109 @@ export function buildTools(ctx: {
         return shape(out);
       },
     }),
+
+    run_sql_batch: tool({
+      description:
+        "Run MANY read-only SQL statements as one batch of A2A tasks — the right tool whenever a job needs several independent SELECTs (collecting stats per table for an artifact or dashboard, profiling many tables, checking row counts across schemas). " +
+        "Up to 50 statements run concurrently; this waits until ALL finish and returns each statement's rows. One approval covers the whole batch. Never loop run_sql one-by-one for work like this.",
+      inputSchema: z.object({
+        statements: z
+          .array(z.object({
+            purpose: z.string().describe("One short line: what this statement gathers"),
+            sql: z.string().describe("A single read-only SELECT/WITH statement, schema-qualified"),
+          }))
+          .min(1)
+          .max(50),
+      }),
+      execute: async ({ statements }) => {
+        const id = requireConn();
+        const writes = statements.filter((s) => classifySql(s.sql) !== "read");
+        if (writes.length) {
+          return { error: `run_sql_batch is read-only; these statements write: ${writes.map((w) => w.purpose).join(", ")}. Use run_sql (with approval) for writes.` };
+        }
+        if (ctx.settings?.readPolicy === "ask" && !ctx.readOnly) {
+          const allowed = await session.askPermission({
+            tool: "run_sql",
+            summary: `Run ${statements.length} read-only statements`,
+            detail: statements.map((s) => `- ${s.purpose}`).join("\n"),
+          });
+          if (!allowed) return { denied: true, message: "The user declined the batch. Ask what they want instead." };
+        }
+        const manager = new TaskManager();
+        for (const s of statements) {
+          manager.submit(s.purpose, async () => shape(await db.query(id, s.sql)));
+        }
+        const emitted = new Set<string>();
+        const results = await manager.drain(4, (t) => {
+          const callId = `a2a-${t.id}`;
+          if (t.state === "working" && !emitted.has(callId)) {
+            emitted.add(callId);
+            session.emit({ type: "tool-start", callId, name: "run_sql", args: { purpose: t.title } });
+          } else if (t.state === "completed" || t.state === "failed") {
+            const r = t.result as { rowCount?: number } | undefined;
+            session.emit({
+              type: "tool-end",
+              callId,
+              name: "run_sql",
+              ok: t.state === "completed",
+              summary: t.state === "completed" ? `${r?.rowCount ?? 0} rows` : (t.error ?? "failed").slice(0, 80),
+            });
+          }
+        });
+        session.record({ kind: "tool.run_sql_batch", count: statements.length, failed: results.filter((t) => t.state === "failed").length });
+        return {
+          ok: results.every((t) => t.state === "completed"),
+          results: results.map((t) => ({
+            purpose: t.title,
+            ...(t.state === "completed" ? (t.result as object) : { error: t.error }),
+          })),
+          message: "All batch statements finished. Use the data above directly — do not re-run them.",
+        };
+      },
+    }),
+
+    spawn_researchers: tool({
+      description:
+        "Spawn a SWARM of parallel read-only researcher agents in one call (A2A tasks) — use when a job decomposes into several independent questions (e.g. 'profile each schema', 'investigate these 6 subsystems'). " +
+        "Waits until every researcher reports, then returns all reports. Prefer this over calling spawn_researcher repeatedly.",
+      inputSchema: z.object({
+        tasks: z.array(z.string()).min(1).max(50).describe("One focused research question per agent"),
+      }),
+      execute: async ({ tasks }) => {
+        const researcher = tools["spawn_researcher"] as
+          | { execute?: (a: { task: string }, o: unknown) => Promise<unknown> }
+          | undefined;
+        if (typeof researcher?.execute !== "function") {
+          return { error: "Researchers are unavailable here (no model, read-only context, or disabled in settings)." };
+        }
+        const manager = new TaskManager();
+        for (const task of tasks) {
+          manager.submit(task, async () => researcher.execute!({ task }, { toolCallId: `swarm-${Date.now()}`, messages: [] }));
+        }
+        const emitted = new Set<string>();
+        const results = await manager.drain(2, (t) => {
+          const callId = `a2a-${t.id}`;
+          if (t.state === "working" && !emitted.has(callId)) {
+            emitted.add(callId);
+            session.emit({ type: "tool-start", callId, name: "spawn_researcher", args: { task: t.title } });
+          } else if (t.state === "completed" || t.state === "failed") {
+            session.emit({
+              type: "tool-end",
+              callId,
+              name: "spawn_researcher",
+              ok: t.state === "completed",
+              summary: t.state === "completed" ? "reported" : (t.error ?? "failed").slice(0, 80),
+            });
+          }
+        });
+        session.record({ kind: "tool.spawn_researchers", count: tasks.length, failed: results.filter((t) => t.state === "failed").length });
+        return {
+          ok: results.every((t) => t.state === "completed"),
+          reports: results.map((t) => ({ task: t.title, ...(t.state === "completed" ? { report: t.result } : { error: t.error }) })),
+          message: "Every researcher has reported. Synthesize the findings above into the answer now.",
+        };
+      },
+    }),
   };
+  return tools;
 }
