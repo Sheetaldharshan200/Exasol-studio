@@ -913,28 +913,6 @@ export function AssistantPanel({
         </div>
       ) : null}
 
-      {/* ── Pinned files: everything sent this chat, click to open a preview tab ── */}
-      {sessionFiles.length > 0 ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
-          {sessionFiles.map((f) => (
-            <button
-              key={f.name}
-              type="button"
-              onClick={() => onOpenAttachment?.(f)}
-              title={`Open ${f.name} in a tab`}
-              className="group flex max-w-[46%] items-center gap-1.5 rounded-full border border-border bg-muted/40 py-1 pr-2.5 pl-2 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:bg-primary/10"
-            >
-              {f.kind === "image" ? (
-                <ImageIcon className="h-3 w-3 shrink-0 text-primary" />
-              ) : (
-                <FileText className="h-3 w-3 shrink-0 text-muted-foreground group-hover:text-primary" />
-              )}
-              <span className="truncate">{f.name}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       {/* ── Conversation (shadcn AI Elements) ── */}
       <Conversation className="min-h-0 flex-1">
         <ConversationContent className="space-y-3">
@@ -970,7 +948,14 @@ export function AssistantPanel({
           ) : (
             items.map((it) =>
               it.kind === "msg" ? (
-                <Bubble key={it.id} message={it} />
+                <Bubble
+                  key={it.id}
+                  message={it}
+                  onOpenAttachmentName={(name) => {
+                    const f = sessionFiles.find((x) => x.name === name);
+                    if (f) onOpenAttachment?.(f);
+                  }}
+                />
               ) : it.kind === "tool" ? (
                 <ToolView key={it.id} item={it} />
               ) : it.kind === "perm" ? (
@@ -994,15 +979,9 @@ export function AssistantPanel({
       </Conversation>
 
       {/* ── Composer ── */}
+      {/* Approvals render ONCE, as the in-chat PermissionCard — no duplicate
+          dock here. */}
       <div className="relative shrink-0 p-2.5 pt-0">
-        {items
-          .filter((it): it is Extract<ChatItem, { kind: "perm" }> => it.kind === "perm" && it.result === undefined)
-          .slice(0, 1)
-          .map((p) => (
-            <div key={p.id} className="mb-1.5">
-              <PermissionCard item={p} onAnswer={answerPermission} />
-            </div>
-          ))}
         {/* Slash / mention popup */}
         {menuItems.length > 0 ? (
           <div className="absolute bottom-full left-2.5 z-30 mb-1 w-[calc(100%-1.25rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
@@ -1617,7 +1596,13 @@ const CHAT_MD_COMPONENTS = {
   ),
 } as const;
 
-function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
+function Bubble({
+  message,
+  onOpenAttachmentName,
+}: {
+  message: Extract<ChatItem, { kind: "msg" }>;
+  onOpenAttachmentName?: (name: string) => void;
+}) {
   if (message.role === "user") {
     return (
       <Message from="user">
@@ -1627,13 +1612,15 @@ function Bubble({ message }: { message: Extract<ChatItem, { kind: "msg" }> }) {
         {message.attachments?.length ? (
           <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
             {message.attachments.map((name) => (
-              <span
+              <button
                 key={name}
-                title={name}
-                className="max-w-[180px] truncate rounded-md border border-border bg-secondary/50 px-2 py-0.5 text-[10.5px] text-muted-foreground"
+                type="button"
+                title={`Open ${name} in a tab`}
+                onClick={() => onOpenAttachmentName?.(name)}
+                className="max-w-[180px] truncate rounded-md border border-border bg-secondary/50 px-2 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 {name}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}

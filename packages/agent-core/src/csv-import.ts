@@ -148,8 +148,10 @@ export function inferType(values: string[]): ColType {
   if (seen.every((v) => DATE_RE.test(v))) return { kind: "date" };
 
   if (seen.every((v) => INT_RE.test(v))) {
-    const maxDigits = Math.min(36, Math.max(...seen.map((v) => v.replace("-", "").length)));
-    return { kind: "decimal", precision: Math.max(maxDigits, 1), scale: 0 };
+    // Loop, never spread: Math.max(...600k values) overflows the call stack.
+    let digits = 1;
+    for (const v of seen) digits = Math.max(digits, v.replace("-", "").length);
+    return { kind: "decimal", precision: Math.min(36, digits), scale: 0 };
   }
   if (seen.every((v) => INT_RE.test(v) || DEC_RE.test(v))) {
     let intDigits = 1;
@@ -164,7 +166,8 @@ export function inferType(values: string[]): ColType {
     return { kind: "decimal", precision: Math.max(precision, scale + 1), scale };
   }
 
-  const maxLen = Math.max(...seen.map((v) => v.length));
+  let maxLen = 1;
+  for (const v of seen) maxLen = Math.max(maxLen, v.length);
   // Round up with headroom; Exasol VARCHAR max is 2,000,000.
   const size = Math.min(2_000_000, Math.max(20, Math.ceil((maxLen * 1.5) / 10) * 10));
   return { kind: "varchar", size };
