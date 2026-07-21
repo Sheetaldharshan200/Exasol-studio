@@ -472,7 +472,9 @@ function TitleBar({
         <ThemeToggle className="h-6 w-6 rounded-md hover:bg-secondary" />
         {connected ? (
           <button
-            onClick={onDisconnect}
+            // Never pass the handler directly: onClick's MouseEvent would land
+            // in disconnect(profileId?) and be mistaken for a profile id.
+            onClick={() => onDisconnect()}
             className="flex h-6 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] hover:border-destructive/50 hover:text-foreground"
           >
             <Unplug className="h-3.5 w-3.5" />
@@ -616,7 +618,7 @@ function ConnectionSection({
                 <HardDriveUpload className="h-3.5 w-3.5" /> Upload driver to BucketFS
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDisconnect} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={() => onDisconnect()} className="text-destructive focus:text-destructive">
                 <Unplug className="h-3.5 w-3.5" /> Disconnect
               </DropdownMenuItem>
             </DropdownMenuContent>
