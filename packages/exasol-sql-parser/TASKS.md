@@ -39,17 +39,17 @@ architecture as dt-sql-parser's dialects, but with a true Exasol grammar.
 - [ ] Session/system: ALTER SESSION/SYSTEM, KILL, FLUSH STATISTICS, RECOMPRESS, REORGANIZE, PRELOAD
 
 ## Phase 5 — Completion engine
-- [ ] antlr4-c3 candidate collection at caret token
+- [x] antlr4-c3 candidate collection at caret token
 - [ ] preferredRules → entity kinds: schema / table / view / column / function / script / connection / consumer group
-- [ ] Context resolution: alias map from parse tree (FROM/JOIN visitors), CTE names as virtual tables, subquery scoping
-- [ ] Keyword candidates filtered by follow-set (only grammatically valid)
-- [ ] API: `getSuggestions(sql, caret) → { kinds, keywords, tableRefs }` — drop-in for Studio's `sql-completion.ts`
-- Acceptance: golden tests — 50 caret scenarios with exact expected suggestion sets
+- [x] Context resolution: alias-resolved tableRefs from the parse tree, CTE names as virtual tables, caret-statement scoping (subquery-level scoping still open)
+- [x] Keyword candidates filtered by follow-set (only grammatically valid)
+- [x] API: `getSuggestions(sql, caret) → { kinds, keywords, tableRefs, ctes, errors }` — drop-in for Studio's `sql-completion.ts`
+- Acceptance (partial): 17 golden tests incl. scope/error-tolerance; grow toward 50 scenarios
 
 ## Phase 6 — Error tolerance & performance
-- [ ] Error-recovery strategy so half-typed statements still yield candidates
+- [x] Error-recovery verified: half-typed WHERE/alias-dot statements still yield kinds + tableRefs
 - [ ] Incremental / statement-splitting so only the caret statement is parsed
-- [ ] Benchmarks: <5ms p95 completion on a 500-line script (M-series baseline)
+- [~] Benchmark: 120-statement script completes in ~20ms cold-path (golden-tested <100ms); <5ms p95 target + statement-splitting still open
 
 ## Phase 7 — Quality gates
 - [ ] Corpus: every example from Exasol docs SQL reference into `tests/corpus/`
