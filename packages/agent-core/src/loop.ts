@@ -599,17 +599,26 @@ export async function runTurn(opts: {
           importedAll = true; // one shot — never loop this rescue
           session.record({ kind: "rescue", reason: "imports-incomplete", remaining: remaining.map((d) => d.name) });
           try {
-            const out = await batch.execute(
+            const out = (await batch.execute(
               { schema: lastImportSchema ?? "TPCH", files: remaining.map((d) => d.name) },
               { toolCallId: `impfix-${Date.now()}`, messages: [] },
-            );
+            )) as { completed?: { file: string; table?: string; rowsInserted?: number }[]; failed?: { file: string; error?: string }[]; denied?: boolean };
             remaining.forEach((d) => importedDocs.add(d.id));
-            session.messages.push(new HumanMessage(
-                `The remaining ${remaining.length} attached files were loaded for you in one batch. Results:\n${JSON.stringify(out).slice(0, 2500)}\n\n` +
-                "Now report EVERY loaded table with its REAL row count from the results above — a short list. " +
-                "Never invent sample rows or restate data you did not fetch. Do not call more tools.",
-            ));
-            return new Command({ goto: "attempt" });
+            if (out?.denied) return new Command({ goto: "finalize" });
+            // Deterministic closing summary — the step budgets are usually
+            // exhausted by now, so never depend on another model attempt.
+            const lines = [
+              `Loaded the remaining ${out?.completed?.length ?? 0} file(s):`,
+              ...(out?.completed ?? []).map((c) => `- ${c.table ?? c.file}: ${c.rowsInserted ?? "?"} rows`),
+              ...(out?.failed ?? []).map((f) => `- ${f.file}: FAILED — ${f.error ?? "unknown error"}`),
+            ];
+            const canned = lines.join("\n");
+            const mid = `impfix-${Date.now()}`;
+            session.emit({ type: "message-start", messageId: mid, role: "assistant" });
+            session.emit({ type: "text-delta", messageId: mid, delta: canned });
+            session.messages.push(new AIMessage(canned));
+            session.record({ kind: "assistant", model: modelRef, text: canned, steps: 0, usage: null, durationMs: 0, gated: "import-rescue-summary" });
+            return new Command({ goto: "finalize" });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             session.record({ kind: "tool.error", name: "import_attachments", error: msg });
@@ -666,7 +675,11 @@ export async function runTurn(opts: {
     };
 
     const route = (s: TurnGraphState): "recover" | "continuation" | "finalize" => {
-      if (canRetry() && (s.toolCalls === 0 || importsIncomplete())) return "recover";
+      // Unfinished imports ALWAYS route to recover, even with retry budgets
+      // exhausted — the rescue there is deterministic (no model attempt), and
+      // 4 imports' worth of steps is exactly what empties the budgets.
+      if (importsIncomplete()) return "recover";
+      if (canRetry() && s.toolCalls === 0) return "recover";
       if (canRetry() && continuations < 2 && s.toolCalls > 0 && looksUnfinished(s.text)) return "continuation";
       return "finalize";
     };

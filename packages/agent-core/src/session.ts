@@ -25,7 +25,7 @@ export type AgentEvent =
 
 /** A render-ready conversation item, rebuilt from the transcript. */
 export type ReplayItem =
-  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean }
+  | { kind: "msg"; id: string; role: "user" | "assistant"; content: string; error?: boolean; attachments?: string[] }
   | { kind: "tool"; id: string; name: string; args: unknown; done: true; ok: boolean; summary?: string }
   | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean };
 
@@ -249,7 +249,15 @@ export class Session {
       n += 1;
       switch (e.kind) {
         case "user":
-          items.push({ kind: "msg", id: `u${n}`, role: "user", content: String(e.text ?? "") });
+          items.push({
+            kind: "msg",
+            id: `u${n}`,
+            role: "user",
+            content: String(e.text ?? ""),
+            ...(Array.isArray(e.attachments) && e.attachments.length
+              ? { attachments: (e.attachments as { name?: string }[]).map((a) => String(a.name ?? "")).filter(Boolean) }
+              : {}),
+          });
           break;
         case "assistant":
           if (e.text) items.push({ kind: "msg", id: `a${n}`, role: "assistant", content: String(e.text) });
