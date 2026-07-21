@@ -1032,8 +1032,11 @@ export function AssistantPanel({
                 inputRef.current?.focus();
               }
             }}
-            // Always bright — no focus-dependent dimming at all.
-            className="flex-col items-stretch rounded-xl border-muted-foreground/60 bg-editor ring-1 ring-muted-foreground/25"
+            // Always bright. The shadcn InputGroup base dims the WHOLE group to
+            // 50% opacity when any child is disabled (has-disabled:opacity-50) —
+            // and the send button is disabled while the input is empty, which
+            // made the box look dim until the first letter. Override it.
+            className="flex-col items-stretch rounded-xl border-muted-foreground/60 bg-editor ring-1 ring-muted-foreground/25 has-disabled:bg-editor has-disabled:opacity-100"
           >
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
