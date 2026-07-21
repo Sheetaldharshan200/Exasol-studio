@@ -124,6 +124,19 @@ export const agent = {
     await api("/config", "PUT", { model });
   },
 
+  async mcpList(): Promise<{ id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number }[]> {
+    const { servers } = await api<{ servers: { id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number }[] }>("/mcp");
+    return servers;
+  },
+  async mcpAdd(cfg: { name: string; command: string; args: string[]; env?: Record<string, string> }): Promise<void> {
+    await api("/mcp", "POST", cfg);
+  },
+  async mcpReconnect(id: string): Promise<void> {
+    await api(`/mcp/${encodeURIComponent(id)}/reconnect`, "POST", {});
+  },
+  async mcpRemove(id: string): Promise<void> {
+    await api(`/mcp/${encodeURIComponent(id)}`, "DELETE");
+  },
   async revertSession(id: string, userIndex: number): Promise<string | null> {
     const { removedText } = await api<{ removedText: string | null }>(
       `/sessions/${encodeURIComponent(id)}/revert`, "POST", { userIndex },

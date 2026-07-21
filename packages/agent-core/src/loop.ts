@@ -98,6 +98,7 @@ export async function runTurn(opts: {
   artifacts: ArtifactStore;
   skills: SkillStore;
   documents: DocumentStore;
+  mcp?: import("./mcp.ts").McpManager;
   modelRef: string;
   userText: string;
   /** Extra context from the app (current schema, editor SQL, selection). */
@@ -107,7 +108,7 @@ export async function runTurn(opts: {
   /** Where this turn runs: the desktop app (default) or the terminal CLI. */
   surface?: "app" | "cli";
 }): Promise<void> {
-  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, modelRef, userText, context, attachments, surface = "app" } = opts;
+  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, mcp, modelRef, userText, context, attachments, surface = "app" } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -295,6 +296,7 @@ export async function runTurn(opts: {
     surface,
     board,
     store,
+    mcp,
   });
   // Progressive tool disclosure: small local models get confused when handed
   // ~26 tools at once (wrong picks, hallucinated names, calls-as-text). Expose
@@ -874,6 +876,9 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   // Semantic-view tools only exist in `all` when the layer is ready; when they
   // do, they're the source of truth for analytics, so always surface them.
   add("semantic_compile_request", "semantic_compile_sql");
+  // Bridged MCP tools (mcp_*): the user explicitly connected those servers —
+  // always expose them (each call is approval-gated anyway).
+  for (const n of Object.keys(all)) if (n.startsWith("mcp_")) keep.add(n);
 
   const out: ToolSet = {};
   for (const n of keep) out[n] = all[n];

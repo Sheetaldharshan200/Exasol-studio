@@ -23,6 +23,7 @@
     "@langchain/google-genai": "^2.2.0",
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "hyparquet": "^1.26.2",
     "ws": "^8.21.0",
     "zod": "^3.25.0"

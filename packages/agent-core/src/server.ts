@@ -7,6 +7,7 @@ import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
+import { McpManager } from "./mcp.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { DocumentStore } from "./documents.ts";
 import type { Attachment } from "./loop.ts";
@@ -25,6 +26,8 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const memory = new MemoryStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
   const dashboards = new DashboardStore(config.dataDir);
+  const mcp = new McpManager(config.dataDir);
+  void mcp.connectAll();
   const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
@@ -121,6 +124,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "mcp") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
+        if (req.method === "POST" && !parts[2]) {
+          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
+          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
+          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const status = mcp.list().find((x) => x.id === server.id);
+          return json(res, 200, { server: status });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
+          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          await mcp.remove(decodeURIComponent(parts[2]));
+          return json(res, 200, { ok: true });
+        }
+      }
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
         if (req.method === "GET" && parts[2] && parts[3] === "history") {
@@ -214,6 +234,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "mcp") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
+        if (req.method === "POST" && !parts[2]) {
+          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
+          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
+          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const status = mcp.list().find((x) => x.id === server.id);
+          return json(res, 200, { server: status });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
+          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          await mcp.remove(decodeURIComponent(parts[2]));
+          return json(res, 200, { ok: true });
+        }
+      }
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
         if (req.method === "GET" && parts[2] && parts[3] === "history") {
@@ -290,6 +327,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         session.connectionId = body.connectionId ?? session.connectionId;
         // Fire the turn; the client watches the SSE stream.
         void runTurn({
+          mcp,
           session,
           registry,
           db,
@@ -310,6 +348,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "mcp") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
+        if (req.method === "POST" && !parts[2]) {
+          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
+          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
+          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const status = mcp.list().find((x) => x.id === server.id);
+          return json(res, 200, { server: status });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
+          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          await mcp.remove(decodeURIComponent(parts[2]));
+          return json(res, 200, { ok: true });
+        }
+      }
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
         if (req.method === "GET" && parts[2] && parts[3] === "history") {
@@ -369,6 +424,23 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
+      if (parts[1] === "mcp") {
+        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
+        if (req.method === "POST" && !parts[2]) {
+          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
+          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
+          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const status = mcp.list().find((x) => x.id === server.id);
+          return json(res, 200, { server: status });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
+          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
+        }
+        if (req.method === "DELETE" && parts[2]) {
+          await mcp.remove(decodeURIComponent(parts[2]));
+          return json(res, 200, { ok: true });
+        }
+      }
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
         if (req.method === "GET" && parts[2] && parts[3] === "history") {

@@ -87,6 +87,8 @@ export function buildTools(ctx: {
   surface?: "app" | "cli";
   /** Shared per-turn findings board for multi-agent work. */
   board?: TurnBoard;
+  /** Connected external MCP servers — their tools are bridged in. */
+  mcp?: import("./mcp.ts").McpManager;
 }): ToolSet {
   const { db, session } = ctx;
 
@@ -1411,5 +1413,35 @@ export function buildTools(ctx: {
       },
     }),
   };
+
+  // ── MCP bridge: every tool of every CONNECTED external server becomes a
+  // native agent tool named mcp_<server>_<tool>. Args pass through loosely
+  // (the server validates); EVERY call is approval-gated — external systems
+  // are outside our permission model, so the human stays in the loop.
+  for (const mt of ctx.mcp?.tools() ?? []) {
+    const safe = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, "_");
+    const bridgeName = `mcp_${safe(mt.serverId)}_${safe(mt.name)}`;
+    tools[bridgeName] = tool({
+      description:
+        `[${mt.serverName} via MCP] ${mt.description || mt.name}. ` +
+        `Arguments must follow this JSON Schema: ${JSON.stringify(mt.inputSchema).slice(0, 800)}`,
+      inputSchema: z.object({}).passthrough(),
+      execute: async (args) => {
+        const allowed = await session.askPermission({
+          tool: bridgeName,
+          summary: `Call ${mt.serverName} → ${mt.name}`,
+          detail: JSON.stringify(args, null, 2),
+        });
+        session.record({ kind: "tool.mcp", server: mt.serverId, tool: mt.name, args, allowed });
+        if (!allowed) return { denied: true, message: "The user declined this external call. Do not retry it." };
+        try {
+          const text = await ctx.mcp!.call(mt.serverId, mt.name, args as Record<string, unknown>);
+          return { ok: true, result: text.length > 12_000 ? text.slice(0, 12_000) + `… [+${text.length - 12_000} chars]` : text };
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+    });
+  }
   return tools;
 }
