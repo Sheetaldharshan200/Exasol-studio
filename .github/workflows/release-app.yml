@@ -88,6 +88,13 @@ jobs:
       - name: Bundle platform runtime
         run: node scripts/fetch-runtime.mjs ${{ matrix.target }}
 
+      # Prebundle the verified Exasol components (Personal launcher, ExaPump)
+      # so first install needs no download. Platforms without a locked
+      # artifact are skipped — install falls back to the verified download.
+      - name: Prebundle Exasol runtime components
+        shell: bash
+        run: python3 scripts/prefetch-runtime.py ${{ matrix.target }} || python scripts/prefetch-runtime.py ${{ matrix.target }}
+
       - name: Build & publish (draft release)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:

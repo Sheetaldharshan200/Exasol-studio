@@ -17,7 +17,19 @@ LOCK = ROOT / "apps/desktop/src-tauri/resources/runtime-components.lock.json"
 DEST = ROOT / "apps/desktop/src-tauri/resources/runtime"
 
 
+TRIPLE_TO_KEY = {
+    "aarch64-apple-darwin": "macos-aarch64",
+    "x86_64-apple-darwin": "macos-x86_64",
+    "x86_64-unknown-linux-gnu": "linux-x86_64",
+    "aarch64-unknown-linux-gnu": "linux-aarch64",
+    "x86_64-pc-windows-msvc": "windows-x86_64",
+    "aarch64-pc-windows-msvc": "windows-aarch64",
+}
+
+
 def platform_key() -> str:
+    if len(sys.argv) > 1:  # explicit Rust target triple (CI matrix)
+        return TRIPLE_TO_KEY.get(sys.argv[1], sys.argv[1])
     os_name = {"darwin": "macos", "linux": "linux", "win32": "windows"}.get(sys.platform, sys.platform)
     arch = {"arm64": "aarch64", "x86_64": "x86_64", "amd64": "x86_64"}.get(platform.machine().lower(), platform.machine().lower())
     return f"{os_name}-{arch}"
