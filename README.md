@@ -8,22 +8,72 @@ Ask questions in plain words. Exa (the assistant) finds the right tables, writes
 
 ## Get it (2 minutes)
 
-1. Go to **[Releases](../../releases/latest)** and download the one file for your computer:
+Pick the track that fits you. **Single developer** = install on your own
+machine, fastest via the command line. **Enterprise / IT** = roll it out to a
+managed fleet. Full details in **[docs/INSTALL.md](docs/INSTALL.md)**.
 
-   | Your computer | File to download |
-   |---|---|
-   | Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
-   | Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
-   | Windows | `ExasolStudio-Windows-64bit-setup.exe` |
-   | Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
+### Single developer
 
-2. **Mac:** open the DMG, drag the app into **~/Applications** — no admin password needed.
-   **Windows:** run the installer — it installs just for you, no admin prompt.
-   **Linux:** make the AppImage executable and run it.
+**Command line (recommended)** — one command, auto-updates, easy to remove:
 
-3. Open the app. **No database yet?** The built-in Marketplace installs a free local Exasol on your machine in about two minutes — one click, verified download.
+| Platform | Install |
+|---|---|
+| **macOS** (Homebrew) | `brew tap sheetaldharshan200/tap https://github.com/Sheetaldharshan200/homebrew-tap`<br>`brew install --cask exasol-studio` |
+| **Windows** (Scoop) | `scoop bucket add exasol https://github.com/Sheetaldharshan200/homebrew-tap`<br>`scoop install exasol-studio` |
+| **Windows** (WinGet)¹ | `winget install ExasolStudio` |
+| **Linux** (Debian/Ubuntu) | `curl -fsSLO <deb-url> && sudo apt install ./ExasolStudio-Linux-64bit.deb` |
 
-That's it. Updates arrive automatically.
+Upgrade later: `brew upgrade --cask exasol-studio` / `scoop update exasol-studio`.
+Remove: `brew uninstall --cask exasol-studio` / `scoop uninstall exasol-studio`.
+
+> **Don't have `brew` or `scoop`?** Install the manager once —
+> macOS: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`,
+> Windows: `irm get.scoop.sh | iex` (WinGet is already built into Windows 10/11).
+> Or skip package managers entirely and use the **manual download** below — it
+> needs no tooling at all.
+
+> **Yes, Windows has a `brew`-style CLI too.** [Scoop](https://scoop.sh) is the
+> closest analog — a custom *bucket* works exactly like a Homebrew *tap* (the
+> command above adds ours). [WinGet](https://learn.microsoft.com/windows/package-manager/)
+> is Microsoft's built-in one. ¹WinGet needs a signed installer, so it lands
+> once we notarize/sign; Scoop works today.
+
+**Manual download** — grab the one file for your machine from
+**[Releases](../../releases/latest)**:
+
+| Your computer | File |
+|---|---|
+| Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
+| Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
+| Windows | `ExasolStudio-Windows-64bit-setup.exe` |
+| Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
+
+**Mac:** open the DMG, drag into Applications. **Windows:** run the installer
+(installs just for you, no admin). **Linux:** `chmod +x` the AppImage and run.
+
+> This build isn't Apple-notarized yet, so a manual DMG shows a Gatekeeper
+> prompt on first launch — right-click → **Open**, or just use the Homebrew
+> command above, which handles it for you. (The CLI install is the smooth path.)
+
+### Enterprise / IT (managed fleet)
+
+Deploy silently to many machines through your MDM — no per-user prompts:
+
+- **macOS** — a signed, notarized `.pkg` pushed via **Jamf / Intune / Kandji**
+  installs to `/Applications` with zero user interaction.
+- **Windows** — the `.exe` installs silently with `/S`, or ship the MSIX/WinGet
+  package through **Intune**.
+- **Linux** — the `.deb` / `.rpm` via your existing config-management (apt/yum).
+
+Silent, promptless installs require code-signing + notarization (macOS) and a
+signed installer (Windows). The exact certificates, secrets, and MDM steps are
+in **[docs/INSTALL.md](docs/INSTALL.md#enterprise-fleets)**.
+
+### First run
+
+Open the app. **No database yet?** The built-in Marketplace installs a free
+local Exasol on your machine in about two minutes — one click, verified
+download. Updates then arrive automatically.
 
 ## What can I do with it?
 

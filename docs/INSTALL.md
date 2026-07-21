@@ -1,5 +1,29 @@
 # Installing Exasol Studio
 
+> **No package manager? You don't need one.** The command-line installs below
+> are the *smooth* path, but the **manual download** (DMG / .exe / AppImage from
+> [Releases](https://github.com/Sheetaldharshan200/Exasol-studio/releases/latest))
+> always works with zero tooling. Use whichever suits you.
+
+## Don't have Homebrew / Scoop yet? (one-time setup)
+
+Installing the package manager is a single command, then the app install works:
+
+**macOS — install Homebrew:**
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+**Windows — install Scoop** (no admin needed):
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+irm get.scoop.sh | iex
+```
+
+**Windows — WinGet is already built in.** Windows 10 (recent) and Windows 11
+ship WinGet with the App Installer, so `winget install …` needs no setup at all
+(once we publish a signed package). Check with `winget --version`.
+
 ## macOS — Homebrew (recommended for developers)
 
 ```sh
@@ -13,6 +37,31 @@ brew install --cask exasol-studio
 Homebrew places the app in `/Applications` and, on this demo build, strips the
 download quarantine flag so it launches without the Gatekeeper "unidentified
 developer" prompt.
+
+## Windows — Scoop (the `brew` analog) or WinGet
+
+Windows has command-line package managers just like macOS. **Scoop** mirrors
+the Homebrew tap model — a *bucket* is the same idea as a *tap*:
+
+```powershell
+scoop bucket add exasol https://github.com/Sheetaldharshan200/homebrew-tap
+scoop install exasol-studio
+```
+
+- Upgrade: `scoop update exasol-studio`
+- Remove: `scoop uninstall exasol-studio`
+
+The manifest runs the app's installer silently (`/S`). Because this demo build
+is unsigned, Windows SmartScreen may warn on first launch — choose **More info →
+Run anyway**. A signed build removes that.
+
+**WinGet** (Microsoft's built-in manager) is the other option and will be the
+recommended one once the installer is code-signed, since WinGet validates the
+signature:
+
+```powershell
+winget install ExasolStudio
+```
 
 ## macOS — DMG (manual)
 

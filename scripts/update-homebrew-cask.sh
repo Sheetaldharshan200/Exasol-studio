@@ -38,11 +38,13 @@ sha_of() { # asset-name -> sha256 (downloads from the release)
 
 ARM_SHA="$(sha_of ExasolStudio-Mac-AppleSilicon.dmg)"
 INTEL_SHA="$(sha_of ExasolStudio-Mac-Intel.dmg)"
-echo "  arm64  $ARM_SHA"
-echo "  intel  $INTEL_SHA"
+WIN_SHA="$(sha_of ExasolStudio-Windows-64bit-setup.exe || true)"
+echo "  macos arm64  $ARM_SHA"
+echo "  macos intel  $INTEL_SHA"
+echo "  windows x64  ${WIN_SHA:-<none>}"
 
 gh repo clone "$TAP_REPO" "$WORK/tap" -- -q
-mkdir -p "$WORK/tap/Casks"
+mkdir -p "$WORK/tap/Casks" "$WORK/tap/bucket"
 cat > "$WORK/tap/Casks/exasol-studio.rb" <<RUBY
 cask "exasol-studio" do
   version "$VERSION"
@@ -79,16 +81,48 @@ cask "exasol-studio" do
 end
 RUBY
 
+# Windows Scoop manifest (brew-tap analog): silent NSIS install/uninstall.
+if [ -n "$WIN_SHA" ]; then
+  cat > "$WORK/tap/bucket/exasol-studio.json" <<JSON
+{
+    "version": "$VERSION",
+    "description": "Desktop Exasol client with a local database, AI assistant, and data tooling",
+    "homepage": "https://github.com/$APP_REPO",
+    "license": "Proprietary",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/$APP_REPO/releases/download/v$VERSION/ExasolStudio-Windows-64bit-setup.exe#/dl.exe",
+            "hash": "$WIN_SHA"
+        }
+    },
+    "installer": { "script": [ "Start-Process -Wait -FilePath \"\$dir\\\\dl.exe\" -ArgumentList '/S'" ] },
+    "uninstaller": {
+        "script": [
+            "\$u = Get-ChildItem -Path \"\$env:LOCALAPPDATA\\\\Exasol Studio\\\\uninstall.exe\" -ErrorAction SilentlyContinue",
+            "if (\$u) { Start-Process -Wait -FilePath \$u.FullName -ArgumentList '/S' }"
+        ]
+    },
+    "checkver": { "github": "https://github.com/$APP_REPO" },
+    "autoupdate": {
+        "architecture": {
+            "64bit": { "url": "https://github.com/$APP_REPO/releases/download/v\$version/ExasolStudio-Windows-64bit-setup.exe#/dl.exe" }
+        }
+    }
+}
+JSON
+fi
+
 cd "$WORK/tap"
-if git diff --quiet -- Casks/exasol-studio.rb 2>/dev/null && git ls-files --error-unmatch Casks/exasol-studio.rb >/dev/null 2>&1; then
-  echo "✓ cask already up to date for $TAG"
+git add Casks/exasol-studio.rb bucket/exasol-studio.json 2>/dev/null || git add Casks/exasol-studio.rb
+if git diff --cached --quiet; then
+  echo "✓ packages already up to date for $TAG"
   exit 0
 fi
-git add Casks/exasol-studio.rb
-git -c user.name="release-bot" -c user.email="noreply@exasol.com" commit -q -m "exasol-studio $VERSION"
+git -c user.name="release-bot" -c user.email="noreply@exasol.com" commit -q -m "exasol-studio $VERSION (cask + scoop)"
 git push -q origin HEAD
 echo "✓ pushed exasol-studio $VERSION to $TAP_REPO"
 echo
-echo "Install with:"
-echo "  brew tap sheetaldharshan200/tap https://github.com/$TAP_REPO"
-echo "  brew install --cask exasol-studio"
+echo "macOS:    brew tap sheetaldharshan200/tap https://github.com/$TAP_REPO"
+echo "          brew install --cask exasol-studio"
+echo "Windows:  scoop bucket add exasol https://github.com/$TAP_REPO"
+echo "          scoop install exasol-studio"
