@@ -733,29 +733,32 @@ export function buildTools(ctx: {
 
               const started = Date.now();
               try {
-                await db.execute(id, plan.createSchemaSql);
-                if (plan.dropSql) await db.execute(id, plan.dropSql);
-                await db.execute(id, plan.createTableSql);
-                // Bulk-load in batches; if a batch fails (one malformed row in
-                // messy data), fall back to row-by-row for that batch so one bad
-                // line never sinks the whole import — skip and count the failures.
-                const BATCH = 500;
-                let inserted = 0;
-                let skipped = 0;
-                for (let i = 0; i < plan.rows.length; i += BATCH) {
-                  const slice = plan.rows.slice(i, i + BATCH);
-                  try {
-                    inserted += await db.execute(id, buildInsert(plan, slice));
-                  } catch {
-                    for (const row of slice) {
-                      try {
-                        inserted += await db.execute(id, buildInsert(plan, [row]));
-                      } catch {
-                        skipped += 1;
+                // Production path: ONE dedicated autocommit-off connection —
+                // all batches join a single transaction with one COMMIT
+                // (fewer fsyncs, atomic load); batch-level row fallback kept.
+                const BATCH = 1000;
+                const { inserted, skipped } = await db.bulkLoad(id, async (exec) => {
+                  await exec(plan.createSchemaSql);
+                  if (plan.dropSql) await exec(plan.dropSql);
+                  await exec(plan.createTableSql);
+                  let inserted = 0;
+                  let skipped = 0;
+                  for (let i = 0; i < plan.rows.length; i += BATCH) {
+                    const slice = plan.rows.slice(i, i + BATCH);
+                    try {
+                      inserted += await exec(buildInsert(plan, slice));
+                    } catch {
+                      for (const row of slice) {
+                        try {
+                          inserted += await exec(buildInsert(plan, [row]));
+                        } catch {
+                          skipped += 1;
+                        }
                       }
                     }
                   }
-                }
+                  return { inserted, skipped };
+                });
                 session.record({ kind: "tool.import_csv.done", target: `${plan.schema}.${plan.table}`, inserted, skipped, ms: Date.now() - started });
                 return {
                   ok: true,
@@ -841,28 +844,30 @@ export function buildTools(ctx: {
               const manager = new TaskManager();
               for (const { doc, plan } of plans) {
                 manager.submit(doc.name, async (report) => {
-                  await db.execute(id, plan.createSchemaSql);
-                  if (plan.dropSql) await db.execute(id, plan.dropSql);
-                  await db.execute(id, plan.createTableSql);
-                  const BATCH = 500;
-                  let inserted = 0;
-                  let skipped = 0;
-                  for (let i = 0; i < plan.rows.length; i += BATCH) {
-                    const slice = plan.rows.slice(i, i + BATCH);
-                    try {
-                      inserted += await db.execute(id, buildInsert(plan, slice));
-                    } catch {
-                      for (const row of slice) {
-                        try {
-                          inserted += await db.execute(id, buildInsert(plan, [row]));
-                        } catch {
-                          skipped += 1;
+                  const BATCH = 1000;
+                  return db.bulkLoad(id, async (exec) => {
+                    await exec(plan.createSchemaSql);
+                    if (plan.dropSql) await exec(plan.dropSql);
+                    await exec(plan.createTableSql);
+                    let inserted = 0;
+                    let skipped = 0;
+                    for (let i = 0; i < plan.rows.length; i += BATCH) {
+                      const slice = plan.rows.slice(i, i + BATCH);
+                      try {
+                        inserted += await exec(buildInsert(plan, slice));
+                      } catch {
+                        for (const row of slice) {
+                          try {
+                            inserted += await exec(buildInsert(plan, [row]));
+                          } catch {
+                            skipped += 1;
+                          }
                         }
                       }
+                      report(`${Math.min(i + BATCH, plan.rows.length)}/${plan.rows.length} rows`);
                     }
-                    report(`${Math.min(i + BATCH, plan.rows.length)}/${plan.rows.length} rows`);
-                  }
-                  return { table: `${plan.schema}.${plan.table}`, rowsInserted: inserted, rowsSkipped: skipped };
+                    return { table: `${plan.schema}.${plan.table}`, rowsInserted: inserted, rowsSkipped: skipped };
+                  });
                 });
               }
               const emitted = new Set<string>();

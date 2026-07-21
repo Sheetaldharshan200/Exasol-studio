@@ -53,7 +53,7 @@ export class DbRegistry {
     return [...this.conns.values()].map((c) => ({ id: c.id, name: c.name }));
   }
 
-  private makeDriver(info: DbConnectionInfo): ExasolDriver {
+  private makeDriver(info: DbConnectionInfo, opts?: { autocommit?: boolean }): ExasolDriver {
     return new ExasolDriver(
       (url) =>
         // Local/self-signed deployments (Exasol Personal) need TLS
@@ -66,13 +66,37 @@ export class DbRegistry {
         user: info.user,
         password: info.password,
         encryption: info.encryption ?? true,
-        autocommit: true,
+        autocommit: opts?.autocommit ?? true,
         clientName: "Exasol Studio Agent",
         fetchSize: 128 * 1024,
         resultSetMaxRows: FETCH_ROW_CAP,
         schema: info.schema || undefined,
       },
     );
+  }
+
+  /**
+   * Run a bulk load on a DEDICATED autocommit-off connection: every statement
+   * joins ONE transaction, committed once at the end (far fewer commit fsyncs
+   * than per-batch autocommit) and rolled back atomically on failure. The
+   * connection is closed either way — the shared pool driver is untouched.
+   */
+  async bulkLoad<T>(id: string, work: (execute: (sql: string) => Promise<number>) => Promise<T>): Promise<T> {
+    const info = this.conns.get(id);
+    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const driver = this.makeDriver(info, { autocommit: false });
+    await driver.connect();
+    const execute = (sql: string): Promise<number> => driver.execute(sql);
+    try {
+      const out = await work(execute);
+      await driver.execute("COMMIT");
+      return out;
+    } catch (e) {
+      await driver.execute("ROLLBACK").catch(() => undefined);
+      throw e;
+    } finally {
+      void driver.close().catch(() => undefined);
+    }
   }
 
   /** Get (or lazily open) the shared driver for a connection. */
