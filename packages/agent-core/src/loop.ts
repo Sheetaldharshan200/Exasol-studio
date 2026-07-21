@@ -584,22 +584,40 @@ export async function runTurn(opts: {
       }
 
       // Multi-file follow-through: the user attached SEVERAL data files, the
-      // model imported some but not all, then stopped (often drifting into a
-      // greeting). Send it back with the exact remaining files — batch tool,
-      // one call. Enforced here because descriptions alone don't hold small
-      // models to completion.
-      if (!importedAll && importedDocs.size > 0 && nudges < 2) {
+      // model imported some but not all, then stopped. Nudging the model to
+      // continue burns attempts and still stalls mid-job on small models — so
+      // finish DETERMINISTICALLY: execute import_attachments ourselves for
+      // exactly the remaining files (it asks ONE approval and drains all of
+      // them), then hand the real results back for the final summary.
+      if (!importedAll && importedDocs.size > 0) {
         const tabular = documents.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
-        const remaining = tabular.filter((d) => !importedDocs.has(d.id)).map((d) => d.name);
-        if (tabular.length > 1 && remaining.length > 0) {
-          nudges++;
-          session.record({ kind: "nudge", reason: "imports-incomplete", remaining });
-          session.messages.push(new HumanMessage(
-              `You loaded only ${tabular.length - remaining.length} of the ${tabular.length} attached data files and stopped. ` +
-              `Finish the job NOW: call import_attachments with schema "${lastImportSchema ?? "the same schema"}" and files ${JSON.stringify(remaining)} to load the rest in one batch. ` +
-              "Do not greet the user, do not ask what to do — load them, then report every table with its row count.",
-          ));
-          return new Command({ goto: "attempt" });
+        const remaining = tabular.filter((d) => !importedDocs.has(d.id));
+        const batch = guardedTools["import_attachments"] as
+          | { execute?: (a: unknown, o: unknown) => Promise<unknown> }
+          | undefined;
+        if (tabular.length > 1 && remaining.length > 0 && typeof batch?.execute === "function") {
+          importedAll = true; // one shot — never loop this rescue
+          session.record({ kind: "rescue", reason: "imports-incomplete", remaining: remaining.map((d) => d.name) });
+          try {
+            const out = await batch.execute(
+              { schema: lastImportSchema ?? "TPCH", files: remaining.map((d) => d.name) },
+              { toolCallId: `impfix-${Date.now()}`, messages: [] },
+            );
+            remaining.forEach((d) => importedDocs.add(d.id));
+            session.messages.push(new HumanMessage(
+                `The remaining ${remaining.length} attached files were loaded for you in one batch. Results:\n${JSON.stringify(out).slice(0, 2500)}\n\n` +
+                "Now report EVERY loaded table with its REAL row count from the results above — a short list. " +
+                "Never invent sample rows or restate data you did not fetch. Do not call more tools.",
+            ));
+            return new Command({ goto: "attempt" });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            session.record({ kind: "tool.error", name: "import_attachments", error: msg });
+            session.messages.push(new HumanMessage(
+                `Loading the remaining files failed: ${msg}. Report which tables ARE loaded (real row counts only) and the error for the rest.`,
+            ));
+            return new Command({ goto: "attempt" });
+          }
         }
       }
 
