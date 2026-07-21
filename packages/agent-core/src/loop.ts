@@ -170,6 +170,7 @@ export async function runTurn(opts: {
       const mid = `gate-${Date.now()}`;
       session.emit({ type: "message-start", messageId: mid, role: "assistant" });
       session.emit({ type: "text-delta", messageId: mid, delta: canned });
+      session.emit({ type: "message-done", messageId: mid });
       session.messages.push(new AIMessage(canned));
       session.record({ kind: "assistant", model: modelRef, text: canned, steps: 0, usage: null, durationMs: 0, gated: "no-connection-load" });
       session.running = false;
@@ -343,6 +344,7 @@ export async function runTurn(opts: {
         const mid = `batch-${Date.now()}`;
         session.emit({ type: "message-start", messageId: mid, role: "assistant" });
         session.emit({ type: "text-delta", messageId: mid, delta: text });
+        session.emit({ type: "message-done", messageId: mid });
         session.messages.push(new AIMessage(text));
         session.record({ kind: "assistant", model: modelRef, text, steps: 0, usage: null, durationMs: 0, gated: "deterministic-batch-load" });
         session.running = false;
@@ -672,6 +674,7 @@ export async function runTurn(opts: {
             const mid = `impfix-${Date.now()}`;
             session.emit({ type: "message-start", messageId: mid, role: "assistant" });
             session.emit({ type: "text-delta", messageId: mid, delta: canned });
+            session.emit({ type: "message-done", messageId: mid });
             session.messages.push(new AIMessage(canned));
             session.record({ kind: "assistant", model: modelRef, text: canned, steps: 0, usage: null, durationMs: 0, gated: "import-rescue-summary" });
             return new Command({ goto: "finalize" });
