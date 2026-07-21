@@ -1616,7 +1616,18 @@ function Bubble({
     return (
       <Message from="user">
         <MessageContent className="[overflow-wrap:anywhere] whitespace-pre-wrap break-words">
-          {message.content}
+          {splitFences(message.content).map((part, i) =>
+            part.code ? (
+              <pre
+                key={i}
+                className="my-1.5 overflow-x-auto rounded-md border border-border bg-background/60 px-2.5 py-1.5 font-mono text-[11.5px] leading-relaxed whitespace-pre"
+              >
+                {part.text.replace(/^(?:```|''')[a-zA-Z0-9]*\n?/, "").replace(/(?:```|''')\s*$/, "")}
+              </pre>
+            ) : (
+              <span key={i}>{part.text}</span>
+            ),
+          )}
         </MessageContent>
         {message.attachments?.length ? (
           <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
