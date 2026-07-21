@@ -1032,7 +1032,14 @@ export function AssistantPanel({
                 inputRef.current?.focus();
               }
             }}
-            className="flex-col items-stretch rounded-xl border-border bg-editor transition-colors focus-within:border-muted-foreground/60 focus-within:ring-1 focus-within:ring-muted-foreground/25"
+            // "Active" = focused OR carrying state (text, attachments, an open
+            // picker/menu) — the box stays bright the whole time the user is
+            // working in it, not only while a key is down.
+            className={cn(
+              "flex-col items-stretch rounded-xl border-border bg-editor transition-colors focus-within:border-muted-foreground/60 focus-within:ring-1 focus-within:ring-muted-foreground/25",
+              (input.trim() || attachments.length > 0 || showPicker || showConnPicker || menuItems.length > 0) &&
+                "border-muted-foreground/60 ring-1 ring-muted-foreground/25",
+            )}
           >
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
