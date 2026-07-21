@@ -13,6 +13,9 @@ import type { ArtifactStore } from "./artifacts.ts";
 import type { Skill } from "./skills.ts";
 import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
 import { TaskManager } from "./a2a.ts";
+import { writeFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { TurnBoard, Finding } from "./board.ts";
 import { parquetReadObjects } from "hyparquet";
 import uiMap from "../data/ui-map.json" with { type: "json" };
@@ -1093,6 +1096,134 @@ export function buildTools(ctx: {
             ...(t.state === "completed" ? (t.result as object) : { error: t.error }),
           })),
           message: "All batch statements finished. Use the data above directly — do not re-run them.",
+        };
+      },
+    }),
+
+    profile_tables: tool({
+      description:
+        "Data-quality/profiling SWEEP: profile many tables concurrently (A2A tasks) — row count plus per-column non-null % and distinct counts. " +
+        "The right tool for 'check data quality', 'profile this schema', or gathering table stats for an artifact. Waits until every table is profiled.",
+      inputSchema: z.object({
+        schema: z.string().describe("Schema to profile, e.g. 'TPCH'"),
+        tables: z.array(z.string()).max(50).optional().describe("Specific tables; defaults to every table in the schema"),
+      }),
+      execute: async ({ schema, tables }) => {
+        const id = requireConn();
+        const sch = schema.toUpperCase();
+        let names = tables?.map((t) => t.toUpperCase());
+        if (!names?.length) {
+          const out = await db.query(id, `SELECT TABLE_NAME FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA = ${lit(sch)} ORDER BY TABLE_NAME LIMIT 50`);
+          names = out.rows.map((r) => String(r[0]));
+        }
+        if (!names.length) return { error: `No tables found in schema ${sch}.` };
+        if (ctx.settings?.readPolicy === "ask" && !ctx.readOnly) {
+          const allowed = await session.askPermission({
+            tool: "run_sql",
+            summary: `Profile ${names.length} tables in ${sch}`,
+            detail: names.join(", "),
+          });
+          if (!allowed) return { denied: true, message: "The user declined the profiling sweep." };
+        }
+        const manager = new TaskManager();
+        for (const table of names) {
+          manager.submit(`${sch}.${table}`, async () => {
+            const cols = await db.query(id, `SELECT COLUMN_NAME FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA = ${lit(sch)} AND COLUMN_TABLE = ${lit(table)} ORDER BY COLUMN_ORDINAL_POSITION LIMIT 20`);
+            const colNames = cols.rows.map((r) => String(r[0]));
+            const aggs = colNames.map((c) => `COUNT(${quoteIdent(c)}), COUNT(DISTINCT ${quoteIdent(c)})`).join(", ");
+            const stats = await db.query(id, `SELECT COUNT(*)${aggs ? `, ${aggs}` : ""} FROM ${quoteIdent(sch)}.${quoteIdent(table)}`);
+            const row = stats.rows[0] ?? [];
+            const total = Number(row[0] ?? 0);
+            return {
+              table: `${sch}.${table}`,
+              rows: total,
+              columns: colNames.map((c, i) => ({
+                name: c,
+                nonNullPct: total ? Math.round((Number(row[1 + i * 2] ?? 0) / total) * 100) : 0,
+                distinct: Number(row[2 + i * 2] ?? 0),
+              })),
+            };
+          });
+        }
+        const emitted = new Set<string>();
+        const results = await manager.drain(4, (t) => {
+          const callId = `a2a-${t.id}`;
+          if (t.state === "working" && !emitted.has(callId)) {
+            emitted.add(callId);
+            session.emit({ type: "tool-start", callId, name: "profile_query", args: { table: t.title } });
+          } else if (t.state === "completed" || t.state === "failed") {
+            const r = t.result as { rows?: number } | undefined;
+            session.emit({ type: "tool-end", callId, name: "profile_query", ok: t.state === "completed", summary: t.state === "completed" ? `${r?.rows ?? 0} rows profiled` : (t.error ?? "failed").slice(0, 80) });
+          }
+        });
+        session.record({ kind: "tool.profile_tables", schema: sch, count: names.length, failed: results.filter((t) => t.state === "failed").length });
+        return {
+          ok: results.every((t) => t.state === "completed"),
+          profiles: results.map((t) => (t.state === "completed" ? t.result : { table: t.title, error: t.error })),
+          message: "Profiling sweep complete. Columns with low non-null % or distinct=1 are quality flags worth mentioning.",
+        };
+      },
+    }),
+
+    export_tables: tool({
+      description:
+        "Export many tables to CSV files on the user's disk in one batch (A2A tasks) — for 'export all tables', 'give me these as CSV', backups before changes. " +
+        "Files land in ~/Downloads/exasol-exports. One approval covers the batch; waits until every file is written.",
+      inputSchema: z.object({
+        schema: z.string().describe("Schema to export from"),
+        tables: z.array(z.string()).max(50).optional().describe("Specific tables; defaults to every table in the schema"),
+      }),
+      execute: async ({ schema, tables }) => {
+        const id = requireConn();
+        const sch = schema.toUpperCase();
+        let names = tables?.map((t) => t.toUpperCase());
+        if (!names?.length) {
+          const out = await db.query(id, `SELECT TABLE_NAME FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA = ${lit(sch)} ORDER BY TABLE_NAME LIMIT 50`);
+          names = out.rows.map((r) => String(r[0]));
+        }
+        if (!names.length) return { error: `No tables found in schema ${sch}.` };
+        const dir = join(homedir(), "Downloads", "exasol-exports");
+        const allowed = await session.askPermission({
+          tool: "export_tables",
+          summary: `Export ${names.length} tables from ${sch} to CSV`,
+          detail: `Folder: ${dir}\n${names.map((t) => `- ${sch}.${t} → ${t.toLowerCase()}.csv`).join("\n")}`,
+        });
+        if (!allowed) return { denied: true, message: "The user declined the export." };
+        await mkdir(dir, { recursive: true });
+        const csvCell = (v: unknown) => {
+          if (v === null || v === undefined) return "";
+          const s = String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const manager = new TaskManager();
+        for (const table of names) {
+          manager.submit(`${sch}.${table}`, async (report) => {
+            const out = await db.query(id, `SELECT * FROM ${quoteIdent(sch)}.${quoteIdent(table)} LIMIT 500000`);
+            report(`${out.rows.length} rows fetched`);
+            const lines = [out.columns.map((c) => csvCell(c)).join(",")];
+            for (const row of out.rows) lines.push(row.map(csvCell).join(","));
+            const path = join(dir, `${table.toLowerCase()}.csv`);
+            await writeFile(path, lines.join("\n"), "utf8");
+            return { table: `${sch}.${table}`, path, rows: out.rows.length };
+          });
+        }
+        const emitted = new Set<string>();
+        const results = await manager.drain(3, (t) => {
+          const callId = `a2a-${t.id}`;
+          if (t.state === "working" && !emitted.has(callId)) {
+            emitted.add(callId);
+            session.emit({ type: "tool-start", callId, name: "export_tables", args: { table: t.title } });
+          } else if (t.state === "completed" || t.state === "failed") {
+            const r = t.result as { rows?: number } | undefined;
+            session.emit({ type: "tool-end", callId, name: "export_tables", ok: t.state === "completed", summary: t.state === "completed" ? `${r?.rows ?? 0} rows exported` : (t.error ?? "failed").slice(0, 80) });
+          }
+        });
+        session.record({ kind: "tool.export_tables", schema: sch, count: names.length, failed: results.filter((t) => t.state === "failed").length });
+        return {
+          ok: results.every((t) => t.state === "completed"),
+          exported: results.map((t) => (t.state === "completed" ? t.result : { table: t.title, error: t.error })),
+          folder: dir,
+          message: `Export finished into ${dir}. Tell the user the folder and per-file row counts.`,
         };
       },
     }),
