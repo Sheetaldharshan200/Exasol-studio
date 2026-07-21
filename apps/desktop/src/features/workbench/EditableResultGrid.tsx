@@ -35,6 +35,7 @@ export function EditableResultGrid({
   pk,
   busy,
   initialFocus,
+  colWidths,
   onApply,
   onExit,
 }: {
@@ -46,6 +47,8 @@ export function EditableResultGrid({
   busy: boolean;
   /** Cell to focus when the grid opens (the one the user double-tapped). */
   initialFocus?: { row: number; col: number } | null;
+  /** Column widths (px) captured from the read-only table — keeps geometry stable. */
+  colWidths?: number[] | null;
   onApply: (statements: string[]) => void;
   onExit: () => void;
 }) {
@@ -158,7 +161,17 @@ export function EditableResultGrid({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-px">
-        <table className="w-full border-collapse border border-border text-[12px]">
+        <table
+          className={"w-full border-collapse border border-border text-[12px]" + (colWidths?.length ? " table-fixed" : "")}
+          style={colWidths?.length ? { width: colWidths.reduce((a, b) => a + b, 0) } : undefined}
+        >
+          {colWidths?.length ? (
+            <colgroup>
+              {colWidths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
+          ) : null}
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary">
               <th className="w-8 border-b border-r border-border px-1 py-1.5" />

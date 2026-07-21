@@ -1119,6 +1119,16 @@ function ResultsGrid({
   const [editing, setEditing] = useState(false);
   // The cell the user double-tapped — edit mode opens with THAT cell focused.
   const [focusCell, setFocusCell] = useState<{ row: number; col: number } | null>(null);
+  // Column widths captured from the read-only table the moment editing starts,
+  // so the editable grid renders with IDENTICAL geometry (no resize jump).
+  const roTableRef = useRef<HTMLTableElement | null>(null);
+  const [editColWidths, setEditColWidths] = useState<number[] | null>(null);
+  const startEditing = (cell: { row: number; col: number } | null) => {
+    const ths = roTableRef.current?.querySelectorAll("thead th");
+    setEditColWidths(ths ? Array.from(ths).map((th) => (th as HTMLElement).offsetWidth) : null);
+    setFocusCell(cell);
+    setEditing(true);
+  };
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -1159,6 +1169,7 @@ function ResultsGrid({
         pk={editable.pk}
         busy={Boolean(editBusy)}
         initialFocus={focusCell}
+        colWidths={editColWidths}
         onApply={onCommitEdits}
         onExit={() => {
           setEditing(false);
@@ -1172,7 +1183,7 @@ function ResultsGrid({
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
         {canEdit ? (
           <button
-            onClick={() => setEditing(true)}
+            onClick={() => startEditing(null)}
             title={`Edit rows in ${editable!.table}`}
             className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
@@ -1193,7 +1204,7 @@ function ResultsGrid({
         </span>
       </div>
       <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
-        <table className="w-full border-collapse border border-border">
+        <table ref={roTableRef} className="w-full border-collapse border border-border">
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary">
               <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
@@ -1227,10 +1238,7 @@ function ResultsGrid({
                     key={cellIndex}
                     onDoubleClick={
                       canEdit
-                        ? () => {
-                            setFocusCell({ row: rowIndex, col: cellIndex });
-                            setEditing(true);
-                          }
+                        ? () => startEditing({ row: rowIndex, col: cellIndex })
                         : undefined
                     }
                     className="max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground"
