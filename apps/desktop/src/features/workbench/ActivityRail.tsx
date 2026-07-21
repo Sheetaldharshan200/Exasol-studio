@@ -1,5 +1,17 @@
 import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Settings, Star, Store, type LucideIcon } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
+
+/** MCP mark — connected-nodes glyph for the Model Context Protocol. */
+function McpMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className={className} aria-hidden>
+      <circle cx="12" cy="5" r="2.1" />
+      <circle cx="5" cy="17" r="2.1" />
+      <circle cx="19" cy="17" r="2.1" />
+      <path d="M10.9 6.9 6.2 15.2M13.1 6.9l4.7 8.3M7.1 17h9.8" />
+    </svg>
+  );
+}
 import {
   Tooltip,
   TooltipContent,
@@ -15,7 +27,8 @@ export type ActivityId =
   | "git"
   | "marketplace"
   | "guides"
-  | "bi";
+  | "bi"
+  | "mcp";
 
 export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
   { id: "databases", label: "Databases", icon: Database },
@@ -32,7 +45,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
 // not the sidebar panel). "bi" launches an external tool, so it's an action —
 // never a persistent selection. Everything else is a sidebar panel.
 const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides"]);
-const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "git"]);
+const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "git", "mcp"]);
 
 export function ActivityRail({
   active,
@@ -98,6 +111,25 @@ export function ActivityRail({
       </div>
 
       <div className="flex flex-col items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="MCP servers"
+              data-agent-id="rail.mcp"
+              onClick={() => onSelect("mcp")}
+              className={cn(
+                "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                active === "mcp" && sidebarOpen && "text-primary",
+              )}
+            >
+              {active === "mcp" && sidebarOpen ? (
+                <span className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
+              ) : null}
+              <McpMark className="h-[18px] w-[18px]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">MCP servers — connect Jira, Excel, files & more</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <button

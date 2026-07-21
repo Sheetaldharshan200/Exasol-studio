@@ -111,6 +111,7 @@ import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
 import { ConnectView } from "@/features/connection/ConnectView";
+import { McpMarketplace } from "@/features/marketplace/McpMarketplace";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
@@ -906,7 +907,9 @@ function Sidebar({
         ? "Files"
         : activity === "visualizer"
           ? "Visualizer"
-          : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
+          : activity === "mcp"
+            ? "MCP Servers"
+            : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
 
   if (activity !== "databases") {
     return (
@@ -917,7 +920,11 @@ function Sidebar({
             <PanelLeftClose className="h-3.5 w-3.5" />
           </IconButton>
         </div>
-        {activity === "files" ? (
+        {activity === "mcp" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <McpMarketplace />
+          </div>
+        ) : activity === "files" ? (
           <FileExplorer onOpenFile={onOpenFile} onOpenData={onOpenData} onLoadData={onLoadData} onFileDeleted={onFileDeleted} refreshSignal={filesRefresh} />
         ) : activity === "favorites" ? (
           <FavoritesPanel profileId={activeProfileId} onOpen={(fav) => onOpenFavorite?.(fav)} />

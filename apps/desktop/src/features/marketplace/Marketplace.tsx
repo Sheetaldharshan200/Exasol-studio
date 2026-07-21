@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { McpMarketplace } from "@/features/marketplace/McpMarketplace";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   BarChart3,
@@ -941,13 +940,9 @@ export function Marketplace() {
                     </section>
                   );
                 })}
-                <McpMarketplace />
               </>
             ) : navItems.length ? (
-              <>
-                <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
-                {nav === "ai" ? <McpMarketplace /> : null}
-              </>
+              <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}

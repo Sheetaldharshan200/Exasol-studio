@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-21T11:17:59.533Z",
+  "generatedAt": "2026-07-21T11:27:57.513Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -59,6 +59,12 @@
       "label": "connect username",
       "where": "apps/desktop/src/features/connection/ConnectView.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
+    },
+    {
+      "id": "anchor.rail.mcp",
+      "label": "rail mcp",
+      "where": "apps/desktop/src/features/workbench/ActivityRail.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/ActivityRail.tsx"
     },
     {
       "id": "anchor.rail.settings",

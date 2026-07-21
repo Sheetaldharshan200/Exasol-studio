@@ -60,6 +60,7 @@ type SlashCommand = {
   hint?: string;
   /** Clears the conversation instead of sending. */
   clears?: boolean;
+  local?: boolean;
   /** Requires an active database connection — we ask the user to connect first
    *  instead of firing a prompt whose tools would just fail. */
   needsDb?: boolean;
@@ -96,6 +97,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
     expand: (a) => `Build a live SQL dashboard that ${a || "…"}`.trim() },
   { cmd: "/artifact", desc: "Build an HTML insight report", hint: "what the report should cover",
     expand: (a) => `Build a self-contained HTML report that ${a || "…"}`.trim() },
+  { cmd: "/mcp", desc: "Show connected MCP servers, their tools and status", local: true },
   { cmd: "/clear", desc: "Clear the conversation", clears: true },
 ];
 
@@ -615,6 +617,25 @@ export function AssistantPanel({
       return;
     }
     // Commands that work on the database need a live connection first.
+    if (slash?.cmd.cmd === "/mcp") {
+      setInput("");
+      setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: "/mcp" }]);
+      const servers = await agent.mcpList().catch(() => []);
+      const body = servers.length
+        ? [
+            "### MCP servers",
+            ...servers.map((s) => {
+              const head = `${s.connected ? "🟢" : "🔴"} **${s.name}** — ${s.connected ? `connected · ${s.toolCount} tools` : "disconnected"}\n\`${s.command} ${s.args.join(" ")}\``;
+              const tools = s.tools?.length ? `\nTools: ${s.tools.map((x) => `\`${x}\``).join(", ")}${s.toolCount > s.tools.length ? " …" : ""}` : "";
+              return head + tools;
+            }),
+            "",
+            "_Every external call is approval-gated. Manage servers via the MCP icon in the sidebar (above the Exa logo)._",
+          ].join("\n\n")
+        : "No MCP servers connected yet. Click the **MCP icon** in the sidebar (just above the Exa logo) to connect Jira, Excel, local files, GitHub — or any custom MCP server. Their tools join me, and I can land their data straight into Exasol.";
+      setItems((m) => [...m, { kind: "msg", id: `a-${Date.now()}`, role: "assistant", content: body }]);
+      return;
+    }
     if (slash?.cmd.needsDb && !targetConn) {
       setItems((m) => [
         ...m,

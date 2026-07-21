@@ -81,10 +81,10 @@ export function McpMarketplace() {
   }
 
   return (
-    <section className="mt-8">
+    <section className="p-3">
       <div className="mb-1 flex items-center gap-2">
         <PlugZap className="h-4 w-4 text-primary" />
-        <h2 className="text-[15px] font-semibold text-foreground">MCP marketplace</h2>
+        <h2 className="text-[13px] font-semibold text-foreground">Connect external tools</h2>
       </div>
       <p className="mb-3 max-w-2xl text-[12px] text-muted-foreground">
         Connect external MCP servers — Jira, Excel, files, GitHub, or any custom one. Their tools join the AI agent
@@ -123,7 +123,7 @@ export function McpMarketplace() {
         </div>
       ) : null}
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2">
         {CURATED.map((c) => (
           <div key={c.name} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3">
             <span className="text-[13px] font-semibold text-foreground">{c.name}</span>

@@ -67,6 +67,7 @@ export class McpManager {
       env: s.env ? Object.fromEntries(Object.keys(s.env).map((k) => [k, "•••"])) : undefined, // never leak secrets
       connected: this.live.has(s.id),
       toolCount: this.live.get(s.id)?.tools.length ?? 0,
+      tools: (this.live.get(s.id)?.tools ?? []).slice(0, 12).map((t) => t.name),
     }));
   }
 
