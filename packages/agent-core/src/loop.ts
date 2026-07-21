@@ -1,4 +1,4 @@
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { runLoop, type ToolSet } from "./llm.ts";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
@@ -152,6 +152,33 @@ export async function runTurn(opts: {
   session.messages.push(new HumanMessage({ content } as ConstructorParameters<typeof HumanMessage>[0]));
   session.record({ kind: "user", model: modelRef, text: userText, context: context ?? null, connection: session.connectionId, attachments: (attachments ?? []).map((a) => ({ name: a.name, kind: a.kind })) });
   session.emit({ type: "user-message", text: userText });
+
+  // Doomed-turn gate: a data-loading request with NO connection. Small models
+  // spiral here — narrating fake CALL import_csv(...) plans through every
+  // corrective nudge. Answer deterministically in one line and stop; no model
+  // call, no plan spam.
+  if (!session.connectionId) {
+    const tabular = documents.list(session.id).filter((d) => /\.(csv|tsv|txt|parquet)$/i.test(d.name));
+    const wantsLoad = /\b(load|import|upload|pump|ingest|insert|table)\b/i.test(userText);
+    if (tabular.length > 0 && wantsLoad) {
+      const canned =
+        `**Connect to a database first.** I have your ${tabular.length} attached file${tabular.length === 1 ? "" : "s"} ready, but there's no active connection to load into.\n\n` +
+        (surface === "cli"
+          ? "Run `/connect`, then ask again — "
+          : "Press **Connect** in the title bar (or tap a saved connection in the Databases rail), then ask again — ") +
+        `I'll load ${tabular.length === 1 ? "it" : "all of them"} in one batch with a single approval.`;
+      const mid = `gate-${Date.now()}`;
+      session.emit({ type: "message-start", messageId: mid, role: "assistant" });
+      session.emit({ type: "text-delta", messageId: mid, delta: canned });
+      session.messages.push(new AIMessage(canned));
+      session.record({ kind: "assistant", model: modelRef, text: canned, steps: 0, usage: null, durationMs: 0, gated: "no-connection-load" });
+      session.running = false;
+      session.abort = null;
+      store.touch(session);
+      session.emit({ type: "status", state: "idle" });
+      return;
+    }
+  }
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
   const remembered = settings.enableInsights ? await memory.contextFor(session.connectionId, userText) : "";
