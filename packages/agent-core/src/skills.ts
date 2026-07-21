@@ -109,7 +109,7 @@ export class SkillStore {
    * so the right playbook auto-activates without the model guessing to call
    * load_skill. Cached per skill by content hash.
    */
-  async recall(query: string, k = 1, threshold = 0.22): Promise<Skill[]> {
+  async recall(query: string, k = 2, threshold = 0.18): Promise<Skill[]> {
     const skills = this.list();
     if (!skills.length) return [];
     const key = (sk: Skill) => createHash("sha1").update(sk.name + sk.description).digest("hex").slice(0, 16);

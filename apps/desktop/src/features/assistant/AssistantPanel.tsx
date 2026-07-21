@@ -80,25 +80,24 @@ const LEARN_DB_PROMPT =
 // type your text; on send, expand() builds the real prompt (falling back to a
 // sensible default when you give no argument). The raw "/cmd …" is what shows
 // in the conversation, with the command highlighted.
+// Curated: a tight set of high-value commands. Each is something the agent
+// does noticeably better as a one-tap prompt than free typing. `/mcp` and
+// `/clear` are local (no model call). Keep this list short and sharp.
 const SLASH_COMMANDS: SlashCommand[] = [
-  { cmd: "/explain", desc: "Explain SQL — yours, or the editor's", hint: "paste SQL, or leave blank for the editor",
-    expand: (a) => (a ? `Explain this Exasol SQL, step by step:\n\n${a}` : "Explain the SQL in my editor, step by step.") },
-  { cmd: "/optimize", desc: "Optimize a query for Exasol", hint: "paste SQL, or leave blank for the editor",
-    expand: (a) => (a ? `Suggest ways to optimize this Exasol SQL:\n\n${a}` : "Suggest ways to optimize the SQL in my editor for Exasol.") },
-  { cmd: "/fix", desc: "Find and fix SQL errors", hint: "paste SQL, or leave blank for the editor",
-    expand: (a) => (a ? `Find and fix any errors in this Exasol SQL:\n\n${a}` : "Find and fix any errors in the SQL in my editor.") },
-  { cmd: "/generate", desc: "Generate SQL from a description", hint: "what the query should do",
+  { cmd: "/generate", desc: "Generate an Exasol SQL query from a description", hint: "what the query should do",
     expand: (a) => `Generate an Exasol SQL query that ${a || "…"}`.trim() },
-  { cmd: "/tables", desc: "List tables in a schema", hint: "schema name (optional)", needsDb: true,
-    expand: (a) => (a ? `List the tables and views in the ${a.toUpperCase()} schema, one line each.` : "List the tables in the current schema, one line each.") },
-  { cmd: "/learn-my-db", desc: "Learn my database & set up the semantic model", hint: "just press Enter", needsDb: true,
+  { cmd: "/explain", desc: "Explain a query, step by step", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Explain this Exasol SQL, step by step:\n\n${a}` : "Explain the SQL in my editor, step by step.") },
+  { cmd: "/optimize", desc: "Tune a query for Exasol performance", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Suggest ways to optimize this Exasol SQL:\n\n${a}` : "Suggest ways to optimize the SQL in my editor for Exasol.") },
+  { cmd: "/fix", desc: "Find and fix errors in a query", hint: "paste SQL, or leave blank for the editor",
+    expand: (a) => (a ? `Find and fix any errors in this Exasol SQL:\n\n${a}` : "Find and fix any errors in the SQL in my editor.") },
+  { cmd: "/learn-my-db", desc: "Map my database and set up the semantic model", hint: "just press Enter", needsDb: true,
     expand: () => LEARN_DB_PROMPT },
-  { cmd: "/dashboard", desc: "Build a live SQL dashboard", hint: "what it should show",
+  { cmd: "/dashboard", desc: "Build a live SQL-backed dashboard", hint: "what it should show",
     expand: (a) => `Build a live SQL dashboard that ${a || "…"}`.trim() },
-  { cmd: "/artifact", desc: "Build an HTML insight report", hint: "what the report should cover",
-    expand: (a) => `Build a self-contained HTML report that ${a || "…"}`.trim() },
-  { cmd: "/mcp", desc: "Show connected MCP servers, their tools and status", local: true },
-  { cmd: "/clear", desc: "Clear the conversation", clears: true },
+  { cmd: "/mcp", desc: "Connected MCP servers — status & tools", local: true },
+  { cmd: "/clear", desc: "Start a new conversation", clears: true },
 ];
 
 /** Parse a leading slash command from composer text, if any. */
@@ -286,6 +285,10 @@ export function AssistantPanel({
   const sessionFilesRef = useRef<AgentAttachment[]>([]);
   sessionFilesRef.current = sessionFiles;
   const [attachHint, setAttachHint] = useState<string | null>(null);
+  // /mcp shows an inline status panel above the composer — NOT a chat bubble.
+  const [mcpPanel, setMcpPanel] = useState<
+    { name: string; connected: boolean; toolCount: number; tools?: string[]; command: string; args: string[] }[] | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -616,24 +619,12 @@ export function AssistantPanel({
       newChat();
       return;
     }
-    // Commands that work on the database need a live connection first.
+    // /mcp is a local status view — render it inline above the composer, never
+    // as a user/assistant message in the conversation.
     if (slash?.cmd.cmd === "/mcp") {
       setInput("");
-      setItems((m) => [...m, { kind: "msg", id: `u-${Date.now()}`, role: "user", content: "/mcp" }]);
       const servers = await agent.mcpList().catch(() => []);
-      const body = servers.length
-        ? [
-            "### MCP servers",
-            ...servers.map((s) => {
-              const head = `${s.connected ? "🟢" : "🔴"} **${s.name}** — ${s.connected ? `connected · ${s.toolCount} tools` : "disconnected"}\n\`${s.command} ${s.args.join(" ")}\``;
-              const tools = s.tools?.length ? `\nTools: ${s.tools.map((x) => `\`${x}\``).join(", ")}${s.toolCount > s.tools.length ? " …" : ""}` : "";
-              return head + tools;
-            }),
-            "",
-            "_Every external call is approval-gated. Manage servers via the MCP icon in the sidebar (above the Exa logo)._",
-          ].join("\n\n")
-        : "No MCP servers connected yet. Click the **MCP icon** in the sidebar (just above the Exa logo) to connect Jira, Excel, local files, GitHub — or any custom MCP server. Their tools join me, and I can land their data straight into Exasol.";
-      setItems((m) => [...m, { kind: "msg", id: `a-${Date.now()}`, role: "assistant", content: body }]);
+      setMcpPanel(servers);
       return;
     }
     if (slash?.cmd.needsDb && !targetConn) {
@@ -1045,6 +1036,50 @@ export function AssistantPanel({
       {/* Approvals render ONCE, as the in-chat PermissionCard — no duplicate
           dock here. */}
       <div className="relative shrink-0 p-2.5 pt-0">
+        {/* Inline /mcp status — shown here, never as a chat message. */}
+        {mcpPanel ? (
+          <div className="mb-2 overflow-hidden rounded-lg border border-border bg-popover shadow-sm">
+            <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
+              <span className="eyebrow-muted">MCP servers</span>
+              <button
+                onClick={() => setMcpPanel(null)}
+                aria-label="Dismiss"
+                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="max-h-52 overflow-y-auto p-1.5">
+              {mcpPanel.length === 0 ? (
+                <p className="px-2 py-2 text-[11.5px] text-muted-foreground">
+                  No MCP servers connected. Open the <span className="font-medium text-foreground">MCP</span> icon in the
+                  sidebar to connect Jira, GitHub, Excel, Postgres and more — every call stays approval-gated.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {mcpPanel.map((s) => (
+                    <div key={s.name} className="rounded-md px-2 py-1.5 hover:bg-secondary/50">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", s.connected ? "bg-primary" : "bg-destructive/70")} />
+                        <span className="text-[12px] font-medium text-foreground">{s.name}</span>
+                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                          {s.connected ? `${s.toolCount} tools` : "disconnected"}
+                        </span>
+                      </div>
+                      {s.connected && s.tools?.length ? (
+                        <p className="mt-0.5 truncate pl-3 text-[10.5px] text-muted-foreground">
+                          {s.tools.slice(0, 6).join(" · ")}
+                          {s.toolCount > s.tools.length ? " …" : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
         {/* Slash / mention popup */}
         {menuItems.length > 0 ? (
           <div className="absolute bottom-full left-2.5 z-30 mb-1 w-[calc(100%-1.25rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-xl">

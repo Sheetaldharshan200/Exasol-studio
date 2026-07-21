@@ -18,7 +18,10 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 
-const NODE_VERSION = "v22.14.0"; // pinned; bump to move every platform at once
+// v24 LTS (Krypton): its bundled SQLite is compiled WITH fts5, so the agent's
+// KnowledgeGraph gets real full-text search. v22 shipped SQLite without fts5
+// (the KB falls back to LIKE there — see packages/agent-core/src/kb.ts).
+const NODE_VERSION = "v24.18.0"; // pinned; bump to move every platform at once
 
 // One row per Rust target triple. node = nodejs.org dist slug; llama =
 // substring that identifies the llama.cpp release asset for this platform.

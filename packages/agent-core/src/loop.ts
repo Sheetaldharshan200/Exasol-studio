@@ -223,7 +223,10 @@ export async function runTurn(opts: {
   // Semantic auto-activation: surface the skill whose meaning matches THIS
   // turn (jcode-style embedding hit) and inject its full body, so the right
   // playbook is live without the model remembering to call load_skill.
-  const autoSkills = (await skillStore.recall(userText, 1)).filter((sk) => !defaultSkills.includes(sk));
+  // Feed the query + light context (editor SQL keywords) so the match reflects
+  // what the user is actually working on, and surface up to 2 relevant skills.
+  const recallQuery = [userText, context].filter(Boolean).join(" ").slice(0, 2000);
+  const autoSkills = (await skillStore.recall(recallQuery, 2)).filter((sk) => !defaultSkills.includes(sk));
   if (autoSkills.length) {
     system += `\n\nRelevant skill for this request (auto-activated):\n${autoSkills
       .map((sk) => `## ${sk.name}\n${sk.body}`)
