@@ -108,6 +108,8 @@ import { UiGraph } from "@/lib/ui-graph";
 import { dashboardBus } from "@/lib/dashboard-bus";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
+import { TerminalView } from "@/features/workbench/TerminalView";
+import { invoke } from "@tauri-apps/api/core";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
@@ -1273,115 +1275,6 @@ function ResultsGrid({
   );
 }
 
-function ConsolePanel({ onRun, clearSignal }: { onRun: (sql: string) => Promise<string>; clearSignal?: number }) {
-  const [lines, setLines] = useState<{ kind: "in" | "out" | "err"; text: string }[]>([]);
-  const [input, setInputVal] = useState("");
-  const [hist, setHist] = useState<string[]>([]);
-  const [histIdx, setHistIdx] = useState(-1);
-  const [running, setRunning] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [lines, running]);
-  useEffect(() => {
-    if (clearSignal) setLines([]);
-  }, [clearSignal]);
-
-  async function run() {
-    const sql = input.trim();
-    if (!sql || running) return;
-    if (/^(clear|cls)$/i.test(sql)) {
-      setLines([]);
-      setInputVal("");
-      return;
-    }
-    setLines((l) => [...l, { kind: "in", text: sql }]);
-    setHist((h) => [sql, ...h.slice(0, 99)]);
-    setHistIdx(-1);
-    setInputVal("");
-    setRunning(true);
-    try {
-      const out = await onRun(sql);
-      setLines((l) => [...l, { kind: "out", text: out }]);
-    } catch (e) {
-      setLines((l) => [...l, { kind: "err", text: errorMessage(e) }]);
-    } finally {
-      setRunning(false);
-      inputRef.current?.focus();
-    }
-  }
-
-  // Click anywhere in the terminal focuses the prompt — like a real terminal.
-  return (
-    <div
-      className="h-full cursor-text overflow-y-auto bg-editor px-3 py-2 font-mono text-[12px] leading-[1.55]"
-      onMouseUp={() => {
-        if (!window.getSelection()?.toString()) inputRef.current?.focus();
-      }}
-    >
-      {lines.length === 0 ? (
-        <p className="text-muted-foreground">
-          Exasol SQL terminal — statements run on the active connection. ↑/↓ history · `clear` resets · results also land in SQL History.
-        </p>
-      ) : (
-        lines.map((ln, i) =>
-          ln.kind === "in" ? (
-            <div key={i} className="flex gap-2 whitespace-pre-wrap break-words">
-              <span className="shrink-0 select-none text-primary">exasol ❯</span>
-              <span className="text-foreground">{ln.text}</span>
-            </div>
-          ) : (
-            <pre
-              key={i}
-              className={cn(
-                "whitespace-pre-wrap break-words",
-                ln.kind === "err" ? "text-destructive" : "text-foreground/90",
-              )}
-            >
-              {ln.text}
-            </pre>
-          ),
-        )
-      )}
-      {running ? <div className="animate-pulse text-muted-foreground">running…</div> : null}
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 select-none text-primary">exasol ❯</span>
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInputVal(e.target.value)}
-          disabled={running}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void run();
-            else if (e.key === "ArrowUp") {
-              const n = Math.min(histIdx + 1, hist.length - 1);
-              if (hist[n] !== undefined) {
-                setHistIdx(n);
-                setInputVal(hist[n]);
-              }
-              e.preventDefault();
-            } else if (e.key === "ArrowDown") {
-              const n = histIdx - 1;
-              setHistIdx(Math.max(n, -1));
-              setInputVal(n >= 0 ? hist[n] : "");
-              e.preventDefault();
-            } else if (e.key === "l" && (e.ctrlKey || e.metaKey)) {
-              setLines([]);
-              e.preventDefault();
-            }
-          }}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          data-bare
-          aria-label="SQL terminal input"
-          className="w-full bg-transparent caret-primary outline-none disabled:opacity-50"
-        />
-      </div>
-      <div ref={endRef} />
-    </div>
-  );
-}
-
 function HistoryDock({
   entries,
   open,
@@ -1389,7 +1282,6 @@ function HistoryDock({
   onPick,
   onClear,
   onRefresh,
-  onRunConsole,
 }: {
   entries: HistoryEntry[];
   open: boolean;
@@ -1397,33 +1289,39 @@ function HistoryDock({
   onPick: (sql: string) => void;
   onClear: () => void;
   onRefresh: () => void;
-  onRunConsole: (sql: string) => Promise<string>;
 }) {
   const [mode, setMode] = useState<"terminal" | "history">("history");
   // VS Code-style terminal instances: right-side list, + to create, per-
   // terminal scrollback kept alive (hidden, not unmounted) when switching.
-  const termCounter = useRef(1);
-  const [terms, setTerms] = useState<{ id: number; name: string }[]>([{ id: 1, name: "exasol 1" }]);
-  const [activeTerm, setActiveTerm] = useState(1);
-  const [termClears, setTermClears] = useState<Record<number, number>>({});
-  function newTerminal() {
-    termCounter.current += 1;
-    const id = termCounter.current;
-    setTerms((l) => [...l, { id, name: `exasol ${id}` }]);
-    setActiveTerm(id);
-    setMode("terminal");
+  const termCounter = useRef(0);
+  const [terms, setTerms] = useState<{ id: number; pty: number; name: string }[]>([]);
+  const [activeTerm, setActiveTerm] = useState(0);
+  async function newTerminal() {
+    try {
+      const pty = await invoke<number>("term_create", { cols: 100, rows: 24 });
+      termCounter.current += 1;
+      const id = termCounter.current;
+      setTerms((l) => [...l, { id, pty, name: `zsh ${id}` }]);
+      setActiveTerm(id);
+      setMode("terminal");
+    } catch {
+      /* pty failed — nothing to add */
+    }
   }
   function killTerminal(id: number) {
+    const victim = terms.find((x) => x.id === id);
+    if (victim) void invoke("term_kill", { id: victim.pty }).catch(() => undefined);
     setTerms((l) => {
       const next = l.filter((x) => x.id !== id);
-      if (!next.length) {
-        termCounter.current += 1;
-        next.push({ id: termCounter.current, name: `exasol ${termCounter.current}` });
-      }
-      if (id === activeTerm) setActiveTerm(next[next.length - 1].id);
+      if (id === activeTerm && next.length) setActiveTerm(next[next.length - 1].id);
       return next;
     });
   }
+  // First open of the terminal tab spawns the first shell.
+  useEffect(() => {
+    if (open && mode === "terminal" && terms.length === 0) void newTerminal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode]);
   // VS Code-style bottom panel: uppercase tab strip in the header, active tab
   // underlined; actions on the right are contextual to the active tab.
   const TABS: { id: "terminal" | "history"; label: string }[] = [
@@ -1477,17 +1375,9 @@ function HistoryDock({
                 </IconButton>
               </>
             ) : (
-              <>
-                <IconButton label="New terminal" onClick={newTerminal}>
-                  <Plus className="h-3.5 w-3.5" />
-                </IconButton>
-                <IconButton
-                  label="Clear active terminal"
-                  onClick={() => setTermClears((c) => ({ ...c, [activeTerm]: (c[activeTerm] ?? 0) + 1 }))}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </IconButton>
-              </>
+              <IconButton label="New terminal" onClick={() => void newTerminal()}>
+                <Plus className="h-3.5 w-3.5" />
+              </IconButton>
             )}
           </div>
         ) : null}
@@ -1498,7 +1388,7 @@ function HistoryDock({
             <div className="min-w-0 flex-1">
               {terms.map((tm) => (
                 <div key={tm.id} className={cn("h-full", tm.id !== activeTerm && "hidden")}>
-                  <ConsolePanel onRun={onRunConsole} clearSignal={termClears[tm.id] ?? 0} />
+                  <TerminalView ptyId={tm.pty} active={tm.id === activeTerm} />
                 </div>
               ))}
             </div>
@@ -1506,7 +1396,7 @@ function HistoryDock({
               <div className="flex h-7 shrink-0 items-center justify-between border-b border-border/60 px-2">
                 <span className="text-[9.5px] font-medium tracking-wider text-muted-foreground uppercase">Terminals</span>
                 <button
-                  onClick={newTerminal}
+                  onClick={() => void newTerminal()}
                   aria-label="New terminal"
                   className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
                 >
@@ -3852,21 +3742,6 @@ export function ExasolStudio({
             setHistoryOpen(false);
           }}
           onClear={() => ipc.sqlHistoryClear().then(loadHistory)}
-          onRunConsole={async (sql) => {
-            if (!connection) throw new Error("Connect to a database first.");
-            const res = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, 200, true);
-            loadHistory();
-            refreshSqlCatalog();
-            const r = res.results[0];
-            if (!r) return "(no result)";
-            if (r.error) throw new Error(r.error);
-            if (r.kind === "rowCount") return `${r.rowCount} row(s) affected · ${r.elapsedMs} ms`;
-            const cols = r.columns.map((c) => c.name);
-            const head = cols.join("\t");
-            const rows = r.rows.slice(0, 15).map((row) => row.map((v) => (v === null ? "NULL" : String(v))).join("\t"));
-            const more = r.rowCount > 15 ? `\n… ${r.rowCount - 15} more rows (open a query tab for the full grid)` : "";
-            return `${head}\n${rows.join("\n")}${more}\n(${r.rowCount} rows · ${r.elapsedMs} ms)`;
-          }}
           onRefresh={loadHistory}
         />
       </div>

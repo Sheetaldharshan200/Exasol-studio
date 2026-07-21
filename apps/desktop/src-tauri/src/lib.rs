@@ -1,4 +1,5 @@
 mod agent;
+mod terminal;
 mod bucketfs;
 mod catalog;
 mod connection;
@@ -42,12 +43,17 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
+            app.manage(crate::terminal::TermRegistry::default());
             app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
             crate::local_database::auto_start_if_installed(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            terminal::term_create,
+            terminal::term_write,
+            terminal::term_resize,
+            terminal::term_kill,
             drivers::list_drivers,
             driver_exec::driver_status,
             driver_exec::driver_setup,
