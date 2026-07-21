@@ -26,7 +26,7 @@ export const PanelSchema = z
     z.object({
       type: z.literal("echarts"),
       /** Constrained ECharts option: data is injected as dataset.source. */
-      chart: z.enum(["bar", "line", "area", "pie", "scatter"]),
+      chart: z.enum(["bar", "line", "area", "pie", "donut", "hbar", "scatter", "heatmap", "funnel", "radar", "treemap", "gauge"]),
       /** Column for categories/x-axis (first column if omitted). */
       xField: z.string().optional(),
       /** Value columns to plot (all numeric columns if omitted). */

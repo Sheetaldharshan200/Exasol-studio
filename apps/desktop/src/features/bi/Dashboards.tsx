@@ -206,6 +206,13 @@ const VIZ_TILES: { key: string; hint: string; art: React.ReactNode }[] = [
   { key: "area", hint: "Trend with magnitude", art: (<g><polygon points="5,22 15,12 24,16 33,7 43,11 43,24 5,24" fill="var(--primary)" opacity="0.25"/><polyline points="5,22 15,12 24,16 33,7 43,11" stroke="var(--primary)" strokeWidth="2" strokeLinejoin="round"/></g>) },
   { key: "pie", hint: "Proportions of a whole", art: (<g><circle cx="24" cy="13" r="9" fill="currentColor" opacity="0.35"/><path d="M24 13 L24 4 A9 9 0 0 1 32.5 16 Z" fill="var(--primary)"/></g>) },
   { key: "scatter", hint: "Correlation between measures", art: (<g fill="currentColor" opacity="0.6"><circle cx="10" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="25" cy="16" r="2"/><circle cx="30" cy="8" r="2" fill="var(--primary)" opacity="1"/><circle cx="38" cy="11" r="2"/></g>) },
+  { key: "donut", hint: "Proportions, with a hole for a total", art: (<g><circle cx="24" cy="13" r="9" fill="none" stroke="currentColor" strokeWidth="4" opacity="0.35"/><path d="M24 4 A9 9 0 0 1 32.6 16" stroke="var(--primary)" strokeWidth="4" fill="none"/></g>) },
+  { key: "hbar", hint: "Compare many categories (horizontal)", art: (<g><rect x="8" y="5" width="26" height="4" rx="1" fill="var(--primary)"/><rect x="8" y="11" width="18" height="4" rx="1" fill="currentColor" opacity="0.45"/><rect x="8" y="17" width="30" height="4" rx="1" fill="currentColor" opacity="0.45"/></g>) },
+  { key: "heatmap", hint: "Density across two dimensions", art: (<g>{[0,1,2,3].map((x)=>[0,1].map((y)=>null))}<rect x="9" y="5" width="7" height="7" fill="var(--primary)" opacity="0.9"/><rect x="17" y="5" width="7" height="7" fill="currentColor" opacity="0.25"/><rect x="25" y="5" width="7" height="7" fill="currentColor" opacity="0.5"/><rect x="33" y="5" width="7" height="7" fill="currentColor" opacity="0.2"/><rect x="9" y="13" width="7" height="7" fill="currentColor" opacity="0.35"/><rect x="17" y="13" width="7" height="7" fill="var(--primary)" opacity="0.6"/><rect x="25" y="13" width="7" height="7" fill="currentColor" opacity="0.2"/><rect x="33" y="13" width="7" height="7" fill="var(--primary)" opacity="0.4"/></g>) },
+  { key: "funnel", hint: "Stage-by-stage drop-off", art: (<g fill="currentColor" opacity="0.5"><path d="M10 5 h28 l-5 5 h-18 Z" fill="var(--primary)" opacity="0.9"/><path d="M16 12 h16 l-4 5 h-8 Z"/><path d="M21 19 h6 l-1.5 4 h-3 Z"/></g>) },
+  { key: "radar", hint: "Compare across several axes", art: (<g stroke="currentColor" opacity="0.4" fill="none"><polygon points="24,3 40,10 35,23 13,23 8,10"/><polygon points="24,8 34,12 31,20 17,20 14,12" stroke="var(--primary)" fill="var(--primary)" fillOpacity="0.2" opacity="1"/></g>) },
+  { key: "treemap", hint: "Composition of many parts", art: (<g><rect x="8" y="5" width="16" height="16" rx="1" fill="var(--primary)" opacity="0.75"/><rect x="26" y="5" width="14" height="9" rx="1" fill="currentColor" opacity="0.4"/><rect x="26" y="16" width="8" height="5" rx="1" fill="currentColor" opacity="0.3"/><rect x="36" y="16" width="4" height="5" rx="1" fill="currentColor" opacity="0.25"/></g>) },
+  { key: "gauge", hint: "Progress toward a target", art: (<g fill="none"><path d="M10 21 A14 14 0 0 1 38 21" stroke="currentColor" opacity="0.3" strokeWidth="4"/><path d="M10 21 A14 14 0 0 1 27 8" stroke="var(--primary)" strokeWidth="4"/><circle cx="24" cy="21" r="2" fill="currentColor"/></g>) },
   { key: "kpi", hint: "One number that matters", art: (<g><text x="24" y="15" textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--primary)">42k</text><rect x="14" y="19" width="20" height="2" rx="1" fill="currentColor" opacity="0.35"/></g>) },
   { key: "table", hint: "Raw rows and columns", art: (<g stroke="currentColor" opacity="0.5" strokeWidth="1"><rect x="8" y="5" width="32" height="16" rx="1.5"/><line x1="8" y1="10" x2="40" y2="10"/><line x1="8" y1="15" x2="40" y2="15"/><line x1="21" y1="5" x2="21" y2="21"/><line x1="30" y1="5" x2="30" y2="21"/></g>) },
   { key: "explore", hint: "Interactive pivot studio", art: (<g><rect x="8" y="6" width="10" height="6" rx="1" fill="var(--primary)" opacity="0.8"/><rect x="8" y="14" width="10" height="6" rx="1" fill="currentColor" opacity="0.35"/><rect x="21" y="6" width="19" height="14" rx="1.5" stroke="currentColor" opacity="0.5" fill="none"/><path d="M25 16 l4 -4 l3 2 l4 -5" stroke="var(--primary)" strokeWidth="1.5" fill="none"/></g>) },
@@ -791,20 +798,55 @@ function buildChartOption(
   const yCols = yIdxs.length ? yIdxs : cols.map((_, i) => i).filter((i) => i !== xIdx);
 
   const categories = result.rows.map((r) => String(r[xIdx] ?? ""));
+  const nameValue = () => result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: num(r[yCols[0] ?? 1]) ?? 0 }));
+  const AXISLESS = new Set(["pie", "donut", "funnel", "radar", "treemap", "gauge"]);
+  let extraOption: Record<string, unknown> = {};
   const series =
-    viz.chart === "pie"
+    viz.chart === "pie" || viz.chart === "donut"
       ? [
           {
             type: "pie" as const,
-            radius: ["35%", "70%"],
+            radius: viz.chart === "donut" ? ["48%", "72%"] : ["0%", "70%"],
             itemStyle: { borderRadius: 4 },
             label: { color: fg, fontSize: 10 },
-            data: result.rows.map((r) => ({ name: String(r[xIdx] ?? ""), value: num(r[yCols[0] ?? 1]) ?? 0 })),
+            data: nameValue(),
           },
         ]
-      : yCols.map((yi) => ({
+      : viz.chart === "funnel"
+        ? [{ type: "funnel" as const, gap: 2, label: { color: fg, fontSize: 10 }, data: nameValue().sort((a, b) => b.value - a.value) }]
+        : viz.chart === "treemap"
+          ? [{ type: "treemap" as const, roam: false, breadcrumb: { show: false }, label: { color: "#fff", fontSize: 10 }, data: nameValue() }]
+          : viz.chart === "gauge"
+            ? (() => {
+                const v = num(result.rows[0]?.[yCols[0] ?? 0]) ?? 0;
+                const max = Math.max(Math.ceil((v * 1.25) / 10) * 10, 10);
+                return [{ type: "gauge" as const, max, progress: { show: true }, detail: { color: fg, fontSize: 16 }, axisLabel: { color: fg, fontSize: 8 }, data: [{ value: v, name: cols[yCols[0] ?? 0] }] }];
+              })()
+            : viz.chart === "radar"
+              ? (() => {
+                  const maxV = Math.max(...result.rows.flatMap((r) => yCols.map((yi) => num(r[yi]) ?? 0)), 1);
+                  extraOption = { radar: { indicator: categories.map((c) => ({ name: c, max: maxV * 1.15 })), axisName: { color: fg, fontSize: 9 } } };
+                  return [{ type: "radar" as const, data: yCols.map((yi) => ({ name: cols[yi], value: result.rows.map((r) => num(r[yi]) ?? 0) })) }];
+                })()
+              : viz.chart === "heatmap"
+                ? (() => {
+                    // Expect 3 columns: x, y, value (Superset heatmap shape).
+                    const yCat = cols.findIndex((_, i) => i !== xIdx && !isNumCol(i));
+                    const yi = yCat >= 0 ? yCat : Math.min(1, cols.length - 1);
+                    const vi = yCols.find((i) => i !== xIdx && i !== yi) ?? cols.length - 1;
+                    const xs = [...new Set(result.rows.map((r) => String(r[xIdx] ?? "")))];
+                    const ys = [...new Set(result.rows.map((r) => String(r[yi] ?? "")))];
+                    const vals = result.rows.map((r) => num(r[vi]) ?? 0);
+                    extraOption = {
+                      xAxis: { type: "category", data: xs, axisLabel: { color: fg, fontSize: 9 } },
+                      yAxis: { type: "category", data: ys, axisLabel: { color: fg, fontSize: 9 } },
+                      visualMap: { min: Math.min(...vals, 0), max: Math.max(...vals, 1), calculable: true, orient: "horizontal", left: "center", bottom: 0, textStyle: { color: fg }, inRange: { color: ["#123", "#5fc33b"] } },
+                    };
+                    return [{ type: "heatmap" as const, label: { show: xs.length * ys.length <= 60, color: fg, fontSize: 9 }, data: result.rows.map((r) => [String(r[xIdx] ?? ""), String(r[yi] ?? ""), num(r[vi]) ?? 0]) }];
+                  })()
+                : yCols.map((yi) => ({
           name: cols[yi],
-          type: (viz.chart === "area" ? "line" : viz.chart) as "line" | "bar" | "scatter",
+          type: (viz.chart === "area" ? "line" : viz.chart === "hbar" ? "bar" : viz.chart) as "line" | "bar" | "scatter",
           ...(viz.chart === "area" ? { areaStyle: { opacity: 0.22 } } : {}),
           ...(viz.stacked ? { stack: "total" } : {}),
           smooth: viz.chart !== "bar",
@@ -818,27 +860,28 @@ function buildChartOption(
   const primary: Record<string, unknown> = {
     color: PALETTE,
     grid: { left: 44, right: 12, top: 24, bottom: 26 },
-    tooltip: { trigger: viz.chart === "pie" ? "item" : "axis" },
+    tooltip: { trigger: AXISLESS.has(viz.chart) || viz.chart === "heatmap" ? "item" : "axis" },
     legend:
-      series.length > 1 && viz.chart !== "pie"
+      series.length > 1 && !AXISLESS.has(viz.chart) && viz.chart !== "heatmap"
         ? { top: 2, textStyle: { color: fg, fontSize: 10 }, icon: "circle" }
         : undefined,
-    ...(viz.chart !== "pie"
+    ...(!AXISLESS.has(viz.chart) && viz.chart !== "heatmap"
       ? {
-          xAxis: {
+          [viz.chart === "hbar" ? "yAxis" : "xAxis"]: {
             type: "category",
             data: categories,
             axisLabel: { color: fg, fontSize: 10, hideOverlap: true, rotate: categories.length > 8 ? 30 : 0 },
             axisLine: { lineStyle: { color: border } },
             axisTick: { show: false },
           },
-          yAxis: {
+          [viz.chart === "hbar" ? "xAxis" : "yAxis"]: {
             type: "value",
             axisLabel: { color: fg, fontSize: 10 },
             splitLine: { lineStyle: { color: border, opacity: 0.4, type: "dashed" } },
           },
         }
       : {}),
+    ...extraOption,
     series,
   };
   // Full-control overrides: whatever the human (or agent) put in viz.option
@@ -900,7 +943,8 @@ function PanelEditor({
   const [vizType, setVizType] = useState<"echarts" | "kpi" | "table" | "explore" | "markdown">(panel.viz.type);
   const [content, setContent] = useState(panel.viz.type === "markdown" ? panel.viz.content : "");
   const ev = panel.viz.type === "echarts" ? panel.viz : null;
-  const [chart, setChart] = useState<"bar" | "line" | "area" | "pie" | "scatter">(ev?.chart ?? "bar");
+  type ChartKind = "bar" | "line" | "area" | "pie" | "donut" | "hbar" | "scatter" | "heatmap" | "funnel" | "radar" | "treemap" | "gauge";
+  const [chart, setChart] = useState<ChartKind>(ev?.chart ?? "bar");
   const [xField, setXField] = useState(ev?.xField ?? "");
   const [yFields, setYFields] = useState((ev?.yFields ?? []).join(", "));
   const [stacked, setStacked] = useState(Boolean(ev?.stacked));
@@ -1000,6 +1044,30 @@ function PanelEditor({
   }
 
   const cols = preview?.columns.map((c) => c.name) ?? [];
+  // Data-shape suggestions (Superset heuristics): temporal → line/area;
+  // few categories → pie; many → bar/treemap; 2 measures → scatter;
+  // 2 dims + measure → heatmap; single number → kpi/gauge.
+  const suggested = useMemo(() => {
+    const s = new Set<string>();
+    if (!preview || !preview.columns.length) return s;
+    const isNum = (i: number) => /DECIMAL|DOUBLE|INT|NUMBER|FLOAT/i.test(preview.columns[i].typeName ?? "");
+    const isTime = (i: number) => /DATE|TIMESTAMP/i.test(preview.columns[i].typeName ?? "");
+    const numIdx = preview.columns.map((_, i) => i).filter(isNum);
+    const catIdx = preview.columns.map((_, i) => i).filter((i) => !isNum(i) && !isTime(i));
+    const rows = preview.rows.length;
+    if (rows === 1 && numIdx.length >= 1) { s.add("kpi"); s.add("gauge"); }
+    if (preview.columns.some((_, i) => isTime(i)) && numIdx.length) { s.add("line"); s.add("area"); }
+    if (catIdx.length >= 1 && numIdx.length >= 1) {
+      const cats = new Set(preview.rows.map((r) => String(r[catIdx[0]]))).size;
+      if (cats < 6) { s.add("pie"); s.add("donut"); }
+      else if (cats <= 15) s.add("bar");
+      else { s.add("treemap"); s.add("hbar"); }
+    }
+    if (numIdx.length >= 2) s.add("scatter");
+    if (catIdx.length >= 2 && numIdx.length >= 1) s.add("heatmap");
+    if (rows > 1) s.add("table");
+    return s;
+  }, [preview]);
 
   return (
     // Inline editing surface — takes the grid's place inside the dashboard
@@ -1101,7 +1169,14 @@ function PanelEditor({
               className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[12px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
             />
             {previewErr ? (
-              <p className="mt-1 text-[11px] text-destructive">{previewErr}</p>
+              <div className="mt-1 text-[11px]">
+                <p className="text-destructive">{previewErr}</p>
+                {/not found/i.test(previewErr) ? (
+                  <p className="mt-0.5 text-muted-foreground">
+                    Tip: pick a dataset from the list above — it fills the SQL with a real table name (SCHEMA.TABLE is just a placeholder).
+                  </p>
+                ) : null}
+              </div>
             ) : preview ? (
               <p className="mt-1 text-[11px] text-muted-foreground">
                 ✓ {preview.rowCount} rows · columns: {cols.join(", ")}
@@ -1110,7 +1185,15 @@ function PanelEditor({
           </div>
 
           <div>
-            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Visualize as</span>
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground" title="Pick how this panel shows the query result — run Preview first and green dots mark the types that suit your data">
+              Visualize as
+            </span>
+            {suggested.size ? (
+              <p className="mb-1.5 text-[11px] text-muted-foreground">
+                <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-primary align-middle" /> Suggested for your data:{" "}
+                {[...suggested].slice(0, 4).join(", ")}
+              </p>
+            ) : null}
             <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
               {VIZ_TILES.map((tile) => {
                 const direct = tile.key === "kpi" || tile.key === "table" || tile.key === "explore";
@@ -1129,11 +1212,11 @@ function PanelEditor({
                       else if (direct) setVizType(tile.key as "kpi" | "table" | "explore");
                       else {
                         setVizType("echarts");
-                        setChart(tile.key as "bar" | "line" | "area" | "pie" | "scatter");
+                        setChart(tile.key as ChartKind);
                       }
                     }}
                     className={cn(
-                      "flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors",
+                      "relative flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors",
                       active
                         ? "border-primary/60 bg-primary/10 text-primary ring-1 ring-primary/30"
                         : "border-border text-muted-foreground hover:border-muted-foreground/40 hover:bg-secondary/60 hover:text-foreground",
@@ -1143,6 +1226,12 @@ function PanelEditor({
                       {tile.art}
                     </svg>
                     <span className="text-[10px] font-medium capitalize">{tile.key}</span>
+                    {suggested.has(tile.key) ? (
+                      <span
+                        title="Suits the shape of your previewed data"
+                        className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary"
+                      />
+                    ) : null}
                   </button>
                 );
               })}
@@ -1179,8 +1268,11 @@ function PanelEditor({
                   )}
                 </label>
                 <label className="flex-1">
-                  <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Value columns (comma-separated)
+                  <span
+                    className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                    title="Which numeric columns become series — click the chips after Preview, or type names comma-separated. Empty = every numeric column"
+                  >
+                    Value columns
                   </span>
                   <input
                     value={yFields}
@@ -1188,15 +1280,45 @@ function PanelEditor({
                     placeholder="(all numeric columns)"
                     className="h-8 w-full rounded-lg border border-border bg-editor px-2.5 text-[12px] outline-none"
                   />
+                  {cols.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {cols.map((c) => {
+                        const list = yFields.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+                        const on = list.includes(c.toUpperCase());
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            title={on ? `Remove ${c} from the series` : `Add ${c} as a series`}
+                            onClick={() =>
+                              setYFields((on ? list.filter((x) => x !== c.toUpperCase()) : [...list, c]).join(", "))
+                            }
+                            className={cn(
+                              "rounded-full border px-1.5 py-px text-[10px]",
+                              on ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </label>
               </div>
-              <label className="flex items-center gap-2 text-[12px] text-foreground">
+              <label
+                className="flex items-center gap-2 text-[12px] text-foreground"
+                title="Stack series on top of each other — composition instead of side-by-side comparison"
+              >
                 <input type="checkbox" checked={stacked} onChange={(e) => setStacked(e.target.checked)} /> Stacked
               </label>
-              <div>
-                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Advanced — raw ECharts option (JSON, merged over the generated chart)
-                </span>
+              <details className="group">
+                <summary
+                  className="cursor-pointer list-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                  title="For developers: any ECharts option JSON here merges OVER the generated chart — full control of every series, axis, and label"
+                >
+                  ▸ Advanced — raw ECharts option (JSON)
+                </summary>
                 <textarea
                   value={optionJson}
                   onChange={(e) => setOptionJson(e.target.value)}
@@ -1206,7 +1328,7 @@ function PanelEditor({
                   className="w-full resize-y rounded-lg border border-border bg-editor px-2.5 py-2 font-mono text-[11.5px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
                 />
                 {jsonErr ? <p className="mt-1 text-[11px] text-destructive">{jsonErr}</p> : null}
-              </div>
+              </details>
             </div>
           ) : vizType === "kpi" ? (
             <div className="flex gap-2">

@@ -228,7 +228,7 @@ export type DashPanel = {
   /** Absent on markdown text panels. */
   query?: { sql: string };
   viz:
-    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "scatter"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
+    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "donut" | "hbar" | "scatter" | "heatmap" | "funnel" | "radar" | "treemap" | "gauge"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
     | { type: "kpi"; valueField?: string; unit?: string }
     | { type: "table" }
     | { type: "explore"; config?: Record<string, unknown> }
