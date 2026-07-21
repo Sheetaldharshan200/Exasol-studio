@@ -38,6 +38,23 @@ Homebrew places the app in `/Applications` and, on this demo build, strips the
 download quarantine flag so it launches without the Gatekeeper "unidentified
 developer" prompt.
 
+## macOS — Homebrew without a tap
+
+Prefer not to add a tap? Homebrew can install a cask straight from a local
+file. Download it once, then install:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/Casks/exasol-studio.rb -o /tmp/exasol-studio.rb
+brew install --cask /tmp/exasol-studio.rb
+```
+
+This is a genuine one-shot `brew` install with no `brew tap`. Tradeoff: no
+`brew upgrade` (re-run the two lines for a new version) and it isn't
+discoverable. There is no `brew install --cask <https-url>` — brew installs a
+cask only from a tap or a local file, so this download-then-install is the
+"no tap" path. (The other tap-free route is getting into the official
+`homebrew-cask` repo, which requires a code-signed + notarized build.)
+
 ## Windows — Scoop (the `brew` analog) or WinGet
 
 Windows has command-line package managers just like macOS. **Scoop** mirrors

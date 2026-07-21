@@ -32,6 +32,13 @@ Remove: `brew uninstall --cask exasol-studio` / `scoop uninstall exasol-studio`.
 > Or skip package managers entirely and use the **manual download** below — it
 > needs no tooling at all.
 
+> **Prefer brew without adding a tap?** Install the cask from a local file:
+> ```sh
+> curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/Casks/exasol-studio.rb -o /tmp/exasol-studio.rb
+> brew install --cask /tmp/exasol-studio.rb
+> ```
+> (One-shot install, no `brew upgrade` — see [docs/INSTALL.md](docs/INSTALL.md).)
+
 > **Yes, Windows has a `brew`-style CLI too.** [Scoop](https://scoop.sh) is the
 > closest analog — a custom *bucket* works exactly like a Homebrew *tap* (the
 > command above adds ours). [WinGet](https://learn.microsoft.com/windows/package-manager/)
