@@ -287,4 +287,18 @@ export const dashboards = {
   async remove(id: string): Promise<void> {
     await api(`/dashboards/${encodeURIComponent(id)}`, "DELETE");
   },
+  async history(id: string): Promise<{ index: number; updatedAt: number; title: string; panels: number }[]> {
+    const { history } = await api<{ history: { index: number; updatedAt: number; title: string; panels: number }[] }>(
+      `/dashboards/${encodeURIComponent(id)}/history`,
+    );
+    return history;
+  },
+  async rollback(id: string, index: number): Promise<Dashboard> {
+    const { dashboard } = await api<{ dashboard: Dashboard }>(
+      `/dashboards/${encodeURIComponent(id)}/rollback`,
+      "POST",
+      { index },
+    );
+    return dashboard;
+  },
 };

@@ -199,6 +199,19 @@ export function DashboardsTab({
 
 /* ────────────────────────── Dashboard view ────────────────────────── */
 
+/** Mini chart previews for the visual type picker (Grafana-style tiles). */
+const VIZ_TILES: { key: string; hint: string; art: React.ReactNode }[] = [
+  { key: "bar", hint: "Compare categories", art: (<g><rect x="6" y="12" width="6" height="12" rx="1" fill="currentColor" opacity="0.45"/><rect x="15" y="6" width="6" height="18" rx="1" fill="var(--primary)"/><rect x="24" y="15" width="6" height="9" rx="1" fill="currentColor" opacity="0.45"/><rect x="33" y="9" width="6" height="15" rx="1" fill="currentColor" opacity="0.45"/></g>) },
+  { key: "line", hint: "Trends over time", art: (<polyline points="5,20 15,12 24,15 33,7 43,10" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>) },
+  { key: "area", hint: "Trend with magnitude", art: (<g><polygon points="5,22 15,12 24,16 33,7 43,11 43,24 5,24" fill="var(--primary)" opacity="0.25"/><polyline points="5,22 15,12 24,16 33,7 43,11" stroke="var(--primary)" strokeWidth="2" strokeLinejoin="round"/></g>) },
+  { key: "pie", hint: "Proportions of a whole", art: (<g><circle cx="24" cy="13" r="9" fill="currentColor" opacity="0.35"/><path d="M24 13 L24 4 A9 9 0 0 1 32.5 16 Z" fill="var(--primary)"/></g>) },
+  { key: "scatter", hint: "Correlation between measures", art: (<g fill="currentColor" opacity="0.6"><circle cx="10" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="25" cy="16" r="2"/><circle cx="30" cy="8" r="2" fill="var(--primary)" opacity="1"/><circle cx="38" cy="11" r="2"/></g>) },
+  { key: "kpi", hint: "One number that matters", art: (<g><text x="24" y="15" textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--primary)">42k</text><rect x="14" y="19" width="20" height="2" rx="1" fill="currentColor" opacity="0.35"/></g>) },
+  { key: "table", hint: "Raw rows and columns", art: (<g stroke="currentColor" opacity="0.5" strokeWidth="1"><rect x="8" y="5" width="32" height="16" rx="1.5"/><line x1="8" y1="10" x2="40" y2="10"/><line x1="8" y1="15" x2="40" y2="15"/><line x1="21" y1="5" x2="21" y2="21"/><line x1="30" y1="5" x2="30" y2="21"/></g>) },
+  { key: "explore", hint: "Interactive pivot studio", art: (<g><rect x="8" y="6" width="10" height="6" rx="1" fill="var(--primary)" opacity="0.8"/><rect x="8" y="14" width="10" height="6" rx="1" fill="currentColor" opacity="0.35"/><rect x="21" y="6" width="19" height="14" rx="1.5" stroke="currentColor" opacity="0.5" fill="none"/><path d="M25 16 l4 -4 l3 2 l4 -5" stroke="var(--primary)" strokeWidth="1.5" fill="none"/></g>) },
+  { key: "text", hint: "Markdown narrative", art: (<g fill="currentColor" opacity="0.5"><rect x="8" y="6" width="24" height="2.5" rx="1"/><rect x="8" y="11" width="32" height="2" rx="1"/><rect x="8" y="15" width="28" height="2" rx="1"/><rect x="8" y="19" width="18" height="2" rx="1"/></g>) },
+];
+
 function DashboardView({
   dash: initial,
   profileId,
@@ -212,6 +225,18 @@ function DashboardView({
 }) {
   const [dash, setDash] = useState<Dashboard>(initial);
   const [editing, setEditing] = useState<DashPanel | null>(null);
+  const [history, setHistory] = useState<{ index: number; updatedAt: number; title: string; panels: number }[] | null>(null);
+  async function toggleHistory() {
+    if (history) return setHistory(null);
+    setHistory(await dashboards.history(dash.id).catch(() => []));
+  }
+  async function restoreRevision(index: number) {
+    const restored = await dashboards.rollback(dash.id, index).catch(() => null);
+    if (restored) {
+      setDash(restored);
+      setHistory(null);
+    }
+  }
   const [nonce, setNonce] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -337,6 +362,13 @@ function DashboardView({
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
         <span className="truncate text-[13px] font-semibold text-foreground">{dash.title}</span>
+        <button
+          onClick={() => void toggleHistory()}
+          title="Revision history — restore any earlier version"
+          className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          History
+        </button>
         {!profileId ? (
           <span className="rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium uppercase text-warning">
             not connected
@@ -1079,30 +1111,38 @@ function PanelEditor({
 
           <div>
             <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Visualize as</span>
-            <div className="flex flex-wrap gap-1.5">
-              {(["bar", "line", "area", "pie", "scatter", "kpi", "table", "explore", "text"] as const).map((t) => {
-                const direct = t === "kpi" || t === "table" || t === "explore";
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+              {VIZ_TILES.map((tile) => {
+                const direct = tile.key === "kpi" || tile.key === "table" || tile.key === "explore";
                 const active =
-                  t === "text" ? vizType === "markdown" : direct ? vizType === t : vizType === "echarts" && chart === t;
+                  tile.key === "text"
+                    ? vizType === "markdown"
+                    : direct
+                      ? vizType === tile.key
+                      : vizType === "echarts" && chart === tile.key;
                 return (
                   <button
-                    key={t}
+                    key={tile.key}
+                    title={tile.hint}
                     onClick={() => {
-                      if (t === "text") setVizType("markdown");
-                      else if (direct) setVizType(t);
+                      if (tile.key === "text") setVizType("markdown");
+                      else if (direct) setVizType(tile.key as "kpi" | "table" | "explore");
                       else {
                         setVizType("echarts");
-                        setChart(t);
+                        setChart(tile.key as "bar" | "line" | "area" | "pie" | "scatter");
                       }
                     }}
                     className={cn(
-                      "flex h-7 items-center rounded-md border px-2.5 text-[11.5px] capitalize transition-colors",
+                      "flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors",
                       active
-                        ? "border-primary/50 bg-primary/10 font-medium text-primary"
-                        : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        ? "border-primary/60 bg-primary/10 text-primary ring-1 ring-primary/30"
+                        : "border-border text-muted-foreground hover:border-muted-foreground/40 hover:bg-secondary/60 hover:text-foreground",
                     )}
                   >
-                    {t}
+                    <svg viewBox="0 0 48 26" className="h-[26px] w-full" fill="none" aria-hidden>
+                      {tile.art}
+                    </svg>
+                    <span className="text-[10px] font-medium capitalize">{tile.key}</span>
                   </button>
                 );
               })}

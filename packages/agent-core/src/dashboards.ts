@@ -136,11 +136,50 @@ export class DashboardStore {
       });
     }
     const parsed = DashboardSchema.parse(raw);
-    writeFileSync(
-      join(this.dir, `${sanitize(parsed.id)}.json`),
-      JSON.stringify({ ...parsed, updatedAt: Date.now() }, null, 2),
-    );
+    const path = join(this.dir, `${sanitize(parsed.id)}.json`);
+    // Revision history (dash-server-inspired): every save snapshots the
+    // previous version; keep the last 15, restorable via rollback().
+    let revisions: unknown[] = [];
+    try {
+      const prev = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      revisions = Array.isArray(prev.revisions) ? (prev.revisions as unknown[]) : [];
+      delete prev.revisions;
+      revisions.unshift(prev);
+      revisions = revisions.slice(0, 15);
+    } catch {
+      /* first save — no prior revision */
+    }
+    writeFileSync(path, JSON.stringify({ ...parsed, updatedAt: Date.now(), revisions }, null, 2));
     return parsed;
+  }
+
+  /** Revision metadata, newest first. */
+  history(id: string): { index: number; updatedAt: number; title: string; panels: number }[] {
+    try {
+      const doc = JSON.parse(readFileSync(join(this.dir, `${sanitize(id)}.json`), "utf8")) as {
+        revisions?: { updatedAt?: number; title?: string; panels?: unknown[] }[];
+      };
+      return (doc.revisions ?? []).map((r, index) => ({
+        index,
+        updatedAt: r.updatedAt ?? 0,
+        title: r.title ?? "",
+        panels: Array.isArray(r.panels) ? r.panels.length : 0,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Restore a revision (the current version becomes a revision itself). */
+  rollback(id: string, index: number): Dashboard | null {
+    try {
+      const doc = JSON.parse(readFileSync(join(this.dir, `${sanitize(id)}.json`), "utf8")) as { revisions?: unknown[] };
+      const rev = doc.revisions?.[index] as Record<string, unknown> | undefined;
+      if (!rev) return null;
+      return this.save({ ...rev, id });
+    } catch {
+      return null;
+    }
   }
 
   delete(id: string): boolean {

@@ -123,6 +123,14 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // Dashboards: GET list / GET one / PUT save / DELETE
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2] && parts[3] === "history") {
+          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
+          const body = (await readBody(req)) as { index?: number };
+          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
+        }
         if (req.method === "GET" && parts[2]) {
           const d = dashboards.get(decodeURIComponent(parts[2]));
           return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
@@ -208,6 +216,14 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // Dashboards: GET list / GET one / PUT save / DELETE
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2] && parts[3] === "history") {
+          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
+          const body = (await readBody(req)) as { index?: number };
+          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
+        }
         if (req.method === "GET" && parts[2]) {
           const d = dashboards.get(decodeURIComponent(parts[2]));
           return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
@@ -279,6 +295,14 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // Dashboards: GET list / GET one / PUT save / DELETE
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2] && parts[3] === "history") {
+          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
+          const body = (await readBody(req)) as { index?: number };
+          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
+        }
         if (req.method === "GET" && parts[2]) {
           const d = dashboards.get(decodeURIComponent(parts[2]));
           return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
@@ -330,6 +354,14 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // Dashboards: GET list / GET one / PUT save / DELETE
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
+        if (req.method === "GET" && parts[2] && parts[3] === "history") {
+          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
+        }
+        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
+          const body = (await readBody(req)) as { index?: number };
+          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
+          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
+        }
         if (req.method === "GET" && parts[2]) {
           const d = dashboards.get(decodeURIComponent(parts[2]));
           return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
