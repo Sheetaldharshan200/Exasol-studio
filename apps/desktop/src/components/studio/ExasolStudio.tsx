@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
+import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import {
   Activity,
   BarChart3,
@@ -1419,6 +1420,30 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // Live schema catalog feeding the editor's autocompletion (per connection).
+  const sqlCatalogRef = useRef<SqlCatalog>(emptyCatalog());
+  useEffect(() => {
+    sqlCatalogRef.current = emptyCatalog();
+    if (!connection) return;
+    let alive = true;
+    ipc
+      .executeSql(
+        connection.profile.id,
+        connection.profile.name,
+        "SELECT COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS') ORDER BY 1, 2 LIMIT 20000",
+        20000,
+        false,
+      )
+      .then((res) => {
+        if (!alive) return;
+        const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
+        if (table?.rows) sqlCatalogRef.current = buildCatalog(table.rows as unknown[][]);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [connection]);
   const tabCounter = useRef(1);
   // Imperative handles for the collapsible side panels.
   const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -3218,6 +3243,7 @@ export function ExasolStudio({
                   onChange={(value) => patchTab(activeTab.id, { sql: value ?? "" })}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
+                    registerExasolCompletion(monaco, () => sqlCatalogRef.current);
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
