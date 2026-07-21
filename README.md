@@ -6,61 +6,48 @@ Ask questions in plain words. Exa (the assistant) finds the right tables, writes
 
 ---
 
-## Get it (2 minutes)
+## Download & install
 
-Pick the track that fits you. **Single developer** = install on your own
-machine, fastest via the command line. **Enterprise / IT** = roll it out to a
-managed fleet. Full details in **[docs/INSTALL.md](docs/INSTALL.md)**.
+### ⬇️ Get the installer — [**Releases ›**](../../releases/latest)
 
-### Single developer
+Download the one file for your computer and open it. That's the whole install.
 
-**Command line (recommended)** — one command, auto-updates, easy to remove:
+| Your computer | Download | Then |
+|---|---|---|
+| **Mac** — Apple Silicon (M1–M4) | **[`ExasolStudio-Mac-AppleSilicon.dmg`](../../releases/latest)** | Open the DMG, drag into **Applications** |
+| **Mac** — Intel | **[`ExasolStudio-Mac-Intel.dmg`](../../releases/latest)** | Open the DMG, drag into **Applications** |
+| **Windows** | **[`ExasolStudio-Windows-64bit-setup.exe`](../../releases/latest)** | Run it — installs for you, no admin |
+| **Linux** | **[`ExasolStudio-Linux-64bit.AppImage`](../../releases/latest)** (or `.deb` / `.rpm`) | `chmod +x` and run |
 
-| Platform | Install |
-|---|---|
-| **macOS** (Homebrew) | `brew tap sheetaldharshan200/tap https://github.com/Sheetaldharshan200/homebrew-tap`<br>`brew install --cask exasol-studio` |
-| **Windows** (Scoop) | `scoop bucket add exasol https://github.com/Sheetaldharshan200/homebrew-tap`<br>`scoop install exasol-studio` |
-| **Windows** (WinGet)¹ | `winget install ExasolStudio` |
-| **Linux** (Debian/Ubuntu) | `curl -fsSLO <deb-url> && sudo apt install ./ExasolStudio-Linux-64bit.deb` |
+> On macOS this demo build isn't Apple-notarized yet, so the first launch shows
+> a Gatekeeper prompt — **right-click the app → Open → Open** (once). Or use the
+> command-line backup below, which clears that for you.
 
-Upgrade later: `brew upgrade --cask exasol-studio` / `scoop update exasol-studio`.
-Remove: `brew uninstall --cask exasol-studio` / `scoop uninstall exasol-studio`.
+### No permission to run the installer? Try the command line
 
-> **Don't have `brew` or `scoop`?** Install the manager once —
-> macOS: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`,
-> Windows: `irm get.scoop.sh | iex` (WinGet is already built into Windows 10/11).
-> Or skip package managers entirely and use the **manual download** below — it
-> needs no tooling at all.
+Locked-down machine, can't get admin, or the installer is blocked? These install
+into **your user space — no admin rights needed** — and are a clean way to just
+try it. **One command each** — no separate tap/bucket step.
 
-> **Prefer brew without adding a tap?** Install the cask from a local file:
-> ```sh
-> curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/Casks/exasol-studio.rb -o /tmp/exasol-studio.rb
-> brew install --cask /tmp/exasol-studio.rb
-> ```
-> (One-shot install, no `brew upgrade` — see [docs/INSTALL.md](docs/INSTALL.md).)
+**macOS** (needs [Homebrew](https://brew.sh)):
+```sh
+brew install --cask sheetaldharshan200/tap/exasol-studio
+```
+Upgrade: `brew upgrade --cask exasol-studio` · Remove: `brew uninstall --cask exasol-studio`
 
-> **Yes, Windows has a `brew`-style CLI too.** [Scoop](https://scoop.sh) is the
-> closest analog — a custom *bucket* works exactly like a Homebrew *tap* (the
-> command above adds ours). [WinGet](https://learn.microsoft.com/windows/package-manager/)
-> is Microsoft's built-in one. ¹WinGet needs a signed installer, so it lands
-> once we notarize/sign; Scoop works today.
+**Windows** (needs [Scoop](https://scoop.sh), itself installable without admin):
+```powershell
+scoop install https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/bucket/exasol-studio.json
+```
+Update: `scoop update exasol-studio` · Remove: `scoop uninstall exasol-studio`
 
-**Manual download** — grab the one file for your machine from
-**[Releases](../../releases/latest)**:
+> The one macOS command **auto-adds the tap and installs in a single step**, so
+> `brew upgrade` keeps working — no `brew tap` line needed.
 
-| Your computer | File |
-|---|---|
-| Mac (Apple Silicon — M1/M2/M3/M4) | `ExasolStudio-Mac-AppleSilicon.dmg` |
-| Mac (Intel) | `ExasolStudio-Mac-Intel.dmg` |
-| Windows | `ExasolStudio-Windows-64bit-setup.exe` |
-| Linux | `ExasolStudio-Linux-64bit.AppImage` (or `.deb` / `.rpm`) |
-
-**Mac:** open the DMG, drag into Applications. **Windows:** run the installer
-(installs just for you, no admin). **Linux:** `chmod +x` the AppImage and run.
-
-> This build isn't Apple-notarized yet, so a manual DMG shows a Gatekeeper
-> prompt on first launch — right-click → **Open**, or just use the Homebrew
-> command above, which handles it for you. (The CLI install is the smooth path.)
+> Don't have Homebrew / Scoop? One-time, no admin —
+> macOS: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` ·
+> Windows: `irm get.scoop.sh | iex`. These are a **backup** — the installer above
+> is the main path.
 
 ### Enterprise / IT (managed fleet)
 

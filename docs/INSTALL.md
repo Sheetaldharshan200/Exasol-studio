@@ -1,99 +1,64 @@
 # Installing Exasol Studio
 
-> **No package manager? You don't need one.** The command-line installs below
-> are the *smooth* path, but the **manual download** (DMG / .exe / AppImage from
-> [Releases](https://github.com/Sheetaldharshan200/Exasol-studio/releases/latest))
-> always works with zero tooling. Use whichever suits you.
+The main way is the **installer** — download one file and open it. The
+**command line** is a backup for locked-down machines where you can't run the
+installer. No Homebrew tap or Scoop bucket to add for either path.
 
-## Don't have Homebrew / Scoop yet? (one-time setup)
+## 1. Installer (main path) — download and open
 
-Installing the package manager is a single command, then the app install works:
+Get the one file for your machine from
+[Releases](https://github.com/Sheetaldharshan200/Exasol-studio/releases/latest):
 
-**macOS — install Homebrew:**
-```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
+| Platform | File | Then |
+|---|---|---|
+| macOS — Apple Silicon | `ExasolStudio-Mac-AppleSilicon.dmg` | Open, drag into **Applications** |
+| macOS — Intel | `ExasolStudio-Mac-Intel.dmg` | Open, drag into **Applications** |
+| Windows | `ExasolStudio-Windows-64bit-setup.exe` | Run it (installs per-user, no admin) |
+| Linux | `ExasolStudio-Linux-64bit.AppImage` / `.deb` / `.rpm` | `chmod +x` and run, or `apt`/`yum` install |
 
-**Windows — install Scoop** (no admin needed):
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-irm get.scoop.sh | iex
-```
-
-**Windows — WinGet is already built in.** Windows 10 (recent) and Windows 11
-ship WinGet with the App Installer, so `winget install …` needs no setup at all
-(once we publish a signed package). Check with `winget --version`.
-
-## macOS — Homebrew (recommended for developers)
-
-```sh
-brew tap sheetaldharshan200/tap https://github.com/Sheetaldharshan200/homebrew-tap
-brew install --cask exasol-studio
-```
-
-- Upgrade: `brew upgrade --cask exasol-studio`
-- Remove: `brew uninstall --cask exasol-studio` (add `--zap` to delete app data too)
-
-Homebrew places the app in `/Applications` and, on this demo build, strips the
-download quarantine flag so it launches without the Gatekeeper "unidentified
-developer" prompt.
-
-## macOS — Homebrew without a tap
-
-Prefer not to add a tap? Homebrew can install a cask straight from a local
-file. Download it once, then install:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/Casks/exasol-studio.rb -o /tmp/exasol-studio.rb
-brew install --cask /tmp/exasol-studio.rb
-```
-
-This is a genuine one-shot `brew` install with no `brew tap`. Tradeoff: no
-`brew upgrade` (re-run the two lines for a new version) and it isn't
-discoverable. There is no `brew install --cask <https-url>` — brew installs a
-cask only from a tap or a local file, so this download-then-install is the
-"no tap" path. (The other tap-free route is getting into the official
-`homebrew-cask` repo, which requires a code-signed + notarized build.)
-
-## Windows — Scoop (the `brew` analog) or WinGet
-
-Windows has command-line package managers just like macOS. **Scoop** mirrors
-the Homebrew tap model — a *bucket* is the same idea as a *tap*:
-
-```powershell
-scoop bucket add exasol https://github.com/Sheetaldharshan200/homebrew-tap
-scoop install exasol-studio
-```
-
-- Upgrade: `scoop update exasol-studio`
-- Remove: `scoop uninstall exasol-studio`
-
-The manifest runs the app's installer silently (`/S`). Because this demo build
-is unsigned, Windows SmartScreen may warn on first launch — choose **More info →
-Run anyway**. A signed build removes that.
-
-**WinGet** (Microsoft's built-in manager) is the other option and will be the
-recommended one once the installer is code-signed, since WinGet validates the
-signature:
-
-```powershell
-winget install ExasolStudio
-```
-
-## macOS — DMG (manual)
-
-Download `ExasolStudio-Mac-AppleSilicon.dmg` (Apple Silicon) or
-`ExasolStudio-Mac-Intel.dmg` from the
-[latest release](https://github.com/Sheetaldharshan200/Exasol-studio/releases/latest),
-open it, and drag **Exasol Studio** into Applications.
-
-Because this build is not yet Apple-notarized, first launch is blocked by
-Gatekeeper. Either right-click the app → **Open** → **Open**, or clear the flag
-once from a terminal:
+On macOS, because this demo build isn't Apple-notarized, first launch is blocked
+by Gatekeeper. Right-click the app → **Open** → **Open** (once), or clear the
+flag from a terminal:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Exasol Studio.app"
 ```
+
+## 2. Command line (backup) — no admin, one command
+
+For a locked-down machine, a blocked installer, or just to try it quickly. Both
+install into your **user space** and need **no admin rights** — one command
+each, no separate tap/bucket step.
+
+**macOS** (needs [Homebrew](https://brew.sh)):
+```sh
+brew install --cask sheetaldharshan200/tap/exasol-studio
+```
+- Upgrade: `brew upgrade --cask exasol-studio`
+- Remove: `brew uninstall --cask exasol-studio` (add `--zap` to delete app data too)
+
+A fully-qualified cask name (`owner/tap/token`) makes Homebrew **auto-add the
+tap and install in one step**, so `brew upgrade` works normally — no separate
+`brew tap` line. The cask strips the download quarantine flag, so it launches
+without the Gatekeeper prompt on this unsigned demo build.
+
+**Windows** (needs [Scoop](https://scoop.sh)):
+```powershell
+scoop install https://raw.githubusercontent.com/Sheetaldharshan200/homebrew-tap/HEAD/bucket/exasol-studio.json
+```
+- Update: `scoop update exasol-studio`
+- Remove: `scoop uninstall exasol-studio`
+
+Scoop installs a single manifest by URL — no `scoop bucket add`. It runs the
+app's installer silently; on this unsigned demo build SmartScreen may warn on
+first launch (**More info → Run anyway**).
+
+### Don't have Homebrew / Scoop? (one-time, no admin)
+
+- **macOS:** `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
+- **Windows:** `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned; irm get.scoop.sh | iex`
+- **Windows WinGet** is already built into Windows 10/11 (`winget --version`) and
+  becomes the recommended CLI once the installer is code-signed.
 
 ## The friction, and the real fix
 
