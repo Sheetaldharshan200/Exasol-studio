@@ -22,9 +22,9 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
   }, []);
 
   return (
-    <section className="p-3">
+    <section className="flex h-full min-h-0 flex-col overflow-y-auto p-3">
       <div className="mb-1 flex items-center gap-2">
-        <PlugZap className="h-4 w-4 text-primary" />
+        <PlugZap className="h-4 w-4 shrink-0 text-primary" />
         <h2 className="text-[13px] font-semibold text-foreground">Connect external tools</h2>
       </div>
       <p className="mb-3 text-[11.5px] text-muted-foreground">
@@ -33,9 +33,9 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
       </p>
 
       {servers.length > 0 ? (
-        <div className="mb-4 space-y-1.5">
+        <div className="mb-4 space-y-1">
           {servers.map((s) => (
-            <div key={s.id} className="flex items-center gap-2 rounded-lg border border-border bg-panel/60 px-2.5 py-2">
+            <div key={s.id} className="flex items-center gap-2.5 rounded-lg border border-border/70 px-2.5 py-2">
               <span className="relative shrink-0">
                 <ConnectorLogo logo={MCP_PRESETS.find((p) => p.name === s.name)?.logo} className="h-6 w-6" />
                 <span
@@ -54,14 +54,14 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
               <button
                 title="Reconnect"
                 onClick={() => void agent.mcpReconnect(s.id).then(refresh)}
-                className="rounded p-1 text-muted-foreground hover:text-foreground"
+                className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
               <button
                 title="Remove"
                 onClick={() => void agent.mcpRemove(s.id).then(refresh)}
-                className="rounded p-1 text-muted-foreground hover:text-destructive"
+                className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -72,22 +72,22 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
 
       <button
         onClick={() => onOpenConfig?.("audit", "Audit log")}
-        className="mb-3 text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        className="mb-3 self-start text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
       >
         View audit log →
       </button>
 
-      <div className="grid gap-1.5">
+      <div className="grid gap-1">
         {MCP_PRESETS.map((p) => (
           <button
             key={p.id}
             onClick={() => onOpenConfig?.(p.id, p.name)}
             title={p.desc}
-            className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-panel"
+            className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-secondary/50"
           >
             <ConnectorLogo logo={p.logo} />
-            <div className="min-w-0">
-              <div className="text-[12px] font-medium text-foreground">{p.name}</div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-medium text-foreground">{p.name}</div>
               <div className="truncate text-[10.5px] text-muted-foreground">{p.desc}</div>
             </div>
           </button>
