@@ -261,7 +261,6 @@ export function AssistantPanel({
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<string>("");
   const [showPicker, setShowPicker] = useState(false);
@@ -1033,14 +1032,8 @@ export function AssistantPanel({
                 inputRef.current?.focus();
               }
             }}
-            // "Active" = focused OR carrying state (text, attachments, an open
-            // picker/menu) — the box stays bright the whole time the user is
-            // working in it, not only while a key is down.
-            className={cn(
-              "flex-col items-stretch rounded-xl border-border bg-editor transition-colors focus-within:border-muted-foreground/60 focus-within:ring-1 focus-within:ring-muted-foreground/25",
-              (inputFocused || input.trim() || attachments.length > 0 || showPicker || showConnPicker || menuItems.length > 0) &&
-                "border-muted-foreground/60 ring-1 ring-muted-foreground/25",
-            )}
+            // Always bright — no focus-dependent dimming at all.
+            className="flex-col items-stretch rounded-xl border-muted-foreground/60 bg-editor ring-1 ring-muted-foreground/25"
           >
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
@@ -1081,8 +1074,6 @@ export function AssistantPanel({
               data-bare
               className="relative min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-[inherit] text-transparent caret-foreground outline-none selection:bg-primary/20 placeholder:text-muted-foreground"
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
               value={input}
               rows={1}
               onChange={(e) => setInput(e.target.value)}
