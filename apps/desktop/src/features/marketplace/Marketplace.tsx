@@ -43,7 +43,7 @@ import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "bundled" | "reference";
+type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "semantic-views" | "bundled" | "reference";
 
 export type CatalogItem = {
   id: string;
@@ -76,6 +76,16 @@ export const CATALOG: CatalogItem[] = [
     labs: true,
     description: "CLI to import, export, and run SQL.",
     homepage: "https://github.com/exasol-labs/exapump",
+  },
+  {
+    id: "semantic-views",
+    name: "Semantic Views",
+    repo: "exasol-labs/exasol-semantic-views",
+    kind: "extension",
+    install: "semantic-views",
+    labs: true,
+    description: "Business-friendly semantic layer on your local database. Optional — install when you want it.",
+    homepage: "https://github.com/exasol-labs/exasol-semantic-views",
   },
   {
     id: "json-tables",
@@ -320,6 +330,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the prebuilt ingest engine for your platform (built by our CI)",
         "Download the Python package (wheel)",
         "Install it with uv — no Rust, cargo or git needed on your machine",
+      ];
+    case "semantic-views":
+      return [
+        "Start your local Exasol database (if it is not running)",
+        "Install the pinned Semantic Views framework into it",
+        "Verify readiness — your data stays untouched (no example dataset is seeded)",
       ];
     case "bundled":
       return ["Verify the pinned skills shipped inside Exasol Studio", "Make them available to the AI agent immediately"];

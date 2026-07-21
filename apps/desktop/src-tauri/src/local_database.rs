@@ -231,6 +231,68 @@ raise RuntimeError(f"Exasol did not accept an authenticated query before the rea
     Ok(())
 }
 
+/// One quick authentication attempt (no retry loop) — used to distinguish
+/// "wrong credential" from "database not up yet" during recovery.
+fn probe_credentials(app: &AppHandle, python: &Path, runtime: &RuntimeConnection) -> bool {
+    const SCRIPT: &str = r#"import os, ssl, pyexasol
+connection = pyexasol.connect(
+    dsn=os.environ["EXA_DSN"],
+    user=os.environ["EXA_USER"],
+    password=os.environ["EXA_PASSWORD"],
+    encryption=True,
+    websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+)
+connection.execute("SELECT 1")
+connection.close()
+"#;
+    let owned = runtime_env(runtime);
+    let envs: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    let python_s = python.to_string_lossy().to_string();
+    run_streamed_env(app, JOB_ID, &python_s, &["-c", SCRIPT], &envs).is_ok_and(|code| code == 0)
+}
+
+/// Recovery ladder for a personal database whose stored credential no longer
+/// works — typically the SYS password was changed outside Studio (SQL client,
+/// `exasol` CLI, exapump). Order: the session master password, then a clear,
+/// actionable error. Success re-aligns secrets.json and the vault profile.
+fn recover_personal_auth(
+    app: &AppHandle,
+    python: &Path,
+    runtime: &RuntimeConnection,
+) -> AppResult<RuntimeConnection> {
+    let master = app.state::<AppState>().master_secret.read().unwrap().clone();
+    if let Some(master) = master {
+        if master != runtime.password {
+            let mut candidate = runtime.clone();
+            candidate.password = master.clone();
+            if probe_credentials(app, python, &candidate) {
+                emit_log(
+                    app,
+                    JOB_ID,
+                    "The stored credential was stale, but your master password works — re-aligning Studio's records.",
+                    "info",
+                );
+                crate::local_runtime::persist_personal_password(app, &master)?;
+                profiles::ensure_personal_local_profile(
+                    &app.state::<AppState>(),
+                    &candidate.host,
+                    candidate.port,
+                    &candidate.user,
+                    &master,
+                )?;
+                return Ok(candidate);
+            }
+        }
+    }
+    Err(AppError::Storage(
+        "The local database rejected Studio's stored SYS credential — it was probably changed outside Studio (SQL client or CLI). Fix: unlock the vault so Studio can try your master password, or run `ALTER USER SYS IDENTIFIED BY \"<your master password>\"` with the current credential, then retry setup."
+            .into(),
+    ))
+}
+
 fn query_ready_runtime(
     app: &AppHandle,
     python: &Path,
@@ -245,9 +307,19 @@ fn query_ready_runtime(
                 format!("Initial authenticated readiness probe failed: {first_error}"),
                 "info",
             );
+            // The DB is up (the port opened) but auth failed → credential
+            // drift, not a boot problem. Try the recovery ladder before the
+            // heavier restart path.
+            if crate::local_runtime::personal_db_running(app) {
+                if let Ok(recovered) = recover_personal_auth(app, python, runtime) {
+                    return Ok(recovered);
+                }
+            }
             let recovered = crate::local_runtime::restart_personal_runtime(app, JOB_ID)?;
-            validate_pyexasol_connection(app, python, &recovered)?;
-            Ok(recovered)
+            match validate_pyexasol_connection(app, python, &recovered) {
+                Ok(()) => Ok(recovered),
+                Err(_) => recover_personal_auth(app, python, &recovered),
+            }
         }
         Err(error) => Err(error),
     }
@@ -762,10 +834,10 @@ fn ensure_exapump(app: &AppHandle, data_dir: &Path) -> AppResult<PathBuf> {
     emit_log(
         app,
         JOB_ID,
-        format!("Downloading verified ExaPump {}…", component.version),
+        format!("Installing verified ExaPump {}…", component.version),
         "info",
     );
-    crate::local_runtime::download_verified(&artifact.url, &target, &artifact.sha256)?;
+    crate::local_runtime::obtain_artifact(app, JOB_ID, artifact, &target)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -895,6 +967,72 @@ fn install_semantic_views(
     Ok(())
 }
 
+/// pgAdmin model: the local database's SYS password is the Studio master
+/// password. Applies ALTER USER against the running database, then persists
+/// the credential in the deployment secrets and the vault profile. Returns
+/// false when there is nothing to sync (no personal deployment).
+pub(crate) fn sync_master_password(app: &AppHandle, master: &str) -> AppResult<bool> {
+    if !crate::local_runtime::personal_deployment_exists(app) {
+        return Ok(false);
+    }
+    let runtime = crate::local_runtime::current_personal_connection(app)?;
+    if runtime.password == master {
+        return Ok(true);
+    }
+    if !crate::local_runtime::personal_db_running(app) {
+        // Applied on the next bootstrap instead — the DB must be up to ALTER.
+        return Ok(false);
+    }
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let python = venv_python(&data_dir);
+    if !python.is_file() {
+        return Err(AppError::Storage(
+            "The managed Python stack is not installed yet.".into(),
+        ));
+    }
+    const SCRIPT: &str = r#"import os, ssl, pyexasol
+connection = pyexasol.connect(
+    dsn=os.environ["EXA_DSN"],
+    user=os.environ["EXA_USER"],
+    password=os.environ["EXA_PASSWORD"],
+    encryption=True,
+    websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+)
+new_password = os.environ["STUDIO_NEW_SYS_PASSWORD"]
+quoted = new_password.replace('"', '""')
+connection.execute(f'ALTER USER SYS IDENTIFIED BY "{quoted}"')
+connection.close()
+print("SYS password now matches the Studio master password")
+"#;
+    let mut envs_owned: Vec<(String, String)> = runtime_env(&runtime).into_iter().collect();
+    envs_owned.push(("STUDIO_NEW_SYS_PASSWORD".into(), master.to_string()));
+    let envs: Vec<(&str, &str)> = envs_owned
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    let python_s = python.to_string_lossy().to_string();
+    if run_streamed_env(app, JOB_ID, &python_s, &["-c", SCRIPT], &envs)? != 0 {
+        return Err(AppError::Storage(
+            "Could not apply the master password to the local database.".into(),
+        ));
+    }
+    crate::local_runtime::persist_personal_password(app, master)?;
+    profiles::ensure_personal_local_profile(
+        &app.state::<AppState>(),
+        &runtime.host,
+        runtime.port,
+        &runtime.user,
+        master,
+    )?;
+    emit_log(
+        app,
+        JOB_ID,
+        "Local Exasol now uses your master password (SYS).",
+        "success",
+    );
+    Ok(true)
+}
+
 fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     let lock = crate::component_lock::components();
     let data_dir = app.state::<AppState>().data_dir.clone();
@@ -907,8 +1045,6 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         "Pulling or starting Exasol Nano with Docker/Podman…".into()
     };
     status.local_ready = false;
-    status.semantic_views.state = "waiting".into();
-    status.semantic_views.error = None;
     write_status(&app, &data_dir, status.clone())?;
 
     let runtime = crate::local_runtime::ensure_runtime(&app, JOB_ID)?;
@@ -931,7 +1067,24 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     );
     write_status(&app, &data_dir, status.clone())?;
     let python = ensure_python_stack(&app, &data_dir)?;
-    let runtime = query_ready_runtime(&app, &python, &runtime)?;
+    let mut runtime = query_ready_runtime(&app, &python, &runtime)?;
+    // pgAdmin model: keep the local SYS credential equal to the master
+    // password whenever the vault is unlocked this session.
+    let master = app.state::<AppState>().master_secret.read().unwrap().clone();
+    if let Some(master) = master {
+        if runtime.kind == "personal" && runtime.password != master {
+            match sync_master_password(&app, &master) {
+                Ok(true) => runtime.password = master,
+                Ok(false) => {}
+                Err(error) => emit_log(
+                    &app,
+                    JOB_ID,
+                    format!("Master-password sync skipped: {error}"),
+                    "info",
+                ),
+            }
+        }
+    }
     status.local_ready = true;
     set_component(
         &mut status,
@@ -1013,23 +1166,26 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
 
-    status.step = "semantic-views".into();
-    status.message = "Loading and verifying Exasol Semantic Views in the background…".into();
-    status.semantic_views = CapabilityState {
-        state: "installing".into(),
-        version: Some(lock.semantic_views.revision.clone()),
-        error: None,
-        connection_id: Some(profile.id),
-    };
-    write_status(&app, &data_dir, status.clone())?;
-    install_semantic_views(&app, &data_dir, &runtime, &python)?;
+    // Semantic Views is OPT-IN — never installed by default. A previous
+    // installation (marker present) keeps reporting ready; otherwise it stays
+    // available for one-click install from the Marketplace.
+    let semantic_marker = data_dir.join("personal-local/semantic-example.ready");
+    if semantic_marker.is_file() {
+        status.semantic_views = CapabilityState {
+            state: "ready".into(),
+            version: std::fs::read_to_string(&semantic_marker)
+                .ok()
+                .map(|version| version.trim().to_string()),
+            error: None,
+            connection_id: Some(profile.id),
+        };
+    }
 
     status.state = "ready".into();
     status.step = "complete".into();
     status.message = "Local Exasol and the complete AI/data stack are ready.".into();
-    status.semantic_views.state = "ready".into();
     write_status(&app, &data_dir, status)?;
-    emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, Semantic Views, agent skills, ExaPump, and MCP server are ready.", "success");
+    emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, agent skills, ExaPump, and MCP server are ready.", "success");
     Ok(())
 }
 
@@ -1067,8 +1223,6 @@ fn fully_ready(status: &BootstrapStatus) -> bool {
     };
     status.state == "ready"
         && status.local_ready
-        && status.semantic_views.state == "ready"
-        && status.semantic_views.version.as_deref() == Some(&lock.semantic_views.revision)
         && component_at("pyexasol", &lock.python_stack.pyexasol_version)
         && component_at("mcp-server", &lock.python_stack.mcp_server_version)
         && component_at("exapump", &lock.exapump.version)
@@ -1133,6 +1287,47 @@ pub fn personal_local_bootstrap(
 #[tauri::command]
 pub fn personal_local_status(state: State<'_, AppState>) -> BootstrapStatus {
     read_status(&state.data_dir)
+}
+
+/// Opt-in install of the Exasol Semantic Views framework (Marketplace action).
+#[tauri::command]
+pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        let lock = crate::component_lock::components();
+        let data_dir = app.state::<AppState>().data_dir.clone();
+        let mut status = read_status(&data_dir);
+        status.semantic_views = CapabilityState {
+            state: "installing".into(),
+            version: Some(lock.semantic_views.revision.clone()),
+            error: None,
+            connection_id: status.profile_id.clone(),
+        };
+        write_status(&app, &data_dir, status.clone())?;
+        let result = (|| -> AppResult<()> {
+            let runtime = crate::local_runtime::ensure_runtime(&app, JOB_ID)?;
+            let python = venv_python(&data_dir);
+            if !python.is_file() {
+                return Err(AppError::Storage(
+                    "Set up the local database first — the managed Python stack is not installed yet.".into(),
+                ));
+            }
+            install_semantic_views(&app, &data_dir, &runtime, &python)
+        })();
+        match &result {
+            Ok(()) => {
+                status.semantic_views.state = "ready".into();
+                status.semantic_views.error = None;
+            }
+            Err(error) => {
+                status.semantic_views.state = "failed".into();
+                status.semantic_views.error = Some(error.to_string());
+            }
+        }
+        write_status(&app, &data_dir, status)?;
+        result
+    })
+    .await
+    .map_err(|error| AppError::Storage(error.to_string()))?
 }
 
 pub fn ensure_lifecycle_idle(app: &AppHandle, action: &str) -> AppResult<()> {

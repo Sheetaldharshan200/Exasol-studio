@@ -33,5 +33,11 @@ fi
 # Key was generated with an empty passphrase; allow override.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
+# Prebundle the locked runtime artifacts (Exasol Personal, ExaPump) so a fresh
+# install works offline. Skip with EXASOL_PREBUNDLE=0 for quick dev builds.
+if [ "${EXASOL_PREBUNDLE:-1}" = "1" ]; then
+  python3 "$REPO_ROOT/scripts/prefetch-runtime.py"
+fi
+
 cd "$REPO_ROOT/apps/desktop"
 exec pnpm tauri build "$@"

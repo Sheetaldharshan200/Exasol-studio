@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, CheckCheck, CircleAlert, Info, Zap } from "lucide-react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 type NoticeKind = "info" | "success" | "warning";
@@ -36,6 +38,26 @@ export function Notifications() {
   const [items, setItems] = useState<Notice[]>(SEED);
   const ref = useRef<HTMLDivElement>(null);
   const unread = items.filter((n) => !n.read).length;
+
+  // Live notices pushed from the backend (component update watcher, etc.).
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: UnlistenFn | undefined;
+    void listen<{ kind: NoticeKind; title: string; body: string }>("studio:notice", (e) => {
+      setItems((list) => [
+        {
+          id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          kind: e.payload.kind ?? "info",
+          title: e.payload.title,
+          body: e.payload.body,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          read: false,
+        },
+        ...list,
+      ]);
+    }).then((u) => (un = u));
+    return () => un?.();
+  }, []);
 
   useEffect(() => {
     if (!open) return;

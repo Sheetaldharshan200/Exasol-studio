@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -141,6 +141,28 @@ pub struct VaultStatus {
     pub recovery_remaining: usize,
 }
 
+/// pgAdmin model: remember the master password in memory for this session and
+/// keep the local Personal database's SYS credential equal to it. The sync is
+/// best-effort in a background thread — vault operations never block on the
+/// database, and a stopped DB picks the password up on its next bootstrap.
+fn remember_master(app: &AppHandle, state: &State<'_, AppState>, password: &str) {
+    *state.master_secret.write().unwrap() = Some(password.to_string());
+    let app = app.clone();
+    let master = password.to_string();
+    std::thread::spawn(move || {
+        if crate::local_runtime::personal_db_running(&app) {
+            if let Err(error) = crate::local_database::sync_master_password(&app, &master) {
+                crate::market::emit_log(
+                    &app,
+                    "personal-local",
+                    format!("Master-password sync skipped: {error}"),
+                    "info",
+                );
+            }
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn vault_status(state: State<'_, AppState>) -> AppResult<VaultStatus> {
     let vault = load_vault(&state)?;
@@ -154,7 +176,7 @@ pub async fn vault_status(state: State<'_, AppState>) -> AppResult<VaultStatus> 
 
 /// Create the vault. Returns the 5 recovery codes (shown once, never stored).
 #[tauri::command]
-pub async fn vault_setup(state: State<'_, AppState>, password: String) -> AppResult<Vec<String>> {
+pub async fn vault_setup(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<Vec<String>> {
     if load_vault(&state)?.is_some() {
         return Err(AppError::InvalidSettings("A master password is already set.".into()));
     }
@@ -174,11 +196,12 @@ pub async fn vault_setup(state: State<'_, AppState>, password: String) -> AppRes
     };
     std::fs::write(vault_path(&state), serde_json::to_vec_pretty(&vault).unwrap())?;
     *state.vault_key.write().unwrap() = Some(dek);
+    remember_master(&app, &state, &password);
     Ok(codes)
 }
 
 #[tauri::command]
-pub async fn vault_unlock(state: State<'_, AppState>, password: String) -> AppResult<bool> {
+pub async fn vault_unlock(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<bool> {
     let vault = load_vault(&state)?.ok_or_else(|| AppError::InvalidSettings("No master password is set.".into()))?;
     let salt = B64.decode(&vault.salt).map_err(|_| AppError::Storage("corrupt vault".into()))?;
     let kek = derive_key(&password, &salt)?;
@@ -190,18 +213,21 @@ pub async fn vault_unlock(state: State<'_, AppState>, password: String) -> AppRe
     let mut key = [0u8; 32];
     key.copy_from_slice(&dek);
     *state.vault_key.write().unwrap() = Some(key);
+    remember_master(&app, &state, &password);
     Ok(true)
 }
 
 #[tauri::command]
 pub async fn vault_lock(state: State<'_, AppState>) -> AppResult<()> {
     *state.vault_key.write().unwrap() = None;
+    *state.master_secret.write().unwrap() = None;
     Ok(())
 }
 
 /// Reset the master password using one recovery code. The used code is consumed.
 #[tauri::command]
 pub async fn vault_recover(
+    app: AppHandle,
     state: State<'_, AppState>,
     code: String,
     new_password: String,
@@ -235,12 +261,14 @@ pub async fn vault_recover(
     vault.recovery.remove(idx);
     std::fs::write(vault_path(&state), serde_json::to_vec_pretty(&vault).unwrap())?;
     *state.vault_key.write().unwrap() = Some(dek);
+    remember_master(&app, &state, &new_password);
     Ok(vault.recovery.len())
 }
 
 /// Change the master password (must currently be unlocked / supply the old one).
 #[tauri::command]
 pub async fn vault_change_password(
+    app: AppHandle,
     state: State<'_, AppState>,
     old_password: String,
     new_password: String,
@@ -257,6 +285,7 @@ pub async fn vault_change_password(
     vault.verifier = seal(&kek, MARKER)?;
     vault.dek_wrapped = seal(&kek, &dek)?;
     std::fs::write(vault_path(&state), serde_json::to_vec_pretty(&vault).unwrap())?;
+    remember_master(&app, &state, &new_password);
     Ok(())
 }
 

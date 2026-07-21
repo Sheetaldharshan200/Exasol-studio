@@ -1,5 +1,6 @@
 mod agent;
 mod terminal;
+mod updates;
 mod bucketfs;
 mod catalog;
 mod connection;
@@ -44,6 +45,7 @@ pub fn run() {
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::terminal::TermRegistry::default());
+            crate::updates::start(app.handle().clone());
             app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
             crate::local_database::auto_start_if_installed(app.handle());
@@ -150,6 +152,7 @@ pub fn run() {
             local_llm::llm_set_auto_start,
             local_database::personal_local_bootstrap,
             local_database::personal_local_status,
+            local_database::personal_install_semantic_views,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

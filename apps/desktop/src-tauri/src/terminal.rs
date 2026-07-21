@@ -11,6 +11,47 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::{AppError, AppResult};
+use crate::state::AppState;
+use std::path::{Path, PathBuf};
+use tauri::Manager;
+
+/// Curated shims dir (`<data>/bin`) exposing every Studio-managed tool under
+/// its plain name — including marketplace binaries stored under versioned
+/// filenames. Rebuilt (cheaply) on every terminal spawn so newly installed
+/// tools appear in the next terminal.
+fn ensure_shims(data_dir: &Path) -> Option<PathBuf> {
+    let shims = data_dir.join("bin");
+    std::fs::create_dir_all(&shims).ok()?;
+    let mut targets: Vec<(String, PathBuf)> = Vec::new();
+    for name in ["exasol", "exapump"] {
+        targets.push((name.into(), data_dir.join("personal-local/bin").join(name)));
+    }
+    for name in ["exasol-mcp-server", "exasol-mcp-server-http", "exasol-install-skills"] {
+        targets.push((name.into(), data_dir.join("personal-local/python/bin").join(name)));
+    }
+    // Marketplace downloads keep versioned names (tool-1.2.3-macos-aarch64).
+    if let Ok(entries) = std::fs::read_dir(data_dir.join("marketplace/json-tables")) {
+        for entry in entries.flatten() {
+            let file = entry.file_name().to_string_lossy().to_string();
+            if file.starts_with("exasol-json-tables-ingest") && !file.ends_with(".whl") {
+                targets.push(("exasol-json-tables-ingest".into(), entry.path()));
+            }
+        }
+    }
+    #[cfg(unix)]
+    for (name, target) in targets {
+        if !target.is_file() {
+            continue;
+        }
+        let link = shims.join(&name);
+        if std::fs::read_link(&link).map(|existing| existing == target).unwrap_or(false) {
+            continue;
+        }
+        let _ = std::fs::remove_file(&link);
+        let _ = std::os::unix::fs::symlink(&target, &link);
+    }
+    Some(shims)
+}
 
 struct TermHandle {
     writer: Box<dyn Write + Send>,
@@ -33,16 +74,22 @@ pub fn term_create(app: AppHandle, state: State<'_, TermRegistry>, cols: u16, ro
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
     // GUI apps inherit a restricted PATH — give the shell the usual user dirs
-    // plus Studio's own bundled tools (exapump, exasol/c4, MCP server).
+    // plus every Studio-managed tool (exasol, exapump, MCP server, extensions)
+    // via the curated shims dir.
     if let Some(home) = dirs::home_dir() {
         cmd.cwd(&home);
         let h = home.display();
+        let data_dir = app.state::<AppState>().data_dir.clone();
+        let shims = ensure_shims(&data_dir)
+            .map(|dir| format!("{}:", dir.display()))
+            .unwrap_or_default();
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.env(
             "PATH",
             format!(
-                "{h}/Library/Application Support/com.exasol.studio/personal-local/bin:\
-{h}/.local/bin:{h}/.exasol-starter-kit/bin:/opt/homebrew/bin:/usr/local/bin:{path}"
+                "{shims}{data}/personal-local/bin:\
+{h}/.local/bin:{h}/.exasol-starter-kit/bin:/opt/homebrew/bin:/usr/local/bin:{path}",
+                data = data_dir.display()
             ),
         );
     }

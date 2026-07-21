@@ -993,6 +993,9 @@ pub async fn market_install_run(
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
+        "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone())
+            .await
+            .map(|_| "Exasol Semantic Views is installed on your local database.".into()),
         _ => match (url, filename) {
             (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
             _ => Err(AppError::Storage(

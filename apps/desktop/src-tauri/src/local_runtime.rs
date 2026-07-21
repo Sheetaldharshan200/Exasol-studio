@@ -125,6 +125,54 @@ pub(crate) fn sha256_file(path: &Path) -> AppResult<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+/// Prebundled runtime artifact shipped inside the .app (`resources/runtime/`).
+/// Returns the path only when the checksum matches the component lock, so a
+/// tampered or stale bundle silently falls back to the verified download.
+fn bundled_artifact(app: &AppHandle, name: &str, expected_sha256: &str) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(path) = app
+        .path()
+        .resolve(format!("runtime/{name}"), tauri::path::BaseDirectory::Resource)
+    {
+        candidates.push(path);
+    }
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("resources/runtime/{name}")));
+    candidates.into_iter().find(|path| {
+        path.is_file()
+            && sha256_file(path).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected_sha256))
+    })
+}
+
+/// Fetch a locked artifact: prebundled copy first (no network), verified
+/// download otherwise. Either way the destination matches the lock's sha256.
+pub(crate) fn obtain_artifact(
+    app: &AppHandle,
+    id: &str,
+    artifact: &crate::component_lock::Artifact,
+    destination: &Path,
+) -> AppResult<()> {
+    if let Some(bundled) = bundled_artifact(app, &artifact.name, &artifact.sha256) {
+        emit_log(
+            app,
+            id,
+            format!("Installing {} from the app bundle (no download needed)…", artifact.name),
+            "info",
+        );
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let partial = destination.with_extension("partial");
+        std::fs::copy(&bundled, &partial)?;
+        if destination.exists() {
+            std::fs::remove_file(destination)?;
+        }
+        std::fs::rename(partial, destination)?;
+        return Ok(());
+    }
+    emit_log(app, id, format!("Downloading verified {}…", artifact.name), "info");
+    download_verified(&artifact.url, destination, &artifact.sha256)
+}
+
 pub(crate) fn download_verified(
     url: &str,
     destination: &Path,
@@ -277,13 +325,10 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     emit_log(
         app,
         id,
-        format!(
-            "Downloading verified Exasol Personal {}…",
-            component.version
-        ),
+        format!("Installing Exasol Personal {}…", component.version),
         "info",
     );
-    download_verified(&artifact.url, &archive, &artifact.sha256)?;
+    obtain_artifact(app, id, artifact, &archive)?;
     let unpack = runtime_dir(app)?.join("launcher-unpack");
     let _ = std::fs::remove_dir_all(&unpack);
     std::fs::create_dir_all(&unpack)?;
@@ -374,6 +419,30 @@ fn read_personal_connection(app: &AppHandle) -> AppResult<RuntimeConnection> {
         password: password.into(),
         engine: None,
     })
+}
+
+/// True when Studio's own Personal deployment has been installed.
+pub(crate) fn personal_deployment_exists(app: &AppHandle) -> bool {
+    personal_deployment_dir(app).is_ok_and(|dir| dir.join("deployment.json").is_file())
+}
+
+/// True when the managed database is currently accepting connections.
+pub(crate) fn personal_db_running(app: &AppHandle) -> bool {
+    personal_deployment_exists(app) && port_ready(expected_db_port(app))
+}
+
+/// The deployment's current connection (must be installed).
+pub(crate) fn current_personal_connection(app: &AppHandle) -> AppResult<RuntimeConnection> {
+    read_personal_connection(app)
+}
+
+/// Rewrite the deployment's stored dbPassword after a successful ALTER USER,
+/// so `exasol`-CLI operations and future reads use the new credential.
+pub(crate) fn persist_personal_password(app: &AppHandle, password: &str) -> AppResult<()> {
+    let path = personal_deployment_dir(app)?.join("secrets.json");
+    let mut secrets: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    secrets["dbPassword"] = Value::String(password.into());
+    write_secret(&path, &serde_json::to_string_pretty(&secrets)?)
 }
 
 fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
