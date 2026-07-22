@@ -32,6 +32,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -571,6 +574,33 @@ function DashboardView({
 
 /* ────────────────────────── Panels ────────────────────────── */
 
+/** Quick chart-type switcher — grouped parent → child so a panel's shape can
+ *  change from the card itself, without opening the full editor. */
+const VIZ_SWITCH: { group: string; items: { key: string; label: string }[] }[] = [
+  { group: "Trend", items: [{ key: "line", label: "Line" }, { key: "area", label: "Area" }] },
+  { group: "Comparison", items: [{ key: "bar", label: "Bar" }, { key: "hbar", label: "Horizontal bar" }, { key: "radar", label: "Radar" }] },
+  { group: "Composition", items: [{ key: "pie", label: "Pie" }, { key: "donut", label: "Donut" }, { key: "radial", label: "Radial" }, { key: "treemap", label: "Treemap" }, { key: "funnel", label: "Funnel" }] },
+  { group: "Distribution", items: [{ key: "scatter", label: "Scatter" }, { key: "heatmap", label: "Heatmap" }] },
+  { group: "Single value", items: [{ key: "kpi", label: "KPI" }, { key: "gauge", label: "Gauge" }] },
+  { group: "Data", items: [{ key: "table", label: "Table" }] },
+];
+
+/** Build a new viz for the panel when the quick switcher picks `key`, reusing
+ *  the existing field mapping where it still applies. A quick switch drops any
+ *  raw ECharts `option` override so the new type always renders visibly. */
+function switchPanelViz(panel: DashPanel, key: string): DashPanel["viz"] {
+  if (key === "kpi")
+    return { type: "kpi", valueField: panel.viz.type === "kpi" ? panel.viz.valueField : undefined, unit: panel.viz.type === "kpi" ? panel.viz.unit : undefined };
+  if (key === "table") return { type: "table" };
+  const ev = panel.viz.type === "echarts" ? panel.viz : undefined;
+  return { type: "echarts", chart: key as Extract<DashPanel["viz"], { type: "echarts" }>["chart"], xField: ev?.xField, yFields: ev?.yFields ?? [], stacked: ev?.stacked };
+}
+
+/** The key that identifies a panel's current viz in the switcher. */
+function currentVizKey(panel: DashPanel): string {
+  return panel.viz.type === "echarts" ? (panel.viz.chart ?? "bar") : panel.viz.type;
+}
+
 function Panel({
   panel,
   profileId,
@@ -660,6 +690,44 @@ function Panel({
         ) : null}
         <span className="ml-auto flex items-center gap-0.5">
           {loading && !result ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+          {onVizChange && panel.viz.type !== "markdown" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground data-[state=open]:pointer-events-auto data-[state=open]:bg-secondary data-[state=open]:opacity-100"
+                  aria-label="Change chart type"
+                  title="Change chart type"
+                >
+                  <BarChart3 className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuLabel>Chart type</DropdownMenuLabel>
+                {VIZ_SWITCH.map((grp) => (
+                  <DropdownMenuSub key={grp.group}>
+                    <DropdownMenuSubTrigger>{grp.group}</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {grp.items.map((it) => {
+                        const activeKey = currentVizKey(panel);
+                        return (
+                          <DropdownMenuItem
+                            key={it.key}
+                            onClick={() => onVizChange(switchPanelViz(panel, it.key))}
+                            className={cn(activeKey === it.key && "text-primary")}
+                          >
+                            {it.label}
+                            {activeKey === it.key ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -1028,6 +1096,8 @@ function buildChartOption(
                 : yCols.map((yi) => ({
           name: cols[yi],
           type: (viz.chart === "area" ? "line" : viz.chart === "hbar" ? "bar" : viz.chart) as "line" | "bar" | "scatter",
+          // Hover/click a series (or its legend) to spotlight it and fade the rest.
+          emphasis: { focus: "series" as const },
           ...(viz.chart === "area" ? { areaStyle: { opacity: 0.22 } } : {}),
           ...(viz.stacked ? { stack: "total" } : {}),
           smooth: viz.chart !== "bar",
@@ -1167,7 +1237,8 @@ function PanelEditor({
 
   function applyTemplate(t: (typeof TEMPLATES)[number]) {
     const ds = dataset || "SCHEMA.TABLE";
-    setSql(t.sql(ds));
+    const nextSql = t.sql(ds);
+    setSql(nextSql);
     if (t.viz === "explore") setVizType("explore");
     else if (t.viz === "kpi") setVizType("kpi");
     else if (t.viz === "table") setVizType("table");
@@ -1176,18 +1247,21 @@ function PanelEditor({
       setChart(t.viz);
     }
     if (!title || title === "New panel") setTitle(t.label);
-    setPreview(null);
+    // Auto-run so the live preview fills in immediately (only for a real dataset).
+    if (dataset) void runPreview(nextSql);
+    else setPreview(null);
   }
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [jsonErr, setJsonErr] = useState<string | null>(null);
 
-  async function runPreview() {
-    if (!profileId || !sql.trim()) return;
+  async function runPreview(sqlOverride?: string) {
+    const q = (sqlOverride ?? sql).trim();
+    if (!profileId || !q) return;
     setRunning(true);
     setPreviewErr(null);
     try {
-      const res = await ipc.executeSql(profileId, connectionName, sql, 200, false);
+      const res = await ipc.executeSql(profileId, connectionName, q, 200, false);
       const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
       if (!first || first.error) setPreviewErr(first?.error ?? "no result");
       else setPreview(first);
@@ -1232,6 +1306,19 @@ function PanelEditor({
     onSave({ ...panel, title, query: vizType === "markdown" ? undefined : { sql }, viz });
   }
 
+  // The panel as currently configured — drives the live preview pane. Lenient
+  // about invalid raw-option JSON (the strict check lives in save()).
+  const previewViz = useMemo<DashPanel["viz"]>(() => {
+    if (vizType === "markdown") return { type: "markdown", content: content || "*…*" };
+    if (vizType === "kpi") return { type: "kpi", valueField: kpiField || undefined, unit: kpiUnit || undefined };
+    if (vizType === "table") return { type: "table" };
+    if (vizType === "explore") return { type: "explore", config: panel.viz.type === "explore" ? panel.viz.config : undefined };
+    let option: Record<string, unknown> | undefined;
+    try { option = optionJson.trim() ? (JSON.parse(optionJson) as Record<string, unknown>) : undefined; } catch { option = undefined; }
+    return { type: "echarts", chart, xField: xField || undefined, yFields: yFields.split(",").map((s) => s.trim()).filter(Boolean), stacked: stacked || undefined, option };
+  }, [vizType, content, kpiField, kpiUnit, chart, xField, yFields, stacked, optionJson, panel]);
+  const livePanel: DashPanel = { ...panel, title, viz: previewViz };
+
   const cols = preview?.columns.map((c) => c.name) ?? [];
   // Data-shape suggestions (Superset heuristics): temporal → line/area;
   // few categories → pie; many → bar/treemap; 2 measures → scatter;
@@ -1262,20 +1349,22 @@ function PanelEditor({
     // Inline editing surface — takes the grid's place inside the dashboard
     // tab (no floating dialog).
     <div className="flex min-h-0 flex-1 flex-col bg-editor">
-      <div className="mx-auto flex h-full w-full max-w-[720px] flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          <span className="text-[13px] font-semibold text-foreground">Edit panel</span>
-          <button
-            onClick={onClose}
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-            aria-label="Close"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+        <BarChart3 className="h-4 w-4 text-primary" />
+        <span className="text-[13px] font-semibold text-foreground">Edit panel</span>
+        <button
+          onClick={onClose}
+          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          aria-label="Close"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div className="flex min-h-0 flex-1">
+        {/* Left: configuration form (bounded width). */}
+        <div className="flex min-h-0 w-full max-w-[600px] flex-col border-r border-border">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           <label className="block">
             <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Title</span>
             <input
@@ -1574,23 +1663,65 @@ function PanelEditor({
               </label>
             </div>
           ) : null}
+          </div>
         </div>
 
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-2.5">
-          <button
-            onClick={onClose}
-            className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={!sql.trim()}
-            className="cta-glow flex h-8 items-center rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-          >
-            Save panel
-          </button>
+        {/* Right: live preview of the panel as it will look on the dashboard. */}
+        <div className="flex min-h-0 flex-1 flex-col bg-panel/20">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Live preview</span>
+            {preview ? <span className="text-[10px] text-muted-foreground">· {preview.rowCount} rows</span> : null}
+          </div>
+          <div className="min-h-0 flex-1 p-3">
+            <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/70 bg-panel/60">
+              <div className="shrink-0 truncate border-b border-border/50 px-3 py-1.5 text-[12px] font-medium text-foreground">{title || "New panel"}</div>
+              <div className="min-h-0 flex-1">
+                {vizType === "markdown" ? (
+                  <div className="h-full overflow-y-auto px-3.5 py-2.5 text-[12.5px] leading-relaxed text-foreground [&_a]:text-primary [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_h1]:mb-1 [&_h1]:text-[16px] [&_h1]:font-bold [&_h2]:font-semibold [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-4">
+                    <ReactMarkdown>{content || "*Nothing to preview yet.*"}</ReactMarkdown>
+                  </div>
+                ) : !profileId ? (
+                  <Hint text="Connect to a database to preview." />
+                ) : previewErr ? (
+                  <Hint text={previewErr} error />
+                ) : !preview ? (
+                  <Hint text="Run Preview to see this panel live." />
+                ) : vizType === "kpi" ? (
+                  <KpiPanel panel={livePanel} result={preview} />
+                ) : vizType === "table" ? (
+                  <PerspectiveTable result={preview} />
+                ) : vizType === "explore" ? (
+                  <Hint text="Explore mode is configured directly on the panel." />
+                ) : (() => {
+                  const ev = previewViz as Extract<DashPanel["viz"], { type: "echarts" }>;
+                  const simple = ["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"] as const;
+                  const isSimple = !ev.option && (simple as readonly string[]).includes(ev.chart ?? "");
+                  return isSimple ? (
+                    <ShadcnChartPanel chart={ev.chart as (typeof simple)[number]} result={preview} />
+                  ) : (
+                    <ChartPanel panel={livePanel} result={preview} />
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-2.5">
+        <button
+          onClick={onClose}
+          className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={!sql.trim()}
+          className="cta-glow flex h-8 items-center rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+        >
+          Save panel
+        </button>
       </div>
     </div>
   );

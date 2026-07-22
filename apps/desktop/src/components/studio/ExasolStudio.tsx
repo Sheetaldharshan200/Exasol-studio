@@ -146,6 +146,14 @@ function parseSingleTable(sql: string): { schema?: string; table: string } | nul
   const clean = (x: string) => x.replace(/"/g, "");
   return m[2] ? { schema: clean(m[1]), table: clean(m[2]) } : { table: clean(m[1]) };
 }
+
+/** Name a new query tab after its table (Open data / Generate SELECT), so the
+ *  tab strip reads "WEATHER_DAILY" instead of "Untitled". Empty/ambiguous SQL
+ *  keeps the "Untitled" placeholder. */
+function tabTitleFromSql(sql: string): string {
+  const t = parseSingleTable(sql);
+  return t?.table ?? "Untitled";
+}
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -2612,12 +2620,12 @@ export function ExasolStudio({
   }, []);
 
   // Open (and optionally run) a query built in the visual query builder.
-  async function openBuiltSql(sql: string, runNow: boolean) {
+  async function openBuiltSql(sql: string, runNow: boolean, title?: string) {
     const key = connKey;
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-q-${Date.now()}-${tabCounter.current}`,
-      title: "Untitled",
+      title: title ?? tabTitleFromSql(sql),
       view: "sql",
       sql,
       response: null,
