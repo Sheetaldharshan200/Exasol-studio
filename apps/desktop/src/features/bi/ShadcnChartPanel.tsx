@@ -80,19 +80,18 @@ export function ShadcnChartPanel({
   const toggle = (k: string) => setActive((cur) => (cur === k ? null : k));
   const clickCursor = { cursor: "pointer" as const };
 
-  // Animation policy: draw in on first render, when the chart type changes, and
-  // on hover — but NOT on every data refresh (that caused the endless looping).
-  // `animKey` remounts the chart so the entrance replays; `animate` is only true
-  // during that brief window, so a background refresh just merges data silently.
-  const [hoverNonce, setHoverNonce] = useState(0);
+  // Animation policy: draw in exactly ONCE — on first render and when the chart
+  // TYPE changes. Never on data refresh (that looped every tick) and never on
+  // hover (remounting under the cursor re-fired mouseenter → endless replay).
+  // `animKey` is keyed on the chart type only, so a background refresh merges
+  // data without remounting; `animate` is true only in the brief draw-in window.
   const [animate, setAnimate] = useState(true);
   useEffect(() => {
     setAnimate(true);
     const id = setTimeout(() => setAnimate(false), 900);
     return () => clearTimeout(id);
-  }, [chart, hoverNonce]);
-  const animKey = `${chart}-${hoverNonce}`;
-  const bump = () => setHoverNonce((n) => n + 1);
+  }, [chart]);
+  const animKey = chart;
   const anim = { isAnimationActive: animate, animationDuration: 700 as const };
 
   if (!data.length || !series.length) {
@@ -129,10 +128,9 @@ export function ShadcnChartPanel({
       </div>
     ) : null;
 
-  // Wraps a chart with the interactive legend on top, filling the panel, and
-  // catches hover to replay the draw-in animation.
+  // Wraps a chart with the interactive legend on top, filling the panel.
   const Wrap = ({ children }: { children: ReactNode }) => (
-    <div className="flex h-full w-full flex-col" onMouseEnter={bump}>
+    <div className="flex h-full w-full flex-col">
       {InteractiveLegend}
       <div className="min-h-0 flex-1">{children}</div>
     </div>

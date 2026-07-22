@@ -3228,9 +3228,12 @@ export function ExasolStudio({
   // "Dashboards" from a result: add this query as a panel to the dashboard for
   // its schema — one dashboard per schema, so every query against WEATHER lands
   // on the WEATHER dashboard (created on first use, appended to after that).
+  const addingDashRef = useRef(false);
   async function sendResultToDashboard(sql: string) {
     const trimmed = (sql ?? "").trim();
     if (!trimmed) { void openBi(); return; }
+    if (addingDashRef.current) return; // guard double-clicks
+    addingDashRef.current = true;
     // Schema: the query's own table, else the connection's default, else a catch-all.
     const parsed = parseSingleTable(trimmed);
     const schema = (parsed?.schema ?? connection?.profile.schema ?? "Ad hoc queries").trim() || "Ad hoc queries";
@@ -3238,14 +3241,26 @@ export function ExasolStudio({
     const tabName = activeTab.view === "sql" && activeTab.title && activeTab.title !== "Untitled" ? activeTab.title : "";
     const panelTitle = tabName || (trimmed.length > 60 ? trimmed.slice(0, 57) + "…" : trimmed);
     const id = `schema-${schema.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "adhoc"}`;
+    const normSql = (s: string) => s.trim().replace(/;\s*$/, "").replace(/\s+/g, " ").toLowerCase();
 
     try {
       const metas = await dashClient.list();
-      const existingMeta = metas.find((m) => m.id === id || m.title === schema);
+      // One dashboard per schema — match by title first (the backend may assign
+      // its own id), then by our deterministic id.
+      const existingMeta = metas.find((m) => m.title === schema) ?? metas.find((m) => m.id === id);
       const dash: DashDoc = existingMeta
         ? await dashClient.get(existingMeta.id)
         : { version: 1, id, title: schema, description: `Panels built from ${schema} queries`, panels: [] };
-      // Stack the new panel below whatever's already there.
+
+      // Don't append a duplicate: if this exact query is already a panel, just
+      // open the dashboard instead of adding it again.
+      const dup = dash.panels.find((p) => p.query && normSql(p.query.sql) === normSql(trimmed));
+      if (dup) {
+        openBiTab();
+        window.setTimeout(() => dashboardBus.open(dash.id), 200);
+        return;
+      }
+
       const bottom = dash.panels.reduce((y, p) => Math.max(y, p.grid.y + p.grid.h), 0);
       const panel: DashPanelDoc = {
         id: `p-${Date.now()}-${dash.panels.length}`,
@@ -3260,6 +3275,9 @@ export function ExasolStudio({
     } catch {
       // Agent sidecar unavailable — fall back to just opening the tab.
       void openBi();
+    } finally {
+      // Brief cooldown so a stray double-fire can't create two panels.
+      window.setTimeout(() => { addingDashRef.current = false; }, 600);
     }
   }
 
