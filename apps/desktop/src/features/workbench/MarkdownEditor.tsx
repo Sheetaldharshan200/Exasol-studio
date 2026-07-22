@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { useEditor, useEditorState, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -42,6 +42,16 @@ export function MarkdownEditor({
 }) {
   const lastEmitted = useRef(value);
   const [focused, setFocused] = useState(false);
+  // Serializing the whole doc to markdown is O(doc) — doing it on every
+  // keystroke is a typing-jank source. Debounce it; flush on blur/unmount.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const emitTimer = useRef<number | null>(null);
+  const emitNow = (ed: Editor) => {
+    const md = (ed.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown.getMarkdown();
+    lastEmitted.current = md;
+    onChangeRef.current(md);
+  };
   const editor = useEditor({
     extensions: [
       // StarterKit v3 already bundles underline, link, strike, code, lists,
@@ -62,11 +72,24 @@ export function MarkdownEditor({
       attributes: { class: "md-body tiptap max-w-none px-3 py-2 text-[13px] leading-relaxed outline-none" },
     },
     onUpdate: ({ editor }) => {
-      const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown.getMarkdown();
-      lastEmitted.current = md;
-      onChange(md);
+      if (emitTimer.current) window.clearTimeout(emitTimer.current);
+      emitTimer.current = window.setTimeout(() => {
+        emitTimer.current = null;
+        emitNow(editor);
+      }, 300);
     },
   });
+
+  // Flush a pending emit (blur / unmount) so no keystrokes are ever lost.
+  const flush = () => {
+    if (emitTimer.current !== null && editor) {
+      window.clearTimeout(emitTimer.current);
+      emitTimer.current = null;
+      emitNow(editor);
+    }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => flush(), [editor]);
 
   // Reflect external value changes (e.g. loaded notebook) without clobbering
   // the cursor while the user types.
@@ -85,6 +108,7 @@ export function MarkdownEditor({
       onFocus={() => { setFocused(true); onFocusChange?.(true); }}
       onBlur={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return; // focus stayed inside
+        flush();
         setFocused(false);
         onFocusChange?.(false);
       }}
@@ -100,6 +124,26 @@ function Toolbar({ editor, trailing }: { editor: Editor; trailing?: React.ReactN
   const [linkUrl, setLinkUrl] = useState("");
   const linkInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Subscribe to the editor's transactions so active states track the caret —
+  // TipTap v3's useEditor doesn't re-render on selection changes by itself.
+  const on = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => ({
+      h1: ed.isActive("heading", { level: 1 }),
+      h2: ed.isActive("heading", { level: 2 }),
+      h3: ed.isActive("heading", { level: 3 }),
+      bold: ed.isActive("bold"),
+      italic: ed.isActive("italic"),
+      underline: ed.isActive("underline"),
+      strike: ed.isActive("strike"),
+      code: ed.isActive("code"),
+      bulletList: ed.isActive("bulletList"),
+      orderedList: ed.isActive("orderedList"),
+      blockquote: ed.isActive("blockquote"),
+      codeBlock: ed.isActive("codeBlock"),
+      link: ed.isActive("link"),
+    }),
+  });
   const Btn = ({ on, run, title, children }: { on?: boolean; run: () => void; title: string; children: React.ReactNode }) => (
     <button
       type="button"
@@ -142,22 +186,22 @@ function Toolbar({ editor, trailing }: { editor: Editor; trailing?: React.ReactN
 
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-0.5 rounded-t-lg border-b border-border/60 bg-panel px-2 py-1">
-      <Btn title="Heading 1" on={editor.isActive("heading", { level: 1 })} run={() => c().toggleHeading({ level: 1 }).run()}><Heading1 className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Heading 2" on={editor.isActive("heading", { level: 2 })} run={() => c().toggleHeading({ level: 2 }).run()}><Heading2 className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Heading 3" on={editor.isActive("heading", { level: 3 })} run={() => c().toggleHeading({ level: 3 }).run()}><Heading3 className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Heading 1" on={on.h1} run={() => c().toggleHeading({ level: 1 }).run()}><Heading1 className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Heading 2" on={on.h2} run={() => c().toggleHeading({ level: 2 }).run()}><Heading2 className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Heading 3" on={on.h3} run={() => c().toggleHeading({ level: 3 }).run()}><Heading3 className="h-3.5 w-3.5" /></Btn>
       <span className="mx-0.5 h-4 w-px bg-border" />
-      <Btn title="Bold" on={editor.isActive("bold")} run={() => c().toggleBold().run()}><Bold className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Italic" on={editor.isActive("italic")} run={() => c().toggleItalic().run()}><Italic className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Underline" on={editor.isActive("underline")} run={() => c().toggleUnderline().run()}><UnderlineIcon className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Strikethrough" on={editor.isActive("strike")} run={() => c().toggleStrike().run()}><Strikethrough className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Inline code" on={editor.isActive("code")} run={() => c().toggleCode().run()}><Code className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Bold" on={on.bold} run={() => c().toggleBold().run()}><Bold className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Italic" on={on.italic} run={() => c().toggleItalic().run()}><Italic className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Underline" on={on.underline} run={() => c().toggleUnderline().run()}><UnderlineIcon className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Strikethrough" on={on.strike} run={() => c().toggleStrike().run()}><Strikethrough className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Inline code" on={on.code} run={() => c().toggleCode().run()}><Code className="h-3.5 w-3.5" /></Btn>
       <span className="mx-0.5 h-4 w-px bg-border" />
-      <Btn title="Bullet list" on={editor.isActive("bulletList")} run={() => c().toggleBulletList().run()}><List className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Numbered list" on={editor.isActive("orderedList")} run={() => c().toggleOrderedList().run()}><ListOrdered className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Quote" on={editor.isActive("blockquote")} run={() => c().toggleBlockquote().run()}><Quote className="h-3.5 w-3.5" /></Btn>
-      <Btn title="Code block" on={editor.isActive("codeBlock")} run={() => c().toggleCodeBlock().run()}><Code2 className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Bullet list" on={on.bulletList} run={() => c().toggleBulletList().run()}><List className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Numbered list" on={on.orderedList} run={() => c().toggleOrderedList().run()}><ListOrdered className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Quote" on={on.blockquote} run={() => c().toggleBlockquote().run()}><Quote className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Code block" on={on.codeBlock} run={() => c().toggleCodeBlock().run()}><Code2 className="h-3.5 w-3.5" /></Btn>
       <span className="mx-0.5 h-4 w-px bg-border" />
-      <Btn title="Link" on={editor.isActive("link")} run={openLink}><Link2 className="h-3.5 w-3.5" /></Btn>
+      <Btn title="Link" on={on.link} run={openLink}><Link2 className="h-3.5 w-3.5" /></Btn>
       <Btn title="Insert image from your computer" run={() => fileRef.current?.click()}><ImageIcon className="h-3.5 w-3.5" /></Btn>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
       {linkOpen ? (
