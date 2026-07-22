@@ -146,6 +146,14 @@ function parseSingleTable(sql: string): { schema?: string; table: string } | nul
   const clean = (x: string) => x.replace(/"/g, "");
   return m[2] ? { schema: clean(m[1]), table: clean(m[2]) } : { table: clean(m[1]) };
 }
+
+/** Name a new query tab after its table (Open data / Generate SELECT), so the
+ *  tab strip reads "WEATHER_DAILY" instead of "Untitled". Empty/ambiguous SQL
+ *  keeps the "Untitled" placeholder. */
+function tabTitleFromSql(sql: string): string {
+  const t = parseSingleTable(sql);
+  return t?.table ?? "Untitled";
+}
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import {
@@ -189,6 +197,11 @@ type SqlTab = {
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
   objectProfileId?: string;
+  /** For object tabs — deep-link to a sub-tab (info/columns/keys) and edit mode.
+   *  Nonce forces the panel to re-apply even when the tab already exists. */
+  objNavTab?: string;
+  objNavEdit?: boolean;
+  objNavNonce?: number;
   /** Execution lifecycle for the status strip (started/running/completed). */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
   /** For artifact tabs — the rendered HTML document. */
@@ -1859,6 +1872,32 @@ export function ExasolStudio({
     }
   }
 
+  // Run structure-editor DDL directly ("Confirm & Save"). Stops at the first
+  // failing statement and reports it so the editor can show it inline; refreshes
+  // the tree + catalog on success so the new shape shows up.
+  async function commitDdl(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
+    // The Details tab may belong to a connection other than the active one.
+    const conn = connections.find((c) => c.profile.id === activeTab.objectProfileId) ?? connection;
+    if (!conn || !statements.length) return { ok: false, error: "No active connection." };
+    try {
+      for (const st of statements) {
+        const r = await ipc.executeSql(conn.profile.id, conn.profile.name, st, 1, false);
+        const errored = r.results.find((x) => x.error);
+        if (errored?.error) {
+          loadHistory();
+          return { ok: false, error: errored.error, failedSql: st };
+        }
+      }
+      loadHistory();
+      refreshSqlCatalog();
+      setTreeKeys((k) => ({ ...k, [conn.profile.id]: (k[conn.profile.id] ?? 0) + 1 }));
+      window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: conn.profile.id } }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) };
+    }
+  }
+
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
   async function runDdl(profileId: string, sql: string) {
@@ -2586,12 +2625,12 @@ export function ExasolStudio({
   }, []);
 
   // Open (and optionally run) a query built in the visual query builder.
-  async function openBuiltSql(sql: string, runNow: boolean) {
+  async function openBuiltSql(sql: string, runNow: boolean, title?: string) {
     const key = connKey;
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-q-${Date.now()}-${tabCounter.current}`,
-      title: "Untitled",
+      title: title ?? tabTitleFromSql(sql),
       view: "sql",
       sql,
       response: null,
@@ -2753,13 +2792,20 @@ export function ExasolStudio({
   }
 
   // Open (or focus) an object-detail tab for a schema/table/view.
-  function openObjectDetails(profileId: string, ctx: { type: string; schema?: string; name: string }) {
+  function openObjectDetails(
+    profileId: string,
+    ctx: { type: string; schema?: string; name: string },
+    nav?: { tab?: string; edit?: boolean },
+  ) {
     const type = ctx.type as ObjectRef["type"];
     if (!["schema", "virtual-schema", "table", "view", "user"].includes(type)) return;
     const list = tabsFor(connKey);
     const id = `obj:${profileId}:${ctx.schema ?? ""}:${ctx.name}:${type}`;
+    const nonce = Date.now();
     const existing = list.find((t) => t.view === "object" && t.id === id);
     if (existing) {
+      // Re-navigate an already-open details tab to the requested sub-tab.
+      if (nav) patchTab(existing.id, { objNavTab: nav.tab, objNavEdit: nav.edit, objNavNonce: nonce });
       setActiveTabId(existing.id);
       return;
     }
@@ -2772,6 +2818,9 @@ export function ExasolStudio({
       execError: null,
       objectRef: { type, schema: ctx.schema, name: ctx.name },
       objectProfileId: profileId,
+      objNavTab: nav?.tab,
+      objNavEdit: nav?.edit,
+      objNavNonce: nav ? nonce : undefined,
     };
     updateTabs(connKey, (l) => [...l, tab]);
     setActiveTabId(tab.id);
@@ -3826,6 +3875,11 @@ export function ExasolStudio({
                 connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
                 object={activeTab.objectRef}
                 onOpenData={(sql) => void openBuiltSql(sql, true)}
+                onOpenSql={openSqlTab}
+                onApplyDdl={commitDdl}
+                navTab={activeTab.objNavTab}
+                navEdit={activeTab.objNavEdit}
+                navNonce={activeTab.objNavNonce}
               />
             </div>
           ) : isSpecialTab && connection ? (
@@ -4159,6 +4213,7 @@ export function ExasolStudio({
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
           onAction={(action) => setObjAction({ profileId: ctxMenu.profileId, action })}
           onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
+          onEditInDetails={(tab, edit) => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx, { tab, edit })}
           onFavorite={
             ctxMenu.node.ctx && !ctxMenu.node.ctx.type.startsWith("new-")
               ? () =>
