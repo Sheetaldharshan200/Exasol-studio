@@ -19,6 +19,7 @@ import {
   Eye,
   FileCode2,
   GitBranch,
+  NotebookPen,
   GitCommitHorizontal,
   History,
   Info,
@@ -125,6 +126,8 @@ import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/feat
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
 import { GitPanel } from "@/features/workbench/GitPanel";
+import { NotebookTab } from "@/features/workbench/NotebookTab";
+import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite, type Favorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
@@ -165,7 +168,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills";
 
 type SqlTab = {
   id: string;
@@ -227,6 +230,8 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   welcome: Sparkles,
   artifact: FileCode2,
   git: GitBranch,
+  notebook: NotebookPen,
+  skills: Sparkles,
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -2731,6 +2736,29 @@ export function ExasolStudio({
     return () => window.removeEventListener("studio:open-git", on);
   }, []);
 
+  // Open (or focus) a full-page tab by a simple single-instance view.
+  function openSingletonTab(view: "notebook" | "skills", title: string, idPrefix: string) {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === view);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-${idPrefix}-${Date.now()}-${tabCounter.current}`,
+      title,
+      view,
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+  const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
+  const openSkills = () => openSingletonTab("skills", "Skills", "sk");
+
   // Open (or focus) the Guides & Docs tab.
   function openGuides() {
     const list = tabsFor(connKey);
@@ -3133,11 +3161,13 @@ export function ExasolStudio({
               openGuides();
               return;
             }
-            if (id === "git") {
-              // Source Control opens as a full-page tab (GitHub-style two-pane).
+            if (id === "git" || id === "notebook" || id === "skills") {
+              // Full-page tabs (Source Control, Notebook, Skills).
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
-              openGit();
+              if (id === "git") openGit();
+              else if (id === "notebook") openNotebook();
+              else openSkills();
               return;
             }
             if (id === "bi") {
@@ -3644,6 +3674,14 @@ export function ExasolStudio({
           ) : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
               <GitPanel full />
+            </div>
+          ) : activeTab.view === "notebook" ? (
+            <div className="min-h-0 flex-1">
+              <NotebookTab profileId={connection?.profile.id ?? null} connectionName={connection?.profile.name ?? ""} />
+            </div>
+          ) : activeTab.view === "skills" ? (
+            <div className="min-h-0 flex-1">
+              <SkillsTab />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">

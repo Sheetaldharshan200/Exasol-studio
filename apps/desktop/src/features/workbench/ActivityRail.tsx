@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, Settings, Star, Store, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, NotebookPen, Settings, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
 
 /** Official MCP mark (Boxicons v3, MIT/free license) — currentColor, so it
@@ -24,6 +24,8 @@ export type ActivityId =
   | "favorites"
   | "visualizer"
   | "git"
+  | "notebook"
+  | "skills"
   | "marketplace"
   | "guides"
   | "bi"
@@ -34,7 +36,9 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
   { id: "files", label: "Files", icon: FileCode2 },
   { id: "favorites", label: "Favorites", icon: Star },
   { id: "visualizer", label: "Visualizer", icon: Eye },
-  { id: "git", label: "Git", icon: GitBranch },
+  { id: "git", label: "Source Control", icon: GitBranch },
+  { id: "notebook", label: "Notebook", icon: NotebookPen },
+  { id: "skills", label: "Skills", icon: Sparkles },
   { id: "marketplace", label: "Marketplace", icon: Store },
   { id: "guides", label: "Guides & Docs", icon: BookOpen },
   { id: "bi", label: "Dashboards", icon: BarChart3 },
@@ -43,8 +47,8 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] =
 // Items that open a full-screen tab (highlighted by the active tab's view,
 // not the sidebar panel). "bi" launches an external tool, so it's an action —
 // never a persistent selection. Everything else is a sidebar panel.
-const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides"]);
-const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "git", "mcp"]);
+const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "notebook", "skills"]);
+const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "mcp"]);
 
 export function ActivityRail({
   active,
