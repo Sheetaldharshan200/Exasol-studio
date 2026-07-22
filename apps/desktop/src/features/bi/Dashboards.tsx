@@ -12,6 +12,7 @@ import { Icon } from "@/components/ui/icon";
 import {
   ArrowLeft,
   BarChart3,
+  ChevronDown,
   FileDown,
   Loader2,
   Maximize2,
@@ -23,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -638,7 +640,8 @@ function Panel({
             <DropdownMenuTrigger asChild>
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-foreground"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground data-[state=open]:pointer-events-auto data-[state=open]:bg-secondary data-[state=open]:opacity-100"
                 aria-label="Panel size"
                 title="Resize panel"
               >
@@ -659,7 +662,7 @@ function Panel({
               e.stopPropagation();
               onEdit();
             }}
-            className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-foreground"
+            className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground"
             aria-label="Edit panel"
           >
             <Pencil className="h-3 w-3" />
@@ -669,7 +672,7 @@ function Panel({
               e.stopPropagation();
               onDelete();
             }}
-            className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-destructive"
+            className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-destructive"
             aria-label="Delete panel"
           >
             <Trash2 className="h-3 w-3" />
@@ -1102,8 +1105,9 @@ function PanelEditor({
   const [kpiUnit, setKpiUnit] = useState(panel.viz.type === "kpi" ? (panel.viz.unit ?? "") : "");
   const [optionJson, setOptionJson] = useState(ev?.option ? JSON.stringify(ev.option, null, 2) : "");
   const [preview, setPreview] = useState<StatementResult | null>(null);
-  const [datasets, setDatasets] = useState<string[]>([]);
+  const [datasets, setDatasets] = useState<{ schema: string; name: string }[]>([]);
   const [dataset, setDataset] = useState("");
+  const [dsOpen, setDsOpen] = useState(false);
 
   // Every table/view on the connection is a dataset — virtual schemas too
   // (they surface in the same catalog views).
@@ -1113,14 +1117,14 @@ function PanelEditor({
       .executeSql(
         profileId,
         connectionName,
-        `SELECT TABLE_SCHEMA || '.' || TABLE_NAME AS DS FROM SYS.EXA_ALL_TABLES
-         UNION SELECT VIEW_SCHEMA || '.' || VIEW_NAME FROM SYS.EXA_ALL_VIEWS ORDER BY 1`,
+        `SELECT TABLE_SCHEMA AS S, TABLE_NAME AS N FROM SYS.EXA_ALL_TABLES
+         UNION SELECT VIEW_SCHEMA, VIEW_NAME FROM SYS.EXA_ALL_VIEWS ORDER BY 1, 2`,
         2000,
         false,
       )
       .then((res) => {
         const first = res.results.find((r) => r.kind === "resultSet");
-        if (first && !first.error) setDatasets(first.rows.map((r) => String(r[0])));
+        if (first && !first.error) setDatasets(first.rows.map((r) => ({ schema: String(r[0]), name: String(r[1]) })));
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1271,19 +1275,52 @@ function PanelEditor({
             <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Start from a template
             </span>
-            <div className="mb-1.5 flex gap-1.5">
-              <select
-                value={dataset}
-                onChange={(e) => setDataset(e.target.value)}
-                className="h-7 min-w-0 flex-1 rounded-lg border border-border bg-editor px-2 text-[11.5px] outline-none"
+            <div className="relative mb-1.5">
+              <button
+                type="button"
+                onClick={() => setDsOpen((v) => !v)}
+                className="flex h-7 w-full items-center gap-1.5 rounded-lg border border-border bg-editor px-2 text-left text-[11.5px] outline-none hover:border-primary/40"
               >
-                <option value="">Pick a dataset (table / view / virtual schema)…</option>
-                {datasets.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
+                <span className={cn("min-w-0 flex-1 truncate", !dataset && "text-muted-foreground")}>
+                  {dataset || "Pick a dataset (table / view / virtual schema)…"}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </button>
+              {dsOpen ? (
+                <>
+                  {/* click-away */}
+                  <div className="fixed inset-0 z-40" onClick={() => setDsOpen(false)} />
+                  <div className="absolute inset-x-0 top-8 z-50 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+                    <Command loop>
+                      <CommandInput autoFocus placeholder="Search tables & views…" className="h-8 text-[12px]" />
+                      <CommandList className="max-h-64">
+                        <CommandEmpty>No matching table or view.</CommandEmpty>
+                        <div className="border-b border-border/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {connectionName || "Database"}
+                        </div>
+                        {[...new Set(datasets.map((d) => d.schema))].map((schema) => (
+                          <CommandGroup key={schema} heading={schema}>
+                            {datasets.filter((d) => d.schema === schema).map((d) => {
+                              const full = `${d.schema}.${d.name}`;
+                              return (
+                                <CommandItem
+                                  key={full}
+                                  value={full}
+                                  onSelect={() => { setDataset(full); setDsOpen(false); }}
+                                  className="text-[11.5px]"
+                                >
+                                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                                  {dataset === full ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </div>
+                </>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {TEMPLATES.map((t) => (

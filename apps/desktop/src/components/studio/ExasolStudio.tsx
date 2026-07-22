@@ -2439,9 +2439,16 @@ export function ExasolStudio({
         // Pointer-based drag reorder — HTML5 DnD is unreliable inside the
         // WKWebView titlebar region, so we track the pointer ourselves.
         onPointerDown={(e) => {
+          // Middle-click closes the tab (browser convention).
+          if (e.button === 1) {
+            e.preventDefault();
+            closeTab(tab.id);
+            return;
+          }
           if (e.button !== 0) return;
           tabDrag.current = { id: tab.id, startX: e.clientX, moved: false };
         }}
+        onAuxClick={(e) => e.preventDefault()}
         onClick={() => {
           // A drag just happened → the pointerup already handled it; don't
           // also treat it as a plain activate-click.
