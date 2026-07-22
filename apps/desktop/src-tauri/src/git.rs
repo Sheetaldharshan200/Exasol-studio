@@ -383,6 +383,27 @@ fn remote_op(args: &[&str], label: &str) -> AppResult<String> {
     Ok(if out.trim().is_empty() { err.trim().to_string() } else { out.trim().to_string() })
 }
 
+/// Connect (or replace) the workspace repo's `origin` remote — lets the user
+/// push their versioned SQL/notebooks to GitHub/GitLab from the Git panel.
+#[tauri::command]
+pub fn git_set_remote(url: String) -> AppResult<String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(AppError::Storage("Enter a repository URL (https://… or git@…).".into()));
+    }
+    let (_, remotes, _) = run(&["remote"])?;
+    let has_origin = remotes.lines().any(|r| r.trim() == "origin");
+    let (ok, _, err) = if has_origin {
+        run(&["remote", "set-url", "origin", url])?
+    } else {
+        run(&["remote", "add", "origin", url])?
+    };
+    if !ok {
+        return Err(AppError::Storage(format!("git remote failed: {}", err.trim())));
+    }
+    Ok(format!("origin → {url}"))
+}
+
 #[tauri::command]
 pub fn git_fetch() -> AppResult<String> {
     remote_op(&["fetch", "--all", "--prune"], "fetch")

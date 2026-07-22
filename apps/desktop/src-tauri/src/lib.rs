@@ -128,6 +128,7 @@ pub fn run() {
             git::git_unstage,
             git::git_discard,
             git::git_diff,
+            git::git_set_remote,
             git::git_fetch,
             git::git_pull,
             git::git_push,

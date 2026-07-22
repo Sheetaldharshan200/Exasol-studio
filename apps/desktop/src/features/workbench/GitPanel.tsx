@@ -58,6 +58,8 @@ export function GitPanel({ full = false }: { full?: boolean }) {
   const [diff, setDiff] = useState<{ path: string; staged: boolean; text: string } | null>(null);
   const [newBranch, setNewBranch] = useState(false);
   const [branchName, setBranchName] = useState("");
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const needsRemote = !!error && error.includes("No git remote");
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -273,7 +275,36 @@ export function GitPanel({ full = false }: { full?: boolean }) {
               </button>
             </div>
             {notice ? <p className="mt-1.5 truncate text-[11px] text-primary">{notice}</p> : null}
-            {error ? <p className="mt-1.5 text-[11px] text-destructive">{error}</p> : null}
+            {needsRemote ? (
+              <div className="mt-1.5 rounded-lg border border-border bg-panel/60 p-2">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  This workspace isn’t connected to a remote yet. Create an empty repository
+                  (GitHub/GitLab) and paste its URL to enable push, pull and fetch:
+                </p>
+                <div className="mt-1.5 flex gap-1.5">
+                  <input
+                    value={remoteUrl}
+                    onChange={(e) => setRemoteUrl(e.target.value)}
+                    placeholder="https://github.com/you/my-sql-workspace.git"
+                    spellCheck={false}
+                    className="h-7 min-w-0 flex-1 rounded-md border border-border bg-editor px-2 font-mono text-[11px] outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && remoteUrl.trim())
+                        void act(() => ipc.gitSetRemote(remoteUrl.trim()), "Remote connected — push again to upload.");
+                    }}
+                  />
+                  <button
+                    onClick={() => void act(() => ipc.gitSetRemote(remoteUrl.trim()), "Remote connected — push again to upload.")}
+                    disabled={busy || !remoteUrl.trim()}
+                    className="h-7 shrink-0 rounded-md bg-primary px-2.5 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </div>
+            ) : error ? (
+              <p className="mt-1.5 text-[11px] text-destructive">{error}</p>
+            ) : null}
           </div>
           </div>
 

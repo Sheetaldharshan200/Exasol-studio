@@ -460,6 +460,7 @@ export const ipc = {
   gitUnstage: (paths: string[]) => call<null>("git_unstage", { paths }),
   gitDiscard: (paths: string[]) => call<null>("git_discard", { paths }),
   gitDiff: (path: string, staged: boolean) => call<string>("git_diff", { path, staged }),
+  gitSetRemote: (url: string) => call<string>("git_set_remote", { url }),
   gitFetch: () => call<string>("git_fetch"),
   gitPull: () => call<string>("git_pull"),
   gitPush: () => call<string>("git_push"),

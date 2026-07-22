@@ -281,6 +281,28 @@ export function AssistantPanel({
   // shown monospace above the composer and folded back into the message on send.
   const [codeContext, setCodeContext] = useState<{ lang: string; content: string } | null>(null);
   const [codeExpanded, setCodeExpanded] = useState(false);
+  // A code block BEING WRITTEN (Slack-style): typing ''' / ``` (or ⌘⇧⏎, or the
+  // </> button) opens a dedicated monospace editor above the composer; Done
+  // (⌘⏎ / Esc) attaches it as the code chip, ✕ discards. No ghost fence
+  // characters ever live inside the prose input.
+  const [codeDraft, setCodeDraft] = useState<{ lang: string; content: string } | null>(null);
+  const codeDraftRef = useRef<HTMLTextAreaElement>(null);
+  function openCodeDraft(seed?: { lang: string; content: string }) {
+    setCodeDraft(seed ?? { lang: "sql", content: "" });
+    requestAnimationFrame(() => codeDraftRef.current?.focus());
+  }
+  function commitCodeDraft() {
+    setCodeDraft((draft) => {
+      if (draft && draft.content.trim()) {
+        setCodeContext((prev) =>
+          prev ? { ...prev, content: `${prev.content}\n\n${draft.content}` } : { lang: draft.lang || "sql", content: draft.content },
+        );
+        setCodeExpanded(false);
+      }
+      return null;
+    });
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
   const [sending, setSending] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<string>("");
@@ -691,9 +713,15 @@ export function AssistantPanel({
 
   async function send(text: string, codeOverride?: { lang: string; content: string } | null) {
     const trimmed = text.trim();
-    // Fold the attached code snippet (chip) back into a fenced block so the
-    // conversation renders it as a proper code block and the agent receives it.
-    const code = codeOverride !== undefined ? codeOverride : codeContext;
+    // Fold the attached code snippet (chip) - and any code still being written
+    // in the draft editor - into a fenced block so the conversation renders it
+    // properly and the agent receives it.
+    let code = codeOverride !== undefined ? codeOverride : codeContext;
+    if (codeOverride === undefined && codeDraft?.content.trim()) {
+      code = code
+        ? { ...code, content: `${code.content}\n\n${codeDraft.content}` }
+        : { lang: codeDraft.lang || "sql", content: codeDraft.content };
+    }
     const codeBlock = code && code.content.trim() ? `\n\n\`\`\`${code.lang}\n${code.content}\n\`\`\`` : "";
     if ((!trimmed && attachments.length === 0 && !codeBlock) || sending) return;
 
@@ -749,6 +777,7 @@ export function AssistantPanel({
     }
     setInput("");
     setCodeContext(null);
+    setCodeDraft(null);
     setCodeExpanded(false);
     setAttachments([]);
     setAttachHint(null);
@@ -882,10 +911,9 @@ export function AssistantPanel({
     void agent.setDefaultModel(ref).catch(() => undefined);
   }
 
-  /** Slack-style code blocks in the composer: the instant an open fence
-   *  (``` or ''', optional language) is typed at the end of the input, the
-   *  closing fence is auto-inserted and the caret lands inside — so the block
-   *  box appears immediately and the user just types the code. */
+  /** Typing an open fence (``` or ''', optional language) transforms it — the
+   *  fence characters vanish from the prose and the code editor opens (the
+   *  same transform Slack does). */
   function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const next = e.target.value;
     const count = (next.match(/```|'''/g) ?? []).length;
@@ -893,9 +921,8 @@ export function AssistantPanel({
     if (count % 2 === 1 && count === prevCount + 1 && e.target.selectionStart === next.length) {
       const m = /(```|''')([a-zA-Z0-9_-]*)$/.exec(next);
       if (m) {
-        setInput(`${next}\n\n${m[1]}`);
-        const pos = next.length + 1; // the empty line between the fences
-        requestAnimationFrame(() => inputRef.current?.setSelectionRange(pos, pos));
+        setInput(next.slice(0, m.index).replace(/\n$/, ""));
+        openCodeDraft({ lang: m[2] || "sql", content: "" });
         return;
       }
     }
@@ -903,6 +930,12 @@ export function AssistantPanel({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // ⌘⇧⏎ — insert a code block (Slack's shortcut).
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "Enter") {
+      e.preventDefault();
+      openCodeDraft();
+      return;
+    }
     if (menuItems.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1267,7 +1300,63 @@ export function AssistantPanel({
             // made the box look dim until the first letter. Override it.
             className="flex-col items-stretch rounded-xl border-muted-foreground/60 bg-editor ring-1 ring-muted-foreground/25 has-disabled:bg-editor has-disabled:opacity-100"
           >
-          {codeContext ? (
+          {codeDraft ? (
+            <div className="px-2 pt-2">
+              <div className="overflow-hidden rounded-lg border border-primary/40 bg-panel/60">
+                <div className="flex items-center gap-1.5 border-b border-border/70 bg-secondary/40 px-2 py-1">
+                  <Code2 className="h-3 w-3 text-primary" />
+                  <span className="text-[10.5px] font-medium text-foreground">Code</span>
+                  <input
+                    value={codeDraft.lang}
+                    onChange={(e) => setCodeDraft((d) => (d ? { ...d, lang: e.target.value.toLowerCase() } : d))}
+                    data-bare
+                    spellCheck={false}
+                    className="h-5 w-20 rounded border border-border bg-background px-1.5 font-mono text-[10px] lowercase outline-none focus:border-primary/50"
+                    title="Language (sql, python, json…)"
+                  />
+                  <span className="ml-auto text-[10px] text-muted-foreground">⏎ new line · ⌘⏎ done · Esc done</span>
+                  <button
+                    type="button"
+                    onClick={commitCodeDraft}
+                    className="h-5 rounded bg-primary px-2 text-[10.5px] font-medium text-primary-foreground hover:bg-primary/85"
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCodeDraft(null); inputRef.current?.focus(); }}
+                    title="Discard code"
+                    className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <textarea
+                  ref={codeDraftRef}
+                  data-bare
+                  value={codeDraft.content}
+                  spellCheck={false}
+                  rows={Math.min(12, Math.max(3, codeDraft.content.split("\n").length + 1))}
+                  onChange={(e) => setCodeDraft((d) => (d ? { ...d, content: e.target.value } : d))}
+                  onKeyDown={(e) => {
+                    if (((e.metaKey || e.ctrlKey) && e.key === "Enter") || e.key === "Escape") {
+                      e.preventDefault();
+                      commitCodeDraft();
+                    } else if (e.key === "Tab") {
+                      e.preventDefault();
+                      const ta = e.currentTarget;
+                      const { selectionStart: s, selectionEnd: en, value } = ta;
+                      setCodeDraft((d) => (d ? { ...d, content: value.slice(0, s) + "  " + value.slice(en) } : d));
+                      requestAnimationFrame(() => ta.setSelectionRange(s + 2, s + 2));
+                    }
+                  }}
+                  placeholder="Type or paste your code…"
+                  className="w-full resize-none bg-editor px-2.5 py-1.5 font-mono text-[12px] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground [scrollbar-width:thin]"
+                />
+              </div>
+            </div>
+          ) : null}
+          {codeContext && !codeDraft ? (
             <div className="px-2 pt-2">
               <div className="overflow-hidden rounded-lg border border-border bg-panel/60">
                 <div className="flex items-center gap-1.5 border-b border-border/70 bg-secondary/40 px-2 py-1">
@@ -1290,7 +1379,11 @@ export function AssistantPanel({
                     <X className="h-3 w-3" />
                   </button>
                 </div>
-                <pre className={cn("overflow-x-auto px-2.5 py-1.5 font-mono text-[11px] leading-[1.5] text-syntax-type [scrollbar-width:thin]", !codeExpanded && "max-h-16 overflow-y-hidden")}>
+                <pre
+                  onClick={() => { openCodeDraft(codeContext); setCodeContext(null); }}
+                  title="Click to edit this code"
+                  className={cn("cursor-text overflow-x-auto px-2.5 py-1.5 font-mono text-[11px] leading-[1.5] text-foreground [scrollbar-width:thin] hover:bg-secondary/30", !codeExpanded && "max-h-16 overflow-y-hidden")}
+                >
                   {codeContext.content.trim()}
                 </pre>
               </div>
@@ -1343,6 +1436,13 @@ export function AssistantPanel({
             />
           </div>
           <InputGroupAddon align="block-end" className="gap-1">
+            <PromptInputButton
+              onClick={() => (codeDraft ? commitCodeDraft() : openCodeDraft())}
+              aria-label="Insert code block"
+              title="Insert a code block (or type ''')"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+            </PromptInputButton>
             <PromptInputButton
               onClick={() => fileInputRef.current?.click()}
               aria-label="Attach files"

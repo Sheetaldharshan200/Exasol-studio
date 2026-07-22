@@ -184,6 +184,7 @@ export function DashboardsTab({
                 onClick={() => void dashboards.get(d.id).then(setOpen)}
               >
                 <div className="flex items-center gap-1.5">
+                  <Icon name="dashboards" className="h-4 w-4 shrink-0 text-primary" />
                   <span className="truncate text-[13.5px] font-semibold text-foreground">{d.title}</span>
                   <button
                     onClick={(e) => {
@@ -382,6 +383,11 @@ function DashboardView({
   }
 
   function persistLayout(next: readonly LayoutItem[]) {
+    const changed = next.some((l) => {
+      const p = dash.panels.find((x) => x.id === l.i);
+      return p && (p.grid.x !== l.x || p.grid.y !== l.y || p.grid.w !== l.w || p.grid.h !== l.h);
+    });
+    if (!changed) return;
     const updated: Dashboard = {
       ...dash,
       panels: dash.panels.map((p) => {
@@ -389,7 +395,9 @@ function DashboardView({
         return l ? { ...p, grid: { x: l.x, y: l.y, w: l.w, h: l.h } } : p;
       }),
     };
-    void dashboards.save(updated).catch(() => undefined);
+    // Update the CONTROLLED layout too — saving only to disk made the grid
+    // snap back after every drag, so panels could never be placed side by side.
+    void saveDash(updated);
   }
 
   return (
@@ -402,6 +410,7 @@ function DashboardView({
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
+        <Icon name="dashboards" className="h-4 w-4 shrink-0 text-primary" />
         <span className="truncate text-[13px] font-semibold text-foreground">{dash.title}</span>
         <button
           onClick={() => void toggleHistory()}
