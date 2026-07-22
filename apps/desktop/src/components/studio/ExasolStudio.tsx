@@ -1128,6 +1128,7 @@ function ResultsGrid({
   onChart,
   editable,
   onOpenSql,
+  onCommitEdits,
   editBusy,
   fontSize = 12,
   zebra = true,
@@ -1138,6 +1139,7 @@ function ResultsGrid({
   /** Present when this result maps to a single updatable table. */
   editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
   onOpenSql?: (sql: string, title?: string) => void;
+  onCommitEdits?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   editBusy?: boolean;
   fontSize?: number;
   zebra?: boolean;
@@ -1184,8 +1186,8 @@ function ResultsGrid({
       </div>
     );
   }
-  const canEdit = Boolean(editable && onOpenSql);
-  if (editing && editable && onOpenSql) {
+  const canEdit = Boolean(editable && (onOpenSql || onCommitEdits));
+  if (editing && editable && (onOpenSql || onCommitEdits)) {
     return (
       <EditableResultGrid
         columns={result.columns}
@@ -1197,6 +1199,7 @@ function ResultsGrid({
         initialFocus={focusCell}
         colWidths={editColWidths}
         onOpenSql={onOpenSql}
+        onApply={onCommitEdits}
         onExit={() => {
           setEditing(false);
           setFocusCell(null);
@@ -1829,6 +1832,32 @@ export function ExasolStudio({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
+
+  // Apply staged row edits directly ("Confirm & Save"). Exasol returns
+  // statement errors INSIDE the result (not as a JS throw), so we inspect each
+  // one and stop at the first failure, returning it so the grid shows the
+  // inline error and keeps the user's edits.
+  async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
+    if (!connection || !statements.length) return { ok: false, error: "No active connection." };
+    try {
+      for (const st of statements) {
+        const r = await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
+        const errored = r.results.find((x) => x.error);
+        if (errored?.error) {
+          loadHistory();
+          return { ok: false, error: errored.error, failedSql: st };
+        }
+      }
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
+      patchTab(activeTab.id, { response: res, execError: null });
+      loadHistory();
+      refreshSqlCatalog();
+      window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) };
+    }
+  }
 
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
@@ -3969,6 +3998,7 @@ export function ExasolStudio({
                         onChart={() => void openBi()}
                         editable={editTable}
                         onOpenSql={openSqlTab}
+                        onCommitEdits={commitEdits}
                         editBusy={running}
                         fontSize={gridFontSize}
                         zebra={gridZebra}

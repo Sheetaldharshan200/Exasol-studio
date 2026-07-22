@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Code2, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { Code2, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ColumnMeta } from "@/lib/ipc";
 
@@ -37,6 +37,7 @@ export function EditableResultGrid({
   initialFocus,
   colWidths,
   onOpenSql,
+  onApply,
   onExit,
 }: {
   columns: ColumnMeta[];
@@ -53,9 +54,14 @@ export function EditableResultGrid({
   /** Column widths (px) captured from the read-only table — keeps geometry stable. */
   colWidths?: number[] | null;
   /** Open the generated DML in a new query tab (the review/run surface). */
-  onOpenSql: (sql: string, title?: string) => void;
+  onOpenSql?: (sql: string, title?: string) => void;
+  /** Run the DML directly ("Confirm & Save"); returns the first DB error. */
+  onApply?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   onExit: () => void;
 }) {
+  // The last direct-save DB error, shown inline. Edits are KEPT on failure.
+  const [applyError, setApplyError] = useState<{ message: string; sql?: string } | null>(null);
+  const [saving, setSaving] = useState(false);
   // edits: rowIndex -> colIndex -> new value (string)
   const [edits, setEdits] = useState<Record<number, Record<number, string>>>({});
   // Focus + select the double-tapped cell once, when the grid mounts.
@@ -159,12 +165,31 @@ export function EditableResultGrid({
         </button>
         <div className="ml-auto flex items-center gap-1.5">
           <button
-            onClick={() => { const dml = build(); if (dml.length) { onOpenSql(dml.join("\n"), `Edit ${table}`); onExit(); } }}
-            disabled={!dirty}
-            title="Open these changes as SQL in a new query tab to review and run"
+            onClick={() => { const dml = build(); if (dml.length && onOpenSql) onOpenSql(dml.join("\n"), `Edit ${table}`); }}
+            disabled={!dirty || saving || !onOpenSql}
+            title="Open these changes as SQL in a new query tab"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+          >
+            <Code2 className="h-3.5 w-3.5" /> Review SQL
+          </button>
+          <button
+            onClick={async () => {
+              if (!onApply) return;
+              const dml = build();
+              if (!dml.length) return;
+              setApplyError(null);
+              setSaving(true);
+              const r = await onApply(dml);
+              setSaving(false);
+              // Keep edits on failure; clear them only when the DB accepted them.
+              if (r?.ok) reset();
+              else setApplyError({ message: r?.error ?? "The update failed.", sql: r?.failedSql });
+            }}
+            disabled={!dirty || saving || !onApply}
+            title="Run these changes now"
             className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
           >
-            <Code2 className="h-3.5 w-3.5" /> Generate SQL
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Confirm &amp; Save
           </button>
           <button onClick={onExit} className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground">
             <X className="h-3.5 w-3.5" /> Done
@@ -172,6 +197,17 @@ export function EditableResultGrid({
         </div>
       </div>
 
+      {applyError ? (
+        <div className="flex shrink-0 items-start gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-2">
+          <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium text-destructive">Update failed — your edits are kept. Fix and Save again, or use Review SQL.</p>
+            <p className="mt-0.5 break-words font-mono text-[11px] text-destructive/90">{applyError.message}</p>
+            {applyError.sql ? <p className="mt-1 break-all font-mono text-[10.5px] text-muted-foreground">{applyError.sql}</p> : null}
+          </div>
+          <button onClick={() => setApplyError(null)} aria-label="Dismiss" className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto p-px">
         <table
