@@ -2,21 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import {
-  BarChart3,
-  BookOpen,
-  Boxes,
-  Cpu,
-  Database,
-  Download,
-  ExternalLink,
-  FileCode2,
-  HardDriveDownload,
-  Loader2,
-  Plug,
-  Server,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, BarChart3, BookOpen, Boxes, Cpu, Database, Download, ExternalLink, FileCode2, HardDriveDownload, Loader2, Plug, Server, type LucideIcon } from "lucide-react";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -193,7 +179,7 @@ export function Docs() {
               className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
               title="Back to the README"
             >
-              ← README
+              <ArrowLeft className="h-3 w-3" /> README
             </button>
           ) : null}
           <span className="flex-1 truncate text-[13px] font-semibold text-foreground">

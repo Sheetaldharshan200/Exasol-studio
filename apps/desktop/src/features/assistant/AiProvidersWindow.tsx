@@ -375,7 +375,7 @@ function ProvidersSection(props: {
               {llmState.runningModel ? (
                 <p className="px-1 text-[10.5px] text-muted-foreground">
                   {llmState.embeddingReady
-                    ? "✓ Memory, skills & session search running fully on-device."
+                    ? "Memory, skills & session search running fully on-device."
                     : busyLlm === "embed" || progress?.stage === "embed"
                       ? "Setting up on-device memory (21 MB, one time)…"
                       : "On-device memory will finish setting up shortly."}

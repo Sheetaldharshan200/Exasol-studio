@@ -799,7 +799,7 @@ export function Marketplace() {
               {badges}
             </div>
             {did ? (
-              <p className="mt-0.5 text-[10px] font-medium text-primary">✓ Runs inside Exasol Studio</p>
+              <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-primary"><Check className="h-3 w-3" /> Runs inside Exasol Studio</p>
             ) : comingSoon ? (
               <p className="mt-0.5 text-[10px] text-muted-foreground">Supported by Exasol — not yet runnable in Exasol Studio</p>
             ) : null}
@@ -856,7 +856,7 @@ export function Marketplace() {
                   runtime ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground",
                 )}
               >
-                {runtime ? `${runtime} ✓` : "no docker/podman"}
+                {runtime ? runtime : "no docker/podman"}
               </span>
             </div>
           ) : null}
@@ -1362,5 +1362,5 @@ async function simulate(
     push("out", "done");
   }
   await wait(300);
-  push("success", `✓ ${item.name} installed.`);
+  push("success", `${item.name} installed.`);
 }

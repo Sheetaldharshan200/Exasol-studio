@@ -61,3 +61,6 @@ docs/foundation/graphify/rendered/
 # CI-fetched app runtime (Node + llama engine) — bundled at release time only
 apps/desktop/src-tauri/resources/runtime/*
 !apps/desktop/src-tauri/resources/runtime/.gitkeep
+
+# Graphify local knowledge-graph artifact
+graphify-out/

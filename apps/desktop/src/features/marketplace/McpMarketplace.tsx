@@ -75,7 +75,7 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
         onClick={() => onOpenConfig?.("audit", "Audit log")}
         className="mb-3 self-start text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
       >
-        View audit log →
+        View audit log
       </button>
 
       <p className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">

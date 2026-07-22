@@ -83,7 +83,7 @@ export function LoadDataDialog({
         setLines([
           { level: "cmd", text: `$ exapump upload ${fileName} --table ${fullTable}${dryRun ? " --dry-run" : ""}` },
           { level: "out", text: "Inferred 4 columns · loaded 1,240 rows" },
-          { level: "success", text: dryRun ? "✓ Preview complete." : "✓ Upload complete." },
+          { level: "success", text: dryRun ? "Preview complete." : "Upload complete." },
         ]);
         setOk(true);
         setPhase("done");

@@ -25,7 +25,7 @@ const cellText = (v: unknown) => (v === null || v === undefined ? "" : String(v)
 const mdCell = (v: unknown) => cellText(v).replace(/\|/g, "\\|").replace(/\n/g, " ");
 
 function resultToMarkdown(r: StatementResult): string {
-  if (r.error) return `> ⚠ ${r.error}`;
+  if (r.error) return `> **Error:** ${r.error}`;
   if (r.kind === "rowCount" || !r.columns.length) return `_${r.rowCount} row(s) affected · ${r.elapsedMs} ms_`;
   const head = `| ${r.columns.map((c) => mdCell(c.name)).join(" | ")} |`;
   const sep = `| ${r.columns.map(() => "---").join(" | ")} |`;
@@ -54,7 +54,7 @@ export function buildNotebookMarkdown(title: string, cells: ExportCell[]): strin
 /* ───────────────────────────── HTML / PDF ────────────────────────────── */
 
 function resultToHtml(r: StatementResult): string {
-  if (r.error) return `<p class="err">⚠ ${esc(r.error)}</p>`;
+  if (r.error) return `<p class="err">Error: ${esc(r.error)}</p>`;
   if (r.kind === "rowCount" || !r.columns.length) return `<p class="muted">${r.rowCount} row(s) affected · ${r.elapsedMs} ms</p>`;
   const cols = r.columns.map((c) => `<th>${esc(c.name)}</th>`).join("");
   const rows = r.rows

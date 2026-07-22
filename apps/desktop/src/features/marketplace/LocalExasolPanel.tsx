@@ -69,13 +69,13 @@ export function LocalExasolPanel({ onClose }: { onClose: () => void }) {
         setLines((prev) => [
           ...prev,
           { level: "out", text: `(preview) local runtime ${action} → ok` },
-          { level: "success", text: `✓ Local runtime ${action} finished.` },
+          { level: "success", text: `Local runtime ${action} finished.` },
         ]);
         setRunning(null);
         void r;
       }
     } catch (e) {
-      setLines((prev) => [...prev, { level: "err", text: `✗ ${errorMessage(e)}` }]);
+      setLines((prev) => [...prev, { level: "err", text: `${errorMessage(e)}` }]);
       setRunning(null);
     }
   }

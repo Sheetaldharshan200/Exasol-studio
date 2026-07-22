@@ -114,7 +114,7 @@ export function WelcomeScreen({
               <span className="font-medium text-foreground">Exasol Personal is free</span> for local &amp; personal use.
               Ready for production? Exasol scales to your cloud at low cost.{" "}
               <button onClick={() => openExternal("https://www.exasol.com/exasol-personal/")} className="text-primary hover:underline">
-                Learn more →
+                Learn more
               </button>
             </p>
           </div>
