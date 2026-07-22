@@ -483,7 +483,11 @@ pub async fn start_model(app: &AppHandle, model_id: &str) -> AppResult<()> {
             "-ngl",
             "99", // full GPU offload where available; ignored on CPU builds
             "-c",
-            "16384",
+            // 32k (the model's native window). The agent's system prompt (skills
+            // + tool schemas + schema KB) alone can be ~18k tokens, which
+            // overflowed a 16k window even on a one-word turn. 32k gives real
+            // headroom; the agent still compacts before this ceiling.
+            "32768",
             "--alias",
             model.name,
         ])

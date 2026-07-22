@@ -289,9 +289,10 @@ export class ProviderRegistry {
     const modelId = modelRef.slice(slash + 1);
     const fromCatalog = this.catalog[providerId]?.find((m) => m.id === modelId)?.context;
     if (fromCatalog) return fromCatalog;
-    // Local servers: builtin runs llama-server with -c 16384; Ollama defaults
-    // vary — 16k is a safe floor that triggers compaction before truncation.
-    return 16_000;
+    // Local servers: builtin runs llama-server with -c 32768; Ollama defaults
+    // vary. Report a hair under 32k so compaction fires before the engine's
+    // hard ceiling (a 400 "exceeds context size" otherwise).
+    return 31_000;
   }
 
   /** Whether the model accepts image input (unknown local models → false). */

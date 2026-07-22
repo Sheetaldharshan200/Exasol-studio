@@ -23,6 +23,7 @@ import {
   SlidersHorizontal,
   Table2,
   Trash2,
+  User,
   Wand2,
   Wrench,
   X,
@@ -35,7 +36,7 @@ import ReactMarkdown from "react-markdown";
 import { AgentMark, AgentLoader } from "@/components/studio/AgentMark";
 import { ModelPicker } from "@/features/assistant/ModelPicker";
 import { Conversation, ConversationContent } from "@/components/ai-elements/conversation";
-import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { PromptInputTools, PromptInputButton, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
@@ -1777,23 +1778,44 @@ function Bubble({
   onUserAction?: (action: "copy" | "revert" | "fork", id: string) => void;
 }) {
   if (message.role === "user") {
+    // Right-aligned accent bubble with a small avatar; actions on hover.
     return (
-      <Message from="user">
-        <MessageContent className="[overflow-wrap:anywhere] whitespace-pre-wrap break-words">
-          {splitFences(message.content).map((part, i) =>
-            part.code ? (
-              <pre
-                key={i}
-                className="my-1.5 overflow-x-auto rounded-md border border-border bg-background/60 px-2.5 py-1.5 font-mono text-[11.5px] leading-relaxed whitespace-pre"
+      <div className="group flex flex-col items-end gap-1 py-1.5">
+        <div className="flex max-w-[88%] items-start gap-2">
+          <div className="min-w-0 rounded-2xl rounded-br-sm bg-primary/12 px-3.5 py-2 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] whitespace-pre-wrap break-words">
+            {splitFences(message.content).map((part, i) =>
+              part.code ? (
+                <pre
+                  key={i}
+                  className="my-1.5 overflow-x-auto rounded-md border border-border/60 bg-background/50 px-2.5 py-1.5 font-mono text-[11.5px] leading-relaxed whitespace-pre"
+                >
+                  {part.text.replace(/^(?:```|''')[a-zA-Z0-9]*\n?/, "").replace(/(?:```|''')\s*$/, "")}
+                </pre>
+              ) : (
+                <span key={i}>{part.text}</span>
+              ),
+            )}
+          </div>
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
+            <User className="h-3.5 w-3.5" />
+          </span>
+        </div>
+        {message.attachments?.length ? (
+          <div className="mr-8 flex max-w-full flex-wrap justify-end gap-1">
+            {message.attachments.map((name) => (
+              <button
+                key={name}
+                type="button"
+                title={`Open ${name} in a tab`}
+                onClick={() => onOpenAttachmentName?.(name)}
+                className="max-w-[180px] truncate rounded-md border border-border bg-secondary/50 px-2 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
               >
-                {part.text.replace(/^(?:```|''')[a-zA-Z0-9]*\n?/, "").replace(/(?:```|''')\s*$/, "")}
-              </pre>
-            ) : (
-              <span key={i}>{part.text}</span>
-            ),
-          )}
-        </MessageContent>
-        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                {name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="mr-8 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {([
             ["copy", Copy, "Copy message"],
             ["revert", RotateCcw, "Revert to here — rewinds the chat (and the model's memory) to before this message"],
@@ -1810,44 +1832,32 @@ function Bubble({
             </button>
           ))}
         </div>
-        {message.attachments?.length ? (
-          <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
-            {message.attachments.map((name) => (
-              <button
-                key={name}
-                type="button"
-                title={`Open ${name} in a tab`}
-                onClick={() => onOpenAttachmentName?.(name)}
-                className="max-w-[180px] truncate rounded-md border border-border bg-secondary/50 px-2 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </Message>
+      </div>
     );
   }
-  if (message.error) {
-    return (
-      <Message from="assistant">
-        <MessageContent className="[overflow-wrap:anywhere] break-words text-destructive">
-          {message.content}
-        </MessageContent>
-      </Message>
-    );
-  }
+  // Assistant: Exa avatar on the left, clean prose flush beside it.
   return (
-    <Message from="assistant">
-      <MessageContent className="min-w-0 bg-transparent p-0">
-        <MessageResponse components={CHAT_MD_COMPONENTS} controls={{ table: false }}>
-          {cleanAssistant(message.content)}
-        </MessageResponse>
-        {message.streaming ? (
-          <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
-        ) : null}
-      </MessageContent>
-    </Message>
+    <div className="flex gap-2.5 py-1.5">
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+        <AgentMark className="h-3.5 w-3.5" active={message.streaming} />
+      </span>
+      <div className="min-w-0 flex-1 pt-0.5">
+        {message.error ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive [overflow-wrap:anywhere] break-words">
+            {message.content}
+          </div>
+        ) : (
+          <>
+            <MessageResponse components={CHAT_MD_COMPONENTS} controls={{ table: false }}>
+              {cleanAssistant(message.content)}
+            </MessageResponse>
+            {message.streaming ? (
+              <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-primary/70 align-middle" />
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
