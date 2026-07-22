@@ -3686,7 +3686,12 @@ export function ExasolStudio({
                 connectionName={connection?.profile.name ?? ""}
                 connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
                 editorTheme={editorTheme}
-                beforeMount={defineMonacoThemes}
+                beforeMount={(m) => {
+                  defineMonacoThemes(m);
+                  // Register Exasol autocompletion on the shared monaco (guarded
+                  // internally) so notebook SQL cells get completions too.
+                  registerExasolCompletion(m, () => sqlCatalogRef.current);
+                }}
                 onConnectDb={openConnect}
                 onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
                 onAsk={(text) => {

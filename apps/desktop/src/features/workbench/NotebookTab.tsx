@@ -1,10 +1,11 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
   ArrowUp,
+  BarChart3,
   Bold,
   ChevronDown,
   Code,
@@ -21,6 +22,7 @@ import {
   Share2,
   Sparkles,
   SquareCode,
+  Table as TableIcon,
   Text as TextIcon,
   Trash2,
   Waypoints,
@@ -69,6 +71,8 @@ const mkCell = (type: CellType = "sql", src = ""): Cell => ({
 
 export type NotebookConn = { id: string; name: string; host: string };
 
+const NB_KEY = "studio.notebook.v1";
+
 /**
  * The data notebook for analysts & scientists: connect one or more databases
  * (including cross-database virtual schemas), then explore with SQL + Markdown
@@ -94,7 +98,24 @@ export function NotebookTab({
   onAddVirtualSchema: () => void;
   onAsk: (text: string) => void;
 }) {
-  const [cells, setCells] = useState<Cell[]>(() => [mkCell("sql")]);
+  // Persist the notebook (cell type + source only) across restarts.
+  const [cells, setCells] = useState<Cell[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(NB_KEY) ?? "[]") as { type: CellType; src: string }[];
+      if (Array.isArray(raw) && raw.length) return raw.map((c) => mkCell(c.type, c.src));
+    } catch {
+      /* fresh */
+    }
+    return [mkCell("sql")];
+  });
+  useEffect(() => {
+    const save = cells.map((c) => ({ type: c.type, src: c.src }));
+    try {
+      localStorage.setItem(NB_KEY, JSON.stringify(save));
+    } catch {
+      /* quota */
+    }
+  }, [cells]);
   const execCount = useRef(0);
   const runningAll = useRef(false);
 
@@ -265,6 +286,7 @@ function CellView({
   onAsk: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [resultView, setResultView] = useState<"table" | "chart">("table");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const isSql = cell.type === "sql";
   const isMd = cell.type === "markdown";
@@ -293,10 +315,10 @@ function CellView({
     <div className="group/cell relative">
       <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
 
-      <div className={cn("overflow-hidden rounded-xl border transition-colors", rendered ? "border-transparent hover:border-border" : "border-border bg-panel/40")}>
+      <div className={cn("overflow-hidden rounded-lg transition-colors", rendered ? "hover:bg-secondary/20" : "bg-secondary/25")}>
         {/* Cell header: type dropdown (SQL / Markdown / Mermaid) + count. */}
         {!rendered ? (
-          <div className="flex items-center gap-2 border-b border-border/60 px-2 py-1">
+          <div className="flex items-center gap-2 px-2 pt-1.5">
             <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
               <SelectTrigger size="sm" className="h-6 w-[124px] text-[11.5px]">
                 <SelectValue />
@@ -375,6 +397,11 @@ function CellView({
                     scrollbar: { vertical: "auto", horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
                     padding: { top: 6, bottom: 6 },
                     wordWrap: "on",
+                    // Ensure Exasol autocompletion actually pops in cells.
+                    quickSuggestions: { other: true, comments: false, strings: false },
+                    suggestOnTriggerCharacters: true,
+                    tabCompletion: "on",
+                    fixedOverflowWidgets: true,
                   }}
                 />
               </div>
@@ -394,11 +421,11 @@ function CellView({
           </div>
 
           <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
-            <button onClick={onRun} disabled={cell.running} title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-              {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5" />}
+            <button onClick={onRun} disabled={cell.running} title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
+              {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5 fill-current" />}
             </button>
             {isSql ? (
-              <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-syntax-function hover:bg-secondary">
+              <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
               </button>
             ) : null}
@@ -409,18 +436,35 @@ function CellView({
         </div>
 
         {isSql && cell.error ? (
-          <div className="border-t border-border bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">{cell.error}</div>
+          <div className="mx-2 mb-2 rounded-md bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">{cell.error}</div>
         ) : isSql && cell.result ? (
-          <div className="border-t border-border">
-            <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground">
+          <div className="px-1 pb-1">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
               <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", collapsed && "-rotate-90")} />
                 {cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
               </button>
+              {cell.result.kind === "resultSet" && cell.result.rows.length > 0 ? (
+                <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
+                  {(["table", "chart"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setResultView(v)}
+                      className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px] capitalize", resultView === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {v === "table" ? <TableIcon className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />} {v}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
             </div>
             {!collapsed && cell.result.kind === "resultSet" ? (
-              <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
+              resultView === "chart" ? (
+                <ResultChart columns={cell.result.columns} rows={cell.result.rows} />
+              ) : (
+                <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
+              )
             ) : null}
           </div>
         ) : null}
@@ -438,6 +482,70 @@ function InsertBar({ onSql, onMd, className }: { onSql: () => void; onMd: () => 
       <button onClick={onSql} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground"><Plus className="h-2.5 w-2.5" /> SQL</button>
       <button onClick={onMd} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground"><Plus className="h-2.5 w-2.5" /> Text</button>
       <span className="h-px flex-1 bg-border/60" />
+    </div>
+  );
+}
+
+/** Quick bar/line chart of a result set: first non-numeric column = category
+ *  (x), numeric columns = series. Lazy-loads echarts, theme-aware. */
+function ResultChart({ columns, rows }: { columns: { name: string; typeName: string }[]; rows: unknown[][] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [kind, setKind] = useState<"bar" | "line">("bar");
+
+  const isNum = (v: unknown) => v !== null && v !== "" && !Number.isNaN(Number(v));
+  const numericCols = columns
+    .map((c, i) => ({ c, i }))
+    .filter(({ i }) => rows.slice(0, 20).every((r) => r[i] === null || isNum(r[i])) && rows.some((r) => isNum(r[i])));
+  const catIdx = columns.findIndex((_, i) => !numericCols.some((n) => n.i === i));
+  const xIdx = catIdx >= 0 ? catIdx : 0;
+
+  useEffect(() => {
+    if (!ref.current || !numericCols.length) return;
+    let chart: import("echarts").ECharts | null = null;
+    let disposed = false;
+    void import("echarts").then((echarts) => {
+      if (disposed || !ref.current) return;
+      const dark = document.documentElement.classList.contains("dark");
+      chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
+      const cats = rows.slice(0, 200).map((r) => String(r[xIdx] ?? ""));
+      const palette = ["#5fc33b", "#4a9fd4", "#e0a63a", "#c65fd0", "#e05f5f", "#2bb8a3"];
+      chart.setOption({
+        color: palette,
+        grid: { top: 24, right: 16, bottom: 40, left: 52 },
+        tooltip: { trigger: "axis" },
+        legend: { top: 0, textStyle: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, type: "scroll" },
+        xAxis: { type: "category", data: cats, axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10, rotate: cats.length > 8 ? 30 : 0 } },
+        yAxis: { type: "value", axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, splitLine: { lineStyle: { color: dark ? "#27272a" : "#e4e4e7" } } },
+        series: numericCols.map(({ c, i }) => ({
+          name: c.name,
+          type: kind,
+          data: rows.slice(0, 200).map((r) => (isNum(r[i]) ? Number(r[i]) : null)),
+          smooth: kind === "line",
+          barMaxWidth: 28,
+        })),
+      });
+    });
+    const ro = new ResizeObserver(() => chart?.resize());
+    ro.observe(ref.current);
+    return () => {
+      disposed = true;
+      ro.disconnect();
+      chart?.dispose();
+    };
+  }, [columns, rows, kind, xIdx, numericCols.length]);
+
+  if (!numericCols.length) {
+    return <p className="px-3 py-6 text-center text-[12px] text-muted-foreground">No numeric columns to chart.</p>;
+  }
+  return (
+    <div className="rounded-md bg-background/40 p-1">
+      <div className="flex items-center gap-0.5 px-1 pb-0.5">
+        {(["bar", "line"] as const).map((k) => (
+          <button key={k} onClick={() => setKind(k)} className={cn("rounded px-1.5 py-0.5 text-[10.5px] capitalize", kind === k ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>{k}</button>
+        ))}
+        <span className="ml-1 text-[10px] text-muted-foreground/70">x: {columns[xIdx]?.name}</span>
+      </div>
+      <div ref={ref} style={{ height: 300 }} className="w-full" />
     </div>
   );
 }

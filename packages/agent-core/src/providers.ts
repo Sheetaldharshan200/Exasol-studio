@@ -46,6 +46,7 @@ const CLOUD_PROVIDERS: { id: string; name: string; envKey: string }[] = [
   { id: "anthropic", name: "Anthropic", envKey: "ANTHROPIC_API_KEY" },
   { id: "openai", name: "OpenAI", envKey: "OPENAI_API_KEY" },
   { id: "google", name: "Google", envKey: "GOOGLE_GENERATIVE_AI_API_KEY" },
+  { id: "groq", name: "Groq", envKey: "GROQ_API_KEY" },
   { id: "openrouter", name: "OpenRouter", envKey: "OPENROUTER_API_KEY" },
 ];
 
@@ -63,6 +64,12 @@ const EMBEDDED_CATALOG: Record<string, ModelInfo[]> = {
   google: [
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", context: 1_000_000, toolCall: true, reasoning: true, image: true },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", context: 1_000_000, toolCall: true, image: true },
+  ],
+  groq: [
+    { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B (Groq)", context: 131_072, toolCall: true },
+    { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B Instant (Groq)", context: 131_072, toolCall: true },
+    { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", context: 131_072, toolCall: true, reasoning: true },
+    { id: "moonshotai/kimi-k2-instruct", name: "Kimi K2 (Groq)", context: 131_072, toolCall: true },
   ],
   openrouter: [],
 };
@@ -384,6 +391,14 @@ export class ProviderRegistry {
           apiKey: pc.apiKey ?? process.env.OPENROUTER_API_KEY ?? "not-needed",
           temperature,
           configuration: { baseURL: "https://openrouter.ai/api/v1" },
+        });
+      case "groq":
+        // Groq is OpenAI-compatible.
+        return new ChatOpenAI({
+          model: modelId,
+          apiKey: pc.apiKey ?? process.env.GROQ_API_KEY ?? "not-needed",
+          temperature,
+          configuration: { baseURL: "https://api.groq.com/openai/v1" },
         });
       case "builtin":
       case "ollama":

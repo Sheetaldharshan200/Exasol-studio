@@ -42,6 +42,7 @@ const CLOUD_META: Record<string, { hint: string; keyUrl: string }> = {
   anthropic: { hint: "Claude models", keyUrl: "https://console.anthropic.com/settings/keys" },
   openai: { hint: "GPT models", keyUrl: "https://platform.openai.com/api-keys" },
   google: { hint: "Gemini models", keyUrl: "https://aistudio.google.com/apikey" },
+  groq: { hint: "Fast Llama/Kimi/GPT-OSS inference", keyUrl: "https://console.groq.com/keys" },
   openrouter: { hint: "One key, many models", keyUrl: "https://openrouter.ai/keys" },
 };
 

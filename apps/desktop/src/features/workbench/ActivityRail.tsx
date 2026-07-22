@@ -31,17 +31,19 @@ export type ActivityId =
   | "bi"
   | "mcp";
 
+// Ordered by how often they're used: everyday data work first (databases,
+// files, notebook, visualizer), then project tools, then occasional ones.
 export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
   { id: "databases", label: "Databases", icon: Database },
   { id: "files", label: "Files", icon: FileCode2 },
-  { id: "favorites", label: "Favorites", icon: Star },
-  { id: "visualizer", label: "Visualizer", icon: Eye },
-  { id: "git", label: "Source Control", icon: GitBranch },
   { id: "notebook", label: "Notebook", icon: NotebookPen },
+  { id: "visualizer", label: "Visualizer", icon: Eye },
+  { id: "bi", label: "Dashboards", icon: BarChart3 },
+  { id: "git", label: "Source Control", icon: GitBranch },
+  { id: "favorites", label: "Favorites", icon: Star },
   { id: "skills", label: "Skills", icon: Sparkles },
   { id: "marketplace", label: "Marketplace", icon: Store },
   { id: "guides", label: "Guides & Docs", icon: BookOpen },
-  { id: "bi", label: "Dashboards", icon: BarChart3 },
 ];
 
 // Items that open a full-screen tab (highlighted by the active tab's view,
