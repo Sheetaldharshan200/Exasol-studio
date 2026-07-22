@@ -25,6 +25,7 @@ import {
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
+import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
 import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
 import {
   Select,
@@ -62,10 +63,13 @@ type Cell = {
   error: string | null;
   count: number | null;
   editing: boolean;
+  /** Chart type from an imported dashboard panel — the cell renders this
+   *  visualization (not just a table) once it runs. */
+  chart?: string;
 };
 
 let seq = 0;
-const mkCell = (type: CellType = "sql", src = ""): Cell => ({
+const mkCell = (type: CellType = "sql", src = "", chart?: string): Cell => ({
   id: `c${++seq}-${Math.random().toString(36).slice(2, 6)}`,
   type,
   src,
@@ -75,6 +79,7 @@ const mkCell = (type: CellType = "sql", src = ""): Cell => ({
   count: null,
   // Text/diagram cells are preview-first once they have content; SQL always edits.
   editing: type === "sql" ? true : !src,
+  chart,
 });
 
 export type NotebookConn = { id: string; name: string; host: string };
@@ -83,7 +88,7 @@ const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
 const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
 const NB_ACTIVE_KEY = "studio.notebooks.active";
 
-type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string }[]; updatedAt: number };
+type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string }[]; updatedAt: number };
 
 /** Load all notebooks, migrating the legacy single notebook on first run. */
 function loadNotebooks(): NotebookDoc[] {
@@ -139,7 +144,7 @@ export function NotebookTab({
   const activeBook = books.find((b) => b.id === activeId) ?? books[0];
   const [cells, setCells] = useState<Cell[]>(() => {
     const b = loadNotebooks().find((x) => x.id === (localStorage.getItem(NB_ACTIVE_KEY) ?? "")) ?? loadNotebooks()[0];
-    return b.cells.length ? b.cells.map((c) => mkCell(c.type, c.src)) : [mkCell("sql")];
+    return b.cells.length ? b.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")];
   });
   const [renamingBook, setRenamingBook] = useState<string | null>(null);
 
@@ -149,7 +154,7 @@ export function NotebookTab({
     const t = setTimeout(() => {
       setBooks((bs) => {
         const next = bs.map((b) =>
-          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src })), updatedAt: Date.now() } : b,
+          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
         );
         try {
           localStorage.setItem(NBS_KEY, JSON.stringify(next));
@@ -167,10 +172,10 @@ export function NotebookTab({
     if (id === activeId) return;
     setBooks((bs) => {
       const next = bs.map((b) =>
-        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src })), updatedAt: Date.now() } : b,
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
       );
       const target = next.find((b) => b.id === id);
-      setCells(target && target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src)) : [mkCell("sql")]);
+      setCells(target && target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
       try {
         localStorage.setItem(NBS_KEY, JSON.stringify(next));
       } catch {
@@ -208,7 +213,7 @@ export function NotebookTab({
         const target = next[0];
         setActiveId(target.id);
         localStorage.setItem(NB_ACTIVE_KEY, target.id);
-        setCells(target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src)) : [mkCell("sql")]);
+        setCells(target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
       }
       try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
       return next;
@@ -383,7 +388,11 @@ export function NotebookTab({
         if (p.viz.type === "markdown") {
           imported.push(mkCell("markdown", p.viz.content));
         } else if (p.query?.sql?.trim()) {
-          imported.push(mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`));
+          // Carry the panel's visualization, so the cell renders the CHART,
+          // not just the query text.
+          const chart =
+            p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
+          imported.push(mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`, chart));
         }
       }
       if (imported.length <= 1) {
@@ -391,7 +400,15 @@ export function NotebookTab({
         return;
       }
       setCells((cs) => [...cs, ...imported]);
-      notify("success", "Dashboard imported", `${imported.length - 1} panel${imported.length === 2 ? "" : "s"} from “${dash.title}” added as cells.`);
+      // Run the imported panels right away so the charts appear — the point of
+      // importing is the visuals, not the SQL.
+      if (profileId) {
+        const ids = imported.filter((c) => c.type === "sql").map((c) => c.id);
+        setTimeout(() => { void (async () => { for (const cid of ids) await runCell(cid); })(); }, 50);
+        notify("success", "Dashboard imported", `${imported.length - 1} panel${imported.length === 2 ? "" : "s"} from “${dash.title}” rendering now.`);
+      } else {
+        notify("warning", "Dashboard imported", "Connect to a database and press Run all to render the panels.");
+      }
     } catch (e) {
       notify("warning", "Import failed", errorMessage(e));
     }
@@ -596,7 +613,9 @@ const CellView = memo(function CellView({
   onGrip: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [resultView, setResultView] = useState<"table" | "chart">("table");
+  const [resultView, setResultView] = useState<"table" | "chart">(
+    cell.chart && cell.chart !== "table" && cell.chart !== "kpi" ? "chart" : "table",
+  );
   const [mdFocused, setMdFocused] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const isSql = cell.type === "sql";
@@ -839,7 +858,13 @@ const CellView = memo(function CellView({
             </div>
             {!collapsed && cell.result.kind === "resultSet" ? (
               resultView === "chart" ? (
-                <ResultChart columns={cell.result.columns} rows={cell.result.rows} />
+                cell.chart && ["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"].includes(cell.chart) ? (
+                  <div className="h-64 border-t border-border/60">
+                    <ShadcnChartPanel chart={cell.chart as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"} result={cell.result} />
+                  </div>
+                ) : (
+                  <ResultChart columns={cell.result.columns} rows={cell.result.rows} />
+                )
               ) : (
                 <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
               )
