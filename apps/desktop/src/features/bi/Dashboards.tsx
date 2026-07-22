@@ -641,7 +641,14 @@ function Panel({
     if (!profileId || panel.viz.type === "markdown" || !sql.trim()) return;
     const base = sql.trim().replace(/;\s*$/, "");
     // One extra row tells us whether a next page exists (no COUNT round-trip).
-    const effSql = isTable ? `SELECT * FROM (\n${base}\n) LIMIT ${TABLE_PAGE + 1} OFFSET ${page * TABLE_PAGE}` : base;
+    // Exasol rejects OFFSET without an ORDER BY, so only page beyond the first
+    // when we can give the wrapper a deterministic order (ORDER BY 1). Page 0
+    // uses a bare LIMIT — no OFFSET, no forced sort.
+    const effSql = isTable
+      ? page > 0
+        ? `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${TABLE_PAGE + 1} OFFSET ${page * TABLE_PAGE}`
+        : `SELECT * FROM (\n${base}\n) LIMIT ${TABLE_PAGE + 1}`
+      : base;
     const cap = isTable ? TABLE_PAGE + 1 : 5000;
     if (inFlight.current && effSql === queryKeyRef.current) return; // refresh while busy: drop tick
     queryKeyRef.current = effSql;

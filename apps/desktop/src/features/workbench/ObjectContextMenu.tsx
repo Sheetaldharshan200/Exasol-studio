@@ -97,16 +97,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Set as default schema", kind: "run", sql: `OPEN SCHEMA ${s};` },
         ...(virtual
           ? ([
-              {
-                label: "Refresh…",
-                kind: "action",
-                action: {
-                  title: `Refresh virtual schema ${ctx.name}`,
-                  verb: "Refresh",
-                  message: "Re-read the remote metadata for this virtual schema.",
-                  buildSql: () => `ALTER VIRTUAL SCHEMA ${s} REFRESH;`,
-                },
-              },
+              { label: "Refresh metadata", kind: "run", sql: `ALTER VIRTUAL SCHEMA ${s} REFRESH;` },
             ] as Item[])
           : ([
               {
@@ -125,27 +116,10 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
               },
             ] as Item[])),
         { sep: true },
+        { label: "Rename — generate SQL", kind: "gen", sql: `RENAME SCHEMA ${s} TO ${q(undefined, ctx.name + "_NEW")};` },
+        { label: "Comment — generate SQL", kind: "gen", sql: `COMMENT ON SCHEMA ${s} IS '/* description */';` },
         {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename schema ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `RENAME SCHEMA ${s} TO ${q(undefined, v.name)};`,
-          },
-        },
-        {
-          label: "Comment…",
-          kind: "action",
-          action: {
-            title: `Comment on ${ctx.name}`,
-            verb: "Save",
-            fields: [{ key: "comment", label: "Comment", type: "textarea" }],
-            buildSql: (v) => `COMMENT ON SCHEMA ${s} IS '${lit(v.comment)}';`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop…",
           kind: "action",
           danger: true,
@@ -165,37 +139,13 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
       const t = q(schema, ctx.table ?? "");
       const c = `"${ctx.name}"`;
       return [
+        // Column edits live in the table's Details → Columns editor; here we
+        // only generate SQL (no dialog).
+        { label: "Rename — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} RENAME COLUMN ${c} TO "${ctx.name}_NEW";` },
+        { label: "Change type — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} MODIFY COLUMN ${c} VARCHAR(200);` },
+        { label: "Comment — generate SQL", kind: "gen", sql: `COMMENT ON COLUMN ${t}.${c} IS '/* description */';` },
         {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename column ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `ALTER TABLE ${t} RENAME COLUMN ${c} TO "${v.name}";`,
-          },
-        },
-        {
-          label: "Change type…",
-          kind: "action",
-          action: {
-            title: `Change type of ${ctx.name}`,
-            verb: "Apply",
-            fields: [{ key: "type", label: "New data type", value: "VARCHAR(200)", required: true }],
-            buildSql: (v) => `ALTER TABLE ${t} MODIFY COLUMN ${c} ${v.type};`,
-          },
-        },
-        {
-          label: "Comment…",
-          kind: "action",
-          action: {
-            title: `Comment on ${ctx.name}`,
-            verb: "Save",
-            fields: [{ key: "comment", label: "Comment", type: "textarea" }],
-            buildSql: (v) => `COMMENT ON COLUMN ${t}.${c} IS '${lit(v.comment)}';`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop column…",
           kind: "action",
           danger: true,
@@ -214,49 +164,14 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
     case "user": {
       const u = q(undefined, ctx.name);
       return [
+        // Roles & privileges are managed in the user's Details tab.
+        { label: "Open details (roles, privileges)", kind: "nav", navTab: "roles" },
+        { sep: true },
+        { label: "Change password — generate SQL", kind: "gen", sql: `ALTER USER ${u} IDENTIFIED BY "new_password";` },
+        { label: "Rename — generate SQL", kind: "gen", sql: `RENAME USER ${u} TO ${q(undefined, ctx.name + "_NEW")};` },
+        { label: "Set consumer group — generate SQL", kind: "gen", sql: `ALTER USER ${u} SET CONSUMER_GROUP = MEDIUM;` },
         {
-          label: "Change password…",
-          kind: "action",
-          action: {
-            title: `Change password for ${ctx.name}`,
-            verb: "Update",
-            fields: [{ key: "pw", label: "New password", type: "password", required: true }],
-            buildSql: (v) => `ALTER USER ${u} IDENTIFIED BY "${v.pw}";`,
-          },
-        },
-        {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename user ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `RENAME USER ${u} TO ${q(undefined, v.name)};`,
-          },
-        },
-        {
-          label: "Set consumer group…",
-          kind: "action",
-          action: {
-            title: `Consumer group for ${ctx.name}`,
-            verb: "Apply",
-            fields: [
-              {
-                key: "grp",
-                label: "Consumer group",
-                type: "select",
-                value: "MEDIUM",
-                options: [
-                  { value: "LOW", label: "LOW" },
-                  { value: "MEDIUM", label: "MEDIUM" },
-                  { value: "HIGH", label: "HIGH" },
-                ],
-              },
-            ],
-            buildSql: (v) => `ALTER USER ${u} SET CONSUMER_GROUP = ${v.grp};`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop user…",
           kind: "action",
           danger: true,
@@ -275,17 +190,9 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
     case "role": {
       const r = q(undefined, ctx.name);
       return [
+        { label: "Grant to… — generate SQL", kind: "gen", sql: `GRANT ${r} TO GRANTEE_NAME;` },
         {
-          label: "Grant role…",
-          kind: "action",
-          action: {
-            title: `Grant ${ctx.name}`,
-            verb: "Grant",
-            fields: [{ key: "grantee", label: "Grant to (user or role)", required: true }],
-            buildSql: (v) => `GRANT ${r} TO ${q(undefined, v.grantee)};`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop role…",
           kind: "action",
           danger: true,
@@ -303,22 +210,9 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
     case "connection": {
       const cn = q(undefined, ctx.name);
       return [
+        { label: "Alter — generate SQL", kind: "gen", sql: `ALTER CONNECTION ${cn} TO 'host:port' USER 'user' IDENTIFIED BY 'password';` },
         {
-          label: "Alter connection…",
-          kind: "action",
-          action: {
-            title: `Alter connection ${ctx.name}`,
-            verb: "Save",
-            fields: [
-              { key: "to", label: "Target (host:port / URL)", required: true },
-              { key: "user", label: "User", placeholder: "optional" },
-              { key: "pw", label: "Password", type: "password", placeholder: "optional" },
-            ],
-            buildSql: (v) =>
-              `ALTER CONNECTION ${cn} TO '${lit(v.to)}'${v.user ? ` USER '${lit(v.user)}' IDENTIFIED BY '${lit(v.pw)}'` : ""};`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop connection…",
           kind: "action",
           danger: true,
@@ -338,17 +232,9 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
       return [
         { label: "Execute", kind: "run", sql: `EXECUTE SCRIPT ${s};` },
         { label: "Generate call", kind: "gen", sql: `EXECUTE SCRIPT ${s}();` },
+        { label: "Rename — generate SQL", kind: "gen", sql: `RENAME SCRIPT ${s} TO ${q(schema, ctx.name + "_NEW")};` },
         {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename script ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `RENAME SCRIPT ${s} TO ${q(schema, v.name)};`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop…",
           kind: "action",
           danger: true,
@@ -367,17 +253,9 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
       const f = q(schema, ctx.name);
       return [
         { label: "Generate call", kind: "gen", sql: `SELECT ${f}();` },
+        { label: "Rename — generate SQL", kind: "gen", sql: `RENAME FUNCTION ${f} TO ${q(schema, ctx.name + "_NEW")};` },
         {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename function ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `RENAME FUNCTION ${f} TO ${q(schema, v.name)};`,
-          },
-        },
-        {
+          // Destructive → keep the confirmation model.
           label: "Drop…",
           kind: "action",
           danger: true,
