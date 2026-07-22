@@ -213,12 +213,22 @@ function highlightInput(text: string): React.ReactNode {
     if (part.code) {
       nodes.push(
         part.block ? (
-          <span
-            key={`code-${idx}`}
-            className="-mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-wrap break-words rounded-md bg-secondary px-1 text-syntax-type shadow-[inset_2px_0_0_0_var(--primary)] ring-1 ring-border"
-          >
-            {part.text}
-          </span>
+          // The ''' / ``` markers stay in the text (the textarea needs them to
+          // know the block's bounds) but render invisible — the user sees just
+          // a clean box with their code in the normal text color.
+          (() => {
+            const m = /^(```|''')([a-zA-Z0-9_-]*)([\s\S]*?)(```|''')?$/.exec(part.text);
+            return (
+              <span
+                key={`code-${idx}`}
+                className="-mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-wrap break-words rounded-md bg-secondary px-1 shadow-[inset_2px_0_0_0_var(--primary)] ring-1 ring-border"
+              >
+                <span className="text-transparent">{(m?.[1] ?? "") + (m?.[2] ?? "")}</span>
+                {m?.[3] ?? part.text}
+                <span className="text-transparent">{m?.[4] ?? ""}</span>
+              </span>
+            );
+          })()
         ) : (
           <span key={`code-${idx}`} className="rounded-sm bg-primary/15 text-syntax-type ring-1 ring-primary/25">
             {part.text}
