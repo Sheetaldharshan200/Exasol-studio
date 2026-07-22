@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
+import { ThemeCustomizer } from "@/components/studio/ThemeCustomizer";
 import { useTheme } from "@/components/theme/theme-provider";
 import { Input } from "@/components/ui/input";
 import {
@@ -487,6 +488,7 @@ function TitleBar({
           </span>
         ) : null}
         <Notifications />
+        <ThemeCustomizer />
         <ThemeToggle className="h-6 w-6 rounded-md hover:bg-secondary" />
         {connected ? (
           <button

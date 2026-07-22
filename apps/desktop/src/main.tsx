@@ -5,8 +5,10 @@ import "@/app/global.css";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyWindowControlsInset } from "@/lib/platform";
+import { applyThemePreset } from "@/lib/theme-presets";
 
 applyWindowControlsInset();
+applyThemePreset(); // restore the user's saved color preset + radius
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

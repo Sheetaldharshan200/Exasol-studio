@@ -3,6 +3,7 @@ import { Search, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { ipc, isTauri } from "@/lib/ipc";
 import { openAiProvidersWindow } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
+import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
 
 type SettingValue = string | number | boolean;
 
@@ -406,6 +407,17 @@ export function SettingsWindow() {
                     ))}
                   </div>
                   <SettingPreview catKey={current.key} values={values} />
+                  {current.key === "appearance" ? (
+                    <div className="mt-5">
+                      <div className="text-[13px] text-foreground">Color theme</div>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Preset palettes and corner radius — applies to light and dark mode. Also available from the palette button in the title bar.
+                      </p>
+                      <div className="mt-2 overflow-hidden rounded-xl border border-border">
+                        <ThemePresetPicker />
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
