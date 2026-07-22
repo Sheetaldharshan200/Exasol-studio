@@ -1859,6 +1859,32 @@ export function ExasolStudio({
     }
   }
 
+  // Run structure-editor DDL directly ("Confirm & Save"). Stops at the first
+  // failing statement and reports it so the editor can show it inline; refreshes
+  // the tree + catalog on success so the new shape shows up.
+  async function commitDdl(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
+    // The Details tab may belong to a connection other than the active one.
+    const conn = connections.find((c) => c.profile.id === activeTab.objectProfileId) ?? connection;
+    if (!conn || !statements.length) return { ok: false, error: "No active connection." };
+    try {
+      for (const st of statements) {
+        const r = await ipc.executeSql(conn.profile.id, conn.profile.name, st, 1, false);
+        const errored = r.results.find((x) => x.error);
+        if (errored?.error) {
+          loadHistory();
+          return { ok: false, error: errored.error, failedSql: st };
+        }
+      }
+      loadHistory();
+      refreshSqlCatalog();
+      setTreeKeys((k) => ({ ...k, [conn.profile.id]: (k[conn.profile.id] ?? 0) + 1 }));
+      window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: conn.profile.id } }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) };
+    }
+  }
+
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
   async function runDdl(profileId: string, sql: string) {
@@ -3826,6 +3852,8 @@ export function ExasolStudio({
                 connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
                 object={activeTab.objectRef}
                 onOpenData={(sql) => void openBuiltSql(sql, true)}
+                onOpenSql={openSqlTab}
+                onApplyDdl={commitDdl}
               />
             </div>
           ) : isSpecialTab && connection ? (

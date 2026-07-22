@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Boxes, Columns3, Database, FileCode2, GraduationCap, HardDrive, Info, KeyRound, Loader2, Play, Shield, Table2, User } from "lucide-react";
+import { Boxes, Columns3, Database, FileCode2, GraduationCap, HardDrive, Info, KeyRound, Loader2, Pencil, Play, Shield, Table2, User } from "lucide-react";
 import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type ObjectGrant, type ObjectSize, type UserDetails } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { TableStructureEditor } from "./TableStructureEditor";
 
 export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
 
@@ -41,12 +42,18 @@ export function ObjectDetailPanel({
   connectionName,
   object,
   onOpenData,
+  onOpenSql,
+  onApplyDdl,
 }: {
   profileId: string;
   connectionName: string;
   object: ObjectRef;
   /** Run SELECT * against this object in a new query tab. */
   onOpenData: (sql: string) => void;
+  /** Open DDL in a new query tab (structure editor "Review SQL"). */
+  onOpenSql?: (sql: string, title?: string) => void;
+  /** Run DDL directly (structure editor "Confirm & Save"); returns first error. */
+  onApplyDdl?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
 }) {
   const isTable = object.type === "table" || object.type === "view";
   const isUser = object.type === "user";
@@ -59,6 +66,9 @@ export function ObjectDetailPanel({
   const [size, setSize] = useState<ObjectSize | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingStructure, setEditingStructure] = useState(false);
+  // Bumped after a successful ALTER so the panel re-reads the table's shape.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Grants + Size (schema & table/view) load lazily on first view.
   useEffect(() => {
@@ -102,7 +112,7 @@ export function ObjectDetailPanel({
     return () => {
       alive = false;
     };
-  }, [profileId, object.type, object.schema, object.name, isTable, isUser]);
+  }, [profileId, object.type, object.schema, object.name, isTable, isUser, reloadKey]);
 
   const subtabs: SubTab[] = isUser
     ? [
@@ -232,26 +242,53 @@ export function ObjectDetailPanel({
             }
           />
         ) : tab === "columns" ? (
-          <table className="w-full border-collapse border border-border text-[12px]">
-            <thead>
-              <tr className="bg-secondary text-left">
-                <th className="border border-border px-3 py-1.5">Column</th>
-                <th className="border border-border px-3 py-1.5">Type</th>
-                <th className="border border-border px-3 py-1.5">Nullable</th>
-                <th className="border border-border px-3 py-1.5">Default</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono">
-              {cols.map((c) => (
-                <tr key={c.name} className="even:bg-secondary/30">
-                  <td className="border border-border px-3 py-1 text-foreground">{c.name}</td>
-                  <td className="border border-border px-3 py-1 text-muted-foreground">{c.dataType}</td>
-                  <td className="border border-border px-3 py-1 text-muted-foreground">{c.nullable === false ? "NOT NULL" : "NULL"}</td>
-                  <td className="border border-border px-3 py-1 text-muted-foreground">{c.default ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          editingStructure && object.type === "table" ? (
+            <TableStructureEditor
+              schema={object.schema}
+              table={object.name}
+              columns={cols}
+              constraints={cons}
+              onOpenSql={onOpenSql}
+              onApply={onApplyDdl}
+              onDone={() => { setEditingStructure(false); setReloadKey((k) => k + 1); }}
+            />
+          ) : (
+            <div className="flex h-full min-h-0 flex-col">
+              {object.type === "table" && (onOpenSql || onApplyDdl) ? (
+                <div className="mb-2 flex shrink-0 items-center justify-end">
+                  <button
+                    onClick={() => setEditingStructure(true)}
+                    className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary"
+                    title="Change columns, types, and primary key"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit structure
+                  </button>
+                </div>
+              ) : null}
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className="w-full border-collapse border border-border text-[12px]">
+                  <thead>
+                    <tr className="bg-secondary text-left">
+                      <th className="border border-border px-3 py-1.5">Column</th>
+                      <th className="border border-border px-3 py-1.5">Type</th>
+                      <th className="border border-border px-3 py-1.5">Nullable</th>
+                      <th className="border border-border px-3 py-1.5">Default</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono">
+                    {cols.map((c) => (
+                      <tr key={c.name} className="even:bg-secondary/30">
+                        <td className="border border-border px-3 py-1 text-foreground">{c.name}</td>
+                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.dataType}</td>
+                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.nullable === false ? "NOT NULL" : "NULL"}</td>
+                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.default ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
         ) : tab === "keys" ? (
           cons.length ? (
             <table className="w-full border-collapse border border-border text-[12px]">
