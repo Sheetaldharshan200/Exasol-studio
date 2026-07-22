@@ -215,7 +215,7 @@ function highlightInput(text: string): React.ReactNode {
         part.block ? (
           <span
             key={`code-${idx}`}
-            className="-mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-wrap break-words rounded-md bg-secondary/80 px-1 text-syntax-type ring-1 ring-border"
+            className="-mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-wrap break-words rounded-md bg-secondary px-1 text-syntax-type shadow-[inset_2px_0_0_0_var(--primary)] ring-1 ring-border"
           >
             {part.text}
           </span>
@@ -872,21 +872,24 @@ export function AssistantPanel({
     void agent.setDefaultModel(ref).catch(() => undefined);
   }
 
-  /** Typing a CLOSED fence (```sql … ``` or ''' … ''') in the composer turns it
-   *  into the monospace code-context chip above the input — a real code block,
-   *  kept out of the prose. The open fence is only tinted until it's closed. */
-  function absorbFences(next: string): string {
-    const m = /(```|''')([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)\1/.exec(next);
-    if (!m) return next;
-    const [whole, , lang, body] = m;
-    const content = body.replace(/\n$/, "");
-    if (content.trim()) {
-      setCodeContext((prev) =>
-        prev ? { ...prev, content: `${prev.content}\n\n${content}` } : { lang: lang || "sql", content },
-      );
-      setCodeExpanded(false);
+  /** Slack-style code blocks in the composer: the instant an open fence
+   *  (``` or ''', optional language) is typed at the end of the input, the
+   *  closing fence is auto-inserted and the caret lands inside — so the block
+   *  box appears immediately and the user just types the code. */
+  function handleComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const next = e.target.value;
+    const count = (next.match(/```|'''/g) ?? []).length;
+    const prevCount = (input.match(/```|'''/g) ?? []).length;
+    if (count % 2 === 1 && count === prevCount + 1 && e.target.selectionStart === next.length) {
+      const m = /(```|''')([a-zA-Z0-9_-]*)$/.exec(next);
+      if (m) {
+        setInput(`${next}\n\n${m[1]}`);
+        const pos = next.length + 1; // the empty line between the fences
+        requestAnimationFrame(() => inputRef.current?.setSelectionRange(pos, pos));
+        return;
+      }
     }
-    return (next.slice(0, m.index) + next.slice(m.index + whole.length)).replace(/\n{3,}/g, "\n\n");
+    setInput(next);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -912,10 +915,12 @@ export function AssistantPanel({
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {
-      // Inside an OPEN code fence (``` or ''' not yet closed), Enter writes a
-      // newline so multi-line code can be typed — it must not fire the send.
-      const fences = input.match(/```|'''/g)?.length ?? 0;
-      if (fences % 2 === 1) return;
+      // While the caret sits INSIDE a code fence (odd number of ```/''' markers
+      // before it), Enter writes a newline so multi-line code can be typed —
+      // it must not fire the send. Outside the fence, Enter sends as usual.
+      const caret = (e.target as HTMLTextAreaElement).selectionStart ?? input.length;
+      const opens = (input.slice(0, caret).match(/```|'''/g) ?? []).length;
+      if (opens % 2 === 1) return;
       e.preventDefault();
       void send(input);
     }
@@ -1322,7 +1327,7 @@ export function AssistantPanel({
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}
               rows={1}
-              onChange={(e) => setInput(absorbFences(e.target.value))}
+              onChange={handleComposerChange}
               onKeyDown={onKeyDown}
               onScroll={syncOverlayScroll}
             />
