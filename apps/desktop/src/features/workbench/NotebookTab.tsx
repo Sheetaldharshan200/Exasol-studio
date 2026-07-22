@@ -11,6 +11,7 @@ import {
   Code,
   Code2,
   Database,
+  GripVertical,
   Heading,
   Italic,
   Link2,
@@ -118,6 +119,40 @@ export function NotebookTab({
   }, [cells]);
   const execCount = useRef(0);
   const runningAll = useRef(false);
+  const [runQueue, setRunQueue] = useState<Set<string>>(new Set());
+
+  // Pointer-based drag reorder of cells (HTML5 DnD is flaky in the webview).
+  const drag = useRef<{ id: string; moved: boolean } | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!drag.current) return;
+      drag.current.moved = true;
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-cell-id]");
+      const over = el?.dataset.cellId;
+      if (!over || over === drag.current.id) return;
+      setCells((cs) => {
+        const from = cs.findIndex((c) => c.id === drag.current!.id);
+        const to = cs.findIndex((c) => c.id === over);
+        if (from < 0 || to < 0 || from === to) return cs;
+        const next = [...cs];
+        const [m] = next.splice(from, 1);
+        next.splice(to, 0, m);
+        return next;
+      });
+    };
+    const onUp = () => {
+      drag.current = null;
+      setDragId(null);
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
 
   const patch = useCallback((id: string, p: Partial<Cell>) => {
     setCells((cs) => cs.map((c) => (c.id === id ? { ...c, ...p } : c)));
@@ -179,7 +214,17 @@ export function NotebookTab({
   async function runAll() {
     if (runningAll.current) return;
     runningAll.current = true;
-    for (const id of cells.map((c) => c.id)) await runCell(id);
+    const order = cells.map((c) => c.id);
+    setRunQueue(new Set(order)); // everyone queued…
+    for (const id of order) {
+      setRunQueue((q) => {
+        const n = new Set(q);
+        n.delete(id);
+        return n;
+      });
+      await runCell(id); // …executed one by one, in order
+    }
+    setRunQueue(new Set());
     runningAll.current = false;
   }
 
@@ -248,6 +293,13 @@ export function NotebookTab({
               onMove={(d) => move(cell.id, d)}
               onRemove={() => remove(cell.id)}
               onAsk={() => onAsk(cell.src)}
+              queued={runQueue.has(cell.id)}
+              dragging={dragId === cell.id}
+              onGrip={() => {
+                drag.current = { id: cell.id, moved: false };
+                setDragId(cell.id);
+                document.body.style.cursor = "grabbing";
+              }}
             />
           ))}
         </div>
@@ -270,6 +322,9 @@ function CellView({
   onMove,
   onRemove,
   onAsk,
+  queued,
+  dragging,
+  onGrip,
 }: {
   cell: Cell;
   first: boolean;
@@ -284,6 +339,9 @@ function CellView({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   onAsk: () => void;
+  queued: boolean;
+  dragging: boolean;
+  onGrip: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [resultView, setResultView] = useState<"table" | "chart">("table");
@@ -312,10 +370,10 @@ function CellView({
   }
 
   return (
-    <div className="group/cell relative">
+    <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
       <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
 
-      <div className={cn("overflow-hidden rounded-lg transition-colors", rendered ? "hover:bg-secondary/20" : "bg-secondary/25")}>
+      <div className={cn("overflow-hidden rounded-lg ring-1 ring-inset ring-transparent transition-colors", queued && "ring-primary/40", rendered ? "hover:bg-secondary/20" : "bg-secondary/25")}>
         {/* Cell header: type dropdown (SQL / Markdown / Mermaid) + count. */}
         {!rendered ? (
           <div className="flex items-center gap-2 px-2 pt-1.5">
@@ -421,6 +479,13 @@ function CellView({
           </div>
 
           <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onGrip(); }}
+              title="Drag to reorder"
+              className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
             <button onClick={onRun} disabled={cell.running} title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
               {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5 fill-current" />}
             </button>
