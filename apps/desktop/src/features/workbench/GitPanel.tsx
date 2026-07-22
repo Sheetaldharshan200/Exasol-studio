@@ -8,10 +8,7 @@ import {
   FileMinus2,
   FilePen,
   FilePlus2,
-  GitBranch,
-  GitCommitHorizontal,
   Loader2,
-  Network,
   Plus,
   RefreshCcw,
   RotateCcw,
@@ -19,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { errorMessage, ipc, type GitBranches, type GitCommit, type GitStatus } from "@/lib/ipc";
+import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -128,7 +126,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
-          <GitBranch className="h-5 w-5" />
+          <BxIcon name="git-branch" className="h-5 w-5" />
         </div>
         <div>
           <p className="text-sm font-medium text-foreground">Version your workspace</p>
@@ -139,7 +137,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
           disabled={busy}
           className="cta-glow flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
         >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />} Initialize repository
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="git-branch" className="h-3.5 w-3.5" />} Initialize repository
         </button>
         {error ? <p className="text-[11.5px] text-destructive">{error}</p> : null}
       </div>
@@ -152,7 +150,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-foreground hover:bg-secondary">
-              <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <BxIcon name="git-branch" className="h-3.5 w-3.5 shrink-0 text-primary" />
               <span className="truncate font-medium">{status.branch ?? "(detached)"}</span>
               <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
@@ -161,7 +159,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
             <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
             {(branches?.local ?? []).map((b) => (
               <DropdownMenuItem key={b} onClick={() => void act(() => ipc.gitCheckout(b))}>
-                <GitBranch className="h-3.5 w-3.5" />
+                <BxIcon name="git-branch" className="h-3.5 w-3.5" />
                 <span className="flex-1 truncate">{b}</span>
                 {b === status.branch ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
               </DropdownMenuItem>
@@ -197,8 +195,8 @@ export function GitPanel({ full = false }: { full?: boolean }) {
 
       {/* View tabs */}
       <div className="flex items-center gap-1 border-b border-border px-2 py-1">
-        <ViewTab active={view === "changes"} onClick={() => setView("changes")} icon={GitCommitHorizontal} label="Changes" count={status.files.length} />
-        <ViewTab active={view === "graph"} onClick={() => setView("graph")} icon={Network} label="Graph" />
+        <ViewTab active={view === "changes"} onClick={() => setView("changes")} icon="git-commit" label="Changes" count={status.files.length} />
+        <ViewTab active={view === "graph"} onClick={() => setView("graph")} icon="git-merge" label="Graph" />
         <button onClick={() => void refresh()} className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground" title="Refresh">
           <RefreshCcw className="h-3.5 w-3.5" />
         </button>
@@ -270,7 +268,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
                 disabled={busy || !message.trim() || status.files.length === 0}
                 className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
               >
-                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommitHorizontal className="h-3.5 w-3.5" />}
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="git-commit" className="h-3.5 w-3.5" />}
                 {staged.length ? "Commit" : "Commit all"}
               </button>
             </div>
@@ -315,7 +313,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
 function Empty({ title, body }: { title: string; body: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground"><GitBranch className="h-5 w-5" /></div>
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground"><BxIcon name="git-branch" className="h-5 w-5" /></div>
       <div>
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</p>
@@ -332,10 +330,10 @@ function IconBtn({ label, onClick, children }: { label: string; onClick: () => v
   );
 }
 
-function ViewTab({ active, onClick, icon: Icon, label, count }: { active: boolean; onClick: () => void; icon: typeof GitBranch; label: string; count?: number }) {
+function ViewTab({ active, onClick, icon, label, count }: { active: boolean; onClick: () => void; icon: IconName; label: string; count?: number }) {
   return (
     <button onClick={onClick} className={cn("flex h-6 items-center gap-1.5 rounded-md px-2 text-[11.5px]", active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
-      <Icon className="h-3.5 w-3.5" /> {label}
+      <BxIcon name={icon} className="h-3.5 w-3.5" /> {label}
       {count ? <span className="rounded-full bg-secondary px-1 text-[9px]">{count}</span> : null}
     </button>
   );

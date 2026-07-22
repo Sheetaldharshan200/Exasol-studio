@@ -1,29 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
   ArrowUp,
   BarChart3,
-  Bold,
   ChevronDown,
   Code,
   Code2,
   Database,
   Eye,
   GripVertical,
-  Heading,
-  Italic,
-  Link2,
-  List,
   Loader2,
   Pencil,
   Play,
   Plus,
   Share2,
   Sparkles,
-  SquareCode,
   Table as TableIcon,
   Text as TextIcon,
   Trash2,
@@ -32,6 +24,7 @@ import {
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
+import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
 import {
   Select,
   SelectContent,
@@ -261,13 +254,23 @@ export function NotebookTab({
             <span className={cn("h-1.5 w-1.5 rounded-full", c.id === profileId ? "bg-primary" : "bg-muted-foreground/40")} />
           </span>
         ))}
-        {/* Two prominent connect actions. */}
-        <button onClick={onConnectDb} className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
-          <Plus className="h-3.5 w-3.5" /> <Database className="h-3.5 w-3.5" /> Connect database
-        </button>
-        <button onClick={onAddVirtualSchema} className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-teal/60 hover:text-foreground">
-          <Plus className="h-3.5 w-3.5" /> <Waypoints className="h-3.5 w-3.5 text-teal" /> Virtual schema
-        </button>
+        {/* Connect actions. Once a database is connected, virtual schemas are
+            the notebook's primary building block, so lead with that and shrink
+            "Connect database" to a compact secondary + . */}
+        {connections.length > 0 ? (
+          <>
+            <button onClick={onAddVirtualSchema} className="flex items-center gap-1 rounded-full border border-teal/40 bg-teal/8 px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:border-teal/70 hover:bg-teal/12">
+              <Plus className="h-3.5 w-3.5" /> <Waypoints className="h-3.5 w-3.5 text-teal" /> Virtual schema
+            </button>
+            <button onClick={onConnectDb} title="Connect another database" className="flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+              <Plus className="h-3.5 w-3.5" /> <Database className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : (
+          <button onClick={onConnectDb} className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+            <Plus className="h-3.5 w-3.5" /> <Database className="h-3.5 w-3.5" /> Connect database
+          </button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
@@ -344,49 +347,41 @@ function CellView({
   const isSql = cell.type === "sql";
   const isMd = cell.type === "markdown";
   const isMermaid = cell.type === "mermaid";
-  const rendered = (isMd || isMermaid) && !cell.editing;
+  const rendered = isMermaid && !cell.editing; // mermaid preview (md is always WYSIWYG)
   const lines = Math.min(18, Math.max(3, cell.src.split("\n").length));
   const editorHeight = lines * 19 + 16;
 
-  // Wrap the current selection (or insert) — powers the Markdown toolbar.
-  function surround(before: string, after = before, block = false) {
-    const ta = taRef.current;
-    if (!ta) return;
-    const { selectionStart: s, selectionEnd: e, value } = ta;
-    const sel = value.slice(s, e) || (block ? "" : "text");
-    const pre = block && s > 0 && value[s - 1] !== "\n" ? "\n" : "";
-    const next = value.slice(0, s) + pre + before + sel + after + value.slice(e);
-    onChange(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const caret = s + pre.length + before.length + sel.length;
-      ta.setSelectionRange(caret, caret);
-    });
+  // Markdown cell: full-width, no gutter — a Word-style WYSIWYG document you
+  // edit in place. Type dropdown + drag/delete appear on hover, top-right.
+  if (isMd) {
+    return (
+      <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
+        <InsertBar onAdd={() => onInsert("above", "sql")} className="-top-2.5" />
+        <div className="relative rounded-lg hover:bg-secondary/10">
+          <MarkdownEditor value={cell.src} onChange={onChange} />
+          <div className="absolute right-1.5 top-1 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+            <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+              <SelectTrigger size="sm" className="h-6 w-[100px] text-[11px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CELL_TYPES.map((t) => { const I = t.icon; return (<SelectItem key={t.value} value={t.value}><span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span></SelectItem>); })}
+              </SelectContent>
+            </Select>
+            <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
+            <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+        <InsertBar onAdd={() => onInsert("below", "sql")} className="-bottom-2.5" />
+      </div>
+    );
   }
 
-  // Rendered text/diagram cell: clean, notebook-style — no box, gutter, run or
-  // actions chrome. Click to edit; a faint hover control lets you edit/move/remove.
+  // Mermaid preview: clean, notebook-style — click to edit, hover controls.
   if (rendered) {
     return (
       <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
         <InsertBar onAdd={() => onInsert("above", "sql")} className="-top-2.5" />
-        <div className="relative rounded-lg px-1">
-          <div onClick={onEdit} className="cursor-text">
-            {isMd ? (
-              cell.src.trim() ? (
-                <div className="md-body max-w-none px-3 py-2 text-[13px] leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: (props) => <img {...props} className="my-2 max-w-full rounded-md border border-border" alt={props.alt ?? ""} /> }}>
-                    {cell.src}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <p className="px-3 py-2 text-[13px] text-muted-foreground/50 italic">Empty text cell — click to edit</p>
-              )
-            ) : (
-              <MermaidView code={cell.src} />
-            )}
-          </div>
-          {/* Faint hover controls — no box, keeps the notebook feel. */}
+        <div className="relative rounded-lg">
+          <div onClick={onEdit} className="cursor-text"><MermaidView code={cell.src} /></div>
           <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
             <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
             <button onClick={onEdit} title="Edit" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
@@ -444,26 +439,9 @@ function CellView({
               })}
             </SelectContent>
           </Select>
-          {isMd && cell.editing ? (
-            <div className="flex items-center gap-0.5">
-              {([
-                [Bold, "Bold", () => surround("**")],
-                [Italic, "Italic", () => surround("_")],
-                [Code, "Inline code", () => surround("`")],
-                [SquareCode, "Code block", () => surround("```\n", "\n```", true)],
-                [Heading, "Heading", () => surround("## ", "", true)],
-                [List, "List", () => surround("- ", "", true)],
-                [Link2, "Link", () => surround("[", "](https://)")],
-              ] as const).map(([Icon, tip, fn], i) => (
-                <button key={i} onClick={fn} title={tip} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                  <Icon className="h-3.5 w-3.5" />
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {/* Preview ↔ Code toggle: markdown/diagram default to Preview so the
-              user visualizes the result, not the raw markup. */}
-          {isMd || isMermaid ? (
+          {/* Preview ↔ Code toggle: diagrams default to Preview so the user
+              visualizes the result, not the raw markup. */}
+          {isMermaid ? (
             <div className="ml-auto flex items-center gap-0.5 rounded-md bg-secondary/60 p-0.5">
               <button
                 onClick={onRun}

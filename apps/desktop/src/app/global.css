@@ -522,6 +522,18 @@
 .md-body img { max-width: 100%; border-radius: 6px; }
 .md-body hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.2em 0; }
 
+/* TipTap WYSIWYG markdown editor (notebook text cells) */
+.tiptap.ProseMirror { min-height: 2.25rem; }
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground) / 0.5);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.tiptap img.ProseMirror-selectednode { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+.tiptap:focus { outline: none; }
+
 /* Indeterminate progress bar (script installs) */
 @keyframes exa-indeterminate {
   0% { left: -45%; }

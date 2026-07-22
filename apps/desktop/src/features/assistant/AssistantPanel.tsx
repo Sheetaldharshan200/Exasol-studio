@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Code2,
   Cpu,
   GitFork,
   RotateCcw,
@@ -23,7 +24,6 @@ import {
   SlidersHorizontal,
   Table2,
   Trash2,
-  User,
   Wand2,
   Wrench,
   X,
@@ -246,8 +246,10 @@ export function AssistantPanel({
 }: {
   contextSummary: string;
   editorSql: string;
-  /** An external prompt (e.g. "AI explain plan") to send automatically. */
-  pendingPrompt?: { text: string; nonce: number; send?: boolean } | null;
+  /** An external prompt (e.g. "AI explain plan") to send automatically.
+   *  `code` attaches a snippet as a monospace context chip above the composer
+   *  (instead of dumping raw ``` fences into the editable input). */
+  pendingPrompt?: { text: string; nonce: number; send?: boolean; code?: string; codeLang?: string } | null;
   /** Active connection profile id — granted to the agent for tool use. */
   connectionId?: string | null;
   /** All currently-open connections, so the agent's target can be chosen. */
@@ -265,6 +267,10 @@ export function AssistantPanel({
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
+  // A code snippet attached as a context chip (e.g. "Ask AI about this SQL"),
+  // shown monospace above the composer and folded back into the message on send.
+  const [codeContext, setCodeContext] = useState<{ lang: string; content: string } | null>(null);
+  const [codeExpanded, setCodeExpanded] = useState(false);
   const [sending, setSending] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<string>("");
@@ -633,11 +639,16 @@ export function AssistantPanel({
   useEffect(() => {
     if (pendingPrompt && pendingPrompt.nonce !== lastNonce.current) {
       lastNonce.current = pendingPrompt.nonce;
+      // Attach any code as a chip rather than raw fences in the editable input.
+      if (pendingPrompt.code != null) {
+        setCodeContext({ lang: pendingPrompt.codeLang || "sql", content: pendingPrompt.code });
+        setCodeExpanded(false);
+      }
       if (pendingPrompt.send === false) {
         // Prefill only (e.g. "Edit with AI"): the user finishes the instruction.
         setInput(pendingPrompt.text);
         inputRef.current?.focus();
-      } else void send(pendingPrompt.text);
+      } else void send(pendingPrompt.text, pendingPrompt.code != null ? { lang: pendingPrompt.codeLang || "sql", content: pendingPrompt.code } : null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPrompt]);
@@ -668,9 +679,13 @@ export function AssistantPanel({
     }
   }
 
-  async function send(text: string) {
+  async function send(text: string, codeOverride?: { lang: string; content: string } | null) {
     const trimmed = text.trim();
-    if ((!trimmed && attachments.length === 0) || sending) return;
+    // Fold the attached code snippet (chip) back into a fenced block so the
+    // conversation renders it as a proper code block and the agent receives it.
+    const code = codeOverride !== undefined ? codeOverride : codeContext;
+    const codeBlock = code && code.content.trim() ? `\n\n\`\`\`${code.lang}\n${code.content}\n\`\`\`` : "";
+    if ((!trimmed && attachments.length === 0 && !codeBlock) || sending) return;
 
     // A slash command: /clear acts immediately; others expand into the real
     // prompt for the agent while the raw "/cmd …" stays as the shown message.
@@ -707,7 +722,7 @@ export function AssistantPanel({
       void openAiProvidersWindow();
       return;
     }
-    const agentText = slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed;
+    const agentText = (slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed) + codeBlock;
     lastRequestRef.current = trimmed || "workspace update"; // for the auto-commit message
 
     const sentAttachments = attachments;
@@ -715,7 +730,7 @@ export function AssistantPanel({
       kind: "msg",
       id: `u-${Date.now()}`,
       role: "user",
-      content: trimmed || "(attached files)",
+      content: (trimmed + codeBlock).trim() || "(attached files)",
       attachments: sentAttachments.length ? sentAttachments.map((a) => a.name) : undefined,
     }]);
     if (sentAttachments.length) {
@@ -723,6 +738,8 @@ export function AssistantPanel({
       setSessionFiles((prev) => [...prev.filter((p) => !sentAttachments.some((a) => a.name === p.name)), ...sentAttachments]);
     }
     setInput("");
+    setCodeContext(null);
+    setCodeExpanded(false);
     setAttachments([]);
     setAttachHint(null);
     setSending(true);
@@ -921,7 +938,7 @@ export function AssistantPanel({
       {/* ── Header ── */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <AgentMark className="h-4.5 w-4.5 shrink-0" active={sending} />
+          <AgentMark className="h-[18px] w-[18px] shrink-0" active={sending} />
           <span className="truncate text-[13px] font-semibold text-foreground" title={title}>
             {showSessions ? "Chat history" : title}
           </span>
@@ -1046,7 +1063,7 @@ export function AssistantPanel({
 
       {/* ── Conversation (shadcn AI Elements) ── */}
       <Conversation className="min-h-0 flex-1">
-        <ConversationContent className="space-y-3">
+        <ConversationContent className="gap-1.5 px-2.5 py-3">
           {agentError ? (
             <div className="[overflow-wrap:anywhere] rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] break-words text-foreground">
               {agentError}
@@ -1206,6 +1223,35 @@ export function AssistantPanel({
             // made the box look dim until the first letter. Override it.
             className="flex-col items-stretch rounded-xl border-muted-foreground/60 bg-editor ring-1 ring-muted-foreground/25 has-disabled:bg-editor has-disabled:opacity-100"
           >
+          {codeContext ? (
+            <div className="px-2 pt-2">
+              <div className="overflow-hidden rounded-lg border border-border bg-panel/60">
+                <div className="flex items-center gap-1.5 border-b border-border/70 bg-secondary/40 px-2 py-1">
+                  <Code2 className="h-3 w-3 text-primary" />
+                  <span className="text-[10.5px] font-medium text-foreground">{codeContext.lang.toUpperCase()} context</span>
+                  <span className="text-[10px] text-muted-foreground">· {codeContext.content.trim().split("\n").length} lines</span>
+                  <button
+                    type="button"
+                    onClick={() => setCodeExpanded((v) => !v)}
+                    className="ml-auto rounded px-1 text-[10px] text-muted-foreground hover:text-foreground"
+                  >
+                    {codeExpanded ? "Collapse" : "Expand"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCodeContext(null); setCodeExpanded(false); }}
+                    className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    aria-label="Remove code context"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <pre className={cn("overflow-x-auto px-2.5 py-1.5 font-mono text-[11px] leading-[1.5] text-syntax-type [scrollbar-width:thin]", !codeExpanded && "max-h-16 overflow-y-hidden")}>
+                  {codeContext.content.trim()}
+                </pre>
+              </div>
+            </div>
+          ) : null}
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2">
               {attachments.map((a, i) => (
@@ -1778,11 +1824,11 @@ function Bubble({
   onUserAction?: (action: "copy" | "revert" | "fork", id: string) => void;
 }) {
   if (message.role === "user") {
-    // Right-aligned accent bubble with a small avatar; actions on hover.
+    // Right-aligned neutral bubble (no avatar); actions on hover.
     return (
-      <div className="group flex flex-col items-end gap-1 py-1.5">
+      <div className="group flex flex-col items-end gap-1 py-0.5">
         <div className="flex max-w-[88%] items-start gap-2">
-          <div className="min-w-0 rounded-2xl rounded-br-sm bg-primary/12 px-3.5 py-2 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] whitespace-pre-wrap break-words">
+          <div className="min-w-0 rounded-2xl rounded-br-sm bg-secondary px-3 py-1.5 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] whitespace-pre-wrap break-words">
             {splitFences(message.content).map((part, i) =>
               part.code ? (
                 <pre
@@ -1796,12 +1842,9 @@ function Bubble({
               ),
             )}
           </div>
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
-            <User className="h-3.5 w-3.5" />
-          </span>
         </div>
         {message.attachments?.length ? (
-          <div className="mr-8 flex max-w-full flex-wrap justify-end gap-1">
+          <div className="flex max-w-full flex-wrap justify-end gap-1">
             {message.attachments.map((name) => (
               <button
                 key={name}
@@ -1815,7 +1858,7 @@ function Bubble({
             ))}
           </div>
         ) : null}
-        <div className="mr-8 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {([
             ["copy", Copy, "Copy message"],
             ["revert", RotateCcw, "Revert to here — rewinds the chat (and the model's memory) to before this message"],
@@ -1837,11 +1880,11 @@ function Bubble({
   }
   // Assistant: Exa avatar on the left, clean prose flush beside it.
   return (
-    <div className="flex gap-2.5 py-1.5">
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-        <AgentMark className="h-3.5 w-3.5" active={message.streaming} />
+    <div className="flex gap-2.5 py-0.5">
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
+        <AgentMark className="h-[22px] w-[22px]" active={message.streaming} />
       </span>
-      <div className="min-w-0 flex-1 pt-0.5">
+      <div className="min-w-0 flex-1 pt-0.5 text-[13px] leading-relaxed">
         {message.error ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive [overflow-wrap:anywhere] break-words">
             {message.content}

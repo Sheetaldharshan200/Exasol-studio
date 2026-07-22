@@ -6,7 +6,6 @@ import {
   Activity,
   BarChart3,
   Blocks,
-  BookOpen,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -18,7 +17,6 @@ import {
   Database,
   Eye,
   FileCode2,
-  GitBranch,
   NotebookPen,
   GitCommitHorizontal,
   History,
@@ -44,8 +42,6 @@ import {
   Shield,
   Sparkles,
   Square,
-  Star,
-  Store,
   SquareTerminal,
   Table2,
   Terminal,
@@ -216,7 +212,7 @@ function newTab(index: number): SqlTab {
 }
 
 const TAB_ICON: Record<TabView, IconName> = {
-  sql: "terminal",
+  sql: "querytab",
   dbInfo: "info",
   dba: "shield",
   dataTypes: "grid",
@@ -229,7 +225,7 @@ const TAB_ICON: Record<TabView, IconName> = {
   object: "table",
   bi: "dashboards",
   connInfo: "plug",
-  welcome: "skills",
+  welcome: "home",
   artifact: "file",
   git: "git",
   notebook: "notebook",
@@ -519,10 +515,10 @@ function TitleBar({
 
 // Activities with a simple placeholder panel (databases/files/visualizer have
 // their own dedicated panels).
-const PLACEHOLDERS: Record<"favorites" | "git" | "marketplace", { icon: typeof Star; title: string; body: string }> = {
-  favorites: { icon: Star, title: "Favorites", body: "Star tables, queries, and connections for quick access." },
-  git: { icon: GitBranch, title: "Git", body: "Version your saved SQL scripts alongside your project." },
-  marketplace: { icon: Store, title: "Marketplace", body: "Browse virtual-schema adapters, drivers, and extensions." },
+const PLACEHOLDERS: Record<"favorites" | "git" | "marketplace", { icon: IconName; title: string; body: string }> = {
+  favorites: { icon: "favorites", title: "Favorites", body: "Star tables, queries, and connections for quick access." },
+  git: { icon: "git", title: "Git", body: "Version your saved SQL scripts alongside your project." },
+  marketplace: { icon: "marketplace", title: "Marketplace", body: "Browse virtual-schema adapters, drivers, and extensions." },
 };
 
 /** A single open connection: header (focus + actions) with its object tree. */
@@ -927,7 +923,7 @@ function Sidebar({
       : activity === "files"
         ? "Files"
         : activity === "visualizer"
-          ? "Visualizer"
+          ? "Schema visualizer"
           : activity === "mcp"
             ? "MCP Servers"
             : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
@@ -965,11 +961,10 @@ function Sidebar({
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
             {(() => {
               const P = PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"];
-              const Icon = P.icon;
               return (
                 <>
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
-                    <Icon className="h-5 w-5" />
+                    <Icon name={P.icon} className="h-5 w-5" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">{P.title}</p>
@@ -1642,7 +1637,7 @@ export function ExasolStudio({
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [historyIdx, setHistoryIdx] = useState(-1);
-  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean } | null>(null);
+  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean; code?: string; codeLang?: string } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
@@ -1994,13 +1989,16 @@ export function ExasolStudio({
     if (dragId === targetId) return;
     updateTabs(connKey, (list) => {
       const from = list.findIndex((x) => x.id === dragId);
-      if (from < 0) return list;
+      const toOrig = targetId ? list.findIndex((x) => x.id === targetId) : -1;
+      if (from < 0 || (targetId && toOrig < 0)) return list;
       const next = [...list];
       const [moved] = next.splice(from, 1);
       if (targetId) {
-        const to = next.findIndex((x) => x.id === targetId);
-        if (to < 0) return list;
-        moved.groupId = next[to].groupId; // adopt target's group (or none)
+        moved.groupId = list[toOrig].groupId; // adopt target's group (or none)
+        let to = next.findIndex((x) => x.id === targetId);
+        // Dragging rightward (past the target) drops AFTER it; leftward drops
+        // BEFORE it. Without this the tab can only ever move left.
+        if (from < toOrig) to += 1;
         next.splice(to, 0, moved);
       } else {
         moved.groupId = undefined;
@@ -2844,7 +2842,7 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-viz-${Date.now()}-${tabCounter.current}`,
-      title: n === 1 ? "Visualizer" : `Visualizer ${n}`,
+      title: n === 1 ? "Schema visualizer" : `Schema visualizer ${n}`,
       view: "visualizer",
       sql: "",
       response: null,
@@ -3742,7 +3740,9 @@ export function ExasolStudio({
                   setAiOpen(true);
                   aiPanelRef.current?.expand();
                   setAiPrompt({
-                    text: `About this SQL — explain it, spot issues, and suggest an improvement:\n\n\`\`\`sql\n${text || "(empty)"}\n\`\`\``,
+                    text: "Explain this SQL, spot any issues, and suggest an improvement.",
+                    code: text || "",
+                    codeLang: "sql",
                     nonce: Date.now(),
                     send: false,
                   });

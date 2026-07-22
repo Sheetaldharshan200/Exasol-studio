@@ -20,7 +20,6 @@ import {
   Search,
   Server,
   ShieldCheck,
-  Sparkles,
   Store,
   Trash2,
   TriangleAlert,
@@ -38,6 +37,7 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
@@ -237,18 +237,18 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-odbc": "odbc",
 };
 
-const NAV: { key: string; label: string; icon: LucideIcon }[] = [
-  { key: "all", label: "All", icon: Store },
-  { key: "recommended", label: "Kit packs", icon: Sparkles },
-  { key: "database", label: "Databases", icon: Database },
-  { key: "load", label: "Data & tools", icon: Cpu },
-  { key: "drivers", label: "Drivers", icon: Plug },
-  { key: "extension", label: "Extensions", icon: Boxes },
-  { key: "ai", label: "AI & Agents", icon: Sparkles },
-  { key: "bi", label: "BI & Analytics", icon: BarChart3 },
-  { key: "installed", label: "Installed", icon: Check },
-  { key: "installing", label: "Installing", icon: Loader2 },
-  { key: "updates", label: "Updates", icon: Download },
+const NAV: { key: string; label: string; icon: IconName }[] = [
+  { key: "all", label: "All", icon: "marketplace" },
+  { key: "recommended", label: "Kit packs", icon: "package" },
+  { key: "database", label: "Databases", icon: "database" },
+  { key: "load", label: "Data & tools", icon: "spanner" },
+  { key: "drivers", label: "Drivers", icon: "usb" },
+  { key: "extension", label: "Extensions", icon: "extension" },
+  { key: "ai", label: "AI & Agents", icon: "cognition" },
+  { key: "bi", label: "BI & Analytics", icon: "dashboard-grid" },
+  { key: "installed", label: "Installed", icon: "check" },
+  { key: "installing", label: "Installing", icon: "loader" },
+  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
 ];
 
 const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
@@ -680,7 +680,7 @@ export function Marketplace() {
             <>
               {newer ? (
                 <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                  <Download className="h-3.5 w-3.5" /> Update to {latest}
+                  <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
                 </button>
               ) : (
                 <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
@@ -699,7 +699,7 @@ export function Marketplace() {
             </>
           ) : (
             <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-              {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {driverBusy[did] ? "Installing…" : "Install & use here"}
             </button>
           )
@@ -714,7 +714,7 @@ export function Marketplace() {
           <>
             {newer ? (
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                <Download className="h-3.5 w-3.5" /> Update to {latest}
+                <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
               </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
@@ -747,7 +747,7 @@ export function Marketplace() {
           </button>
         ) : (
           <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-            {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
             {isInstalling ? "Installing…" : "Install"}
           </button>
         )}
@@ -865,7 +865,6 @@ export function Marketplace() {
           {/* Category rail — sticky so it stays in view while the content scrolls */}
           <nav className="sticky top-2 w-44 shrink-0 space-y-0.5 self-start rounded-xl border border-border/60 bg-panel/40 p-1.5">
             {NAV.map((n) => {
-              const Icon = n.icon;
               const active = nav === n.key;
               const count =
                 n.key === "installed"
@@ -884,7 +883,7 @@ export function Marketplace() {
                     active ? "bg-primary/12 font-medium text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}
                 >
-                  <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
+                  <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
                   <span className="flex-1 truncate">{n.label}</span>
                   {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
                 </button>
@@ -1025,9 +1024,9 @@ export function Marketplace() {
                   ) : q.status === "done" ? (
                     <Check className="h-3.5 w-3.5 text-primary" />
                   ) : q.status === "failed" ? (
-                    <X className="h-3.5 w-3.5 text-destructive" />
+                    <BxIcon name="cross-circle" className="h-3.5 w-3.5 text-destructive" />
                   ) : (
-                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                    <BxIcon name="clock-dashed-half" className="h-3.5 w-3.5 text-muted-foreground/50" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-foreground/90">{q.name}</span>

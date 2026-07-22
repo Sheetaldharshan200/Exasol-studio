@@ -813,7 +813,7 @@ export function Visualizer({
       <header className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-3 [scrollbar-width:thin]">
         <div className="flex shrink-0 items-center gap-2">
           <Link2 className="h-4 w-4 text-[#a78bfa]" />
-          <span className="font-heading text-[14px] font-bold text-foreground">Visualizer</span>
+          <span className="font-heading text-[14px] font-bold text-foreground">Schema visualizer</span>
           <span className="text-xs text-muted-foreground">{connectionName}</span>
         </div>
         {/* Diagram ↔ Build — Build (visual query builder) is promoted with an

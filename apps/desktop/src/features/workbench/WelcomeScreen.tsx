@@ -1,4 +1,4 @@
-import { BookOpen, Database, FileCode2, FolderOpen, Plug, Store } from "lucide-react";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 
 type Recent = { id: string; label: string; sub: string };
@@ -27,11 +27,11 @@ export function WelcomeScreen({
   onGuides: () => void;
   onOpenRecent: (id: string) => void;
 }) {
-  const start = [
-    { icon: FileCode2, label: "New query", onClick: onNewQuery },
-    { icon: FolderOpen, label: "Open SQL file…", onClick: onOpenFile },
-    { icon: connected ? Database : Plug, label: connected ? "Add connection…" : "Connect to a database…", onClick: onConnect },
-    { icon: Store, label: "Browse the Marketplace…", onClick: onMarketplace },
+  const start: { icon: IconName; label: string; onClick: () => void }[] = [
+    { icon: "querytab", label: "New query", onClick: onNewQuery },
+    { icon: "folder-open", label: "Open SQL file…", onClick: onOpenFile },
+    { icon: connected ? "database" : "plug", label: connected ? "Add connection…" : "Connect to a database…", onClick: onConnect },
+    { icon: "marketplace", label: "Browse the Marketplace…", onClick: onMarketplace },
   ];
 
   const guides = [
@@ -47,12 +47,12 @@ export function WelcomeScreen({
     else window.open(url, "_blank");
   };
 
-  const Link = ({ icon: Icon, children, onClick }: { icon?: typeof FileCode2; children: React.ReactNode; onClick: () => void }) => (
+  const Link = ({ icon, children, onClick }: { icon?: IconName; children: React.ReactNode; onClick: () => void }) => (
     <button
       onClick={onClick}
       className="group flex items-center gap-2 py-1 text-left text-[13px] text-primary outline-none hover:underline focus-visible:underline"
     >
-      {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-90" /> : null}
+      {icon ? <Icon name={icon} className="h-4 w-4 shrink-0 opacity-90" /> : null}
       <span>{children}</span>
     </button>
   );
@@ -102,7 +102,7 @@ export function WelcomeScreen({
           <h2 className="mb-1 flex items-center gap-1.5 text-[15px] font-medium text-foreground/90">Guides</h2>
           <div className="flex flex-col">
             {guides.map((g) => (
-              <Link key={g} icon={BookOpen} onClick={onGuides}>
+              <Link key={g} icon="guides" onClick={onGuides}>
                 {g}
               </Link>
             ))}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarChart3, Boxes, Check, GraduationCap, Loader2, Plus, Sparkles, Table2, Wrench, X } from "lucide-react";
-import { agent, skills as skillsApi, type Skill } from "@/lib/agent-client";
+import { agent, skills as skillsApi } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
 
 /**
@@ -68,7 +68,6 @@ const ROLES: Role[] = [
 
 export function SkillsTab() {
   const [active, setActive] = useState<Set<string>>(new Set());
-  const [userSkills, setUserSkills] = useState<Skill[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -76,9 +75,8 @@ export function SkillsTab() {
 
   const refresh = useCallback(async () => {
     try {
-      const [{ settings }, list] = await Promise.all([agent.getSettings(), skillsApi.list().catch(() => [])]);
+      const { settings } = await agent.getSettings();
       setActive(new Set(settings.defaultSkills));
-      setUserSkills(list.filter((s) => s.source === "user"));
     } catch {
       /* ignore */
     } finally {
@@ -169,18 +167,6 @@ export function SkillsTab() {
                 </div>
               </div>
             </div>
-          ) : null}
-
-          {/* Custom skills the user added */}
-          {userSkills.length ? (
-            <section className="mb-6">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">Your skills</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {userSkills.map((s) => (
-                  <SkillCard key={s.name} name={s.name} desc={s.description} on={active.has(s.name)} busy={busy === s.name} onToggle={async () => { setBusy(s.name); try { await setDefault(s.name, !active.has(s.name)); } finally { setBusy(null); } }} />
-                ))}
-              </div>
-            </section>
           ) : null}
 
           {/* Role packs */}
