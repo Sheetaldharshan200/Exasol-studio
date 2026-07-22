@@ -641,7 +641,14 @@ function Panel({
     if (!profileId || panel.viz.type === "markdown" || !sql.trim()) return;
     const base = sql.trim().replace(/;\s*$/, "");
     // One extra row tells us whether a next page exists (no COUNT round-trip).
-    const effSql = isTable ? `SELECT * FROM (\n${base}\n) LIMIT ${TABLE_PAGE + 1} OFFSET ${page * TABLE_PAGE}` : base;
+    // Exasol rejects OFFSET without an ORDER BY, so only page beyond the first
+    // when we can give the wrapper a deterministic order (ORDER BY 1). Page 0
+    // uses a bare LIMIT — no OFFSET, no forced sort.
+    const effSql = isTable
+      ? page > 0
+        ? `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${TABLE_PAGE + 1} OFFSET ${page * TABLE_PAGE}`
+        : `SELECT * FROM (\n${base}\n) LIMIT ${TABLE_PAGE + 1}`
+      : base;
     const cap = isTable ? TABLE_PAGE + 1 : 5000;
     if (inFlight.current && effSql === queryKeyRef.current) return; // refresh while busy: drop tick
     queryKeyRef.current = effSql;
@@ -1251,6 +1258,13 @@ function PanelEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
+  // Auto-run the preview once when the editor opens on a panel that already has
+  // a query (e.g. created from a result) — so the preview pane is never blank.
+  useEffect(() => {
+    if (profileId && sql.trim() && !preview) void runPreview(sql);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId]);
+
   function applyTemplate(t: (typeof TEMPLATES)[number]) {
     const ds = dataset || "SCHEMA.TABLE";
     const nextSql = t.sql(ds);
@@ -1380,7 +1394,7 @@ function PanelEditor({
       <div className="flex min-h-0 flex-1">
         {/* Left: configuration form (bounded width). */}
         <div className="flex min-h-0 w-full max-w-[600px] flex-col border-r border-border">
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <label className="block">
             <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Title</span>
             <input
