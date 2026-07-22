@@ -81,7 +81,10 @@ export class ProviderRegistry {
   private readonly catalogFile: string;
   // Ollama capabilities per model (from /api/show), cached so we probe each
   // model once. Any model the user pulls is classified accurately on next list.
-  private ollamaCaps = new Map<string, { toolCall: boolean; image: boolean }>();
+  private ollamaCaps = new Map<string, { toolCall: boolean; image: boolean; context?: number }>();
+  // Real, server-reported context window per local model ref (built-in via
+  // /props, Ollama via /api/show). Keyed "providerId/modelId".
+  private localContext = new Map<string, number>();
 
   private readonly config: ConfigStore;
 
@@ -93,7 +96,9 @@ export class ProviderRegistry {
   }
 
   /** Ask Ollama what a model can do (tools/vision). Cached per model name. */
-  private async ollamaCapabilities(name: string): Promise<{ toolCall: boolean; image: boolean } | undefined> {
+  private async ollamaCapabilities(
+    name: string,
+  ): Promise<{ toolCall: boolean; image: boolean; context?: number } | undefined> {
     const cached = this.ollamaCaps.get(name);
     if (cached) return cached;
     try {
@@ -104,11 +109,41 @@ export class ProviderRegistry {
         signal: AbortSignal.timeout(2500),
       });
       if (!res.ok) return undefined;
-      const body = (await res.json()) as { capabilities?: string[] };
+      const body = (await res.json()) as {
+        capabilities?: string[];
+        model_info?: Record<string, unknown>;
+        parameters?: string;
+      };
       const caps = Array.isArray(body.capabilities) ? body.capabilities : [];
-      const result = { toolCall: caps.includes("tools"), image: caps.includes("vision") };
+      // Context: the model's trained max (…context_length) capped by the
+      // effective num_ctx if the Modelfile set one — so we never report more
+      // than Ollama actually allocates and overflow it.
+      const info = body.model_info ?? {};
+      const ctxKey = Object.keys(info).find((k) => k.endsWith(".context_length"));
+      const trained = ctxKey ? Number(info[ctxKey]) : undefined;
+      const numCtxMatch = /(?:^|\n)\s*num_ctx\s+(\d+)/.exec(body.parameters ?? "");
+      const numCtx = numCtxMatch ? Number(numCtxMatch[1]) : undefined;
+      const context = numCtx ?? trained;
+      const result = {
+        toolCall: caps.includes("tools"),
+        image: caps.includes("vision"),
+        context: context && Number.isFinite(context) ? context : undefined,
+      };
       this.ollamaCaps.set(name, result);
       return result;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** llama-server exposes the exact allocated context at /props. */
+  private async builtinContext(baseURL: string): Promise<number | undefined> {
+    try {
+      const res = await fetch(`${baseURL.replace(/\/v1$/, "")}/props`, { signal: AbortSignal.timeout(1500) });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { default_generation_settings?: { n_ctx?: number }; n_ctx?: number };
+      const n = body.default_generation_settings?.n_ctx ?? body.n_ctx;
+      return typeof n === "number" && n > 0 ? n : undefined;
     } catch {
       return undefined;
     }
@@ -196,9 +231,15 @@ export class ProviderRegistry {
         models = await Promise.all(
           models.map(async (m) => {
             const caps = await this.ollamaCapabilities(m.id);
-            return caps ? { ...m, toolCall: caps.toolCall, image: caps.image } : m;
+            if (caps?.context) this.localContext.set(`ollama/${m.id}`, caps.context);
+            return caps ? { ...m, toolCall: caps.toolCall, image: caps.image, context: caps.context } : m;
           }),
         );
+      } else if (server.id === "builtin") {
+        // Query the exact allocated window once; every built-in model shares it.
+        const n = await this.builtinContext(server.baseURL);
+        if (n) for (const m of models) this.localContext.set(`builtin/${m.id}`, n);
+        models = models.map((m) => (n ? { ...m, context: n } : m));
       }
       return {
         id: server.id,
@@ -289,10 +330,13 @@ export class ProviderRegistry {
     const modelId = modelRef.slice(slash + 1);
     const fromCatalog = this.catalog[providerId]?.find((m) => m.id === modelId)?.context;
     if (fromCatalog) return fromCatalog;
-    // Local servers: builtin runs llama-server with -c 32768; Ollama defaults
-    // vary. Report a hair under 32k so compaction fires before the engine's
-    // hard ceiling (a 400 "exceeds context size" otherwise).
-    return 31_000;
+    // Local models: use the REAL server-reported window (built-in /props,
+    // Ollama /api/show) discovered during detection, with ~6% headroom so
+    // compaction fires before the engine's hard ceiling. Falls back to a safe
+    // floor only if discovery hasn't run yet.
+    const real = this.localContext.get(modelRef);
+    if (real) return Math.max(4096, Math.floor(real * 0.94));
+    return 8_000;
   }
 
   /** Whether the model accepts image input (unknown local models → false). */
