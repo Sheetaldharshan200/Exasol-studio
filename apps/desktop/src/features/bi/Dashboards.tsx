@@ -348,17 +348,25 @@ function DashboardView({
   }
 
   function addPanel() {
+    const W = 6, H = 6;
+    const collides = (x: number, y: number) =>
+      dash.panels.some((p) => x < p.grid.x + p.grid.w && p.grid.x < x + W && y < p.grid.y + p.grid.h && p.grid.y < y + H);
     const maxY = Math.max(0, ...dash.panels.map((p) => p.grid.y + p.grid.h));
-    const panel: DashPanel = {
+    let spot = { x: 0, y: maxY };
+    outer: for (let y = 0; y <= maxY; y++)
+      for (let x = 0; x + W <= 12; x++)
+        if (!collides(x, y)) { spot = { x, y }; break outer; }
+    const p: DashPanel = {
       id: `p${Date.now().toString(36)}`,
       title: "New panel",
-      grid: { x: 0, y: maxY, w: 6, h: 6 },
+      grid: { x: spot.x, y: spot.y, w: W, h: H },
       query: { sql: "" },
       viz: { type: "table" },
     };
-    void saveDash({ ...dash, panels: [...dash.panels, panel] });
-    setEditing(panel);
+    void saveDash({ ...dash, panels: [...dash.panels, p] });
+    setEditing(p);
   }
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1100);
 
@@ -527,10 +535,15 @@ function DashboardView({
             width={width - 8}
             gridConfig={{ cols: 12, rowHeight: 44, margin: [8, 8] }}
             dragConfig={{ handle: ".dash-panel-title" }}
-            onLayoutChange={persistLayout}
+            resizeConfig={{ handles: ["e", "s", "se"] }}
+            onDragStop={(l) => persistLayout(l)}
+            onResizeStop={(l) => persistLayout(l)}
           >
             {dash.panels.map((p) => (
-              <div key={p.id} className="group/panel overflow-hidden rounded-xl border border-border bg-panel/70">
+              <div
+                key={p.id}
+                className="group/panel transform-gpu overflow-hidden rounded-xl border border-border/70 bg-panel/70 shadow-sm transition-all duration-300 ease-out hover:border-primary/30 hover:shadow-[0_8px_30px_-12px_color-mix(in_srgb,var(--foreground)_25%,transparent)]"
+              >
                 <Panel
                   panel={p}
                   profileId={profileId}
