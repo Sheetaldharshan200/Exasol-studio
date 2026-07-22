@@ -48,7 +48,7 @@ const STATUS_ICON: Record<string, typeof FilePen> = {
 
 const LANE_COLORS = ["#4fa823", "#3b82f6", "#e0a63a", "#c65fd0", "#e05f5f", "#2bb8a3", "#8b7ff0"];
 
-export function GitPanel() {
+export function GitPanel({ full = false }: { full?: boolean }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [branches, setBranches] = useState<GitBranches | null>(null);
   const [graph, setGraph] = useState<GitCommit[]>([]);
@@ -77,6 +77,13 @@ export function GitPanel() {
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  // Refresh when the agent (or anything else) commits/changes the workspace.
+  useEffect(() => {
+    const on = () => void refresh();
+    window.addEventListener("studio:git-changed", on);
+    return () => window.removeEventListener("studio:git-changed", on);
   }, [refresh]);
 
   const staged = useMemo(() => (status?.files ?? []).filter((f) => f.code[0] !== " " && f.code[0] !== "?"), [status]);
@@ -215,7 +222,8 @@ export function GitPanel() {
       ) : null}
 
       {view === "changes" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className={cn("flex min-h-0 flex-1 overflow-hidden", full ? "flex-row" : "flex-col")}>
+          <div className={cn("flex min-h-0 flex-col overflow-hidden", full && "w-[400px] shrink-0 border-r border-border")}>
           <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
             <Section
               title="Staged"
@@ -269,12 +277,37 @@ export function GitPanel() {
             {notice ? <p className="mt-1.5 truncate text-[11px] text-primary">{notice}</p> : null}
             {error ? <p className="mt-1.5 text-[11px] text-destructive">{error}</p> : null}
           </div>
+          </div>
+
+          {/* Full-page mode: a persistent diff pane on the right (GitHub-style),
+              so clicking a file shows its diff side-by-side with the list. */}
+          {full ? (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-editor">
+              {diff ? (
+                <>
+                  <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                    <FilePen className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">{diff.path}</span>
+                    {diff.staged ? <span className="rounded bg-primary/15 px-1.5 py-px text-[9.5px] text-primary">staged</span> : null}
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-auto p-2 [scrollbar-width:thin]">
+                    <DiffBody text={diff.text} />
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-[12.5px] text-muted-foreground">
+                  Select a file to view its diff.
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : (
         <CommitGraph commits={graph} headBranch={status.branch} />
       )}
 
-      {diff ? <DiffOverlay diff={diff} onClose={() => setDiff(null)} /> : null}
+      {/* Overlay diff only in the narrow sidebar; full mode uses the side pane. */}
+      {diff && !full ? <DiffOverlay diff={diff} onClose={() => setDiff(null)} /> : null}
     </div>
   );
 }
@@ -439,7 +472,43 @@ function refsBadges(refs: string, headBranch: string | null) {
   );
 }
 
-/** Colorized unified-diff overlay for one file. */
+/** Colorized unified-diff body (shared by the overlay and the full-page pane).
+ *  GitHub-style: line numbers per side + red/green line backgrounds. */
+function DiffBody({ text }: { text: string }) {
+  if (!text.trim()) return <p className="p-3 text-[12px] text-muted-foreground">No differences.</p>;
+  let oldNo = 0;
+  let newNo = 0;
+  return (
+    <pre className="font-mono text-[11.5px] leading-relaxed">
+      {text.split("\n").map((line, i) => {
+        const isAdd = line.startsWith("+") && !line.startsWith("+++");
+        const isDel = line.startsWith("-") && !line.startsWith("---");
+        const isHunk = line.startsWith("@@");
+        if (isHunk) {
+          const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)?/.exec(line);
+          if (m) { oldNo = Number(m[1]); newNo = Number(m[2]); }
+        }
+        const meta = line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("+++") || line.startsWith("---");
+        const ln = isAdd ? { o: "", n: String(newNo++) } : isDel ? { o: String(oldNo++), n: "" } : isHunk || meta ? { o: "", n: "" } : { o: String(oldNo++), n: String(newNo++) };
+        return (
+          <div
+            key={i}
+            className={cn(
+              "flex whitespace-pre-wrap",
+              isAdd ? "bg-primary/10 text-primary" : isDel ? "bg-destructive/10 text-destructive" : isHunk ? "bg-info/10 text-info" : "text-foreground/70",
+            )}
+          >
+            <span className="w-10 shrink-0 select-none px-1 text-right text-muted-foreground/50">{ln.o}</span>
+            <span className="w-10 shrink-0 select-none px-1 text-right text-muted-foreground/50">{ln.n}</span>
+            <span className="flex-1 px-2">{line || " "}</span>
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+/** Colorized unified-diff overlay for one file (sidebar mode). */
 function DiffOverlay({ diff, onClose }: { diff: { path: string; staged: boolean; text: string }; onClose: () => void }) {
   return (
     <div className="absolute inset-0 z-40 flex flex-col bg-editor">
@@ -450,25 +519,7 @@ function DiffOverlay({ diff, onClose }: { diff: { path: string; staged: boolean;
         <button onClick={onClose} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2 [scrollbar-width:thin]">
-        {diff.text.trim() ? (
-          <pre className="font-mono text-[11.5px] leading-relaxed">
-            {diff.text.split("\n").map((line, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "whitespace-pre-wrap px-1",
-                  line.startsWith("+") && !line.startsWith("+++") ? "bg-primary/10 text-primary" :
-                  line.startsWith("-") && !line.startsWith("---") ? "bg-destructive/10 text-destructive" :
-                  line.startsWith("@@") ? "text-info" : "text-foreground/70",
-                )}
-              >
-                {line || " "}
-              </div>
-            ))}
-          </pre>
-        ) : (
-          <p className="p-3 text-[12px] text-muted-foreground">No differences.</p>
-        )}
+        <DiffBody text={diff.text} />
       </div>
     </div>
   );

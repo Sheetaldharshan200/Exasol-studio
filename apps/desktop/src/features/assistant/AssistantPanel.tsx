@@ -512,14 +512,27 @@ export function AssistantPanel({
       }
       const n = status.files.length;
       if (n === 0) {
-        if (!silent) setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: "Workspace already up to date — nothing to commit." }]);
+        // Nothing changed — stay quiet (no chat spam). A manual click opens the
+        // Git view so the user sees the (clean) state there.
+        if (!silent) window.dispatchEvent(new CustomEvent("studio:open-git"));
         return;
       }
       const clean = (summary || "workspace update").replace(/\s+/g, " ").trim().slice(0, 72);
       await ipc.gitCommit(`Exa: ${clean}`, true);
-      setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: `Committed ${n} workspace change${n === 1 ? "" : "s"} to git.` }]);
+      // Feedback via the notification bell + refresh any open Git view — never
+      // repeated chat notes.
+      window.dispatchEvent(new CustomEvent("studio:git-changed"));
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "success", title: "Committed to git", body: `${n} workspace change${n === 1 ? "" : "s"} committed.` },
+        }),
+      );
     } catch (e) {
-      if (!silent) setItems((m) => [...m, { kind: "note", id: `g-${Date.now()}`, text: `Git commit skipped: ${errorMessage(e)}` }]);
+      if (!silent) {
+        window.dispatchEvent(
+          new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Git commit skipped", body: errorMessage(e) } }),
+        );
+      }
     } finally {
       setCommitting(false);
     }

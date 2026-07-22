@@ -42,24 +42,36 @@ export function Notifications() {
   const ref = useRef<HTMLDivElement>(null);
   const unread = items.filter((n) => !n.read).length;
 
-  // Live notices pushed from the backend (component update watcher, etc.).
+  // Live notices from the backend (Tauri event) AND from the frontend (a
+  // window CustomEvent, e.g. the agent's git auto-commit).
   useEffect(() => {
-    if (!isTauri()) return;
-    let un: UnlistenFn | undefined;
-    void listen<{ kind: NoticeKind; title: string; body: string }>("studio:notice", (e) => {
+    const push = (n: { kind?: NoticeKind; title: string; body: string }) =>
       setItems((list) => [
         {
           id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          kind: e.payload.kind ?? "info",
-          title: e.payload.title,
-          body: e.payload.body,
+          kind: n.kind ?? "info",
+          title: n.title,
+          body: n.body,
           time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           read: false,
         },
         ...list,
       ]);
-    }).then((u) => (un = u));
-    return () => un?.();
+    const onWin = (e: Event) => {
+      const d = (e as CustomEvent<{ kind?: NoticeKind; title: string; body: string }>).detail;
+      if (d?.title) push(d);
+    };
+    window.addEventListener("studio:notice", onWin);
+    let un: UnlistenFn | undefined;
+    if (isTauri()) {
+      void listen<{ kind: NoticeKind; title: string; body: string }>("studio:notice", (e) => push(e.payload)).then(
+        (u) => (un = u),
+      );
+    }
+    return () => {
+      window.removeEventListener("studio:notice", onWin);
+      un?.();
+    };
   }, []);
 
   useEffect(() => {

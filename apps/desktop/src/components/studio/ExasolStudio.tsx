@@ -165,7 +165,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git";
 
 type SqlTab = {
   id: string;
@@ -226,6 +226,7 @@ const TAB_ICON: Record<TabView, typeof Terminal> = {
   connInfo: Plug,
   welcome: Sparkles,
   artifact: FileCode2,
+  git: GitBranch,
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -2702,6 +2703,34 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open (or focus) the full-page Source Control (git) tab.
+  function openGit() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "git");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-git-${Date.now()}-${tabCounter.current}`,
+      title: "Source Control",
+      view: "git",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+  const openGitRef = useRef(openGit);
+  openGitRef.current = openGit;
+  useEffect(() => {
+    const on = () => openGitRef.current();
+    window.addEventListener("studio:open-git", on);
+    return () => window.removeEventListener("studio:open-git", on);
+  }, []);
+
   // Open (or focus) the Guides & Docs tab.
   function openGuides() {
     const list = tabsFor(connKey);
@@ -3102,6 +3131,13 @@ export function ExasolStudio({
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
               openGuides();
+              return;
+            }
+            if (id === "git") {
+              // Source Control opens as a full-page tab (GitHub-style two-pane).
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+              openGit();
               return;
             }
             if (id === "bi") {
@@ -3604,6 +3640,10 @@ export function ExasolStudio({
           ) : activeTab.view === "guides" ? (
             <div className="min-h-0 flex-1">
               <Docs />
+            </div>
+          ) : activeTab.view === "git" ? (
+            <div className="flex min-h-0 flex-1 flex-col bg-editor">
+              <GitPanel full />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
