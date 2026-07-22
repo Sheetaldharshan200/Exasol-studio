@@ -18,6 +18,7 @@ import {
   Link2,
   List,
   Loader2,
+  Pencil,
   Play,
   Plus,
   Share2,
@@ -363,31 +364,68 @@ function CellView({
     });
   }
 
+  // Rendered text/diagram cell: clean, notebook-style — no box, gutter, run or
+  // actions chrome. Click to edit; a faint hover control lets you edit/move/remove.
+  if (rendered) {
+    return (
+      <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
+        <InsertBar onAdd={() => onInsert("above", "sql")} className="-top-2.5" />
+        <div className="relative rounded-lg px-1">
+          <div onClick={onEdit} className="cursor-text">
+            {isMd ? (
+              cell.src.trim() ? (
+                <div className="md-body max-w-none px-3 py-2 text-[13px] leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: (props) => <img {...props} className="my-2 max-w-full rounded-md border border-border" alt={props.alt ?? ""} /> }}>
+                    {cell.src}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <p className="px-3 py-2 text-[13px] text-muted-foreground/50 italic">Empty text cell — click to edit</p>
+              )
+            ) : (
+              <MermaidView code={cell.src} />
+            )}
+          </div>
+          {/* Faint hover controls — no box, keeps the notebook feel. */}
+          <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+            <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
+            <button onClick={onEdit} title="Edit" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
+            <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+        <InsertBar onAdd={() => onInsert("below", "sql")} className="-bottom-2.5" />
+      </div>
+    );
+  }
+
   return (
     <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
       <InsertBar onAdd={() => onInsert("above", "sql")} className="-top-2.5" />
 
       <div className={cn("overflow-hidden rounded-lg border border-border bg-editor transition-colors", queued && "ring-2 ring-inset ring-primary/40")}>
         <div className="flex items-stretch">
-          {/* Left-center gutter — the Jupyter [n] that turns into a Run button
-              on hover (it's both the run control and the run indicator). */}
-          <button
-            onClick={onRun}
-            disabled={cell.running}
-            title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"}
-            className="group/run flex w-10 shrink-0 select-none items-center justify-center"
-          >
-            {cell.running ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-            ) : (
-              <>
-                <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">
-                  {isSql ? `[${cell.count ?? " "}]` : "[ ]"}
-                </span>
-                <Play className="hidden h-3.5 w-3.5 fill-current text-primary group-hover/run:block" />
-              </>
-            )}
-          </button>
+          {/* Left-center gutter — SQL only: the Jupyter [n] that turns into a
+              Run button on hover (run control + indicator). Text/diagram cells
+              have no run — they render when you click away. */}
+          {isSql ? (
+            <button
+              onClick={onRun}
+              disabled={cell.running}
+              title="Run (⌘/Ctrl+Enter)"
+              className="group/run flex w-10 shrink-0 select-none items-center justify-center"
+            >
+              {cell.running ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              ) : (
+                <>
+                  <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">[{cell.count ?? " "}]</span>
+                  <Play className="hidden h-3.5 w-3.5 fill-current text-primary group-hover/run:block" />
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="w-10 shrink-0" />
+          )}
           <div className="min-w-0 flex-1">
         {/* Cell header: type dropdown + (Markdown) format toolbar + (Text/Diagram) Preview|Code toggle. */}
         <div className="flex items-center gap-2 px-2 pt-1.5">
@@ -443,21 +481,7 @@ function CellView({
           ) : null}
         </div>
 
-        {rendered && isMd ? (
-              <div onDoubleClick={onEdit} className="md-body max-w-none cursor-text px-3 py-2 text-[13px] leading-relaxed">
-                {cell.src.trim() ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: (props) => <img {...props} className="my-2 max-w-full rounded-md border border-border" alt={props.alt ?? ""} /> }}>
-                    {cell.src}
-                  </ReactMarkdown>
-                ) : (
-                  <span className="text-muted-foreground/50 italic">Empty text cell — double-click to edit</span>
-                )}
-              </div>
-            ) : rendered && isMermaid ? (
-              <div onDoubleClick={onEdit} className="cursor-text">
-                <MermaidView code={cell.src} />
-              </div>
-            ) : isSql ? (
+        {isSql ? (
               // Monaco SQL cell — Exasol autocompletion comes from the app-global
               // completion provider on the shared monaco instance.
               <div style={{ height: editorHeight }} className="py-1">
@@ -499,8 +523,14 @@ function CellView({
                 autoFocus
                 onChange={(e) => onChange(e.target.value)}
                 onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onRun(); } }}
+                // Click away → render (unless focus moved to this cell's own
+                // controls like the format toolbar).
+                onBlur={(e) => {
+                  const cellEl = (e.currentTarget as HTMLElement).closest("[data-cell-id]");
+                  if (!cellEl || !cellEl.contains(e.relatedTarget as Node)) onRun();
+                }}
                 rows={lines}
-                placeholder={isMermaid ? "graph TD; A[Start] --> B[Next]   ·   ⌘/Ctrl+Enter to render" : "# Markdown — images, tables, links   ·   ⌘/Ctrl+Enter to render"}
+                placeholder={isMermaid ? "graph TD; A[Start] --> B[Next]   ·   click away to render" : "# Markdown — images, tables, links   ·   click away to render"}
                 className="min-w-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
               />
             )}
