@@ -2816,6 +2816,29 @@ export function ExasolStudio({
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
 
+  // Clicking a notification navigates to what it's about (studio:navigate).
+  const navigateRef = useRef<(to: string) => void>(() => undefined);
+  navigateRef.current = (to: string) => {
+    if (to.startsWith("file:")) {
+      void ipc.revealPath(to.slice(5)).catch(() => undefined);
+      return;
+    }
+    if (to === "git") openGit();
+    else if (to === "notebook") openNotebook();
+    else if (to === "skills") openSkills();
+    else if (to === "bi") void openBi();
+    else if (to.startsWith("marketplace")) {
+      openMarketplace();
+      if (to === "marketplace:updates")
+        setTimeout(() => window.dispatchEvent(new CustomEvent("studio:marketplace-nav", { detail: { nav: "updates" } })), 80);
+    }
+  };
+  useEffect(() => {
+    const on = (e: Event) => navigateRef.current((e as CustomEvent<{ to?: string }>).detail?.to ?? "");
+    window.addEventListener("studio:navigate", on);
+    return () => window.removeEventListener("studio:navigate", on);
+  }, []);
+
   // Open (or focus) the Guides & Docs tab.
   function openGuides() {
     const list = tabsFor(connKey);

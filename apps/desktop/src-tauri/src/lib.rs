@@ -112,6 +112,7 @@ pub fn run() {
             market::market_uninstall,
             market::market_doc_file,
             market::open_external,
+            market::reveal_path,
             market::exasol_local_ctl,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,

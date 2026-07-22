@@ -468,6 +468,7 @@ export const ipc = {
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
+  revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
   saveAttachment: (name: string, base64Data: string) =>

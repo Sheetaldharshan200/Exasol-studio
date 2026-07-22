@@ -338,8 +338,8 @@ export function NotebookTab({
     runningAll.current = false;
   }
 
-  const notify = (kind: "success" | "warning", title: string, body: string) =>
-    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
+  const notify = (kind: "success" | "warning", title: string, body: string, go?: string) =>
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body, go } }));
 
   // Export the whole notebook — notes, SQL + result tables, and diagrams — as
   // one document (Markdown / self-contained HTML / PDF via the print dialog).
@@ -351,13 +351,13 @@ export function NotebookTab({
       if (kind === "markdown") {
         const md = buildNotebookMarkdown(title, exportCells);
         const path = await saveDialog({ defaultPath: `${slug}.md`, filters: [{ name: "Markdown", extensions: ["md"] }] });
-        if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`); }
+        if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
         return;
       }
       const html = await buildNotebookHtml(title, exportCells);
       if (kind === "html") {
         const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
-        if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`); }
+        if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
       } else {
         printNotebookHtml(html);
         notify("success", "Print dialog opened", "Choose “Save as PDF”. No dialog? Export HTML and print from your browser.");

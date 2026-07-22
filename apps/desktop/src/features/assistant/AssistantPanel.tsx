@@ -563,13 +563,13 @@ export function AssistantPanel({
       window.dispatchEvent(new CustomEvent("studio:git-changed"));
       window.dispatchEvent(
         new CustomEvent("studio:notice", {
-          detail: { kind: "success", title: "Committed to git", body: `${n} workspace change${n === 1 ? "" : "s"} committed.` },
+          detail: { kind: "success", title: "Committed to git", body: `${n} workspace change${n === 1 ? "" : "s"} committed.`, go: "git" },
         }),
       );
     } catch (e) {
       if (!silent) {
         window.dispatchEvent(
-          new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Git commit skipped", body: errorMessage(e) } }),
+          new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Git commit skipped", body: errorMessage(e), go: "git" } }),
         );
       }
     } finally {

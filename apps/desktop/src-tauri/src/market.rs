@@ -419,6 +419,35 @@ pub async fn market_doc_file(repo: String, path: String) -> AppResult<Value> {
 /// than the webview's window.open (a no-op in Tauri) and independent of the
 /// JS opener plugin's scoping.
 #[tauri::command]
+/// Reveal an exported/saved file in the OS file manager (Finder/Explorer).
+#[tauri::command]
+pub fn reveal_path(path: String) -> AppResult<()> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(AppError::Storage(format!("File not found: {path}")));
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg("-R").arg(&path);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("explorer");
+        c.arg(format!("/select,{path}"));
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_else(|| path.clone()));
+        c
+    };
+    cmd.spawn().map_err(|e| AppError::Storage(format!("reveal failed: {e}")))?;
+    Ok(())
+}
+
 pub fn open_external(url: String) -> AppResult<()> {
     if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
         return Err(AppError::Storage(

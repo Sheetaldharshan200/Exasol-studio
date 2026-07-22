@@ -52,9 +52,11 @@ fn is_newer(remote: &str, local: &str) -> bool {
 }
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
+    // `go` makes the notification clickable: it navigates to the Marketplace's
+    // Updates section, where the new version can be installed.
     let _ = app.emit(
         "studio:notice",
-        json!({ "kind": "info", "title": title, "body": body }),
+        json!({ "kind": "info", "title": title, "body": body, "go": "marketplace:updates" }),
     );
 }
 

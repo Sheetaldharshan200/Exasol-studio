@@ -369,6 +369,16 @@ export function Marketplace() {
   const [queue, setQueue] = useState<{ id: string; name: string; status: "pending" | "installing" | "done" | "failed" }[]>([]);
   const [pendingPack, setPendingPack] = useState<string[] | null>(null);
 
+  // Notification deep-link ("Update available" → the Updates section).
+  useEffect(() => {
+    const on = (e: Event) => {
+      const nav = (e as CustomEvent<{ nav?: string }>).detail?.nav;
+      if (nav) setNav(nav);
+    };
+    window.addEventListener("studio:marketplace-nav", on);
+    return () => window.removeEventListener("studio:marketplace-nav", on);
+  }, []);
+
   const refreshInstalled = useCallback(() => {
     ipc.marketInstalled().then(setInstalled).catch(() => undefined);
     ipc.marketDetect().then(setDetected).catch(() => undefined);

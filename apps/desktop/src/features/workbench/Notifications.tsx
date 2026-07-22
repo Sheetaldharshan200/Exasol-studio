@@ -7,7 +7,17 @@ import { isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 type NoticeKind = "info" | "success" | "warning";
-type Notice = { id: string; kind: NoticeKind; title: string; body: string; time: string; read: boolean };
+type Notice = {
+  id: string;
+  kind: NoticeKind;
+  title: string;
+  body: string;
+  time: string;
+  read: boolean;
+  /** Navigation target — clicking the notice goes there ("git", "notebook",
+   *  "marketplace:updates", "bi", "skills", or "file:<path>" to reveal). */
+  go?: string;
+};
 
 const SEED: Notice[] = [
   {
@@ -45,26 +55,27 @@ export function Notifications() {
   // Live notices from the backend (Tauri event) AND from the frontend (a
   // window CustomEvent, e.g. the agent's git auto-commit).
   useEffect(() => {
-    const push = (n: { kind?: NoticeKind; title: string; body: string }) =>
+    const push = (n: { kind?: NoticeKind; title: string; body: string; go?: string }) =>
       setItems((list) => [
         {
           id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           kind: n.kind ?? "info",
           title: n.title,
           body: n.body,
+          go: n.go,
           time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           read: false,
         },
         ...list,
       ]);
     const onWin = (e: Event) => {
-      const d = (e as CustomEvent<{ kind?: NoticeKind; title: string; body: string }>).detail;
+      const d = (e as CustomEvent<{ kind?: NoticeKind; title: string; body: string; go?: string }>).detail;
       if (d?.title) push(d);
     };
     window.addEventListener("studio:notice", onWin);
     let un: UnlistenFn | undefined;
     if (isTauri()) {
-      void listen<{ kind: NoticeKind; title: string; body: string }>("studio:notice", (e) => push(e.payload)).then(
+      void listen<{ kind: NoticeKind; title: string; body: string; go?: string }>("studio:notice", (e) => push(e.payload)).then(
         (u) => (un = u),
       );
     }
@@ -178,12 +189,20 @@ export function Notifications() {
                       return (
                         <AnimatedListItem key={n.id}>
                           <button
-                            onClick={() => markRead(n.id)}
+                            onClick={() => {
+                              markRead(n.id);
+                              if (n.go) {
+                                window.dispatchEvent(new CustomEvent("studio:navigate", { detail: { to: n.go } }));
+                                setOpen(false);
+                              }
+                            }}
+                            title={n.go ? "Open" : undefined}
                             className={cn(
                               "group relative flex w-full gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
                               n.read
                                 ? "border-transparent hover:bg-secondary/50"
                                 : "border-border bg-secondary/40 hover:bg-secondary/70",
+                              n.go && "cursor-pointer hover:border-primary/40",
                             )}
                           >
                             <span
