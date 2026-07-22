@@ -58,6 +58,11 @@ Verify: `claude mcp list` should show `llm-wiki` and `obsidian-vault` as
   Obsidian's `.obsidian/` UI state. `graph.json` is set to **union-merge** via
   graphify's git merge driver (`.gitattributes`), so parallel edits don't
   conflict. Run `graphify update .` after code changes to refresh it.
+- **Visual graph**: open `docs/codebase-graph.html` in a browser — a
+  self-contained interactive view of the whole codebase graph (vis-network
+  inlined; works offline). Regenerate with
+  `GRAPHIFY_VIZ_NODE_LIMIT=10000 graphify cluster-only . --no-label` then copy
+  `graphify-out/graph.html` over it.
 - The native Python `obsidian-mcp` package is currently broken against recent
   `fastmcp`; the filesystem MCP above is the reliable "vault as folder" path and
   needs no REST-API key or running Obsidian.

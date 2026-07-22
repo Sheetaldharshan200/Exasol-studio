@@ -31,6 +31,9 @@ type Pending = {
   after: string;
   recoverable: boolean;
   sql: string[];
+  /** After a successful create, open this grantee's privileges drawer so the
+   *  admin can assign roles/privileges right away. */
+  openPrivs?: { name: string; isRole: boolean };
 };
 const ACT: Record<ActKind, { icon: typeof Trash2; verb: string; danger: boolean }> = {
   delete: { icon: Trash2, verb: "Delete", danger: true },
@@ -79,8 +82,18 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
     ipc.getDbaOverview(profileId).then(setDba).catch((e) => setError(errorMessage(e))).finally(() => setLoading(false));
     // The USER_* views expose the CURRENT user's own grants — no DBA needed —
     // so the probe works for everyone and reflects exactly what they can do.
-    Promise.all([col1("SELECT GRANTED_ROLE FROM EXA_USER_ROLE_PRIVS"), col1("SELECT PRIVILEGE FROM EXA_USER_SYS_PRIVS")])
-      .then(([roles, sys]) => setCaps({ dba: roles.includes("DBA"), sys: new Set(sys) }))
+    // SYS is the built-in superuser and often does NOT list the DBA role/privs
+    // in those views, so treat it (and anyone able to read EXA_DBA_USERS) as an
+    // admin explicitly — otherwise the default local-DB admin can't manage anyone.
+    Promise.all([
+      col1("SELECT CURRENT_USER"),
+      col1("SELECT GRANTED_ROLE FROM EXA_USER_ROLE_PRIVS"),
+      col1("SELECT PRIVILEGE FROM EXA_USER_SYS_PRIVS"),
+    ])
+      .then(([who, roles, sys]) => {
+        const me = (who[0] ?? "").toUpperCase();
+        setCaps({ dba: me === "SYS" || roles.includes("DBA"), sys: new Set(sys) });
+      })
       .catch(() => setCaps({ dba: false, sys: new Set() }));
   }, [profileId, col1]);
   useEffect(load, [load]);
@@ -110,6 +123,7 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
       setPending(null);
       setDialog(null);
       load();
+      if (p.openPrivs) setDrawer(p.openPrivs); // jump straight to assigning roles/privileges
     } catch (e) {
       setNotice(`Failed — ${errorMessage(e)}`);
       setPending(null);
@@ -346,11 +360,11 @@ function AdminDialog({ dialog, onCancel, onSubmit }: { dialog: { kind: "add-user
       const sql = [dbaSql.createUser(name, password)];
       if (createSession) sql.push(dbaSql.grantCreateSession(name));
       if (comment.trim()) sql.push(dbaSql.commentUser(name, comment));
-      onSubmit({ kind: "create", title: `Create user ${upper}`, now: `No user named ${upper} exists.`, after: `${upper} is created${createSession ? " and can sign in (CREATE SESSION granted)" : " but cannot sign in until granted CREATE SESSION"}.`, recoverable: true, sql });
+      onSubmit({ kind: "create", title: `Create user ${upper}`, now: `No user named ${upper} exists.`, after: `${upper} is created${createSession ? " and can sign in (CREATE SESSION granted)" : " but cannot sign in until granted CREATE SESSION"}. You'll then assign roles/privileges.`, recoverable: true, sql, openPrivs: { name: upper, isRole: false } });
     } else if (dialog.kind === "add-role") {
       if (!name.trim()) return;
       const upper = name.trim().toUpperCase();
-      onSubmit({ kind: "create", title: `Create role ${upper}`, after: `Role ${upper} is created (with no privileges yet).`, recoverable: true, sql: [dbaSql.createRole(name)] });
+      onSubmit({ kind: "create", title: `Create role ${upper}`, after: `Role ${upper} is created; you'll then add privileges to it.`, recoverable: true, sql: [dbaSql.createRole(name)], openPrivs: { name: upper, isRole: true } });
     } else if (dialog.kind === "password") {
       if (!password) return;
       onSubmit({ kind: "key", title: `Change password — ${dialog.user}`, now: `${dialog.user}'s current password stays in effect.`, after: `${dialog.user} must sign in with the new password. Existing sessions keep running.`, recoverable: true, sql: [dbaSql.changePassword(dialog.user, password)] });

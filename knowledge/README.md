@@ -11,6 +11,8 @@ accumulated knowledge directly**, no per-machine setup for the content itself.
 - `../graphify-out/graph.json` — the **graphify** codebase knowledge graph
   (committed; union-merged across contributors via graphify's git merge driver).
   Rebuild with `graphify update .`.
+- `../docs/codebase-graph.html` — a **self-contained interactive HTML viewer**
+  of the graph (open it in any browser; no server or internet needed).
 
 Setup for a new contributor: `./scripts/setup-knowledge-tools.sh` (points the
 MCPs at these in-repo folders). See `docs/knowledge-tools.md`.
