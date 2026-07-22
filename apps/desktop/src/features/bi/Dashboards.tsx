@@ -8,11 +8,13 @@ import { PerspectiveViewer } from "@perspective-dev/react";
 import "@perspective-dev/viewer/dist/css/themes.css";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
+import { Icon } from "@/components/ui/icon";
 import {
   ArrowLeft,
   BarChart3,
   FileDown,
   Loader2,
+  Maximize2,
   Pencil,
   Play,
   Plus,
@@ -21,6 +23,14 @@ import {
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { dashboards, type Dashboard, type DashPanel } from "@/lib/agent-client";
@@ -33,6 +43,8 @@ import { cn } from "@/lib/utils";
 // active connection — no external BI server.
 
 const PALETTE = ["#5fc33b", "#4fa823", "#8ed16f", "#2f7d14", "#b5e3a1", "#1f5c0d", "#d3efc7"];
+// Rows per page for server-side table pagination (LIMIT/OFFSET pushed to Exasol).
+const TABLE_PAGE = 1000;
 
 // One shared Perspective WASM worker for all table panels (lazy).
 let pspClientPromise: ReturnType<typeof pspWorker> | null = null;
@@ -245,6 +257,20 @@ function DashboardView({
     }
   }
   const [nonce, setNonce] = useState(0);
+  // Auto-refresh: re-run every panel's query on an interval (polling — Exasol
+  // doesn't push row changes, so "live" means a periodic full re-query). The
+  // choice is persisted on the dashboard, so it stays live across reopens.
+  const autoRefreshMs = dash.refreshMs ?? 0;
+  const setAutoRefresh = (ms: number) => void saveDash({ ...dash, refreshMs: ms || undefined });
+  useEffect(() => {
+    if (!autoRefreshMs) return;
+    // Skip ticks while the window/tab is hidden so we never poll the database
+    // in the background (avoids needless load when the dashboard isn't on screen).
+    const t = setInterval(() => {
+      if (!document.hidden) setNonce((n) => n + 1);
+    }, autoRefreshMs);
+    return () => clearInterval(t);
+  }, [autoRefreshMs]);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
@@ -343,9 +369,15 @@ function DashboardView({
   }, []);
 
   const layout: LayoutItem[] = useMemo(
-    () => dash.panels.map((p) => ({ i: p.id, x: p.grid.x, y: p.grid.y, w: p.grid.w, h: p.grid.h })),
+    // minW/minH keep panels from being dragged down to an unreadable size.
+    () => dash.panels.map((p) => ({ i: p.id, x: p.grid.x, y: p.grid.y, w: p.grid.w, h: p.grid.h, minW: 2, minH: 3 })),
     [dash],
   );
+
+  // Fixed-size presets so a panel snaps to a tidy layout in one click.
+  function setPanelSize(id: string, w: number, h: number) {
+    void saveDash({ ...dash, panels: dash.panels.map((p) => (p.id === id ? { ...p, grid: { ...p.grid, w, h } } : p)) });
+  }
 
   function persistLayout(next: readonly LayoutItem[]) {
     const updated: Dashboard = {
@@ -424,10 +456,28 @@ function DashboardView({
           onClick={() => setNonce((n) => n + 1)}
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
           aria-label="Refresh all panels"
-          title="Refresh"
+          title="Refresh now"
         >
-          <RefreshCcw className="h-3.5 w-3.5" />
+          <RefreshCcw className={cn("h-3.5 w-3.5", autoRefreshMs && "text-primary")} />
         </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={cn("flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px]", autoRefreshMs ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+              title="Auto-refresh — re-run panel queries on an interval"
+            >
+              {autoRefreshMs ? `${autoRefreshMs / 1000}s` : "Live"}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Live auto-refresh</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => setAutoRefresh(0)}>Off</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAutoRefresh(5_000)}>Every 5s</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAutoRefresh(10_000)}>Every 10s</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAutoRefresh(30_000)}>Every 30s</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAutoRefresh(60_000)}>Every 60s</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {exportNote ? (
         <div className="border-b border-border bg-secondary/40 px-3 py-1 text-[11px] text-muted-foreground">{exportNote}</div>
@@ -446,6 +496,19 @@ function DashboardView({
             setNonce((n) => n + 1);
           }}
         />
+      ) : dash.panels.length === 0 ? (
+        <div ref={containerRef} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground">
+            <Icon name="dashboard-grid" className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">No panels yet</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Add a panel to chart a query, show a KPI, or write a note.</p>
+          </div>
+          <button onClick={addPanel} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
+            <Plus className="h-3.5 w-3.5" /> Add panel
+          </button>
+        </div>
       ) : (
         <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto p-2">
           <GridLayout
@@ -466,8 +529,8 @@ function DashboardView({
                     void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === p.id ? { ...x, viz } : x)) });
                   }}
                   onEdit={() => setEditing(p)}
+                  onSize={(w, h) => setPanelSize(p.id, w, h)}
                   onDelete={() => {
-                    if (dash.panels.length <= 1) return;
                     void saveDash({ ...dash, panels: dash.panels.filter((x) => x.id !== p.id) });
                   }}
                 />
@@ -488,6 +551,7 @@ function Panel({
   connectionName,
   nonce,
   onEdit,
+  onSize,
   onDelete,
   onVizChange,
 }: {
@@ -496,6 +560,7 @@ function Panel({
   connectionName: string;
   nonce: number;
   onEdit: () => void;
+  onSize: (w: number, h: number) => void;
   onDelete: () => void;
   onVizChange?: (viz: DashPanel["viz"]) => void;
 }) {
@@ -503,35 +568,92 @@ function Panel({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const sql = panel.query?.sql ?? "";
+  // Guards a slow query from piling up: if a fetch for the SAME query is still
+  // running when an auto-refresh tick arrives, skip the tick instead of firing
+  // a second concurrent query.
+  const inFlight = useRef(false);
+  const queryKeyRef = useRef("");
+  // Server-side pagination for flat tables: browse the FULL dataset a page at a
+  // time (LIMIT/OFFSET pushed to Exasol) instead of a bounded 50k sample.
+  const isTable = panel.viz.type === "table";
+  const [page, setPage] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  useEffect(() => setPage(0), [sql, panel.viz.type]); // new query -> first page
 
   useEffect(() => {
     if (!profileId || panel.viz.type === "markdown" || !sql.trim()) return;
+    const base = sql.trim().replace(/;\s*$/, "");
+    // One extra row tells us whether a next page exists (no COUNT round-trip).
+    const effSql = isTable ? `SELECT * FROM (\n${base}\n) LIMIT ${TABLE_PAGE + 1} OFFSET ${page * TABLE_PAGE}` : base;
+    const cap = isTable ? TABLE_PAGE + 1 : 5000;
+    if (inFlight.current && effSql === queryKeyRef.current) return; // refresh while busy: drop tick
+    queryKeyRef.current = effSql;
+    inFlight.current = true;
     let cancelled = false;
     setLoading(true);
     ipc
-      .executeSql(profileId, connectionName, sql, panel.viz.type === "table" ? 50000 : 5000, false)
+      .executeSql(profileId, connectionName, effSql, cap, false)
       .then((res) => {
         if (cancelled) return;
         const first = res.results.find((r) => r.kind === "resultSet") ?? res.results[0];
         if (!first || first.error) setError(first?.error ?? "no result");
         else {
+          if (isTable) {
+            const more = first.rows.length > TABLE_PAGE;
+            setHasNext(more);
+            if (more) first.rows = first.rows.slice(0, TABLE_PAGE);
+            first.truncated = false; // paged, not a truncated sample
+          }
           setResult(first);
           setError(null);
         }
       })
       .catch((err) => !cancelled && setError(errorMessage(err)))
-      .finally(() => !cancelled && setLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+          inFlight.current = false;
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [profileId, connectionName, sql, panel.viz.type, nonce]);
+  }, [profileId, connectionName, sql, panel.viz.type, nonce, page, isTable]);
 
   return (
     <div className="flex h-full flex-col">
       <div className="dash-panel-title flex shrink-0 cursor-move items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5">
         <span className="truncate text-[11.5px] font-medium text-foreground">{panel.title || "Panel"}</span>
+        {result?.truncated ? (
+          <span
+            title={`Showing the first ${result.rowCount.toLocaleString()} rows. This panel loads a bounded sample — use GROUP BY / aggregation so Exasol summarises the full dataset server-side (fast, exact) instead of streaming raw rows here.`}
+            className="shrink-0 rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium uppercase text-warning"
+          >
+            sample
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-0.5">
-          {loading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+          {loading && !result ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className="hidden h-5 w-5 items-center justify-center rounded text-muted-foreground group-hover/panel:flex hover:text-foreground"
+                aria-label="Panel size"
+                title="Resize panel"
+              >
+                <Maximize2 className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuLabel>Panel size</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onSize(3, 4)}>Small · ¼ width</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onSize(6, 6)}>Medium · ½ width</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onSize(6, 9)}>Tall · ½ width</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onSize(12, 6)}>Wide · full width</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onSize(12, 10)}>Large · full width</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -568,7 +690,28 @@ function Panel({
         ) : panel.viz.type === "kpi" ? (
           <KpiPanel panel={panel} result={result} />
         ) : panel.viz.type === "table" ? (
-          <PerspectiveTable result={result} />
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="min-h-0 flex-1">
+              <PerspectiveTable result={result} />
+            </div>
+            {page > 0 || hasNext ? (
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-2.5 py-1 text-[10.5px] text-muted-foreground">
+                <span className="tabular-nums">Rows {page * TABLE_PAGE + 1}–{page * TABLE_PAGE + result.rows.length}</span>
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || loading}
+                  className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                  aria-label="Previous page"
+                ><ArrowLeft className="h-3 w-3" /></button>
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={!hasNext || loading}
+                  className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                  aria-label="Next page"
+                ><ArrowLeft className="h-3 w-3 rotate-180" /></button>
+              </div>
+            ) : null}
+          </div>
         ) : panel.viz.type === "explore" ? (
           <ExplorePanel panel={panel} result={result} onVizChange={onVizChange} />
         ) : (
@@ -907,6 +1050,7 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
     };
   }, []);
 
+  const prevVizRef = useRef<string>("");
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -916,8 +1060,14 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
       chart.setOption({ title: { text: "No data", left: "center", top: "center", textStyle: { color: "#888", fontSize: 12 } } });
       return;
     }
-    chart.setOption(built.primary as Parameters<typeof chart.setOption>[0], true);
-    if (built.override) chart.setOption(built.override as Parameters<typeof chart.setOption>[0]);
+    // Only a viz change needs a full rebuild (notMerge). A data-only refresh
+    // (live auto-refresh) merges, so ECharts animates values in place instead
+    // of clearing + replaying the entrance animation — no flicker.
+    const vizKey = JSON.stringify(viz);
+    const structural = vizKey !== prevVizRef.current;
+    prevVizRef.current = vizKey;
+    chart.setOption(built.primary as Parameters<typeof chart.setOption>[0], { notMerge: structural, lazyUpdate: true });
+    if (built.override) chart.setOption(built.override as Parameters<typeof chart.setOption>[0], { lazyUpdate: true });
   }, [result, viz]);
 
   return <div ref={ref} className="h-full w-full" />;

@@ -579,7 +579,7 @@ function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue
         ) : ctrl.type === "radio" ? (
           ctrl.options.map((o) => (
             <label key={o.value} className="flex cursor-pointer items-center gap-2 text-[12.5px]">
-              <input type="radio" checked={String(value) === o.value} onChange={() => onChange(o.value)} className="accent-[color:hsl(var(--primary))]" />
+              <input type="radio" checked={String(value) === o.value} onChange={() => onChange(o.value)} className="accent-[color:var(--primary)]" />
               {o.label}
             </label>
           ))

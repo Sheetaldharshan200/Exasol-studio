@@ -1959,6 +1959,7 @@ export function ExasolStudio({
   // group; dropping on a group header joins that group.
   // Pointer-drag state for tab reordering (see renderTabChip's onPointerDown).
   const tabDrag = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const moveTabRef = useRef<(dragId: string, targetId: string | null) => void>(() => undefined);
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -1966,6 +1967,7 @@ export function ExasolStudio({
       if (!drag) return;
       if (!drag.moved && Math.abs(e.clientX - drag.startX) < 5) return;
       drag.moved = true;
+      setDraggingTabId(drag.id);
       // Which tab is the pointer over? Reorder live (VS Code style).
       const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-tab-id]");
       const overId = el?.dataset.tabId;
@@ -1976,6 +1978,7 @@ export function ExasolStudio({
       const drag = tabDrag.current;
       if (drag?.moved) window.setTimeout(() => (tabDrag.current = null), 0);
       else tabDrag.current = null;
+      setDraggingTabId(null);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -2454,11 +2457,14 @@ export function ExasolStudio({
         }}
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
         className={cn(
-          "group flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
+          "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
           grouped && "border-r-0",
           tab.id === activeTabId
             ? "bg-editor text-foreground"
             : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
+          // Green insertion line marks the tab being dragged to its new slot.
+          draggingTabId === tab.id &&
+            "opacity-70 before:absolute before:inset-y-1 before:-left-px before:z-10 before:w-0.5 before:rounded-full before:bg-primary",
         )}
       >
         <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
@@ -3736,13 +3742,18 @@ export function ExasolStudio({
                 }}
                 onConnectDb={openConnect}
                 onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
-                onAsk={(text) => {
+                onAsk={(text, kind) => {
                   setAiOpen(true);
                   aiPanelRef.current?.expand();
+                  const ask = {
+                    sql: { text: "Explain this SQL, spot any issues, and suggest an improvement.", lang: "sql" },
+                    markdown: { text: "Improve this note — fix wording, structure it better, and fill any gaps.", lang: "markdown" },
+                    mermaid: { text: "Explain this diagram and suggest how to improve or extend it.", lang: "mermaid" },
+                  }[kind ?? "sql"];
                   setAiPrompt({
-                    text: "Explain this SQL, spot any issues, and suggest an improvement.",
+                    text: ask.text,
                     code: text || "",
-                    codeLang: "sql",
+                    codeLang: ask.lang,
                     nonce: Date.now(),
                     send: false,
                   });

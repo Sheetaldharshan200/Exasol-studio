@@ -132,7 +132,7 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
           </button>
         </div>
         <label className="mt-5 flex items-center gap-2 text-[12px] text-foreground">
-          <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="h-3.5 w-3.5 accent-[color:hsl(var(--primary))]" />
+          <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="h-3.5 w-3.5 accent-[color:var(--primary)]" />
           I've saved these somewhere safe.
         </label>
         <div className="mt-4">

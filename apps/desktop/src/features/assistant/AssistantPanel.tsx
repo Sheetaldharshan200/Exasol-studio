@@ -861,15 +861,32 @@ export function AssistantPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onOpenAttachment]);
 
-  async function answerPermission(id: string, allow: boolean) {
+  const answerPermission = useCallback(async (id: string, allow: boolean) => {
     if (!sessionRef.current) return;
     await agent.answerPermission(sessionRef.current, id, allow).catch(() => undefined);
-  }
+  }, []);
 
   function pickModel(ref: string) {
     setModel(ref);
     setShowPicker(false);
     void agent.setDefaultModel(ref).catch(() => undefined);
+  }
+
+  /** Typing a CLOSED fence (```sql … ``` or ''' … ''') in the composer turns it
+   *  into the monospace code-context chip above the input — a real code block,
+   *  kept out of the prose. The open fence is only tinted until it's closed. */
+  function absorbFences(next: string): string {
+    const m = /(```|''')([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)\1/.exec(next);
+    if (!m) return next;
+    const [whole, , lang, body] = m;
+    const content = body.replace(/\n$/, "");
+    if (content.trim()) {
+      setCodeContext((prev) =>
+        prev ? { ...prev, content: `${prev.content}\n\n${content}` } : { lang: lang || "sql", content },
+      );
+      setCodeExpanded(false);
+    }
+    return (next.slice(0, m.index) + next.slice(m.index + whole.length)).replace(/\n{3,}/g, "\n\n");
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -895,6 +912,10 @@ export function AssistantPanel({
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {
+      // Inside an OPEN code fence (``` or ''' not yet closed), Enter writes a
+      // newline so multi-line code can be typed — it must not fire the send.
+      const fences = input.match(/```|'''/g)?.length ?? 0;
+      if (fences % 2 === 1) return;
       e.preventDefault();
       void send(input);
     }
@@ -932,6 +953,28 @@ export function AssistantPanel({
     model.startsWith("builtin/") || model.startsWith("ollama/") || model.startsWith("lmstudio/") || model.startsWith("llamacpp/");
   const ollama = providers.find((p) => p.id === "ollama");
   const thinking = sending && !items.some((it) => it.kind === "msg" && it.streaming && it.content);
+
+  // Memoize the whole message list so typing in the composer (which re-renders
+  // this component every keystroke) doesn't reconcile the entire conversation.
+  const conversationBody = useMemo(
+    () =>
+      items.map((it) =>
+        it.kind === "msg" ? (
+          <BubbleMemo key={it.id} message={it} onOpenAttachmentName={openAttachmentByName} onUserAction={onUserAction} />
+        ) : it.kind === "tool" ? (
+          <ToolViewMemo key={it.id} item={it} />
+        ) : it.kind === "perm" ? (
+          <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
+        ) : (
+          <div key={it.id} className="flex items-center gap-2 py-0.5">
+            <span className="h-px flex-1 bg-border" />
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{it.text}</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+        ),
+      ),
+    [items, openAttachmentByName, onUserAction, answerPermission],
+  );
 
   return (
     <aside className="relative flex h-full min-w-0 flex-col overflow-hidden border-l border-border bg-panel">
@@ -1094,21 +1137,7 @@ export function AssistantPanel({
               </Suggestions>
             </div>
           ) : (
-            items.map((it) =>
-              it.kind === "msg" ? (
-                <BubbleMemo key={it.id} message={it} onOpenAttachmentName={openAttachmentByName} onUserAction={onUserAction} />
-              ) : it.kind === "tool" ? (
-                <ToolViewMemo key={it.id} item={it} />
-              ) : it.kind === "perm" ? (
-                <PermissionCard key={it.id} item={it} onAnswer={answerPermission} />
-              ) : (
-                <div key={it.id} className="flex items-center gap-2 py-0.5">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{it.text}</span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-              ),
-            )
+            conversationBody
           )}
           {thinking ? (
             <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
@@ -1293,7 +1322,7 @@ export function AssistantPanel({
               placeholder={model ? "Ask, or / for commands…" : "Pick a model to start…"}
               value={input}
               rows={1}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => setInput(absorbFences(e.target.value))}
               onKeyDown={onKeyDown}
               onScroll={syncOverlayScroll}
             />

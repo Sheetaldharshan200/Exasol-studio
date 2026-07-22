@@ -278,6 +278,9 @@ export type Dashboard = {
   title: string;
   description: string;
   panels: DashPanel[];
+  /** Auto-refresh cadence in ms (0/undefined = off). Makes the dashboard live:
+   *  every panel re-runs its query on this interval. */
+  refreshMs?: number;
 };
 
 export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
