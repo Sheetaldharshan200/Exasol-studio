@@ -810,7 +810,7 @@ export function Visualizer({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
-      <header className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-3 [scrollbar-width:thin]">
+      <header className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex shrink-0 items-center gap-2">
           <Link2 className="h-4 w-4 text-[#a78bfa]" />
           <span className="font-heading text-[14px] font-bold text-foreground">Schema visualizer</span>

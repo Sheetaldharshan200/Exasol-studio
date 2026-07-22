@@ -415,10 +415,6 @@ pub async fn market_doc_file(repo: String, path: String) -> AppResult<Value> {
     Ok(Value::Null)
 }
 
-/// Open a URL in the user's default browser via the OS opener. More reliable
-/// than the webview's window.open (a no-op in Tauri) and independent of the
-/// JS opener plugin's scoping.
-#[tauri::command]
 /// Reveal an exported/saved file in the OS file manager (Finder/Explorer).
 #[tauri::command]
 pub fn reveal_path(path: String) -> AppResult<()> {
@@ -448,6 +444,10 @@ pub fn reveal_path(path: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Open a URL in the user's default browser via the OS opener. More reliable
+/// than the webview's window.open (a no-op in Tauri) and independent of the
+/// JS opener plugin's scoping.
+#[tauri::command]
 pub fn open_external(url: String) -> AppResult<()> {
     if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
         return Err(AppError::Storage(

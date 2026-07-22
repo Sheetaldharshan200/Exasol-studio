@@ -138,9 +138,9 @@ export function ThemePresetPicker({ onClose }: { onClose?: () => void }) {
           ) : null}
         </div>
 
-        {/* Fonts — bundled, all SIL-OFL (free for commercial use). */}
+        {/* Fonts — bundled locally. */}
         <div className="border-t border-border/60 px-2 pb-1 pt-2">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Fonts (open licensed)</div>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Fonts</div>
           <div className="flex flex-col gap-1.5">
             <select
               value={custom.sansId ?? "inter"}
