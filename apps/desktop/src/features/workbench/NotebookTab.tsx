@@ -5,23 +5,44 @@ import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
   ArrowUp,
+  Bold,
   ChevronDown,
+  Code,
   Code2,
   Database,
+  Heading,
+  Italic,
+  Link2,
+  List,
   Loader2,
   Pencil,
   Play,
   Plus,
+  Share2,
   Sparkles,
+  SquareCode,
   Text as TextIcon,
   Trash2,
   Waypoints,
 } from "lucide-react";
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { SourceLogo } from "@/features/connection/SourceLogo";
+import { MermaidView } from "@/features/workbench/MermaidView";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-type CellType = "sql" | "markdown";
+type CellType = "sql" | "markdown" | "mermaid";
+const CELL_TYPES: { value: CellType; label: string; icon: typeof Code2 }[] = [
+  { value: "sql", label: "SQL", icon: Code2 },
+  { value: "markdown", label: "Markdown", icon: TextIcon },
+  { value: "mermaid", label: "Mermaid", icon: Share2 },
+];
 type Cell = {
   id: string;
   type: CellType;
@@ -42,7 +63,8 @@ const mkCell = (type: CellType = "sql", src = ""): Cell => ({
   result: null,
   error: null,
   count: null,
-  editing: type === "markdown" ? !src : true,
+  // Text/diagram cells are preview-first once they have content; SQL always edits.
+  editing: type === "sql" ? true : !src,
 });
 
 export type NotebookConn = { id: string; name: string; host: string };
@@ -88,8 +110,8 @@ export function NotebookTab({
         return cs;
       });
       if (!cell) return;
-      if (cell.type === "markdown") {
-        patch(id, { editing: false });
+      if (cell.type === "markdown" || cell.type === "mermaid") {
+        patch(id, { editing: false }); // render the preview
         return;
       }
       if (!profileId) {
@@ -147,10 +169,13 @@ export function NotebookTab({
         <span className="text-[11px] text-muted-foreground">Explore data with SQL &amp; Markdown</span>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setCells((cs) => [...cs, mkCell("sql")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-            <Code2 className="h-3.5 w-3.5" /> SQL cell
+            <Code2 className="h-3.5 w-3.5" /> SQL
           </button>
           <button onClick={() => setCells((cs) => [...cs, mkCell("markdown")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-            <TextIcon className="h-3.5 w-3.5" /> Text cell
+            <TextIcon className="h-3.5 w-3.5" /> Text
+          </button>
+          <button onClick={() => setCells((cs) => [...cs, mkCell("mermaid")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+            <Share2 className="h-3.5 w-3.5" /> Diagram
           </button>
           <button onClick={() => void runAll()} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
             <Play className="h-3.5 w-3.5" /> Run all
@@ -240,26 +265,77 @@ function CellView({
   onAsk: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const isSql = cell.type === "sql";
   const isMd = cell.type === "markdown";
-  const rendered = isMd && !cell.editing;
-  const lines = Math.min(18, Math.max(2, cell.src.split("\n").length));
+  const isMermaid = cell.type === "mermaid";
+  const rendered = (isMd || isMermaid) && !cell.editing;
+  const lines = Math.min(18, Math.max(3, cell.src.split("\n").length));
   const editorHeight = lines * 19 + 16;
+
+  // Wrap the current selection (or insert) — powers the Markdown toolbar.
+  function surround(before: string, after = before, block = false) {
+    const ta = taRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e, value } = ta;
+    const sel = value.slice(s, e) || (block ? "" : "text");
+    const pre = block && s > 0 && value[s - 1] !== "\n" ? "\n" : "";
+    const next = value.slice(0, s) + pre + before + sel + after + value.slice(e);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const caret = s + pre.length + before.length + sel.length;
+      ta.setSelectionRange(caret, caret);
+    });
+  }
 
   return (
     <div className="group/cell relative">
       <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
 
       <div className={cn("overflow-hidden rounded-xl border transition-colors", rendered ? "border-transparent hover:border-border" : "border-border bg-panel/40")}>
-        <div className="flex items-stretch">
-          <div className="flex w-11 shrink-0 flex-col items-center gap-1.5 py-2 font-mono text-[10px] text-muted-foreground">
-            <button onClick={() => onType(isMd ? "sql" : "markdown")} title={isMd ? "Switch to SQL" : "Switch to Markdown"} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 hover:bg-secondary hover:text-foreground">
-              {isMd ? <TextIcon className="h-3.5 w-3.5" /> : <Code2 className="h-3.5 w-3.5" />}
-            </button>
-            {!isMd ? <span>[{cell.count ?? " "}]</span> : null}
+        {/* Cell header: type dropdown (SQL / Markdown / Mermaid) + count. */}
+        {!rendered ? (
+          <div className="flex items-center gap-2 border-b border-border/60 px-2 py-1">
+            <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+              <SelectTrigger size="sm" className="h-6 w-[124px] text-[11.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CELL_TYPES.map((t) => {
+                  const I = t.icon;
+                  return (
+                    <SelectItem key={t.value} value={t.value}>
+                      <span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            {isMd ? (
+              <div className="flex items-center gap-0.5">
+                {([
+                  [Bold, "Bold", () => surround("**")],
+                  [Italic, "Italic", () => surround("_")],
+                  [Code, "Inline code", () => surround("`")],
+                  [SquareCode, "Code block", () => surround("```\n", "\n```", true)],
+                  [Heading, "Heading", () => surround("## ", "", true)],
+                  [List, "List", () => surround("- ", "", true)],
+                  [Link2, "Link", () => surround("[", "](https://)")],
+                ] as const).map(([Icon, tip, fn], i) => (
+                  <button key={i} onClick={fn} title={tip} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {isSql ? <span className="ml-auto font-mono text-[10px] text-muted-foreground">[{cell.count ?? " "}]</span> : null}
           </div>
+        ) : null}
 
+        <div className="flex items-stretch">
           <div className="min-w-0 flex-1">
-            {rendered ? (
+            {rendered && isMd ? (
               <div onDoubleClick={onEdit} className="md-body max-w-none cursor-text px-3 py-2 text-[13px] leading-relaxed">
                 {cell.src.trim() ? (
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: (props) => <img {...props} className="my-2 max-w-full rounded-md border border-border" alt={props.alt ?? ""} /> }}>
@@ -269,19 +345,13 @@ function CellView({
                   <span className="text-muted-foreground/50 italic">Empty text cell — double-click to edit</span>
                 )}
               </div>
-            ) : isMd ? (
-              <textarea
-                value={cell.src}
-                autoFocus
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onRun(); } }}
-                rows={lines}
-                placeholder="# Markdown — supports images, tables, links   ·   ⌘/Ctrl+Enter to render"
-                className="min-w-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
-              />
-            ) : (
+            ) : rendered && isMermaid ? (
+              <div onDoubleClick={onEdit} className="cursor-text">
+                <MermaidView code={cell.src} />
+              </div>
+            ) : isSql ? (
               // Monaco SQL cell — Exasol autocompletion comes from the app-global
-              // completion provider registered on the shared monaco instance.
+              // completion provider on the shared monaco instance.
               <div style={{ height: editorHeight }} className="py-1">
                 <Editor
                   height="100%"
@@ -308,14 +378,26 @@ function CellView({
                   }}
                 />
               </div>
+            ) : (
+              // Markdown / Mermaid source editor (preview-first: render on run).
+              <textarea
+                ref={taRef}
+                value={cell.src}
+                autoFocus
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onRun(); } }}
+                rows={lines}
+                placeholder={isMermaid ? "graph TD; A[Start] --> B[Next]   ·   ⌘/Ctrl+Enter to render" : "# Markdown — images, tables, links   ·   ⌘/Ctrl+Enter to render"}
+                className="min-w-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
+              />
             )}
           </div>
 
           <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
-            <button onClick={onRun} disabled={cell.running} title={isMd ? "Render (⌘/Ctrl+Enter)" : "Run (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+            <button onClick={onRun} disabled={cell.running} title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
               {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5" />}
             </button>
-            {!isMd ? (
+            {isSql ? (
               <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-syntax-function hover:bg-secondary">
                 <Sparkles className="h-3.5 w-3.5" />
               </button>
@@ -326,9 +408,9 @@ function CellView({
           </div>
         </div>
 
-        {!isMd && cell.error ? (
+        {isSql && cell.error ? (
           <div className="border-t border-border bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">{cell.error}</div>
-        ) : !isMd && cell.result ? (
+        ) : isSql && cell.result ? (
           <div className="border-t border-border">
             <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground">
               <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">

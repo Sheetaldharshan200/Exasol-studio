@@ -143,29 +143,39 @@ export function NewVirtualSchema({
                 <span className="font-mono">exasol/nano</span> after <span className="font-mono">init slc install=all</span>).
               </p>
               <Field label="Source database">
-                <div className="grid grid-cols-3 gap-1.5">
-                  {VS_SOURCES.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      title={s.note ?? s.name}
-                      onClick={() => {
-                        setSource(s.id);
-                        if (s.jdbc) {
-                          setJdbcUrl(s.jdbc);
-                          setConnMode("new");
-                        }
-                      }}
-                      className={cn(
-                        "flex flex-col items-center gap-1 rounded-lg border px-1.5 py-2 text-center transition-colors",
-                        source === s.id ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-secondary/40",
-                      )}
-                    >
-                      <SourceLogo logo={s.logo} className="h-7 w-7" />
-                      <span className="w-full truncate text-[10px] text-muted-foreground">{s.name}</span>
-                    </button>
-                  ))}
-                </div>
+                {(["jdbc", "document"] as const).map((group) => {
+                  const items = VS_SOURCES.filter((s) => s.kind === group);
+                  return (
+                    <div key={group} className="mb-2">
+                      <p className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                        {group === "jdbc" ? "Databases" : "Document sources (advanced)"}
+                      </p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {items.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            title={s.note ?? s.name}
+                            onClick={() => {
+                              setSource(s.id);
+                              if (s.jdbc) {
+                                setJdbcUrl(s.jdbc);
+                                setConnMode("new");
+                              }
+                            }}
+                            className={cn(
+                              "flex flex-col items-center gap-1 rounded-lg border px-1.5 py-2 text-center transition-colors",
+                              source === s.id ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-secondary/40",
+                            )}
+                          >
+                            <SourceLogo logo={s.logo} className="h-7 w-7" />
+                            <span className="w-full truncate text-[10px] text-muted-foreground">{s.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
                 <p className="mt-1.5 text-[10.5px] text-muted-foreground">
                   {source
                     ? `Uses the ${VS_SOURCES.find((s) => s.id === source)?.repo} adapter. Install its script + JDBC driver in the database, then fill the connection below.`
