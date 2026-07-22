@@ -373,8 +373,14 @@ function CellView({
     <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
       <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
 
-      <div className={cn("overflow-hidden rounded-lg ring-1 ring-inset ring-transparent transition-colors", queued && "ring-primary/40", rendered ? "hover:bg-secondary/20" : "bg-secondary/25")}>
-        {/* Cell header: type dropdown (SQL / Markdown / Mermaid) + count. */}
+      <div className={cn("overflow-hidden rounded-lg border border-border bg-editor transition-colors", queued && "ring-2 ring-inset ring-primary/40")}>
+        <div className="flex items-stretch">
+          {/* Left-center execution gutter — correlates with Jupyter's [n]. */}
+          <div className="flex w-10 shrink-0 select-none items-center justify-center font-mono text-[10px] text-muted-foreground/70">
+            {isSql ? `[${cell.count ?? " "}]` : ""}
+          </div>
+          <div className="min-w-0 flex-1">
+        {/* Cell header: type dropdown (SQL / Markdown / Mermaid). */}
         {!rendered ? (
           <div className="flex items-center gap-2 px-2 pt-1.5">
             <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
@@ -409,13 +415,10 @@ function CellView({
                 ))}
               </div>
             ) : null}
-            {isSql ? <span className="ml-auto font-mono text-[10px] text-muted-foreground">[{cell.count ?? " "}]</span> : null}
           </div>
         ) : null}
 
-        <div className="flex items-stretch">
-          <div className="min-w-0 flex-1">
-            {rendered && isMd ? (
+        {rendered && isMd ? (
               <div onDoubleClick={onEdit} className="md-body max-w-none cursor-text px-3 py-2 text-[13px] leading-relaxed">
                 {cell.src.trim() ? (
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: (props) => <img {...props} className="my-2 max-w-full rounded-md border border-border" alt={props.alt ?? ""} /> }}>

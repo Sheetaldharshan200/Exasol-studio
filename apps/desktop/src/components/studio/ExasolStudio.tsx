@@ -158,6 +158,7 @@ import {
   type PersonalLocalStatus,
   type DriverInfo,
   type ExecuteResponse,
+  type GitLogEntry,
   type HistoryEntry,
   type ServerInfo,
   type StatementResult,
@@ -1282,6 +1283,57 @@ function ResultsGrid({
   );
 }
 
+/** Recent git commits, shown to the right of SQL history. Refreshes when the
+ *  workspace changes (agent auto-commit, manual commit). */
+function GitLogPane() {
+  const [log, setLog] = useState<GitLogEntry[] | null>(null);
+  const [isRepo, setIsRepo] = useState(true);
+  useEffect(() => {
+    const load = () => {
+      ipc.gitStatus()
+        .then((s) => {
+          setIsRepo(s.isRepo);
+          if (s.isRepo) ipc.gitLog(80).then(setLog).catch(() => setLog([]));
+          else setLog([]);
+        })
+        .catch(() => setLog([]));
+    };
+    load();
+    window.addEventListener("studio:git-changed", load);
+    return () => window.removeEventListener("studio:git-changed", load);
+  }, []);
+  return (
+    <div className="flex w-72 shrink-0 flex-col border-l border-border bg-panel/30">
+      <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 px-2.5">
+        <GitCommitHorizontal className="h-3.5 w-3.5 text-primary" />
+        <span className="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase">Git log</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        {log === null ? (
+          <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>
+        ) : !isRepo ? (
+          <p className="px-3 py-3 text-[11px] text-muted-foreground">Not a git repo yet — commits appear here once the workspace is versioned.</p>
+        ) : log.length === 0 ? (
+          <p className="px-3 py-3 text-[11px] text-muted-foreground">No commits yet.</p>
+        ) : (
+          <ul className="py-0.5">
+            {log.map((c) => (
+              <li key={c.hash} className="border-b border-border/40 px-2.5 py-1.5 last:border-0">
+                <div className="truncate text-[11.5px] text-foreground" title={c.subject}>{c.subject}</div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className="font-mono text-primary">{c.hash.slice(0, 7)}</span>
+                  <span className="truncate">{c.author}</span>
+                  <span className="ml-auto shrink-0">{c.relative}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HistoryDock({
   entries,
   open,
@@ -1476,50 +1528,41 @@ function HistoryDock({
               </div>
             </div>
           </div>
-        ) : entries.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            No queries run yet.
-          </div>
         ) : (
-          <table className="w-full text-[12px]">
-            <thead className="sticky top-0 bg-secondary">
-              <tr className="text-left text-muted-foreground">
-                {["Time", "Statement", "Rows", "Elapsed", "Status"].map((h) => (
-                  <th key={h} className="border-b border-border px-3 py-1.5 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="cursor-pointer border-b border-border hover:bg-accent/60"
-                  onClick={() => onPick(entry.sql)}
-                >
-                  <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                    {new Date(entry.executedAt).toLocaleTimeString()}
-                  </td>
-                  <td className="max-w-[520px] truncate px-3 py-1.5 font-mono text-foreground">
-                    {entry.sql.replace(/\s+/g, " ").trim()}
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-mono">{entry.rowCount}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{entry.elapsedMs} ms</td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-px text-[10px] font-medium",
-                        entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive",
-                      )}
-                    >
-                      {entry.success ? "ok" : "error"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          // SQL history on the left, git commit log on the right.
+          <div className="flex h-full min-h-0">
+            <div className="min-w-0 flex-1 overflow-auto [scrollbar-width:thin]">
+              {entries.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
+              ) : (
+                <table className="w-full text-[12px]">
+                  <thead className="sticky top-0 bg-secondary">
+                    <tr className="text-left text-muted-foreground">
+                      {["Time", "Statement", "Rows", "Elapsed", "Status"].map((h) => (
+                        <th key={h} className="border-b border-border px-3 py-1.5 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((entry) => (
+                      <tr key={entry.id} className="cursor-pointer border-b border-border hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
+                        <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
+                        <td className="max-w-[520px] truncate px-3 py-1.5 font-mono text-foreground">{entry.sql.replace(/\s+/g, " ").trim()}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{entry.rowCount}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{entry.elapsedMs} ms</td>
+                        <td className="px-3 py-1.5">
+                          <span className={cn("rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+                            {entry.success ? "ok" : "error"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <GitLogPane />
+          </div>
         )}
       </div>
     </section>
