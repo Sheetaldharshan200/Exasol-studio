@@ -31,9 +31,6 @@ type Pending = {
   after: string;
   recoverable: boolean;
   sql: string[];
-  /** After a successful create, open this grantee's privileges drawer so the
-   *  admin can assign roles/privileges right away. */
-  openPrivs?: { name: string; isRole: boolean };
 };
 const ACT: Record<ActKind, { icon: typeof Trash2; verb: string; danger: boolean }> = {
   delete: { icon: Trash2, verb: "Delete", danger: true },
@@ -49,22 +46,13 @@ const ACT: Record<ActKind, { icon: typeof Trash2; verb: string; danger: boolean 
  * every change is confirmed in plain language (what it is now → what happens →
  * whether it's recoverable), with the SQL available but not the headline.
  */
-export function DbaDashboard({ profileId, connectionName }: { profileId: string; connectionName: string }) {
+export function DbaDashboard({ profileId, connectionName, onOpenSql }: { profileId: string; connectionName: string; onOpenSql: (sql: string, title?: string) => void }) {
   const [dba, setDba] = useState<DbaOverview | null>(null);
   const [caps, setCaps] = useState<Caps | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Section>("sessions");
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<
-    | { kind: "add-user" }
-    | { kind: "add-role" }
-    | { kind: "password"; user: string }
-    | { kind: "rename"; user: string }
-    | null
-  >(null);
   const [drawer, setDrawer] = useState<{ name: string; isRole: boolean } | null>(null);
 
   const col1 = useCallback(
@@ -110,28 +98,23 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
   const canKill = caps?.dba || cap(caps, "KILL ANY SESSION");
   const isAdmin = Boolean(canCreateUser || canDropUser || canAlterUser || canCreateRole || canDropRole || canManagePrivs || canKill);
 
-  async function run(p: Pending) {
-    setRunning(true);
-    setNotice(null);
-    try {
-      for (const sql of p.sql) {
-        const res = await ipc.executeSql(profileId, connectionName, sql, 10, false);
-        const first = res.results[0];
-        if (first?.error) throw new Error(first.error);
-      }
-      setNotice(`Done — ${p.title}`);
-      setPending(null);
-      setDialog(null);
-      load();
-      if (p.openPrivs) setDrawer(p.openPrivs); // jump straight to assigning roles/privileges
-    } catch (e) {
-      setNotice(`Failed — ${errorMessage(e)}`);
-      setPending(null);
-    } finally {
-      setRunning(false);
-    }
-  }
-  const ask = (p: Pending) => setPending(p);
+  // Open the generated SQL in a query tab (the single review/run surface).
+  // Nothing executes from the DBA UI — the user runs it in the editor and sees
+  // results/errors there.
+  // Every action opens as SQL in a query tab — no dialogs. A comment header
+  // carries the plain-language context (what it does, recoverability) so the
+  // user reviews and runs it in one place.
+  const ask = (p: Pending) => {
+    const header = [
+      `-- ${p.title}`,
+      p.now ? `-- Now: ${p.now}` : "",
+      `-- After: ${p.after}`,
+      p.recoverable ? "-- Recoverable." : "-- WARNING: this cannot be undone.",
+    ].filter(Boolean).join("\n");
+    onOpenSql(`${header}\n${p.sql.join(";\n")};\n`, p.title);
+    setNotice(`Opened in a SQL tab — review and run: ${p.title}`);
+    setDrawer(null);
+  };
 
   return (
     <div className="relative flex h-full flex-col bg-editor">
@@ -184,7 +167,7 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
             <Grid columns={["Measure time", "Raw size", "Mem size", "Auxiliary", "Statistics", "Recommended RAM"]} rows={dba.dbSize ? [[dba.dbSize.measureTime, dba.dbSize.rawObjectSize, dba.dbSize.memObjectSize, dba.dbSize.auxiliarySize, dba.dbSize.statisticsSize, dba.dbSize.recommendedDbRamSize].map((v) => (v == null ? "" : String(v)))] : []} />
           ) : tab === "users" ? (
             <>
-              {canCreateUser ? <ActionBar label="Add user" onClick={() => setDialog({ kind: "add-user" })} /> : null}
+              {canCreateUser ? <ActionBar label="Add user" onClick={() => ask({ kind: "create", title: "Create user", after: "Fill in the name/password, then run.", recoverable: true, sql: ['-- Replace NEW_USER and the password, then run\nCREATE USER NEW_USER IDENTIFIED BY "change-me"', "GRANT CREATE SESSION TO NEW_USER"] })} /> : null}
               <Grid
                 columns={["Name", "Created", "Consumer group", "Comment", ""]}
                 rows={dba.users.map((u) => [u.name, u.created ?? "", u.consumerGroup ?? "", u.comment ?? ""])}
@@ -194,8 +177,8 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
                   return (
                     <span className="flex items-center justify-end gap-0.5">
                       {canManagePrivs ? <RowBtn title="Privileges" onClick={() => setDrawer({ name, isRole: false })}><ShieldCheck className="h-3.5 w-3.5" /></RowBtn> : null}
-                      {canAlterUser ? <RowBtn title="Change password" onClick={() => setDialog({ kind: "password", user: name })}><KeyRound className="h-3.5 w-3.5" /></RowBtn> : null}
-                      {canAlterUser ? <RowBtn title="Rename" disabled={sys} onClick={() => setDialog({ kind: "rename", user: name })}><Pencil className="h-3.5 w-3.5" /></RowBtn> : null}
+                      {canAlterUser ? <RowBtn title="Change password" onClick={() => ask({ kind: "key", title: `Change password — ${name}`, now: `${name}\u2019s current password stays until this runs.`, after: `${name} signs in with the new password.`, recoverable: true, sql: [`-- Set a new password, then run\n${dbaSql.changePassword(name, "new-password")}`] })}><KeyRound className="h-3.5 w-3.5" /></RowBtn> : null}
+                      {canAlterUser ? <RowBtn title="Rename" disabled={sys} onClick={() => ask({ kind: "save", title: `Rename ${name}`, after: "Objects and grants are unchanged.", recoverable: true, sql: [`-- Replace NEW_NAME, then run\n${dbaSql.renameUser(name, "NEW_NAME")}`] })}><Pencil className="h-3.5 w-3.5" /></RowBtn> : null}
                       {canDropUser ? (
                         <RowBtn title={sys ? "SYS cannot be dropped" : "Delete user"} danger disabled={sys} onClick={() => ask({
                           kind: "delete",
@@ -213,7 +196,7 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
             </>
           ) : tab === "roles" ? (
             <>
-              {canCreateRole ? <ActionBar label="Add role" onClick={() => setDialog({ kind: "add-role" })} /> : null}
+              {canCreateRole ? <ActionBar label="Add role" onClick={() => ask({ kind: "create", title: "Create role", after: "Name the role, then run; add privileges after.", recoverable: true, sql: ["-- Replace NEW_ROLE, then run\nCREATE ROLE NEW_ROLE"] })} /> : null}
               <Grid
                 columns={["Name", "Created", "Consumer group", "Comment", ""]}
                 rows={dba.roles.map((r) => [r.name, r.created ?? "", r.consumerGroup ?? "", r.comment ?? ""])}
@@ -278,56 +261,6 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
         ) : null}
       </div>
 
-      {pending ? <ConfirmDialog pending={pending} connectionName={connectionName} running={running} onCancel={() => setPending(null)} onRun={() => void run(pending)} /> : null}
-      {dialog ? <AdminDialog dialog={dialog} onCancel={() => setDialog(null)} onSubmit={ask} /> : null}
-    </div>
-  );
-}
-
-/** Plain-language confirmation: now → after, recoverability, semantic icon;
- *  SQL is available under a disclosure, not the headline. */
-function ConfirmDialog({ pending, connectionName, running, onCancel, onRun }: { pending: Pending; connectionName: string; running: boolean; onCancel: () => void; onRun: () => void }) {
-  const [showSql, setShowSql] = useState(false);
-  const meta = ACT[pending.kind];
-  const Icon = meta.icon;
-  return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/60 p-6" onClick={() => !running && onCancel()}>
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-          <span className={cn("flex h-8 w-8 items-center justify-center rounded-full", meta.danger ? "bg-destructive/12 text-destructive" : "bg-primary/12 text-primary")}>
-            <Icon className="h-4 w-4" />
-          </span>
-          <span className="text-[13.5px] font-semibold text-foreground">{pending.title}</span>
-        </div>
-        <div className="space-y-2.5 px-4 py-3.5 text-[12.5px] leading-relaxed">
-          {pending.now ? (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Now</div>
-              <p className="text-foreground/90">{pending.now}</p>
-            </div>
-          ) : null}
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">After</div>
-            <p className="text-foreground/90">{pending.after}</p>
-          </div>
-          <div className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px]", pending.recoverable ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive")}>
-            {pending.recoverable ? <RotateCcw className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
-            {pending.recoverable ? "Recoverable — you can restore or redo this." : "This cannot be undone."}
-          </div>
-          <button onClick={() => setShowSql((v) => !v)} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-            <ChevronRight className={cn("h-3 w-3 transition-transform", showSql && "rotate-90")} /> {showSql ? "Hide" : "View"} SQL
-          </button>
-          {showSql ? (
-            <pre className="overflow-x-auto rounded-lg border border-border bg-editor px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground [scrollbar-width:thin]">{pending.sql.join(";\n")};</pre>
-          ) : null}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
-          <button onClick={onCancel} disabled={running} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
-          <button onClick={onRun} disabled={running} className={cn("flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium text-primary-foreground disabled:opacity-60", meta.danger ? "bg-destructive hover:bg-destructive/85" : "bg-primary hover:bg-primary/85")}>
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />} {meta.verb}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -347,70 +280,6 @@ function RowBtn({ title, onClick, danger, disabled, children }: { title: string;
     <button title={title} disabled={disabled} onClick={onClick} className={cn("flex h-6 w-6 items-center justify-center rounded text-muted-foreground disabled:opacity-30", danger ? "hover:text-destructive" : "hover:bg-secondary hover:text-foreground")}>
       {children}
     </button>
-  );
-}
-
-function AdminDialog({ dialog, onCancel, onSubmit }: { dialog: { kind: "add-user" } | { kind: "add-role" } | { kind: "password"; user: string } | { kind: "rename"; user: string }; onCancel: () => void; onSubmit: (p: Pending) => void }) {
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
-  const [comment, setComment] = useState("");
-  const [createSession, setCreateSession] = useState(true);
-  const title = dialog.kind === "add-user" ? "Add user" : dialog.kind === "add-role" ? "Add role" : dialog.kind === "password" ? `Change password — ${dialog.user}` : `Rename — ${dialog.user}`;
-
-  function submit() {
-    if (dialog.kind === "add-user") {
-      if (!name.trim() || !password) return;
-      const upper = name.trim().toUpperCase();
-      const sql = [dbaSql.createUser(name, password)];
-      if (createSession) sql.push(dbaSql.grantCreateSession(name));
-      if (comment.trim()) sql.push(dbaSql.commentUser(name, comment));
-      onSubmit({ kind: "create", title: `Create user ${upper}`, now: `No user named ${upper} exists.`, after: `${upper} is created${createSession ? " and can sign in (CREATE SESSION granted)" : " but cannot sign in until granted CREATE SESSION"}. You'll then assign roles/privileges.`, recoverable: true, sql, openPrivs: { name: upper, isRole: false } });
-    } else if (dialog.kind === "add-role") {
-      if (!name.trim()) return;
-      const upper = name.trim().toUpperCase();
-      onSubmit({ kind: "create", title: `Create role ${upper}`, after: `Role ${upper} is created; you'll then add privileges to it.`, recoverable: true, sql: [dbaSql.createRole(name)], openPrivs: { name: upper, isRole: true } });
-    } else if (dialog.kind === "password") {
-      if (!password) return;
-      onSubmit({ kind: "key", title: `Change password — ${dialog.user}`, now: `${dialog.user}'s current password stays in effect.`, after: `${dialog.user} must sign in with the new password. Existing sessions keep running.`, recoverable: true, sql: [dbaSql.changePassword(dialog.user, password)] });
-    } else {
-      if (!name.trim()) return;
-      const upper = name.trim().toUpperCase();
-      onSubmit({ kind: "save", title: `Rename ${dialog.user} → ${upper}`, now: `The user is called ${dialog.user}.`, after: `The user is renamed to ${upper}; their objects and grants are unchanged.`, recoverable: true, sql: [dbaSql.renameUser(dialog.user, name)] });
-    }
-  }
-
-  const inputCls = "h-8 w-full rounded-md border border-border bg-editor px-2.5 text-[12.5px] outline-none focus:border-primary/50";
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <label className="block"><span className="mb-1 block text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>{children}</label>
-  );
-  return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/60 p-6" onClick={onCancel}>
-      <div className="w-full max-w-sm overflow-hidden rounded-xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold text-foreground">{title}</div>
-        <div className="flex flex-col gap-3 px-4 py-3">
-          {dialog.kind === "add-user" || dialog.kind === "add-role" || dialog.kind === "rename" ? (
-            <Field label={dialog.kind === "rename" ? "New name" : "Name"}>
-              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} className={inputCls} placeholder={dialog.kind === "add-role" ? "REPORTING_READERS" : "ANNA"} />
-            </Field>
-          ) : null}
-          {dialog.kind === "add-user" || dialog.kind === "password" ? (
-            <Field label="Password"><input autoFocus={dialog.kind === "password"} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} /></Field>
-          ) : null}
-          {dialog.kind === "add-user" ? (
-            <>
-              <Field label="Comment (optional)"><input value={comment} onChange={(e) => setComment(e.target.value)} className={inputCls} placeholder="Analyst — reporting team" /></Field>
-              <label className="flex items-center gap-2 text-[12px] text-foreground">
-                <input type="checkbox" checked={createSession} onChange={(e) => setCreateSession(e.target.checked)} className="h-3.5 w-3.5 accent-[color:var(--primary)]" /> Allow sign-in (grant CREATE SESSION)
-              </label>
-            </>
-          ) : null}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
-          <button onClick={onCancel} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
-          <button onClick={submit} className="h-7 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">Continue</button>
-        </div>
-      </div>
-    </div>
   );
 }
 

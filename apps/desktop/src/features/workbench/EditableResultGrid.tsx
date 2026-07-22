@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
+import { Code2, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ColumnMeta } from "@/lib/ipc";
 
@@ -33,10 +33,10 @@ export function EditableResultGrid({
   schema,
   table,
   pk,
-  busy,
+  catalogColumns,
   initialFocus,
   colWidths,
-  onApply,
+  onOpenSql,
   onExit,
 }: {
   columns: ColumnMeta[];
@@ -44,30 +44,32 @@ export function EditableResultGrid({
   schema?: string;
   table: string;
   pk: string[];
-  busy: boolean;
+  /** The table's real column identifiers from the catalog (exact stored case).
+   *  Result metadata can report a different case than what's stored, so we
+   *  quote these — otherwise UPDATE/DELETE hit "object not found". */
+  catalogColumns?: string[];
   /** Cell to focus when the grid opens (the one the user double-tapped). */
   initialFocus?: { row: number; col: number } | null;
   /** Column widths (px) captured from the read-only table — keeps geometry stable. */
   colWidths?: number[] | null;
-  onApply: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }>;
+  /** Open the generated DML in a new query tab (the review/run surface). */
+  onOpenSql: (sql: string, title?: string) => void;
   onExit: () => void;
 }) {
-  // The last commit's DB error, shown as a banner. Edits are KEPT on failure so
-  // the user can correct and retry (never silently discarded).
-  const [applyError, setApplyError] = useState<{ message: string; sql?: string } | null>(null);
   // edits: rowIndex -> colIndex -> new value (string)
   const [edits, setEdits] = useState<Record<number, Record<number, string>>>({});
   // Focus + select the double-tapped cell once, when the grid mounts.
   const focusOnce = (el: HTMLInputElement | null) => {
     if (el) {
       el.focus();
-      el.select();
+      // Place the caret at the end instead of selecting all — so typing edits
+      // the existing value rather than replacing it on the first keypress.
+      const n = el.value.length;
+      el.setSelectionRange(n, n);
     }
   };
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
   const [inserts, setInserts] = useState<Record<string, string>[]>([]);
-  const [review, setReview] = useState<string[] | null>(null);
-  const [showSql, setShowSql] = useState(false);
 
   // Row identity for UPDATE/DELETE WHERE clauses. Prefer the primary key; when
   // the table has none (common in Exasol), fall back to matching on every
@@ -76,6 +78,12 @@ export function EditableResultGrid({
   const identity = useMemo(() => (noPk ? columns.map((c) => c.name) : pk), [noPk, pk, columns]);
   const pkIdx = useMemo(() => identity.map((n) => columns.findIndex((c) => c.name === n)), [identity, columns]);
   const t = qualify(schema, table);
+  // Map a result column name to the table's real (catalog) identifier so the
+  // generated SQL uses the exact stored case Exasol expects.
+  const colId = (name: string): string => {
+    const hit = (catalogColumns ?? []).find((c) => c.toLowerCase() === name.toLowerCase());
+    return hit ?? name;
+  };
 
   const dirty =
     Object.keys(edits).length > 0 || deleted.size > 0 || inserts.length > 0;
@@ -86,7 +94,7 @@ export function EditableResultGrid({
 
   function where(row: Cell[]): string {
     return identity
-      .map((name, i) => `"${name}" = ${lit(row[pkIdx[i]], columns[pkIdx[i]]?.typeName ?? "")}`)
+      .map((name, i) => `"${colId(name)}" = ${lit(row[pkIdx[i]], columns[pkIdx[i]]?.typeName ?? "")}`)
       .join(" AND ");
   }
 
@@ -99,7 +107,7 @@ export function EditableResultGrid({
       const sets = Object.entries(cols)
         .map(([cStr, val]) => {
           const c = Number(cStr);
-          return `"${columns[c].name}" = ${lit(val, columns[c].typeName)}`;
+          return `"${colId(columns[c].name)}" = ${lit(val, columns[c].typeName)}`;
         })
         .join(", ");
       if (sets) out.push(`UPDATE ${t} SET ${sets} WHERE ${where(rows[r])};`);
@@ -110,7 +118,7 @@ export function EditableResultGrid({
     for (const rec of inserts) {
       const cols = columns.filter((c) => (rec[c.name] ?? "") !== "");
       if (!cols.length) continue;
-      const names = cols.map((c) => `"${c.name}"`).join(", ");
+      const names = cols.map((c) => `"${colId(c.name)}"`).join(", ");
       const vals = cols.map((c) => lit(rec[c.name], c.typeName)).join(", ");
       out.push(`INSERT INTO ${t} (${names}) VALUES (${vals});`);
     }
@@ -151,12 +159,12 @@ export function EditableResultGrid({
         </button>
         <div className="ml-auto flex items-center gap-1.5">
           <button
-            onClick={() => setReview(build())}
-            disabled={!dirty || busy}
+            onClick={() => { const dml = build(); if (dml.length) { onOpenSql(dml.join("\n"), `Edit ${table}`); onExit(); } }}
+            disabled={!dirty}
+            title="Open these changes as SQL in a new query tab to review and run"
             className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
           >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Review &amp; apply
+            <Code2 className="h-3.5 w-3.5" /> Generate SQL
           </button>
           <button onClick={onExit} className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground">
             <X className="h-3.5 w-3.5" /> Done
@@ -164,17 +172,6 @@ export function EditableResultGrid({
         </div>
       </div>
 
-      {applyError ? (
-        <div className="flex shrink-0 items-start gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-2">
-          <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-medium text-destructive">Update failed — your edits are kept. Fix and Save again.</p>
-            <p className="mt-0.5 break-words font-mono text-[11px] text-destructive/90">{applyError.message}</p>
-            {applyError.sql ? <p className="mt-1 break-all font-mono text-[10.5px] text-muted-foreground">{applyError.sql}</p> : null}
-          </div>
-          <button onClick={() => setApplyError(null)} aria-label="Dismiss" className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-        </div>
-      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto p-px">
         <table
@@ -262,58 +259,6 @@ export function EditableResultGrid({
         </table>
       </div>
 
-      {review ? (() => {
-        const nUpd = Object.keys(edits).filter((r) => !deleted.has(Number(r))).length;
-        const nDel = deleted.size;
-        const nIns = inserts.filter((rec) => columns.some((c) => (rec[c.name] ?? "") !== "")).length;
-        const parts = [nUpd && `${nUpd} row${nUpd > 1 ? "s" : ""} updated`, nDel && `${nDel} row${nDel > 1 ? "s" : ""} deleted`, nIns && `${nIns} row${nIns > 1 ? "s" : ""} added`].filter(Boolean) as string[];
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setReview(null)}>
-            <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/12 text-primary"><Save className="h-4 w-4" /></span>
-                <span className="text-[13.5px] font-semibold text-foreground">Save changes to {t}</span>
-              </div>
-              <div className="space-y-2.5 px-4 py-3.5 text-[12.5px] leading-relaxed">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">What will happen</div>
-                  <ul className="mt-0.5 list-disc pl-4 text-foreground/90">
-                    {parts.length ? parts.map((p) => <li key={p}>{p}</li>) : <li>No changes to apply.</li>}
-                  </ul>
-                </div>
-                <div className="flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11.5px] text-destructive">
-                  <ShieldOff className="h-3.5 w-3.5 shrink-0" /> Row changes are written immediately and can't be automatically undone.
-                </div>
-                <button onClick={() => setShowSql((v) => !v)} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                  <ChevronRight className={cn("h-3 w-3 transition-transform", showSql && "rotate-90")} /> {showSql ? "Hide" : "View"} SQL
-                </button>
-                {showSql ? (
-                  <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-editor p-3 font-mono text-[11px] text-foreground [scrollbar-width:thin]">{review.join("\n")}</pre>
-                ) : null}
-              </div>
-              <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
-                <button onClick={() => setReview(null)} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
-                <button
-                  disabled={!review.length || busy}
-                  onClick={async () => {
-                    const stmts = review;
-                    setReview(null);
-                    setApplyError(null);
-                    const res = await onApply(stmts);
-                    // Only clear the staged edits when the DB accepted them;
-                    // on failure keep them and show the exact error to fix.
-                    if (res?.ok) reset();
-                    else setApplyError({ message: res?.error ?? "The update failed.", sql: res?.failedSql });
-                  }}
-                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })() : null}
     </div>
   );
 }

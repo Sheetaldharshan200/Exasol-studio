@@ -1127,7 +1127,7 @@ function ResultsGrid({
   error,
   onChart,
   editable,
-  onCommitEdits,
+  onOpenSql,
   editBusy,
   fontSize = 12,
   zebra = true,
@@ -1136,8 +1136,8 @@ function ResultsGrid({
   error: string | null;
   onChart?: () => void;
   /** Present when this result maps to a single updatable table. */
-  editable?: { schema?: string; table: string; pk: string[] } | null;
-  onCommitEdits?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }>;
+  editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
+  onOpenSql?: (sql: string, title?: string) => void;
   editBusy?: boolean;
   fontSize?: number;
   zebra?: boolean;
@@ -1184,8 +1184,8 @@ function ResultsGrid({
       </div>
     );
   }
-  const canEdit = Boolean(editable && onCommitEdits);
-  if (editing && editable && onCommitEdits) {
+  const canEdit = Boolean(editable && onOpenSql);
+  if (editing && editable && onOpenSql) {
     return (
       <EditableResultGrid
         columns={result.columns}
@@ -1193,10 +1193,10 @@ function ResultsGrid({
         schema={editable.schema}
         table={editable.table}
         pk={editable.pk}
-        busy={Boolean(editBusy)}
+        catalogColumns={editable.columns}
         initialFocus={focusCell}
         colWidths={editColWidths}
-        onApply={onCommitEdits}
+        onOpenSql={onOpenSql}
         onExit={() => {
           setEditing(false);
           setFocusCell(null);
@@ -1644,7 +1644,7 @@ export function ExasolStudio({
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
-  const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[] } | null>(null);
+  const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[]; columns: string[] } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ profileId: string; node: TreeNode; x: number; y: number } | null>(null);
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
@@ -1821,7 +1821,7 @@ export function ExasolStudio({
           d.constraints.find((c) => c.constraintType === "PRIMARY KEY")?.columns.map((c) => c.column) ?? [];
         // Editable even without a PK — most Exasol tables have none. The grid
         // falls back to matching rows on all selected column values.
-        setEditTable({ schema, table: t.table, pk });
+        setEditTable({ schema, table: t.table, pk, columns: d.columns.map((c) => c.name) });
       })
       .catch(() => alive && setEditTable(null));
     return () => {
@@ -1829,39 +1829,6 @@ export function ExasolStudio({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
-
-  // Apply reviewed CRUD statements, then re-run the tab's query to refresh.
-  // Apply staged row edits. Exasol returns statement errors INSIDE the result
-  // (not as a JS throw), so we inspect each result and stop at the first
-  // failure — returning it to the editable grid so the error is shown there and
-  // the user's edits are kept (DBeaver/DBVisualizer behaviour), instead of
-  // silently swallowing it (the failure only reaching SQL history).
-  async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }> {
-    if (!connection || !statements.length) return { ok: false, error: "No active connection." };
-    setRunning(true);
-    try {
-      for (let i = 0; i < statements.length; i++) {
-        const st = statements[i];
-        const r = await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
-        const errored = r.results.find((x) => x.error);
-        if (errored?.error) {
-          loadHistory(); // the failed statement still lands in history
-          return { ok: false, error: errored.error, failedIndex: i, failedSql: st };
-        }
-      }
-      // All statements succeeded → refresh the grid from the live table.
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
-      patchTab(activeTab.id, { response: res, execError: null });
-      loadHistory();
-      refreshSqlCatalog();
-      window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errorMessage(e) };
-    } finally {
-      setRunning(false);
-    }
-  }
 
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
@@ -1958,6 +1925,20 @@ export function ExasolStudio({
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
   }
+
+  /** Open generated SQL (DBA actions, row edits, …) in a NEW query tab — the
+   *  editor is the single place SQL is reviewed and run, so results and errors
+   *  surface natively. Dialogs only confirm; they never execute. */
+  function openSqlTab(sql: string, title = "SQL") {
+    tabCounter.current += 1;
+    const tab = newTab(tabCounter.current);
+    tab.title = title;
+    tab.sql = sql.trimEnd() + "\n";
+    updateTabs(connKey, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
+  }
+  const openSqlTabRef = useRef(openSqlTab);
+  openSqlTabRef.current = openSqlTab;
 
   // 2) Tab drag & drop: reorder chips; dropping ON a grouped chip adopts its
   // group; dropping on a group header joins that group.
@@ -3833,7 +3814,7 @@ export function ExasolStudio({
                   connectionName={connection.profile.name}
                 />
               ) : activeTab.view === "dba" ? (
-                <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} />
+                <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} onOpenSql={openSqlTab} />
               ) : (
                 // Key by tab id so every Visualizer tab is its OWN independent
                 // instance — a new tab starts fresh and never inherits the
@@ -3987,7 +3968,7 @@ export function ExasolStudio({
                         error={lastResult?.error ?? null}
                         onChart={() => void openBi()}
                         editable={editTable}
-                        onCommitEdits={commitEdits}
+                        onOpenSql={openSqlTab}
                         editBusy={running}
                         fontSize={gridFontSize}
                         zebra={gridZebra}
