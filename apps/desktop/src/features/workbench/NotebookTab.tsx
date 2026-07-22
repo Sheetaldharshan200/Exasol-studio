@@ -11,6 +11,7 @@ import {
   Code,
   Code2,
   Database,
+  Eye,
   GripVertical,
   Heading,
   Italic,
@@ -380,43 +381,59 @@ function CellView({
             {isSql ? `[${cell.count ?? " "}]` : ""}
           </div>
           <div className="min-w-0 flex-1">
-        {/* Cell header: type dropdown (SQL / Markdown / Mermaid). */}
-        {!rendered ? (
-          <div className="flex items-center gap-2 px-2 pt-1.5">
-            <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
-              <SelectTrigger size="sm" className="h-6 w-[124px] text-[11.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CELL_TYPES.map((t) => {
-                  const I = t.icon;
-                  return (
-                    <SelectItem key={t.value} value={t.value}>
-                      <span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            {isMd ? (
-              <div className="flex items-center gap-0.5">
-                {([
-                  [Bold, "Bold", () => surround("**")],
-                  [Italic, "Italic", () => surround("_")],
-                  [Code, "Inline code", () => surround("`")],
-                  [SquareCode, "Code block", () => surround("```\n", "\n```", true)],
-                  [Heading, "Heading", () => surround("## ", "", true)],
-                  [List, "List", () => surround("- ", "", true)],
-                  [Link2, "Link", () => surround("[", "](https://)")],
-                ] as const).map(([Icon, tip, fn], i) => (
-                  <button key={i} onClick={fn} title={tip} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                    <Icon className="h-3.5 w-3.5" />
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Cell header: type dropdown + (Markdown) format toolbar + (Text/Diagram) Preview|Code toggle. */}
+        <div className="flex items-center gap-2 px-2 pt-1.5">
+          <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+            <SelectTrigger size="sm" className="h-6 w-[124px] text-[11.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CELL_TYPES.map((t) => {
+                const I = t.icon;
+                return (
+                  <SelectItem key={t.value} value={t.value}>
+                    <span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {isMd && cell.editing ? (
+            <div className="flex items-center gap-0.5">
+              {([
+                [Bold, "Bold", () => surround("**")],
+                [Italic, "Italic", () => surround("_")],
+                [Code, "Inline code", () => surround("`")],
+                [SquareCode, "Code block", () => surround("```\n", "\n```", true)],
+                [Heading, "Heading", () => surround("## ", "", true)],
+                [List, "List", () => surround("- ", "", true)],
+                [Link2, "Link", () => surround("[", "](https://)")],
+              ] as const).map(([Icon, tip, fn], i) => (
+                <button key={i} onClick={fn} title={tip} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {/* Preview ↔ Code toggle: markdown/diagram default to Preview so the
+              user visualizes the result, not the raw markup. */}
+          {isMd || isMermaid ? (
+            <div className="ml-auto flex items-center gap-0.5 rounded-md bg-secondary/60 p-0.5">
+              <button
+                onClick={onRun}
+                className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px]", !cell.editing ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <Eye className="h-3 w-3" /> Preview
+              </button>
+              <button
+                onClick={onEdit}
+                className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px]", cell.editing ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <Code className="h-3 w-3" /> Code
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         {rendered && isMd ? (
               <div onDoubleClick={onEdit} className="md-body max-w-none cursor-text px-3 py-2 text-[13px] leading-relaxed">
