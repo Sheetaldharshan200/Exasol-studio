@@ -101,6 +101,7 @@ import { Docs } from "@/features/marketplace/Docs";
 import { DashboardsTab } from "@/features/bi/Dashboards";
 import { ArtifactTab } from "@/features/artifact/ArtifactTab";
 import { artifacts as artifactClient } from "@/lib/agent-client";
+import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as DashPanelDoc } from "@/lib/agent-client";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { dashboardBus } from "@/lib/dashboard-bus";
@@ -1235,10 +1236,10 @@ function ResultsGrid({
         {onChart ? (
           <button
             onClick={onChart}
-            title="Open Dashboards"
+            title="Add this query as a panel to its schema's dashboard"
             className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
-            <BarChart3 className="h-3.5 w-3.5" /> Dashboards
+            <BarChart3 className="h-3.5 w-3.5" /> Add to dashboard
           </button>
         ) : null}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
@@ -3224,6 +3225,44 @@ export function ExasolStudio({
     openBiTab();
   }
 
+  // "Dashboards" from a result: add this query as a panel to the dashboard for
+  // its schema — one dashboard per schema, so every query against WEATHER lands
+  // on the WEATHER dashboard (created on first use, appended to after that).
+  async function sendResultToDashboard(sql: string) {
+    const trimmed = (sql ?? "").trim();
+    if (!trimmed) { void openBi(); return; }
+    // Schema: the query's own table, else the connection's default, else a catch-all.
+    const parsed = parseSingleTable(trimmed);
+    const schema = (parsed?.schema ?? connection?.profile.schema ?? "Ad hoc queries").trim() || "Ad hoc queries";
+    // Panel name: the active tab's name (e.g. "WEATHER_DAILY"), else the SQL itself.
+    const tabName = activeTab.view === "sql" && activeTab.title && activeTab.title !== "Untitled" ? activeTab.title : "";
+    const panelTitle = tabName || (trimmed.length > 60 ? trimmed.slice(0, 57) + "…" : trimmed);
+    const id = `schema-${schema.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "adhoc"}`;
+
+    try {
+      const metas = await dashClient.list();
+      const existingMeta = metas.find((m) => m.id === id || m.title === schema);
+      const dash: DashDoc = existingMeta
+        ? await dashClient.get(existingMeta.id)
+        : { version: 1, id, title: schema, description: `Panels built from ${schema} queries`, panels: [] };
+      // Stack the new panel below whatever's already there.
+      const bottom = dash.panels.reduce((y, p) => Math.max(y, p.grid.y + p.grid.h), 0);
+      const panel: DashPanelDoc = {
+        id: `p-${Date.now()}-${dash.panels.length}`,
+        title: panelTitle,
+        grid: { x: 0, y: bottom, w: 6, h: 8 },
+        query: { sql: trimmed },
+        viz: { type: "table" },
+      };
+      const saved = await dashClient.save({ ...dash, panels: [...dash.panels, panel] });
+      openBiTab();
+      window.setTimeout(() => dashboardBus.open(saved.id), 200);
+    } catch {
+      // Agent sidecar unavailable — fall back to just opening the tab.
+      void openBi();
+    }
+  }
+
   // Step through SQL history into the current editor.
   function historyNav(dir: "prev" | "next") {
     if (history.length === 0) return;
@@ -4040,7 +4079,7 @@ export function ExasolStudio({
                               #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                             </div>
                             <div className="h-[280px]">
-                              <ResultsGrid result={r} error={r.error} onChart={() => void openBi()} />
+                              <ResultsGrid result={r} error={r.error} onChart={() => void sendResultToDashboard(activeTab.sql)} />
                             </div>
                           </div>
                         ))}
@@ -4049,7 +4088,7 @@ export function ExasolStudio({
                       <ResultsGrid
                         result={lastResult}
                         error={lastResult?.error ?? null}
-                        onChart={() => void openBi()}
+                        onChart={() => void sendResultToDashboard(activeTab.sql)}
                         editable={editTable}
                         onOpenSql={openSqlTab}
                         onCommitEdits={commitEdits}

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import {
   Area,
   AreaChart,
@@ -80,6 +80,21 @@ export function ShadcnChartPanel({
   const toggle = (k: string) => setActive((cur) => (cur === k ? null : k));
   const clickCursor = { cursor: "pointer" as const };
 
+  // Animation policy: draw in on first render, when the chart type changes, and
+  // on hover — but NOT on every data refresh (that caused the endless looping).
+  // `animKey` remounts the chart so the entrance replays; `animate` is only true
+  // during that brief window, so a background refresh just merges data silently.
+  const [hoverNonce, setHoverNonce] = useState(0);
+  const [animate, setAnimate] = useState(true);
+  useEffect(() => {
+    setAnimate(true);
+    const id = setTimeout(() => setAnimate(false), 900);
+    return () => clearTimeout(id);
+  }, [chart, hoverNonce]);
+  const animKey = `${chart}-${hoverNonce}`;
+  const bump = () => setHoverNonce((n) => n + 1);
+  const anim = { isAnimationActive: animate, animationDuration: 700 as const };
+
   if (!data.length || !series.length) {
     return <p className="flex h-full items-center justify-center text-[11px] text-muted-foreground">No numeric columns to chart.</p>;
   }
@@ -114,41 +129,44 @@ export function ShadcnChartPanel({
       </div>
     ) : null;
 
+  // Wraps a chart with the interactive legend on top, filling the panel, and
+  // catches hover to replay the draw-in animation.
+  const Wrap = ({ children }: { children: ReactNode }) => (
+    <div className="flex h-full w-full flex-col" onMouseEnter={bump}>
+      {InteractiveLegend}
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  );
+
   if (chart === "pie" || chart === "donut") {
     const key = series[0];
     const pieData: Record<string, unknown>[] = data.slice(0, 12).map((d, i) => ({ ...d, fill: `var(--chart-${(i % 5) + 1})` }));
     const pieConfig: ChartConfig = Object.fromEntries(pieData.map((d) => [String(d[catKey]), { label: String(d[catKey]) }]));
     return (
-      <ChartContainer config={{ ...config, ...pieConfig }} className="h-full w-full p-2">
-        <PieChart>
-          <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-          <Pie data={pieData} dataKey={key} nameKey={catKey} innerRadius={chart === "donut" ? "55%" : 0} strokeWidth={2} />
-          <ChartLegend content={<ChartLegendContent nameKey={catKey} />} className="flex-wrap" />
-        </PieChart>
-      </ChartContainer>
+      <Wrap>
+        <ChartContainer key={animKey} config={{ ...config, ...pieConfig }} className="h-full w-full p-2">
+          <PieChart>
+            <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+            <Pie data={pieData} dataKey={key} nameKey={catKey} innerRadius={chart === "donut" ? "55%" : 0} strokeWidth={2} {...anim} />
+            <ChartLegend content={<ChartLegendContent nameKey={catKey} />} className="flex-wrap" />
+          </PieChart>
+        </ChartContainer>
+      </Wrap>
     );
   }
-
-  // Wraps a chart with the interactive legend on top, filling the panel.
-  const Wrap = ({ children }: { children: ReactNode }) => (
-    <div className="flex h-full w-full flex-col">
-      {InteractiveLegend}
-      <div className="min-h-0 flex-1">{children}</div>
-    </div>
-  );
 
   if (chart === "radar") {
     // Compare series across category axes (shadcn radar recipe).
     const radarData = data.slice(0, 12);
     return (
       <Wrap>
-        <ChartContainer config={config} className="h-full w-full p-2">
+        <ChartContainer key={animKey} config={config} className="h-full w-full p-2">
           <RadarChart data={radarData}>
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             <PolarGrid />
             <PolarAngleAxis dataKey={catKey} fontSize={10} />
             {series.map((k) => (
-              <Radar key={k} dataKey={k} stroke={`var(--color-${k})`} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.04 : 0.35} strokeOpacity={lineOpacity(k)} dot={{ r: 3, fillOpacity: dimmed(k) ? 0.1 : 1 }} style={clickCursor} onClick={() => toggle(k)} />
+              <Radar key={k} dataKey={k} stroke={`var(--color-${k})`} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.04 : 0.35} strokeOpacity={lineOpacity(k)} dot={{ r: 3, fillOpacity: dimmed(k) ? 0.1 : 1 }} style={clickCursor} onClick={() => toggle(k)} {...anim} />
             ))}
           </RadarChart>
         </ChartContainer>
@@ -162,27 +180,29 @@ export function ShadcnChartPanel({
     const radialData: Record<string, unknown>[] = data.slice(0, 8).map((d, i) => ({ ...d, fill: `var(--chart-${(i % 5) + 1})` }));
     const radialConfig: ChartConfig = Object.fromEntries(radialData.map((d) => [String(d[catKey]), { label: String(d[catKey]) }]));
     return (
-      <ChartContainer config={{ ...config, ...radialConfig }} className="h-full w-full p-2">
-        <RadialBarChart data={radialData} innerRadius="25%" outerRadius="100%">
-          <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel nameKey={catKey} />} />
-          <RadialBar dataKey={key} background cornerRadius={6} />
-          <ChartLegend content={<ChartLegendContent nameKey={catKey} />} className="flex-wrap" />
-        </RadialBarChart>
-      </ChartContainer>
+      <Wrap>
+        <ChartContainer key={animKey} config={{ ...config, ...radialConfig }} className="h-full w-full p-2">
+          <RadialBarChart data={radialData} innerRadius="25%" outerRadius="100%">
+            <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel nameKey={catKey} />} />
+            <RadialBar dataKey={key} background cornerRadius={6} {...anim} />
+            <ChartLegend content={<ChartLegendContent nameKey={catKey} />} className="flex-wrap" />
+          </RadialBarChart>
+        </ChartContainer>
+      </Wrap>
     );
   }
 
   if (chart === "line") {
     return (
       <Wrap>
-        <ChartContainer config={config} className="h-full w-full p-2">
+        <ChartContainer key={animKey} config={config} className="h-full w-full p-2">
           <LineChart accessibilityLayer data={data} margin={{ left: 8, right: 12, top: 8 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey={catKey} {...axis} />
             <YAxis {...axis} width={40} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
-              <Line key={k} dataKey={k} type="natural" stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={activeIfPresent === k ? 3 : 2} dot={false} activeDot={{ r: 4, style: clickCursor, onClick: () => toggle(k) }} style={clickCursor} onClick={() => toggle(k)} />
+              <Line key={k} dataKey={k} type="natural" stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={activeIfPresent === k ? 3 : 2} dot={false} activeDot={{ r: 4, style: clickCursor, onClick: () => toggle(k) }} style={clickCursor} onClick={() => toggle(k)} {...anim} />
             ))}
           </LineChart>
         </ChartContainer>
@@ -193,7 +213,7 @@ export function ShadcnChartPanel({
   if (chart === "area") {
     return (
       <Wrap>
-        <ChartContainer config={config} className="h-full w-full p-2">
+        <ChartContainer key={animKey} config={config} className="h-full w-full p-2">
           <AreaChart accessibilityLayer data={data} margin={{ left: 8, right: 12, top: 8 }}>
             <defs>
               {series.map((k) => (
@@ -208,7 +228,7 @@ export function ShadcnChartPanel({
             <YAxis {...axis} width={40} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
-              <Area key={k} dataKey={k} type="natural" fill={`url(#fill-${uid}-${k})`} fillOpacity={fillOpacity(k)} stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={2} stackId={undefined} style={clickCursor} onClick={() => toggle(k)} />
+              <Area key={k} dataKey={k} type="natural" fill={`url(#fill-${uid}-${k})`} fillOpacity={fillOpacity(k)} stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={2} stackId={undefined} style={clickCursor} onClick={() => toggle(k)} {...anim} />
             ))}
           </AreaChart>
         </ChartContainer>
@@ -220,7 +240,7 @@ export function ShadcnChartPanel({
   const vertical = chart === "hbar";
   return (
     <Wrap>
-      <ChartContainer config={config} className="h-full w-full p-2">
+      <ChartContainer key={animKey} config={config} className="h-full w-full p-2">
         <BarChart accessibilityLayer data={data} layout={vertical ? "vertical" : "horizontal"} margin={{ left: 8, right: 12, top: 8 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           {vertical ? (
@@ -236,7 +256,7 @@ export function ShadcnChartPanel({
           )}
           <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
           {series.map((k) => (
-            <Bar key={k} dataKey={k} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.18 : 1} radius={vertical ? [0, 6, 6, 0] : [6, 6, 0, 0]} style={clickCursor} onClick={() => toggle(k)} />
+            <Bar key={k} dataKey={k} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.18 : 1} radius={vertical ? [0, 6, 6, 0] : [6, 6, 0, 0]} style={clickCursor} onClick={() => toggle(k)} {...anim} />
           ))}
         </BarChart>
       </ChartContainer>
