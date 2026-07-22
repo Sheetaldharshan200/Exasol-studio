@@ -93,7 +93,7 @@ export function ActivityRail({
                   aria-label={item.label}
                   onClick={() => onSelect(item.id)}
                   className={cn(
-                    "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                    "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
                     selected && "text-primary",
                   )}
                 >
@@ -122,7 +122,7 @@ export function ActivityRail({
               data-agent-id="rail.mcp"
               onClick={() => onSelect("mcp")}
               className={cn(
-                "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
                 active === "mcp" && sidebarOpen && "text-primary",
               )}
             >
@@ -140,7 +140,7 @@ export function ActivityRail({
               aria-label="Exa"
               onClick={onToggleAi}
               className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
                 aiOpen && "text-primary",
               )}
             >
@@ -155,7 +155,7 @@ export function ActivityRail({
               aria-label="Settings"
               data-agent-id="rail.settings"
               onClick={onOpenSettings}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground"
             >
               <Icon name="settings" className="h-[18px] w-[18px]" />
             </button>

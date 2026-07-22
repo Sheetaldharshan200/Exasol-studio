@@ -127,6 +127,7 @@ import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDe
 import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
 import { GitPanel } from "@/features/workbench/GitPanel";
 import { NotebookTab } from "@/features/workbench/NotebookTab";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite, type Favorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
@@ -214,25 +215,25 @@ function newTab(index: number): SqlTab {
   };
 }
 
-const TAB_ICON: Record<TabView, typeof Terminal> = {
-  sql: Terminal,
-  dbInfo: Info,
-  dba: Shield,
-  dataTypes: Shapes,
-  connect: Plug,
-  visualizer: Eye,
-  filePreview: Table2,
-  mcpConfig: PlugZap,
-  marketplace: Store,
-  guides: BookOpen,
-  object: Table2,
-  bi: BarChart3,
-  connInfo: Plug,
-  welcome: Sparkles,
-  artifact: FileCode2,
-  git: GitBranch,
-  notebook: NotebookPen,
-  skills: Sparkles,
+const TAB_ICON: Record<TabView, IconName> = {
+  sql: "terminal",
+  dbInfo: "info",
+  dba: "shield",
+  dataTypes: "grid",
+  connect: "plug",
+  visualizer: "visualizer",
+  filePreview: "table",
+  mcpConfig: "plug",
+  marketplace: "marketplace",
+  guides: "guides",
+  object: "table",
+  bi: "dashboards",
+  connInfo: "plug",
+  welcome: "skills",
+  artifact: "file",
+  git: "git",
+  notebook: "notebook",
+  skills: "skills",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -2462,7 +2463,7 @@ export function ExasolStudio({
             : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground",
         )}
       >
-        <TabIcon className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
         {isEditing ? (
           <input
             autoFocus
@@ -3595,7 +3596,7 @@ export function ExasolStudio({
               <span className="flex items-center gap-1.5 px-1 text-[12px] font-medium text-foreground">
                 {(() => {
                   const TabIcon = TAB_ICON[activeTab.view];
-                  return <TabIcon className="h-3.5 w-3.5 text-primary" />;
+                  return <Icon name={TabIcon} className="h-3.5 w-3.5 text-primary" />;
                 })()}
                 {activeTab.title}
               </span>
