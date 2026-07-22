@@ -3396,6 +3396,10 @@ export function ExasolStudio({
           activeTab.view !== "bi" &&
           activeTab.view !== "welcome" &&
           activeTab.view !== "mcpConfig" &&
+          activeTab.view !== "git" &&
+          activeTab.view !== "notebook" &&
+          activeTab.view !== "skills" &&
+          activeTab.view !== "artifact" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (

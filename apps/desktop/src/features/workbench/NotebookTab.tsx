@@ -1,27 +1,53 @@
 import { useCallback, useRef, useState } from "react";
-import { ChevronDown, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Code2,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Text as TextIcon,
+  Trash2,
+} from "lucide-react";
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
+type CellType = "sql" | "markdown";
 type Cell = {
   id: string;
-  sql: string;
+  type: CellType;
+  src: string;
   running: boolean;
   result: StatementResult | null;
   error: string | null;
-  ranAt: number | null;
+  count: number | null; // execution count, Jupyter-style
+  editing: boolean; // markdown cells: editing vs rendered
 };
 
-let cellSeq = 0;
-const newCell = (sql = ""): Cell => ({ id: `c${++cellSeq}-${Math.random().toString(36).slice(2, 6)}`, sql, running: false, result: null, error: null, ranAt: null });
+let seq = 0;
+const mkCell = (type: CellType = "sql", src = ""): Cell => ({
+  id: `c${++seq}-${Math.random().toString(36).slice(2, 6)}`,
+  type,
+  src,
+  running: false,
+  result: null,
+  error: null,
+  count: null,
+  editing: type === "markdown" ? !src : true,
+});
 
 /**
- * A Colab-style SQL notebook: independent cells you write and run against the
- * connection, each showing its own scrollable result grid. Add a cell below any
- * result and keep exploring — the workspace equivalent of a data notebook.
+ * A Jupyter-style notebook for Exasol: SQL and Markdown cells you can add above
+ * or below, reorder, switch type, and run. SQL cells execute against the
+ * connection and show a scrollable result grid; Markdown cells render in place.
  */
 export function NotebookTab({ profileId, connectionName }: { profileId: string | null; connectionName: string }) {
-  const [cells, setCells] = useState<Cell[]>(() => [newCell()]);
+  const [cells, setCells] = useState<Cell[]>(() => [mkCell("sql")]);
+  const execCount = useRef(0);
   const runningAll = useRef(false);
 
   const patch = useCallback((id: string, p: Partial<Cell>) => {
@@ -29,39 +55,63 @@ export function NotebookTab({ profileId, connectionName }: { profileId: string |
   }, []);
 
   const runCell = useCallback(
-    async (id: string, sql: string) => {
+    async (id: string) => {
+      let cell: Cell | undefined;
+      setCells((cs) => {
+        cell = cs.find((c) => c.id === id);
+        return cs;
+      });
+      if (!cell) return;
+      if (cell.type === "markdown") {
+        patch(id, { editing: false });
+        return;
+      }
       if (!profileId) {
         patch(id, { error: "Connect to a database first.", result: null });
         return;
       }
-      if (!sql.trim()) return;
+      if (!cell.src.trim()) return;
       patch(id, { running: true, error: null });
       try {
-        const res = await ipc.executeSql(profileId, connectionName, sql, 1000, false);
+        const res = await ipc.executeSql(profileId, connectionName, cell.src, 1000, false);
         const r = res.results[res.results.length - 1] ?? null;
-        patch(id, { running: false, result: r, error: r?.error ?? null, ranAt: Date.now() });
+        patch(id, { running: false, result: r, error: r?.error ?? null, count: ++execCount.current });
       } catch (e) {
-        patch(id, { running: false, error: errorMessage(e), result: null });
+        patch(id, { running: false, error: errorMessage(e), result: null, count: ++execCount.current });
       }
     },
     [profileId, connectionName, patch],
   );
 
-  function addCellAfter(id: string) {
+  function insert(at: string, where: "above" | "below", type: CellType) {
     setCells((cs) => {
-      const i = cs.findIndex((c) => c.id === id);
+      const i = cs.findIndex((c) => c.id === at);
       const next = [...cs];
-      next.splice(i + 1, 0, newCell());
+      next.splice(where === "above" ? i : i + 1, 0, mkCell(type));
       return next;
     });
   }
-  function removeCell(id: string) {
-    setCells((cs) => (cs.length === 1 ? [newCell()] : cs.filter((c) => c.id !== id)));
+  function move(id: string, dir: -1 | 1) {
+    setCells((cs) => {
+      const i = cs.findIndex((c) => c.id === id);
+      const j = i + dir;
+      if (j < 0 || j >= cs.length) return cs;
+      const next = [...cs];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+  function remove(id: string) {
+    setCells((cs) => (cs.length === 1 ? [mkCell("sql")] : cs.filter((c) => c.id !== id)));
+  }
+  function setType(id: string, type: CellType) {
+    patch(id, { type, result: null, error: null, editing: true });
   }
   async function runAll() {
     if (runningAll.current) return;
     runningAll.current = true;
-    for (const c of cells) if (c.sql.trim()) await runCell(c.id, c.sql);
+    const ids = cells.map((c) => c.id);
+    for (const id of ids) await runCell(id);
     runningAll.current = false;
   }
 
@@ -78,25 +128,35 @@ export function NotebookTab({ profileId, connectionName }: { profileId: string |
             <Play className="h-3.5 w-3.5" /> Run all
           </button>
           <button
-            onClick={() => setCells((cs) => [...cs, newCell()])}
+            onClick={() => setCells((cs) => [...cs, mkCell("sql")])}
+            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <Code2 className="h-3.5 w-3.5" /> SQL
+          </button>
+          <button
+            onClick={() => setCells((cs) => [...cs, mkCell("markdown")])}
             className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
           >
-            <Plus className="h-3.5 w-3.5" /> Cell
+            <TextIcon className="h-3.5 w-3.5" /> Markdown
           </button>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
-        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+        <div className="mx-auto flex max-w-4xl flex-col gap-2.5">
           {cells.map((cell, i) => (
             <CellView
               key={cell.id}
-              index={i + 1}
               cell={cell}
-              onChange={(sql) => patch(cell.id, { sql })}
-              onRun={() => void runCell(cell.id, cell.sql)}
-              onAddBelow={() => addCellAfter(cell.id)}
-              onRemove={() => removeCell(cell.id)}
+              first={i === 0}
+              last={i === cells.length - 1}
+              onChange={(src) => patch(cell.id, { src })}
+              onRun={() => void runCell(cell.id)}
+              onEdit={() => patch(cell.id, { editing: true })}
+              onType={(t) => setType(cell.id, t)}
+              onInsert={(w, t) => insert(cell.id, w, t)}
+              onMove={(d) => move(cell.id, d)}
+              onRemove={() => remove(cell.id)}
             />
           ))}
         </div>
@@ -106,90 +166,144 @@ export function NotebookTab({ profileId, connectionName }: { profileId: string |
 }
 
 function CellView({
-  index,
   cell,
+  first,
+  last,
   onChange,
   onRun,
-  onAddBelow,
+  onEdit,
+  onType,
+  onInsert,
+  onMove,
   onRemove,
 }: {
-  index: number;
   cell: Cell;
-  onChange: (sql: string) => void;
+  first: boolean;
+  last: boolean;
+  onChange: (src: string) => void;
   onRun: () => void;
-  onAddBelow: () => void;
+  onEdit: () => void;
+  onType: (t: CellType) => void;
+  onInsert: (where: "above" | "below", type: CellType) => void;
+  onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const isMd = cell.type === "markdown";
+  const rendered = isMd && !cell.editing;
+
   return (
-    <div className="group/cell overflow-hidden rounded-xl border border-border bg-panel/40">
-      {/* Editor row */}
-      <div className="flex items-stretch">
-        <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-r border-border/60 py-2 font-mono text-[10px] text-muted-foreground">
-          <span>[{index}]</span>
+    <div className="group/cell relative">
+      {/* Insert-above hover strip */}
+      <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
+
+      <div className={cn("overflow-hidden rounded-xl border transition-colors", rendered ? "border-transparent hover:border-border" : "border-border bg-panel/40")}>
+        <div className="flex items-stretch">
+          {/* Gutter */}
+          <div className="flex w-11 shrink-0 flex-col items-center gap-1.5 py-2 font-mono text-[10px] text-muted-foreground">
+            <button
+              onClick={() => onType(isMd ? "sql" : "markdown")}
+              title={isMd ? "Switch to SQL" : "Switch to Markdown"}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 hover:bg-secondary hover:text-foreground"
+            >
+              {isMd ? <TextIcon className="h-3.5 w-3.5" /> : <Code2 className="h-3.5 w-3.5" />}
+            </button>
+            {!isMd ? <span>[{cell.count ?? " "}]</span> : null}
+          </div>
+
+          {/* Body */}
+          <div className="min-w-0 flex-1">
+            {rendered ? (
+              <div
+                onDoubleClick={onEdit}
+                className="md-body prose-sm max-w-none cursor-text px-3 py-2 text-[13px] leading-relaxed"
+              >
+                {cell.src.trim() ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{cell.src}</ReactMarkdown>
+                ) : (
+                  <span className="text-muted-foreground/50 italic">Empty markdown — double-click to edit</span>
+                )}
+              </div>
+            ) : (
+              <textarea
+                value={cell.src}
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    onRun();
+                  }
+                }}
+                rows={Math.min(16, Math.max(2, cell.src.split("\n").length))}
+                spellCheck={false}
+                placeholder={isMd ? "# Markdown…   ·   ⌘/Ctrl+Enter to render" : "SELECT * FROM …   ·   ⌘/Ctrl+Enter to run"}
+                className="min-w-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
+              />
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+            <button
+              onClick={onRun}
+              disabled={cell.running}
+              title={isMd ? "Render (⌘/Ctrl+Enter)" : "Run (⌘/Ctrl+Enter)"}
+              className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+            >
+              {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5" />}
+            </button>
+            <button onClick={() => onMove(-1)} disabled={first} title="Move up" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30">
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => onMove(1)} disabled={last} title="Move down" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30">
+              <ArrowDown className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
-        <textarea
-          value={cell.sql}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              onRun();
-            }
-          }}
-          rows={Math.min(12, Math.max(2, cell.sql.split("\n").length))}
-          spellCheck={false}
-          placeholder="SELECT * FROM …   ·   ⌘/Ctrl+Enter to run"
-          className="min-w-0 flex-1 resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
-        />
-        <div className="flex shrink-0 flex-col items-center gap-1 p-1.5">
-          <button
-            onClick={onRun}
-            disabled={cell.running}
-            title="Run (⌘/Ctrl+Enter)"
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-          >
-            {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={onRemove}
-            title="Delete cell"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/cell:opacity-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
+
+        {/* SQL result */}
+        {!isMd && cell.error ? (
+          <div className="border-t border-border bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">
+            {cell.error}
+          </div>
+        ) : !isMd && cell.result ? (
+          <div className="border-t border-border">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground">
+              <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", collapsed && "-rotate-90")} />
+                {cell.result.kind === "rowCount"
+                  ? `${cell.result.rowCount} row(s) affected`
+                  : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
+              </button>
+              <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
+            </div>
+            {!collapsed && cell.result.kind === "resultSet" ? (
+              <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* Result */}
-      {cell.error ? (
-        <div className="border-t border-border bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">
-          {cell.error}
-        </div>
-      ) : cell.result ? (
-        <div className="border-t border-border">
-          <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground">
-            <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", collapsed && "-rotate-90")} />
-              {cell.result.kind === "rowCount"
-                ? `${cell.result.rowCount} row(s) affected`
-                : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
-            </button>
-            <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
-          </div>
-          {!collapsed && cell.result.kind === "resultSet" ? (
-            <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
-          ) : null}
-        </div>
-      ) : null}
+      {/* Insert-below hover strip */}
+      <InsertBar onSql={() => onInsert("below", "sql")} onMd={() => onInsert("below", "markdown")} className="-bottom-2.5" />
+    </div>
+  );
+}
 
-      {/* Add-below affordance */}
-      <button
-        onClick={onAddBelow}
-        className="flex w-full items-center justify-center gap-1 border-t border-border/60 py-1 text-[10.5px] text-muted-foreground opacity-0 transition-opacity hover:bg-secondary/40 hover:text-foreground group-hover/cell:opacity-100"
-      >
-        <Plus className="h-3 w-3" /> Cell below
+function InsertBar({ onSql, onMd, className }: { onSql: () => void; onMd: () => void; className?: string }) {
+  return (
+    <div className={cn("absolute inset-x-0 z-10 flex h-5 items-center justify-center gap-1 opacity-0 transition-opacity hover:opacity-100 group-hover/cell:opacity-100", className)}>
+      <span className="h-px flex-1 bg-border/60" />
+      <button onClick={onSql} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground">
+        <Plus className="h-2.5 w-2.5" /> SQL
       </button>
+      <button onClick={onMd} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground">
+        <Plus className="h-2.5 w-2.5" /> MD
+      </button>
+      <span className="h-px flex-1 bg-border/60" />
     </div>
   );
 }
@@ -216,10 +330,7 @@ function ResultGrid({ columns, rows, truncated }: { columns: { name: string; typ
               {row.map((v, ci) => (
                 <td
                   key={ci}
-                  className={cn(
-                    "max-w-[360px] truncate border-b border-border/40 px-2.5 py-1 whitespace-nowrap",
-                    v === null && "text-muted-foreground/50 italic",
-                  )}
+                  className={cn("max-w-[360px] truncate border-b border-border/40 px-2.5 py-1 whitespace-nowrap", v === null && "text-muted-foreground/50 italic")}
                   title={v === null ? "NULL" : String(v)}
                 >
                   {v === null ? "NULL" : String(v)}
@@ -229,17 +340,13 @@ function ResultGrid({ columns, rows, truncated }: { columns: { name: string; typ
           ))}
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length + 1} className="px-3 py-4 text-center text-muted-foreground">
-                No rows.
-              </td>
+              <td colSpan={columns.length + 1} className="px-3 py-4 text-center text-muted-foreground">No rows.</td>
             </tr>
           ) : null}
         </tbody>
       </table>
       {truncated ? (
-        <p className="border-t border-border px-3 py-1.5 text-[10.5px] text-muted-foreground">
-          Showing the first {rows.length} rows.
-        </p>
+        <p className="border-t border-border px-3 py-1.5 text-[10.5px] text-muted-foreground">Showing the first {rows.length} rows.</p>
       ) : null}
     </div>
   );
