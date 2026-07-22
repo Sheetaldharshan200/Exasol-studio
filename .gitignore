@@ -69,3 +69,6 @@ graphify-out/.DS_Store
 # Obsidian per-machine workspace state (keep the vault notes, not the UI state)
 knowledge/vault/.obsidian/*
 !knowledge/vault/.obsidian/.gitkeep
+graphify-out/[0-9][0-9][0-9][0-9]-*/
+graphify-out/*.sig
+graphify-out/.graphify_analysis.json
