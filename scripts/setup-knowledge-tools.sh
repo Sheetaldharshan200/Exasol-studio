@@ -14,16 +14,17 @@ need claude
 echo "==> graphify (codebase knowledge graph)"
 uv tool install graphifyy >/dev/null 2>&1 || uv tool upgrade graphifyy >/dev/null 2>&1 || true
 graphify install >/dev/null 2>&1 || true
-( cd "$ROOT" && graphify extract . >/dev/null 2>&1 ) && echo "   graph built -> graphify-out/" || echo "   (graphify extract skipped/failed — run it manually)"
+( cd "$ROOT" && graphify update . >/dev/null 2>&1 ) && echo "   graph built -> graphify-out/graph.json (committed)" || echo "   (graphify update skipped/failed — run it manually)"
+git config merge.graphify.driver "graphify merge-driver %O %A %B" 2>/dev/null || true
 
 echo "==> llm-wiki (persistent project KB)"
 uv tool install llm-wiki-mcp >/dev/null 2>&1 || true
-WIKI="$HOME/.exasol-studio-wiki"; mkdir -p "$WIKI"
+WIKI="$ROOT/knowledge/wiki"; mkdir -p "$WIKI/pages"
 claude mcp add llm-wiki --scope user -- "$HOME/.local/bin/llm-wiki-mcp" --wiki-root "$WIKI" >/dev/null 2>&1 \
   && echo "   registered MCP: llm-wiki -> $WIKI" || echo "   (llm-wiki already registered)"
 
 echo "==> obsidian-vault (notes vault over the filesystem)"
-VAULT="${OBSIDIAN_VAULT:-$HOME/ExasolStudioVault}"; mkdir -p "$VAULT/.obsidian"
+VAULT="${OBSIDIAN_VAULT:-$ROOT/knowledge/vault}"; mkdir -p "$VAULT/.obsidian"
 [ -f "$VAULT/Welcome.md" ] || printf '# Exasol Studio Vault\n\nShared Markdown notes for the project.\n' > "$VAULT/Welcome.md"
 claude mcp add obsidian-vault --scope user -- npx -y @modelcontextprotocol/server-filesystem "$VAULT" >/dev/null 2>&1 \
   && echo "   registered MCP: obsidian-vault -> $VAULT" || echo "   (obsidian-vault already registered)"

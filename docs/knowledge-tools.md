@@ -23,21 +23,21 @@ assistants it detects. Or do it manually:
 # 1. graphify — codebase knowledge graph + /graphify skill
 uv tool install graphifyy
 graphify install          # registers the /graphify skill with Claude Code, Cursor, Codex, Gemini
-graphify extract .        # build the graph for this repo (writes graphify-out/, git-ignored)
+graphify update .         # build graphify-out/graph.json (COMMITTED; cache/ stays git-ignored)
 
 # 2. llm-wiki — persistent project knowledge base (MCP server)
 uv tool install llm-wiki-mcp
 claude mcp add llm-wiki --scope user -- \
-  "$HOME/.local/bin/llm-wiki-mcp" --wiki-root "$HOME/.exasol-studio-wiki"
+  "$HOME/.local/bin/llm-wiki-mcp" --wiki-root "$(pwd)/knowledge/wiki"
 
 # 3. obsidian-vault — notes vault over the filesystem (no Obsidian app required)
-mkdir -p "$HOME/ExasolStudioVault/.obsidian"
+mkdir -p knowledge/vault/.obsidian
 claude mcp add obsidian-vault --scope user -- \
-  npx -y @modelcontextprotocol/server-filesystem "$HOME/ExasolStudioVault"
+  npx -y @modelcontextprotocol/server-filesystem "$(pwd)/knowledge/vault"
 ```
 
 Verify: `claude mcp list` should show `llm-wiki` and `obsidian-vault` as
-**Connected**; `graphify-out/` should exist after `graphify extract`.
+**Connected**; `graphify-out/graph.json` should exist after `graphify update .`.
 
 ## How to use them (the working loop)
 
@@ -51,10 +51,13 @@ Verify: `claude mcp list` should show `llm-wiki` and `obsidian-vault` as
 
 ## Notes
 
-- `graphify-out/` and the wiki/vault roots are **local, git-ignored** — the
-  knowledge lives per-machine, seeded the same way for everyone via this doc.
-  (If we later want a *shared* wiki, we can commit a `wiki/` folder and point
-  `--wiki-root` at it — open question.)
+- The knowledge is **shared in the repo**, not per-machine:
+  `knowledge/wiki/` (llm-wiki root), `knowledge/vault/` (Obsidian vault) and
+  `graphify-out/graph.json` (the codebase graph) are **committed**. Only the
+  machine-local, regenerable bits are git-ignored: `graphify-out/cache/` and
+  Obsidian's `.obsidian/` UI state. `graph.json` is set to **union-merge** via
+  graphify's git merge driver (`.gitattributes`), so parallel edits don't
+  conflict. Run `graphify update .` after code changes to refresh it.
 - The native Python `obsidian-mcp` package is currently broken against recent
   `fastmcp`; the filesystem MCP above is the reliable "vault as folder" path and
   needs no REST-API key or running Obsidian.

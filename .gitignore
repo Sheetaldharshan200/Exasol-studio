@@ -62,5 +62,10 @@ docs/foundation/graphify/rendered/
 apps/desktop/src-tauri/resources/runtime/*
 !apps/desktop/src-tauri/resources/runtime/.gitkeep
 
-# Graphify local knowledge-graph artifact
-graphify-out/
+# Graphify: commit the portable graph, ignore the machine-local AST/stat cache
+graphify-out/cache/
+graphify-out/*.html
+graphify-out/.DS_Store
+# Obsidian per-machine workspace state (keep the vault notes, not the UI state)
+knowledge/vault/.obsidian/*
+!knowledge/vault/.obsidian/.gitkeep

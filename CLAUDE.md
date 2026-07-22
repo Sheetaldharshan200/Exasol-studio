@@ -14,19 +14,18 @@ project evolves instead of being re-derived every session. Setup: `./scripts/set
 1. **graphify** — a queryable knowledge graph of the whole codebase (AST-based,
    local, no vector store). For any question about architecture, where a symbol
    lives, or how files relate, **query graphify first** rather than blind
-   grepping. The graph lives in `graphify-out/` (git-ignored).
-   - Build/refresh: `graphify extract .` (re-run after large changes)
+   grepping. The graph lives in `graphify-out/graph.json` — **committed** to the repo (the AST cache `graphify-out/cache/` is git-ignored).
+   - Refresh: `graphify update .` (re-run after large changes; commit the updated graph.json)
    - In an AI assistant: the `/graphify` skill, or ask a codebase question.
 
 2. **llm-wiki** — a persistent, growable Markdown knowledge base (an MCP server:
    `wiki_read`, `wiki_write_page`, `wiki_log_append`, `wiki_inventory`). Root:
-   `~/.exasol-studio-wiki`. **Record durable decisions, gotchas, and how-tos
+   `knowledge/wiki/` (committed). **Record durable decisions, gotchas, and how-tos
    here** (e.g. "why dashboards persist at drag-stop", "the fastmcp/Obsidian
    incompatibility") so the next contributor/agent inherits them.
 
 3. **obsidian-vault** — read/search/write Markdown notes in an Obsidian vault
-   via a filesystem MCP (default `~/ExasolStudioVault`; point it at your own
-   vault if you have one). Use it for shared design notes and running logs.
+   via a filesystem MCP (`knowledge/vault/`, committed). Use it for shared design notes and running logs.
 
 Rule of thumb: **read** project knowledge from graphify (code) and llm-wiki
 (decisions); **write** new durable knowledge back into llm-wiki as you learn it.

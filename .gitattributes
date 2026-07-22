@@ -1,2 +1,3 @@
 # Preserve upstream skill/reference formatting without treating vendor whitespace as an error.
 packages/agent-core/skills/** whitespace=-trailing-space
+graphify-out/graph.json merge=graphify
