@@ -5,6 +5,13 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/700.css";
+/* Optional user-selectable fonts (theme customizer) — all SIL-OFL licensed.
+   Browsers fetch a face only when it's actually used, so these cost nothing
+   until picked. */
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/source-sans-3";
+@import "@fontsource-variable/fira-code";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));

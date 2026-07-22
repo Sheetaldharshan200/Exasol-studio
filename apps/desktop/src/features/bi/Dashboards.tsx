@@ -9,6 +9,7 @@ import "@perspective-dev/viewer/dist/css/themes.css";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { Icon } from "@/components/ui/icon";
+import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
 import {
   ArrowLeft,
   BarChart3,
@@ -226,6 +227,7 @@ const VIZ_TILES: { key: string; hint: string; art: React.ReactNode }[] = [
   { key: "heatmap", hint: "Density across two dimensions", art: (<g>{[0,1,2,3].map((x)=>[0,1].map((y)=>null))}<rect x="9" y="5" width="7" height="7" fill="var(--primary)" opacity="0.9"/><rect x="17" y="5" width="7" height="7" fill="currentColor" opacity="0.25"/><rect x="25" y="5" width="7" height="7" fill="currentColor" opacity="0.5"/><rect x="33" y="5" width="7" height="7" fill="currentColor" opacity="0.2"/><rect x="9" y="13" width="7" height="7" fill="currentColor" opacity="0.35"/><rect x="17" y="13" width="7" height="7" fill="var(--primary)" opacity="0.6"/><rect x="25" y="13" width="7" height="7" fill="currentColor" opacity="0.2"/><rect x="33" y="13" width="7" height="7" fill="var(--primary)" opacity="0.4"/></g>) },
   { key: "funnel", hint: "Stage-by-stage drop-off", art: (<g fill="currentColor" opacity="0.5"><path d="M10 5 h28 l-5 5 h-18 Z" fill="var(--primary)" opacity="0.9"/><path d="M16 12 h16 l-4 5 h-8 Z"/><path d="M21 19 h6 l-1.5 4 h-3 Z"/></g>) },
   { key: "radar", hint: "Compare across several axes", art: (<g stroke="currentColor" opacity="0.4" fill="none"><polygon points="24,3 40,10 35,23 13,23 8,10"/><polygon points="24,8 34,12 31,20 17,20 14,12" stroke="var(--primary)" fill="var(--primary)" fillOpacity="0.2" opacity="1"/></g>) },
+  { key: "radial", hint: "Progress rings per category", art: (<g fill="none" strokeLinecap="round"><path d="M24 22 A9 9 0 1 1 33 13" stroke="currentColor" opacity="0.3" strokeWidth="3"/><path d="M24 22 A9 9 0 1 1 30 5.5" stroke="var(--primary)" strokeWidth="3"/><path d="M24 18 A5 5 0 1 1 29 13" stroke="currentColor" opacity="0.45" strokeWidth="3"/></g>) },
   { key: "treemap", hint: "Composition of many parts", art: (<g><rect x="8" y="5" width="16" height="16" rx="1" fill="var(--primary)" opacity="0.75"/><rect x="26" y="5" width="14" height="9" rx="1" fill="currentColor" opacity="0.4"/><rect x="26" y="16" width="8" height="5" rx="1" fill="currentColor" opacity="0.3"/><rect x="36" y="16" width="4" height="5" rx="1" fill="currentColor" opacity="0.25"/></g>) },
   { key: "gauge", hint: "Progress toward a target", art: (<g fill="none"><path d="M10 21 A14 14 0 0 1 38 21" stroke="currentColor" opacity="0.3" strokeWidth="4"/><path d="M10 21 A14 14 0 0 1 27 8" stroke="var(--primary)" strokeWidth="4"/><circle cx="24" cy="21" r="2" fill="currentColor"/></g>) },
   { key: "kpi", hint: "One number that matters", art: (<g><text x="24" y="15" textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--primary)">42k</text><rect x="14" y="19" width="20" height="2" rx="1" fill="currentColor" opacity="0.35"/></g>) },
@@ -739,9 +741,20 @@ function Panel({
           </div>
         ) : panel.viz.type === "explore" ? (
           <ExplorePanel panel={panel} result={result} onVizChange={onVizChange} />
-        ) : (
-          <ChartPanel panel={panel} result={result} />
-        )}
+        ) : (() => {
+          // Common chart types render as shadcn/ui charts (Recharts) — the
+          // ui.shadcn.com/charts look with draw-in animation. A custom ECharts
+          // option or exotic type (heatmap, treemap, gauge, radar, funnel,
+          // scatter) keeps the ECharts engine.
+          const ev = panel.viz as Extract<DashPanel["viz"], { type: "echarts" }>;
+          const simple = ["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"] as const;
+          const isSimple = !ev.option && (simple as readonly string[]).includes(ev.chart ?? "");
+          return isSimple ? (
+            <ShadcnChartPanel chart={ev.chart as (typeof simple)[number]} result={result} />
+          ) : (
+            <ChartPanel panel={panel} result={result} />
+          );
+        })()}
       </div>
     </div>
   );
@@ -1235,7 +1248,7 @@ function PanelEditor({
     if (preview.columns.some((_, i) => isTime(i)) && numIdx.length) { s.add("line"); s.add("area"); }
     if (catIdx.length >= 1 && numIdx.length >= 1) {
       const cats = new Set(preview.rows.map((r) => String(r[catIdx[0]]))).size;
-      if (cats < 6) { s.add("pie"); s.add("donut"); }
+      if (cats < 6) { s.add("pie"); s.add("donut"); s.add("radial"); }
       else if (cats <= 15) s.add("bar");
       else { s.add("treemap"); s.add("hbar"); }
     }

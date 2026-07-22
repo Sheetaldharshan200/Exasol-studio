@@ -20,6 +20,7 @@ const P = (primary: string, primaryFg: string, extra: Record<string, string> = {
   "--sidebar-primary": primary,
   "--sidebar-ring": primary,
   "--signal": primary,
+  "--signal-foreground": primaryFg,
   ...extra,
 });
 
@@ -41,8 +42,8 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "violet-bloom",
     name: "Violet Bloom",
-    dots: ["#7c3aed", "#ddd6fe"],
-    light: P("#7c3aed", "#ffffff", { "--accent": "#f3efff", "--secondary": "#f0edf9" }),
+    dots: ["#6d28d9", "#ddd6fe"],
+    light: P("#6d28d9", "#ffffff", { "--accent": "#f3efff", "--secondary": "#f0edf9" }),
     dark: P("#a78bfa", "#140b26", { "--accent": "#241a3d" }),
   },
   {
@@ -105,30 +106,91 @@ export const THEME_PRESETS: ThemePreset[] = [
 
 export const RADIUS_OPTIONS = ["0rem", "0.25rem", "0.5rem", "0.75rem", "1rem"] as const;
 
-const PRESET_KEY = "studio.theme.preset";
-const RADIUS_KEY = "studio.theme.radius";
-const STYLE_ID = "studio-theme-preset";
+/** Free (SIL-OFL) fonts bundled via @fontsource — no licensing strings attached. */
+export const SANS_FONTS = [
+  { id: "inter", name: "Inter (default)", stack: `"Inter Variable", "Inter", system-ui, sans-serif` },
+  { id: "figtree", name: "Figtree", stack: `"Figtree Variable", "Figtree", system-ui, sans-serif` },
+  { id: "manrope", name: "Manrope", stack: `"Manrope Variable", "Manrope", system-ui, sans-serif` },
+  { id: "space-grotesk", name: "Space Grotesk", stack: `"Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif` },
+  { id: "source-sans", name: "Source Sans 3", stack: `"Source Sans 3 Variable", "Source Sans 3", system-ui, sans-serif` },
+] as const;
+export const MONO_FONTS = [
+  { id: "jetbrains", name: "JetBrains Mono (default)", stack: `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace` },
+  { id: "fira-code", name: "Fira Code", stack: `"Fira Code Variable", "Fira Code", ui-monospace, Menlo, monospace` },
+] as const;
 
-export function storedPresetId(): string {
-  return localStorage.getItem(PRESET_KEY) ?? "default";
-}
-export function storedRadius(): string {
-  return localStorage.getItem(RADIUS_KEY) ?? "0.5rem";
+export type ThemeCustom = {
+  presetId: string;
+  radius: string;
+  /** Custom button/accent color (overrides the preset's primary). */
+  primary?: string;
+  sansId?: string;
+  monoId?: string;
+};
+
+const CUSTOM_KEY = "studio.theme.custom.v1";
+
+export function storedTheme(): ThemeCustom {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "null") as ThemeCustom | null;
+    if (raw?.presetId) return raw;
+  } catch { /* fresh */ }
+  // Migrate the older two-key storage.
+  return { presetId: localStorage.getItem("studio.theme.preset") ?? "default", radius: localStorage.getItem("studio.theme.radius") ?? "0.5rem" };
 }
 
-/** Apply (and persist) a preset + radius by injecting an override stylesheet. */
-export function applyThemePreset(presetId: string = storedPresetId(), radius: string = storedRadius()) {
-  const preset = THEME_PRESETS.find((p) => p.id === presetId) ?? THEME_PRESETS[0];
-  localStorage.setItem(PRESET_KEY, preset.id);
-  localStorage.setItem(RADIUS_KEY, radius);
+/** Black or white — whichever reads on the given hex background. */
+export function contrastFg(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  return lum > 0.55 ? "#0b1220" : "#ffffff";
+}
+
+const STYLE_ID2 = "studio-theme-preset";
+
+/** Apply (and persist) the full theme customization. */
+export function applyTheme(custom: ThemeCustom) {
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom));
+  const preset = THEME_PRESETS.find((p) => p.id === custom.presetId) ?? THEME_PRESETS[0];
   const vars = (o: Record<string, string>) => Object.entries(o).map(([k, v]) => `${k}: ${v};`).join(" ");
-  const radiusLine = radius !== "0.5rem" ? `--radius: ${radius};` : "";
-  const css = `:root { ${vars(preset.light)} ${radiusLine} }\n.dark { ${vars(preset.dark)} }`;
-  let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+
+  const globals: Record<string, string> = {};
+  if (custom.radius && custom.radius !== "0.5rem") globals["--radius"] = custom.radius;
+  if (custom.primary) {
+    const fg = contrastFg(custom.primary);
+    Object.assign(globals, {
+      "--primary": custom.primary, "--primary-foreground": fg, "--ring": custom.primary,
+      "--sidebar-primary": custom.primary, "--sidebar-ring": custom.primary,
+      "--signal": custom.primary, "--signal-foreground": fg,
+    });
+  }
+  const sans = SANS_FONTS.find((f) => f.id === custom.sansId);
+  if (sans && sans.id !== "inter") { globals["--font-sans"] = sans.stack; globals["--font-heading"] = sans.stack; }
+  const mono = MONO_FONTS.find((f) => f.id === custom.monoId);
+  if (mono && mono.id !== "jetbrains") globals["--font-mono"] = mono.stack;
+
+  // Light overrides are scoped to :root:not(.dark): the injected sheet loads
+  // last, so a bare :root block would beat the BASE .dark rules and leak
+  // light-mode colors into dark mode (the "invisible white text" bug).
+  const css =
+    `:root:not(.dark) { ${vars(preset.light)} }
+` +
+    `.dark { ${vars(preset.dark)} }
+` +
+    `:root { ${vars(globals)} }`;
+  let el = document.getElementById(STYLE_ID2) as HTMLStyleElement | null;
   if (!el) {
     el = document.createElement("style");
-    el.id = STYLE_ID;
+    el.id = STYLE_ID2;
     document.head.appendChild(el);
   }
   el.textContent = css;
+}
+
+/** Back-compat boot/apply entry (used by main.tsx and older callers). */
+export function applyThemePreset(presetId?: string, radius?: string) {
+  const cur = storedTheme();
+  applyTheme({ ...cur, presetId: presetId ?? cur.presetId, radius: radius ?? cur.radius });
 }
