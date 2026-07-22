@@ -3681,7 +3681,24 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">
-              <NotebookTab profileId={connection?.profile.id ?? null} connectionName={connection?.profile.name ?? ""} />
+              <NotebookTab
+                profileId={connection?.profile.id ?? null}
+                connectionName={connection?.profile.name ?? ""}
+                connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
+                editorTheme={editorTheme}
+                beforeMount={defineMonacoThemes}
+                onConnectDb={openConnect}
+                onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
+                onAsk={(text) => {
+                  setAiOpen(true);
+                  aiPanelRef.current?.expand();
+                  setAiPrompt({
+                    text: `About this SQL — explain it, spot issues, and suggest an improvement:\n\n\`\`\`sql\n${text || "(empty)"}\n\`\`\``,
+                    nonce: Date.now(),
+                    send: false,
+                  });
+                }}
+              />
             </div>
           ) : activeTab.view === "skills" ? (
             <div className="min-h-0 flex-1">
