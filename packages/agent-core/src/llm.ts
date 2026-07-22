@@ -20,7 +20,7 @@ import { AIMessage, AIMessageChunk, SystemMessage, ToolMessage, type BaseMessage
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { tool as lcTool } from "@langchain/core/tools";
 import type { z } from "zod";
-import { parseLooseArgs, repairArgs, resolveToolName, zodSchemaish } from "./tool-repair.ts";
+import { parseLooseArgs, repairArgs, rescueTextCalls, resolveToolName, zodSchemaish } from "./tool-repair.ts";
 import { log } from "./log.ts";
 
 // ── tool shape (drop-in for the ai package's tool()/ToolSet) ────────────────
@@ -101,6 +101,7 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
   let text = "";
   let toolCallCount = 0;
   let step = 0;
+  let rescuedOnce = false;
 
   const throwIfAborted = () => {
     if (abortSignal?.aborted) {
@@ -164,6 +165,24 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
       if (bad.name && parsed !== null) {
         calls.push({ id: bad.id ?? `c${step}-${calls.length}`, name: bad.name, args: parsed });
         log.info("invalid tool call repaired", { tool: bad.name });
+      }
+    }
+    // Prose-only turn: small models sometimes NARRATE their tool use (fake
+    // CALL IMPORT_CSV(...) statements, a JSON dashboard spec they "show"
+    // instead of saving). Rescue recognizable intents into real calls — once
+    // per run, so a stubborn model can't loop forever.
+    if (!calls.length && stepText && !rescuedOnce) {
+      const rescued = rescueTextCalls(stepText).filter((r) => toolNames.includes(r.name));
+      if (rescued.length) {
+        rescuedOnce = true;
+        for (const r of rescued) calls.push({ id: `rescue-${step}-${calls.length}`, name: r.name, args: r.args });
+        log.info("rescued narrated tool calls", { names: rescued.map((r) => r.name) });
+        // Keep the transcript consistent: the assistant message must carry the
+        // tool_calls that the ToolMessages below answer.
+        produced[produced.length - 1] = new AIMessage({
+          content: ai.content,
+          tool_calls: calls.map((c) => ({ id: c.id, name: c.name, args: c.args, type: "tool_call" as const })),
+        });
       }
     }
     if (!calls.length) break; // finished — no more tool work
