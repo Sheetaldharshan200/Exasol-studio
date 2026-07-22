@@ -1137,7 +1137,7 @@ function ResultsGrid({
   onChart?: () => void;
   /** Present when this result maps to a single updatable table. */
   editable?: { schema?: string; table: string; pk: string[] } | null;
-  onCommitEdits?: (statements: string[]) => void;
+  onCommitEdits?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }>;
   editBusy?: boolean;
   fontSize?: number;
   zebra?: boolean;
@@ -1831,31 +1831,33 @@ export function ExasolStudio({
   }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
 
   // Apply reviewed CRUD statements, then re-run the tab's query to refresh.
-  async function commitEdits(statements: string[]) {
-    if (!connection || !statements.length) return;
+  // Apply staged row edits. Exasol returns statement errors INSIDE the result
+  // (not as a JS throw), so we inspect each result and stop at the first
+  // failure — returning it to the editable grid so the error is shown there and
+  // the user's edits are kept (DBeaver/DBVisualizer behaviour), instead of
+  // silently swallowing it (the failure only reaching SQL history).
+  async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }> {
+    if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     setRunning(true);
     try {
-      for (const st of statements) {
-        await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
+      for (let i = 0; i < statements.length; i++) {
+        const st = statements[i];
+        const r = await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
+        const errored = r.results.find((x) => x.error);
+        if (errored?.error) {
+          loadHistory(); // the failed statement still lands in history
+          return { ok: false, error: errored.error, failedIndex: i, failedSql: st };
+        }
       }
-      const res = await ipc.executeSql(
-        connection.profile.id,
-        connection.profile.name,
-        activeTab.sql,
-        maxRows,
-        false,
-      );
+      // All statements succeeded → refresh the grid from the live table.
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
       patchTab(activeTab.id, { response: res, execError: null });
       loadHistory();
       refreshSqlCatalog();
-      // Tell live views (Visualizer, tree) the catalog may have changed so they
-      // re-read schemas/tables — a CREATE/DROP/import just ran.
-      window.dispatchEvent(
-        new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }),
-      );
+      window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
+      return { ok: true };
     } catch (e) {
-      patchTab(activeTab.id, { execError: errorMessage(e) });
-      setResultTab("messages");
+      return { ok: false, error: errorMessage(e) };
     } finally {
       setRunning(false);
     }
@@ -3985,7 +3987,7 @@ export function ExasolStudio({
                         error={lastResult?.error ?? null}
                         onChart={() => void openBi()}
                         editable={editTable}
-                        onCommitEdits={(stmts) => void commitEdits(stmts)}
+                        onCommitEdits={commitEdits}
                         editBusy={running}
                         fontSize={gridFontSize}
                         zebra={gridZebra}

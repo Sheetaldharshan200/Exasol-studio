@@ -17,7 +17,7 @@ const TABS: { id: Section; label: string; icon: typeof Users }[] = [
 /** Live RBAC of the CONNECTED user — read from the DB, which stays the real
  *  authority. The UI only mirrors it so users aren't offered actions the
  *  database would reject. */
-type Caps = { dba: boolean; sys: Set<string> };
+type Caps = { user: string; dba: boolean; sys: Set<string> };
 function cap(c: Caps | null, priv: string): boolean {
   return !!c && (c.dba || c.sys.has(priv));
 }
@@ -92,9 +92,9 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
     ])
       .then(([who, roles, sys]) => {
         const me = (who[0] ?? "").toUpperCase();
-        setCaps({ dba: me === "SYS" || roles.includes("DBA"), sys: new Set(sys) });
+        setCaps({ user: me || "(unknown)", dba: me === "SYS" || roles.includes("DBA"), sys: new Set(sys) });
       })
-      .catch(() => setCaps({ dba: false, sys: new Set() }));
+      .catch(() => setCaps({ user: "(unknown)", dba: false, sys: new Set() }));
   }, [profileId, col1]);
   useEffect(load, [load]);
 
@@ -139,9 +139,13 @@ export function DbaDashboard({ profileId, connectionName }: { profileId: string;
         <BookUser className="h-4 w-4 text-primary" />
         <span className="text-[14px] font-bold text-foreground">DBA · {connectionName}</span>
         {caps ? (
-          <span className={cn("flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium", isAdmin ? "bg-primary/12 text-primary" : "bg-secondary text-muted-foreground")}>
-            {isAdmin ? <ShieldCheck className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-            {caps.dba ? "DBA" : isAdmin ? "Admin privileges" : "Read-only"}
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            signed in as <span className="font-mono text-foreground">{caps.user}</span>
+            <span className={cn("flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium", isAdmin ? "bg-primary/12 text-primary" : "bg-secondary text-muted-foreground")}>
+              {isAdmin ? <ShieldCheck className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+              {caps.dba ? "DBA" : isAdmin ? "Admin" : "Read-only"}
+            </span>
+            <button onClick={() => setDrawer({ name: caps.user, isRole: false })} className="rounded px-1 text-[10.5px] underline-offset-2 hover:text-foreground hover:underline">my privileges</button>
           </span>
         ) : null}
         {notice ? (

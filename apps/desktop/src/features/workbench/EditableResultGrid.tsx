@@ -49,9 +49,12 @@ export function EditableResultGrid({
   initialFocus?: { row: number; col: number } | null;
   /** Column widths (px) captured from the read-only table — keeps geometry stable. */
   colWidths?: number[] | null;
-  onApply: (statements: string[]) => void;
+  onApply: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedIndex?: number; failedSql?: string }>;
   onExit: () => void;
 }) {
+  // The last commit's DB error, shown as a banner. Edits are KEPT on failure so
+  // the user can correct and retry (never silently discarded).
+  const [applyError, setApplyError] = useState<{ message: string; sql?: string } | null>(null);
   // edits: rowIndex -> colIndex -> new value (string)
   const [edits, setEdits] = useState<Record<number, Record<number, string>>>({});
   // Focus + select the double-tapped cell once, when the grid mounts.
@@ -160,6 +163,18 @@ export function EditableResultGrid({
           </button>
         </div>
       </div>
+
+      {applyError ? (
+        <div className="flex shrink-0 items-start gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-2">
+          <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium text-destructive">Update failed — your edits are kept. Fix and Save again.</p>
+            <p className="mt-0.5 break-words font-mono text-[11px] text-destructive/90">{applyError.message}</p>
+            {applyError.sql ? <p className="mt-1 break-all font-mono text-[10.5px] text-muted-foreground">{applyError.sql}</p> : null}
+          </div>
+          <button onClick={() => setApplyError(null)} aria-label="Dismiss" className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto p-px">
         <table
@@ -280,7 +295,16 @@ export function EditableResultGrid({
                 <button onClick={() => setReview(null)} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
                 <button
                   disabled={!review.length || busy}
-                  onClick={() => { const stmts = review; setReview(null); reset(); onApply(stmts); }}
+                  onClick={async () => {
+                    const stmts = review;
+                    setReview(null);
+                    setApplyError(null);
+                    const res = await onApply(stmts);
+                    // Only clear the staged edits when the DB accepted them;
+                    // on failure keep them and show the exact error to fix.
+                    if (res?.ok) reset();
+                    else setApplyError({ message: res?.error ?? "The update failed.", sql: res?.failedSql });
+                  }}
                   className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                 >
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
