@@ -1,7 +1,23 @@
 import { useMemo, useState } from "react";
 import { Code2, KeyRound, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ColumnInfo, ConstraintInfo } from "@/lib/ipc";
+
+/** Shared, fixed column widths for the columns table. The read-only Columns
+ *  view and this editor both render this colgroup, so toggling "Edit structure"
+ *  swaps text for inputs in place — the columns never shift under the cursor. */
+export function ColumnsColgroup() {
+  return (
+    <colgroup>
+      <col style={{ width: 44 }} />
+      <col style={{ width: "32%" }} />
+      <col style={{ width: "44%" }} />
+      <col style={{ width: 128 }} />
+      <col style={{ width: 44 }} />
+    </colgroup>
+  );
+}
 
 /** Common Exasol column types offered in the type dropdown. The column's own
  *  current type is always added to the list so it stays selectable. */
@@ -226,7 +242,8 @@ export function TableStructureEditor({
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full table-fixed border-collapse text-[12px]">
+          <ColumnsColgroup />
           <thead className="sticky top-0 z-10">
             <tr className="bg-secondary text-left">
               <th className="border border-border px-2 py-1.5 font-medium" title="Primary key"><KeyRound className="h-3.5 w-3.5 text-muted-foreground" /></th>
@@ -261,30 +278,30 @@ export function TableStructureEditor({
                       className={cn("w-full bg-transparent px-1 py-0.5 font-mono text-[12px] text-foreground outline-none focus:bg-primary/5", r.dropped && "line-through")}
                     />
                   </td>
-                  <td className="border border-border px-2 py-0.5">
-                    <div className="flex items-center gap-1">
-                      <select
-                        value={r.custom ? CUSTOM : r.type}
+                  <td className="border border-border px-2 py-0.5 align-top">
+                    <Select
+                      value={r.custom ? CUSTOM : r.type}
+                      disabled={r.dropped}
+                      onValueChange={(v) => {
+                        if (v === CUSTOM) patch(r.id, { custom: true });
+                        else patch(r.id, { type: v, custom: false });
+                      }}
+                    >
+                      <SelectTrigger size="sm" className="h-7 w-full font-mono text-[11px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {typeOpts.map((tp) => <SelectItem key={tp} value={tp} className="font-mono text-[11px]">{tp}</SelectItem>)}
+                        <SelectItem value={CUSTOM}>Custom…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {r.custom ? (
+                      <input
+                        value={r.type}
                         disabled={r.dropped}
-                        onChange={(e) => {
-                          if (e.target.value === CUSTOM) patch(r.id, { custom: true });
-                          else patch(r.id, { type: e.target.value, custom: false });
-                        }}
-                        className="min-w-0 flex-1 rounded border border-border bg-panel px-1 py-0.5 font-mono text-[11px] text-foreground outline-none"
-                      >
-                        {typeOpts.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-                        <option value={CUSTOM}>Custom…</option>
-                      </select>
-                      {r.custom ? (
-                        <input
-                          value={r.type}
-                          disabled={r.dropped}
-                          onChange={(e) => patch(r.id, { type: e.target.value })}
-                          placeholder="e.g. DECIMAL(10,3)"
-                          className="w-32 rounded border border-border bg-transparent px-1 py-0.5 font-mono text-[11px] text-foreground outline-none focus:bg-primary/5"
-                        />
-                      ) : null}
-                    </div>
+                        onChange={(e) => patch(r.id, { type: e.target.value })}
+                        placeholder="e.g. DECIMAL(10,3)"
+                        className="mt-1 w-full rounded border border-border bg-transparent px-1.5 py-0.5 font-mono text-[11px] text-foreground outline-none focus:bg-primary/5"
+                      />
+                    ) : null}
                   </td>
                   <td className="border border-border px-3 py-1">
                     <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">

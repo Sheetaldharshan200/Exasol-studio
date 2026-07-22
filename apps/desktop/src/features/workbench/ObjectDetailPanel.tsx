@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Boxes, Columns3, Database, FileCode2, GraduationCap, HardDrive, Info, KeyRound, Loader2, Pencil, Play, Shield, Table2, User } from "lucide-react";
 import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type ObjectGrant, type ObjectSize, type UserDetails } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { TableStructureEditor } from "./TableStructureEditor";
+import { TableStructureEditor, ColumnsColgroup } from "./TableStructureEditor";
 import { TableKeysEditor } from "./TableKeysEditor";
 import { TableInfoEditor } from "./TableInfoEditor";
 
@@ -308,24 +308,30 @@ export function ObjectDetailPanel({
                 </div>
               ) : null}
               <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full border-collapse border border-border text-[12px]">
+                <table className="w-full table-fixed border-collapse border border-border text-[12px]">
+                  <ColumnsColgroup />
                   <thead>
                     <tr className="bg-secondary text-left">
+                      <th className="border border-border px-2 py-1.5" title="Primary key"><KeyRound className="h-3.5 w-3.5 text-muted-foreground" /></th>
                       <th className="border border-border px-3 py-1.5">Column</th>
                       <th className="border border-border px-3 py-1.5">Type</th>
                       <th className="border border-border px-3 py-1.5">Nullable</th>
-                      <th className="border border-border px-3 py-1.5">Default</th>
+                      <th className="border border-border px-2 py-1.5" />
                     </tr>
                   </thead>
                   <tbody className="font-mono">
-                    {cols.map((c) => (
-                      <tr key={c.name} className="even:bg-secondary/30">
-                        <td className="border border-border px-3 py-1 text-foreground">{c.name}</td>
-                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.dataType}</td>
-                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.nullable === false ? "NOT NULL" : "NULL"}</td>
-                        <td className="border border-border px-3 py-1 text-muted-foreground">{c.default ?? ""}</td>
-                      </tr>
-                    ))}
+                    {cols.map((c) => {
+                      const isPk = cons.some((k) => k.constraintType === "PRIMARY KEY" && k.columns.some((x) => x.column === c.name));
+                      return (
+                        <tr key={c.name} className="even:bg-secondary/30">
+                          <td className="border border-border px-2 py-1 text-center">{isPk ? <KeyRound className="mx-auto h-3.5 w-3.5 text-primary" /> : null}</td>
+                          <td className="truncate border border-border px-3 py-1 text-foreground" title={c.name}>{c.name}</td>
+                          <td className="truncate border border-border px-3 py-1 text-muted-foreground" title={c.dataType}>{c.dataType}</td>
+                          <td className="border border-border px-3 py-1 text-muted-foreground">{c.nullable === false ? "NOT NULL" : "NULL"}</td>
+                          <td className="border border-border px-2 py-1" />
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

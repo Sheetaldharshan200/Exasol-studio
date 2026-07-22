@@ -9,6 +9,7 @@ import "@perspective-dev/viewer/dist/css/themes.css";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { Icon } from "@/components/ui/icon";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
 import {
   ArrowLeft,
@@ -1572,18 +1573,13 @@ function PanelEditor({
                     X / category column
                   </span>
                   {cols.length ? (
-                    <select
-                      value={xField}
-                      onChange={(e) => setXField(e.target.value)}
-                      className="h-8 w-full rounded-lg border border-border bg-editor px-2 text-[12px] outline-none"
-                    >
-                      <option value="">(first column)</option>
-                      {cols.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                    <Select value={xField || "__first__"} onValueChange={(v) => setXField(v === "__first__" ? "" : v)}>
+                      <SelectTrigger className="h-8 w-full text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__first__">(first column)</SelectItem>
+                        {cols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <input
                       value={xField}
