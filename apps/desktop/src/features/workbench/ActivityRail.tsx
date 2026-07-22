@@ -49,7 +49,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
 // Items that open a full-screen tab (highlighted by the active tab's view,
 // not the sidebar panel). "bi" launches an external tool, so it's an action —
 // never a persistent selection. Everything else is a sidebar panel.
-const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "notebook", "skills"]);
+const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "notebook", "skills", "bi"]);
 const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "mcp"]);
 
 export function ActivityRail({

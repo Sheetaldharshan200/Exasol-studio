@@ -18,7 +18,6 @@ import {
   Link2,
   List,
   Loader2,
-  Pencil,
   Play,
   Plus,
   Share2,
@@ -236,13 +235,7 @@ export function NotebookTab({
         <span className="text-[11px] text-muted-foreground">Explore data with SQL &amp; Markdown</span>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setCells((cs) => [...cs, mkCell("sql")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-            <Code2 className="h-3.5 w-3.5" /> SQL
-          </button>
-          <button onClick={() => setCells((cs) => [...cs, mkCell("markdown")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-            <TextIcon className="h-3.5 w-3.5" /> Text
-          </button>
-          <button onClick={() => setCells((cs) => [...cs, mkCell("mermaid")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-            <Share2 className="h-3.5 w-3.5" /> Diagram
+            <Plus className="h-3.5 w-3.5" /> Cell
           </button>
           <button onClick={() => void runAll()} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
             <Play className="h-3.5 w-3.5" /> Run all
@@ -372,14 +365,29 @@ function CellView({
 
   return (
     <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
-      <InsertBar onSql={() => onInsert("above", "sql")} onMd={() => onInsert("above", "markdown")} className="-top-2.5" />
+      <InsertBar onAdd={() => onInsert("above", "sql")} className="-top-2.5" />
 
       <div className={cn("overflow-hidden rounded-lg border border-border bg-editor transition-colors", queued && "ring-2 ring-inset ring-primary/40")}>
         <div className="flex items-stretch">
-          {/* Left-center execution gutter — correlates with Jupyter's [n]. */}
-          <div className="flex w-10 shrink-0 select-none items-center justify-center font-mono text-[10px] text-muted-foreground/70">
-            {isSql ? `[${cell.count ?? " "}]` : ""}
-          </div>
+          {/* Left-center gutter — the Jupyter [n] that turns into a Run button
+              on hover (it's both the run control and the run indicator). */}
+          <button
+            onClick={onRun}
+            disabled={cell.running}
+            title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"}
+            className="group/run flex w-10 shrink-0 select-none items-center justify-center"
+          >
+            {cell.running ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            ) : (
+              <>
+                <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">
+                  {isSql ? `[${cell.count ?? " "}]` : "[ ]"}
+                </span>
+                <Play className="hidden h-3.5 w-3.5 fill-current text-primary group-hover/run:block" />
+              </>
+            )}
+          </button>
           <div className="min-w-0 flex-1">
         {/* Cell header: type dropdown + (Markdown) format toolbar + (Text/Diagram) Preview|Code toggle. */}
         <div className="flex items-center gap-2 px-2 pt-1.5">
@@ -506,9 +514,6 @@ function CellView({
             >
               <GripVertical className="h-3.5 w-3.5" />
             </button>
-            <button onClick={onRun} disabled={cell.running} title={isSql ? "Run (⌘/Ctrl+Enter)" : "Render (⌘/Ctrl+Enter)"} className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">
-              {cell.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : rendered ? <Pencil className="h-3 w-3" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-            </button>
             {isSql ? (
               <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -555,17 +560,16 @@ function CellView({
         ) : null}
       </div>
 
-      <InsertBar onSql={() => onInsert("below", "sql")} onMd={() => onInsert("below", "markdown")} className="-bottom-2.5" />
+      <InsertBar onAdd={() => onInsert("below", "sql")} className="-bottom-2.5" />
     </div>
   );
 }
 
-function InsertBar({ onSql, onMd, className }: { onSql: () => void; onMd: () => void; className?: string }) {
+function InsertBar({ onAdd, className }: { onAdd: () => void; className?: string }) {
   return (
     <div className={cn("absolute inset-x-0 z-10 flex h-5 items-center justify-center gap-1 opacity-0 transition-opacity group-hover/cell:opacity-100", className)}>
       <span className="h-px flex-1 bg-border/60" />
-      <button onClick={onSql} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground"><Plus className="h-2.5 w-2.5" /> SQL</button>
-      <button onClick={onMd} className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground"><Plus className="h-2.5 w-2.5" /> Text</button>
+      <button onClick={onAdd} title="Add a cell here" className="flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground"><Plus className="h-2.5 w-2.5" /> Cell</button>
       <span className="h-px flex-1 bg-border/60" />
     </div>
   );
