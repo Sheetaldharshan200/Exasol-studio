@@ -3,6 +3,8 @@ import { Boxes, Columns3, Database, FileCode2, GraduationCap, HardDrive, Info, K
 import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type ObjectGrant, type ObjectSize, type UserDetails } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { TableStructureEditor } from "./TableStructureEditor";
+import { TableKeysEditor } from "./TableKeysEditor";
+import { TableInfoEditor } from "./TableInfoEditor";
 
 export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
 
@@ -44,6 +46,9 @@ export function ObjectDetailPanel({
   onOpenData,
   onOpenSql,
   onApplyDdl,
+  navTab,
+  navEdit,
+  navNonce,
 }: {
   profileId: string;
   connectionName: string;
@@ -54,6 +59,11 @@ export function ObjectDetailPanel({
   onOpenSql?: (sql: string, title?: string) => void;
   /** Run DDL directly (structure editor "Confirm & Save"); returns first error. */
   onApplyDdl?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
+  /** Deep-link: which sub-tab to show, whether to open its editor, and a nonce
+   *  that re-applies the navigation even when the tab was already open. */
+  navTab?: string;
+  navEdit?: boolean;
+  navNonce?: number;
 }) {
   const isTable = object.type === "table" || object.type === "view";
   const isUser = object.type === "user";
@@ -67,8 +77,21 @@ export function ObjectDetailPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingStructure, setEditingStructure] = useState(false);
+  const [editingKeys, setEditingKeys] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
   // Bumped after a successful ALTER so the panel re-reads the table's shape.
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Deep-link: jump to the requested sub-tab (and open its editor) whenever the
+  // navigation nonce changes — e.g. a right-click "Edit structure" in the tree.
+  useEffect(() => {
+    if (navNonce === undefined) return;
+    if (navTab) setTab(navTab);
+    if (navTab === "columns") { setEditingStructure(Boolean(navEdit)); }
+    else if (navTab === "keys") { setEditingKeys(Boolean(navEdit)); }
+    else if (navTab === "info") { setEditingInfo(Boolean(navEdit)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navNonce]);
 
   // Grants + Size (schema & table/view) load lazily on first view.
   useEffect(() => {
@@ -219,6 +242,23 @@ export function ObjectDetailPanel({
             <p className="text-[13px] text-muted-foreground">No object privileges granted.</p>
           )
         ) : tab === "info" ? (
+          isTable && object.type === "table" && editingInfo ? (
+            <TableInfoEditor
+              schema={object.schema}
+              name={object.name}
+              onOpenSql={onOpenSql}
+              onApply={onApplyDdl}
+              onDone={() => { setEditingInfo(false); setReloadKey((k) => k + 1); }}
+            />
+          ) : (
+          <div className="flex h-full min-h-0 flex-col">
+            {object.type === "table" && (onOpenSql || onApplyDdl) ? (
+              <div className="mb-2 flex shrink-0 items-center justify-end">
+                <button onClick={() => setEditingInfo(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title="Rename or set a comment">
+                  <Pencil className="h-3.5 w-3.5" /> Rename / properties
+                </button>
+              </div>
+            ) : null}
           <PropTable
             rows={
               isUser
@@ -241,6 +281,8 @@ export function ObjectDetailPanel({
                   ]
             }
           />
+          </div>
+          )
         ) : tab === "columns" ? (
           editingStructure && object.type === "table" ? (
             <TableStructureEditor
@@ -290,31 +332,54 @@ export function ObjectDetailPanel({
             </div>
           )
         ) : tab === "keys" ? (
-          cons.length ? (
-            <table className="w-full border-collapse border border-border text-[12px]">
-              <thead>
-                <tr className="bg-secondary text-left">
-                  <th className="border border-border px-3 py-1.5">Name</th>
-                  <th className="border border-border px-3 py-1.5">Type</th>
-                  <th className="border border-border px-3 py-1.5">Columns</th>
-                  <th className="border border-border px-3 py-1.5">References</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {cons.map((c) => (
-                  <tr key={c.name} className="even:bg-secondary/30">
-                    <td className="border border-border px-3 py-1 text-foreground">{c.name}</td>
-                    <td className="border border-border px-3 py-1 text-muted-foreground">{c.constraintType}</td>
-                    <td className="border border-border px-3 py-1 text-muted-foreground">{c.columns.map((x) => x.column).join(", ")}</td>
-                    <td className="border border-border px-3 py-1 text-muted-foreground">
-                      {c.columns[0]?.referencedTable ? `${c.columns[0].referencedTable} (${c.columns.map((x) => x.referencedColumn).join(", ")})` : ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          editingKeys && object.type === "table" ? (
+            <TableKeysEditor
+              schema={object.schema}
+              table={object.name}
+              columns={cols.map((c) => c.name)}
+              constraints={cons}
+              onOpenSql={onOpenSql}
+              onApply={onApplyDdl}
+              onDone={() => { setEditingKeys(false); setReloadKey((k) => k + 1); }}
+            />
           ) : (
-            <p className="text-[13px] text-muted-foreground">No constraints.</p>
+            <div className="flex h-full min-h-0 flex-col">
+              {object.type === "table" && (onOpenSql || onApplyDdl) ? (
+                <div className="mb-2 flex shrink-0 items-center justify-end">
+                  <button onClick={() => setEditingKeys(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title="Add or drop primary keys, unique keys, and foreign keys">
+                    <Pencil className="h-3.5 w-3.5" /> Edit keys & constraints
+                  </button>
+                </div>
+              ) : null}
+              <div className="min-h-0 flex-1 overflow-auto">
+                {cons.length ? (
+                  <table className="w-full border-collapse border border-border text-[12px]">
+                    <thead>
+                      <tr className="bg-secondary text-left">
+                        <th className="border border-border px-3 py-1.5">Name</th>
+                        <th className="border border-border px-3 py-1.5">Type</th>
+                        <th className="border border-border px-3 py-1.5">Columns</th>
+                        <th className="border border-border px-3 py-1.5">References</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-mono">
+                      {cons.map((c) => (
+                        <tr key={c.name} className="even:bg-secondary/30">
+                          <td className="border border-border px-3 py-1 text-foreground">{c.name}</td>
+                          <td className="border border-border px-3 py-1 text-muted-foreground">{c.constraintType}</td>
+                          <td className="border border-border px-3 py-1 text-muted-foreground">{c.columns.map((x) => x.column).join(", ")}</td>
+                          <td className="border border-border px-3 py-1 text-muted-foreground">
+                            {c.columns[0]?.referencedTable ? `${c.columns[0].referencedTable} (${c.columns.map((x) => x.referencedColumn).join(", ")})` : ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">No constraints.</p>
+                )}
+              </div>
+            </div>
           )
         ) : tab === "grants" ? (
           grants === null ? (

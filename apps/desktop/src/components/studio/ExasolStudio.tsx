@@ -197,6 +197,11 @@ type SqlTab = {
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
   objectProfileId?: string;
+  /** For object tabs — deep-link to a sub-tab (info/columns/keys) and edit mode.
+   *  Nonce forces the panel to re-apply even when the tab already exists. */
+  objNavTab?: string;
+  objNavEdit?: boolean;
+  objNavNonce?: number;
   /** Execution lifecycle for the status strip (started/running/completed). */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
   /** For artifact tabs — the rendered HTML document. */
@@ -2787,13 +2792,20 @@ export function ExasolStudio({
   }
 
   // Open (or focus) an object-detail tab for a schema/table/view.
-  function openObjectDetails(profileId: string, ctx: { type: string; schema?: string; name: string }) {
+  function openObjectDetails(
+    profileId: string,
+    ctx: { type: string; schema?: string; name: string },
+    nav?: { tab?: string; edit?: boolean },
+  ) {
     const type = ctx.type as ObjectRef["type"];
     if (!["schema", "virtual-schema", "table", "view", "user"].includes(type)) return;
     const list = tabsFor(connKey);
     const id = `obj:${profileId}:${ctx.schema ?? ""}:${ctx.name}:${type}`;
+    const nonce = Date.now();
     const existing = list.find((t) => t.view === "object" && t.id === id);
     if (existing) {
+      // Re-navigate an already-open details tab to the requested sub-tab.
+      if (nav) patchTab(existing.id, { objNavTab: nav.tab, objNavEdit: nav.edit, objNavNonce: nonce });
       setActiveTabId(existing.id);
       return;
     }
@@ -2806,6 +2818,9 @@ export function ExasolStudio({
       execError: null,
       objectRef: { type, schema: ctx.schema, name: ctx.name },
       objectProfileId: profileId,
+      objNavTab: nav?.tab,
+      objNavEdit: nav?.edit,
+      objNavNonce: nav ? nonce : undefined,
     };
     updateTabs(connKey, (l) => [...l, tab]);
     setActiveTabId(tab.id);
@@ -3862,6 +3877,9 @@ export function ExasolStudio({
                 onOpenData={(sql) => void openBuiltSql(sql, true)}
                 onOpenSql={openSqlTab}
                 onApplyDdl={commitDdl}
+                navTab={activeTab.objNavTab}
+                navEdit={activeTab.objNavEdit}
+                navNonce={activeTab.objNavNonce}
               />
             </div>
           ) : isSpecialTab && connection ? (
@@ -4195,6 +4213,7 @@ export function ExasolStudio({
           onEditorSql={(sql, runNow) => void openBuiltSql(sql, runNow)}
           onAction={(action) => setObjAction({ profileId: ctxMenu.profileId, action })}
           onDetails={() => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx)}
+          onEditInDetails={(tab, edit) => ctxMenu.node.ctx && openObjectDetails(ctxMenu.profileId, ctxMenu.node.ctx, { tab, edit })}
           onFavorite={
             ctxMenu.node.ctx && !ctxMenu.node.ctx.type.startsWith("new-")
               ? () =>

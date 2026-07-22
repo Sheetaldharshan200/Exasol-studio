@@ -34,6 +34,7 @@ export type ObjectAction = {
 type Item =
   | { sep: true }
   | { label: string; kind: "run" | "gen" | "copy"; sql?: string; text?: string }
+  | { label: string; kind: "nav"; navTab: string; navEdit?: boolean }
   | { label: string; kind: "action"; danger?: boolean; action: ObjectAction };
 
 function q(schema: string | undefined, name: string): string {
@@ -61,51 +62,14 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Generate UPDATE", kind: "gen", sql: `UPDATE ${t} SET /* col = value */ WHERE /* condition */;` },
         { label: "Generate DELETE", kind: "gen", sql: `DELETE FROM ${t} WHERE /* condition */;` },
         { sep: true },
-        {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename table ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (v) => `RENAME TABLE ${t} TO ${q(schema, v.name)};`,
-          },
-        },
-        {
-          label: "Comment…",
-          kind: "action",
-          action: {
-            title: `Comment on ${ctx.name}`,
-            verb: "Save",
-            fields: [{ key: "comment", label: "Comment", type: "textarea", placeholder: "Describe this table…" }],
-            buildSql: (v) => `COMMENT ON TABLE ${t} IS '${lit(v.comment)}';`,
-          },
-        },
+        // All editing happens in the Details tab — never a dialog.
+        { label: "Edit properties (rename, comment)…", kind: "nav", navTab: "info", navEdit: true },
+        { label: "Edit structure (columns, types)…", kind: "nav", navTab: "columns", navEdit: true },
+        { label: "Edit keys & constraints…", kind: "nav", navTab: "keys", navEdit: true },
         { sep: true },
-        {
-          label: "Truncate…",
-          kind: "action",
-          danger: true,
-          action: {
-            title: `Truncate ${ctx.name}?`,
-            verb: "Truncate",
-            danger: true,
-            message: `Every row in ${label(schema, ctx.name)} will be permanently deleted. The table structure is kept. This cannot be undone.`,
-            buildSql: () => `TRUNCATE TABLE ${t};`,
-          },
-        },
-        {
-          label: "Drop…",
-          kind: "action",
-          danger: true,
-          action: {
-            title: `Drop table ${ctx.name}?`,
-            verb: "Drop",
-            danger: true,
-            message: `The table ${label(schema, ctx.name)} and all of its data will be permanently removed. This cannot be undone.`,
-            buildSql: () => `DROP TABLE ${t};`,
-          },
-        },
+        // Destructive ops open as reviewable SQL in a query tab (no dialog).
+        { label: "Truncate — generate SQL", kind: "gen", sql: `TRUNCATE TABLE ${t};` },
+        { label: "Drop — generate SQL", kind: "gen", sql: `DROP TABLE ${t};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
         { label: "Copy path", kind: "copy", text: label(schema, ctx.name) },
@@ -117,38 +81,10 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT 1000;` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${v};` },
         { sep: true },
-        {
-          label: "Rename…",
-          kind: "action",
-          action: {
-            title: `Rename view ${ctx.name}`,
-            verb: "Rename",
-            fields: [{ key: "name", label: "New name", value: ctx.name, required: true }],
-            buildSql: (val) => `RENAME VIEW ${v} TO ${q(schema, val.name)};`,
-          },
-        },
-        {
-          label: "Comment…",
-          kind: "action",
-          action: {
-            title: `Comment on ${ctx.name}`,
-            verb: "Save",
-            fields: [{ key: "comment", label: "Comment", type: "textarea" }],
-            buildSql: (val) => `COMMENT ON VIEW ${v} IS '${lit(val.comment)}';`,
-          },
-        },
-        {
-          label: "Drop…",
-          kind: "action",
-          danger: true,
-          action: {
-            title: `Drop view ${ctx.name}?`,
-            verb: "Drop",
-            danger: true,
-            message: `The view ${label(schema, ctx.name)} will be permanently removed. This cannot be undone.`,
-            buildSql: () => `DROP VIEW ${v};`,
-          },
-        },
+        // Editing opens as reviewable SQL in a query tab (no dialog).
+        { label: "Rename — generate SQL", kind: "gen", sql: `RENAME VIEW ${v} TO ${q(schema, ctx.name + "_NEW")};` },
+        { label: "Comment — generate SQL", kind: "gen", sql: `COMMENT ON VIEW ${v} IS '/* description */';` },
+        { label: "Drop — generate SQL", kind: "gen", sql: `DROP VIEW ${v};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
       ];
@@ -547,6 +483,7 @@ export function ObjectContextMenu({
   onEditorSql,
   onAction,
   onDetails,
+  onEditInDetails,
   onFavorite,
 }: {
   ctx: NodeCtx;
@@ -560,6 +497,8 @@ export function ObjectContextMenu({
   onAction: (action: ObjectAction) => void;
   /** Open the object detail tab (schema/table/view). */
   onDetails?: () => void;
+  /** Open the Details tab at a sub-tab in edit mode (table editing lives there). */
+  onEditInDetails?: (tab: string, edit?: boolean) => void;
   /** Add this object to Favorites. */
   onFavorite?: () => void;
 }) {
@@ -616,6 +555,7 @@ export function ObjectContextMenu({
             onClick={() => {
               if (it.kind === "copy") navigator.clipboard?.writeText(it.text ?? "");
               else if (it.kind === "action") onAction(it.action);
+              else if (it.kind === "nav") onEditInDetails?.(it.navTab, it.navEdit);
               else onEditorSql(it.sql ?? "", it.kind === "run");
               onClose();
             }}

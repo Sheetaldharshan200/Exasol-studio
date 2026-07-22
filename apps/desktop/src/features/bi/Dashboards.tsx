@@ -1151,6 +1151,21 @@ function ChartPanel({ panel, result }: { panel: DashPanel; result: StatementResu
     chartRef.current = chart;
     const ro = new ResizeObserver(() => chart.resize());
     ro.observe(ref.current);
+    // Click a series to spotlight it and fade the rest (works for any chart
+    // with multiple series — bar, line, scatter, funnel…). Click it again, or
+    // click empty space, to bring them all back. `emphasis.focus:'series'` on
+    // the series definitions does the fading; we just make it stick on click.
+    let spot = -1;
+    const onClick = (p: { seriesIndex?: number }) => {
+      const idx = typeof p.seriesIndex === "number" ? p.seriesIndex : -1;
+      chart.dispatchAction({ type: "downplay" });
+      if (idx < 0 || idx === spot) { spot = -1; return; }
+      spot = idx;
+      chart.dispatchAction({ type: "highlight", seriesIndex: idx });
+    };
+    const onEmpty = () => { spot = -1; chart.dispatchAction({ type: "downplay" }); };
+    chart.on("click", onClick);
+    chart.getZr().on("click", (e) => { if (!e.target) onEmpty(); });
     return () => {
       ro.disconnect();
       chart.dispose();

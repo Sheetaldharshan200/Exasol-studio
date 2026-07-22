@@ -75,6 +75,10 @@ export function ShadcnChartPanel({
   const dimmed = (k: string) => activeIfPresent !== null && activeIfPresent !== k;
   const lineOpacity = (k: string) => (dimmed(k) ? 0.12 : 1);
   const fillOpacity = (k: string) => (dimmed(k) ? 0.05 : undefined);
+  // Clicking a series (the actual line/bar/area, or its legend chip) spotlights
+  // it; clicking the same one again restores all.
+  const toggle = (k: string) => setActive((cur) => (cur === k ? null : k));
+  const clickCursor = { cursor: "pointer" as const };
 
   if (!data.length || !series.length) {
     return <p className="flex h-full items-center justify-center text-[11px] text-muted-foreground">No numeric columns to chart.</p>;
@@ -144,7 +148,7 @@ export function ShadcnChartPanel({
             <PolarGrid />
             <PolarAngleAxis dataKey={catKey} fontSize={10} />
             {series.map((k) => (
-              <Radar key={k} dataKey={k} stroke={`var(--color-${k})`} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.04 : 0.35} strokeOpacity={lineOpacity(k)} dot={{ r: 3, fillOpacity: dimmed(k) ? 0.1 : 1 }} />
+              <Radar key={k} dataKey={k} stroke={`var(--color-${k})`} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.04 : 0.35} strokeOpacity={lineOpacity(k)} dot={{ r: 3, fillOpacity: dimmed(k) ? 0.1 : 1 }} style={clickCursor} onClick={() => toggle(k)} />
             ))}
           </RadarChart>
         </ChartContainer>
@@ -178,7 +182,7 @@ export function ShadcnChartPanel({
             <YAxis {...axis} width={40} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
-              <Line key={k} dataKey={k} type="natural" stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={activeIfPresent === k ? 3 : 2} dot={false} activeDot={{ r: 4 }} />
+              <Line key={k} dataKey={k} type="natural" stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={activeIfPresent === k ? 3 : 2} dot={false} activeDot={{ r: 4, style: clickCursor, onClick: () => toggle(k) }} style={clickCursor} onClick={() => toggle(k)} />
             ))}
           </LineChart>
         </ChartContainer>
@@ -204,7 +208,7 @@ export function ShadcnChartPanel({
             <YAxis {...axis} width={40} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
-              <Area key={k} dataKey={k} type="natural" fill={`url(#fill-${uid}-${k})`} fillOpacity={fillOpacity(k)} stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={2} stackId={undefined} />
+              <Area key={k} dataKey={k} type="natural" fill={`url(#fill-${uid}-${k})`} fillOpacity={fillOpacity(k)} stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={2} stackId={undefined} style={clickCursor} onClick={() => toggle(k)} />
             ))}
           </AreaChart>
         </ChartContainer>
@@ -232,7 +236,7 @@ export function ShadcnChartPanel({
           )}
           <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
           {series.map((k) => (
-            <Bar key={k} dataKey={k} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.18 : 1} radius={vertical ? [0, 6, 6, 0] : [6, 6, 0, 0]} />
+            <Bar key={k} dataKey={k} fill={`var(--color-${k})`} fillOpacity={dimmed(k) ? 0.18 : 1} radius={vertical ? [0, 6, 6, 0] : [6, 6, 0, 0]} style={clickCursor} onClick={() => toggle(k)} />
           ))}
         </BarChart>
       </ChartContainer>
