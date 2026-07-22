@@ -165,7 +165,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
       const u = q(undefined, ctx.name);
       return [
         // Roles & privileges are managed in the user's Details tab.
-        { label: "Open details (roles, privileges)", kind: "nav", navTab: "roles" },
+        { label: "Edit roles & privileges…", kind: "nav", navTab: "roles", navEdit: true },
         { sep: true },
         { label: "Change password — generate SQL", kind: "gen", sql: `ALTER USER ${u} IDENTIFIED BY "new_password";` },
         { label: "Rename — generate SQL", kind: "gen", sql: `RENAME USER ${u} TO ${q(undefined, ctx.name + "_NEW")};` },
