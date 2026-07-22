@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Database, Eye, FileCode2, GitBranch, NotebookPen, Settings, Sparkles, Star, Store, type LucideIcon } from "lucide-react";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { AgentMark } from "@/components/studio/AgentMark";
 
 /** Official MCP mark (Boxicons v3, MIT/free license) — currentColor, so it
@@ -33,17 +33,17 @@ export type ActivityId =
 
 // Ordered by how often they're used: everyday data work first (databases,
 // files, notebook, visualizer), then project tools, then occasional ones.
-export const ACTIVITIES: { id: ActivityId; label: string; icon: LucideIcon }[] = [
-  { id: "databases", label: "Databases", icon: Database },
-  { id: "files", label: "Files", icon: FileCode2 },
-  { id: "notebook", label: "Notebook", icon: NotebookPen },
-  { id: "visualizer", label: "Visualizer", icon: Eye },
-  { id: "bi", label: "Dashboards", icon: BarChart3 },
-  { id: "git", label: "Source Control", icon: GitBranch },
-  { id: "favorites", label: "Favorites", icon: Star },
-  { id: "skills", label: "Skills", icon: Sparkles },
-  { id: "marketplace", label: "Marketplace", icon: Store },
-  { id: "guides", label: "Guides & Docs", icon: BookOpen },
+export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
+  { id: "databases", label: "Databases", icon: "database" },
+  { id: "files", label: "Files", icon: "files" },
+  { id: "notebook", label: "Notebook", icon: "notebook" },
+  { id: "visualizer", label: "Visualizer", icon: "visualizer" },
+  { id: "bi", label: "Dashboards", icon: "dashboards" },
+  { id: "git", label: "Source Control", icon: "git" },
+  { id: "favorites", label: "Favorites", icon: "favorites" },
+  { id: "skills", label: "Skills", icon: "skills" },
+  { id: "marketplace", label: "Marketplace", icon: "marketplace" },
+  { id: "guides", label: "Guides & Docs", icon: "guides" },
 ];
 
 // Items that open a full-screen tab (highlighted by the active tab's view,
@@ -80,7 +80,6 @@ export function ActivityRail({
     >
       <div className="flex flex-col items-center gap-1">
         {ACTIVITIES.map((item) => {
-          const Icon = item.icon;
           const isViz = item.id === "visualizer";
           const selected = FULL_TAB_VIEWS.has(item.id)
             ? activeView === item.id
@@ -101,7 +100,7 @@ export function ActivityRail({
                   {selected ? (
                     <span className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
                   ) : null}
-                  <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  <Icon name={item.icon} className="h-[18px] w-[18px]" />
                   {isViz && visualizerCount > 0 ? (
                     <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-mono text-[9px] font-semibold text-primary-foreground">
                       {visualizerCount}
@@ -158,7 +157,7 @@ export function ActivityRail({
               onClick={onOpenSettings}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
-              <Settings className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              <Icon name="settings" className="h-[18px] w-[18px]" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">Settings</TooltipContent>
