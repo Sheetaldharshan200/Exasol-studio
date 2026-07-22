@@ -33,3 +33,13 @@ Start here before implementation work spreads across the repository.
 - confirm new boundaries or major trade-offs are captured in ADRs
 - confirm tests or validation notes are added in the appropriate place
 
+
+## Project knowledge tools
+
+This repo uses **graphify** (codebase knowledge graph), **llm-wiki** (persistent
+decisions KB), and an **Obsidian-style notes vault** so project understanding
+compounds across contributors and sessions. Set them up once with
+`./scripts/setup-knowledge-tools.sh`, then query graphify for architecture
+questions and record durable decisions in llm-wiki. Full guide:
+[docs/knowledge-tools.md](docs/knowledge-tools.md). AI coding assistants also
+read the repo-root `CLAUDE.md`.
