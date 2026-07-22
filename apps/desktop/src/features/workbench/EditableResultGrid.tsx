@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Loader2, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ColumnMeta } from "@/lib/ipc";
 
@@ -64,6 +64,7 @@ export function EditableResultGrid({
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
   const [inserts, setInserts] = useState<Record<string, string>[]>([]);
   const [review, setReview] = useState<string[] | null>(null);
+  const [showSql, setShowSql] = useState(false);
 
   // Row identity for UPDATE/DELETE WHERE clauses. Prefer the primary key; when
   // the table has none (common in Exasol), fall back to matching on every
@@ -246,36 +247,49 @@ export function EditableResultGrid({
         </table>
       </div>
 
-      {review ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setReview(null)}>
-          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-border px-4 py-3 text-[13px] font-semibold text-foreground">
-              Review {review.length} statement{review.length === 1 ? "" : "s"}
-            </div>
-            <pre className="min-h-[120px] flex-1 overflow-auto bg-editor p-3 font-mono text-[12px] text-foreground [scrollbar-width:thin]">
-              {review.length ? review.join("\n") : "No changes to apply."}
-            </pre>
-            <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
-              <span className="flex-1 text-[11px] text-muted-foreground">These run against {t}. Review carefully.</span>
-              <button onClick={() => setReview(null)} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">
-                Cancel
-              </button>
-              <button
-                disabled={!review.length || busy}
-                onClick={() => {
-                  const stmts = review;
-                  setReview(null);
-                  reset();
-                  onApply(stmts);
-                }}
-                className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-              >
-                <Check className="h-3.5 w-3.5" /> Apply
-              </button>
+      {review ? (() => {
+        const nUpd = Object.keys(edits).filter((r) => !deleted.has(Number(r))).length;
+        const nDel = deleted.size;
+        const nIns = inserts.filter((rec) => columns.some((c) => (rec[c.name] ?? "") !== "")).length;
+        const parts = [nUpd && `${nUpd} row${nUpd > 1 ? "s" : ""} updated`, nDel && `${nDel} row${nDel > 1 ? "s" : ""} deleted`, nIns && `${nIns} row${nIns > 1 ? "s" : ""} added`].filter(Boolean) as string[];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setReview(null)}>
+            <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/12 text-primary"><Save className="h-4 w-4" /></span>
+                <span className="text-[13.5px] font-semibold text-foreground">Save changes to {t}</span>
+              </div>
+              <div className="space-y-2.5 px-4 py-3.5 text-[12.5px] leading-relaxed">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">What will happen</div>
+                  <ul className="mt-0.5 list-disc pl-4 text-foreground/90">
+                    {parts.length ? parts.map((p) => <li key={p}>{p}</li>) : <li>No changes to apply.</li>}
+                  </ul>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11.5px] text-destructive">
+                  <ShieldOff className="h-3.5 w-3.5 shrink-0" /> Row changes are written immediately and can't be automatically undone.
+                </div>
+                <button onClick={() => setShowSql((v) => !v)} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+                  <ChevronRight className={cn("h-3 w-3 transition-transform", showSql && "rotate-90")} /> {showSql ? "Hide" : "View"} SQL
+                </button>
+                {showSql ? (
+                  <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-editor p-3 font-mono text-[11px] text-foreground [scrollbar-width:thin]">{review.join("\n")}</pre>
+                ) : null}
+              </div>
+              <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
+                <button onClick={() => setReview(null)} className="h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
+                <button
+                  disabled={!review.length || busy}
+                  onClick={() => { const stmts = review; setReview(null); reset(); onApply(stmts); }}
+                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        );
+      })() : null}
     </div>
   );
 }
