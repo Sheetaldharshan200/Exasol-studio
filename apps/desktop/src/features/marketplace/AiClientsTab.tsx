@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Bot, Check, Copy, Loader2, Plug, RefreshCcw, Unplug } from "lucide-react";
+import { Check, Copy, Loader2, Plug, RefreshCcw, Unplug } from "lucide-react";
+import { AiClientMark } from "@/features/marketplace/ai-client-marks";
 import { errorMessage, ipc, type AiClientStatus } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -15,9 +16,21 @@ export function AiClientsTab() {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = () => ipc.listAiClients().then(setClients).catch((e) => setError(errorMessage(e)));
+  const [scanning, setScanning] = useState(false);
+  const refresh = async () => {
+    setScanning(true);
+    try {
+      setClients(await ipc.listAiClients());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      // Keep the spin visible long enough to read as a scan, not a flicker.
+      window.setTimeout(() => setScanning(false), 500);
+    }
+  };
   useEffect(() => {
     void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function act(c: AiClientStatus, fn: () => Promise<AiClientStatus>) {
@@ -80,7 +93,7 @@ export function AiClientsTab() {
                 <div className="space-y-1.5">
                   {grp.list.map((c) => (
                     <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border/70 bg-panel/50 px-3 py-2.5">
-                      <Bot className={cn("h-4.5 w-4.5 shrink-0", c.connected ? "text-primary" : "text-muted-foreground")} />
+                      <AiClientMark clientId={c.id} className={cn("h-6 w-6 shrink-0", c.connected ? "text-foreground" : "text-muted-foreground")} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[13px] font-medium text-foreground">{c.name}</span>
@@ -132,9 +145,10 @@ export function AiClientsTab() {
           )}
           <button
             onClick={() => void refresh()}
-            className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            disabled={scanning}
+            className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-60"
           >
-            <RefreshCcw className="h-3 w-3" /> Rescan
+            <RefreshCcw className={cn("h-3 w-3", scanning && "animate-spin")} /> {scanning ? "Scanning…" : "Rescan"}
           </button>
         </>
       )}

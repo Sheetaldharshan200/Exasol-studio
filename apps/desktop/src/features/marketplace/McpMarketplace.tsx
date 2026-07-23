@@ -15,6 +15,7 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
   const [servers, setServers] = useState<
     { id: string; name: string; command?: string; args?: string[]; connected: boolean; toolCount: number }[]
   >([]);
+  const [reconnecting, setReconnecting] = useState<Record<string, boolean>>({});
   const refresh = () => agent.mcpList().then(setServers).catch(() => undefined);
   useEffect(() => {
     void refresh();
@@ -68,10 +69,17 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
               </button>
               <button
                 title={s.connected ? "Reconnect" : "Connect"}
-                onClick={() => void agent.mcpReconnect(s.id).then(refresh)}
-                className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+                disabled={reconnecting[s.id]}
+                onClick={() => {
+                  setReconnecting((r) => ({ ...r, [s.id]: true }));
+                  void agent
+                    .mcpReconnect(s.id)
+                    .then(refresh)
+                    .finally(() => setReconnecting((r) => ({ ...r, [s.id]: false })));
+                }}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-70"
               >
-                <RefreshCw className="h-3.5 w-3.5" />
+                <RefreshCw className={cn("h-3.5 w-3.5", reconnecting[s.id] && "animate-spin text-primary")} />
               </button>
               <button
                 title="Remove"
