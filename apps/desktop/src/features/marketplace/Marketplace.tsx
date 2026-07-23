@@ -10,6 +10,8 @@ import {
   Cpu,
   Database,
   Download,
+  Package,
+  Plus,
   ExternalLink,
   FileCode2,
   LayoutGrid,
@@ -38,9 +40,11 @@ import {
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
+import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
 type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "semantic-views" | "bundled" | "reference";
@@ -237,18 +241,23 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-odbc": "odbc",
 };
 
-const NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "all", label: "All", icon: "marketplace" },
-  { key: "recommended", label: "Kit packs", icon: "package" },
+// Horizontal tab bar: Kits first, then Catalog, then the status views (so
+// Updates stays visible), then a single "Categories" tab that expands into the
+// per-kind sections.
+const PRIMARY_NAV: { key: string; label: string; icon: IconName }[] = [
+  { key: "recommended", label: "Kits", icon: "package" },
+  { key: "all", label: "Catalog", icon: "marketplace" },
+  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
+  { key: "installing", label: "Installing", icon: "loader" },
+  { key: "installed", label: "Installed", icon: "check" },
+];
+const CATEGORY_NAV: { key: string; label: string; icon: IconName }[] = [
   { key: "database", label: "Databases", icon: "database" },
   { key: "load", label: "Data & tools", icon: "spanner" },
   { key: "drivers", label: "Drivers", icon: "usb" },
   { key: "extension", label: "Extensions", icon: "extension" },
   { key: "ai", label: "AI & Agents", icon: "cognition" },
   { key: "bi", label: "BI & Analytics", icon: "dashboard-grid" },
-  { key: "installed", label: "Installed", icon: "check" },
-  { key: "installing", label: "Installing", icon: "loader" },
-  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
 ];
 
 const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
@@ -570,7 +579,9 @@ export function Marketplace() {
   const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
-  const [nav, setNav] = useState<string>("all");
+  const [nav, setNav] = useState<string>("recommended");
+  // Kit "template" modal (Image-45 style): shows a kit's tools + install action.
+  const [kitModal, setKitModal] = useState<Pack | null>(null);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const isList = layout === "list";
   const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
@@ -790,9 +801,7 @@ export function Marketplace() {
     return (
       <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
         <div className="flex items-start gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-foreground">
-            <Icon className="h-4 w-4" />
-          </div>
+          <Icon className="h-5 w-5 shrink-0 text-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="break-words leading-snug text-[13px] font-semibold text-foreground">{item.name}</span>
@@ -870,47 +879,87 @@ export function Marketplace() {
           </button>
         </header>
 
-        {/* Two-pane: category rail + content */}
-        <div className="flex items-start gap-6">
-          {/* Category rail — sticky so it stays in view while the content scrolls */}
-          <nav className="sticky top-2 w-44 shrink-0 space-y-0.5 self-start rounded-xl border border-border/60 bg-panel/40 p-1.5">
-            {NAV.map((n) => {
-              const active = nav === n.key;
-              const count =
-                n.key === "installed"
-                  ? installedCount
-                  : n.key === "installing"
-                    ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
-                    : n.key === "updates"
-                      ? updatesAvailable
-                      : 0;
-              return (
-                <button
-                  key={n.key}
-                  onClick={() => setNav(n.key)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors",
-                    active ? "bg-primary/12 font-medium text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                  )}
-                >
-                  <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
-                  <span className="flex-1 truncate">{n.label}</span>
-                  {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
-                </button>
-              );
-            })}
-          </nav>
+        {/* Horizontal tab bar — Kits, Catalog, status (Updates visible), then a
+            single Categories tab that expands into the per-kind sections. */}
+        <nav className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {PRIMARY_NAV.map((n) => {
+            const active = nav === n.key;
+            const count =
+              n.key === "installed"
+                ? installedCount
+                : n.key === "installing"
+                  ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
+                  : n.key === "updates"
+                    ? updatesAvailable
+                    : 0;
+            return (
+              <button
+                key={n.key}
+                onClick={() => setNav(n.key)}
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+                  active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
+                <span className="truncate">{n.label}</span>
+                {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
+              </button>
+            );
+          })}
+          {/* Categories — one tab that expands to the per-kind views. */}
+          {(() => {
+            const catActive = CATEGORY_NAV.some((c) => c.key === nav);
+            const current = CATEGORY_NAV.find((c) => c.key === nav);
+            return (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+                      catActive ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <BxIcon name="grid" className={cn("h-3.5 w-3.5 shrink-0", catActive ? "text-primary" : "")} />
+                    <span className="truncate">{catActive && current ? current.label : "Categories"}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {CATEGORY_NAV.map((c) => (
+                    <DropdownMenuItem key={c.key} onClick={() => setNav(c.key)} className={cn(nav === c.key && "text-primary")}>
+                      <BxIcon name={c.icon} className="h-3.5 w-3.5" />
+                      {c.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
+          {/* AI clients — hook Claude/Codex/Cursor/… up to Exasol via the
+              bundled read-only MCP server (the starter kit's mcp-setup, in-app). */}
+          <button
+            onClick={() => setNav("ai-clients")}
+            className={cn(
+              "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+              nav === "ai-clients" ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <BxIcon name="cognition" className={cn("h-3.5 w-3.5 shrink-0", nav === "ai-clients" ? "text-primary" : "")} />
+            <span className="truncate">AI clients</span>
+          </button>
+        </nav>
 
-          {/* Content */}
-          <div className="min-w-0 flex-1">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="relative flex-1">
+        {/* Content */}
+        <div className="min-w-0">
+            <div className="mb-4 flex items-center justify-end gap-2">
+              <div className="relative w-56">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search tools, drivers, extensions…"
-                  className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                  placeholder="Search…"
+                  className="h-8 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                 />
                 {query ? (
                   <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
@@ -918,13 +967,13 @@ export function Marketplace() {
                   </button>
                 ) : null}
               </div>
-              <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border bg-panel/70 p-1">
+              <div className="flex h-8 shrink-0 items-center gap-1">
                 <button
                   onClick={() => setLayout("grid")}
                   aria-label="Grid view"
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                    layout === "grid" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                    layout === "grid" ? "text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <LayoutGrid className="h-4 w-4" />
@@ -933,8 +982,8 @@ export function Marketplace() {
                   onClick={() => setLayout("list")}
                   aria-label="List view"
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                    layout === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                    layout === "list" ? "text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <List className="h-4 w-4" />
@@ -942,7 +991,9 @@ export function Marketplace() {
               </div>
             </div>
 
-            {nav === "recommended" ? (
+            {nav === "ai-clients" ? (
+              <AiClientsTab layout={layout} />
+            ) : nav === "recommended" ? (
               <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;
@@ -951,10 +1002,30 @@ export function Marketplace() {
                     return c?.install === "reference" || installedMap[it.id] || detected[it.id];
                   });
                   return (
-                    <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
+                    <div
+                      key={pack.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setKitModal(pack)}
+                      onKeyDown={(e) => { if (e.key === "Enter") setKitModal(pack); }}
+                      title="See what's in this kit"
+                      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                    >
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
-                        <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{pack.name}</span>
+                        {/* + installs the whole kit; clicking the card shows what's inside. */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
+                          disabled={allInstalled}
+                          title={allInstalled ? "Already installed" : "Install this kit"}
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
+                            allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary",
+                          )}
+                        >
+                          {allInstalled ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
+                        </button>
                       </div>
                       <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -962,13 +1033,6 @@ export function Marketplace() {
                           <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
                         ))}
                       </div>
-                      <button
-                        onClick={() => installPack(pack)}
-                        disabled={allInstalled}
-                        className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Install pack</>}
-                      </button>
                     </div>
                   );
                 })}
@@ -1007,7 +1071,6 @@ export function Marketplace() {
               </div>
             )}
           </div>
-        </div>
       </div>
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
@@ -1046,6 +1109,67 @@ export function Marketplace() {
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {/* Kit "template" modal — what's inside a kit + one-click install. */}
+      {kitModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setKitModal(null)}>
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-2.5 px-5 pt-5">
+              <kitModal.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[15px] font-semibold text-foreground">{kitModal.name}</h3>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{kitModal.tagline}</p>
+              </div>
+              <button onClick={() => setKitModal(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            </div>
+
+            <div className="mt-3 border-t border-border px-5 py-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">In this kit</p>
+              <div className="space-y-2">
+                {kitModal.items.map((it) => {
+                  const c = CATALOG.find((x) => x.id === it.id);
+                  const ItIcon = it.icon;
+                  const done = c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                  return (
+                    <div key={it.id} className="flex items-start gap-2.5">
+                      <ItIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12.5px] font-medium text-foreground">{c?.name ?? it.label}</span>
+                          {done ? <Check className="h-3 w-3 text-primary" /> : null}
+                        </div>
+                        {c?.description ? <p className="text-[11px] leading-snug text-muted-foreground">{c.description}</p> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel/40 px-5 py-3">
+              <button onClick={() => setKitModal(null)} className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground">Close</button>
+              {(() => {
+                const allInstalled = kitModal.items.every((it) => {
+                  const c = CATALOG.find((x) => x.id === it.id);
+                  return c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                });
+                return (
+                  <button
+                    onClick={() => { installPack(kitModal); setKitModal(null); }}
+                    disabled={allInstalled}
+                    className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Use this kit</>}
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

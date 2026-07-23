@@ -36,13 +36,13 @@ export type ActivityId =
 export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
   { id: "databases", label: "Databases", icon: "database" },
   { id: "files", label: "Files", icon: "files" },
+  { id: "marketplace", label: "Marketplace", icon: "marketplace" },
+  { id: "skills", label: "Skills", icon: "skills" },
   { id: "notebook", label: "Notebook", icon: "notebook" },
   { id: "visualizer", label: "Schema visualizer", icon: "visualizer" },
   { id: "bi", label: "Dashboards", icon: "dashboards" },
   { id: "git", label: "Source Control", icon: "git" },
   { id: "favorites", label: "Favorites", icon: "favorites" },
-  { id: "skills", label: "Skills", icon: "skills" },
-  { id: "marketplace", label: "Marketplace", icon: "marketplace" },
   { id: "guides", label: "Guides & Docs", icon: "guides" },
 ];
 

@@ -355,7 +355,7 @@ export function ConnectView({
                     />
                   </Field>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 items-start gap-3">
                   <Field label="Username">
                     <div className="relative">
                       <KeyRound className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -381,20 +381,21 @@ export function ConnectView({
                         {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       </button>
                     </div>
-                    {draft.host.trim() === "127.0.0.1" &&
-                    draft.port === 8565 &&
-                    draft.username.trim().toLowerCase() === "sys" ? (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        This is your local Exasol — use your{" "}
-                        <span className="font-medium text-foreground">Studio master password</span>.
-                      </p>
-                    ) : null}
                   </Field>
                 </div>
+                {/* Full-width hint so it never unbalances the two-column row above. */}
+                {draft.host.trim() === "127.0.0.1" &&
+                draft.port === 8565 &&
+                draft.username.trim().toLowerCase() === "sys" ? (
+                  <p className="-mt-2 text-[11px] text-muted-foreground">
+                    This is your local Exasol — use your{" "}
+                    <span className="font-medium text-foreground">Studio master password</span>.
+                  </p>
+                ) : null}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Driver">
                     <Select value={draft.driverId} onValueChange={(v) => patch({ driverId: v })}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -460,7 +461,7 @@ export function ConnectView({
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Encryption">
                     <Select value={draft.sslMode} onValueChange={(v) => patch({ sslMode: v })}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

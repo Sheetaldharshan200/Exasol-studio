@@ -62,7 +62,7 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
   const preset: McpPreset = MCP_PRESETS.find((p) => p.id === presetId) ?? MCP_PRESETS[MCP_PRESETS.length - 1];
   const isCustom = preset.id === "custom";
   const [envVals, setEnvVals] = useState<Record<string, string>>({});
-  const [custom, setCustom] = useState({ name: "", command: "", args: "" });
+  const [custom, setCustom] = useState({ name: "", command: "", args: "", transport: "stdio" as "stdio" | "http", url: "", token: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [connected, setConnected] = useState<{ toolCount: number; tools?: string[] } | null>(null);
@@ -83,14 +83,24 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
     setErr(null);
     try {
       const name = isCustom ? custom.name.trim() : preset.name;
-      const command = isCustom ? custom.command.trim() : preset.command;
-      const args = isCustom
-        ? custom.args.trim().split(/\s+/).filter(Boolean)
-        : [...preset.args, ...(preset.argInputs ?? []).map((a) => envVals[`arg:${a.key}`] ?? "")];
-      const env = preset.env.length
-        ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
-        : undefined;
-      await agent.mcpAdd({ name, command, args, env });
+      if (isCustom && custom.transport === "http") {
+        // Remote MCP server — no local process, no Docker. Self-sustained.
+        await agent.mcpAdd({
+          name,
+          transport: "http",
+          url: custom.url.trim(),
+          headers: custom.token.trim() ? { Authorization: `Bearer ${custom.token.trim()}` } : undefined,
+        });
+      } else {
+        const command = isCustom ? custom.command.trim() : preset.command;
+        const args = isCustom
+          ? custom.args.trim().split(/\s+/).filter(Boolean)
+          : [...preset.args, ...(preset.argInputs ?? []).map((a) => envVals[`arg:${a.key}`] ?? "")];
+        const env = preset.env.length
+          ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
+          : undefined;
+        await agent.mcpAdd({ name, command, args, env });
+      }
       const list = await agent.mcpList();
       const hit = list.find((s) => s.name === name);
       if (hit?.connected) setConnected({ toolCount: hit.toolCount, tools: hit.tools });
@@ -103,7 +113,7 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
   }
 
   const canConnect = isCustom
-    ? custom.name.trim() && custom.command.trim()
+    ? custom.name.trim() && (custom.transport === "http" ? custom.url.trim() : custom.command.trim())
     : preset.env.every((e) => !e.secret || envVals[e.key]?.trim()) &&
       (preset.argInputs ?? []).every((a) => envVals[`arg:${a.key}`]?.trim());
 
@@ -135,17 +145,43 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
 
         {isCustom ? (
           <section className="mb-6 space-y-3">
-            {(
-              [
-                ["name", "Name", "My data source"],
-                ["command", "Command", "npx | uvx | /path/to/binary"],
-                ["args", "Arguments (space-separated)", "-y some-mcp-server --flag"],
-              ] as const
+            {/* Transport: a self-contained remote URL, or a local command. */}
+            <div className="inline-flex rounded-lg border border-border p-0.5">
+              {([["http", "Remote (URL)"], ["stdio", "Local (command)"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setCustom((c) => ({ ...c, transport: val }))}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-[12px] font-medium transition-colors",
+                    custom.transport === val ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11.5px] text-muted-foreground">
+              {custom.transport === "http"
+                ? "Connects to a hosted MCP server over HTTP — nothing runs locally, no Docker or binaries needed."
+                : "Runs an MCP server as a local process (needs the command available on this machine)."}
+            </p>
+            {(custom.transport === "http"
+              ? ([
+                  ["name", "Name", "My data source"],
+                  ["url", "Server URL", "https://api.example.com/mcp/"],
+                  ["token", "Access token (optional)", "sent as Authorization: Bearer …"],
+                ] as const)
+              : ([
+                  ["name", "Name", "My data source"],
+                  ["command", "Command", "npx | uvx | /path/to/binary"],
+                  ["args", "Arguments (space-separated)", "-y some-mcp-server --flag"],
+                ] as const)
             ).map(([k, label, ph]) => (
               <label key={k} className="block">
                 <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
                 <input
                   value={custom[k]}
+                  type={k === "token" ? "password" : "text"}
                   onChange={(e) => setCustom((c) => ({ ...c, [k]: e.target.value }))}
                   placeholder={ph}
                   className="h-9 w-full rounded-lg border border-border bg-panel px-3 font-mono text-[12.5px] outline-none"

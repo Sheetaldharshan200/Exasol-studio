@@ -18,11 +18,18 @@ import {
   Terminal,
   Zap,
   type LucideIcon,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
+import { Icon as BxIcon } from "@/components/ui/icon";
+
+/** Brain-circuit (Boxicons) with a lucide-compatible signature for SECTIONS. */
+const BrainCircuit = ({ className }: { className?: string }) => <BxIcon name="brain-circuit" className={className} />;
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PET_AVATARS, PetAvatar } from "@/components/studio/PetAvatar";
 import { skills as skillsApi, type Skill } from "@/lib/agent-client";
 import {
@@ -48,15 +55,16 @@ const CLOUD_META: Record<string, { hint: string; keyUrl: string }> = {
 
 type SectionKey = "providers" | "guardrails" | "behavior" | "skills";
 
-const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon; desc: string }[] = [
-  { key: "providers", label: "Providers & Models", icon: Cpu, desc: "Built-in engine, local runtimes, API keys" },
+const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
+  { key: "providers", label: "Providers & Models", icon: BrainCircuit, desc: "Built-in engine, local runtimes, API keys" },
   { key: "guardrails", label: "Guardrails", icon: ShieldCheck, desc: "What the AI may and may not do" },
   { key: "behavior", label: "Behavior", icon: SlidersHorizontal, desc: "Steps, temperature, instructions" },
   { key: "skills", label: "Skills", icon: Sparkles, desc: "Reusable instruction packs for the agent" },
 ];
 
-/** Standalone AI Settings window: sidebar + sections. */
-export function AiProvidersWindow() {
+/** AI Settings: sidebar + sections. Renders as a standalone native window
+ *  (title bar + h-screen) or embedded as a workspace tab (standalone=false). */
+export function AiProvidersWindow({ standalone = true }: { standalone?: boolean } = {}) {
   const [section, setSection] = useState<SectionKey>("providers");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -68,12 +76,14 @@ export function AiProvidersWindow() {
   const [busyLlm, setBusyLlm] = useState<string | null>(null);
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [instructionsDraft, setInstructionsDraft] = useState<string>("");
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const { providers: list } = await agent.models();
+      const { providers: list, defaultModel: dm } = await agent.models();
       setProviders(list);
+      setDefaultModel(dm);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -153,9 +163,9 @@ export function AiProvidersWindow() {
   const activeSection = SECTIONS.find((s) => s.key === section) ?? SECTIONS[0];
   const ActiveIcon = activeSection.icon;
   return (
-    <div className="flex h-screen flex-col bg-editor text-foreground">
-      {/* Title bar (draggable) */}
-      <div data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
+    <div className={cn("flex flex-col bg-editor text-foreground", standalone ? "h-screen" : "h-full")}>
+      {/* Title bar (draggable only as a native window) */}
+      <div data-tauri-drag-region={standalone || undefined} className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
         <AgentMark className="h-4 w-4 text-primary" />
         <span className="text-[13px] font-semibold tracking-tight">AI Settings</span>
         <button
@@ -237,6 +247,14 @@ export function AiProvidersWindow() {
                 saving={saving}
                 saveKey={saveKey}
                 inDb={providers.find((p) => p.id === "in-database")}
+                settings={settings}
+                patchSettings={patchSettings}
+                defaultModel={defaultModel}
+                onSetDefaultModel={async (m) => {
+                  await agent.setDefaultModel(m);
+                  setDefaultModel(m);
+                  await emit(EV_AI_PROVIDERS_CHANGED);
+                }}
                 onChanged={async () => {
                   await refresh();
                   await emit(EV_AI_PROVIDERS_CHANGED);
@@ -278,11 +296,45 @@ function ProvidersSection(props: {
   saving: string | null;
   saveKey: (id: string) => Promise<void>;
   inDb?: AgentProviderInfo;
+  settings: AgentSettings | null;
+  patchSettings: (patch: Partial<AgentSettings>) => Promise<void>;
+  defaultModel: string | null;
+  onSetDefaultModel: (model: string) => Promise<void>;
   onChanged: () => Promise<void>;
 }) {
-  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey, inDb, onChanged } = props;
+  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey, inDb, settings, patchSettings, defaultModel, onSetDefaultModel, onChanged } = props;
+  // Horizontal sub-tabs: one source group at a time instead of a long scroll.
+  const [srcTab, setSrcTab] = useState<"builtin" | "local" | "cloud" | "indb">("builtin");
+  const tab = srcTab === "builtin" && llmState && !llmState.supported ? "local" : srcTab;
+  const TABS: { key: typeof srcTab; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }[] = [
+    { key: "builtin", label: "Built-in AI", icon: Zap, show: Boolean(llmState?.supported) },
+    { key: "local", label: "Local runtimes", icon: Cpu, show: true },
+    { key: "cloud", label: "Cloud APIs", icon: Globe, show: true },
+    { key: "indb", label: "In-database", icon: Database, show: true },
+  ];
   return (
     <>
+      {/* ── Source tabs ── */}
+      <div className="flex items-center gap-0.5 border-b border-border">
+        {TABS.filter((t) => t.show).map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setSrcTab(t.key)}
+              className={cn(
+                "flex h-8 items-center gap-1.5 border-b-2 px-2.5 text-[12px] transition-colors",
+                active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className={cn("h-3.5 w-3.5", active && "text-primary")} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {tab === "builtin" ? (
+      <>
       {llmState?.supported ? (
         <section>
           <div className="mb-1 flex items-center gap-1.5">
@@ -386,11 +438,11 @@ function ProvidersSection(props: {
         </section>
       ) : null}
 
+      </>
+      ) : null}
+
+      {tab === "local" ? (
       <section>
-        <div className="mb-1 flex items-center gap-1.5">
-          <Cpu className="h-3.5 w-3.5 text-primary" />
-          <h2 className="text-[13px] font-semibold">Local runtimes</h2>
-        </div>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
           Free, private, and offline — detected automatically on this machine.
         </p>
@@ -400,6 +452,7 @@ function ProvidersSection(props: {
             : [{ id: "ollama", name: "Ollama (local)", kind: "local", configured: false, models: [] } as AgentProviderInfo]
           ).map((p) => (
             <div key={p.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+              <ProviderMark providerId={p.id} className="h-5 w-5 shrink-0 text-foreground" />
               <span className={cn("h-2 w-2 shrink-0 rounded-full", p.running ? "bg-primary" : "bg-muted-foreground/40")} />
               <div className="min-w-0 flex-1">
                 <div className="text-[12.5px] font-medium">{p.name.replace(" (local)", "")}</div>
@@ -413,7 +466,21 @@ function ProvidersSection(props: {
                         : "Not detected"}
                 </div>
               </div>
-              {p.running ? (
+              {p.running && p.models.length ? (
+                <Select
+                  value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
+                  onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
+                >
+                  <SelectTrigger size="sm" className="h-7 w-48 text-[11.5px]"><SelectValue placeholder={`${p.models.length} models…`} /></SelectTrigger>
+                  <SelectContent>
+                    {p.models.map((m) => (
+                      <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
+                        <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : p.running ? (
                 <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">ready</span>
               ) : p.id === "ollama" && !p.installedOnly ? (
                 <button
@@ -428,10 +495,12 @@ function ProvidersSection(props: {
         </div>
       </section>
 
+      ) : null}
+
+      {tab === "cloud" ? (
       <section>
-        <h2 className="mb-1 text-[13px] font-semibold">External providers</h2>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
-          Keys are stored locally on this machine and used only for your requests.
+          Keys are stored locally on this machine and used only for your requests. Model lists refresh live from the catalog.
         </p>
         <div className="space-y-2.5">
           {clouds.map((p) => {
@@ -439,8 +508,9 @@ function ProvidersSection(props: {
             return (
               <div key={p.id} className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
+                  <ProviderMark providerId={p.id} className="h-4.5 w-4.5 shrink-0 text-foreground" />
                   <span className="text-[12.5px] font-medium">{p.name}</span>
-                  <span className="text-[10.5px] text-muted-foreground">· {meta.hint}</span>
+                  <span className="text-[10.5px] text-muted-foreground">· {p.configured && p.models.length ? `${p.models.length} models live` : meta.hint}</span>
                   {p.configured ? (
                     <span className="ml-auto flex items-center gap-0.5 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">
                       <Check className="h-2.5 w-2.5" /> connected
@@ -454,6 +524,29 @@ function ProvidersSection(props: {
                     </button>
                   )}
                 </div>
+                {p.configured && p.models.length ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="shrink-0 text-[10.5px] text-muted-foreground">Model</span>
+                    <Select
+                      value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
+                      onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
+                    >
+                      <SelectTrigger size="sm" className="h-7 w-full text-[11.5px]">
+                        <SelectValue placeholder={`Choose from ${p.models.length} live models…`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {p.models.map((m) => (
+                          <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
+                            <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {defaultModel?.startsWith(`${p.id}/`) ? (
+                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">in use</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-2 flex gap-1.5">
                   <Input
                     type="password"
@@ -463,9 +556,9 @@ function ProvidersSection(props: {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void saveKey(p.id);
                     }}
-                    className="h-7 text-xs"
+                    className="h-9 flex-1 rounded-lg text-[12.5px]"
                   />
-                  <Button size="sm" className="h-7" disabled={!drafts[p.id]?.trim() || saving === p.id} onClick={() => void saveKey(p.id)}>
+                  <Button size="sm" className="h-9 px-4" disabled={!drafts[p.id]?.trim() || saving === p.id} onClick={() => void saveKey(p.id)}>
                     {saving === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                   </Button>
                 </div>
@@ -475,7 +568,9 @@ function ProvidersSection(props: {
         </div>
       </section>
 
-      <InDatabaseSection provider={inDb} onChanged={onChanged} />
+      ) : null}
+
+      {tab === "indb" ? <InDatabaseSection provider={inDb} onChanged={onChanged} /> : null}
     </>
   );
 }

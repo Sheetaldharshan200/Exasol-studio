@@ -11,33 +11,30 @@ export function isAiProvidersWindow(): boolean {
   return new URLSearchParams(window.location.search).get("view") === AI_PROVIDERS_WINDOW_LABEL;
 }
 
-/** Open AI provider setup in a separate native window (Tauri). */
+/** Open AI settings as a WORKSPACE TAB in the main window (like Marketplace).
+ *  Works from the main window and from other native windows (Settings) via a
+ *  cross-window event; falls back to a DOM event outside Tauri. */
 export async function openAiProvidersWindow(): Promise<boolean> {
-  if (!isTauri()) return false;
-  try {
-    const { WebviewWindow, getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
-    const existing = (await getAllWebviewWindows()).find((w) => w.label === AI_PROVIDERS_WINDOW_LABEL);
-    if (existing) {
-      await existing.setFocus();
+  if (isTauri()) {
+    try {
+      const [{ emit }, { getCurrentWebviewWindow }] = await Promise.all([
+        import("@tauri-apps/api/event"),
+        import("@tauri-apps/api/webviewWindow"),
+      ]);
+      await emit("open-ai-settings-tab");
+      // Bring the main window forward when called from another native window.
+      const current = getCurrentWebviewWindow();
+      if (current.label !== "main") {
+        const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+        const main = (await getAllWebviewWindows()).find((w) => w.label === "main");
+        await main?.setFocus();
+      }
       return true;
+    } catch (err) {
+      console.error("openAiProvidersWindow failed", err);
+      return false;
     }
-    const win = new WebviewWindow(AI_PROVIDERS_WINDOW_LABEL, {
-      url: `index.html?view=${AI_PROVIDERS_WINDOW_LABEL}`,
-      title: "AI Settings",
-      width: 780,
-      height: 640,
-      center: true,
-      resizable: true,
-      minWidth: 660,
-      minHeight: 480,
-    });
-    await new Promise<void>((resolve, reject) => {
-      win.once("tauri://created", () => resolve());
-      win.once("tauri://error", (e) => reject(e));
-    });
-    return true;
-  } catch (err) {
-    console.error("openAiProvidersWindow failed", err);
-    return false;
   }
+  window.dispatchEvent(new CustomEvent("studio:open-ai-settings"));
+  return true;
 }

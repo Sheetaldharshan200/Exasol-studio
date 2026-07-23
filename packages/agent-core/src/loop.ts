@@ -1,5 +1,6 @@
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { runLoop, type ToolSet } from "./llm.ts";
+import { z } from "zod";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
 import type { DashboardStore } from "./dashboards.ts";
@@ -40,7 +41,10 @@ EVIDENCE RULES — these are absolute:
 - NEVER invent schema, table, or column names. Discover them with list_schemas / list_tables / describe_table first.
 - When you answer a data question, the SQL you ran IS the evidence — show it.
 - If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
+- NEVER display example, placeholder, or illustrative data values as if they were the user's data. Every cell, row, and number you show must come verbatim from a tool result in THIS conversation. After loading a file, do NOT print "sample rows" from memory — if a preview is useful, query the table first and show what the query returned.
 - COMPLETENESS CHECK before finishing: every schema/table/number in your answer must trace to a tool result from THIS turn. If the question spans several objects, cover ALL of them — never describe an object you did not query, and never drop one you did. If anything is missing, call the tool instead of finishing.
+
+Your toolset is LEAN by design: you start each turn with the core tools for the task. If a capability is missing (export, profiling, dashboards, UI, researchers…), call request_tools with the tool names you need — its description lists everything available — then use them on your next step.
 
 ACT, DON'T NARRATE — this is how you work:
 - You do tasks by CALLING TOOLS, not by describing them. If a tool can do it, CALL THE TOOL — do not answer with a plan, a numbered list of steps, or a block of SQL "to run".
@@ -53,14 +57,14 @@ Choosing dashboard vs artifact: if the user types /dashboard (or clearly asks fo
 
 Artifacts: for anything richer than a couple of sentences, call load_skill('artifact-builder') then render_artifact({title, html}) — a self-contained HTML page opens as a tab in the app — use it for rich insights, reports, or small interactive views that a chat message can't express (styled summaries, diagrams, an HTML table of findings). The html must be ONE complete document with inline CSS/JS (no external URLs). Prefer this over long text when the user wants a visual insight; use dashboards for live SQL-backed charts.
 
-Dashboards: you can BUILD live dashboards with dashboard_save (validated JSON spec: panels with SQL + bar/line/area/pie/scatter charts, KPI cards, tables, 'explore' panels — an interactive pivot/chart studio the user can reshape — and MARKDOWN text panels ({viz:{type:"markdown",content}}, no query) for narrative, all on a 12-column grid). For report-style dashboards, open with a full-width markdown summary panel (what the data shows, in 2-4 sentences) and add short markdown insight notes next to key charts — dashboards can be exported as Markdown/HTML/PDF reports, and the narrative is what makes them readable. When the user asks for a dashboard: find the tables (kb_search), verify columns, test each panel's SQL with run_sql, then save — the dashboard opens in the app's Dashboards view. For dashboards with 3+ panels, FAN OUT: issue MULTIPLE spawn_researcher calls in ONE turn — one per panel/metric area, each tasked "find the right table and columns for X, then write AND test the exact SELECT" — they run in PARALLEL and report back tested SQL; assemble the spec from their reports and call dashboard_save once. Panel SQL MUST use fully schema-qualified names (WEATHER.WEATHER_DAILY, never bare WEATHER_DAILY) — panels run without a default schema. It MUST aggregate in the database (GROUP BY / LIMIT): Exasol crunches millions of rows server-side and a chart needs at most a few hundred — never chart raw row dumps. NEVER tell the user a dashboard exists unless dashboard_save returned ok:true with an id — on ok:false, read the hint, fix the spec, retry once, or report the failure honestly. For charts beyond the basic five, put a full ECharts option in viz.option with your own series (any ECharts series type) — the panel injects the query result as dataset.source (first row = column names).
+Dashboards: you can BUILD live dashboards with dashboard_save (validated JSON spec: panels with SQL + bar/line/area/pie/scatter charts, KPI cards, tables, 'explore' panels — an interactive pivot/chart studio the user can reshape — and MARKDOWN text panels ({viz:{type:"markdown",content}}, no query) for narrative, all on a 12-column grid). For report-style dashboards, open with a full-width markdown summary panel (what the data shows, in 2-4 sentences) and add short markdown insight notes next to key charts — dashboards can be exported as Markdown/HTML/PDF reports, and the narrative is what makes them readable. When the user asks for a dashboard: find the tables (kb_search), verify columns, test each panel's SQL with run_sql, then save — the dashboard opens in the app's Dashboards view. For dashboards with 3+ panels, FAN OUT: issue MULTIPLE spawn_researcher calls in ONE turn — one per panel/metric area, each tasked "find the right table and columns for X, then write AND test the exact SELECT" — they run in PARALLEL and report back tested SQL; assemble the spec from their reports and call dashboard_save once. Panel SQL MUST use fully schema-qualified names (SCHEMA.TABLE_NAME, never a bare table name) — panels run without a default schema. It MUST aggregate in the database (GROUP BY / LIMIT): Exasol crunches millions of rows server-side and a chart needs at most a few hundred — never chart raw row dumps. NEVER tell the user a dashboard exists unless dashboard_save returned ok:true with an id — on ok:false, read the hint, fix the spec, retry once, or report the failure honestly. For charts beyond the basic five, put a full ECharts option in viz.option with your own series (any ECharts series type) — the panel injects the query result as dataset.source (first row = column names).
 
 Working method:
 - START data questions with kb_search — it returns the relevant tables, columns, and join conditions from the schema knowledge graph in one call.
 - Prefer ONE set-based catalog query over per-object loops: table counts per schema = SELECT TABLE_SCHEMA, COUNT(*) FROM SYS.EXA_ALL_TABLES GROUP BY TABLE_SCHEMA; ALL tables in ALL schemas = SELECT TABLE_SCHEMA, TABLE_NAME FROM SYS.EXA_ALL_TABLES ORDER BY 1, 2 — one run_sql call, complete, nothing missed. NEVER loop list_tables over schemas.
 - NEVER end your turn by announcing a next step ("I'll now check…", "moving on to…"). Either DO it (call the tool) or the task is finished. A turn that stops mid-plan is a failed turn.
 - Answer data questions by running SQL with run_sql, then summarize the actual result.
-- Decompose multi-part requests: when the user asks for several INDEPENDENT things (e.g. "summarize energy AND weather AND draft a dashboard", or "profile these three tables"), issue MULTIPLE spawn_researcher calls in ONE turn — they run in parallel and report back, then you synthesize. Keep dependent steps (discover schema → then its tables → then sample) sequential in the main loop. Rule of thumb: 3+ independent sub-questions → fan out.
+- Decompose multi-part requests: when the user asks for several INDEPENDENT things (several datasets to summarize, several tables to profile, several unrelated questions), issue MULTIPLE spawn_researcher calls in ONE turn — they run in parallel and report back, then you synthesize. Keep dependent steps (discover schema → then its tables → then sample) sequential in the main loop. Rule of thumb: 3+ independent sub-questions → fan out.
 - When you verify a durable fact (a join key, what a table means, a business definition), save it with remember_insight so future sessions know it.
 - For performance questions use profile_query (Exasol has no EXPLAIN — profiling is the mechanism).
 - Statements that modify data or structure require the user's approval; use them only when the user asked for a change, and never retry a denied statement.
@@ -74,7 +78,10 @@ Connections — how they actually work:
 
 Exasol SQL dialect:
 - Use LIMIT n (never FETCH FIRST or TOP). QUALIFY filters window functions. IDENTITY columns exist.
-- Unquoted identifiers fold to UPPERCASE; double-quote mixed-case or reserved identifiers.
+- Identifier casing (handle this yourself — do not make the user quote things):
+  - Exasol folds UNQUOTED identifiers to UPPERCASE. Loaded tables (e.g. CSV imports) are stored UPPERCASE, so reference their columns UNQUOTED — \`SELECT TRANSACTIONID\`, never \`SELECT "TransactionID"\`.
+  - Always take the EXACT stored identifier (name + case) from the schema tools (kb_search / describe / SYS.EXA_ALL_COLUMNS) before writing SQL — never reuse the casing from a source file header, a prior message, or a guess.
+  - Double-quote ONLY when the stored identifier is genuinely mixed-case or a reserved word (as the catalog reports it); quoting with the wrong case causes "object <name> not found".
 - System metadata lives in SYS (EXA_ALL_*), statistics in EXA_STATISTICS.
 
 Be concise and direct. Prefer runnable SQL in \`\`\`sql blocks. Small result tables may be shown as markdown tables.
@@ -330,6 +337,49 @@ export async function runTurn(opts: {
   // in the conversation). This resolves loops the model would otherwise get
   // stuck in far more gracefully than a hard abort.
   const guardedTools = wrapForProgress(relevantTools);
+
+  // ── On-demand tools ──────────────────────────────────────────────────────
+  // The turn starts with the lean, relevant core set (small request → works on
+  // low-TPM providers, keeps weak models focused). Every OTHER tool can be
+  // pulled in mid-turn by the model itself via request_tools; the step loop
+  // re-binds each step, so newly loaded tools are callable immediately after.
+  if (modelSupportsTools) {
+    const inactive = () => Object.keys(tools).filter((n) => !(n in guardedTools));
+    const catalog = inactive()
+      .map((n) => `${n} — ${String((tools[n] as { description?: string }).description ?? "").split(/[.\n]/)[0].slice(0, 90)}`)
+      .join("\n");
+    if (catalog) {
+      guardedTools["request_tools"] = {
+        description:
+          "Load additional tools for THIS turn when your current toolset can't do the job. " +
+          "Call it with the exact tool names you need, then call those tools on your next step. " +
+          "Available (not yet loaded):\n" + catalog,
+        inputSchema: z.object({ names: z.array(z.string()).min(1).describe("Exact tool names to load") }),
+        execute: async ({ names }: { names: string[] }) => {
+          const loaded: string[] = [];
+          const unknown: string[] = [];
+          for (const raw of names) {
+            const n = raw.trim();
+            if (n in guardedTools) continue; // already active
+            if (tools[n]) {
+              guardedTools[n] = wrapForProgress({ [n]: tools[n] })[n];
+              loaded.push(n);
+            } else {
+              unknown.push(n);
+            }
+          }
+          session.record({ kind: "tool.request_tools", loaded, unknown });
+          return {
+            loaded,
+            unknown: unknown.length ? unknown : undefined,
+            note: loaded.length
+              ? `Loaded: ${loaded.join(", ")}. They are callable from your NEXT step — call them now to continue the task.`
+              : "Nothing new was loaded — the names were unknown or already active. Check the catalog in this tool's description.",
+          };
+        },
+      } as ToolSet[string];
+    }
+  }
 
   // Deterministic multi-file load (research-backed: small local models must
   // not orchestrate multi-step loops — they stall mid-job and fabricate

@@ -168,9 +168,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
-          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
-          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
+          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
+          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
+          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
           const status = mcp.list().find((x) => x.id === server.id);
           return json(res, 200, { server: status });
         }
@@ -286,9 +287,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
-          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
-          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
+          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
+          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
+          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
           const status = mcp.list().find((x) => x.id === server.id);
           return json(res, 200, { server: status });
         }
@@ -408,9 +410,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
-          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
-          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
+          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
+          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
+          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
           const status = mcp.list().find((x) => x.id === server.id);
           return json(res, 200, { server: status });
         }
@@ -492,9 +495,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
         if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; command: string; args?: string[]; env?: Record<string, string> };
-          if (!body?.name || !body?.command) return json(res, 400, { error: "name and command are required" });
-          const server = await mcp.add({ name: body.name, command: body.command, args: body.args ?? [], env: body.env });
+          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
+          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
+          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
+          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
           const status = mcp.list().find((x) => x.id === server.id);
           return json(res, 200, { server: status });
         }
