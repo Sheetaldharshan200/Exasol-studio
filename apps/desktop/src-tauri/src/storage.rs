@@ -36,13 +36,21 @@ pub fn read_json<T: DeserializeOwned>(path: &Path, default: T) -> AppResult<T> {
     }
 }
 
-/// Atomically write a JSON document. The temp file name is process-unique so
-/// two running app instances can never interleave into the same temp file.
+/// Atomically write a JSON document. The temp file name is unique PER CALL
+/// (pid + counter): concurrent writers in the same process (e.g. a dashboard's
+/// panels all appending history at once) each rename their own temp file —
+/// a shared temp name made rename race and fail with ENOENT.
 pub fn write_json<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension(format!("json.tmp-{}", std::process::id()));
+    let tmp = path.with_extension(format!(
+        "json.tmp-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::write(&tmp, serde_json::to_string_pretty(value)?)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
