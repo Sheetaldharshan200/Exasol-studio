@@ -39,6 +39,11 @@ Rule of thumb: **read** project knowledge from graphify (code) and llm-wiki
   (`apps/desktop/src/components/ui/boxicons.ts` + `<Icon>`) or `lucide-react`.
 - **Theme-safe CSS**: theme variables are full colors (e.g. `--border: #dce3ee`),
   so use `var(--border)` / `color-mix(...)` — never `hsl(var(--border))`.
+- **One codebase, every platform**: the frontend is a single build that runs in
+  the Tauri desktop shell, on the web, and (future) Tauri Mobile. Platform
+  differences live ONLY in the transport tiers of `apps/desktop/src/lib/ipc.ts`
+  (Tauri IPC → `VITE_BACKEND_URL` HTTP → mock) — never fork per-platform UI.
+  See `docs/web-deploy.md`.
 - **Local build**: `EXASOL_PREBUNDLE=0 ./scripts/build-local.sh --bundles app`
   (run from repo root; the script masks pipe exit codes, so verify the built
   binary's mtime before relaunching).

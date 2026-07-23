@@ -1,9 +1,24 @@
-# Web deployment (demo build)
+# One codebase, every platform
 
-The desktop app's frontend also runs in a plain browser: outside Tauri, every
-IPC command falls back to the built-in mock (`src/lib/ipc-mock.ts`, ~85
-commands with demo data), so the full UI is explorable without a native
-backend. This is **Phase 1 — a demo**, not the full product on the web.
+There is ONE frontend and ONE build artifact (`apps/desktop/dist`). The same
+build ships as:
+
+- **Desktop** — embedded in the Tauri shell (native Rust backend over IPC)
+- **Web** — served as a static SPA (Vercel or any static host)
+- **Mobile (future)** — Tauri 2 Mobile wraps the SAME frontend for iOS/Android
+
+Only the **transport** differs, resolved in one place (`src/lib/ipc.ts`):
+
+1. **Tauri IPC** — when running inside a Tauri shell (desktop, later mobile)
+2. **Hosted backend** — when `VITE_BACKEND_URL` is set: every command POSTs to
+   `<backend>/ipc/<command>` with its args as JSON. This is the exact contract
+   the Phase-2 headless server implements — same command names as the Rust
+   `#[tauri::command]`s.
+3. **Built-in mock** — plain browser with no backend: ~85 commands answer with
+   demo data (`src/lib/ipc-mock.ts`), so the whole UI is explorable.
+
+The AI sidecar resolves the same way: Tauri bridge inside the shell, direct
+HTTP via `VITE_AGENT_URL` on the web.
 
 ## Deploy to Vercel
 
