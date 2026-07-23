@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Waypoints, X } from "lucide-react";
+import { Copy, ExternalLink, Loader2, Waypoints, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { errorMessage, ipc, type VsPrereqs } from "@/lib/ipc";
-import { VS_SOURCES } from "@/features/connection/virtual-schema-sources";
+import { VS_SOURCES, VS_DRIVER_BUCKET_PATH } from "@/features/connection/virtual-schema-sources";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +61,32 @@ export function NewVirtualSchema({
   }, [profileId]);
 
   const conn = connMode === "existing" ? existingConn : connName;
+  const selected = useMemo(() => VS_SOURCES.find((s) => s.id === source), [source]);
+
+  // Per-provider one-time driver + adapter install script (settings.cfg + the
+  // two BucketFS uploads + the adapter script). Grounded in the dialect's own
+  // driver identity — nothing generic.
+  const installScript = useMemo(() => {
+    if (!selected?.driverClass) return "";
+    const db = selected.driverName ?? selected.id.toUpperCase();
+    const adapterSchema = "ADAPTER";
+    const scriptName = `${selected.id.toUpperCase()}_ADAPTER_SCRIPT`;
+    return [
+      `-- 1) Upload to BucketFS (from a shell): the ${selected.name} adapter JAR`,
+      `--    (from github.com/${selected.repo.split(" ")[0]}/releases) and the JDBC`,
+      `--    driver JAR${selected.driverMaven ? ` (Maven: ${selected.driverMaven})` : ""} into:`,
+      `--    ${VS_DRIVER_BUCKET_PATH}/${db}/`,
+      `-- 2) settings.cfg next to the driver JAR:`,
+      `--    ${db}=driver_name=${db};jar=<driver>.jar;driverMain=${selected.driverClass};fetchSize=100000;insertSize=-1;prepared=1`,
+      `-- 3) Register the adapter script:`,
+      `CREATE SCHEMA IF NOT EXISTS ${adapterSchema};`,
+      `CREATE OR REPLACE JAVA ADAPTER SCRIPT ${adapterSchema}.${scriptName} AS`,
+      `  %scriptclass com.exasol.adapter.RequestDispatcher;`,
+      `  %jar /buckets/bfsdefault/default/<adapter-dist>.jar;`,
+      `  %jar ${VS_DRIVER_BUCKET_PATH}/${db}/<driver>.jar;`,
+      `/`,
+    ].join("\n");
+  }, [selected]);
 
   const ddl = useMemo(() => {
     const stmts: string[] = [];
@@ -177,11 +203,46 @@ export function NewVirtualSchema({
                   );
                 })}
                 <p className="mt-1.5 text-[10.5px] text-muted-foreground">
-                  {source
-                    ? `Uses the ${VS_SOURCES.find((s) => s.id === source)?.repo} adapter. Install its script + JDBC driver in the database, then fill the connection below.`
+                  {selected
+                    ? `Uses the ${selected.repo.split(" ")[0]} adapter.`
                     : "Pick a source to prefill the JDBC URL. Any JDBC database works via Generic JDBC."}
                 </p>
               </Field>
+
+              {/* Dynamic, per-provider driver + adapter install (one-time). */}
+              {selected?.driverClass ? (
+                <div className="rounded-lg border border-border bg-secondary/20 p-2.5">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <SourceLogo logo={selected.logo} className="h-4 w-4" />
+                    <span className="text-[11.5px] font-semibold text-foreground">{selected.name} driver &amp; adapter</span>
+                    <span className="ml-auto rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium uppercase text-primary">one-time</span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
+                    <dt>Driver class</dt><dd className="truncate text-foreground/90" title={selected.driverClass}>{selected.driverClass}</dd>
+                    {selected.driverMaven ? (<><dt>JDBC driver</dt><dd className="truncate text-foreground/90">{selected.driverMaven}</dd></>) : null}
+                    <dt>BucketFS</dt><dd className="truncate text-foreground/90">{VS_DRIVER_BUCKET_PATH}/{selected.driverName}/</dd>
+                  </dl>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { void navigator.clipboard?.writeText(installScript); }}
+                      className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                    >
+                      <Copy className="h-3 w-3" /> Copy install steps
+                    </button>
+                    {selected.docs ? (
+                      <a href={selected.docs} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10.5px] text-primary hover:underline">
+                        User guide <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                    {selected.driverMaven ? (
+                      <a href={`https://central.sonatype.com/artifact/${selected.driverMaven.replace(":", "/")}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10.5px] text-primary hover:underline">
+                        Get driver JAR <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <Field label="Virtual schema name">
                 <Input value={vsName} onChange={(e) => setVsName(e.target.value)} placeholder="MY_PG" />
               </Field>

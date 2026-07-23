@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { agent } from "@/lib/agent-client";
 import { McpMark } from "@/components/brand/McpMark";
 import { MCP_PRESETS } from "@/features/marketplace/mcp-presets";
@@ -22,8 +22,15 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
     return () => window.clearInterval(t);
   }, []);
 
+  // Once a connector is configured it moves up to the active list — so hide it
+  // from "Connectors" (the add-new launcher). "custom" always stays so you can
+  // add more one-off servers.
+  const configured = new Set(servers.map((s) => s.name));
+  const presetIdFor = (name: string) => MCP_PRESETS.find((p) => p.name === name)?.id ?? "custom";
+  const availablePresets = MCP_PRESETS.filter((p) => p.id === "custom" || !configured.has(p.name));
+
   return (
-    <section className="flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto p-3">
+    <section className="flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="mb-1 flex items-center gap-2">
         <McpMark className="h-4 w-4 shrink-0 text-primary" />
         <h2 className="text-[13px] font-semibold text-foreground">Connect external tools</h2>
@@ -53,7 +60,14 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
                 </div>
               </div>
               <button
-                title="Reconnect"
+                title="Edit configuration"
+                onClick={() => onOpenConfig?.(presetIdFor(s.name), s.name)}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                title={s.connected ? "Reconnect" : "Connect"}
                 onClick={() => void agent.mcpReconnect(s.id).then(refresh)}
                 className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
               >
@@ -82,7 +96,7 @@ export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: str
         Connectors
       </p>
       <div className="grid gap-1">
-        {MCP_PRESETS.map((p) => (
+        {availablePresets.map((p) => (
           <button
             key={p.id}
             onClick={() => onOpenConfig?.(p.id, p.name)}
