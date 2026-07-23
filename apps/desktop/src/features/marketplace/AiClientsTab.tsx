@@ -62,8 +62,8 @@ export function AiClientsTab() {
   const others = (clients ?? []).filter((c) => !c.detected);
 
   return (
-    <div className="max-w-3xl">
-      <div className="mb-4 rounded-lg border border-border bg-panel/50 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+    <div>
+      <div className="mb-4 max-w-4xl rounded-lg border border-border bg-panel/50 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
         <p>
           <span className="font-medium text-foreground">Use your Exasol from other AI clients.</span> One click writes the
           bundled <span className="font-mono text-[11px]">exasol-mcp-server</span> into the client's own MCP config (a backup
@@ -93,7 +93,7 @@ export function AiClientsTab() {
                 <div className="space-y-1.5">
                   {grp.list.map((c) => (
                     <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border/70 bg-panel/50 px-3 py-2.5">
-                      <AiClientMark clientId={c.id} className={cn("h-6 w-6 shrink-0", c.connected ? "text-foreground" : "text-muted-foreground")} />
+                      <span className="flex w-8 shrink-0 justify-center"><AiClientMark clientId={c.id} className={cn("h-6 w-6", c.connected ? "text-foreground" : "text-muted-foreground")} /></span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[13px] font-medium text-foreground">{c.name}</span>
@@ -107,11 +107,11 @@ export function AiClientsTab() {
                         </div>
                         <p className="truncate font-mono text-[10.5px] text-muted-foreground" title={c.configPath}>{c.configPath}</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex w-[236px] shrink-0 items-center justify-end gap-1.5">
                         <button
                           onClick={() => void copySnippet(c)}
                           title="Copy the exasol MCP entry for this client's config"
-                          className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          className="flex h-7 w-[96px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
                         >
                           {copied === c.id ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />} Snippet
                         </button>
@@ -120,7 +120,7 @@ export function AiClientsTab() {
                             <button
                               onClick={() => void act(c, () => ipc.disconnectAiClient(c.id))}
                               disabled={busy[c.id]}
-                              className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                              className="flex h-7 w-[124px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
                             >
                               {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />} Disconnect
                             </button>
@@ -128,13 +128,13 @@ export function AiClientsTab() {
                             <button
                               onClick={() => void act(c, () => ipc.connectAiClient(c.id))}
                               disabled={busy[c.id]}
-                              className="cta-glow flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                              className="cta-glow flex h-7 w-[124px] items-center justify-center gap-1 rounded-md bg-primary text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                             >
                               {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Connect
                             </button>
                           )
                         ) : (
-                          <span className="text-[10.5px] text-muted-foreground">manual config</span>
+                          <span className="flex h-7 w-[124px] items-center justify-center rounded-md border border-dashed border-border/60 text-[10.5px] text-muted-foreground">manual config</span>
                         )}
                       </div>
                     </div>
