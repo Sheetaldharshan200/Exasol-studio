@@ -215,6 +215,39 @@ pub fn list_ai_clients() -> AppResult<Vec<AiClientStatus>> {
     Ok(CLIENTS.iter().map(|d| status_for(d, &home)).collect())
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiClientsReady {
+    pub ready: bool,
+    pub reason: Option<String>,
+}
+
+/// Prerequisite probe for the AI-clients tab: is the bundled MCP server +
+/// managed read-only identity in place? (Cheap file checks only — no vault
+/// access, so it works even while the vault is locked.)
+#[tauri::command]
+pub fn ai_clients_ready(app: AppHandle) -> AppResult<AiClientsReady> {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let bin = if cfg!(windows) {
+        data_dir.join("personal-local/python/Scripts/exasol-mcp-server.exe")
+    } else {
+        data_dir.join("personal-local/python/bin/exasol-mcp-server")
+    };
+    if !bin.is_file() {
+        return Ok(AiClientsReady {
+            ready: false,
+            reason: Some("The bundled Exasol MCP server is not installed yet. Set up the local database (Marketplace → Databases → Exasol Personal) — it installs the MCP server and its read-only identity.".into()),
+        });
+    }
+    if !data_dir.join("agent/mcp-identity.json").is_file() {
+        return Ok(AiClientsReady {
+            ready: false,
+            reason: Some("The read-only MCP identity has not been provisioned yet. Finish the local database setup, then come back here.".into()),
+        });
+    }
+    Ok(AiClientsReady { ready: true, reason: None })
+}
+
 #[tauri::command]
 pub fn connect_ai_client(app: AppHandle, client_id: String) -> AppResult<AiClientStatus> {
     let home = home()?;

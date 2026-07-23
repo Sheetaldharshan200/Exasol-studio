@@ -461,6 +461,7 @@ export const ipc = {
   connectAiClient: (clientId: string) => call<AiClientStatus>("connect_ai_client", { clientId }),
   disconnectAiClient: (clientId: string) => call<AiClientStatus>("disconnect_ai_client", { clientId }),
   aiClientSnippet: (clientId: string) => call<string>("ai_client_snippet", { clientId }),
+  aiClientsReady: () => call<{ ready: boolean; reason?: string | null }>("ai_clients_ready"),
   marketDocFile: (repo: string, path: string) => call<string | null>("market_doc_file", { repo, path }),
   openExternal: (url: string) => call<null>("open_external", { url }),
   gitStatus: () => call<GitStatus>("git_status"),

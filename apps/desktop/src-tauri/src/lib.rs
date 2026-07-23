@@ -118,6 +118,7 @@ pub fn run() {
             ai_clients::connect_ai_client,
             ai_clients::disconnect_ai_client,
             ai_clients::ai_client_snippet,
+            ai_clients::ai_clients_ready,
             market::exasol_local_ctl,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,

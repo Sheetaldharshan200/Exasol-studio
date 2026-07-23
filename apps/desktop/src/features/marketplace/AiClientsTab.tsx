@@ -17,10 +17,12 @@ export function AiClientsTab() {
   const [error, setError] = useState<string | null>(null);
 
   const [scanning, setScanning] = useState(false);
+  const [prereq, setPrereq] = useState<{ ready: boolean; reason?: string | null } | null>(null);
   const refresh = async () => {
     setScanning(true);
     try {
       setClients(await ipc.listAiClients());
+      setPrereq(await ipc.aiClientsReady().catch(() => ({ ready: true })));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -76,6 +78,12 @@ export function AiClientsTab() {
         </p>
       </div>
 
+      {prereq && !prereq.ready ? (
+        <div className="mb-3 max-w-4xl rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">Not ready yet.</span> {prereq.reason}
+        </div>
+      ) : null}
+
       {error ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
@@ -110,8 +118,9 @@ export function AiClientsTab() {
                       <div className="flex w-[236px] shrink-0 items-center justify-end gap-1.5">
                         <button
                           onClick={() => void copySnippet(c)}
+                          disabled={prereq ? !prereq.ready : false}
                           title="Copy the exasol MCP entry for this client's config"
-                          className="flex h-7 w-[96px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          className="flex h-7 w-[96px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
                         >
                           {copied === c.id ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />} Snippet
                         </button>
@@ -127,7 +136,7 @@ export function AiClientsTab() {
                           ) : (
                             <button
                               onClick={() => void act(c, () => ipc.connectAiClient(c.id))}
-                              disabled={busy[c.id]}
+                              disabled={busy[c.id] || (prereq ? !prereq.ready : false)}
                               className="cta-glow flex h-7 w-[124px] items-center justify-center gap-1 rounded-md bg-primary text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                             >
                               {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Connect
