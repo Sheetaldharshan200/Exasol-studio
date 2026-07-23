@@ -139,11 +139,19 @@ export const agent = {
     const { events } = await api<{ events: Record<string, unknown>[] }>(`/audit?limit=${limit}`);
     return events;
   },
-  async mcpList(): Promise<{ id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number; tools?: string[] }[]> {
-    const { servers } = await api<{ servers: { id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number; tools?: string[] }[] }>("/mcp");
+  async mcpList(): Promise<{ id: string; name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; url?: string; connected: boolean; toolCount: number; tools?: string[] }[]> {
+    const { servers } = await api<{ servers: { id: string; name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; url?: string; connected: boolean; toolCount: number; tools?: string[] }[] }>("/mcp");
     return servers;
   },
-  async mcpAdd(cfg: { name: string; command: string; args: string[]; env?: Record<string, string> }): Promise<void> {
+  async mcpAdd(cfg: {
+    name: string;
+    transport?: "stdio" | "http";
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
+  }): Promise<void> {
     await api("/mcp", "POST", cfg);
   },
   async mcpReconnect(id: string): Promise<void> {

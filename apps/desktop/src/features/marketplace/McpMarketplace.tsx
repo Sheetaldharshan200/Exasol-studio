@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  */
 export function McpMarketplace({ onOpenConfig }: { onOpenConfig?: (presetId: string, presetName: string) => void }) {
   const [servers, setServers] = useState<
-    { id: string; name: string; command: string; args: string[]; connected: boolean; toolCount: number }[]
+    { id: string; name: string; command?: string; args?: string[]; connected: boolean; toolCount: number }[]
   >([]);
   const refresh = () => agent.mcpList().then(setServers).catch(() => undefined);
   useEffect(() => {

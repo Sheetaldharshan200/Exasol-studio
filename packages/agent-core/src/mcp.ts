@@ -1,5 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -54,9 +56,17 @@ export function manifestFor(id: string): ConnectorManifest {
 export type McpServerConfig = {
   id: string;
   name: string;
-  command: string;
-  args: string[];
+  /** How Studio reaches the server. Defaults to "stdio" for backward compat.
+   *  "http" connects to a REMOTE server (no local process) — the self-sustained
+   *  path for hosted MCP servers like GitHub's, requiring no Docker/binary. */
+  transport?: "stdio" | "http";
+  // stdio transport
+  command?: string;
+  args?: string[];
   env?: Record<string, string>;
+  // http transport — url + optional headers (headers are sealed like env).
+  url?: string;
+  headers?: Record<string, string>;
   enabled: boolean;
 };
 
@@ -108,6 +118,7 @@ export class McpManager {
     return this.servers.map((s) => ({
       ...s,
       env: s.env ? Object.fromEntries(Object.keys(s.env).map((k) => [k, "•••"])) : undefined, // never leak secrets
+      headers: s.headers ? Object.fromEntries(Object.keys(s.headers).map((k) => [k, "•••"])) : undefined,
       connected: this.live.has(s.id),
       toolCount: this.live.get(s.id)?.tools.length ?? 0,
       tools: (this.live.get(s.id)?.tools ?? []).slice(0, 12).map((t) => t.name),
@@ -116,13 +127,12 @@ export class McpManager {
 
   async add(cfg: Omit<McpServerConfig, "id" | "enabled">): Promise<McpServerConfig> {
     const id = cfg.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `srv-${Date.now()}`;
-    const env = cfg.env
-      ? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, this.box.seal(v)]))
-      : undefined;
-    const server: McpServerConfig = { id, enabled: true, ...cfg, env };
+    const seal = (rec?: Record<string, string>) =>
+      rec ? Object.fromEntries(Object.entries(rec).map(([k, v]) => [k, this.box.seal(v)])) : undefined;
+    const server: McpServerConfig = { id, enabled: true, ...cfg, env: seal(cfg.env), headers: seal(cfg.headers) };
     this.servers = [...this.servers.filter((s) => s.id !== id), server];
     this.persist();
-    this.audit.log({ kind: "connector.add", id, name: cfg.name, command: cfg.command, manifest: manifestFor(id) });
+    this.audit.log({ kind: "connector.add", id, name: cfg.name, command: cfg.command ?? cfg.url, manifest: manifestFor(id) });
     await this.connect(id);
     return server;
   }
@@ -139,18 +149,32 @@ export class McpManager {
     if (!cfg) return { ok: false, error: "unknown server" };
     await this.disconnect(id);
     try {
-      const transport = new StdioClientTransport({
-        command: cfg.command,
-        args: cfg.args,
-        env: {
-          ...process.env,
-          PATH: SPAWN_PATH,
-          ...Object.fromEntries(Object.entries(cfg.env ?? {}).map(([k, v]) => [k, this.box.open(v)])),
-        } as Record<string, string>,
-        stderr: "ignore",
-      });
+      const isHttp = cfg.transport === "http" || (!cfg.command && !!cfg.url);
       const client = new Client({ name: "exasol-studio", version: "1.0.0" }, { capabilities: {} });
-      await client.connect(transport);
+      if (isHttp) {
+        if (!cfg.url) return { ok: false, error: "http connector has no url" };
+        const headers = Object.fromEntries(Object.entries(cfg.headers ?? {}).map(([k, v]) => [k, this.box.open(v)]));
+        const url = new URL(cfg.url);
+        // Prefer Streamable HTTP (the current spec); fall back to SSE for older
+        // remote servers. Both are remote — no local process, no Docker.
+        try {
+          await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers } }));
+        } catch {
+          await client.connect(new SSEClientTransport(url, { requestInit: { headers } }));
+        }
+      } else {
+        const transport = new StdioClientTransport({
+          command: cfg.command ?? "",
+          args: cfg.args ?? [],
+          env: {
+            ...process.env,
+            PATH: SPAWN_PATH,
+            ...Object.fromEntries(Object.entries(cfg.env ?? {}).map(([k, v]) => [k, this.box.open(v)])),
+          } as Record<string, string>,
+          stderr: "ignore",
+        });
+        await client.connect(transport);
+      }
       const listed = await client.listTools();
       const tools: McpToolInfo[] = (listed.tools ?? []).map((t) => ({
         serverId: cfg.id,

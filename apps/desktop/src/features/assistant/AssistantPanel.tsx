@@ -327,7 +327,7 @@ export function AssistantPanel({
   const [attachHint, setAttachHint] = useState<string | null>(null);
   // /mcp shows an inline status panel above the composer — NOT a chat bubble.
   const [mcpPanel, setMcpPanel] = useState<
-    { name: string; connected: boolean; toolCount: number; tools?: string[]; command: string; args: string[] }[] | null
+    { name: string; connected: boolean; toolCount: number; tools?: string[]; command?: string; args?: string[] }[] | null
   >(null);
   // Git auto-commit of workspace changes after each agent turn. Deterministic
   // (the app does it — not the model), gated by the autoCommit setting.
