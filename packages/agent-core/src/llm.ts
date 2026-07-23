@@ -87,13 +87,23 @@ type RunLoopOpts = {
 export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
   const { model, system, tools = {}, abortSignal, onEvent } = opts;
   const maxSteps = Math.max(1, opts.maxSteps ?? 1);
-  const toolNames = Object.keys(tools);
-  // LangChain converts the zod schemas; execution stays OURS (the bound
-  // functions are never invoked).
-  const bindDefs = toolNames.map((name) =>
-    lcTool(async () => "", { name, description: tools[name].description, schema: tools[name].inputSchema }),
-  );
-  const bound = bindDefs.length && model.bindTools ? model.bindTools(bindDefs) : model;
+  // Tools are re-bound EVERY step from the live `tools` object, so a tool that
+  // adds entries mid-turn (request_tools — on-demand tool loading) takes
+  // effect on the very next step. LangChain converts the zod schemas;
+  // execution stays OURS (the bound functions are never invoked).
+  let boundCount = -1;
+  let bound: typeof model = model;
+  const rebind = () => {
+    const names = Object.keys(tools);
+    if (names.length === boundCount) return; // unchanged → keep the binding
+    boundCount = names.length;
+    const bindDefs = names.map((name) =>
+      lcTool(async () => "", { name, description: tools[name].description, schema: tools[name].inputSchema }),
+    );
+    bound = bindDefs.length && model.bindTools ? (model.bindTools(bindDefs) as typeof model) : model;
+  };
+  rebind();
+  // NOTE: computed live where used — the set can grow mid-turn (request_tools).
 
   const base: BaseMessage[] = system ? [new SystemMessage(system), ...opts.messages] : [...opts.messages];
   const produced: BaseMessage[] = [];
@@ -113,6 +123,7 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
 
   for (; step < maxSteps; step++) {
     throwIfAborted();
+    rebind();
     let ai: AIMessageChunk | AIMessage;
     if (opts.stream) {
       let acc: AIMessageChunk | null = null;
@@ -172,7 +183,7 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
     // instead of saving). Rescue recognizable intents into real calls — once
     // per run, so a stubborn model can't loop forever.
     if (!calls.length && stepText && !rescuedOnce) {
-      const rescued = rescueTextCalls(stepText).filter((r) => toolNames.includes(r.name));
+      const rescued = rescueTextCalls(stepText).filter((r) => Object.keys(tools).includes(r.name));
       if (rescued.length) {
         rescuedOnce = true;
         for (const r of rescued) calls.push({ id: `rescue-${step}-${calls.length}`, name: r.name, args: r.args });
@@ -191,13 +202,13 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
     // a ToolMessage so the model sees real results (or actionable errors).
     const results = await Promise.all(
       calls.map(async (call): Promise<ToolMessage> => {
-        const resolved = resolveToolName(call.name, toolNames);
+        const resolved = resolveToolName(call.name, Object.keys(tools));
         if (!resolved) {
           onEvent?.({ type: "tool-error", toolCallId: call.id, toolName: call.name, error: "no such tool" });
           return new ToolMessage({
             tool_call_id: call.id,
             name: call.name,
-            content: `No tool named "${call.name}" exists. Available tools: ${toolNames.join(", ")}. Use one of those.`,
+            content: `No tool named "${call.name}" exists. Available tools: ${Object.keys(tools).join(", ")}. Use one of those.`,
           });
         }
         const def = tools[resolved];

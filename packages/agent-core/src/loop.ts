@@ -1,5 +1,6 @@
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { runLoop, type ToolSet } from "./llm.ts";
+import { z } from "zod";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
 import type { DashboardStore } from "./dashboards.ts";
@@ -42,6 +43,8 @@ EVIDENCE RULES — these are absolute:
 - If a tool returns an error or empty result, report that honestly. Do not fabricate a plausible answer around it.
 - NEVER display example, placeholder, or illustrative data values as if they were the user's data. Every cell, row, and number you show must come verbatim from a tool result in THIS conversation. After loading a file, do NOT print "sample rows" from memory — if a preview is useful, query the table first and show what the query returned.
 - COMPLETENESS CHECK before finishing: every schema/table/number in your answer must trace to a tool result from THIS turn. If the question spans several objects, cover ALL of them — never describe an object you did not query, and never drop one you did. If anything is missing, call the tool instead of finishing.
+
+Your toolset is LEAN by design: you start each turn with the core tools for the task. If a capability is missing (export, profiling, dashboards, UI, researchers…), call request_tools with the tool names you need — its description lists everything available — then use them on your next step.
 
 ACT, DON'T NARRATE — this is how you work:
 - You do tasks by CALLING TOOLS, not by describing them. If a tool can do it, CALL THE TOOL — do not answer with a plan, a numbered list of steps, or a block of SQL "to run".
@@ -334,6 +337,49 @@ export async function runTurn(opts: {
   // in the conversation). This resolves loops the model would otherwise get
   // stuck in far more gracefully than a hard abort.
   const guardedTools = wrapForProgress(relevantTools);
+
+  // ── On-demand tools ──────────────────────────────────────────────────────
+  // The turn starts with the lean, relevant core set (small request → works on
+  // low-TPM providers, keeps weak models focused). Every OTHER tool can be
+  // pulled in mid-turn by the model itself via request_tools; the step loop
+  // re-binds each step, so newly loaded tools are callable immediately after.
+  if (modelSupportsTools) {
+    const inactive = () => Object.keys(tools).filter((n) => !(n in guardedTools));
+    const catalog = inactive()
+      .map((n) => `${n} — ${String((tools[n] as { description?: string }).description ?? "").split(/[.\n]/)[0].slice(0, 90)}`)
+      .join("\n");
+    if (catalog) {
+      guardedTools["request_tools"] = {
+        description:
+          "Load additional tools for THIS turn when your current toolset can't do the job. " +
+          "Call it with the exact tool names you need, then call those tools on your next step. " +
+          "Available (not yet loaded):\n" + catalog,
+        inputSchema: z.object({ names: z.array(z.string()).min(1).describe("Exact tool names to load") }),
+        execute: async ({ names }: { names: string[] }) => {
+          const loaded: string[] = [];
+          const unknown: string[] = [];
+          for (const raw of names) {
+            const n = raw.trim();
+            if (n in guardedTools) continue; // already active
+            if (tools[n]) {
+              guardedTools[n] = wrapForProgress({ [n]: tools[n] })[n];
+              loaded.push(n);
+            } else {
+              unknown.push(n);
+            }
+          }
+          session.record({ kind: "tool.request_tools", loaded, unknown });
+          return {
+            loaded,
+            unknown: unknown.length ? unknown : undefined,
+            note: loaded.length
+              ? `Loaded: ${loaded.join(", ")}. They are callable from your NEXT step — call them now to continue the task.`
+              : "Nothing new was loaded — the names were unknown or already active. Check the catalog in this tool's description.",
+          };
+        },
+      } as ToolSet[string];
+    }
+  }
 
   // Deterministic multi-file load (research-backed: small local models must
   // not orchestrate multi-step loops — they stall mid-job and fabricate
