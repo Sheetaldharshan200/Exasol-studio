@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   Package,
+  Plus,
   ExternalLink,
   FileCode2,
   LayoutGrid,
@@ -906,14 +907,14 @@ export function Marketplace() {
 
         {/* Content */}
         <div className="min-w-0">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="relative flex-1">
+            <div className="mb-4 flex items-center justify-end gap-2">
+              <div className="relative w-56">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search tools, drivers, extensions…"
-                  className="h-9 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                  placeholder="Search…"
+                  className="h-8 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                 />
                 {query ? (
                   <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
@@ -921,12 +922,12 @@ export function Marketplace() {
                   </button>
                 ) : null}
               </div>
-              <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border bg-panel/70 p-1">
+              <div className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border border-border bg-panel/70 p-0.5">
                 <button
                   onClick={() => setLayout("grid")}
                   aria-label="Grid view"
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
                     layout === "grid" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -936,7 +937,7 @@ export function Marketplace() {
                   onClick={() => setLayout("list")}
                   aria-label="List view"
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
                     layout === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -954,16 +955,30 @@ export function Marketplace() {
                     return c?.install === "reference" || installedMap[it.id] || detected[it.id];
                   });
                   return (
-                    <button
+                    <div
                       key={pack.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setKitModal(pack)}
-                      title="View what's in this kit"
-                      className="group flex flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                      onKeyDown={(e) => { if (e.key === "Enter") setKitModal(pack); }}
+                      title="See what's in this kit"
+                      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
-                        <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
-                        {allInstalled ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground/50 transition-colors group-hover:text-primary" />}
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{pack.name}</span>
+                        {/* + installs the whole kit; clicking the card shows what's inside. */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
+                          disabled={allInstalled}
+                          title={allInstalled ? "Already installed" : "Install this kit"}
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors",
+                            allInstalled ? "border-transparent text-primary" : "border-border text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary",
+                          )}
+                        >
+                          {allInstalled ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
+                        </button>
                       </div>
                       <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -971,10 +986,7 @@ export function Marketplace() {
                           <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
                         ))}
                       </div>
-                      <span className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground">
-                        {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Package className="h-3.5 w-3.5" /> View kit</>}
-                      </span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
