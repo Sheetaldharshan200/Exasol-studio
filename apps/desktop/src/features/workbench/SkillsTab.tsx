@@ -72,6 +72,8 @@ export function SkillsTab() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: "", desc: "", body: "" });
+  // Kit-style pack modal: click a role card to see the skills inside.
+  const [packModal, setPackModal] = useState<(typeof ROLES)[number] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -104,6 +106,21 @@ export function SkillsTab() {
       } else {
         await skillsApi.save(skill.id, skill.desc, skill.body);
         await setDefault(skill.id, true);
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Activate every skill in a role pack (skips ones already active).
+  async function usePack(role: (typeof ROLES)[number]) {
+    setBusy(`pack:${role.id}`);
+    try {
+      for (const sk of role.skills) {
+        if (!active.has(sk.id)) {
+          await skillsApi.save(sk.id, sk.desc, sk.body);
+          await setDefault(sk.id, true);
+        }
       }
     } finally {
       setBusy(null);
@@ -169,30 +186,99 @@ export function SkillsTab() {
             </div>
           ) : null}
 
-          {/* Role packs */}
-          <div className="space-y-6">
+          {/* Role packs — marketplace-kit style: + activates the whole pack,
+              clicking the card shows the skills inside. */}
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
             {ROLES.map((role) => {
               const Icon = role.icon;
+              const allOn = role.skills.every((sk) => active.has(sk.id));
+              const packBusy = busy === `pack:${role.id}`;
               return (
-                <section key={role.id}>
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-muted-foreground"><Icon className="h-4 w-4" /></span>
-                    <div>
-                      <div className="text-[13px] font-semibold text-foreground">{role.name}</div>
-                      <div className="text-[10.5px] text-muted-foreground">{role.blurb}</div>
-                    </div>
+                <div
+                  key={role.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setPackModal(role)}
+                  onKeyDown={(e) => { if (e.key === "Enter") setPackModal(role); }}
+                  title="See the skills in this pack"
+                  className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{role.name}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (!allOn) void usePack(role); }}
+                      disabled={allOn || packBusy}
+                      title={allOn ? "All skills active" : "Activate this pack"}
+                      className={cn(
+                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
+                        allOn ? "text-primary" : "text-muted-foreground hover:text-primary",
+                      )}
+                    >
+                      {packBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : allOn ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
+                    </button>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{role.blurb}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
                     {role.skills.map((sk) => (
-                      <SkillCard key={sk.id} name={sk.name} desc={sk.desc} on={active.has(sk.id)} busy={busy === sk.id} onToggle={() => void toggle(sk)} />
+                      <span key={sk.id} className={cn("rounded px-1.5 py-px text-[10px]", active.has(sk.id) ? "bg-primary/15 text-primary" : "bg-secondary/60 text-muted-foreground")}>{sk.name}</span>
                     ))}
                   </div>
-                </section>
+                </div>
               );
             })}
           </div>
         </div>
       </div>
+
+      {/* Pack modal — what's inside + per-skill toggles + one-click activate. */}
+      {packModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setPackModal(null)}>
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-2.5 px-5 pt-5">
+              <packModal.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[15px] font-semibold text-foreground">{packModal.name}</h3>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{packModal.blurb}</p>
+              </div>
+              <button onClick={() => setPackModal(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="mt-3 border-t border-border px-5 py-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">In this pack</p>
+              <div className="space-y-2.5">
+                {packModal.skills.map((sk) => (
+                  <div key={sk.id} className="flex items-start gap-2.5">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[12.5px] font-medium text-foreground">{sk.name}</span>
+                      <p className="text-[11px] leading-snug text-muted-foreground">{sk.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => void toggle(sk)}
+                      disabled={busy === sk.id}
+                      className={cn(
+                        "flex h-6 w-20 shrink-0 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors disabled:opacity-50",
+                        active.has(sk.id) ? "border border-border text-muted-foreground hover:text-foreground" : "bg-primary text-primary-foreground hover:bg-primary/85",
+                      )}
+                    >
+                      {busy === sk.id ? <Loader2 className="h-3 w-3 animate-spin" /> : active.has(sk.id) ? <><Check className="h-3 w-3" /> Active</> : <><Plus className="h-3 w-3" /> Add</>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel/40 px-5 py-3">
+              <button onClick={() => setPackModal(null)} className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground">Close</button>
+              <button
+                onClick={() => void usePack(packModal)}
+                disabled={packModal.skills.every((sk) => active.has(sk.id)) || busy === `pack:${packModal.id}`}
+                className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy === `pack:${packModal.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : packModal.skills.every((sk) => active.has(sk.id)) ? <><Check className="h-3.5 w-3.5" /> All active</> : <><Sparkles className="h-3.5 w-3.5" /> Use this pack</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
