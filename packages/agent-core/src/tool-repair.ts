@@ -256,6 +256,11 @@ export function extractTextToolCalls(text: string): { name: string; args: Record
  */
 export function zodSchemaish(schema: unknown): { properties: Record<string, { type?: string }>; required: string[] } | null {
   try {
+    // Plain JSON Schema (MCP-bridged tools): read properties/required directly.
+    const js = schema as { properties?: Record<string, { type?: string }>; required?: string[]; shape?: Record<string, unknown> };
+    if (js?.properties && typeof js.properties === "object" && !js.shape) {
+      return { properties: js.properties, required: Array.isArray(js.required) ? js.required : [] };
+    }
     const shape = (schema as { shape?: Record<string, unknown> })?.shape;
     if (!shape || typeof shape !== "object") return null;
     const properties: Record<string, { type?: string }> = {};

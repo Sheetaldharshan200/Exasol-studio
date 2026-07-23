@@ -193,8 +193,13 @@ export class ProviderRegistry {
       for (const p of CLOUD_PROVIDERS) {
         const models = api[p.id]?.models;
         if (!models) continue;
+        // Only actual chat LLMs belong in the picker: drop embeddings, TTS,
+        // audio/realtime, image/video generation, moderation, and rerankers —
+        // they can't run the agent and only clutter the lists.
+        const NON_LLM = /embed|tts|speech|audio|whisper|transcrib|realtime|image|imagen|dall-?e|veo|sora|moderation|rerank|guard|ocr/i;
         next[p.id] = Object.entries(models)
-          .filter(([, m]) => m.status !== "deprecated")
+          .filter(([id, m]) => m.status !== "deprecated" && !NON_LLM.test(id) && !NON_LLM.test(m.name ?? ""))
+          .filter(([, m]) => !Array.isArray(m.modalities?.input) || m.modalities!.input!.includes("text"))
           .map(([id, m]) => ({
             id,
             name: m.name ?? id,

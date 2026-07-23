@@ -95,7 +95,12 @@ ${(uiMap.entries as { id: string; label: string; where: string }[])
 /** Providers with tight tokens-per-minute budgets (e.g. Groq free tier ~8k
  * TPM): the turn is built LEAN — compact prompt, skill names instead of full
  * bodies, capped grounding — so a simple message fits the budget. */
-const LEAN_TPM_PROVIDERS = new Set(["groq"]);
+// Default-lean until a probe/error tells us the account's real budget — a
+// saved key triggers a rate-limit-header probe (server.ts), and TPM errors
+// mid-turn update the stored limit too. Dev-tier/paid accounts therefore get
+// FULL turns automatically.
+const LEAN_DEFAULT_PROVIDERS = new Set(["groq"]);
+const LEAN_TPM_THRESHOLD = 20_000;
 
 const LEAN_SYSTEM_PROMPT = `You are Exa, the Exasol Studio agent — an expert in the Exasol analytics database, embedded in a desktop SQL workbench.
 
@@ -142,7 +147,9 @@ export async function runTurn(opts: {
   // Temperature moves to model construction in LangChain (constructor param,
   // not a per-call option).
   const model = registry.resolve(modelRef, { temperature: Math.min(Math.max(settings.temperature, 0), 1) });
-  const leanTurn = LEAN_TPM_PROVIDERS.has(modelRef.split("/")[0] ?? "");
+  const turnProviderId = modelRef.split("/")[0] ?? "";
+  const knownTpm = config.get().providerLimits?.[turnProviderId]?.tpm ?? null;
+  const leanTurn = knownTpm !== null ? knownTpm < LEAN_TPM_THRESHOLD : LEAN_DEFAULT_PROVIDERS.has(turnProviderId);
   const modelSupportsImages = registry.supportsImages(modelRef);
 
   // Handle attachments: text/docs go into the session document store for
@@ -833,7 +840,19 @@ export async function runTurn(opts: {
     await graph.invoke({}, { recursionLimit: 64, signal: session.abort?.signal });
   } catch (e) {
     const aborted = session.abort?.signal.aborted;
-    const message = aborted ? "Stopped." : e instanceof Error ? e.message : String(e);
+    let message = aborted ? "Stopped." : e instanceof Error ? e.message : String(e);
+    // Learn the account's real budget from limit errors ("… tokens per minute
+    // (TPM): Limit 8000 …") so the NEXT turn adapts automatically.
+    const tpmMatch = /tokens per minute \(TPM\): Limit (\d+)/i.exec(message);
+    if (!aborted && tpmMatch) {
+      const tpm = Number(tpmMatch[1]);
+      config.update((cfg) => {
+        cfg.providerLimits = { ...cfg.providerLimits, [turnProviderId]: { tpm, at: Date.now() } };
+      });
+      if (tpm < LEAN_TPM_THRESHOLD && !leanTurn) {
+        message += `\n\nThis account allows ${tpm.toLocaleString()} tokens/minute — noted. Send your message again and I'll run in lean mode to fit it.`;
+      }
+    }
     session.record({ kind: aborted ? "aborted" : "error", model: modelRef, error: message });
     if (!aborted) log.error("turn failed", { model: modelRef, error: message });
     session.emit(

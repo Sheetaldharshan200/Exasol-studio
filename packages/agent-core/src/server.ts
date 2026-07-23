@@ -73,6 +73,34 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
       }
 
+      // Probe a provider's ACTUAL tokens-per-minute budget from its rate-limit
+      // headers (OpenAI-compatible APIs return x-ratelimit-limit-tokens on a
+      // 1-token completion). Lets lean/full turns adapt to the account tier —
+      // free tier goes lean, Dev/paid tiers keep the full experience.
+      const probeProviderTpm = async (providerId: string, apiKey: string) => {
+        const targets: Record<string, { url: string; model: string }> = {
+          groq: { url: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.1-8b-instant" },
+          openai: { url: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+        };
+        const t = targets[providerId];
+        if (!t) return;
+        try {
+          const res = await fetch(t.url, {
+            method: "POST",
+            headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: t.model, max_tokens: 1, messages: [{ role: "user", content: "." }] }),
+          });
+          const raw = res.headers.get("x-ratelimit-limit-tokens");
+          const tpm = raw ? Number(raw.replace(/[^0-9]/g, "")) : NaN;
+          config.update((cfg) => {
+            cfg.providerLimits = { ...cfg.providerLimits, [providerId]: { tpm: Number.isFinite(tpm) && tpm > 0 ? tpm : null, at: Date.now() } };
+          });
+          log.info("provider tpm probed", { provider: providerId, tpm: Number.isFinite(tpm) ? tpm : null, status: res.status });
+        } catch (e) {
+          log.warn("provider tpm probe failed", { provider: providerId, error: String(e) });
+        }
+      };
+
       // PUT /v1/providers/:id  {apiKey?, baseURL?, models?}
       if (req.method === "PUT" && parts[1] === "providers" && parts[2]) {
         const body = await readBody<{ apiKey?: string; baseURL?: string; models?: { id: string; name?: string; context?: number }[] }>(req);
@@ -82,7 +110,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (typeof body.baseURL === "string") body.baseURL = body.baseURL.trim();
         config.update((cfg) => {
           cfg.providers[parts[2]] = { ...cfg.providers[parts[2]], ...body };
+          // A new key can mean a new tier — forget the old budget until re-probed.
+          if (body.apiKey && cfg.providerLimits?.[parts[2]]) delete cfg.providerLimits[parts[2]];
         });
+        if (body.apiKey) void probeProviderTpm(parts[2], body.apiKey);
         return json(res, 200, { ok: true });
       }
 
