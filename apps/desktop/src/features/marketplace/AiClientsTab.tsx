@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * equivalent of the starter kit's `exakit mcp-setup`. Deliberately separate
  * from the in-app agent's connectors (which bring tools INTO the Studio agent).
  */
-export function AiClientsTab() {
+export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) {
   const [clients, setClients] = useState<AiClientStatus[] | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -63,6 +63,50 @@ export function AiClientsTab() {
   const detected = (clients ?? []).filter((c) => c.detected);
   const others = (clients ?? []).filter((c) => !c.detected);
 
+  const badge = (c: AiClientStatus) =>
+    c.connected ? (
+      <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
+        <Check className="h-2.5 w-2.5" /> connected
+      </span>
+    ) : c.detected ? (
+      <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">detected</span>
+    ) : null;
+
+  // Shared action pair; `full` stretches the buttons in grid cards.
+  const actions = (c: AiClientStatus, full = false) => (
+    <>
+      <button
+        onClick={() => void copySnippet(c)}
+        disabled={prereq ? !prereq.ready : false}
+        title="Copy the exasol MCP entry for this client's config"
+        className={cn("flex h-7 items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40", full ? "flex-1" : "w-[96px]")}
+      >
+        {copied === c.id ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />} Snippet
+      </button>
+      {c.auto ? (
+        c.connected ? (
+          <button
+            onClick={() => void act(c, () => ipc.disconnectAiClient(c.id))}
+            disabled={busy[c.id]}
+            className={cn("flex h-7 items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50", full ? "flex-1" : "w-[124px]")}
+          >
+            {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />} Disconnect
+          </button>
+        ) : (
+          <button
+            onClick={() => void act(c, () => ipc.connectAiClient(c.id))}
+            disabled={busy[c.id] || (prereq ? !prereq.ready : false)}
+            className={cn("cta-glow flex h-7 items-center justify-center gap-1 rounded-md bg-primary text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50", full ? "flex-1" : "w-[124px]")}
+          >
+            {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Connect
+          </button>
+        )
+      ) : (
+        <span className={cn("flex h-7 items-center justify-center rounded-md border border-dashed border-border/60 text-[10.5px] text-muted-foreground", full ? "flex-1" : "w-[124px]")}>manual config</span>
+      )}
+    </>
+  );
+
   return (
     <div>
       <div className="mb-4 max-w-4xl rounded-lg border border-border bg-panel/50 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
@@ -94,71 +138,58 @@ export function AiClientsTab() {
         </div>
       ) : (
         <>
-          {[{ label: "Detected on this machine", list: detected }, { label: "Other supported clients", list: others }].map((grp) =>
-            grp.list.length ? (
+          {[{ label: "Detected on this machine", list: detected, rescan: true }, { label: "Other supported clients", list: others, rescan: false }].map((grp) =>
+            grp.list.length || grp.rescan ? (
               <section key={grp.label} className="mb-5">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{grp.label}</p>
-                <div className="space-y-1.5">
-                  {grp.list.map((c) => (
-                    <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border/70 bg-panel/50 px-3 py-2.5">
-                      <span className="flex w-8 shrink-0 justify-center"><AiClientMark clientId={c.id} className={cn("h-6 w-6", c.connected ? "text-foreground" : "text-muted-foreground")} /></span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[13px] font-medium text-foreground">{c.name}</span>
-                          {c.connected ? (
-                            <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-                              <Check className="h-2.5 w-2.5" /> connected
-                            </span>
-                          ) : c.detected ? (
-                            <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">detected</span>
-                          ) : null}
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{grp.label}</p>
+                  {grp.rescan ? (
+                    <button
+                      onClick={() => void refresh()}
+                      disabled={scanning}
+                      className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    >
+                      <RefreshCcw className={cn("h-3 w-3", scanning && "animate-spin")} /> {scanning ? "Scanning…" : "Rescan"}
+                    </button>
+                  ) : null}
+                </div>
+                {grp.rescan && !grp.list.length ? (
+                  <p className="text-[12px] text-muted-foreground">No AI clients detected on this machine.</p>
+                ) : null}
+                {layout === "grid" ? (
+                  <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
+                    {grp.list.map((c) => (
+                      <div key={c.id} className="flex flex-col gap-2 rounded-xl border border-border/70 bg-panel/50 p-3">
+                        <div className="flex items-center gap-2">
+                          <AiClientMark clientId={c.id} className={cn("h-6 w-6 shrink-0", c.connected ? "text-foreground" : "text-muted-foreground")} />
+                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{c.name}</span>
+                          {badge(c)}
                         </div>
                         <p className="truncate font-mono text-[10.5px] text-muted-foreground" title={c.configPath}>{c.configPath}</p>
+                        <div className="mt-auto flex items-center gap-1.5">{actions(c, true)}</div>
                       </div>
-                      <div className="flex w-[236px] shrink-0 items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => void copySnippet(c)}
-                          disabled={prereq ? !prereq.ready : false}
-                          title="Copy the exasol MCP entry for this client's config"
-                          className="flex h-7 w-[96px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-                        >
-                          {copied === c.id ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />} Snippet
-                        </button>
-                        {c.auto ? (
-                          c.connected ? (
-                            <button
-                              onClick={() => void act(c, () => ipc.disconnectAiClient(c.id))}
-                              disabled={busy[c.id]}
-                              className="flex h-7 w-[124px] items-center justify-center gap-1 rounded-md border border-border text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
-                            >
-                              {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />} Disconnect
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => void act(c, () => ipc.connectAiClient(c.id))}
-                              disabled={busy[c.id] || (prereq ? !prereq.ready : false)}
-                              className="cta-glow flex h-7 w-[124px] items-center justify-center gap-1 rounded-md bg-primary text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                            >
-                              {busy[c.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Connect
-                            </button>
-                          )
-                        ) : (
-                          <span className="flex h-7 w-[124px] items-center justify-center rounded-md border border-dashed border-border/60 text-[10.5px] text-muted-foreground">manual config</span>
-                        )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {grp.list.map((c) => (
+                      <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border/70 bg-panel/50 px-3 py-2.5">
+                        <span className="flex w-8 shrink-0 justify-center"><AiClientMark clientId={c.id} className={cn("h-6 w-6", c.connected ? "text-foreground" : "text-muted-foreground")} /></span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[13px] font-medium text-foreground">{c.name}</span>
+                            {badge(c)}
+                          </div>
+                          <p className="truncate font-mono text-[10.5px] text-muted-foreground" title={c.configPath}>{c.configPath}</p>
+                        </div>
+                        <div className="flex w-[236px] shrink-0 items-center justify-end gap-1.5">{actions(c)}</div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </section>
             ) : null,
           )}
-          <button
-            onClick={() => void refresh()}
-            disabled={scanning}
-            className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-60"
-          >
-            <RefreshCcw className={cn("h-3 w-3", scanning && "animate-spin")} /> {scanning ? "Scanning…" : "Rescan"}
-          </button>
         </>
       )}
     </div>

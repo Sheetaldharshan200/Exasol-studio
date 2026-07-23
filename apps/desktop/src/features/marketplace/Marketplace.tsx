@@ -967,13 +967,13 @@ export function Marketplace() {
                   </button>
                 ) : null}
               </div>
-              <div className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border border-border bg-panel/70 p-0.5">
+              <div className="flex h-8 shrink-0 items-center gap-1">
                 <button
                   onClick={() => setLayout("grid")}
                   aria-label="Grid view"
                   className={cn(
                     "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "grid" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                    layout === "grid" ? "text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <LayoutGrid className="h-4 w-4" />
@@ -983,7 +983,7 @@ export function Marketplace() {
                   aria-label="List view"
                   className={cn(
                     "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "list" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                    layout === "list" ? "text-primary" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <List className="h-4 w-4" />
@@ -992,7 +992,7 @@ export function Marketplace() {
             </div>
 
             {nav === "ai-clients" ? (
-              <AiClientsTab />
+              <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
               <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
                 {PACKS.map((pack) => {
