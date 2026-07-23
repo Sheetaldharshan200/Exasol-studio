@@ -59,6 +59,32 @@ function pspClient() {
   return (pspClientPromise ??= pspWorker());
 }
 
+/** Issue #10: a one-click query-efficiency dashboard on Exasol's own
+ * statistics tables (EXA_STATISTICS.EXA_SQL_LAST_DAY) — statement volume,
+ * durations by command, error rate, resource hogs. */
+function queryPerfDashboard(): Dashboard {
+  const S = "EXA_STATISTICS.EXA_SQL_LAST_DAY";
+  return {
+    version: 1,
+    id: "",
+    title: "Query performance",
+    description: "Engine efficiency from Exasol's statistics tables (last 24h)",
+    refreshMs: 60_000,
+    panels: [
+      { id: "qp-note", title: "About", grid: { x: 0, y: 0, w: 12, h: 2 }, viz: { type: "markdown", content: "**Query performance — last 24 hours** (from `EXA_STATISTICS.EXA_SQL_LAST_DAY`, auto-refreshes every minute). Volume and latency per command, failures, and the heaviest statements by duration, CPU and temp RAM." } },
+      { id: "qp-count", title: "Statements (24h)", grid: { x: 0, y: 2, w: 3, h: 4 }, query: { sql: `SELECT COUNT(*) AS STATEMENTS FROM ${S}` }, viz: { type: "kpi" } },
+      { id: "qp-err", title: "Failed %", grid: { x: 3, y: 2, w: 3, h: 4 }, query: { sql: `SELECT ROUND(100 * SUM(CASE WHEN SUCCESS THEN 0 ELSE 1 END) / NULLIF(COUNT(*), 0), 2) AS FAILED_PCT FROM ${S}` }, viz: { type: "kpi", unit: "%" } },
+      { id: "qp-avg", title: "Avg duration (s)", grid: { x: 6, y: 2, w: 3, h: 4 }, query: { sql: `SELECT ROUND(AVG(DURATION), 3) AS AVG_SECONDS FROM ${S}` }, viz: { type: "kpi", unit: "s" } },
+      { id: "qp-p95", title: "Max duration (s)", grid: { x: 9, y: 2, w: 3, h: 4 }, query: { sql: `SELECT ROUND(MAX(DURATION), 2) AS MAX_SECONDS FROM ${S}` }, viz: { type: "kpi", unit: "s" } },
+      { id: "qp-hourly", title: "Statements per hour", grid: { x: 0, y: 6, w: 6, h: 7 }, query: { sql: `SELECT TO_CHAR(TRUNC(START_TIME, 'HH'), 'HH24:MI') AS HOUR, COUNT(*) AS STATEMENTS FROM ${S} GROUP BY TRUNC(START_TIME, 'HH') ORDER BY TRUNC(START_TIME, 'HH')` }, viz: { type: "echarts", chart: "area" } },
+      { id: "qp-bycmd", title: "Avg duration by command", grid: { x: 6, y: 6, w: 6, h: 7 }, query: { sql: `SELECT COMMAND_NAME, ROUND(AVG(DURATION), 3) AS AVG_SECONDS FROM ${S} GROUP BY COMMAND_NAME ORDER BY 2 DESC LIMIT 14` }, viz: { type: "echarts", chart: "hbar" } },
+      { id: "qp-classvol", title: "Volume by command class", grid: { x: 0, y: 13, w: 6, h: 7 }, query: { sql: `SELECT COMMAND_CLASS, COUNT(*) AS STATEMENTS FROM ${S} GROUP BY COMMAND_CLASS ORDER BY 2 DESC` }, viz: { type: "echarts", chart: "donut" } },
+      { id: "qp-cpu", title: "Duration vs CPU (per statement)", grid: { x: 6, y: 13, w: 6, h: 7 }, query: { sql: `SELECT DURATION AS DURATION_S, CPU FROM ${S} WHERE DURATION IS NOT NULL AND CPU IS NOT NULL ORDER BY DURATION DESC LIMIT 500` }, viz: { type: "echarts", chart: "scatter" } },
+      { id: "qp-slowest", title: "Heaviest statements", grid: { x: 0, y: 20, w: 12, h: 8 }, query: { sql: `SELECT TO_CHAR(START_TIME, 'HH24:MI:SS') AS AT, SESSION_ID, COMMAND_NAME, ROUND(DURATION, 2) AS SECONDS, ROUND(CPU, 1) AS CPU, ROUND(TEMP_DB_RAM_PEAK, 1) AS TEMP_RAM_MIB, ROW_COUNT, CASE WHEN SUCCESS THEN 'ok' ELSE 'FAILED' END AS STATUS FROM ${S} ORDER BY DURATION DESC LIMIT 100` }, viz: { type: "table" } },
+    ],
+  };
+}
+
 export function DashboardsTab({
   profileId,
   connectionName,
@@ -154,6 +180,12 @@ export function DashboardsTab({
             >
               <Plus className="h-3.5 w-3.5 text-primary" /> New dashboard
             </button>
+            <button
+              onClick={() => void dashboards.save(queryPerfDashboard()).then(setOpen)}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-[12.5px] text-foreground hover:bg-secondary"
+            >
+              <Icon name="clock-dashed-half" className="h-3.5 w-3.5 text-primary" /> Query performance
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -181,6 +213,15 @@ export function DashboardsTab({
             >
               <Plus className="h-5 w-5 text-primary" />
               <span className="text-[12.5px] font-medium">New dashboard</span>
+            </button>
+            <button
+              onClick={() => void dashboards.save(queryPerfDashboard()).then(setOpen)}
+              title="Statement volume, durations, failures and resource hogs from EXA_STATISTICS (last 24h)"
+              className="flex min-h-[110px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              <Icon name="clock-dashed-half" className="h-5 w-5 text-primary" />
+              <span className="text-[12.5px] font-medium">Query performance</span>
+              <span className="text-[10.5px]">from system statistics</span>
             </button>
             {list.map((d) => (
               <div

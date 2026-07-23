@@ -117,6 +117,34 @@ Exasol SQL: LIMIT n (never TOP/FETCH FIRST). Unquoted identifiers fold to UPPERC
 
 Be concise. Prefer runnable SQL in fenced sql code blocks.`;
 
+/** Issue #15: translate raw provider/API failures into short, actionable
+ * messages. The raw error is appended in parentheses so nothing is hidden. */
+function humanizeProviderError(providerId: string, raw: string): string {
+  const r = raw.toLowerCase();
+  const p = providerId || "the provider";
+  let friendly: string | null = null;
+  if (/api[_ ]?key[_ ]?invalid|invalid api key|incorrect api key|unauthorized|401/.test(r)) {
+    friendly = `Your ${p} API key was rejected. Re-save a valid key in AI settings (check it's the right key type for ${p}).`;
+  } else if (/tokens per minute|tpm/.test(r)) {
+    friendly = `This ${p} account's per-minute token budget is too small for this request. Wait a minute and retry, upgrade the plan, or switch model.`;
+  } else if (/quota|exceeded your current|billing|payment required|insufficient[_ ]quota|credit/.test(r)) {
+    friendly = `The ${p} account is out of quota/credits. Add billing or switch to another provider in the model picker.`;
+  } else if (/rate limit|429|too many requests/.test(r)) {
+    friendly = `${p} is rate-limiting requests right now. Wait a moment and try again.`;
+  } else if (/context length|maximum context|context window|too many tokens|prompt is too long|request too large/.test(r)) {
+    friendly = "The conversation no longer fits this model's context window. Start a new chat, or switch to a larger-context model in the picker.";
+  } else if (/model.*(not found|does not exist|unknown)|404/.test(r)) {
+    friendly = "This model isn't available on your account. Pick a different model in the model picker.";
+  } else if (/econnrefused|enotfound|fetch failed|network|socket|timeout|etimedout|dns/.test(r)) {
+    friendly = `Couldn't reach ${p}. Check your internet connection (or the local runtime, if this is a local model) and try again.`;
+  } else if (/overloaded|503|502|server error|500/.test(r)) {
+    friendly = `${p} is having trouble right now (server-side). Try again shortly or switch model.`;
+  }
+  if (!friendly) return raw;
+  const brief = raw.length > 220 ? raw.slice(0, 220) + "…" : raw;
+  return `${friendly}\n\n(technical: ${brief})`;
+}
+
 /** One user turn: multi-step agent loop with tool execution. */
 export async function runTurn(opts: {
   session: Session;
@@ -853,6 +881,7 @@ export async function runTurn(opts: {
         message += `\n\nThis account allows ${tpm.toLocaleString()} tokens/minute — noted. Send your message again and I'll run in lean mode to fit it.`;
       }
     }
+    if (!aborted) message = humanizeProviderError(turnProviderId, message);
     session.record({ kind: aborted ? "aborted" : "error", model: modelRef, error: message });
     if (!aborted) log.error("turn failed", { model: modelRef, error: message });
     session.emit(

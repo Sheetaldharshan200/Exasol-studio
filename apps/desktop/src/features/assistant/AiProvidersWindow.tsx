@@ -446,12 +446,12 @@ function ProvidersSection(props: {
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
           Free, private, and offline — detected automatically on this machine.
         </p>
-        <div className="space-y-2">
+        <div className="divide-y divide-border/60">
           {(locals.length
             ? locals
             : [{ id: "ollama", name: "Ollama (local)", kind: "local", configured: false, models: [] } as AgentProviderInfo]
           ).map((p) => (
-            <div key={p.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+            <div key={p.id} className="flex items-center gap-2.5 py-3 first:pt-0">
               <ProviderMark providerId={p.id} className="h-5 w-5 shrink-0 text-foreground" />
               <span className={cn("h-2 w-2 shrink-0 rounded-full", p.running ? "bg-primary" : "bg-muted-foreground/40")} />
               <div className="min-w-0 flex-1">
@@ -502,11 +502,11 @@ function ProvidersSection(props: {
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
           Keys are stored locally on this machine and used only for your requests. Model lists refresh live from the catalog.
         </p>
-        <div className="space-y-2.5">
+        <div className="divide-y divide-border/60">
           {clouds.map((p) => {
             const meta = CLOUD_META[p.id];
             return (
-              <div key={p.id} className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+              <div key={p.id} className="py-3 first:pt-0">
                 <div className="flex items-center gap-1.5">
                   <ProviderMark providerId={p.id} className="h-4.5 w-4.5 shrink-0 text-foreground" />
                   <span className="text-[12.5px] font-medium">{p.name}</span>
