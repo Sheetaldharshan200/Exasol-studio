@@ -92,7 +92,7 @@ export function ObjectDetailPanel({
     if (navTab === "columns") { setEditingStructure(Boolean(navEdit)); }
     else if (navTab === "keys") { setEditingKeys(Boolean(navEdit)); }
     else if (navTab === "info") { setEditingInfo(Boolean(navEdit)); }
-    else if (navTab === "roles" || navTab === "sysprivs") { setEditingUserPrivs(Boolean(navEdit)); }
+    else if (navTab === "roles" || navTab === "sysprivs" || navTab === "objprivs") { setEditingUserPrivs(Boolean(navEdit)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navNonce]);
 
@@ -215,12 +215,13 @@ export function ObjectDetailPanel({
           </div>
         ) : error ? (
           <div className="max-w-lg rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[12.5px] text-muted-foreground">{error}</div>
-        ) : tab === "roles" || tab === "sysprivs" ? (
+        ) : tab === "roles" || tab === "sysprivs" || tab === "objprivs" ? (
           isUser && editingUserPrivs ? (
             <UserPrivilegesEditor
               user={object.name}
               roles={(userD?.roles ?? []).filter((x): x is string => Boolean(x))}
               sysPrivs={(userD?.systemPrivileges ?? []).filter((x): x is string => Boolean(x))}
+              objPrivs={userD?.objectPrivileges ?? []}
               onOpenSql={onOpenSql}
               onApply={onApplyDdl}
               onDone={() => { setEditingUserPrivs(false); setReloadKey((k) => k + 1); }}
@@ -229,41 +230,43 @@ export function ObjectDetailPanel({
             <div className="flex h-full min-h-0 flex-col">
               {isUser && (onOpenSql || onApplyDdl) ? (
                 <div className="mb-2 flex shrink-0 items-center justify-end">
-                  <button onClick={() => setEditingUserPrivs(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title="Grant or revoke roles and system privileges">
-                    <Pencil className="h-3.5 w-3.5" /> Edit roles &amp; privileges
+                  <button onClick={() => setEditingUserPrivs(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title="Grant or revoke roles, system privileges, and object privileges">
+                    <Pencil className="h-3.5 w-3.5" /> Edit access
                   </button>
                 </div>
               ) : null}
               <div className="min-h-0 flex-1 overflow-auto">
-                <StringList items={tab === "roles" ? userD?.roles : userD?.systemPrivileges} empty={tab === "roles" ? "No roles granted." : "No system privileges granted."} />
+                {tab === "objprivs" ? (
+                  (userD?.objectPrivileges.length ?? 0) ? (
+                    <table className="w-full border-collapse border border-border text-[12px]">
+                      <thead>
+                        <tr className="bg-secondary text-left">
+                          <th className="border border-border px-3 py-1.5">Schema</th>
+                          <th className="border border-border px-3 py-1.5">Object</th>
+                          <th className="border border-border px-3 py-1.5">Privilege</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono">
+                        {userD?.objectPrivileges.map((p, i) => (
+                          <tr key={i} className="even:bg-secondary/30">
+                            <td className="border border-border px-3 py-1 text-muted-foreground">{p.schema ?? ""}</td>
+                            <td className="border border-border px-3 py-1 text-foreground">{p.object ?? ""}</td>
+                            <td className="border border-border px-3 py-1 text-muted-foreground">{p.privilege ?? ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-[13px] text-muted-foreground">No object privileges granted.</p>
+                  )
+                ) : (
+                  <StringList items={tab === "roles" ? userD?.roles : userD?.systemPrivileges} empty={tab === "roles" ? "No roles granted." : "No system privileges granted."} />
+                )}
               </div>
             </div>
           )
         ) : tab === "owned" ? (
           <StringList items={userD?.ownedSchemas} empty="Owns no schemas." />
-        ) : tab === "objprivs" ? (
-          (userD?.objectPrivileges.length ?? 0) ? (
-            <table className="w-full border-collapse border border-border text-[12px]">
-              <thead>
-                <tr className="bg-secondary text-left">
-                  <th className="border border-border px-3 py-1.5">Schema</th>
-                  <th className="border border-border px-3 py-1.5">Object</th>
-                  <th className="border border-border px-3 py-1.5">Privilege</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {userD?.objectPrivileges.map((p, i) => (
-                  <tr key={i} className="even:bg-secondary/30">
-                    <td className="border border-border px-3 py-1 text-muted-foreground">{p.schema ?? ""}</td>
-                    <td className="border border-border px-3 py-1 text-foreground">{p.object ?? ""}</td>
-                    <td className="border border-border px-3 py-1 text-muted-foreground">{p.privilege ?? ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-[13px] text-muted-foreground">No object privileges granted.</p>
-          )
         ) : tab === "info" ? (
           isTable && object.type === "table" && editingInfo ? (
             <TableInfoEditor

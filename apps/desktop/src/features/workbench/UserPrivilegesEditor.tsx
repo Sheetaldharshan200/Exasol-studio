@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Code2, Loader2, Plus, RotateCcw, Save, ShieldOff, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { dbaSql, SYS_PRIVS, ALL_SYS_PRIVS } from "./dba-sql";
+import { dbaSql, ident, SYS_PRIVS, ALL_SYS_PRIVS, OBJ_PRIVS_SCHEMA, OBJ_PRIVS_TABLE } from "./dba-sql";
+
+type ObjPriv = { schema: string | null; object: string | null; privilege: string | null };
 
 /**
  * Edit a user's roles and system privileges in the Details tab — grant/revoke
@@ -14,6 +16,7 @@ export function UserPrivilegesEditor({
   user,
   roles,
   sysPrivs,
+  objPrivs = [],
   onOpenSql,
   onApply,
   onDone,
@@ -21,20 +24,33 @@ export function UserPrivilegesEditor({
   user: string;
   roles: string[];
   sysPrivs: string[];
+  objPrivs?: ObjPriv[];
   onOpenSql?: (sql: string, title?: string) => void;
   onApply?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   onDone: () => void;
 }) {
   const currentRoles = useMemo(() => roles.filter(Boolean), [roles]);
   const currentPrivs = useMemo(() => sysPrivs.filter(Boolean), [sysPrivs]);
+  // Object privileges the user already holds (each row: schema, object, priv).
+  const currentObj = useMemo(
+    () => objPrivs.filter((o) => o.privilege && o.schema).map((o) => ({ schema: o.schema as string, object: o.object, privilege: o.privilege as string })),
+    [objPrivs],
+  );
 
   const [revokedRoles, setRevokedRoles] = useState<Set<string>>(new Set());
   const [addedRoles, setAddedRoles] = useState<string[]>([]);
   const [roleInput, setRoleInput] = useState("");
   const [revokedPrivs, setRevokedPrivs] = useState<Set<string>>(new Set());
   const [addedPrivs, setAddedPrivs] = useState<string[]>([]);
+  // Object privileges: revoke keyed on "priv@schema.object"; adds are staged rows.
+  const [revokedObj, setRevokedObj] = useState<Set<string>>(new Set());
+  const [addedObj, setAddedObj] = useState<{ schema: string; object: string; priv: string }[]>([]);
+  const [objSchema, setObjSchema] = useState("");
+  const [objObject, setObjObject] = useState("");
+  const [objPriv, setObjPriv] = useState("");
   const [applyError, setApplyError] = useState<{ message: string; sql?: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const objKey = (o: { schema: string; object: string | null; privilege: string }) => `${o.privilege}@${o.schema}.${o.object ?? ""}`;
 
   const heldPrivs = useMemo(() => new Set(currentPrivs.map((p) => p.toUpperCase())), [currentPrivs]);
 
@@ -55,8 +71,16 @@ export function UserPrivilegesEditor({
     for (const r of addedRoles) out.push(dbaSql.grantRole(r, user, false) + ";");
     for (const p of revokedPrivs) if (ALL_SYS_PRIVS.has(p)) out.push(dbaSql.revokeSysPriv(p, user) + ";");
     for (const p of addedPrivs) if (ALL_SYS_PRIVS.has(p)) out.push(dbaSql.grantSysPriv(p, user) + ";");
+    // Object privileges
+    for (const o of currentObj) {
+      if (revokedObj.has(objKey(o))) {
+        const ref = o.object ? `${ident(o.schema)}.${ident(o.object)}` : `SCHEMA ${ident(o.schema)}`;
+        out.push(dbaSql.revokeObjPriv(o.privilege, ref, user) + ";");
+      }
+    }
+    for (const o of addedObj) out.push(dbaSql.grantObjPriv(o.priv, o.schema, o.object || null, user) + ";");
     return out;
-  }, [revokedRoles, addedRoles, revokedPrivs, addedPrivs, user]);
+  }, [revokedRoles, addedRoles, revokedPrivs, addedPrivs, revokedObj, addedObj, currentObj, user]);
 
   const dirty = statements.length > 0;
 
@@ -65,6 +89,9 @@ export function UserPrivilegesEditor({
     setAddedRoles([]);
     setRevokedPrivs(new Set());
     setAddedPrivs([]);
+    setRevokedObj(new Set());
+    setAddedObj([]);
+    setObjSchema(""); setObjObject(""); setObjPriv("");
     setRoleInput("");
     setApplyError(null);
   }
@@ -176,6 +203,54 @@ export function UserPrivilegesEditor({
               </Select>
             </div>
           ) : null}
+        </section>
+
+        {/* Object privileges */}
+        <section>
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Object privileges</p>
+          <div className="flex flex-wrap gap-1.5">
+            {currentObj.map((o) => {
+              const k = objKey(o);
+              const off = revokedObj.has(k);
+              const on = `${o.privilege} on ${o.schema}${o.object ? "." + o.object : ""}`;
+              return (
+                <button key={k} onClick={() => toggle(revokedObj, setRevokedObj, k)} title={off ? "Keep this grant" : "Revoke this grant"} className={cn("flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]", off ? "border-destructive/40 text-muted-foreground line-through" : "border-border text-foreground hover:border-destructive/50")}>
+                  {on} {off ? <Undo2 className="h-3 w-3" /> : <X className="h-3 w-3 text-muted-foreground" />}
+                </button>
+              );
+            })}
+            {addedObj.map((o, i) => (
+              <button key={`${objKey({ schema: o.schema, object: o.object, privilege: o.priv })}-${i}`} onClick={() => setAddedObj((a) => a.filter((_, j) => j !== i))} className="flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 font-mono text-[11px] text-primary" title="Remove (don't grant)">
+                {o.priv} on {o.schema}{o.object ? "." + o.object : ""} <X className="h-3 w-3" />
+              </button>
+            ))}
+            {!currentObj.length && !addedObj.length ? <span className="text-[12px] text-muted-foreground">No object privileges.</span> : null}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <input value={objSchema} onChange={(e) => setObjSchema(e.target.value)} placeholder="SCHEMA" className="h-7 w-28 rounded-md border border-border bg-transparent px-2 font-mono text-[11px] text-foreground outline-none focus:border-primary/50" />
+            <input value={objObject} onChange={(e) => setObjObject(e.target.value)} placeholder="TABLE (blank = whole schema)" className="h-7 w-52 rounded-md border border-border bg-transparent px-2 font-mono text-[11px] text-foreground outline-none focus:border-primary/50" />
+            <Select value={objPriv} onValueChange={setObjPriv}>
+              <SelectTrigger size="sm" className="h-7 w-36 text-[11px]"><SelectValue placeholder="Privilege…" /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>{objObject ? "Table / view" : "Schema"}</SelectLabel>
+                  {(objObject ? OBJ_PRIVS_TABLE : OBJ_PRIVS_SCHEMA).map((p) => <SelectItem key={p} value={p} className="font-mono text-[11px]">{p}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <button
+              onClick={() => {
+                const sc = objSchema.trim().toUpperCase();
+                if (!sc || !objPriv) return;
+                setAddedObj((a) => [...a, { schema: sc, object: objObject.trim().toUpperCase(), priv: objPriv }]);
+                setObjObject(""); setObjPriv("");
+              }}
+              disabled={!objSchema.trim() || !objPriv}
+              className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+            >
+              <Plus className="h-3.5 w-3.5" /> Grant
+            </button>
+          </div>
         </section>
 
         {dirty ? <p className="text-[11px] text-muted-foreground">{statements.length} statement{statements.length === 1 ? "" : "s"} pending — review or save.</p> : null}
