@@ -506,16 +506,26 @@ function DashboardView({
     setEditing(p);
   }
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1100);
-
-  useEffect(() => {
-    const el = containerRef.current;
+  // Width via CALLBACK ref: the grid container unmounts whenever the panel
+  // editor takes over the tab, and a once-bound observer stays attached to the
+  // dead element — a ~0 measurement from the unmount then poisons the width
+  // forever and every panel collapses onto column 0. Rebinding per element
+  // (and ignoring hidden/zero readings) fixes the "dashboard collapses after
+  // any edit" bug at the root.
+  const widthObserver = useRef<ResizeObserver | null>(null);
+  const containerRef = useCallback((el: HTMLDivElement | null) => {
+    widthObserver.current?.disconnect();
+    widthObserver.current = null;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    const apply = () => {
+      const w = el.clientWidth;
+      if (w > 60) setWidth(w); // hidden containers measure ~0 — never adopt that
+    };
+    const ro = new ResizeObserver(apply);
     ro.observe(el);
-    setWidth(el.clientWidth);
-    return () => ro.disconnect();
+    apply();
+    widthObserver.current = ro;
   }, []);
 
   const layout: LayoutItem[] = useMemo(
