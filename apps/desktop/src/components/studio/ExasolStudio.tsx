@@ -159,6 +159,7 @@ function tabTitleFromSql(sql: string): string {
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
+import { QueryProfileView, type ProfileData, type ProfilePart } from "@/features/workbench/QueryProfileView";
 import {
   errorMessage,
   ipc,
@@ -178,7 +179,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile";
 
 type SqlTab = {
   id: string;
@@ -209,6 +210,8 @@ type SqlTab = {
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
   /** For artifact tabs — the rendered HTML document. */
   artifactHtml?: string;
+  /** For profile tabs — the computed query-performance analysis. */
+  profileData?: ProfileData;
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -248,6 +251,7 @@ const TAB_ICON: Record<TabView, IconName> = {
   notebook: "notebook",
   skills: "skills",
   aiSettings: "brain-circuit",
+  profile: "clock-dashed-half",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -3264,28 +3268,82 @@ export function ExasolStudio({
   // "Dashboards" from a result: add this query as a panel to the dashboard for
   // its schema — one dashboard per schema, so every query against WEATHER lands
   // on the WEATHER dashboard (created on first use, appended to after that).
-  // Per-query performance profile (issue ask): Exasol has no EXPLAIN — run the
-  // statement with session profiling ON in ONE batch (same session), then read
-  // the step-by-step parts from EXA_STATISTICS. Opens as a normal query tab so
-  // the run is visible, editable, and logged in SQL history like everything else.
-  function profileQuery(sql: string) {
+  // Per-query performance ANALYSIS: Exasol has no EXPLAIN and doesn't tell you
+  // where a query slows down — so WE compute it. One batch (same session) runs
+  // the statement with profiling ON, reads the engine's step parts, and a
+  // dedicated tab renders time-share, bottleneck callouts, and tuning advice.
+  const [profiling, setProfiling] = useState(false);
+  const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
+  async function profileQuery(sql: string) {
     const stmt = sql.trim().replace(/;\s*$/, "");
-    if (!stmt) return;
+    if (!stmt || !connection || profiling) return;
     const script = [
-      "-- Query performance profile — runs your statement with profiling ON,",
-      "-- then shows the engine's step-by-step execution parts (EXA_STATISTICS).",
       "ALTER SESSION SET PROFILE = 'ON';",
       stmt + ";",
       "ALTER SESSION SET PROFILE = 'OFF';",
       "FLUSH STATISTICS;",
-      "SELECT STMT_ID, PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME,",
+      "SELECT COMMAND_NAME, STMT_ID, PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME,",
       "       OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK, HDD_READ, NET",
       "FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY",
       "WHERE SESSION_ID = CURRENT_SESSION",
       "ORDER BY STMT_ID DESC, PART_ID",
-      "LIMIT 100;",
+      "LIMIT 300;",
     ].join("\n");
-    void openBuiltSql(script, true, "Profile");
+    setProfiling(true);
+    try {
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, script, 500, true);
+      const bad = res.results.find((r) => r.error);
+      if (bad?.error) {
+        pushNotification("warning", "Profiling failed", bad.error);
+        return;
+      }
+      const sets = res.results.filter((r) => r.kind === "resultSet" && r.columns.length >= 14);
+      const prof = sets[sets.length - 1];
+      if (!prof || !prof.rows.length) {
+        pushNotification("warning", "Profiling returned nothing", "EXA_STATISTICS had no profile parts for this session — the statistics user may lack access.");
+        return;
+      }
+      const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
+      type Raw = { cmd: string; stmtId: number; part: ProfilePart };
+      const raws: Raw[] = prof.rows.map((r) => ({
+        cmd: String(r[0] ?? ""),
+        stmtId: Number(r[1] ?? 0),
+        part: {
+          partId: Number(r[2] ?? 0), name: String(r[3] ?? ""), info: r[4] === null ? null : String(r[4]),
+          schema: r[5] === null ? null : String(r[5]), object: r[6] === null ? null : String(r[6]),
+          objectRows: num(r[7]), outRows: num(r[8]), duration: num(r[9]), cpu: num(r[10]),
+          tempRam: num(r[11]), hddRead: num(r[12]), net: num(r[13]),
+        },
+      }));
+      // Our statement = the newest stmt whose command matches the SQL's verb
+      // (falls back to the newest non-ALTER/FLUSH statement).
+      const verb = (stmt.match(/^[a-zA-Z]+/)?.[0] ?? "SELECT").toUpperCase();
+      const candidates = [...new Set(raws.map((r) => r.stmtId))].sort((a, b) => b - a);
+      const targetId =
+        candidates.find((id) => raws.some((r) => r.stmtId === id && r.cmd.toUpperCase().startsWith(verb))) ??
+        candidates.find((id) => raws.some((r) => r.stmtId === id && !/^(ALTER|FLUSH|COMMIT)/i.test(r.cmd))) ??
+        candidates[0];
+      const parts = raws.filter((r) => r.stmtId === targetId).map((r) => r.part).sort((a, b) => a.partId - b.partId);
+      const data: ProfileData = { sql: stmt, script, commandName: raws.find((r) => r.stmtId === targetId)?.cmd ?? verb, parts };
+      tabCounter.current += 1;
+      const tab: SqlTab = {
+        id: `tab-prof-${Date.now()}-${tabCounter.current}`,
+        title: "Performance",
+        view: "profile",
+        sql: "",
+        response: null,
+        execError: null,
+        profileData: data,
+      };
+      updateTabs(connKey, (l) => [...l, tab]);
+      setActiveIdByConn((a) => ({ ...a, [connKey]: tab.id }));
+      loadHistory();
+    } catch (e) {
+      pushNotification("warning", "Profiling failed", errorMessage(e));
+    } finally {
+      setProfiling(false);
+    }
   }
 
   const addingDashRef = useRef(false);
@@ -3658,6 +3716,7 @@ export function ExasolStudio({
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
           activeTab.view !== "aiSettings" &&
+          activeTab.view !== "profile" &&
           activeTab.view !== "artifact" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -3978,6 +4037,10 @@ export function ExasolStudio({
           ) : activeTab.view === "aiSettings" ? (
             <div className="min-h-0 flex-1">
               <AiProvidersWindow standalone={false} />
+            </div>
+          ) : activeTab.view === "profile" && activeTab.profileData ? (
+            <div className="min-h-0 flex-1">
+              <QueryProfileView data={activeTab.profileData} onOpenSql={openSqlTab} />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
