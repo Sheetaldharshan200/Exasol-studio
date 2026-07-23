@@ -56,7 +56,10 @@ export function DatabaseTree({
       setStates((s) => ({ ...s, [node.id]: { status: "done", children: [] } }));
       return;
     }
-    setStates((s) => ({ ...s, [node.id]: { status: "loading", children: [] } }));
+    // Stale-while-revalidate: keep the previous children on screen while the
+    // reload runs — clearing them collapsed the tree to a skeleton and back,
+    // which read as a flicker on every refresh.
+    setStates((s) => ({ ...s, [node.id]: { status: "loading", children: s[node.id]?.children ?? [] } }));
     node
       .load()
       .then((children) => {
@@ -186,8 +189,11 @@ export function DatabaseTree({
       );
       if (open && st) {
         const childTrail = [...trail, !isLast];
-        if (st.status === "loading") {
+        if (st.status === "loading" && st.children.length === 0) {
           rows.push(<Placeholder key={node.id + ":l"} trail={childTrail} kind="loading" />);
+        } else if (st.status === "loading") {
+          // Refreshing with existing data — keep it visible, no skeleton swap.
+          walk(st.children, childTrail);
         } else if (st.status === "error") {
           rows.push(
             <Placeholder key={node.id + ":e"} trail={childTrail} kind="error" text={st.error} />,

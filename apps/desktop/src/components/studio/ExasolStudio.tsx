@@ -212,6 +212,8 @@ type SqlTab = {
   artifactHtml?: string;
   /** For profile tabs — the computed query-performance analysis. */
   profileData?: ProfileData;
+  /** Result pagination (0-based) for single-SELECT tabs. */
+  resultPage?: number;
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -1882,7 +1884,7 @@ export function ExasolStudio({
         }
       }
       const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
-      patchTab(activeTab.id, { response: res, execError: null });
+      patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       refreshSqlCatalog();
       window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
@@ -2669,6 +2671,7 @@ export function ExasolStudio({
               ? {
                   ...t,
                   response: result,
+                  resultPage: 0,
                   execError: result.success ? null : result.results.find((r) => r.error)?.error ?? "Statement failed.",
                 }
               : t,
@@ -3067,6 +3070,7 @@ export function ExasolStudio({
           const failed = result.results.find((r) => r.error);
           patchTab(activeTab.id, {
             response: result,
+                  resultPage: 0,
             execError: failed?.error ?? "Statement failed.",
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
           });
@@ -3074,6 +3078,7 @@ export function ExasolStudio({
         } else {
           patchTab(activeTab.id, {
             response: result,
+                  resultPage: 0,
             execError: null,
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true },
           });
@@ -3384,6 +3389,28 @@ export function ExasolStudio({
       pushNotification("warning", "Profiling failed", errorMessage(e));
     } finally {
       setProfiling(false);
+    }
+  }
+
+  // Server-side result paging for single-SELECT tabs: page 0 is the plain run
+  // (the truncated flag = "has next"); later pages wrap the query with
+  // ORDER BY 1 + LIMIT/OFFSET — Exasol requires a deterministic order for
+  // OFFSET, so pages beyond the first are ordered by the first column.
+  const [paging, setPaging] = useState(false);
+  async function loadResultPage(page: number) {
+    if (!connection || paging || page < 0) return;
+    const stmts = splitStatements(activeTab.sql);
+    if (stmts.length !== 1) return;
+    const base = stmts[0].text.trim().replace(/;\s*$/, "");
+    const sql = page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
+    setPaging(true);
+    try {
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, false);
+      patchTab(activeTab.id, { response: res, execError: res.success ? null : res.results.find((r) => r.error)?.error ?? null, resultPage: page });
+    } catch (e) {
+      pushNotification("warning", "Page load failed", errorMessage(e));
+    } finally {
+      setPaging(false);
     }
   }
 
@@ -4244,11 +4271,37 @@ export function ExasolStudio({
                     ))}
                     {lastResult ? (
                       <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                        {lastResult.kind === "resultSet" ? (
-                          <>
-                            {lastResult.rowCount} rows{lastResult.truncated ? " (truncated)" : ""}
-                          </>
-                        ) : null}
+                        {lastResult.kind === "resultSet" ? (() => {
+                          const page = activeTab.resultPage ?? 0;
+                          const single = splitStatements(activeTab.sql).length === 1 && /^select/i.test(activeTab.sql.trim());
+                          const from = page * maxRows + (lastResult.rowCount ? 1 : 0);
+                          const to = page * maxRows + lastResult.rowCount;
+                          const hasNext = lastResult.truncated;
+                          if (!single || (page === 0 && !hasNext)) {
+                            return <>{lastResult.rowCount} rows{lastResult.truncated ? " (truncated)" : ""}</>;
+                          }
+                          return (
+                            <span className="flex items-center gap-1" title="Pages beyond the first are ordered by the first column — Exasol requires a deterministic order for OFFSET">
+                              Rows {from.toLocaleString()}–{to.toLocaleString()}
+                              <button
+                                onClick={() => void loadResultPage(page - 1)}
+                                disabled={page === 0 || paging}
+                                aria-label="Previous page"
+                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
+                              >
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => void loadResultPage(page + 1)}
+                                disabled={!hasNext || paging}
+                                aria-label="Next page"
+                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
+                              >
+                                {paging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              </button>
+                            </span>
+                          );
+                        })() : null}
                         · {activeTab.response?.totalElapsedMs ?? 0} ms
                       </span>
                     ) : null}
