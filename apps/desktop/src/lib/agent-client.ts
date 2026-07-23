@@ -300,13 +300,15 @@ export type Dashboard = {
   id: string;
   title: string;
   description: string;
+  /** Optional grouping in the dashboards list (e.g. "System"). */
+  group?: string;
   panels: DashPanel[];
   /** Auto-refresh cadence in ms (0/undefined = off). Makes the dashboard live:
    *  every panel re-runs its query on this interval. */
   refreshMs?: number;
 };
 
-export type DashboardMeta = { id: string; title: string; description: string; panels: number; updatedAt: number };
+export type DashboardMeta = { id: string; title: string; description: string; group?: string; panels: number; updatedAt: number };
 
 export type Skill = { name: string; description: string; body: string; source: "builtin" | "user" };
 

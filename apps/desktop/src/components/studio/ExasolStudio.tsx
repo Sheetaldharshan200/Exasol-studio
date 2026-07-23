@@ -51,6 +51,7 @@ import {
   Waypoints,
   X,
   Zap,
+  Gauge,
 } from "lucide-react";
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -1142,6 +1143,7 @@ function ResultsGrid({
   result,
   error,
   onChart,
+  onProfile,
   editable,
   onOpenSql,
   onCommitEdits,
@@ -1152,6 +1154,8 @@ function ResultsGrid({
   result: StatementResult | null;
   error: string | null;
   onChart?: () => void;
+  /** Profile the tab's SQL: step-by-step engine parts from EXA_STATISTICS. */
+  onProfile?: () => void;
   /** Present when this result maps to a single updatable table. */
   editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
   onOpenSql?: (sql: string, title?: string) => void;
@@ -1242,6 +1246,15 @@ function ResultsGrid({
             className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <BarChart3 className="h-3.5 w-3.5" /> Add to dashboard
+          </button>
+        ) : null}
+        {onProfile ? (
+          <button
+            onClick={onProfile}
+            title="Run this query with profiling ON and show the engine's step-by-step execution parts"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Gauge className="h-3.5 w-3.5" /> Performance
           </button>
         ) : null}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
@@ -3251,6 +3264,30 @@ export function ExasolStudio({
   // "Dashboards" from a result: add this query as a panel to the dashboard for
   // its schema — one dashboard per schema, so every query against WEATHER lands
   // on the WEATHER dashboard (created on first use, appended to after that).
+  // Per-query performance profile (issue ask): Exasol has no EXPLAIN — run the
+  // statement with session profiling ON in ONE batch (same session), then read
+  // the step-by-step parts from EXA_STATISTICS. Opens as a normal query tab so
+  // the run is visible, editable, and logged in SQL history like everything else.
+  function profileQuery(sql: string) {
+    const stmt = sql.trim().replace(/;\s*$/, "");
+    if (!stmt) return;
+    const script = [
+      "-- Query performance profile — runs your statement with profiling ON,",
+      "-- then shows the engine's step-by-step execution parts (EXA_STATISTICS).",
+      "ALTER SESSION SET PROFILE = 'ON';",
+      stmt + ";",
+      "ALTER SESSION SET PROFILE = 'OFF';",
+      "FLUSH STATISTICS;",
+      "SELECT STMT_ID, PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME,",
+      "       OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK, HDD_READ, NET",
+      "FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY",
+      "WHERE SESSION_ID = CURRENT_SESSION",
+      "ORDER BY STMT_ID DESC, PART_ID",
+      "LIMIT 100;",
+    ].join("\n");
+    void openBuiltSql(script, true, "Profile");
+  }
+
   const addingDashRef = useRef(false);
   async function sendResultToDashboard(sql: string) {
     const trimmed = (sql ?? "").trim();
@@ -4125,7 +4162,7 @@ export function ExasolStudio({
                               #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                             </div>
                             <div className="h-[280px]">
-                              <ResultsGrid result={r} error={r.error} onChart={() => void sendResultToDashboard(activeTab.sql)} />
+                              <ResultsGrid result={r} error={r.error} onChart={() => void sendResultToDashboard(activeTab.sql)} onProfile={() => profileQuery(activeTab.sql)} />
                             </div>
                           </div>
                         ))}
@@ -4135,6 +4172,7 @@ export function ExasolStudio({
                         result={lastResult}
                         error={lastResult?.error ?? null}
                         onChart={() => void sendResultToDashboard(activeTab.sql)}
+                        onProfile={() => profileQuery(activeTab.sql)}
                         editable={editTable}
                         onOpenSql={openSqlTab}
                         onCommitEdits={commitEdits}
