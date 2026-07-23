@@ -1760,10 +1760,45 @@ function stripToolJson(s: string): string {
   return out;
 }
 
+/**
+ * Reflow a GFM table the model collapsed onto ONE line (header + `|---|`
+ * separator + all rows glued together) back into real rows, so it renders as a
+ * table instead of a jumbled line. Detects a line whose separator cells sit
+ * inline with data, then re-chunks every cell into rows of column-count. Lines
+ * without an inline separator (i.e. already-correct tables) are left untouched.
+ */
+function reflowMarkdownTables(text: string): string {
+  if (!text.includes("|") || !/\|\s*:?-{3,}:?\s*\|/.test(text)) return text;
+  return text
+    .split("\n")
+    .map((line) => {
+      // Only collapsed lines: a separator cell AND data cells after it, same line.
+      if (!/\|\s*:?-{3,}:?\s*\|.*\|.*\S/.test(line)) return line;
+      const cells = line.split("|").map((c) => c.trim()).filter((c) => c !== "");
+      const isSep = (c: string) => /^:?-{3,}:?$/.test(c);
+      const firstSep = cells.findIndex(isSep);
+      if (firstSep < 1) return line; // need at least one header cell before it
+      let cols = 0;
+      while (cells[firstSep + cols] && isSep(cells[firstSep + cols])) cols++;
+      if (cols < 1 || firstSep !== cols) return line; // header count must equal sep count
+      const header = cells.slice(0, cols);
+      const body = cells.slice(cols * 2); // skip header + separator
+      const rows: string[] = [`| ${header.join(" | ")} |`, `| ${header.map(() => "---").join(" | ")} |`];
+      for (let i = 0; i < body.length; i += cols) {
+        const row = body.slice(i, i + cols);
+        while (row.length < cols) row.push("");
+        rows.push(`| ${row.join(" | ")} |`);
+      }
+      return rows.join("\n");
+    })
+    .join("\n");
+}
+
 function cleanAssistant(raw: string): string {
   if (!raw) return raw;
-  if (!hasLeakedToolCall(raw)) return raw;
-  let t = stripToolJson(raw);
+  const reflowed = reflowMarkdownTables(raw);
+  if (!hasLeakedToolCall(reflowed)) return reflowed;
+  let t = stripToolJson(reflowed);
   // The misfire tangled the fences (JSON + prose in one block) — strip fence
   // markers so the remaining prose/list renders as normal chat. Remove opening
   // fences (```lang\n) first, then any bare ``` / '''. The two-step order keeps
