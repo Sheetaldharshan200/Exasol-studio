@@ -550,6 +550,7 @@ const PLACEHOLDERS: Record<"favorites" | "git" | "marketplace", { icon: IconName
 function ConnectionSection({
   connection,
   focused,
+  live,
   treeKey,
   collapsed,
   onToggleCollapse,
@@ -565,6 +566,8 @@ function ConnectionSection({
 }: {
   connection: ActiveConnection;
   focused: boolean;
+  /** Server reachability: true = up, false = down, undefined = probing. */
+  live?: boolean;
   treeKey: number;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -606,10 +609,15 @@ function ConnectionSection({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           title={`${connection.profile.host}:${connection.profile.port}`}
         >
+          {/* Status dot = liveness, not focus: solid green while the server
+              answers, red if a connected server stops responding. */}
           <span
+            title={live === false ? "Server not responding" : "Connected — server is up"}
             className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full",
-              focused ? "bg-primary shadow-[0_0_6px_var(--primary)]" : "bg-primary/50",
+              "h-2 w-2 shrink-0 rounded-full",
+              live === false
+                ? "bg-destructive shadow-[0_0_6px_var(--destructive)]"
+                : "bg-emerald-500 shadow-[0_0_6px_#10b981]",
             )}
           />
           <Database className={cn("h-3.5 w-3.5 shrink-0", focused ? "text-primary" : "text-muted-foreground")} />
@@ -841,6 +849,41 @@ function Sidebar({
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Server reachability per profile id (TCP ping, refreshed every 20s):
+  // green dot = server up, red = a live connection whose server went away,
+  // grey = saved server that is not running. `undefined` = not probed yet.
+  const [reachable, setReachable] = useState<Record<string, boolean>>({});
+  const pingTargets = useMemo(
+    () =>
+      [
+        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port })),
+        ...profiles
+          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_"))
+          .map((p) => ({ id: p.id, host: p.host, port: p.port })),
+      ],
+    [connections, profiles],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const probe = () => {
+      for (const t of pingTargets) {
+        ipc
+          .pingServer(t.host, t.port)
+          .then((r) => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === r.reachable ? prev : { ...prev, [t.id]: r.reachable }));
+          })
+          .catch(() => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === false ? prev : { ...prev, [t.id]: false }));
+          });
+      }
+    };
+    probe();
+    const timer = window.setInterval(probe, 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pingTargets]);
   const hasConnections = connections.length > 0;
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
   const connectedIds = new Set(connections.map((c) => c.profile.id));
@@ -926,6 +969,13 @@ function Sidebar({
             className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
             title={`Connect to ${p.name} (${p.host}:${p.port})`}
           >
+            <span
+              title={reachable[p.id] ? "Server is running — not connected" : "Server not running"}
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                reachable[p.id] ? "bg-emerald-500/80" : "border border-muted-foreground/50 bg-transparent",
+              )}
+            />
             <Database className={cn("h-3.5 w-3.5 shrink-0", isLocal ? "text-primary" : "text-muted-foreground")} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] text-foreground">{p.name}</div>
@@ -1063,6 +1113,7 @@ function Sidebar({
               key={conn.profile.id}
               connection={conn}
               focused={conn.profile.id === activeProfileId}
+              live={reachable[conn.profile.id]}
               treeKey={treeKeys[conn.profile.id] ?? 0}
               collapsed={collapsed.has(conn.profile.id)}
               onToggleCollapse={() =>
@@ -1268,16 +1319,19 @@ function ResultsGrid({
         </span>
       </div>
       <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
-        <table ref={roTableRef} className="w-full border-collapse border border-border">
+        {/* border-separate (NOT collapse) so the sticky header cells carry their
+            own opaque background + border — with border-collapse the row bg and
+            borders stay behind and scrolling rows show through the header. */}
+        <table ref={roTableRef} className="w-full border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-secondary">
-              <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
+            <tr>
+              <th className="border-y border-r border-l border-border bg-secondary px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
                 #
               </th>
               {result.columns.map((col) => (
                 <th
                   key={col.name}
-                  className="border-r border-b border-border px-3 py-1.5 text-left font-medium text-foreground"
+                  className="border-y border-r border-border bg-secondary px-3 py-1.5 text-left font-medium text-foreground"
                 >
                   {col.name}
                   <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
@@ -1294,7 +1348,7 @@ function ResultsGrid({
                 title={canEdit ? "Double-click a cell to edit it" : undefined}
                 className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", canEdit && "cursor-cell")}
               >
-                <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
+                <td className="border-r border-b border-l border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
                   {rowIndex + 1}
                 </td>
                 {row.map((cell, cellIndex) => (
@@ -1571,28 +1625,48 @@ function HistoryDock({
               {entries.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
               ) : (
-                <table className="w-full text-[12px]">
-                  <thead className="sticky top-0 bg-secondary">
+                // Execution log, DB-tool style: every run — success or failure —
+                // with its status, command, timing, rows, and the FULL error
+                // message in its own column (not buried in a tooltip).
+                <table className="w-full table-fixed text-[12px]">
+                  <colgroup>
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 74 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 70 }} />
+                    <col style={{ width: 64 }} />
+                    <col style={{ width: "34%" }} />
+                    <col />
+                  </colgroup>
+                  <thead className="sticky top-0 z-10 bg-secondary">
                     <tr className="text-left text-muted-foreground">
-                      {["Time", "Statement", "Rows", "Elapsed", "Status"].map((h) => (
-                        <th key={h} className="border-b border-border px-3 py-1.5 font-medium">{h}</th>
+                      {["Time", "Status", "Command", "Exec", "Rows", "Message", "SQL"].map((h) => (
+                        <th key={h} className="border-b border-border px-2.5 py-1.5 font-medium">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {entries.map((entry) => (
-                      <tr key={entry.id} className="cursor-pointer border-b border-border hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
-                        <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
-                        <td className="max-w-[520px] truncate px-3 py-1.5 font-mono text-foreground">{entry.sql.replace(/\s+/g, " ").trim()}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{entry.rowCount}</td>
-                        <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{entry.elapsedMs} ms</td>
-                        <td className="px-3 py-1.5">
-                          <span className={cn("rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
-                            {entry.success ? "ok" : "error"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {entries.map((entry) => {
+                      const verb = (entry.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
+                      return (
+                        <tr key={entry.id} className="cursor-pointer border-b border-border align-top hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
+                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
+                          <td className="px-2.5 py-1.5">
+                            <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+                              {entry.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                              {entry.success ? "ok" : "FAILED"}
+                            </span>
+                          </td>
+                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">{verb}{entry.statementCount > 1 ? ` ×${entry.statementCount}` : ""}</td>
+                          <td className="px-2.5 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{entry.elapsedMs} ms</td>
+                          <td className="px-2.5 py-1.5 text-right font-mono">{entry.rowCount}</td>
+                          <td className={cn("px-2.5 py-1.5 text-[11.5px] leading-snug break-words", entry.error ? "text-destructive" : "text-muted-foreground")} title={entry.error ?? ""}>
+                            {entry.error ?? "—"}
+                          </td>
+                          <td className="truncate px-2.5 py-1.5 font-mono text-foreground" title={entry.sql}>{entry.sql.replace(/\s+/g, " ").trim()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
