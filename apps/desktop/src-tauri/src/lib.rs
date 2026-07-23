@@ -1,4 +1,5 @@
 mod agent;
+mod ai_clients;
 mod terminal;
 mod updates;
 mod bucketfs;
@@ -113,6 +114,10 @@ pub fn run() {
             market::market_doc_file,
             market::open_external,
             market::reveal_path,
+            ai_clients::list_ai_clients,
+            ai_clients::connect_ai_client,
+            ai_clients::disconnect_ai_client,
+            ai_clients::ai_client_snippet,
             market::exasol_local_ctl,
             bucketfs::bucketfs_list,
             bucketfs::bucketfs_upload,

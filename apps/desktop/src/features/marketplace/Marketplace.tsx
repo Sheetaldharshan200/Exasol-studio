@@ -44,6 +44,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
+import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
 type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
 type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "semantic-views" | "bundled" | "reference";
@@ -935,6 +936,18 @@ export function Marketplace() {
               </DropdownMenu>
             );
           })()}
+          {/* AI clients — hook Claude/Codex/Cursor/… up to Exasol via the
+              bundled read-only MCP server (the starter kit's mcp-setup, in-app). */}
+          <button
+            onClick={() => setNav("ai-clients")}
+            className={cn(
+              "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+              nav === "ai-clients" ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <BxIcon name="cognition" className={cn("h-3.5 w-3.5 shrink-0", nav === "ai-clients" ? "text-primary" : "")} />
+            <span className="truncate">AI clients</span>
+          </button>
         </nav>
 
         {/* Content */}
@@ -978,7 +991,9 @@ export function Marketplace() {
               </div>
             </div>
 
-            {nav === "recommended" ? (
+            {nav === "ai-clients" ? (
+              <AiClientsTab />
+            ) : nav === "recommended" ? (
               <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;

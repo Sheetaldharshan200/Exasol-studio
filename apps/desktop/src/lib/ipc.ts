@@ -269,6 +269,15 @@ export type MarketCatalog = {
   items: Record<string, CatalogEntry>;
 };
 
+export type AiClientStatus = {
+  id: string;
+  name: string;
+  detected: boolean;
+  connected: boolean;
+  configPath: string;
+  auto: boolean;
+};
+
 export type VsPrereqs = {
   adapters: { schema: string; name: string }[];
   connections: string[];
@@ -446,6 +455,12 @@ export const ipc = {
   driverStatus: (driverId: string) =>
     call<{ driverId: string; runtime: string; ready: boolean; supported: boolean; hint: string }>("driver_status", { driverId }),
   driverSetup: (driverId: string) => call<{ ok: boolean }>("driver_setup", { driverId }),
+
+  // External AI clients ↔ the bundled read-only Exasol MCP server.
+  listAiClients: () => call<AiClientStatus[]>("list_ai_clients"),
+  connectAiClient: (clientId: string) => call<AiClientStatus>("connect_ai_client", { clientId }),
+  disconnectAiClient: (clientId: string) => call<AiClientStatus>("disconnect_ai_client", { clientId }),
+  aiClientSnippet: (clientId: string) => call<string>("ai_client_snippet", { clientId }),
   marketDocFile: (repo: string, path: string) => call<string | null>("market_doc_file", { repo, path }),
   openExternal: (url: string) => call<null>("open_external", { url }),
   gitStatus: () => call<GitStatus>("git_status"),
