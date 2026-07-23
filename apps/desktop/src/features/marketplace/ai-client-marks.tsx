@@ -1,4 +1,5 @@
-import { Code2, SquareTerminal } from "lucide-react";
+import { Code2 } from "lucide-react";
+import { ProviderMark } from "@/features/assistant/provider-marks";
 
 /**
  * Brand marks for the AI-clients tab. Path data comes from Simple Icons (CC0 —
@@ -32,6 +33,6 @@ export function AiClientMark({ clientId, className }: { clientId: string; classN
       </svg>
     );
   }
-  if (clientId === "codex") return <SquareTerminal className={className} />;
+  if (clientId === "codex") return <ProviderMark providerId="openai" className={className} />;
   return <Code2 className={className} />; // vscode-copilot + unknowns
 }

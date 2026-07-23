@@ -68,7 +68,22 @@ export type ReplayItem =
   | { kind: "tool"; id: string; name: string; args: unknown; done: true; ok: boolean; summary?: string }
   | { kind: "perm"; id: string; tool: string; summary: string; detail: string; result?: boolean };
 
+/** In the web build there is no Tauri bridge — talk to a hosted agent-core
+ *  directly over HTTP (VITE_AGENT_URL, e.g. https://agent.example.com). */
+const AGENT_URL = (import.meta.env.VITE_AGENT_URL as string | undefined)?.replace(/\/$/, "");
+const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 async function api<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
+  if (!inTauri()) {
+    if (!AGENT_URL) throw new Error("The AI assistant needs a hosted backend — this web demo runs without one.");
+    const res = await fetch(`${AGENT_URL}/v1${path}`, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: body === undefined || body === null ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`agent backend ${res.status}`);
+    return (await res.json()) as T;
+  }
   return invoke<T>("agent_api", { path, method, body: body ?? null });
 }
 
