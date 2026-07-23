@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Boxes, Check, GraduationCap, Loader2, Plus, Sparkles, Table2, Wrench, X } from "lucide-react";
+import { BarChart3, Boxes, Check, GraduationCap, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { agent, skills as skillsApi } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +12,16 @@ import { cn } from "@/lib/utils";
  */
 type SkillDef = { id: string; name: string; desc: string; body: string };
 type Role = { id: string; name: string; icon: typeof Sparkles; blurb: string; skills: SkillDef[] };
+/** User-authored pack (persisted locally; the skills themselves live in the agent). */
+type StoredPack = { id: string; name: string; blurb: string; skills: SkillDef[] };
+const PACKS_KEY = "exasol-custom-skill-packs";
+function loadPacks(): StoredPack[] {
+  try {
+    return JSON.parse(window.localStorage.getItem(PACKS_KEY) || "[]") as StoredPack[];
+  } catch {
+    return [];
+  }
+}
 
 const ROLES: Role[] = [
   {
@@ -71,7 +82,12 @@ export function SkillsTab() {
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ name: "", desc: "", body: "" });
+  const [draft, setDraft] = useState({ name: "", desc: "", body: "", pack: "", newPack: "" });
+  const [customPacks, setCustomPacks] = useState<StoredPack[]>(() => loadPacks());
+  const persistPacks = (next: StoredPack[]) => {
+    setCustomPacks(next);
+    window.localStorage.setItem(PACKS_KEY, JSON.stringify(next));
+  };
   // Kit-style pack modal: click a role card to see the skills inside.
   const [packModal, setPackModal] = useState<(typeof ROLES)[number] | null>(null);
 
@@ -130,18 +146,40 @@ export function SkillsTab() {
   async function addCustom() {
     const name = draft.name.trim();
     if (!name || !draft.body.trim()) return;
+    if (draft.pack === "__new" && !draft.newPack.trim()) return;
     setBusy("__new");
     try {
       const id = name.toLowerCase().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "") || "skill";
-      await skillsApi.save(id, draft.desc.trim() || name, draft.body.trim());
+      const desc = draft.desc.trim() || name;
+      await skillsApi.save(id, desc, draft.body.trim());
       await setDefault(id, true);
-      setDraft({ name: "", desc: "", body: "" });
+      // File the skill into a custom pack (existing or new) if one was chosen.
+      const skill: SkillDef = { id, name, desc, body: draft.body.trim() };
+      if (draft.pack === "__new") {
+        const packName = draft.newPack.trim();
+        const packId = packName.toLowerCase().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "") || "pack";
+        const existing = customPacks.find((cp) => cp.id === packId);
+        persistPacks(
+          existing
+            ? customPacks.map((cp) => (cp.id === packId ? { ...cp, skills: [...cp.skills.filter((k) => k.id !== id), skill] } : cp))
+            : [...customPacks, { id: packId, name: packName, blurb: "Custom pack", skills: [skill] }],
+        );
+      } else if (draft.pack) {
+        persistPacks(customPacks.map((cp) => (cp.id === draft.pack ? { ...cp, skills: [...cp.skills.filter((k) => k.id !== id), skill] } : cp)));
+      }
+      setDraft({ name: "", desc: "", body: "", pack: "", newPack: "" });
       setAdding(false);
       await refresh();
     } finally {
       setBusy(null);
     }
   }
+
+  // Built-in role packs + the user's own packs, one grid.
+  const allPacks: (Role & { custom?: boolean })[] = [
+    ...ROLES,
+    ...customPacks.map((cp) => ({ ...cp, icon: Sparkles, custom: true as const })),
+  ];
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
@@ -176,6 +214,19 @@ export function SkillsTab() {
               <div className="space-y-2">
                 <input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Name (e.g. Finance analyst)" className="h-9 w-full rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
                 <input value={draft.desc} onChange={(e) => setDraft((d) => ({ ...d, desc: e.target.value }))} placeholder="One-line description" className="h-9 w-full rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
+                <div className="flex items-center gap-2">
+                  <Select value={draft.pack || "__none"} onValueChange={(v) => setDraft((d) => ({ ...d, pack: v === "__none" ? "" : v }))}>
+                    <SelectTrigger className="h-9 w-56 text-[12.5px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">No pack (standalone)</SelectItem>
+                      {customPacks.map((cp) => <SelectItem key={cp.id} value={cp.id}>{cp.name}</SelectItem>)}
+                      <SelectItem value="__new">New pack…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {draft.pack === "__new" ? (
+                    <input value={draft.newPack} onChange={(e) => setDraft((d) => ({ ...d, newPack: e.target.value }))} placeholder="Pack name" className="h-9 flex-1 rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
+                  ) : null}
+                </div>
                 <textarea value={draft.body} onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} rows={6} placeholder="Instructions for the agent — how to behave for this role…" className="w-full resize-none rounded-lg border border-border bg-panel p-3 font-mono text-[12px] outline-none [scrollbar-width:thin]" />
                 <div className="flex justify-end">
                   <button onClick={() => void addCustom()} disabled={busy === "__new" || !draft.name.trim() || !draft.body.trim()} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3.5 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
@@ -189,7 +240,7 @@ export function SkillsTab() {
           {/* Role packs — marketplace-kit style: + activates the whole pack,
               clicking the card shows the skills inside. */}
           <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-            {ROLES.map((role) => {
+            {allPacks.map((role) => {
               const Icon = role.icon;
               const allOn = role.skills.every((sk) => active.has(sk.id));
               const packBusy = busy === `pack:${role.id}`;
@@ -217,6 +268,15 @@ export function SkillsTab() {
                     >
                       {packBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : allOn ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
                     </button>
+                    {"custom" in role && role.custom ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); persistPacks(customPacks.filter((cp) => cp.id !== role.id)); }}
+                        title="Remove this pack (its skills stay)"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
                   <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{role.blurb}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
