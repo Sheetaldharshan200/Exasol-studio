@@ -556,9 +556,9 @@ function ProvidersSection(props: {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void saveKey(p.id);
                     }}
-                    className="h-7 text-xs"
+                    className="h-9 flex-1 rounded-lg text-[12.5px]"
                   />
-                  <Button size="sm" className="h-7" disabled={!drafts[p.id]?.trim() || saving === p.id} onClick={() => void saveKey(p.id)}>
+                  <Button size="sm" className="h-9 px-4" disabled={!drafts[p.id]?.trim() || saving === p.id} onClick={() => void saveKey(p.id)}>
                     {saving === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                   </Button>
                 </div>
