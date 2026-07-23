@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
-import { ProviderMark } from "@/features/assistant/provider-marks";
+import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import { Icon as BxIcon } from "@/components/ui/icon";
 
 /** Brain-circuit (Boxicons) with a lucide-compatible signature for SECTIONS. */
@@ -473,7 +473,11 @@ function ProvidersSection(props: {
                 >
                   <SelectTrigger size="sm" className="h-7 w-48 text-[11.5px]"><SelectValue placeholder={`${p.models.length} models…`} /></SelectTrigger>
                   <SelectContent>
-                    {p.models.map((m) => <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>)}
+                    {p.models.map((m) => (
+                      <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
+                        <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               ) : p.running ? (
@@ -532,7 +536,9 @@ function ProvidersSection(props: {
                       </SelectTrigger>
                       <SelectContent>
                         {p.models.map((m) => (
-                          <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>
+                          <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
+                            <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

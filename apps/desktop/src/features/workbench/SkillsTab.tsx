@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Boxes, Check, GraduationCap, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
+import { BarChart3, Boxes, Check, GraduationCap, Lightbulb, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { agent, skills as skillsApi } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
@@ -180,11 +180,35 @@ export function SkillsTab() {
     ...ROLES,
     ...customPacks.map((cp) => ({ ...cp, icon: Sparkles, custom: true as const })),
   ];
+  // User-arranged order (drag a card onto another to reorder), persisted locally.
+  const [packOrder, setPackOrder] = useState<string[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("exasol-skill-pack-order") || "[]") as string[];
+    } catch {
+      return [];
+    }
+  });
+  const orderIdx = (id: string) => {
+    const i = packOrder.indexOf(id);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  const orderedPacks = [...allPacks].sort((a, b) => orderIdx(a.id) - orderIdx(b.id));
+  const countOn = (r: Role) => r.skills.filter((sk) => active.has(sk.id)).length;
+  const addedPacks = orderedPacks.filter((p) => countOn(p) > 0);
+  const restPacks = orderedPacks.filter((p) => countOn(p) === 0);
+  const moveBefore = (src: string, dst: string) => {
+    if (src === dst) return;
+    const ids = orderedPacks.map((p) => p.id).filter((id) => id !== src);
+    const at = ids.indexOf(dst);
+    ids.splice(at === -1 ? ids.length : at, 0, src);
+    setPackOrder(ids);
+    window.localStorage.setItem("exasol-skill-pack-order", JSON.stringify(ids));
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <Sparkles className="h-4 w-4 text-primary" />
+        <Lightbulb className="h-4 w-4 text-primary" />
         <span className="font-heading text-[14px] font-bold text-foreground">Skills</span>
         <span className="text-xs text-muted-foreground">{loading ? "…" : `${active.size} active`}</span>
         <button
@@ -239,8 +263,8 @@ export function SkillsTab() {
 
           {/* Role packs — marketplace-kit style: + activates the whole pack,
               clicking the card shows the skills inside. */}
-          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-            {allPacks.map((role) => {
+          {(() => {
+            const renderPackCard = (role: Role & { custom?: boolean }) => {
               const Icon = role.icon;
               const allOn = role.skills.every((sk) => active.has(sk.id));
               const packBusy = busy === `pack:${role.id}`;
@@ -249,14 +273,21 @@ export function SkillsTab() {
                   key={role.id}
                   role="button"
                   tabIndex={0}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData("text/pack", role.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData("text/pack"); if (src) moveBefore(src, role.id); }}
                   onClick={() => setPackModal(role)}
                   onKeyDown={(e) => { if (e.key === "Enter") setPackModal(role); }}
-                  title="See the skills in this pack"
+                  title="See the skills in this pack — drag to rearrange"
                   className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
                 >
                   <div className="flex items-center gap-2">
                     <Icon className="h-5 w-5 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{role.name}</span>
+                    <span className="shrink-0 rounded bg-secondary/70 px-1.5 py-px font-mono text-[9.5px] text-muted-foreground" title="Skills added from this pack">
+                      {countOn(role)}/{role.skills.length}
+                    </span>
                     <button
                       onClick={(e) => { e.stopPropagation(); if (!allOn) void usePack(role); }}
                       disabled={allOn || packBusy}
@@ -286,8 +317,27 @@ export function SkillsTab() {
                   </div>
                 </div>
               );
-            })}
-          </div>
+            };
+            const grid = (list: (Role & { custom?: boolean })[]) => (
+              <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">{list.map(renderPackCard)}</div>
+            );
+            return (
+              <div className="space-y-6">
+                {addedPacks.length ? (
+                  <section>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Added</p>
+                    {grid(addedPacks)}
+                  </section>
+                ) : null}
+                {restPacks.length ? (
+                  <section>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Not added</p>
+                    {grid(restPacks)}
+                  </section>
+                ) : null}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

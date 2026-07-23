@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
   Check,
   ChevronRight,
@@ -304,7 +305,7 @@ export function ModelPicker({
             .flatMap((p) =>
               p.models
                 .filter((m) => !q || m.name.toLowerCase().includes(q))
-                .map((m) => ({ ref: `${p.id}/${m.id}`, name: m.name, tag: p.name })),
+                .map((m) => ({ ref: `${p.id}/${m.id}`, name: m.name, tag: p.name, pid: p.id, info: m })),
             );
           const missing = clouds.filter((p) => !p.configured);
           if (searching && rows.length === 0) return null;
@@ -325,8 +326,9 @@ export function ModelPicker({
                     model === r.ref ? "bg-secondary" : "hover:bg-secondary/60",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{r.name}</span>
-                  <span className="shrink-0 font-mono text-[9px] uppercase text-muted-foreground">{r.tag}</span>
+                  <ProviderMark providerId={r.pid} className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground" title={`${r.name} · ${r.tag}`}>{r.name}</span>
+                  <ModelBadges context={r.info.context} reasoning={r.info.reasoning} image={r.info.image} />
                   {model === r.ref ? <Check className="h-3 w-3 shrink-0 text-primary" /> : null}
                 </button>
               ))}
