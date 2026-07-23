@@ -10,6 +10,7 @@ import {
   Cpu,
   Database,
   Download,
+  Package,
   ExternalLink,
   FileCode2,
   LayoutGrid,
@@ -237,9 +238,11 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-odbc": "odbc",
 };
 
+// Horizontal tab order: Kits first, then the full catalog, categories, MCP &
+// AI clients, then status. (Kits-first per the marketplace redesign.)
 const NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "all", label: "All", icon: "marketplace" },
-  { key: "recommended", label: "Kit packs", icon: "package" },
+  { key: "recommended", label: "Kits", icon: "package" },
+  { key: "all", label: "Catalog", icon: "marketplace" },
   { key: "database", label: "Databases", icon: "database" },
   { key: "load", label: "Data & tools", icon: "spanner" },
   { key: "drivers", label: "Drivers", icon: "usb" },
@@ -570,7 +573,9 @@ export function Marketplace() {
   const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
-  const [nav, setNav] = useState<string>("all");
+  const [nav, setNav] = useState<string>("recommended");
+  // Kit "template" modal (Image-45 style): shows a kit's tools + install action.
+  const [kitModal, setKitModal] = useState<Pack | null>(null);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const isList = layout === "list";
   const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
@@ -870,39 +875,37 @@ export function Marketplace() {
           </button>
         </header>
 
-        {/* Two-pane: category rail + content */}
-        <div className="flex items-start gap-6">
-          {/* Category rail — sticky so it stays in view while the content scrolls */}
-          <nav className="sticky top-2 w-44 shrink-0 space-y-0.5 self-start rounded-xl border border-border/60 bg-panel/40 p-1.5">
-            {NAV.map((n) => {
-              const active = nav === n.key;
-              const count =
-                n.key === "installed"
-                  ? installedCount
-                  : n.key === "installing"
-                    ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
-                    : n.key === "updates"
-                      ? updatesAvailable
-                      : 0;
-              return (
-                <button
-                  key={n.key}
-                  onClick={() => setNav(n.key)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors",
-                    active ? "bg-primary/12 font-medium text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                  )}
-                >
-                  <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
-                  <span className="flex-1 truncate">{n.label}</span>
-                  {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
-                </button>
-              );
-            })}
-          </nav>
+        {/* Horizontal tab bar — Kits first, then Catalog, categories, status. */}
+        <nav className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {NAV.map((n) => {
+            const active = nav === n.key;
+            const count =
+              n.key === "installed"
+                ? installedCount
+                : n.key === "installing"
+                  ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
+                  : n.key === "updates"
+                    ? updatesAvailable
+                    : 0;
+            return (
+              <button
+                key={n.key}
+                onClick={() => setNav(n.key)}
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+                  active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
+                <span className="truncate">{n.label}</span>
+                {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
 
-          {/* Content */}
-          <div className="min-w-0 flex-1">
+        {/* Content */}
+        <div className="min-w-0">
             <div className="mb-4 flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -951,10 +954,16 @@ export function Marketplace() {
                     return c?.install === "reference" || installedMap[it.id] || detected[it.id];
                   });
                   return (
-                    <div key={pack.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-3.5">
+                    <button
+                      key={pack.id}
+                      onClick={() => setKitModal(pack)}
+                      title="View what's in this kit"
+                      className="group flex flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                    >
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
                         <span className="text-[13px] font-semibold text-foreground">{pack.name}</span>
+                        {allInstalled ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground/50 transition-colors group-hover:text-primary" />}
                       </div>
                       <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -962,14 +971,10 @@ export function Marketplace() {
                           <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
                         ))}
                       </div>
-                      <button
-                        onClick={() => installPack(pack)}
-                        disabled={allInstalled}
-                        className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Install pack</>}
-                      </button>
-                    </div>
+                      <span className="mt-3 flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground">
+                        {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Package className="h-3.5 w-3.5" /> View kit</>}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
@@ -1007,7 +1012,6 @@ export function Marketplace() {
               </div>
             )}
           </div>
-        </div>
       </div>
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
@@ -1046,6 +1050,67 @@ export function Marketplace() {
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {/* Kit "template" modal — what's inside a kit + one-click install. */}
+      {kitModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setKitModal(null)}>
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-2.5 px-5 pt-5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><kitModal.icon className="h-4.5 w-4.5" /></div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[15px] font-semibold text-foreground">{kitModal.name}</h3>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{kitModal.tagline}</p>
+              </div>
+              <button onClick={() => setKitModal(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            </div>
+
+            <div className="mt-3 border-t border-border px-5 py-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">In this kit</p>
+              <div className="space-y-2">
+                {kitModal.items.map((it) => {
+                  const c = CATALOG.find((x) => x.id === it.id);
+                  const ItIcon = it.icon;
+                  const done = c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                  return (
+                    <div key={it.id} className="flex items-start gap-2.5">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground"><ItIcon className="h-3.5 w-3.5" /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12.5px] font-medium text-foreground">{c?.name ?? it.label}</span>
+                          {done ? <Check className="h-3 w-3 text-primary" /> : null}
+                        </div>
+                        {c?.description ? <p className="text-[11px] leading-snug text-muted-foreground">{c.description}</p> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel/40 px-5 py-3">
+              <button onClick={() => setKitModal(null)} className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground">Close</button>
+              {(() => {
+                const allInstalled = kitModal.items.every((it) => {
+                  const c = CATALOG.find((x) => x.id === it.id);
+                  return c?.install === "reference" || installedMap[it.id] || detected[it.id];
+                });
+                return (
+                  <button
+                    onClick={() => { installPack(kitModal); setKitModal(null); }}
+                    disabled={allInstalled}
+                    className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {allInstalled ? <><Check className="h-3.5 w-3.5" /> Installed</> : <><Download className="h-3.5 w-3.5" /> Use this kit</>}
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
