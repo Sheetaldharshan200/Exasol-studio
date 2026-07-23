@@ -118,9 +118,15 @@ export async function buildNotebookHtml(title: string, cells: ExportCell[]): Pro
   img { max-width: 100%; border-radius: 8px; }
   ul, ol { padding-left: 1.4em; }
   blockquote { margin: .8em 0; border-left: 3px solid #d1d1d6; padding-left: .9em; color: #48484a; }
-  pre.sql { background: #f5f5f7; border: 1px solid #e5e5ea; border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
-  pre.sql code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #1c1c1e; white-space: pre; }
+  /* EVERY code block (SQL cells AND fenced blocks inside markdown cells)
+     gets the same treatment — issue #1: md code blocks exported unstyled. */
+  pre { background: #f5f5f7; border: 1px solid #e5e5ea; border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 10px 0; }
+  pre code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #1c1c1e; white-space: pre; background: none; border: none; padding: 0; }
   code { background: #f5f5f7; border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  hr { border: none; border-top: 1px solid #e5e5ea; margin: 20px 0; }
+  section.md table { display: block; overflow-x: auto; }
+  input[type="checkbox"] { margin-right: 6px; }
+  li.task-list-item { list-style: none; margin-left: -1.4em; }
   .tablewrap { overflow-x: auto; margin: 8px 0; }
   table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
   th, td { border: 1px solid #e5e5ea; padding: 5px 9px; text-align: left; white-space: nowrap; }

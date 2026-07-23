@@ -51,6 +51,17 @@ const CLOUD_PROVIDERS: { id: string; name: string; envKey: string }[] = [
 ];
 
 /** Offline fallback so the picker is never empty before the catalog loads. */
+/** Only actual chat LLMs belong in pickers — no embeddings, TTS/speech,
+ * audio/realtime, image/video generation, moderation, or rerankers. */
+const NON_LLM_MODEL = /embed|tts|speech|audio|whisper|transcrib|realtime|image|imagen|dall-?e|veo|sora|moderation|rerank|guard|ocr/i;
+function filterCatalog(catalog: Record<string, ModelInfo[]>): Record<string, ModelInfo[]> {
+  const out: Record<string, ModelInfo[]> = {};
+  for (const [pid, models] of Object.entries(catalog)) {
+    out[pid] = models.filter((m) => !NON_LLM_MODEL.test(m.id) && !NON_LLM_MODEL.test(m.name ?? ""));
+  }
+  return out;
+}
+
 const EMBEDDED_CATALOG: Record<string, ModelInfo[]> = {
   anthropic: [
     { id: "claude-opus-4-8", name: "Claude Opus 4.8", context: 200_000, toolCall: true, reasoning: true, image: true },
@@ -164,7 +175,9 @@ export class ProviderRegistry {
         fetchedAt: number;
         catalog: Record<string, ModelInfo[]>;
       };
-      if (raw?.catalog) this.catalog = { ...EMBEDDED_CATALOG, ...raw.catalog };
+      // The junk filter must apply to CACHED catalogs too — a cache written
+      // before the filter existed still carries whisper/tts/embedding models.
+      if (raw?.catalog) this.catalog = filterCatalog({ ...EMBEDDED_CATALOG, ...raw.catalog });
     } catch {
       // No cache yet — embedded fallback stays active.
     }
@@ -196,9 +209,8 @@ export class ProviderRegistry {
         // Only actual chat LLMs belong in the picker: drop embeddings, TTS,
         // audio/realtime, image/video generation, moderation, and rerankers —
         // they can't run the agent and only clutter the lists.
-        const NON_LLM = /embed|tts|speech|audio|whisper|transcrib|realtime|image|imagen|dall-?e|veo|sora|moderation|rerank|guard|ocr/i;
         next[p.id] = Object.entries(models)
-          .filter(([id, m]) => m.status !== "deprecated" && !NON_LLM.test(id) && !NON_LLM.test(m.name ?? ""))
+          .filter(([id, m]) => m.status !== "deprecated" && !NON_LLM_MODEL.test(id) && !NON_LLM_MODEL.test(m.name ?? ""))
           .filter(([, m]) => !Array.isArray(m.modalities?.input) || m.modalities!.input!.includes("text"))
           .map(([id, m]) => ({
             id,
@@ -210,7 +222,7 @@ export class ProviderRegistry {
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
       }
-      this.catalog = { ...EMBEDDED_CATALOG, ...next };
+      this.catalog = filterCatalog({ ...EMBEDDED_CATALOG, ...next });
       writeFileSync(this.catalogFile, JSON.stringify({ fetchedAt: Date.now(), catalog: next }));
       log.info("models.dev catalog refreshed", { providers: Object.keys(next).length });
     } catch (e) {

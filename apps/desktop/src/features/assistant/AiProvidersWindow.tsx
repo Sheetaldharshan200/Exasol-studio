@@ -446,12 +446,12 @@ function ProvidersSection(props: {
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
           Free, private, and offline — detected automatically on this machine.
         </p>
-        <div className="space-y-2">
+        <div className="divide-y divide-border/60">
           {(locals.length
             ? locals
             : [{ id: "ollama", name: "Ollama (local)", kind: "local", configured: false, models: [] } as AgentProviderInfo]
           ).map((p) => (
-            <div key={p.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+            <div key={p.id} className="flex items-center gap-2.5 py-3 first:pt-0">
               <ProviderMark providerId={p.id} className="h-5 w-5 shrink-0 text-foreground" />
               <span className={cn("h-2 w-2 shrink-0 rounded-full", p.running ? "bg-primary" : "bg-muted-foreground/40")} />
               <div className="min-w-0 flex-1">
@@ -466,21 +466,7 @@ function ProvidersSection(props: {
                         : "Not detected"}
                 </div>
               </div>
-              {p.running && p.models.length ? (
-                <Select
-                  value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
-                  onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
-                >
-                  <SelectTrigger size="sm" className="h-7 w-48 text-[11.5px]"><SelectValue placeholder={`${p.models.length} models…`} /></SelectTrigger>
-                  <SelectContent>
-                    {p.models.map((m) => (
-                      <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
-                        <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : p.running ? (
+              {p.running ? (
                 <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">ready</span>
               ) : p.id === "ollama" && !p.installedOnly ? (
                 <button
@@ -500,13 +486,15 @@ function ProvidersSection(props: {
       {tab === "cloud" ? (
       <section>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
-          Keys are stored locally on this machine and used only for your requests. Model lists refresh live from the catalog.
+          Keys are stored locally on this machine and used only for your requests. Pick the model in the chat's model
+          dropdown — and check your account's usage and rate limits on the provider's console: free tiers often can't
+          fit the full agent.
         </p>
-        <div className="space-y-2.5">
+        <div className="divide-y divide-border/60">
           {clouds.map((p) => {
             const meta = CLOUD_META[p.id];
             return (
-              <div key={p.id} className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+              <div key={p.id} className="py-3 first:pt-0">
                 <div className="flex items-center gap-1.5">
                   <ProviderMark providerId={p.id} className="h-4.5 w-4.5 shrink-0 text-foreground" />
                   <span className="text-[12.5px] font-medium">{p.name}</span>
@@ -524,29 +512,6 @@ function ProvidersSection(props: {
                     </button>
                   )}
                 </div>
-                {p.configured && p.models.length ? (
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="shrink-0 text-[10.5px] text-muted-foreground">Model</span>
-                    <Select
-                      value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
-                      onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
-                    >
-                      <SelectTrigger size="sm" className="h-7 w-full text-[11.5px]">
-                        <SelectValue placeholder={`Choose from ${p.models.length} live models…`} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {p.models.map((m) => (
-                          <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">
-                            <span className="flex w-full items-center gap-2">{m.name || m.id} <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} /></span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {defaultModel?.startsWith(`${p.id}/`) ? (
-                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">in use</span>
-                    ) : null}
-                  </div>
-                ) : null}
                 <div className="mt-2 flex gap-1.5">
                   <Input
                     type="password"

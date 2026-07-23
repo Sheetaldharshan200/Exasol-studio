@@ -66,6 +66,8 @@ export const DashboardSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(""),
+  /** Optional grouping in the dashboards list (e.g. "System"). */
+  group: z.string().optional(),
   panels: z.array(PanelSchema).min(1).max(24),
 });
 
@@ -79,7 +81,7 @@ export class DashboardStore {
     mkdirSync(this.dir, { recursive: true });
   }
 
-  list(): { id: string; title: string; description: string; panels: number; updatedAt: number }[] {
+  list(): { id: string; title: string; description: string; group?: string; panels: number; updatedAt: number }[] {
     const out = [];
     for (const f of readdirSync(this.dir)) {
       if (!f.endsWith(".json")) continue;
@@ -89,6 +91,7 @@ export class DashboardStore {
           id: d.id,
           title: d.title,
           description: d.description ?? "",
+          group: (d as { group?: string }).group,
           panels: d.panels?.length ?? 0,
           updatedAt: d.updatedAt ?? 0,
         });
