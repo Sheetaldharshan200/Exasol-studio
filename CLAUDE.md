@@ -16,6 +16,9 @@ project evolves instead of being re-derived every session. Setup: `./scripts/set
    lives, or how files relate, **query graphify first** rather than blind
    grepping. The graph lives in `graphify-out/graph.json` — **committed** to the repo (the AST cache `graphify-out/cache/` is git-ignored).
    - Refresh: `graphify update .` (re-run after large changes; commit the updated graph.json)
+   - `graph.json` is the **authoritative, queryable** source. `docs/codebase-graph.html`
+     is a frozen visual snapshot (the graph outgrew the HTML viewer's node limit) —
+     don't regenerate it; query graph.json instead.
    - In an AI assistant: the `/graphify` skill, or ask a codebase question.
 
 2. **llm-wiki** — a persistent, growable Markdown knowledge base (an MCP server:
