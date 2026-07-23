@@ -25,6 +25,10 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ProviderMark } from "@/features/assistant/provider-marks";
+import { Icon as BxIcon } from "@/components/ui/icon";
+
+/** Brain-circuit (Boxicons) with a lucide-compatible signature for SECTIONS. */
+const BrainCircuit = ({ className }: { className?: string }) => <BxIcon name="brain-circuit" className={className} />;
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PET_AVATARS, PetAvatar } from "@/components/studio/PetAvatar";
 import { skills as skillsApi, type Skill } from "@/lib/agent-client";
@@ -51,15 +55,16 @@ const CLOUD_META: Record<string, { hint: string; keyUrl: string }> = {
 
 type SectionKey = "providers" | "guardrails" | "behavior" | "skills";
 
-const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon; desc: string }[] = [
-  { key: "providers", label: "Providers & Models", icon: Cpu, desc: "Built-in engine, local runtimes, API keys" },
+const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
+  { key: "providers", label: "Providers & Models", icon: BrainCircuit, desc: "Built-in engine, local runtimes, API keys" },
   { key: "guardrails", label: "Guardrails", icon: ShieldCheck, desc: "What the AI may and may not do" },
   { key: "behavior", label: "Behavior", icon: SlidersHorizontal, desc: "Steps, temperature, instructions" },
   { key: "skills", label: "Skills", icon: Sparkles, desc: "Reusable instruction packs for the agent" },
 ];
 
-/** Standalone AI Settings window: sidebar + sections. */
-export function AiProvidersWindow() {
+/** AI Settings: sidebar + sections. Renders as a standalone native window
+ *  (title bar + h-screen) or embedded as a workspace tab (standalone=false). */
+export function AiProvidersWindow({ standalone = true }: { standalone?: boolean } = {}) {
   const [section, setSection] = useState<SectionKey>("providers");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -158,9 +163,9 @@ export function AiProvidersWindow() {
   const activeSection = SECTIONS.find((s) => s.key === section) ?? SECTIONS[0];
   const ActiveIcon = activeSection.icon;
   return (
-    <div className="flex h-screen flex-col bg-editor text-foreground">
-      {/* Title bar (draggable) */}
-      <div data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
+    <div className={cn("flex flex-col bg-editor text-foreground", standalone ? "h-screen" : "h-full")}>
+      {/* Title bar (draggable only as a native window) */}
+      <div data-tauri-drag-region={standalone || undefined} className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
         <AgentMark className="h-4 w-4 text-primary" />
         <span className="text-[13px] font-semibold tracking-tight">AI Settings</span>
         <button
@@ -301,54 +306,14 @@ function ProvidersSection(props: {
   // Horizontal sub-tabs: one source group at a time instead of a long scroll.
   const [srcTab, setSrcTab] = useState<"builtin" | "local" | "cloud" | "indb">("builtin");
   const tab = srcTab === "builtin" && llmState && !llmState.supported ? "local" : srcTab;
-  const TABS: { key: typeof srcTab; label: string; icon: LucideIcon; show: boolean }[] = [
+  const TABS: { key: typeof srcTab; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }[] = [
     { key: "builtin", label: "Built-in AI", icon: Zap, show: Boolean(llmState?.supported) },
     { key: "local", label: "Local runtimes", icon: Cpu, show: true },
     { key: "cloud", label: "Cloud APIs", icon: Globe, show: true },
     { key: "indb", label: "In-database", icon: Database, show: true },
   ];
-  // Every selectable model, grouped per provider — fed by the live catalog
-  // (models.dev via the header refresh), so cloud lists stay current.
-  const modelGroups = [
-    ...(llmState?.supported ? [{ id: "builtin", name: "Built-in", models: llmState.models.filter((m) => m.downloaded).map((m) => ({ id: m.id, name: m.name })) }] : []),
-    ...locals.filter((p) => p.models.length).map((p) => ({ id: p.id, name: p.name.replace(" (local)", ""), models: p.models })),
-    ...clouds.filter((p) => p.configured && p.models.length).map((p) => ({ id: p.id, name: p.name, models: p.models })),
-  ].filter((g) => g.models.length);
   return (
     <>
-      {/* ── Defaults: the model + generation settings every chat starts with. ── */}
-      <section className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
-        <h2 className="text-[13px] font-semibold">Defaults</h2>
-        <p className="mb-2 text-[11.5px] text-muted-foreground">What new conversations use — change per chat from the model picker.</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11.5px] text-muted-foreground">Default model</span>
-          <Select value={defaultModel ?? ""} onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}>
-            <SelectTrigger size="sm" className="h-7 w-72 text-[11.5px]"><SelectValue placeholder={modelGroups.length ? "Choose a model…" : "No models available yet"} /></SelectTrigger>
-            <SelectContent>
-              {modelGroups.map((g) => (
-                <SelectGroup key={g.id}>
-                  <SelectLabel className="flex items-center gap-1.5"><ProviderMark providerId={g.id} className="h-3 w-3" /> {g.name}</SelectLabel>
-                  {g.models.map((m) => <SelectItem key={`${g.id}/${m.id}`} value={`${g.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>)}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {settings ? (
-          <div className="mt-2">
-            <NumberRow
-              label="Temperature"
-              desc="0 = deterministic, 1 = creative. SQL work likes it low."
-              value={settings.temperature}
-              min={0}
-              max={1}
-              step={0.1}
-              onChange={(v) => void patchSettings({ temperature: v })}
-            />
-          </div>
-        ) : null}
-      </section>
-
       {/* ── Source tabs ── */}
       <div className="flex items-center gap-0.5 border-b border-border">
         {TABS.filter((t) => t.show).map((t) => {
@@ -501,7 +466,17 @@ function ProvidersSection(props: {
                         : "Not detected"}
                 </div>
               </div>
-              {p.running ? (
+              {p.running && p.models.length ? (
+                <Select
+                  value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
+                  onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
+                >
+                  <SelectTrigger size="sm" className="h-7 w-48 text-[11.5px]"><SelectValue placeholder={`${p.models.length} models…`} /></SelectTrigger>
+                  <SelectContent>
+                    {p.models.map((m) => <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : p.running ? (
                 <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">ready</span>
               ) : p.id === "ollama" && !p.installedOnly ? (
                 <button
@@ -545,6 +520,27 @@ function ProvidersSection(props: {
                     </button>
                   )}
                 </div>
+                {p.configured && p.models.length ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="shrink-0 text-[10.5px] text-muted-foreground">Model</span>
+                    <Select
+                      value={defaultModel?.startsWith(`${p.id}/`) ? defaultModel : ""}
+                      onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}
+                    >
+                      <SelectTrigger size="sm" className="h-7 w-full text-[11.5px]">
+                        <SelectValue placeholder={`Choose from ${p.models.length} live models…`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {p.models.map((m) => (
+                          <SelectItem key={m.id} value={`${p.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {defaultModel?.startsWith(`${p.id}/`) ? (
+                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">in use</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-2 flex gap-1.5">
                   <Input
                     type="password"

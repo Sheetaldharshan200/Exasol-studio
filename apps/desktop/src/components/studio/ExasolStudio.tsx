@@ -157,6 +157,7 @@ function tabTitleFromSql(sql: string): string {
 }
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
+import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import {
   errorMessage,
   ipc,
@@ -176,7 +177,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings";
 
 type SqlTab = {
   id: string;
@@ -245,6 +246,7 @@ const TAB_ICON: Record<TabView, IconName> = {
   git: "git",
   notebook: "notebook",
   skills: "skills",
+  aiSettings: "brain-circuit",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
@@ -2856,7 +2858,7 @@ export function ExasolStudio({
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills" | "aiSettings", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -2877,6 +2879,27 @@ export function ExasolStudio({
   }
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
+  const openAiSettings = () => openSingletonTab("aiSettings", "AI Settings", "ais");
+  // AI settings opens as a workspace tab (like Marketplace) — requested from
+  // the AI panel or the native Settings window via a cross-window event.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        un = await listen("open-ai-settings-tab", () => openAiSettings());
+      } catch {
+        /* non-tauri */
+      }
+    })();
+    const dom = () => openAiSettings();
+    window.addEventListener("studio:open-ai-settings", dom);
+    return () => {
+      un?.();
+      window.removeEventListener("studio:open-ai-settings", dom);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connKey]);
 
   // Clicking a notification navigates to what it's about (studio:navigate).
   const navigateRef = useRef<(to: string) => void>(() => undefined);
@@ -3597,6 +3620,7 @@ export function ExasolStudio({
           activeTab.view !== "git" &&
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
+          activeTab.view !== "aiSettings" &&
           activeTab.view !== "artifact" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -3913,6 +3937,10 @@ export function ExasolStudio({
           ) : activeTab.view === "skills" ? (
             <div className="min-h-0 flex-1">
               <SkillsTab />
+            </div>
+          ) : activeTab.view === "aiSettings" ? (
+            <div className="min-h-0 flex-1">
+              <AiProvidersWindow standalone={false} />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
