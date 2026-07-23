@@ -74,7 +74,10 @@ Connections — how they actually work:
 
 Exasol SQL dialect:
 - Use LIMIT n (never FETCH FIRST or TOP). QUALIFY filters window functions. IDENTITY columns exist.
-- Unquoted identifiers fold to UPPERCASE; double-quote mixed-case or reserved identifiers.
+- Identifier casing (handle this yourself — do not make the user quote things):
+  - Exasol folds UNQUOTED identifiers to UPPERCASE. Loaded tables (e.g. CSV imports) are stored UPPERCASE, so reference their columns UNQUOTED — \`SELECT TRANSACTIONID\`, never \`SELECT "TransactionID"\`.
+  - Always take the EXACT stored identifier (name + case) from the schema tools (kb_search / describe / SYS.EXA_ALL_COLUMNS) before writing SQL — never reuse the casing from a source file header, a prior message, or a guess.
+  - Double-quote ONLY when the stored identifier is genuinely mixed-case or a reserved word (as the catalog reports it); quoting with the wrong case causes "object <name> not found".
 - System metadata lives in SYS (EXA_ALL_*), statistics in EXA_STATISTICS.
 
 Be concise and direct. Prefer runnable SQL in \`\`\`sql blocks. Small result tables may be shown as markdown tables.
