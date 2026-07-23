@@ -18,11 +18,14 @@ import {
   Terminal,
   Zap,
   type LucideIcon,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { ProviderMark } from "@/features/assistant/provider-marks";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PET_AVATARS, PetAvatar } from "@/components/studio/PetAvatar";
 import { skills as skillsApi, type Skill } from "@/lib/agent-client";
 import {
@@ -68,12 +71,14 @@ export function AiProvidersWindow() {
   const [busyLlm, setBusyLlm] = useState<string | null>(null);
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [instructionsDraft, setInstructionsDraft] = useState<string>("");
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const { providers: list } = await agent.models();
+      const { providers: list, defaultModel: dm } = await agent.models();
       setProviders(list);
+      setDefaultModel(dm);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -237,6 +242,14 @@ export function AiProvidersWindow() {
                 saving={saving}
                 saveKey={saveKey}
                 inDb={providers.find((p) => p.id === "in-database")}
+                settings={settings}
+                patchSettings={patchSettings}
+                defaultModel={defaultModel}
+                onSetDefaultModel={async (m) => {
+                  await agent.setDefaultModel(m);
+                  setDefaultModel(m);
+                  await emit(EV_AI_PROVIDERS_CHANGED);
+                }}
                 onChanged={async () => {
                   await refresh();
                   await emit(EV_AI_PROVIDERS_CHANGED);
@@ -278,11 +291,85 @@ function ProvidersSection(props: {
   saving: string | null;
   saveKey: (id: string) => Promise<void>;
   inDb?: AgentProviderInfo;
+  settings: AgentSettings | null;
+  patchSettings: (patch: Partial<AgentSettings>) => Promise<void>;
+  defaultModel: string | null;
+  onSetDefaultModel: (model: string) => Promise<void>;
   onChanged: () => Promise<void>;
 }) {
-  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey, inDb, onChanged } = props;
+  const { llmState, progress, busyLlm, llmAction, locals, clouds, drafts, setDrafts, saving, saveKey, inDb, settings, patchSettings, defaultModel, onSetDefaultModel, onChanged } = props;
+  // Horizontal sub-tabs: one source group at a time instead of a long scroll.
+  const [srcTab, setSrcTab] = useState<"builtin" | "local" | "cloud" | "indb">("builtin");
+  const tab = srcTab === "builtin" && llmState && !llmState.supported ? "local" : srcTab;
+  const TABS: { key: typeof srcTab; label: string; icon: LucideIcon; show: boolean }[] = [
+    { key: "builtin", label: "Built-in AI", icon: Zap, show: Boolean(llmState?.supported) },
+    { key: "local", label: "Local runtimes", icon: Cpu, show: true },
+    { key: "cloud", label: "Cloud APIs", icon: Globe, show: true },
+    { key: "indb", label: "In-database", icon: Database, show: true },
+  ];
+  // Every selectable model, grouped per provider — fed by the live catalog
+  // (models.dev via the header refresh), so cloud lists stay current.
+  const modelGroups = [
+    ...(llmState?.supported ? [{ id: "builtin", name: "Built-in", models: llmState.models.filter((m) => m.downloaded).map((m) => ({ id: m.id, name: m.name })) }] : []),
+    ...locals.filter((p) => p.models.length).map((p) => ({ id: p.id, name: p.name.replace(" (local)", ""), models: p.models })),
+    ...clouds.filter((p) => p.configured && p.models.length).map((p) => ({ id: p.id, name: p.name, models: p.models })),
+  ].filter((g) => g.models.length);
   return (
     <>
+      {/* ── Defaults: the model + generation settings every chat starts with. ── */}
+      <section className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+        <h2 className="text-[13px] font-semibold">Defaults</h2>
+        <p className="mb-2 text-[11.5px] text-muted-foreground">What new conversations use — change per chat from the model picker.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11.5px] text-muted-foreground">Default model</span>
+          <Select value={defaultModel ?? ""} onValueChange={(v) => { if (v) void onSetDefaultModel(v); }}>
+            <SelectTrigger size="sm" className="h-7 w-72 text-[11.5px]"><SelectValue placeholder={modelGroups.length ? "Choose a model…" : "No models available yet"} /></SelectTrigger>
+            <SelectContent>
+              {modelGroups.map((g) => (
+                <SelectGroup key={g.id}>
+                  <SelectLabel className="flex items-center gap-1.5"><ProviderMark providerId={g.id} className="h-3 w-3" /> {g.name}</SelectLabel>
+                  {g.models.map((m) => <SelectItem key={`${g.id}/${m.id}`} value={`${g.id}/${m.id}`} className="text-[11.5px]">{m.name || m.id}</SelectItem>)}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {settings ? (
+          <div className="mt-2">
+            <NumberRow
+              label="Temperature"
+              desc="0 = deterministic, 1 = creative. SQL work likes it low."
+              value={settings.temperature}
+              min={0}
+              max={1}
+              step={0.1}
+              onChange={(v) => void patchSettings({ temperature: v })}
+            />
+          </div>
+        ) : null}
+      </section>
+
+      {/* ── Source tabs ── */}
+      <div className="flex items-center gap-0.5 border-b border-border">
+        {TABS.filter((t) => t.show).map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setSrcTab(t.key)}
+              className={cn(
+                "flex h-8 items-center gap-1.5 border-b-2 px-2.5 text-[12px] transition-colors",
+                active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className={cn("h-3.5 w-3.5", active && "text-primary")} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {tab === "builtin" ? (
+      <>
       {llmState?.supported ? (
         <section>
           <div className="mb-1 flex items-center gap-1.5">
@@ -386,11 +473,11 @@ function ProvidersSection(props: {
         </section>
       ) : null}
 
+      </>
+      ) : null}
+
+      {tab === "local" ? (
       <section>
-        <div className="mb-1 flex items-center gap-1.5">
-          <Cpu className="h-3.5 w-3.5 text-primary" />
-          <h2 className="text-[13px] font-semibold">Local runtimes</h2>
-        </div>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
           Free, private, and offline — detected automatically on this machine.
         </p>
@@ -400,6 +487,7 @@ function ProvidersSection(props: {
             : [{ id: "ollama", name: "Ollama (local)", kind: "local", configured: false, models: [] } as AgentProviderInfo]
           ).map((p) => (
             <div key={p.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+              <ProviderMark providerId={p.id} className="h-5 w-5 shrink-0 text-foreground" />
               <span className={cn("h-2 w-2 shrink-0 rounded-full", p.running ? "bg-primary" : "bg-muted-foreground/40")} />
               <div className="min-w-0 flex-1">
                 <div className="text-[12.5px] font-medium">{p.name.replace(" (local)", "")}</div>
@@ -428,10 +516,12 @@ function ProvidersSection(props: {
         </div>
       </section>
 
+      ) : null}
+
+      {tab === "cloud" ? (
       <section>
-        <h2 className="mb-1 text-[13px] font-semibold">External providers</h2>
         <p className="mb-2.5 text-[11.5px] text-muted-foreground">
-          Keys are stored locally on this machine and used only for your requests.
+          Keys are stored locally on this machine and used only for your requests. Model lists refresh live from the catalog.
         </p>
         <div className="space-y-2.5">
           {clouds.map((p) => {
@@ -439,8 +529,9 @@ function ProvidersSection(props: {
             return (
               <div key={p.id} className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
+                  <ProviderMark providerId={p.id} className="h-4.5 w-4.5 shrink-0 text-foreground" />
                   <span className="text-[12.5px] font-medium">{p.name}</span>
-                  <span className="text-[10.5px] text-muted-foreground">· {meta.hint}</span>
+                  <span className="text-[10.5px] text-muted-foreground">· {p.configured && p.models.length ? `${p.models.length} models live` : meta.hint}</span>
                   {p.configured ? (
                     <span className="ml-auto flex items-center gap-0.5 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">
                       <Check className="h-2.5 w-2.5" /> connected
@@ -475,7 +566,9 @@ function ProvidersSection(props: {
         </div>
       </section>
 
-      <InDatabaseSection provider={inDb} onChanged={onChanged} />
+      ) : null}
+
+      {tab === "indb" ? <InDatabaseSection provider={inDb} onChanged={onChanged} /> : null}
     </>
   );
 }
