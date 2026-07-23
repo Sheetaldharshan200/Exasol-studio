@@ -347,9 +347,32 @@ export type AppErrorPayload = { kind: string; message: string };
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+// ── One codebase, every platform ────────────────────────────────────────────
+// The SAME build runs as the desktop app (Tauri), on the web, and — via Tauri
+// Mobile — on phones later. Only the transport differs, resolved here in ONE
+// place, in order:
+//   1. Tauri IPC        — desktop/mobile shells (native Rust backend)
+//   2. Hosted backend   — web with VITE_BACKEND_URL set: POST /ipc/<command>
+//                         (the contract the headless server implements)
+//   3. Built-in mock    — plain browser demo, no backend at all
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.replace(/\/$/, "");
+
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
     return invoke<T>(command, args);
+  }
+  if (BACKEND_URL) {
+    const res = await fetch(`${BACKEND_URL}/ipc/${command}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(args ?? {}),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(detail || `backend ${res.status}`);
+    }
+    return (await res.json()) as T;
   }
   return mockInvoke(command, args) as Promise<T>;
 }

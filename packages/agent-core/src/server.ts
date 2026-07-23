@@ -76,6 +76,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // PUT /v1/providers/:id  {apiKey?, baseURL?, models?}
       if (req.method === "PUT" && parts[1] === "providers" && parts[2]) {
         const body = await readBody<{ apiKey?: string; baseURL?: string; models?: { id: string; name?: string; context?: number }[] }>(req);
+        // Paste hygiene: stray whitespace/newlines in a copied key make the
+        // provider reject it with a confusing "API key not valid".
+        if (typeof body.apiKey === "string") body.apiKey = body.apiKey.trim();
+        if (typeof body.baseURL === "string") body.baseURL = body.baseURL.trim();
         config.update((cfg) => {
           cfg.providers[parts[2]] = { ...cfg.providers[parts[2]], ...body };
         });
