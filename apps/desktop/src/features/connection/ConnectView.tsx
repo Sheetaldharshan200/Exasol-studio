@@ -395,7 +395,7 @@ export function ConnectView({
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Driver">
                     <Select value={draft.driverId} onValueChange={(v) => patch({ driverId: v })}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -461,7 +461,7 @@ export function ConnectView({
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Encryption">
                     <Select value={draft.sslMode} onValueChange={(v) => patch({ sslMode: v })}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
