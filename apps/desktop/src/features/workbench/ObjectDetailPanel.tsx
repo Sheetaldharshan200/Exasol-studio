@@ -4,7 +4,7 @@ import { errorMessage, ipc, type ColumnInfo, type ConstraintInfo, type ObjectGra
 import { cn } from "@/lib/utils";
 import { TableStructureEditor, ColumnsColgroup } from "./TableStructureEditor";
 import { TableKeysEditor } from "./TableKeysEditor";
-import { TableInfoEditor } from "./TableInfoEditor";
+import { ObjectInfoEditor, type InfoEditKind } from "./TableInfoEditor";
 import { UserPrivilegesEditor } from "./UserPrivilegesEditor";
 
 export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
@@ -81,6 +81,20 @@ export function ObjectDetailPanel({
   const [editingKeys, setEditingKeys] = useState(false);
   const [editingInfo, setEditingInfo] = useState(false);
   const [editingUserPrivs, setEditingUserPrivs] = useState(false);
+  // All roles in the DB — feeds the grant-role dropdown in the access editor.
+  const [allRoles, setAllRoles] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!editingUserPrivs || !isUser || allRoles !== null) return;
+    ipc
+      .executeSql(profileId, connectionName, "SELECT ROLE_NAME FROM SYS.EXA_ALL_ROLES ORDER BY 1", 1000, false)
+      .then((r) => {
+        const first = r.results.find((x) => x.kind === "resultSet");
+        if (first && !first.error) setAllRoles(first.rows.map((row) => String(row[0])));
+        else setAllRoles([]);
+      })
+      .catch(() => setAllRoles([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingUserPrivs]);
   // Bumped after a successful ALTER so the panel re-reads the table's shape.
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -222,6 +236,7 @@ export function ObjectDetailPanel({
               roles={(userD?.roles ?? []).filter((x): x is string => Boolean(x))}
               sysPrivs={(userD?.systemPrivileges ?? []).filter((x): x is string => Boolean(x))}
               objPrivs={userD?.objectPrivileges ?? []}
+              availableRoles={allRoles}
               onOpenSql={onOpenSql}
               onApply={onApplyDdl}
               onDone={() => { setEditingUserPrivs(false); setReloadKey((k) => k + 1); }}
@@ -268,8 +283,9 @@ export function ObjectDetailPanel({
         ) : tab === "owned" ? (
           <StringList items={userD?.ownedSchemas} empty="Owns no schemas." />
         ) : tab === "info" ? (
-          isTable && object.type === "table" && editingInfo ? (
-            <TableInfoEditor
+          editingInfo ? (
+            <ObjectInfoEditor
+              kind={(object.type === "virtual-schema" ? "schema" : object.type) as InfoEditKind}
               schema={object.schema}
               name={object.name}
               onOpenSql={onOpenSql}
@@ -278,9 +294,9 @@ export function ObjectDetailPanel({
             />
           ) : (
           <div className="flex h-full min-h-0 flex-col">
-            {object.type === "table" && (onOpenSql || onApplyDdl) ? (
+            {onOpenSql || onApplyDdl ? (
               <div className="mb-2 flex shrink-0 items-center justify-end">
-                <button onClick={() => setEditingInfo(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title="Rename or set a comment">
+                <button onClick={() => setEditingInfo(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary" title={isUser ? "Rename, comment, or change password" : "Rename or set a comment"}>
                   <Pencil className="h-3.5 w-3.5" /> Rename / properties
                 </button>
               </div>

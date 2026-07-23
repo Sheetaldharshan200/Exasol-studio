@@ -17,6 +17,7 @@ export function UserPrivilegesEditor({
   roles,
   sysPrivs,
   objPrivs = [],
+  availableRoles,
   onOpenSql,
   onApply,
   onDone,
@@ -25,6 +26,8 @@ export function UserPrivilegesEditor({
   roles: string[];
   sysPrivs: string[];
   objPrivs?: ObjPriv[];
+  /** All roles in the DB (null = still loading) — feeds the grant dropdown. */
+  availableRoles?: string[] | null;
   onOpenSql?: (sql: string, title?: string) => void;
   onApply?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   onDone: () => void;
@@ -39,7 +42,6 @@ export function UserPrivilegesEditor({
 
   const [revokedRoles, setRevokedRoles] = useState<Set<string>>(new Set());
   const [addedRoles, setAddedRoles] = useState<string[]>([]);
-  const [roleInput, setRoleInput] = useState("");
   const [revokedPrivs, setRevokedPrivs] = useState<Set<string>>(new Set());
   const [addedPrivs, setAddedPrivs] = useState<string[]>([]);
   // Object privileges: revoke keyed on "priv@schema.object"; adds are staged rows.
@@ -58,11 +60,6 @@ export function UserPrivilegesEditor({
     const n = new Set(set);
     n.has(key) ? n.delete(key) : n.add(key);
     setter(n);
-  }
-  function addRole() {
-    const r = roleInput.trim().toUpperCase();
-    if (r && !addedRoles.includes(r) && !currentRoles.some((x) => x.toUpperCase() === r)) setAddedRoles((a) => [...a, r]);
-    setRoleInput("");
   }
 
   const statements = useMemo<string[]>(() => {
@@ -92,7 +89,6 @@ export function UserPrivilegesEditor({
     setRevokedObj(new Set());
     setAddedObj([]);
     setObjSchema(""); setObjObject(""); setObjPriv("");
-    setRoleInput("");
     setApplyError(null);
   }
 
@@ -105,6 +101,11 @@ export function UserPrivilegesEditor({
     if (r?.ok) onDone();
     else setApplyError({ message: r?.error ?? "The change failed.", sql: r?.failedSql });
   }
+
+  // Roles in the DB the user doesn't already have (and aren't staged yet).
+  const grantableRoles = (availableRoles ?? []).filter(
+    (r) => !currentRoles.some((x) => x.toUpperCase() === r.toUpperCase()) && !addedRoles.includes(r),
+  );
 
   // System privileges available to add (curated list minus already-held/added).
   const addable = SYS_PRIVS.map((g) => ({
@@ -157,15 +158,15 @@ export function UserPrivilegesEditor({
             ))}
             {!currentRoles.length && !addedRoles.length ? <span className="text-[12px] text-muted-foreground">No roles.</span> : null}
           </div>
-          <div className="mt-2 flex items-center gap-1.5">
-            <input
-              value={roleInput}
-              onChange={(e) => setRoleInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRole(); } }}
-              placeholder="Grant a role by name…"
-              className="h-7 w-56 rounded-md border border-border bg-transparent px-2 font-mono text-[11px] text-foreground outline-none focus:border-primary/50"
-            />
-            <button onClick={addRole} disabled={!roleInput.trim()} className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40"><Plus className="h-3.5 w-3.5" /> Grant role</button>
+          <div className="mt-2">
+            <Select value="" onValueChange={(v) => { if (v) setAddedRoles((a) => [...a, v]); }} disabled={availableRoles !== null && grantableRoles.length === 0}>
+              <SelectTrigger size="sm" className="h-7 w-64 text-[11px]">
+                <SelectValue placeholder={availableRoles === null ? "Loading roles…" : grantableRoles.length ? "Grant a role…" : "No more roles to grant"} />
+              </SelectTrigger>
+              <SelectContent>
+                {grantableRoles.map((r) => <SelectItem key={r} value={r} className="font-mono text-[11px]">{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </section>
 
