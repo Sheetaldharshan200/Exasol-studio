@@ -114,10 +114,10 @@ function dbSizeDashboard(): Dashboard {
     group: "System",
     refreshMs: 300_000,
     panels: [
-      { id: "sz-raw", title: "Raw size (GiB)", grid: { x: 0, y: 0, w: 4, h: 4 }, query: { sql: `SELECT ROUND(MAX(RAW_OBJECT_SIZE), 2) AS RAW_GIB FROM ${S}` }, viz: { type: "kpi", unit: "GiB" } },
-      { id: "sz-mem", title: "Compressed (GiB)", grid: { x: 4, y: 0, w: 4, h: 4 }, query: { sql: `SELECT ROUND(MAX(MEM_OBJECT_SIZE), 2) AS MEM_GIB FROM ${S}` }, viz: { type: "kpi", unit: "GiB" } },
+      { id: "sz-raw", title: "Raw size (GiB)", grid: { x: 0, y: 0, w: 4, h: 4 }, query: { sql: `SELECT ROUND(MAX(RAW_OBJECT_SIZE), 3) AS RAW_GIB FROM ${S}` }, viz: { type: "kpi", unit: "GiB" } },
+      { id: "sz-mem", title: "Compressed (GiB)", grid: { x: 4, y: 0, w: 4, h: 4 }, query: { sql: `SELECT ROUND(MAX(MEM_OBJECT_SIZE), 3) AS MEM_GIB FROM ${S}` }, viz: { type: "kpi", unit: "GiB" } },
       { id: "sz-ram", title: "Recommended DB RAM (GiB)", grid: { x: 8, y: 0, w: 4, h: 4 }, query: { sql: `SELECT ROUND(MAX(RECOMMENDED_DB_RAM_SIZE), 2) AS RECOMMENDED_GIB FROM ${S}` }, viz: { type: "kpi", unit: "GiB" } },
-      { id: "sz-trend", title: "Size over the day", grid: { x: 0, y: 4, w: 12, h: 7 }, query: { sql: `SELECT TO_CHAR(INTERVAL_START, 'HH24:MI') AS AT_TIME, ROUND(RAW_OBJECT_SIZE, 2) AS RAW_GIB, ROUND(MEM_OBJECT_SIZE, 2) AS MEM_GIB FROM ${S} ORDER BY INTERVAL_START` }, viz: { type: "echarts", chart: "line" } },
+      { id: "sz-trend", title: "Size over the day", grid: { x: 0, y: 4, w: 12, h: 7 }, query: { sql: `SELECT TO_CHAR(MEASURE_TIME, 'HH24:MI') AS AT_TIME, ROUND(RAW_OBJECT_SIZE, 3) AS RAW_GIB, ROUND(MEM_OBJECT_SIZE, 3) AS MEM_GIB FROM ${S} ORDER BY MEASURE_TIME` }, viz: { type: "echarts", chart: "line" } },
     ],
   };
 }
