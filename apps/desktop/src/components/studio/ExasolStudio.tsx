@@ -699,7 +699,7 @@ function VisualizerPanel({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl text-primary">
-          <Eye className="h-5 w-5" />
+          <Icon name="visualizer" className="h-5 w-5" />
         </div>
         <div>
           <p className="text-sm font-medium text-foreground">Nothing to visualize yet</p>
@@ -745,7 +745,7 @@ function VisualizerPanel({
                   : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
               )}
             >
-              <Eye className="h-3.5 w-3.5 shrink-0 text-[#a78bfa]" />
+              <Icon name="visualizer" className="h-3.5 w-3.5 shrink-0 text-[#a78bfa]" />
               <span className="min-w-0 flex-1 truncate">{t.title}</span>
               <span
                 role="button"

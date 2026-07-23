@@ -92,6 +92,26 @@ ${(uiMap.entries as { id: string; label: string; where: string }[])
   .map((e) => `- ${e.label}: ${e.where}`)
   .join("\n")}`;
 
+/** Providers with tight tokens-per-minute budgets (e.g. Groq free tier ~8k
+ * TPM): the turn is built LEAN — compact prompt, skill names instead of full
+ * bodies, capped grounding — so a simple message fits the budget. */
+const LEAN_TPM_PROVIDERS = new Set(["groq"]);
+
+const LEAN_SYSTEM_PROMPT = `You are Exa, the Exasol Studio agent — an expert in the Exasol analytics database, embedded in a desktop SQL workbench.
+
+EVIDENCE RULES — absolute:
+- Every claim about the user's data/schema MUST come from a tool result in THIS conversation. Never invent schema, table, or column names — discover them first.
+- Never display example/placeholder values as the user's data. To preview data, query it and show the result.
+- If a tool errors or returns nothing, say so plainly.
+
+ACT, DON'T NARRATE: do tasks by CALLING TOOLS — never answer with a plan or SQL "to run". Load a file → import_csv. Data question → run_sql, then summarize the real result.
+
+Your toolset is LEAN: if a capability is missing, call request_tools (its description lists everything), then use the loaded tool next step.
+
+Exasol SQL: LIMIT n (never TOP/FETCH FIRST). Unquoted identifiers fold to UPPERCASE — reference loaded tables unquoted; take exact casing from the catalog. Metadata lives in SYS (EXA_ALL_*).
+
+Be concise. Prefer runnable SQL in fenced sql code blocks.`;
+
 /** One user turn: multi-step agent loop with tool execution. */
 export async function runTurn(opts: {
   session: Session;
@@ -122,6 +142,7 @@ export async function runTurn(opts: {
   // Temperature moves to model construction in LangChain (constructor param,
   // not a per-call option).
   const model = registry.resolve(modelRef, { temperature: Math.min(Math.max(settings.temperature, 0), 1) });
+  const leanTurn = LEAN_TPM_PROVIDERS.has(modelRef.split("/")[0] ?? "");
   const modelSupportsImages = registry.supportsImages(modelRef);
 
   // Handle attachments: text/docs go into the session document store for
@@ -190,10 +211,11 @@ export async function runTurn(opts: {
   }
 
   // Cross-session knowledge, verified facts saved by earlier sessions.
-  const remembered = settings.enableInsights ? await memory.contextFor(session.connectionId, userText) : "";
+  const remembered = settings.enableInsights && !leanTurn ? await memory.contextFor(session.connectionId, userText) : "";
+  const basePrompt = leanTurn ? LEAN_SYSTEM_PROMPT : SYSTEM_PROMPT;
   let system = remembered
-    ? `${SYSTEM_PROMPT}\n\nMemory — background about the user and this database. NEVER answer data questions (schemas, tables, columns, counts, values) from this memory — always call the live tools to check; memory only tells you where to look:\n${remembered}`
-    : SYSTEM_PROMPT;
+    ? `${basePrompt}\n\nMemory — background about the user and this database. NEVER answer data questions (schemas, tables, columns, counts, values) from this memory — always call the live tools to check; memory only tells you where to look:\n${remembered}`
+    : basePrompt;
 
   // Surface truth: only describe abilities that EXIST this turn. Telling a
   // model about ui_connect when UI tools are off is how it ends up writing
@@ -222,7 +244,9 @@ export async function runTurn(opts: {
   const defaultSkills = [...new Set(settings.defaultSkills)]
     .map((name) => skillList.find((skill) => skill.name === name))
     .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
-  if (defaultSkills.length) {
+  if (defaultSkills.length && leanTurn) {
+    system += `\n\nActive skills (bodies omitted for this provider's budget — call load_skill(name) if you need the full playbook): ${defaultSkills.map((sk) => sk.name).join(", ")}`;
+  } else if (defaultSkills.length) {
     system += `\n\nDefault skills — these instructions are already active for this turn:\n${defaultSkills
       .map((skill) => `\n<skill name="${skill.name}">\n${skill.body}\n</skill>`)
       .join("\n")}`;
@@ -233,7 +257,7 @@ export async function runTurn(opts: {
   // Feed the query + light context (editor SQL keywords) so the match reflects
   // what the user is actually working on, and surface up to 2 relevant skills.
   const recallQuery = [userText, context].filter(Boolean).join(" ").slice(0, 2000);
-  const autoSkills = (await skillStore.recall(recallQuery, 2)).filter((sk) => !defaultSkills.includes(sk));
+  const autoSkills = leanTurn ? [] : (await skillStore.recall(recallQuery, 2)).filter((sk) => !defaultSkills.includes(sk));
   if (autoSkills.length) {
     system += `\n\nRelevant skill for this request (auto-activated):\n${autoSkills
       .map((sk) => `## ${sk.name}\n${sk.body}`)
@@ -266,7 +290,7 @@ export async function runTurn(opts: {
   if (session.connectionId) {
     try {
       const grounding = buildRetrievedContext(kb, session.connectionId, userText);
-      if (grounding) system += grounding;
+      if (grounding) system += leanTurn ? grounding.slice(0, 1600) : grounding;
     } catch (e) {
       log.warn("rag grounding failed", { error: String(e) });
     }
