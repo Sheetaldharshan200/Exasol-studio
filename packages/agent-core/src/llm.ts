@@ -216,7 +216,12 @@ export async function runLoop(opts: RunLoopOpts): Promise<LoopResult> {
         // Aliased/mistyped argument keys → canonical, without inventing values.
         const schemaish = zodSchemaish(def.inputSchema);
         const repaired = schemaish ? (repairArgs(call.args, schemaish) ?? call.args) : call.args;
-        const valid = def.inputSchema.safeParse(repaired);
+        // MCP-bridged tools carry a raw JSON Schema (no safeParse) — the
+        // remote server validates; we pass the args straight through.
+        const valid =
+          typeof (def.inputSchema as { safeParse?: unknown })?.safeParse === "function"
+            ? def.inputSchema.safeParse(repaired)
+            : ({ success: true, data: repaired } as { success: true; data: unknown });
         const args = valid.success ? (valid.data as Record<string, unknown>) : repaired;
         toolCallCount++;
         onEvent?.({ type: "tool-call", toolCallId: call.id, toolName: resolved, input: args });

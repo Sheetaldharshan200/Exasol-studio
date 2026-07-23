@@ -73,6 +73,10 @@ export type AgentConfig = {
       models?: { id: string; name?: string; context?: number }[];
     }
   >;
+  /** Detected account limits per provider (probed from rate-limit headers /
+   *  parsed from limit errors). tpm = tokens-per-minute; null = probe failed.
+   *  Drives lean vs full turns DYNAMICALLY — a Dev-tier key gets full mode. */
+  providerLimits?: Record<string, { tpm: number | null; at: number }>;
 };
 
 const DEFAULT_CONFIG: AgentConfig = { version: 1, providers: {} };

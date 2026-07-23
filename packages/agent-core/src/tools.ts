@@ -1418,14 +1418,25 @@ export function buildTools(ctx: {
   // native agent tool named mcp_<server>_<tool>. Args pass through loosely
   // (the server validates); EVERY call is approval-gated — external systems
   // are outside our permission model, so the human stays in the loop.
+  // Known-tricky external tools get a usage hint appended so models fill the
+  // required arguments correctly instead of calling with {}.
+  const MCP_TOOL_HINTS: Record<string, string> = {
+    search_repositories: 'To list the signed-in user\'s OWN repositories call {"query":"user:@me"}. The query argument is REQUIRED.',
+  };
   for (const mt of ctx.mcp?.tools() ?? []) {
     const safe = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, "_");
     const bridgeName = `mcp_${safe(mt.serverId)}_${safe(mt.name)}`;
+    const hint = MCP_TOOL_HINTS[mt.name] ? ` ${MCP_TOOL_HINTS[mt.name]}` : "";
+    // Bind the server's REAL JSON Schema so the model sees required fields —
+    // an empty passthrough schema made models call with {} and fail server
+    // validation (-32603 Invalid input).
+    const realSchema =
+      mt.inputSchema && typeof mt.inputSchema === "object"
+        ? (mt.inputSchema as z.ZodType)
+        : z.object({}).passthrough();
     tools[bridgeName] = tool({
-      description:
-        `[${mt.serverName} via MCP] ${mt.description || mt.name}. ` +
-        `Arguments must follow this JSON Schema: ${JSON.stringify(mt.inputSchema).slice(0, 800)}`,
-      inputSchema: z.object({}).passthrough(),
+      description: `[${mt.serverName} via MCP] ${mt.description || mt.name}.${hint}`,
+      inputSchema: realSchema,
       execute: async (args) => {
         const allowed = await session.askPermission({
           tool: bridgeName,
