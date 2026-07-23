@@ -40,6 +40,7 @@ import {
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
@@ -239,20 +240,23 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-odbc": "odbc",
 };
 
-// Horizontal tab order: Kits first, then the full catalog, categories, MCP &
-// AI clients, then status. (Kits-first per the marketplace redesign.)
-const NAV: { key: string; label: string; icon: IconName }[] = [
+// Horizontal tab bar: Kits first, then Catalog, then the status views (so
+// Updates stays visible), then a single "Categories" tab that expands into the
+// per-kind sections.
+const PRIMARY_NAV: { key: string; label: string; icon: IconName }[] = [
   { key: "recommended", label: "Kits", icon: "package" },
   { key: "all", label: "Catalog", icon: "marketplace" },
+  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
+  { key: "installing", label: "Installing", icon: "loader" },
+  { key: "installed", label: "Installed", icon: "check" },
+];
+const CATEGORY_NAV: { key: string; label: string; icon: IconName }[] = [
   { key: "database", label: "Databases", icon: "database" },
   { key: "load", label: "Data & tools", icon: "spanner" },
   { key: "drivers", label: "Drivers", icon: "usb" },
   { key: "extension", label: "Extensions", icon: "extension" },
   { key: "ai", label: "AI & Agents", icon: "cognition" },
   { key: "bi", label: "BI & Analytics", icon: "dashboard-grid" },
-  { key: "installed", label: "Installed", icon: "check" },
-  { key: "installing", label: "Installing", icon: "loader" },
-  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
 ];
 
 const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
@@ -796,9 +800,7 @@ export function Marketplace() {
     return (
       <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
         <div className="flex items-start gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-foreground">
-            <Icon className="h-4 w-4" />
-          </div>
+          <Icon className="h-5 w-5 shrink-0 text-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="break-words leading-snug text-[13px] font-semibold text-foreground">{item.name}</span>
@@ -876,9 +878,10 @@ export function Marketplace() {
           </button>
         </header>
 
-        {/* Horizontal tab bar — Kits first, then Catalog, categories, status. */}
+        {/* Horizontal tab bar — Kits, Catalog, status (Updates visible), then a
+            single Categories tab that expands into the per-kind sections. */}
         <nav className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {NAV.map((n) => {
+          {PRIMARY_NAV.map((n) => {
             const active = nav === n.key;
             const count =
               n.key === "installed"
@@ -903,6 +906,35 @@ export function Marketplace() {
               </button>
             );
           })}
+          {/* Categories — one tab that expands to the per-kind views. */}
+          {(() => {
+            const catActive = CATEGORY_NAV.some((c) => c.key === nav);
+            const current = CATEGORY_NAV.find((c) => c.key === nav);
+            return (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
+                      catActive ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <BxIcon name="grid" className={cn("h-3.5 w-3.5 shrink-0", catActive ? "text-primary" : "")} />
+                    <span className="truncate">{catActive && current ? current.label : "Categories"}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {CATEGORY_NAV.map((c) => (
+                    <DropdownMenuItem key={c.key} onClick={() => setNav(c.key)} className={cn(nav === c.key && "text-primary")}>
+                      <BxIcon name={c.icon} className="h-3.5 w-3.5" />
+                      {c.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
         </nav>
 
         {/* Content */}
@@ -973,8 +1005,8 @@ export function Marketplace() {
                           disabled={allInstalled}
                           title={allInstalled ? "Already installed" : "Install this kit"}
                           className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors",
-                            allInstalled ? "border-transparent text-primary" : "border-border text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary",
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
+                            allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary",
                           )}
                         >
                           {allInstalled ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
@@ -1073,7 +1105,7 @@ export function Marketplace() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-2.5 px-5 pt-5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><kitModal.icon className="h-4.5 w-4.5" /></div>
+              <kitModal.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
                 <h3 className="text-[15px] font-semibold text-foreground">{kitModal.name}</h3>
                 <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{kitModal.tagline}</p>
@@ -1090,7 +1122,7 @@ export function Marketplace() {
                   const done = c?.install === "reference" || installedMap[it.id] || detected[it.id];
                   return (
                     <div key={it.id} className="flex items-start gap-2.5">
-                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground"><ItIcon className="h-3.5 w-3.5" /></div>
+                      <ItIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[12.5px] font-medium text-foreground">{c?.name ?? it.label}</span>
