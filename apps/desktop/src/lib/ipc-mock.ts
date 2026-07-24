@@ -811,6 +811,12 @@ export async function mockInvoke(
     case "agent_info":
       throw new Error("The AI assistant requires the desktop app.");
 
+    case "connection_settings_get":
+      return JSON.parse(window.localStorage.getItem(`mock-conn-settings-${args?.profileId}`) ?? "null");
+    case "connection_settings_set":
+      window.localStorage.setItem(`mock-conn-settings-${args?.profileId}`, JSON.stringify(args?.settings ?? null));
+      return args?.settings ?? null;
+
     case "get_app_settings":
       return {};
     case "set_app_settings":

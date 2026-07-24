@@ -92,6 +92,7 @@ import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { ConnectionInfoPanel } from "@/features/workbench/ConnectionInfoPanel";
+import { ConnectionPropertiesTab } from "@/features/connection/ConnectionPropertiesTab";
 import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { DbaDashboard } from "@/features/workbench/DbaDashboard";
@@ -181,7 +182,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile" | "connProps";
 
 type SqlTab = {
   id: string;
@@ -249,6 +250,7 @@ const TAB_ICON: Record<TabView, IconName> = {
   object: "table",
   bi: "dashboards",
   connInfo: "plug",
+  connProps: "sliders",
   welcome: "home",
   artifact: "file",
   git: "git",
@@ -553,6 +555,7 @@ function ConnectionSection({
   connection,
   focused,
   live,
+  accent,
   treeKey,
   collapsed,
   onToggleCollapse,
@@ -570,6 +573,8 @@ function ConnectionSection({
   focused: boolean;
   /** Server reachability: true = up, false = down, undefined = probing. */
   live?: boolean;
+  /** Connection accent color (Properties → Color and Border). */
+  accent?: string;
   treeKey: number;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -577,7 +582,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
+  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -595,10 +600,11 @@ function ConnectionSection({
     <div className="min-w-0">
       <div
         className={cn(
-          "group flex h-8 items-center gap-1.5 pr-1 pl-1.5 transition-colors",
+          "group relative flex h-8 items-center gap-1.5 pr-1 pl-1.5 transition-colors",
           focused ? "bg-secondary/60" : "hover:bg-secondary/30",
         )}
       >
+        {accent ? <span className="absolute inset-y-0 left-0 w-0.5" style={{ backgroundColor: accent }} /> : null}
         <button
           onClick={onToggleCollapse}
           aria-label={collapsed ? "Expand" : "Collapse"}
@@ -622,7 +628,7 @@ function ConnectionSection({
                 : "bg-emerald-500 shadow-[0_0_6px_#10b981]",
             )}
           />
-          <Database className={cn("h-3.5 w-3.5 shrink-0", focused ? "text-primary" : "text-muted-foreground")} />
+          <Database className={cn("h-3.5 w-3.5 shrink-0", !accent && (focused ? "text-primary" : "text-muted-foreground"))} style={accent ? { color: accent } : undefined} />
           <span className={cn("truncate text-[13px]", focused ? "font-medium text-foreground" : "text-muted-foreground")}>
             {connection.profile.name}
           </span>
@@ -653,6 +659,9 @@ function ConnectionSection({
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={() => onOpenView("connInfo")}>
                 <Plug className="h-3.5 w-3.5" /> Connection info
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("connProps")}>
+                <Settings2 className="h-3.5 w-3.5" /> Properties
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("dbInfo")}>
                 <Info className="h-3.5 w-3.5" /> Database info
@@ -830,7 +839,7 @@ function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
-  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
+  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -855,6 +864,22 @@ function Sidebar({
   // green dot = server up, red = a live connection whose server went away,
   // grey = saved server that is not running. `undefined` = not probed yet.
   const [reachable, setReachable] = useState<Record<string, boolean>>({});
+  // Connection accent colors (Properties → Color and Border → show in name).
+  const [accents, setAccents] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let dead = false;
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const p of profiles) {
+        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
+          | { color?: { accent?: string | null; showInName?: boolean } }
+          | null;
+        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
+      }
+      if (!dead) setAccents(next);
+    })();
+    return () => { dead = true; };
+  }, [profiles]);
   const pingTargets = useMemo(
     () =>
       [
@@ -1116,6 +1141,7 @@ function Sidebar({
               connection={conn}
               focused={conn.profile.id === activeProfileId}
               live={reachable[conn.profile.id]}
+              accent={accents[conn.profile.id]}
               treeKey={treeKeys[conn.profile.id] ?? 0}
               collapsed={collapsed.has(conn.profile.id)}
               onToggleCollapse={() =>
@@ -2970,7 +2996,7 @@ export function ExasolStudio({
   }
 
   // Open (or focus) a read-only catalog surface for a connection.
-  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") {
+  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
     const existing = list.find((t) => t.view === view);
@@ -2988,7 +3014,9 @@ export function ExasolStudio({
             ? "Data Types"
             : view === "connInfo"
               ? "Connection Info"
-              : "DBA",
+              : view === "connProps"
+                ? "Properties"
+                : "DBA",
       view,
       sql: "",
       response: null,
@@ -4412,6 +4440,12 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               {activeTab.view === "connInfo" ? (
                 <ConnectionInfoPanel connection={connection} />
+              ) : activeTab.view === "connProps" ? (
+                <ConnectionPropertiesTab
+                  connection={connection}
+                  profileId={connection.profile.id}
+                  onSaved={() => onSaved?.()}
+                />
               ) : activeTab.view === "dbInfo" ? (
                 <DatabaseInfoPanel
                   profileId={connection.profile.id}

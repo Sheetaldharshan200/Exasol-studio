@@ -547,6 +547,9 @@ export const ipc = {
     split = true,
     addHistory = true,
   ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory }),
+  connectionSettingsGet: (profileId: string) => call<unknown>("connection_settings_get", { profileId }),
+  connectionSettingsSet: (profileId: string, settings: unknown) =>
+    call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),

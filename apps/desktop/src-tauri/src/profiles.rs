@@ -77,6 +77,16 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
     Ok(profile)
 }
 
+/// Blank a profile's stored password (Connection Properties → Authentication
+/// → "Clear at Disconnect"): the next connect prompts for it again.
+pub fn clear_profile_password(state: &AppState, profile_id: &str) -> AppResult<()> {
+    let mut profiles = load_profiles(state)?;
+    if let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) {
+        profile.password = String::new();
+    }
+    write_json(&profiles_path(state), &profiles)
+}
+
 pub fn touch_profile(state: &AppState, profile_id: &str) -> AppResult<()> {
     let mut profiles = load_profiles(state)?;
     if let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) {
