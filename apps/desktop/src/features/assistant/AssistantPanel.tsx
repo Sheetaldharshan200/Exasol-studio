@@ -1661,26 +1661,28 @@ function PermissionCard({
   onAnswer: (id: string, allow: boolean) => void;
 }) {
   const pending = item.result === undefined;
+  // Once answered, the box disappears — just a one-line trace remains.
+  if (!pending) {
+    return (
+      <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground">
+        <ShieldAlert className="h-3 w-3 shrink-0" />
+        <span className="min-w-0 truncate" title={item.summary}>{item.summary}</span>
+        <span
+          className={cn(
+            "shrink-0 rounded px-1.5 py-px text-[9px] font-medium uppercase",
+            item.result ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive",
+          )}
+        >
+          {item.result ? "allowed" : "denied"}
+        </span>
+      </div>
+    );
+  }
   return (
-    <div
-      className={cn(
-        "rounded-xl border p-3",
-        pending ? "border-warning/50 bg-warning/8" : "border-border bg-panel/60",
-      )}
-    >
+    <div className="rounded-xl border border-warning/50 bg-warning/8 p-3">
       <div className="flex items-center gap-1.5">
-        <ShieldAlert className={cn("h-3.5 w-3.5", pending ? "text-warning" : "text-muted-foreground")} />
+        <ShieldAlert className="h-3.5 w-3.5 text-warning" />
         <span className="text-[12px] font-semibold text-foreground">Approval needed</span>
-        {!pending ? (
-          <span
-            className={cn(
-              "ml-auto rounded px-1.5 py-px text-[9px] font-medium uppercase",
-              item.result ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive",
-            )}
-          >
-            {item.result ? "allowed" : "denied"}
-          </span>
-        ) : null}
       </div>
       <p className="mt-1 text-[11.5px] text-muted-foreground">{item.summary}</p>
       {item.detail ? (

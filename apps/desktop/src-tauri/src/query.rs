@@ -199,11 +199,16 @@ async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
     }
 }
 
-async fn run_statement(pool: &ExaPool, statement: &str, max_rows: usize) -> StatementResult {
+async fn run_statement(
+    pool: &ExaPool,
+    conn: &mut sqlx_exasol::ExaConnection,
+    statement: &str,
+    max_rows: usize,
+) -> StatementResult {
     let started = std::time::Instant::now();
 
     if is_result_set_statement(statement) {
-        let mut stream = sqlx_exasol::query(AssertSqlSafe(statement.to_string())).fetch(pool);
+        let mut stream = sqlx_exasol::query(AssertSqlSafe(statement.to_string())).fetch(&mut *conn);
         let mut columns: Vec<ColumnMeta> = Vec::new();
         let mut rows: Vec<Vec<Value>> = Vec::new();
         let mut truncated = false;
@@ -248,7 +253,7 @@ async fn run_statement(pool: &ExaPool, statement: &str, max_rows: usize) -> Stat
         }
     } else {
         match sqlx_exasol::query(AssertSqlSafe(statement.to_string()))
-            .execute(pool)
+            .execute(&mut *conn)
             .await
         {
             Ok(done) => StatementResult {
@@ -284,6 +289,7 @@ pub async fn execute_sql(
     sql: String,
     max_rows: Option<usize>,
     split: Option<bool>,
+    add_history: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
@@ -313,10 +319,18 @@ pub async fn execute_sql(
         (resp.results, resp.success)
     } else {
         let pool = require_pool(&state, &profile_id).await?;
+        // ONE connection for the whole batch: statements from a script share a
+        // session, so ALTER SESSION (e.g. PROFILE), transactions, and session
+        // functions like CURRENT_SESSION behave like they do in any SQL client.
+        // Round-robining the pool per statement broke the query profiler.
+        let mut conn = pool
+            .acquire()
+            .await
+            .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
         let mut results = Vec::with_capacity(statements.len());
         let mut success = true;
         for statement in &statements {
-            let result = run_statement(&pool, statement, max_rows).await;
+            let result = run_statement(&pool, &mut conn, statement, max_rows).await;
             let failed = result.error.is_some();
             results.push(result);
             if failed {
@@ -346,7 +360,11 @@ pub async fn execute_sql(
         error: results.iter().find_map(|r| r.error.clone()),
         row_count: row_total,
     };
-    history::append_history(&state, entry)?;
+    // Background page prefetches pass add_history=false so the execution log
+    // only records what the user actually ran.
+    if add_history.unwrap_or(true) {
+        history::append_history(&state, entry)?;
+    }
 
     Ok(ExecuteResponse {
         results,

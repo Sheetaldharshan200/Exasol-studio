@@ -212,6 +212,8 @@ type SqlTab = {
   artifactHtml?: string;
   /** For profile tabs — the computed query-performance analysis. */
   profileData?: ProfileData;
+  /** Result pagination (0-based) for single-SELECT tabs. */
+  resultPage?: number;
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -548,6 +550,7 @@ const PLACEHOLDERS: Record<"favorites" | "git" | "marketplace", { icon: IconName
 function ConnectionSection({
   connection,
   focused,
+  live,
   treeKey,
   collapsed,
   onToggleCollapse,
@@ -563,6 +566,8 @@ function ConnectionSection({
 }: {
   connection: ActiveConnection;
   focused: boolean;
+  /** Server reachability: true = up, false = down, undefined = probing. */
+  live?: boolean;
   treeKey: number;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -604,10 +609,15 @@ function ConnectionSection({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           title={`${connection.profile.host}:${connection.profile.port}`}
         >
+          {/* Status dot = liveness, not focus: solid green while the server
+              answers, red if a connected server stops responding. */}
           <span
+            title={live === false ? "Server not responding" : "Connected — server is up"}
             className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full",
-              focused ? "bg-primary shadow-[0_0_6px_var(--primary)]" : "bg-primary/50",
+              "h-2 w-2 shrink-0 rounded-full",
+              live === false
+                ? "bg-destructive shadow-[0_0_6px_var(--destructive)]"
+                : "bg-emerald-500 shadow-[0_0_6px_#10b981]",
             )}
           />
           <Database className={cn("h-3.5 w-3.5 shrink-0", focused ? "text-primary" : "text-muted-foreground")} />
@@ -839,6 +849,41 @@ function Sidebar({
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Server reachability per profile id (TCP ping, refreshed every 20s):
+  // green dot = server up, red = a live connection whose server went away,
+  // grey = saved server that is not running. `undefined` = not probed yet.
+  const [reachable, setReachable] = useState<Record<string, boolean>>({});
+  const pingTargets = useMemo(
+    () =>
+      [
+        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port })),
+        ...profiles
+          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_"))
+          .map((p) => ({ id: p.id, host: p.host, port: p.port })),
+      ],
+    [connections, profiles],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const probe = () => {
+      for (const t of pingTargets) {
+        ipc
+          .pingServer(t.host, t.port)
+          .then((r) => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === r.reachable ? prev : { ...prev, [t.id]: r.reachable }));
+          })
+          .catch(() => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === false ? prev : { ...prev, [t.id]: false }));
+          });
+      }
+    };
+    probe();
+    const timer = window.setInterval(probe, 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pingTargets]);
   const hasConnections = connections.length > 0;
   const searchProfileId = activeProfileId ?? connections[0]?.profile.id ?? null;
   const connectedIds = new Set(connections.map((c) => c.profile.id));
@@ -924,6 +969,13 @@ function Sidebar({
             className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
             title={`Connect to ${p.name} (${p.host}:${p.port})`}
           >
+            <span
+              title={reachable[p.id] ? "Server is running — not connected" : "Server not running"}
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                reachable[p.id] ? "bg-emerald-500/80" : "border border-muted-foreground/50 bg-transparent",
+              )}
+            />
             <Database className={cn("h-3.5 w-3.5 shrink-0", isLocal ? "text-primary" : "text-muted-foreground")} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] text-foreground">{p.name}</div>
@@ -1061,6 +1113,7 @@ function Sidebar({
               key={conn.profile.id}
               connection={conn}
               focused={conn.profile.id === activeProfileId}
+              live={reachable[conn.profile.id]}
               treeKey={treeKeys[conn.profile.id] ?? 0}
               collapsed={collapsed.has(conn.profile.id)}
               onToggleCollapse={() =>
@@ -1266,16 +1319,19 @@ function ResultsGrid({
         </span>
       </div>
       <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
-        <table ref={roTableRef} className="w-full border-collapse border border-border">
+        {/* border-separate (NOT collapse) so the sticky header cells carry their
+            own opaque background + border — with border-collapse the row bg and
+            borders stay behind and scrolling rows show through the header. */}
+        <table ref={roTableRef} className="w-full border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-secondary">
-              <th className="border-r border-b border-border px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
+            <tr>
+              <th className="border-y border-r border-l border-border bg-secondary px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
                 #
               </th>
               {result.columns.map((col) => (
                 <th
                   key={col.name}
-                  className="border-r border-b border-border px-3 py-1.5 text-left font-medium text-foreground"
+                  className="border-y border-r border-border bg-secondary px-3 py-1.5 text-left font-medium text-foreground"
                 >
                   {col.name}
                   <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
@@ -1292,7 +1348,7 @@ function ResultsGrid({
                 title={canEdit ? "Double-click a cell to edit it" : undefined}
                 className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", canEdit && "cursor-cell")}
               >
-                <td className="border-r border-b border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
+                <td className="border-r border-b border-l border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
                   {rowIndex + 1}
                 </td>
                 {row.map((cell, cellIndex) => (
@@ -1569,28 +1625,48 @@ function HistoryDock({
               {entries.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
               ) : (
-                <table className="w-full text-[12px]">
-                  <thead className="sticky top-0 bg-secondary">
+                // Execution log, DB-tool style: every run — success or failure —
+                // with its status, command, timing, rows, and the FULL error
+                // message in its own column (not buried in a tooltip).
+                <table className="w-full table-fixed text-[12px]">
+                  <colgroup>
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 74 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 70 }} />
+                    <col style={{ width: 64 }} />
+                    <col style={{ width: "34%" }} />
+                    <col />
+                  </colgroup>
+                  <thead className="sticky top-0 z-10 bg-secondary">
                     <tr className="text-left text-muted-foreground">
-                      {["Time", "Statement", "Rows", "Elapsed", "Status"].map((h) => (
-                        <th key={h} className="border-b border-border px-3 py-1.5 font-medium">{h}</th>
+                      {["Time", "Status", "Command", "Exec", "Rows", "Message", "SQL"].map((h) => (
+                        <th key={h} className="border-b border-border px-2.5 py-1.5 font-medium">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {entries.map((entry) => (
-                      <tr key={entry.id} className="cursor-pointer border-b border-border hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
-                        <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
-                        <td className="max-w-[520px] truncate px-3 py-1.5 font-mono text-foreground">{entry.sql.replace(/\s+/g, " ").trim()}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{entry.rowCount}</td>
-                        <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{entry.elapsedMs} ms</td>
-                        <td className="px-3 py-1.5">
-                          <span className={cn("rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
-                            {entry.success ? "ok" : "error"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {entries.map((entry) => {
+                      const verb = (entry.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
+                      return (
+                        <tr key={entry.id} className="cursor-pointer border-b border-border align-top hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
+                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
+                          <td className="px-2.5 py-1.5">
+                            <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+                              {entry.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                              {entry.success ? "ok" : "FAILED"}
+                            </span>
+                          </td>
+                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">{verb}{entry.statementCount > 1 ? ` ×${entry.statementCount}` : ""}</td>
+                          <td className="px-2.5 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{entry.elapsedMs} ms</td>
+                          <td className="px-2.5 py-1.5 text-right font-mono">{entry.rowCount}</td>
+                          <td className={cn("px-2.5 py-1.5 text-[11.5px] leading-snug break-words", entry.error ? "text-destructive" : "text-muted-foreground")} title={entry.error ?? ""}>
+                            {entry.error ?? "—"}
+                          </td>
+                          <td className="truncate px-2.5 py-1.5 font-mono text-foreground" title={entry.sql}>{entry.sql.replace(/\s+/g, " ").trim()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1882,7 +1958,7 @@ export function ExasolStudio({
         }
       }
       const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
-      patchTab(activeTab.id, { response: res, execError: null });
+      patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       refreshSqlCatalog();
       window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
@@ -2669,6 +2745,7 @@ export function ExasolStudio({
               ? {
                   ...t,
                   response: result,
+                  resultPage: 0,
                   execError: result.success ? null : result.results.find((r) => r.error)?.error ?? "Statement failed.",
                 }
               : t,
@@ -3067,6 +3144,7 @@ export function ExasolStudio({
           const failed = result.results.find((r) => r.error);
           patchTab(activeTab.id, {
             response: result,
+                  resultPage: 0,
             execError: failed?.error ?? "Statement failed.",
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
           });
@@ -3074,6 +3152,7 @@ export function ExasolStudio({
         } else {
           patchTab(activeTab.id, {
             response: result,
+                  resultPage: 0,
             execError: null,
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true },
           });
@@ -3268,10 +3347,15 @@ export function ExasolStudio({
   // "Dashboards" from a result: add this query as a panel to the dashboard for
   // its schema — one dashboard per schema, so every query against WEATHER lands
   // on the WEATHER dashboard (created on first use, appended to after that).
-  // Per-query performance ANALYSIS: Exasol has no EXPLAIN and doesn't tell you
-  // where a query slows down — so WE compute it. One batch (same session) runs
-  // the statement with profiling ON, reads the engine's step parts, and a
-  // dedicated tab renders time-share, bottleneck callouts, and tuning advice.
+  // Per-query performance ANALYSIS — exact, best-practice Exasol profiling:
+  //   1. ONE batch on ONE session: PROFILE ON → statement → SELECT
+  //      CURRENT_STATEMENT (a marker, so the profiled statement's id is
+  //      DETERMINED, never guessed) → PROFILE OFF → FLUSH STATISTICS.
+  //   2. Steps come from EXA_USER_PROFILE_LAST_DAY via SELECT * and are mapped
+  //      BY COLUMN NAME (IN_ROWS/OUT_ROWS/REMARKS… — robust across versions).
+  //   3. The statement's true wall time comes from EXA_USER_SQL_LAST_DAY —
+  //      part durations overlap under parallel execution, so the sum of parts
+  //      is NOT the runtime; both are shown, labeled.
   const [profiling, setProfiling] = useState(false);
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
@@ -3281,51 +3365,87 @@ export function ExasolStudio({
     const script = [
       "ALTER SESSION SET PROFILE = 'ON';",
       stmt + ";",
+      "SELECT CURRENT_STATEMENT AS STMT_MARK;",
       "ALTER SESSION SET PROFILE = 'OFF';",
       "FLUSH STATISTICS;",
-      "SELECT COMMAND_NAME, STMT_ID, PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME,",
-      "       OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK, HDD_READ, NET",
-      "FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY",
-      "WHERE SESSION_ID = CURRENT_SESSION",
-      "ORDER BY STMT_ID DESC, PART_ID",
-      "LIMIT 300;",
+      "SELECT * FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = CURRENT_SESSION ORDER BY STMT_ID DESC, PART_ID LIMIT 400;",
+      "SELECT * FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = CURRENT_SESSION ORDER BY STMT_ID DESC LIMIT 20;",
     ].join("\n");
     setProfiling(true);
     try {
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, script, 500, true);
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, script, 1000, true);
       const bad = res.results.find((r) => r.error);
       if (bad?.error) {
         pushNotification("warning", "Profiling failed", bad.error);
         return;
       }
-      const sets = res.results.filter((r) => r.kind === "resultSet" && r.columns.length >= 14);
-      const prof = sets[sets.length - 1];
-      if (!prof || !prof.rows.length) {
-        pushNotification("warning", "Profiling returned nothing", "EXA_STATISTICS had no profile parts for this session — the statistics user may lack access.");
+      const sets = res.results.filter((r) => r.kind === "resultSet");
+      // Column-name-based accessor: exact and resilient to column order/set.
+      const by = (r: (typeof sets)[number]) => {
+        const idx = new Map(r.columns.map((c, k) => [c.name.toUpperCase(), k]));
+        return (row: unknown[], col: string) => {
+          const k = idx.get(col);
+          return k === undefined ? null : row[k];
+        };
+      };
+      const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
+      // The marker result: one row, one column STMT_MARK → profiled id = mark - 1.
+      const markSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "STMT_MARK"));
+      const mark = markSet ? num(by(markSet)(markSet.rows[0] ?? [], "STMT_MARK")) : null;
+      if (mark === null) {
+        pushNotification("warning", "Profiling failed", "Could not determine the statement id (CURRENT_STATEMENT marker missing).");
         return;
       }
-      const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
-      type Raw = { cmd: string; stmtId: number; part: ProfilePart };
-      const raws: Raw[] = prof.rows.map((r) => ({
-        cmd: String(r[0] ?? ""),
-        stmtId: Number(r[1] ?? 0),
-        part: {
-          partId: Number(r[2] ?? 0), name: String(r[3] ?? ""), info: r[4] === null ? null : String(r[4]),
-          schema: r[5] === null ? null : String(r[5]), object: r[6] === null ? null : String(r[6]),
-          objectRows: num(r[7]), outRows: num(r[8]), duration: num(r[9]), cpu: num(r[10]),
-          tempRam: num(r[11]), hddRead: num(r[12]), net: num(r[13]),
-        },
-      }));
-      // Our statement = the newest stmt whose command matches the SQL's verb
-      // (falls back to the newest non-ALTER/FLUSH statement).
-      const verb = (stmt.match(/^[a-zA-Z]+/)?.[0] ?? "SELECT").toUpperCase();
-      const candidates = [...new Set(raws.map((r) => r.stmtId))].sort((a, b) => b - a);
-      const targetId =
-        candidates.find((id) => raws.some((r) => r.stmtId === id && r.cmd.toUpperCase().startsWith(verb))) ??
-        candidates.find((id) => raws.some((r) => r.stmtId === id && !/^(ALTER|FLUSH|COMMIT)/i.test(r.cmd))) ??
-        candidates[0];
-      const parts = raws.filter((r) => r.stmtId === targetId).map((r) => r.part).sort((a, b) => a.partId - b.partId);
-      const data: ProfileData = { sql: stmt, script, commandName: raws.find((r) => r.stmtId === targetId)?.cmd ?? verb, parts };
+      const targetId = mark - 1;
+      const profSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "PART_NAME"));
+      const sqlSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "COMMAND_CLASS") && !r.columns.some((c) => c.name.toUpperCase() === "PART_NAME"));
+      if (!profSet || !profSet.rows.length) {
+        pushNotification("warning", "No profile data", "EXA_STATISTICS returned no parts — the account may lack statistics access.");
+        return;
+      }
+      const g = by(profSet);
+      const parts: ProfilePart[] = profSet.rows
+        .filter((row) => num(g(row, "STMT_ID")) === targetId)
+        .map((row) => ({
+          partId: num(g(row, "PART_ID")) ?? 0,
+          name: String(g(row, "PART_NAME") ?? ""),
+          info: g(row, "PART_INFO") === null ? null : String(g(row, "PART_INFO")),
+          schema: g(row, "OBJECT_SCHEMA") === null ? null : String(g(row, "OBJECT_SCHEMA")),
+          object: g(row, "OBJECT_NAME") === null ? null : String(g(row, "OBJECT_NAME")),
+          objectRows: num(g(row, "OBJECT_ROWS")),
+          inRows: num(g(row, "IN_ROWS")),
+          outRows: num(g(row, "OUT_ROWS")),
+          duration: num(g(row, "DURATION")),
+          cpu: num(g(row, "CPU")),
+          tempRam: num(g(row, "TEMP_DB_RAM_PEAK")),
+          hddRead: num(g(row, "HDD_READ")),
+          hddWrite: num(g(row, "HDD_WRITE")),
+          net: num(g(row, "NET")),
+          remarks: g(row, "REMARKS") === null ? null : String(g(row, "REMARKS")),
+        }))
+        .sort((a, b) => a.partId - b.partId);
+      if (!parts.length) {
+        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows (it may be too fast to profile).`);
+        return;
+      }
+      // The statement's EXACT wall time + totals from EXA_USER_SQL_LAST_DAY.
+      let wall: ProfileData["wall"] = null;
+      if (sqlSet) {
+        const q = by(sqlSet);
+        const row = sqlSet.rows.find((r2) => num(q(r2, "STMT_ID")) === targetId);
+        if (row) {
+          wall = {
+            duration: num(q(row, "DURATION")),
+            commandName: String(q(row, "COMMAND_NAME") ?? ""),
+            rowCount: num(q(row, "ROW_COUNT")),
+            cpu: num(q(row, "CPU")),
+            tempRam: num(q(row, "TEMP_DB_RAM_PEAK")),
+            hddRead: num(q(row, "HDD_READ")),
+            net: num(q(row, "NET")),
+          };
+        }
+      }
+      const data: ProfileData = { sql: stmt, script, commandName: wall?.commandName ?? (stmt.match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase(), parts, wall };
       tabCounter.current += 1;
       const tab: SqlTab = {
         id: `tab-prof-${Date.now()}-${tabCounter.current}`,
@@ -3337,12 +3457,98 @@ export function ExasolStudio({
         profileData: data,
       };
       updateTabs(connKey, (l) => [...l, tab]);
-      setActiveIdByConn((a) => ({ ...a, [connKey]: tab.id }));
+      setActiveIdByConn((a2) => ({ ...a2, [connKey]: tab.id }));
       loadHistory();
     } catch (e) {
       pushNotification("warning", "Profiling failed", errorMessage(e));
     } finally {
       setProfiling(false);
+    }
+  }
+
+  // Server-side result paging for single-SELECT tabs: page 0 is the plain run
+  // (the truncated flag = "has next"); later pages wrap the query with
+  // ORDER BY 1 + LIMIT/OFFSET — Exasol requires a deterministic order for
+  // OFFSET, so pages beyond the first are ordered by the first column.
+  //
+  // Pages are PREFETCHED: as soon as a page is on screen the next one loads
+  // in the background (and visited pages stay cached), so ▸ is instant. The
+  // cache is stamped with the tab's SQL — a re-run or edit invalidates it —
+  // and prefetches skip the execution log (addHistory=false).
+  const [paging, setPaging] = useState(false);
+  const pageCache = useRef<Map<string, { sql: string; pages: Map<number, ExecuteResponse> }>>(new Map());
+  const prefetching = useRef<Set<string>>(new Set());
+
+  function pagedSql(base: string, page: number): string {
+    return page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
+  }
+  function pageBase(sql: string): string | null {
+    const stmts = splitStatements(sql);
+    if (stmts.length !== 1) return null;
+    const base = stmts[0].text.trim().replace(/;\s*$/, "");
+    return /^select|^with/i.test(base) ? base : null;
+  }
+  async function prefetchPage(tabId: string, base: string, page: number) {
+    if (!connection || page < 0) return;
+    const key = `${tabId}:${page}`;
+    const entry = pageCache.current.get(tabId);
+    if (prefetching.current.has(key) || !entry || entry.sql !== base || entry.pages.has(page)) return;
+    prefetching.current.add(key);
+    try {
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false, false);
+      const cur = pageCache.current.get(tabId);
+      if (res.success && cur && cur.sql === base) {
+        cur.pages.set(page, res);
+        // Keep memory bounded: hold at most 8 pages, dropping the farthest.
+        while (cur.pages.size > 8) {
+          const far = [...cur.pages.keys()].reduce((a2, b2) => (Math.abs(a2 - page) >= Math.abs(b2 - page) ? a2 : b2));
+          cur.pages.delete(far);
+        }
+      }
+    } catch {
+      /* prefetch is best-effort — the click path fetches live on a miss */
+    } finally {
+      prefetching.current.delete(key);
+    }
+  }
+  // A fresh run (page-0 response we didn't serve from cache) seeds the cache
+  // and warms page 1 immediately.
+  useEffect(() => {
+    const res = activeTab.response;
+    if (!res || (activeTab.resultPage ?? 0) !== 0 || !res.success) return;
+    const base = pageBase(activeTab.sql);
+    if (!base) return;
+    const entry = pageCache.current.get(activeTab.id);
+    if (entry && entry.sql === base && entry.pages.get(0) === res) return; // cache-served, not a new run
+    pageCache.current.set(activeTab.id, { sql: base, pages: new Map([[0, res]]) });
+    if (res.results[0]?.truncated) void prefetchPage(activeTab.id, base, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.id, activeTab.response, activeTab.resultPage]);
+
+  async function loadResultPage(page: number) {
+    if (!connection || page < 0) return;
+    const base = pageBase(activeTab.sql);
+    if (!base) return;
+    const entry = pageCache.current.get(activeTab.id);
+    const cached = entry && entry.sql === base ? entry.pages.get(page) : undefined;
+    if (cached) {
+      patchTab(activeTab.id, { response: cached, execError: null, resultPage: page });
+      if (cached.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
+      if (page > 0) void prefetchPage(activeTab.id, base, page - 1);
+      return;
+    }
+    if (paging) return;
+    setPaging(true);
+    try {
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false);
+      const cur = pageCache.current.get(activeTab.id);
+      if (res.success && cur && cur.sql === base) cur.pages.set(page, res);
+      patchTab(activeTab.id, { response: res, execError: res.success ? null : res.results.find((r) => r.error)?.error ?? null, resultPage: page });
+      if (res.success && res.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
+    } catch (e) {
+      pushNotification("warning", "Page load failed", errorMessage(e));
+    } finally {
+      setPaging(false);
     }
   }
 
@@ -4203,11 +4409,37 @@ export function ExasolStudio({
                     ))}
                     {lastResult ? (
                       <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                        {lastResult.kind === "resultSet" ? (
-                          <>
-                            {lastResult.rowCount} rows{lastResult.truncated ? " (truncated)" : ""}
-                          </>
-                        ) : null}
+                        {lastResult.kind === "resultSet" ? (() => {
+                          const page = activeTab.resultPage ?? 0;
+                          const single = splitStatements(activeTab.sql).length === 1 && /^select/i.test(activeTab.sql.trim());
+                          const from = page * maxRows + (lastResult.rowCount ? 1 : 0);
+                          const to = page * maxRows + lastResult.rowCount;
+                          const hasNext = lastResult.truncated;
+                          if (!single || (page === 0 && !hasNext)) {
+                            return <>{lastResult.rowCount} rows{lastResult.truncated ? " (truncated)" : ""}</>;
+                          }
+                          return (
+                            <span className="flex items-center gap-1" title="Pages beyond the first are ordered by the first column — Exasol requires a deterministic order for OFFSET">
+                              Rows {from.toLocaleString()}–{to.toLocaleString()}
+                              <button
+                                onClick={() => void loadResultPage(page - 1)}
+                                disabled={page === 0 || paging}
+                                aria-label="Previous page"
+                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
+                              >
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => void loadResultPage(page + 1)}
+                                disabled={!hasNext || paging}
+                                aria-label="Next page"
+                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
+                              >
+                                {paging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              </button>
+                            </span>
+                          );
+                        })() : null}
                         · {activeTab.response?.totalElapsedMs ?? 0} ms
                       </span>
                     ) : null}

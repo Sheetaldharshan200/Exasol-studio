@@ -66,12 +66,18 @@ fn script_path(app: &AppHandle) -> AppResult<PathBuf> {
 /// A Node runtime bundled into the app resources (placed by the release
 /// workflow's fetch-runtime step). Absent in dev builds → returns None and we
 /// fall back to system Node.
-fn bundled_node(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn bundled_node(app: &AppHandle) -> Option<PathBuf> {
     let rel = if cfg!(windows) { "runtime/node/node.exe" } else { "runtime/node/bin/node" };
     app.path()
         .resolve(rel, tauri::path::BaseDirectory::Resource)
         .ok()
         .filter(|p| p.exists())
+}
+
+/// The Node binary Studio itself runs on: bundled runtime first, system Node
+/// second. Shared with the MCP gateway export (ai_clients).
+pub(crate) fn node_binary(app: &AppHandle) -> Option<PathBuf> {
+    bundled_node(app).or_else(|| resolve_bin("node"))
 }
 
 fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentInfo)> {

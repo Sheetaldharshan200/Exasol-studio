@@ -27,6 +27,11 @@ fn history_path(state: &AppState) -> std::path::PathBuf {
 }
 
 pub fn append_history(state: &AppState, entry: HistoryEntry) -> AppResult<()> {
+    // Serialize read-modify-write: concurrent statements (dashboard panels)
+    // all append here — without the lock they drop each other's entries.
+    use std::sync::Mutex;
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut entries: Vec<HistoryEntry> = read_json(&history_path(state), Vec::new())?;
     entries.insert(0, entry);
     entries.truncate(MAX_ENTRIES);

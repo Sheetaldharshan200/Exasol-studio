@@ -17,6 +17,7 @@ import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
 import { isAiProvidersWindow } from "@/lib/ai-window";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
+import { agent as agentClient } from "@/lib/agent-client";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
@@ -86,15 +87,20 @@ function MainApp() {
   }, []);
 
   // Zero-setup experience: open the managed connection as soon as the
-  // database/profile are ready; Semantic Views may keep loading.
+  // database/profile are ready — but ONLY when Personal is the sole database
+  // here. Once the user has their own connections (nano, remote, …), nothing
+  // ever connects without a click; the sidebar card shows the green
+  // "running" dot and connects on tap.
   useEffect(() => {
     const profileId = localStatus?.localReady ? localStatus.profileId : null;
     if (!profileId || localConnectAttempt.current === profileId || connections.some((c) => c.profile.id === profileId)) return;
-    localConnectAttempt.current = profileId;
     void (async () => {
       const nextProfiles = await ipc.listConnectionProfiles();
+      const others = nextProfiles.filter((p) => p.id !== profileId && !p.username.startsWith("STUDIO_MCP_"));
+      if (others.length > 0 || connections.length > 0) return; // not a zero-setup situation
       const profile = nextProfiles.find((candidate) => candidate.id === profileId);
       if (!profile) return;
+      localConnectAttempt.current = profileId;
       const server = await ipc.connect(profileId);
       adopt({ profile, server });
       await refresh();
@@ -102,6 +108,19 @@ function MainApp() {
       localConnectAttempt.current = null;
     });
   }, [localStatus, connections, adopt, refresh]);
+
+  // Register every OPEN connection with the agent sidecar so the in-app agent
+  // and the Studio MCP gateway (external AI clients) can speak for all of
+  // them. Credentials are decrypted in Rust and held in sidecar memory only.
+  const grantedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isTauri()) return;
+    for (const c of connections) {
+      if (grantedRef.current.has(c.profile.id)) continue;
+      grantedRef.current.add(c.profile.id);
+      void agentClient.grantConnection(c.profile.id).catch(() => grantedRef.current.delete(c.profile.id));
+    }
+  }, [connections]);
 
   // Kick off the guided tour once, shortly after the studio first mounts.
   useEffect(() => {

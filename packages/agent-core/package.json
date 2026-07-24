@@ -2,14 +2,14 @@
   "name": "@exasol-studio/agent-core",
   "version": "0.1.0",
   "private": true,
-  "description": "Headless agentic AI core for Exasol Studio — HTTP+SSE server, provider registry, agent loop.",
+  "description": "Headless agentic AI core for Exasol Studio \u2014 HTTP+SSE server, provider registry, agent loop.",
   "type": "module",
   "main": "dist/agent-core.cjs",
   "bin": {
     "exa-agent": "dist/exa-agent.cjs"
   },
   "scripts": {
-    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\"",
+    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\" && esbuild src/mcp-gateway.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-gateway.cjs --external:node:*",
     "build:cli": "pnpm run build && esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/exa-agent.cjs --external:node:* --banner:js=\"#!/usr/bin/env node\" && node -e \"require('fs').chmodSync('dist/exa-agent.cjs', 0o755)\"",
     "dev": "node --experimental-strip-types src/index.ts",
     "evals": "node --experimental-strip-types evals/run.ts",

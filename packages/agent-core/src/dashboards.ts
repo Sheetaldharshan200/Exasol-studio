@@ -68,6 +68,8 @@ export const DashboardSchema = z.object({
   description: z.string().default(""),
   /** Optional grouping in the dashboards list (e.g. "System"). */
   group: z.string().optional(),
+  /** Auto-refresh cadence in ms — must survive saves (zod strips unknowns). */
+  refreshMs: z.number().int().positive().optional(),
   panels: z.array(PanelSchema).min(1).max(24),
 });
 
