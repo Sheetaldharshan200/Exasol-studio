@@ -115,7 +115,6 @@ import { termBusReady } from "@/lib/term-bus";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { Notifications } from "@/features/workbench/Notifications";
-import { ConnectView } from "@/features/connection/ConnectView";
 import { McpMarketplace } from "@/features/marketplace/McpMarketplace";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
@@ -4341,11 +4340,13 @@ export function ExasolStudio({
 
           {/* Connect flow, catalog surface, file preview, or SQL editor */}
           {activeTab.view === "connect" ? (
+            // New connection = the SAME unified Database Connection page in
+            // new-profile mode (Test connection / Save & Connect footer).
             <div className="min-h-0 flex-1">
-              <ConnectView
-                drivers={drivers}
-                profiles={profiles}
-                onSaved={onSaved}
+              <ConnectionPropertiesTab
+                connection={null}
+                profileId={null}
+                onSaved={() => void onSaved?.()}
                 onConnected={async (p, srv) => {
                   await onConnected(p, srv);
                   await agentClient.grantConnection(p.id).catch(() => undefined);

@@ -109,6 +109,16 @@ Legend: [x] shipped & wired · [~] shipped, stored + partially wired (noted) · 
       deleted ConnectionInfoPanel.tsx, removed ipc.listDataTypes + DataType
       type + mock case + Rust list_data_types command
 
+## 3e. New-connection mode + driver-aware URL (2026-07-24)
+- [x] "+ Connect" opens the SAME unified page in new-profile mode: editable
+      draft (driver picker, encryption, compression), Test connection with
+      inline result, Save & Connect footer; other sections unlock after save
+- [x] Header URL is driver-aware (exa:ws:// native, jdbc:exa:, odbc:exa:,
+      pyexasol://, exa+websocket://) with a driver chip
+- [x] Deleted ConnectView.tsx (557 lines) — the connect form no longer exists
+      twice; encryption/compression/driver are now editable in the unified
+      Connection section for existing profiles too
+
 ## 4. Follow-ups (backlog)
 - [ ] Sweep every SQL emitter (context menus, exports, edit-data grid) through
       the delimited-identifier + qualifier settings
