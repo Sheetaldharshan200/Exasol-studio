@@ -558,6 +558,7 @@ export function NotebookTab({
               onRun={() => void runCell(cell.id)}
               onEdit={() => patch(cell.id, { editing: true })}
               onType={(t) => setType(cell.id, t)}
+              onChart={(t) => patch(cell.id, { chart: t })}
               onMove={(d) => move(cell.id, d)}
               onRemove={() => remove(cell.id)}
               onAsk={() => onAsk(cell.src, cell.type)}
@@ -589,6 +590,7 @@ const CellView = memo(function CellView({
   onRun,
   onEdit,
   onType,
+  onChart,
   onMove,
   onRemove,
   onAsk,
@@ -605,6 +607,7 @@ const CellView = memo(function CellView({
   onRun: () => void;
   onEdit: () => void;
   onType: (t: CellType) => void;
+  onChart: (t: string) => void;
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   onAsk: () => void;
@@ -842,29 +845,47 @@ const CellView = memo(function CellView({
                 {cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
               </button>
               {cell.result.kind === "resultSet" && cell.result.rows.length > 0 ? (
-                <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
-                  {(["table", "chart"] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setResultView(v)}
-                      className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px] capitalize", resultView === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
-                    >
-                      {v === "table" ? <TableIcon className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />} {v}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
+                    {(["table", "chart"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setResultView(v)}
+                        className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px] capitalize", resultView === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
+                      >
+                        {v === "table" ? <TableIcon className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />} {v}
+                      </button>
+                    ))}
+                  </div>
+                  {resultView === "chart" ? (
+                    // Full chart-type palette per cell (issue #16).
+                    <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
+                      {(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => onChart(t)}
+                          className={cn(
+                            "h-5 rounded px-1.5 text-[10px]",
+                            (cell.chart ?? "bar") === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : null}
               <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
             </div>
             {!collapsed && cell.result.kind === "resultSet" ? (
               resultView === "chart" ? (
-                cell.chart && ["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"].includes(cell.chart) ? (
-                  <div className="h-64 border-t border-border/60">
-                    <ShadcnChartPanel chart={cell.chart as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"} result={cell.result} />
-                  </div>
-                ) : (
-                  <ResultChart columns={cell.result.columns} rows={cell.result.rows} />
-                )
+                <div className="h-64 border-t border-border/60">
+                  <ShadcnChartPanel
+                    chart={(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"].includes(cell.chart ?? "") ? cell.chart : "bar") as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"}
+                    result={cell.result}
+                  />
+                </div>
               ) : (
                 <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
               )

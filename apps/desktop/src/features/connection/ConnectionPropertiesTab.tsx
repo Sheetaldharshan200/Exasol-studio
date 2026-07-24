@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
+import { DriversSection } from "@/features/connection/DriversSection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -297,7 +298,7 @@ function categoryDefaults(s: ConnSettings, cat: CategoryId): ConnSettings {
 
 /* ── the tab ────────────────────────────────────────────────────────────── */
 
-export type ConnectionSection = "connection" | "properties" | "dbInfo" | "dataTypes" | "search";
+export type ConnectionSection = "connection" | "properties" | "dbInfo" | "dataTypes" | "search" | "drivers";
 
 export function ConnectionPropertiesTab({
   connection,
@@ -904,11 +905,12 @@ export function ConnectionPropertiesTab({
             ["properties", "Properties", Settings2],
             ["dbInfo", "Database Info", Database],
             ["dataTypes", "Data Types", Type],
+            ["drivers", "Drivers", Plug],
             ["search", "Search", Search],
           ] as const).map(([id, label, Ic]) => (
             <button
               key={id}
-              disabled={isNew && id !== "connection"}
+              disabled={isNew && id !== "connection" && id !== "drivers"}
               title={isNew && id !== "connection" ? "Save the connection first" : undefined}
               onClick={() => setMode(id)}
               className={cn(
@@ -934,6 +936,10 @@ export function ConnectionPropertiesTab({
       ) : mode === "dataTypes" && profileId !== null ? (
         <div className="min-h-0 flex-1">
           <DataTypesPanel profileId={profileId} connectionName={profile?.name ?? ""} />
+        </div>
+      ) : mode === "drivers" ? (
+        <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
+          <DriversSection activeDriverId={profileDraft.driverId} />
         </div>
       ) : mode === "search" && profileId !== null ? (
         <div className="min-h-0 flex-1">

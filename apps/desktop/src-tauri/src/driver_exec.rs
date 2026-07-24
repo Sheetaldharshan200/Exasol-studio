@@ -88,7 +88,63 @@ fn jdbc_dir(app: &AppHandle) -> AppResult<PathBuf> {
 }
 
 fn jdbc_jar(app: &AppHandle) -> AppResult<PathBuf> {
+    // A user-supplied JAR (Drivers tab → "Use custom JAR") wins over the
+    // managed one, so people can pin their own driver version.
+    if let Some(custom) = driver_override(app, "jdbc") {
+        let p = PathBuf::from(&custom);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
     Ok(jdbc_dir(app)?.join(format!("exasol-jdbc-{JDBC_VERSION}.jar")))
+}
+
+fn overrides_path(app: &AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    Some(app.state::<crate::state::AppState>().data_dir.join("driver-overrides.json"))
+}
+
+/// The stored per-driver artifact override (currently: a custom JAR path).
+pub fn driver_override(app: &AppHandle, driver_id: &str) -> Option<String> {
+    let path = overrides_path(app)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let map: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    map.get(driver_id).and_then(|v| v.as_str()).map(String::from)
+}
+
+#[tauri::command]
+pub fn driver_overrides_get(app: AppHandle) -> AppResult<serde_json::Value> {
+    let Some(path) = overrides_path(&app) else { return Ok(json!({})) };
+    if !path.exists() {
+        return Ok(json!({}));
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(serde_json::from_str(&raw).unwrap_or_else(|_| json!({})))
+}
+
+#[tauri::command]
+pub fn driver_override_set(app: AppHandle, driver_id: String, path: Option<String>) -> AppResult<serde_json::Value> {
+    let Some(file) = overrides_path(&app) else { return Ok(json!({})) };
+    let mut map: serde_json::Value = if file.exists() {
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap_or_default()).unwrap_or_else(|_| json!({}))
+    } else {
+        json!({})
+    };
+    let obj = map.as_object_mut().ok_or_else(|| AppError::Storage("driver overrides file is corrupt".into()))?;
+    match path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => {
+            if !std::path::Path::new(&p).is_file() {
+                return Err(AppError::Storage(format!("No file at {p}")));
+            }
+            obj.insert(driver_id, serde_json::Value::String(p));
+        }
+        None => {
+            obj.remove(&driver_id);
+        }
+    }
+    std::fs::write(&file, serde_json::to_string_pretty(&map).unwrap_or_default())
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(map)
 }
 
 /// Locate the extracted JRE's home (the dir that contains `bin/java[.exe]`).

@@ -756,3 +756,24 @@
   border-radius: 6px; font-size: 12px; color: var(--foreground);
 }
 .exa-ai-menu button:hover { background: var(--secondary); }
+
+/* Markdown-cell tables (TipTap TableKit) — real grid lines, compact cells */
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.md-body th {
+  background: color-mix(in oklab, var(--secondary) 60%, transparent);
+  font-weight: 600;
+}
+.md-body .selectedCell {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}

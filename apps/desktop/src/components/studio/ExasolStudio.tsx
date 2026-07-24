@@ -218,6 +218,8 @@ type SqlTab = {
    *  it when the tab is already open. */
   connSection?: import("@/features/connection/ConnectionPropertiesTab").ConnectionSection;
   connSectionNonce?: number;
+  /** Live engine progress for the running batch (issues #19/#20). */
+  queryProgress?: { statement?: number; total?: number; activity?: string | null; percent?: number | null; elapsedMs: number; finished: boolean };
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -3352,7 +3354,20 @@ export function ExasolStudio({
       setRunning(true);
       setResultTab("results");
       const startedAt = Date.now();
-      patchTab(activeTab.id, { execError: null, runMeta: { startedAt, scope } });
+      const tabId = activeTab.id;
+      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined });
+      // Live engine progress: the backend polls the executing session's
+      // ACTIVITY and streams it here; the old result stays pinned until the
+      // new one is 100% done.
+      const progressId = `qp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let unlistenProgress: (() => void) | undefined;
+      if (isTauri()) {
+        void import("@tauri-apps/api/event").then(async ({ listen }) => {
+          unlistenProgress = await listen<NonNullable<SqlTab["queryProgress"]>>(`query-progress:${progressId}`, (ev) => {
+            if (!ev.payload.finished) patchTab(tabId, { queryProgress: ev.payload });
+          });
+        });
+      }
       try {
         const result = await ipc.executeSql(
           connection.profile.id,
@@ -3360,6 +3375,8 @@ export function ExasolStudio({
           sqlToRun,
           maxRows,
           split,
+          true,
+          progressId,
         );
         if (!result.success) {
           const failed = result.results.find((r) => r.error);
@@ -3387,6 +3404,8 @@ export function ExasolStudio({
         });
         setResultTab("messages");
       } finally {
+        unlistenProgress?.();
+        patchTab(tabId, { queryProgress: undefined });
         setRunning(false);
       }
     },
@@ -4671,7 +4690,38 @@ export function ExasolStudio({
                     ) : null}
                   </div>
                   <RunStatusStrip meta={activeTab.runMeta} response={activeTab.response} />
-                  <div className="min-h-0 flex-1 overflow-auto">
+                  {/* Live progress while a batch runs (issues #19/#20): the
+                      previous result stays pinned underneath; a processing
+                      overlay + engine progress bar sit on top until 100%. */}
+                  {activeTab.runMeta && !activeTab.runMeta.finishedAt ? (() => {
+                    const qp = activeTab.queryProgress;
+                    const pct = qp?.percent ?? null;
+                    return (
+                      <div className="shrink-0 border-b border-border bg-panel/60 px-3 py-2">
+                        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          <span className="font-medium text-foreground">Processing…</span>
+                          {qp?.total && qp.total > 1 ? (
+                            <span className="font-mono text-[11px]">statement {qp.statement}/{qp.total}</span>
+                          ) : null}
+                          {qp?.activity ? (
+                            <span className="min-w-0 truncate font-mono text-[11px]">{qp.activity}</span>
+                          ) : null}
+                          <span className="ml-auto font-mono text-[11px]">
+                            {pct !== null ? `${pct}%` : `${(((qp?.elapsedMs ?? Date.now() - activeTab.runMeta.startedAt)) / 1000).toFixed(1)}s`}
+                          </span>
+                        </div>
+                        <div className="relative mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
+                          {pct !== null ? (
+                            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${pct}%` }} />
+                          ) : (
+                            <div className="exa-indeterminate" />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })() : null}
+                  <div className={cn("relative min-h-0 flex-1 overflow-auto", activeTab.runMeta && !activeTab.runMeta.finishedAt && "pointer-events-none opacity-60")}>
                     {resultTab === "messages" ? (
                       <ResultsGrid result={null} error={activeTab.execError} />
                     ) : mergeResults && (activeTab.response?.results.length ?? 0) > 1 ? (

@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { useEditor, useEditorState, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
+import { TableKit } from "@tiptap/extension-table";
+import { TextStyleKit } from "@tiptap/extension-text-style";
 import Placeholder from "@tiptap/extension-placeholder";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { createLowlight, common } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import {
-  Bold, Code, Heading1, Heading2, Heading3, Image as ImageIcon, Italic, Link2, List, ListOrdered, Quote, Strikethrough, Underline as UnderlineIcon, Code2, X,
+  Baseline, Bold, Code, Grid3x3, Heading1, Heading2, Heading3, Image as ImageIcon, Italic, Link2, List, ListOrdered, Quote, Strikethrough, Trash2, Underline as UnderlineIcon, Code2, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +66,9 @@ export function MarkdownEditor({
       }),
       NotebookCodeBlock,
       Image.configure({ inline: false }),
+      // Tables (GFM) + inline text styling (font size / color) — issue #16.
+      TableKit.configure({ table: { resizable: false } }),
+      TextStyleKit,
       Markdown.configure({ html: true, transformPastedText: true, transformCopiedText: true, linkify: true }),
       Placeholder.configure({ placeholder: "Write, or use markdown — # heading, **bold**, - list, images…" }),
     ],
@@ -203,6 +208,59 @@ function Toolbar({ editor, trailing }: { editor: Editor; trailing?: React.ReactN
       <span className="mx-0.5 h-4 w-px bg-border" />
       <Btn title="Link" on={on.link} run={openLink}><Link2 className="h-3.5 w-3.5" /></Btn>
       <Btn title="Insert image from your computer" run={() => fileRef.current?.click()}><ImageIcon className="h-3.5 w-3.5" /></Btn>
+      <span className="mx-0.5 h-4 w-px bg-border" />
+      {/* Font size / text color / tables — issue #16 */}
+      <span className="group/fs relative">
+        <Btn title="Font size" run={() => undefined}><span className="text-[11px] font-semibold">Aa</span></Btn>
+        <span className="invisible absolute top-full left-0 z-20 flex flex-col rounded-md border border-border bg-panel py-0.5 shadow-lg group-hover/fs:visible">
+          {[["Small", "12px"], ["Normal", ""], ["Large", "18px"], ["Huge", "24px"]].map(([label, px]) => (
+            <button
+              key={label}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => (px ? c().setFontSize(px).run() : c().unsetFontSize().run())}
+              className="px-2.5 py-1 text-left text-[11.5px] whitespace-nowrap text-muted-foreground hover:bg-secondary hover:text-foreground"
+              style={px ? { fontSize: px } : undefined}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+      </span>
+      <span className="group/clr relative">
+        <Btn title="Text color" run={() => undefined}><Baseline className="h-3.5 w-3.5" /></Btn>
+        <span className="invisible absolute top-full left-0 z-20 flex items-center gap-1 rounded-md border border-border bg-panel p-1.5 shadow-lg group-hover/clr:visible">
+          {["#e11d48", "#f97316", "#eab308", "#10b981", "#0ea5e9", "#6366f1", "#a855f7"].map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => c().setColor(hex).run()}
+              title={hex}
+              className="h-4 w-4 rounded-sm border border-border/50"
+              style={{ backgroundColor: hex }}
+            />
+          ))}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => c().unsetColor().run()}
+            title="Default color"
+            className="flex h-4 w-4 items-center justify-center rounded-sm border border-border text-[9px] text-muted-foreground"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      </span>
+      {editor.isActive("table") ? (
+        <>
+          <Btn title="Add row below" run={() => c().addRowAfter().run()}><span className="text-[10px] font-semibold">+R</span></Btn>
+          <Btn title="Add column after" run={() => c().addColumnAfter().run()}><span className="text-[10px] font-semibold">+C</span></Btn>
+          <Btn title="Delete table" run={() => c().deleteTable().run()}><Trash2 className="h-3.5 w-3.5" /></Btn>
+        </>
+      ) : (
+        <Btn title="Insert table (3×3)" run={() => c().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><Grid3x3 className="h-3.5 w-3.5" /></Btn>
+      )}
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
       {linkOpen ? (
         <div className="flex items-center gap-1 pl-1">
