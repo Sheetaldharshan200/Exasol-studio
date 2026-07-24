@@ -17,7 +17,7 @@ import {
   Type,
   Unplug,
 } from "lucide-react";
-import { errorMessage, ipc, type ConnectionProfile } from "@/lib/ipc";
+import { errorMessage, ipc, type ConnectionProfile, type DriverInfo, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
@@ -112,6 +112,21 @@ export async function loadConnSettings(profileId: string): Promise<ConnSettings>
 }
 
 export const ACCENT_PRESETS = ["#e11d48", "#f97316", "#eab308", "#10b981", "#0ea5e9", "#6366f1", "#a855f7", "#64748b"];
+
+const SSL_MODES = ["preferred", "required", "verify_ca", "verify_identity", "disabled"];
+
+/** Driver-aware connection URL for the header — shows WHAT will speak to the
+ *  server, not a generic scheme. */
+export function connectionUrl(p: { host: string; port: number | string; driverId?: string }): { url: string; driver: string } {
+  const hp = `${p.host}:${p.port}`;
+  switch (p.driverId) {
+    case "jdbc": return { url: `jdbc:exa:${hp}`, driver: "Exasol JDBC" };
+    case "odbc": return { url: `odbc:exa:${hp}`, driver: "Exasol ODBC" };
+    case "pyexasol": return { url: `pyexasol://${hp}`, driver: "PyExasol" };
+    case "sqlalchemy": return { url: `exa+websocket://${hp}`, driver: "SQLAlchemy" };
+    default: return { url: `exa:ws://${hp}`, driver: "Native websocket" };
+  }
+}
 
 const ENCODINGS = [
   "UTF-8", "ISO-8859-1", "ISO-8859-15", "US-ASCII", "UTF-16", "UTF-16BE", "UTF-16LE",
@@ -294,10 +309,12 @@ export function ConnectionPropertiesTab({
   onDisconnect,
   onConnect,
   onRefresh,
+  onConnected,
 }: {
   /** Live connection when this profile is currently open (for server info). */
   connection: ActiveConnection | null;
-  profileId: string;
+  /** null = NEW connection mode: same page, empty draft, Test / Save & Connect. */
+  profileId: string | null;
   initialSection?: ConnectionSection;
   /** Bumped when the host tab is re-targeted at a section while open. */
   sectionNonce?: number;
@@ -306,6 +323,8 @@ export function ConnectionPropertiesTab({
   onDisconnect?: () => void;
   onConnect?: () => void;
   onRefresh?: () => void;
+  /** New-connection mode: called after Save & Connect succeeds. */
+  onConnected?: (profile: ConnectionProfile, server: ServerInfo) => void | Promise<void>;
 }) {
   const [mode, setMode] = useState<ConnectionSection>(initialSection);
   useEffect(() => {
@@ -315,7 +334,10 @@ export function ConnectionPropertiesTab({
   const [profile, setProfile] = useState<ConnectionProfile | null>(null);
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");
-  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "" });
+  const isNew = profileId === null;
+  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol" });
+  const [drivers, setDrivers] = useState<DriverInfo[]>([]);
+  const [testState, setTestState] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
   const [profileSnapshot, setProfileSnapshot] = useState<string>("");
   const [showPw, setShowPw] = useState(false);
   // Connected-for ticker (like the classic "Connected - 00:11:39").
@@ -336,6 +358,21 @@ export function ConnectionPropertiesTab({
   useEffect(() => {
     let dead = false;
     void (async () => {
+      ipc.listDrivers().then((d) => !dead && setDrivers(d)).catch(() => undefined);
+      if (profileId === null) {
+        const draft = {
+          name: "New Connection", notes: "", host: "127.0.0.1", port: "8563",
+          schema: "", username: "sys", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol",
+        };
+        if (dead) return;
+        setProfile(null);
+        setProfileDraft(draft);
+        setProfileSnapshot(JSON.stringify(draft));
+        const st = structuredClone(DEFAULT_CONN_SETTINGS);
+        setSettings(st);
+        setSavedSnapshot(JSON.stringify(st));
+        return;
+      }
       const profiles = await ipc.listConnectionProfiles().catch(() => []);
       const p = profiles.find((x) => x.id === profileId) ?? null;
       const st = await loadConnSettings(profileId);
@@ -344,6 +381,7 @@ export function ConnectionPropertiesTab({
       const draft = {
         name: p?.name ?? "", notes: p?.notes ?? "", host: p?.host ?? "", port: String(p?.port ?? 8563),
         schema: p?.schema ?? "", username: p?.username ?? "", password: "",
+        sslMode: p?.sslMode ?? "preferred", compression: p?.compression ?? false, driverId: p?.driverId ?? "sqlx-exasol",
       };
       setProfileDraft(draft);
       setProfileSnapshot(JSON.stringify(draft));
@@ -365,8 +403,54 @@ export function ConnectionPropertiesTab({
       return next;
     });
 
+  /** The draft as a full profile (for test / save in NEW mode). */
+  function draftProfile(): ConnectionProfile {
+    return {
+      id: profile?.id ?? "",
+      name: profileDraft.name.trim() || `${profileDraft.username}@${profileDraft.host}`,
+      host: profileDraft.host.trim(),
+      port: Number(profileDraft.port) || 8563,
+      username: profileDraft.username.trim(),
+      password: profileDraft.password,
+      schema: profileDraft.schema.trim() || null,
+      notes: profileDraft.notes,
+      sslMode: profileDraft.sslMode,
+      compression: profileDraft.compression,
+      driverId: profileDraft.driverId,
+    };
+  }
+
+  async function testConnection() {
+    setTestState({ busy: true });
+    try {
+      const info = await ipc.testConnection(draftProfile());
+      setTestState({ busy: false, ok: true, message: `${info.databaseName ?? "Exasol"} · ${info.version ?? ""}` });
+    } catch (e) {
+      setTestState({ busy: false, ok: false, message: errorMessage(e) });
+    }
+  }
+
+  async function saveAndConnect() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await ipc.saveConnectionProfile(draftProfile());
+      if (settings) await ipc.connectionSettingsSet(saved.id, settings);
+      const server = await ipc.connect(saved.id);
+      await onConnected?.(saved, server);
+      onSaved?.();
+      setSavedTick(true);
+      window.setTimeout(() => setSavedTick(false), 1600);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function apply() {
-    if (!settings || busy) return;
+    if (!settings || busy || profileId === null) return;
     setBusy(true);
     setError(null);
     try {
@@ -379,6 +463,9 @@ export function ConnectionPropertiesTab({
           port: Number(profileDraft.port) || profile.port,
           schema: profileDraft.schema.trim() || null,
           username: profileDraft.username.trim() || profile.username,
+          sslMode: profileDraft.sslMode,
+          compression: profileDraft.compression,
+          driverId: profileDraft.driverId,
           // Blank keeps the stored password (server-side rule).
           password: settings.auth.passwordPolicy === "session" ? "" : profileDraft.password,
         });
@@ -730,7 +817,11 @@ export function ConnectionPropertiesTab({
     }
   })();
 
-  const editRow = (label: string, key: keyof typeof profileDraft, opts?: { type?: string; placeholder?: string }) => (
+  const editRow = (
+    label: string,
+    key: "name" | "notes" | "host" | "port" | "schema" | "username" | "password",
+    opts?: { type?: string; placeholder?: string },
+  ) => (
     <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
       <span className="w-56 shrink-0 text-[12px] text-muted-foreground">{label}</span>
       <input
@@ -762,10 +853,21 @@ export function ConnectionPropertiesTab({
           <Database className="mt-0.5 h-5 w-5" style={{ color: s.color.accent ?? "var(--primary)" }} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-bold text-foreground">
-              Database Connection: {profile?.name ?? "Connection"}
+              Database Connection: {isNew ? profileDraft.name || "New Connection" : (profile?.name ?? "Connection")}
             </h2>
-            <p className="font-mono text-[11.5px] text-primary/90">{profile ? `exa://${profile.host}:${profile.port}` : ""}</p>
+            {(() => {
+              const src = isNew ? { host: profileDraft.host, port: profileDraft.port, driverId: profileDraft.driverId } : profile;
+              if (!src?.host) return null;
+              const { url, driver } = connectionUrl(src);
+              return (
+                <p className="flex items-center gap-1.5 font-mono text-[11.5px] text-primary/90">
+                  {url}
+                  <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium tracking-wide text-muted-foreground uppercase">{driver}</span>
+                </p>
+              );
+            })()}
           </div>
+          {isNew ? null : (
           <div className="flex shrink-0 flex-col items-end gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -794,6 +896,7 @@ export function ConnectionPropertiesTab({
               {connectedLive ? `Connected · ${uptime ?? "00:00:00"}` : "Disconnected"}
             </span>
           </div>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-1">
           {([
@@ -805,9 +908,11 @@ export function ConnectionPropertiesTab({
           ] as const).map(([id, label, Ic]) => (
             <button
               key={id}
+              disabled={isNew && id !== "connection"}
+              title={isNew && id !== "connection" ? "Save the connection first" : undefined}
               onClick={() => setMode(id)}
               className={cn(
-                "relative flex h-8 items-center gap-1.5 px-3 text-[12.5px]",
+                "relative flex h-8 items-center gap-1.5 px-3 text-[12.5px] disabled:opacity-40",
                 mode === id ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -822,15 +927,15 @@ export function ConnectionPropertiesTab({
         <div className="mx-6 mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
 
-      {mode === "dbInfo" ? (
+      {mode === "dbInfo" && profileId !== null ? (
         <div className="min-h-0 flex-1">
           <DatabaseInfoPanel profileId={profileId} connectionName={profile?.name ?? ""} />
         </div>
-      ) : mode === "dataTypes" ? (
+      ) : mode === "dataTypes" && profileId !== null ? (
         <div className="min-h-0 flex-1">
           <DataTypesPanel profileId={profileId} connectionName={profile?.name ?? ""} />
         </div>
-      ) : mode === "search" ? (
+      ) : mode === "search" && profileId !== null ? (
         <div className="min-h-0 flex-1">
           <ObjectSearch
             key={profileId}
@@ -864,7 +969,7 @@ export function ConnectionPropertiesTab({
                 <input
                   type={showPw ? "text" : "password"}
                   value={profileDraft.password}
-                  placeholder="Unchanged — type to replace"
+                  placeholder={isNew ? "Password" : "Unchanged — type to replace"}
                   onChange={(e) => setProfileDraft((d) => ({ ...d, password: e.target.value }))}
                   className="h-8 w-full max-w-md rounded-md border border-border bg-secondary/30 px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/60"
                 />
@@ -883,14 +988,26 @@ export function ConnectionPropertiesTab({
             </SectionCard>
             <SectionCard title="Options">
               <CheckRow label="Auto Commit" checked={s.transaction.autoCommit} onChange={(v) => patch((n) => { n.transaction.autoCommit = v; })} />
-              <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
-                <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Encryption</span>
-                <span className="font-mono text-[12.5px] text-foreground">{profile?.sslMode ?? "preferred"}</span>
+              <div className="flex items-center gap-3 border-b border-border/60 py-2">
+                <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Driver Type</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex h-8 min-w-56 items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2.5 text-[12.5px] text-foreground hover:border-muted-foreground">
+                      {drivers.find((d) => d.id === profileDraft.driverId)?.name ?? profileDraft.driverId}
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {(drivers.length ? drivers : [{ id: "sqlx-exasol", name: "Native websocket (built-in)" } as DriverInfo]).map((d) => (
+                      <DropdownMenuItem key={d.id} onClick={() => setProfileDraft((x) => ({ ...x, driverId: d.id }))}>
+                        {d.id === profileDraft.driverId ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="w-3.5" />} {d.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-              <div className="flex items-center gap-3 py-2">
-                <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Compression</span>
-                <span className="font-mono text-[12.5px] text-foreground">{profile?.compression ? "On" : "Off"}</span>
-              </div>
+              <PickerRow label="Encryption" value={profileDraft.sslMode} options={SSL_MODES} onChange={(v) => setProfileDraft((x) => ({ ...x, sslMode: v }))} />
+              <CheckRow label="Compression" checked={profileDraft.compression} onChange={(v) => setProfileDraft((x) => ({ ...x, compression: v }))} />
             </SectionCard>
           </div>
         </div>
@@ -936,7 +1053,32 @@ export function ConnectionPropertiesTab({
       )}
 
       {/* apply bar — only the editable sections need it */}
-      {mode !== "connection" && mode !== "properties" ? null : (
+      {isNew ? (
+        <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-t border-border px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={() => void testConnection()}
+              disabled={testState.busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+            >
+              {testState.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
+            </button>
+            {testState.message ? (
+              <span className={cn("min-w-0 truncate text-[11.5px]", testState.ok ? "text-primary" : "text-destructive")} title={testState.message}>
+                {testState.ok ? `Reachable — ${testState.message}` : testState.message}
+              </span>
+            ) : null}
+          </div>
+          <button
+            onClick={() => void saveAndConnect()}
+            disabled={busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+            className="cta-glow flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : savedTick ? <Check className="h-3 w-3" /> : null}
+            Save &amp; Connect
+          </button>
+        </div>
+      ) : mode !== "connection" && mode !== "properties" ? null : (
       <div className="flex h-11 shrink-0 items-center justify-between border-t border-border px-4">
         {mode === "properties" ? (
           <button
