@@ -1,15 +1,16 @@
 //! Connect external AI clients (Claude Desktop, Claude Code, Cursor, …) to the
-//! bundled read-only Exasol MCP server — the Studio equivalent of the starter
-//! kit's `exakit mcp-setup`. Each client's own config file gets an `exasol`
-//! MCP entry pointing at the managed `exasol-mcp-server` with the dedicated
-//! STUDIO_MCP_* read-only identity (the DB enforces read-only, not trust).
+//! Exasol Studio MCP GATEWAY — one `exasol-studio` MCP entry that speaks for
+//! EVERY database currently connected in Studio (nano, Personal, remote, …),
+//! not a per-database MCP config. Each client's config gets an entry that
+//! launches the bundled stdio bridge (mcp-gateway.cjs); the bridge proxies
+//! tool calls to the running agent sidecar, which holds the live pools and
+//! enforces read-only (single SELECT/WITH/DESCRIBE statements) on the route.
 //!
 //! This is deliberately separate from the in-app agent's connector registry
 //! (agent-core `mcp-servers.json`): connectors bring external tools INTO the
 //! Studio agent; this module takes the Exasol database OUT to other AI clients.
 
 use crate::error::{AppError, AppResult};
-use crate::profiles;
 use crate::state::AppState;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -107,59 +108,53 @@ fn home() -> AppResult<PathBuf> {
     dirs::home_dir().ok_or_else(|| AppError::Storage("Could not resolve the home directory.".into()))
 }
 
-/// The managed MCP server launch spec: binary + env, from the Studio-managed
-/// read-only identity. Errors when local Exasol / the MCP package isn't set up.
+/// The gateway launch spec: Node + the bundled stdio bridge. Holds NO
+/// credentials — the bridge discovers the running sidecar via gateway.json
+/// and every database it exposes lives only in the sidecar's memory.
 struct McpLaunch {
     command: String,
+    args: Vec<String>,
     env: Vec<(String, String)>,
 }
 
+/// Locate the bundled mcp-gateway.cjs: release resource first, then the
+/// workspace path for `tauri dev` / local builds.
+fn gateway_script(app: &AppHandle) -> AppResult<PathBuf> {
+    if let Ok(p) = app.path().resolve("mcp-gateway.cjs", tauri::path::BaseDirectory::Resource) {
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../packages/agent-core/dist/mcp-gateway.cjs");
+    if dev.exists() {
+        return Ok(dev.canonicalize().unwrap_or(dev));
+    }
+    Err(AppError::Storage(
+        "mcp-gateway.cjs not found — run `pnpm -F @exasol-studio/agent-core build`.".into(),
+    ))
+}
+
 fn mcp_launch(app: &AppHandle) -> AppResult<McpLaunch> {
-    let state = app.state::<AppState>();
-    let data_dir = state.data_dir.clone();
-    let bin = if cfg!(windows) {
-        data_dir.join("personal-local/python/Scripts/exasol-mcp-server.exe")
-    } else {
-        data_dir.join("personal-local/python/bin/exasol-mcp-server")
-    };
-    if !bin.is_file() {
-        return Err(AppError::Storage(
-            "The bundled Exasol MCP server is not installed yet — set up the local database (Marketplace → Exasol Personal) first.".into(),
-        ));
-    }
-    let marker = data_dir.join("agent/mcp-identity.json");
-    let raw = fs::read_to_string(&marker).map_err(|_| {
-        AppError::Storage(
-            "No managed MCP identity found — set up the local database first (it provisions the read-only MCP user).".into(),
-        )
+    let node = crate::agent::node_binary(app).ok_or_else(|| {
+        AppError::Storage("Node.js is required for the Studio MCP gateway but was not found.".into())
     })?;
-    let identity: Value = serde_json::from_str(&raw)
-        .map_err(|e| AppError::Storage(format!("The MCP identity marker is unreadable: {e}")))?;
-    let profile_id = identity
-        .get("profileId")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Storage("The MCP identity marker is missing its profile reference.".into()))?;
-    let username = identity
-        .get("username")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    if !username.starts_with("STUDIO_MCP_") {
-        return Err(AppError::Storage(
-            "The managed MCP identity is not the dedicated read-only user; refusing to export it.".into(),
-        ));
-    }
-    let profile = profiles::find_profile(&state, profile_id)?;
+    let script = gateway_script(app)?;
+    let agent_dir = app.state::<AppState>().data_dir.join("agent");
     Ok(McpLaunch {
-        command: bin.to_string_lossy().to_string(),
-        env: vec![
-            ("EXA_DSN".into(), format!("{}:{}", profile.host, profile.port)),
-            ("EXA_USER".into(), username),
-            ("EXA_PASSWORD".into(), profile.password),
-            ("EXA_SSL_CERT_VALIDATION".into(), "no".into()),
-        ],
+        command: node.to_string_lossy().to_string(),
+        args: vec![script.to_string_lossy().to_string()],
+        env: vec![(
+            "EXASOL_STUDIO_AGENT_DIR".into(),
+            agent_dir.to_string_lossy().to_string(),
+        )],
     })
 }
+
+/// The MCP entry name written into client configs. Deliberately NOT "exasol":
+/// this entry speaks for ALL connected databases through the Studio gateway.
+const ENTRY: &str = "exasol-studio";
+/// The old per-database entry name — replaced on connect, removed on disconnect.
+const LEGACY_ENTRY: &str = "exasol";
 
 fn entry_json(launch: &McpLaunch) -> Value {
     let env: serde_json::Map<String, Value> = launch
@@ -167,7 +162,7 @@ fn entry_json(launch: &McpLaunch) -> Value {
         .iter()
         .map(|(k, v)| (k.clone(), Value::String(v.clone())))
         .collect();
-    json!({ "command": launch.command, "args": [], "env": env })
+    json!({ "command": launch.command, "args": launch.args, "env": env })
 }
 
 fn read_config(path: &PathBuf) -> AppResult<Value> {
@@ -186,7 +181,7 @@ fn read_config(path: &PathBuf) -> AppResult<Value> {
 fn has_exasol_entry(cfg: &Value, key: &str) -> bool {
     cfg.get(key)
         .and_then(|s| s.as_object())
-        .map(|m| m.contains_key("exasol"))
+        .map(|m| m.contains_key(ENTRY))
         .unwrap_or(false)
 }
 
@@ -197,7 +192,7 @@ fn status_for(def: &ClientDef, home: &PathBuf) -> AiClientStatus {
         read_config(&config).map(|c| has_exasol_entry(&c, def.servers_key)).unwrap_or(false)
     } else {
         // Best-effort for non-JSON configs: substring probe.
-        fs::read_to_string(&config).map(|raw| raw.contains("exasol")).unwrap_or(false)
+        fs::read_to_string(&config).map(|raw| raw.contains(ENTRY)).unwrap_or(false)
     };
     AiClientStatus {
         id: def.id.into(),
@@ -222,27 +217,21 @@ pub struct AiClientsReady {
     pub reason: Option<String>,
 }
 
-/// Prerequisite probe for the AI-clients tab: is the bundled MCP server +
-/// managed read-only identity in place? (Cheap file checks only — no vault
-/// access, so it works even while the vault is locked.)
+/// Prerequisite probe for the AI-clients tab: can the gateway be exported?
+/// Needs only the bundled bridge script + a Node runtime — no local-database
+/// setup, since the gateway speaks for whatever databases are connected.
 #[tauri::command]
 pub fn ai_clients_ready(app: AppHandle) -> AppResult<AiClientsReady> {
-    let data_dir = app.state::<AppState>().data_dir.clone();
-    let bin = if cfg!(windows) {
-        data_dir.join("personal-local/python/Scripts/exasol-mcp-server.exe")
-    } else {
-        data_dir.join("personal-local/python/bin/exasol-mcp-server")
-    };
-    if !bin.is_file() {
+    if gateway_script(&app).is_err() {
         return Ok(AiClientsReady {
             ready: false,
-            reason: Some("The bundled Exasol MCP server is not installed yet. Set up the local database (Marketplace → Databases → Exasol Personal) — it installs the MCP server and its read-only identity.".into()),
+            reason: Some("The Studio MCP gateway is missing from this build (mcp-gateway.cjs). Reinstall or rebuild Exasol Studio.".into()),
         });
     }
-    if !data_dir.join("agent/mcp-identity.json").is_file() {
+    if crate::agent::node_binary(&app).is_none() {
         return Ok(AiClientsReady {
             ready: false,
-            reason: Some("The read-only MCP identity has not been provisioned yet. Finish the local database setup, then come back here.".into()),
+            reason: Some("Node.js was not found. It powers the Studio MCP gateway — install it from nodejs.org or via Homebrew.".into()),
         });
     }
     Ok(AiClientsReady { ready: true, reason: None })
@@ -288,10 +277,10 @@ pub fn connect_ai_client(app: AppHandle, client_id: String) -> AppResult<AiClien
             path.display()
         )));
     }
-    servers
-        .as_object_mut()
-        .unwrap()
-        .insert("exasol".into(), entry_json(&launch));
+    let map = servers.as_object_mut().unwrap();
+    // Replace the old per-database entry with the all-databases gateway.
+    map.remove(LEGACY_ENTRY);
+    map.insert(ENTRY.into(), entry_json(&launch));
     fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap_or_default())
         .map_err(|e| AppError::Storage(format!("Could not write {}: {e}", path.display())))?;
     Ok(status_for(def, &home))
@@ -313,7 +302,8 @@ pub fn disconnect_ai_client(client_id: String) -> AppResult<AiClientStatus> {
     let path = home.join(def.config_rel);
     let mut cfg = read_config(&path)?;
     if let Some(servers) = cfg.get_mut(def.servers_key).and_then(|s| s.as_object_mut()) {
-        if servers.remove("exasol").is_some() {
+        let removed = servers.remove(ENTRY).is_some() | servers.remove(LEGACY_ENTRY).is_some();
+        if removed {
             fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap_or_default())
                 .map_err(|e| AppError::Storage(format!("Could not write {}: {e}", path.display())))?;
         }
@@ -333,9 +323,15 @@ pub fn ai_client_snippet(app: AppHandle, client_id: String) -> AppResult<String>
                 .map(|(k, v)| format!("{k} = \"{}\"", v.replace('"', "\\\"")))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let args = launch
+                .args
+                .iter()
+                .map(|a| format!("\"{}\"", a.replace('"', "\\\"")))
+                .collect::<Vec<_>>()
+                .join(", ");
             Ok(format!(
-                "# ~/.codex/config.toml\n[mcp_servers.exasol]\ncommand = \"{}\"\nargs = []\nenv = {{ {} }}\n",
-                launch.command, env_lines
+                "# ~/.codex/config.toml\n[mcp_servers.exasol-studio]\ncommand = \"{}\"\nargs = [{}]\nenv = {{ {} }}\n",
+                launch.command, args, env_lines
             ))
         }
         "opencode" => {
@@ -344,13 +340,15 @@ pub fn ai_client_snippet(app: AppHandle, client_id: String) -> AppResult<String>
                 .iter()
                 .map(|(k, v)| (k.clone(), Value::String(v.clone())))
                 .collect();
-            let entry = json!({ "mcp": { "exasol": { "type": "local", "command": [launch.command], "environment": env } } });
+            let mut cmd = vec![launch.command.clone()];
+            cmd.extend(launch.args.iter().cloned());
+            let entry = json!({ "mcp": { "exasol-studio": { "type": "local", "command": cmd, "environment": env } } });
             Ok(format!(
                 "// merge into ~/.config/opencode/opencode.json\n{}",
                 serde_json::to_string_pretty(&entry).unwrap_or_default()
             ))
         }
-        _ => Ok(serde_json::to_string_pretty(&json!({ "mcpServers": { "exasol": entry_json(&launch) } }))
+        _ => Ok(serde_json::to_string_pretty(&json!({ "mcpServers": { ENTRY: entry_json(&launch) } }))
             .unwrap_or_default()),
     }
 }

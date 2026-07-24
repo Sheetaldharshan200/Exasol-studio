@@ -3470,17 +3470,81 @@ export function ExasolStudio({
   // (the truncated flag = "has next"); later pages wrap the query with
   // ORDER BY 1 + LIMIT/OFFSET — Exasol requires a deterministic order for
   // OFFSET, so pages beyond the first are ordered by the first column.
+  //
+  // Pages are PREFETCHED: as soon as a page is on screen the next one loads
+  // in the background (and visited pages stay cached), so ▸ is instant. The
+  // cache is stamped with the tab's SQL — a re-run or edit invalidates it —
+  // and prefetches skip the execution log (addHistory=false).
   const [paging, setPaging] = useState(false);
-  async function loadResultPage(page: number) {
-    if (!connection || paging || page < 0) return;
-    const stmts = splitStatements(activeTab.sql);
-    if (stmts.length !== 1) return;
+  const pageCache = useRef<Map<string, { sql: string; pages: Map<number, ExecuteResponse> }>>(new Map());
+  const prefetching = useRef<Set<string>>(new Set());
+
+  function pagedSql(base: string, page: number): string {
+    return page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
+  }
+  function pageBase(sql: string): string | null {
+    const stmts = splitStatements(sql);
+    if (stmts.length !== 1) return null;
     const base = stmts[0].text.trim().replace(/;\s*$/, "");
-    const sql = page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
+    return /^select|^with/i.test(base) ? base : null;
+  }
+  async function prefetchPage(tabId: string, base: string, page: number) {
+    if (!connection || page < 0) return;
+    const key = `${tabId}:${page}`;
+    const entry = pageCache.current.get(tabId);
+    if (prefetching.current.has(key) || !entry || entry.sql !== base || entry.pages.has(page)) return;
+    prefetching.current.add(key);
+    try {
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false, false);
+      const cur = pageCache.current.get(tabId);
+      if (res.success && cur && cur.sql === base) {
+        cur.pages.set(page, res);
+        // Keep memory bounded: hold at most 8 pages, dropping the farthest.
+        while (cur.pages.size > 8) {
+          const far = [...cur.pages.keys()].reduce((a2, b2) => (Math.abs(a2 - page) >= Math.abs(b2 - page) ? a2 : b2));
+          cur.pages.delete(far);
+        }
+      }
+    } catch {
+      /* prefetch is best-effort — the click path fetches live on a miss */
+    } finally {
+      prefetching.current.delete(key);
+    }
+  }
+  // A fresh run (page-0 response we didn't serve from cache) seeds the cache
+  // and warms page 1 immediately.
+  useEffect(() => {
+    const res = activeTab.response;
+    if (!res || (activeTab.resultPage ?? 0) !== 0 || !res.success) return;
+    const base = pageBase(activeTab.sql);
+    if (!base) return;
+    const entry = pageCache.current.get(activeTab.id);
+    if (entry && entry.sql === base && entry.pages.get(0) === res) return; // cache-served, not a new run
+    pageCache.current.set(activeTab.id, { sql: base, pages: new Map([[0, res]]) });
+    if (res.results[0]?.truncated) void prefetchPage(activeTab.id, base, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.id, activeTab.response, activeTab.resultPage]);
+
+  async function loadResultPage(page: number) {
+    if (!connection || page < 0) return;
+    const base = pageBase(activeTab.sql);
+    if (!base) return;
+    const entry = pageCache.current.get(activeTab.id);
+    const cached = entry && entry.sql === base ? entry.pages.get(page) : undefined;
+    if (cached) {
+      patchTab(activeTab.id, { response: cached, execError: null, resultPage: page });
+      if (cached.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
+      if (page > 0) void prefetchPage(activeTab.id, base, page - 1);
+      return;
+    }
+    if (paging) return;
     setPaging(true);
     try {
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, false);
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false);
+      const cur = pageCache.current.get(activeTab.id);
+      if (res.success && cur && cur.sql === base) cur.pages.set(page, res);
       patchTab(activeTab.id, { response: res, execError: res.success ? null : res.results.find((r) => r.error)?.error ?? null, resultPage: page });
+      if (res.success && res.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
     } catch (e) {
       pushNotification("warning", "Page load failed", errorMessage(e));
     } finally {

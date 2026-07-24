@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
@@ -189,6 +191,40 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // GET /v1/connections — names only, no secrets.
       if (req.method === "GET" && parts[1] === "connections") {
         return json(res, 200, { connections: db.list() });
+      }
+
+      // ── Studio MCP gateway: one MCP server for ALL connected databases. ──
+      // The stdio bridge (mcp-gateway.cjs, launched by external AI clients)
+      // proxies its tool calls here, so whatever is connected in Studio right
+      // now is what external clients can query. Read-only is enforced HERE
+      // because these pools carry the profiles' own credentials.
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "databases") {
+        return json(res, 200, { databases: db.list() });
+      }
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "query") {
+        const body = await readBody<{ database?: string; sql?: string }>(req);
+        const wanted = (body.database ?? "").trim();
+        const sql = (body.sql ?? "").trim().replace(/;\s*$/, "");
+        if (!wanted || !sql) return json(res, 400, { error: "database and sql are required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ??
+          conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        if (!target) {
+          const names = conns.map((c) => c.name).join(", ");
+          return json(res, 404, {
+            error: `No connected database named "${wanted}". Currently connected: ${names || "(none — connect one in Exasol Studio first)"}.`,
+          });
+        }
+        if (!/^(select|with|describe|desc)\b/i.test(sql)) {
+          return json(res, 403, { error: "The Studio gateway is read-only: only SELECT, WITH and DESCRIBE statements are allowed." });
+        }
+        // One statement per call (semicolons checked outside string literals).
+        if (sql.replace(/'(?:[^']|'')*'/g, "''").includes(";")) {
+          return json(res, 403, { error: "One statement per call — remove the extra ';'." });
+        }
+        const out = await db.query(target.id, sql);
+        return json(res, 200, { database: target.name, ...out });
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE
@@ -648,6 +684,16 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       resolve(typeof addr === "object" && addr ? addr.port : 0);
     });
   });
+
+  // Discovery marker for the MCP gateway bridge (mcp-gateway.cjs): external
+  // AI clients launch the bridge, the bridge reads this file to find the live
+  // port + token. User-only permissions; same trust level as the data dir.
+  try {
+    mkdirSync(config.dataDir, { recursive: true });
+    writeFileSync(join(config.dataDir, "gateway.json"), JSON.stringify({ port, token, pid: process.pid }), { mode: 0o600 });
+  } catch (e) {
+    log.warn("could not write gateway.json", { error: String(e) });
+  }
 
   return { port, token };
 }

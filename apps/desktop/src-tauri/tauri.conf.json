@@ -51,6 +51,7 @@
     "createUpdaterArtifacts": true,
     "resources": {
       "../../../packages/agent-core/dist/agent-core.cjs": "agent-core.cjs",
+      "../../../packages/agent-core/dist/mcp-gateway.cjs": "mcp-gateway.cjs",
       "../../../packages/agent-core/dist/exa-agent.cjs": "exa-agent.cjs",
       "../../../packages/agent-core/dist/skills": "skills",
       "resources/exasol-semantic-views": "exasol-semantic-views",

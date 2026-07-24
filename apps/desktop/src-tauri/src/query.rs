@@ -289,6 +289,7 @@ pub async fn execute_sql(
     sql: String,
     max_rows: Option<usize>,
     split: Option<bool>,
+    add_history: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
@@ -359,7 +360,11 @@ pub async fn execute_sql(
         error: results.iter().find_map(|r| r.error.clone()),
         row_count: row_total,
     };
-    history::append_history(&state, entry)?;
+    // Background page prefetches pass add_history=false so the execution log
+    // only records what the user actually ran.
+    if add_history.unwrap_or(true) {
+        history::append_history(&state, entry)?;
+    }
 
     Ok(ExecuteResponse {
         results,

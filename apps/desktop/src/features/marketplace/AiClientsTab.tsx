@@ -6,9 +6,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * Marketplace → AI clients: connect OTHER AI apps (Claude, Codex, Cursor, …)
- * to this machine's Exasol via the bundled read-only MCP server — the Studio
- * equivalent of the starter kit's `exakit mcp-setup`. Deliberately separate
- * from the in-app agent's connectors (which bring tools INTO the Studio agent).
+ * to the Exasol Studio MCP GATEWAY — one `exasol-studio` entry that speaks
+ * for EVERY database connected in Studio, not one MCP config per database.
+ * Deliberately separate from the in-app agent's connectors (which bring
+ * tools INTO the Studio agent).
  */
 export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) {
   const [clients, setClients] = useState<AiClientStatus[] | null>(null);
@@ -111,10 +112,13 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
     <div>
       <div className="mb-4 max-w-4xl rounded-lg border border-border bg-panel/50 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
         <p>
-          <span className="font-medium text-foreground">Use your Exasol from other AI clients.</span> One click writes the
-          bundled <span className="font-mono text-[11px]">exasol-mcp-server</span> into the client's own MCP config (a backup
-          is kept) using Studio's dedicated <span className="font-mono text-[11px]">STUDIO_MCP_*</span> user — the database
-          enforces it is <span className="font-medium text-foreground">read-only</span>. Restart the client afterwards.
+          <span className="font-medium text-foreground">Use every connected database from other AI clients.</span> One click
+          writes a single <span className="font-mono text-[11px]">exasol-studio</span> gateway into the client's own MCP
+          config (a backup is kept). The gateway speaks for <span className="font-medium text-foreground">all databases
+          connected in Studio</span> — connect or disconnect a database here and the client follows, no per-database setup.
+          It is <span className="font-medium text-foreground">read-only</span>: only single SELECT / WITH / DESCRIBE
+          statements are accepted, and no credentials are written to the client's config. Studio must be running for the
+          gateway to answer. Restart the client after connecting.
         </p>
         <p className="mt-1.5">
           This is separate from the <span className="font-medium text-foreground">MCP connectors</span> panel, which brings
