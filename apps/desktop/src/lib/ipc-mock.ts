@@ -423,24 +423,6 @@ export async function mockInvoke(
         ],
       };
 
-    case "list_data_types":
-      return {
-        types: [
-          { typeId: 0, typeName: "BOOLEAN" },
-          { typeId: 1, typeName: "CHAR" },
-          { typeId: 2, typeName: "DATE" },
-          { typeId: 3, typeName: "DECIMAL" },
-          { typeId: 4, typeName: "DOUBLE" },
-          { typeId: 5, typeName: "GEOMETRY" },
-          { typeId: 6, typeName: "INTERVAL DAY TO SECOND" },
-          { typeId: 7, typeName: "INTERVAL YEAR TO MONTH" },
-          { typeId: 8, typeName: "TIMESTAMP" },
-          { typeId: 9, typeName: "TIMESTAMP WITH LOCAL TIME ZONE" },
-          { typeId: 10, typeName: "VARCHAR" },
-          { typeId: 11, typeName: "HASHTYPE" },
-        ],
-      };
-
     case "search_objects": {
       const q = String(args?.query ?? "").trim().toUpperCase();
       if (!q) return { results: [] };

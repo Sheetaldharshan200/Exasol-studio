@@ -288,6 +288,7 @@ export function ConnectionPropertiesTab({
   connection,
   profileId,
   initialSection = "connection",
+  sectionNonce,
   onSaved,
   onOpenObject,
   onDisconnect,
@@ -298,6 +299,8 @@ export function ConnectionPropertiesTab({
   connection: ActiveConnection | null;
   profileId: string;
   initialSection?: ConnectionSection;
+  /** Bumped when the host tab is re-targeted at a section while open. */
+  sectionNonce?: number;
   onSaved?: () => void;
   onOpenObject?: (schema: string, name: string) => void;
   onDisconnect?: () => void;
@@ -305,6 +308,10 @@ export function ConnectionPropertiesTab({
   onRefresh?: () => void;
 }) {
   const [mode, setMode] = useState<ConnectionSection>(initialSection);
+  useEffect(() => {
+    if (sectionNonce !== undefined) setMode(initialSection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionNonce]);
   const [profile, setProfile] = useState<ConnectionProfile | null>(null);
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");

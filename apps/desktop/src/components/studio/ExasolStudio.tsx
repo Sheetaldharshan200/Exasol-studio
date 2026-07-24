@@ -180,7 +180,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile" | "connProps";
+type TabView = "sql" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile" | "connProps";
 
 type SqlTab = {
   id: string;
@@ -215,6 +215,10 @@ type SqlTab = {
   profileData?: ProfileData;
   /** Result pagination (0-based) for single-SELECT tabs. */
   resultPage?: number;
+  /** For the unified connection tab — which section to show; nonce re-applies
+   *  it when the tab is already open. */
+  connSection?: import("@/features/connection/ConnectionPropertiesTab").ConnectionSection;
+  connSectionNonce?: number;
 };
 
 /** A collapsible group of query/view tabs shown as one chip in the tab strip. */
@@ -236,9 +240,7 @@ function newTab(index: number): SqlTab {
 
 const TAB_ICON: Record<TabView, IconName> = {
   sql: "querytab",
-  dbInfo: "info",
   dba: "shield",
-  dataTypes: "grid",
   connect: "plug",
   visualizer: "visualizer",
   filePreview: "table",
@@ -247,7 +249,6 @@ const TAB_ICON: Record<TabView, IconName> = {
   guides: "guides",
   object: "table",
   bi: "dashboards",
-  connInfo: "plug",
   connProps: "sliders",
   welcome: "home",
   artifact: "file",
@@ -3041,28 +3042,44 @@ export function ExasolStudio({
   function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
-    const existing = list.find((t) => t.view === view);
+    if (view === "dba") {
+      const existing = list.find((t) => t.view === "dba");
+      if (existing) {
+        setActiveIdByConn((a) => ({ ...a, [profileId]: existing.id }));
+        return;
+      }
+      tabCounter.current += 1;
+      const tab: SqlTab = { id: `tab-${Date.now()}-${tabCounter.current}`, title: "DBA", view: "dba", sql: "", response: null, execError: null };
+      setTabsByConn((prev) => ({ ...prev, [profileId]: [...(prev[profileId] ?? tabsFor(profileId)), tab] }));
+      setActiveIdByConn((a) => ({ ...a, [profileId]: tab.id }));
+      return;
+    }
+    // Everything connection-scoped is ONE unified tab (Connection |
+    // Properties | Database Info | Data Types | Search) — opening any entry
+    // focuses that tab on the right section instead of spawning siblings.
+    const section: import("@/features/connection/ConnectionPropertiesTab").ConnectionSection =
+      view === "connProps" ? "properties" : view === "dbInfo" ? "dbInfo" : view === "dataTypes" ? "dataTypes" : "connection";
+    const existing = list.find((t) => t.view === "connProps");
     if (existing) {
+      setTabsByConn((prev) => ({
+        ...prev,
+        [profileId]: (prev[profileId] ?? []).map((t) =>
+          t.id === existing.id ? { ...t, connSection: section, connSectionNonce: (t.connSectionNonce ?? 0) + 1 } : t,
+        ),
+      }));
       setActiveIdByConn((a) => ({ ...a, [profileId]: existing.id }));
       return;
     }
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-${Date.now()}-${tabCounter.current}`,
-      title:
-        view === "dbInfo"
-          ? "Database Info"
-          : view === "dataTypes"
-            ? "Data Types"
-            : view === "connInfo"
-              ? "Connection Info"
-              : view === "connProps"
-                ? "Properties"
-                : "DBA",
-      view,
+      title: "Connection",
+      view: "connProps",
       sql: "",
       response: null,
       execError: null,
+      connSection: section,
+      connSectionNonce: 1,
     };
     setTabsByConn((prev) => ({ ...prev, [profileId]: [...(prev[profileId] ?? tabsFor(profileId)), tab] }));
     setActiveIdByConn((a) => ({ ...a, [profileId]: tab.id }));
@@ -4480,22 +4497,15 @@ export function ExasolStudio({
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
-              {activeTab.view === "connInfo" || activeTab.view === "connProps" || activeTab.view === "dbInfo" || activeTab.view === "dataTypes" ? (
+              {activeTab.view === "connProps" ? (
                 // ONE unified Database Connection page (Connection | Properties |
-                // Database Info | Data Types | Search) — the old per-view panels
-                // render inside it, so there is a single page to maintain.
+                // Database Info | Data Types | Search) — a single tab per
+                // connection; menu entries just switch its section.
                 <ConnectionPropertiesTab
                   connection={connection}
                   profileId={connection.profile.id}
-                  initialSection={
-                    activeTab.view === "connProps"
-                      ? "properties"
-                      : activeTab.view === "dbInfo"
-                        ? "dbInfo"
-                        : activeTab.view === "dataTypes"
-                          ? "dataTypes"
-                          : "connection"
-                  }
+                  initialSection={activeTab.connSection ?? "connection"}
+                  sectionNonce={activeTab.connSectionNonce}
                   onSaved={() => onSaved?.()}
                   onOpenObject={(schema, name) => openObject(connection.profile.id, schema, name)}
                   onDisconnect={() => onDisconnect(connection.profile.id)}

@@ -88,7 +88,6 @@ pub fn run() {
             metadata::get_object_grants,
             metadata::get_object_size,
             catalog::get_database_info,
-            catalog::list_data_types,
             catalog::search_objects,
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
