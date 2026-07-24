@@ -8,14 +8,21 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  MoreHorizontal,
   Plug,
+  RefreshCcw,
   RotateCcw,
   Search,
   Settings2,
+  Type,
+  Unplug,
 } from "lucide-react";
 import { errorMessage, ipc, type ConnectionProfile } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
+import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
+import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
+import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -275,23 +282,41 @@ function categoryDefaults(s: ConnSettings, cat: CategoryId): ConnSettings {
 
 /* ── the tab ────────────────────────────────────────────────────────────── */
 
+export type ConnectionSection = "connection" | "properties" | "dbInfo" | "dataTypes" | "search";
+
 export function ConnectionPropertiesTab({
   connection,
   profileId,
+  initialSection = "connection",
   onSaved,
+  onOpenObject,
+  onDisconnect,
+  onConnect,
+  onRefresh,
 }: {
   /** Live connection when this profile is currently open (for server info). */
   connection: ActiveConnection | null;
   profileId: string;
+  initialSection?: ConnectionSection;
   onSaved?: () => void;
+  onOpenObject?: (schema: string, name: string) => void;
+  onDisconnect?: () => void;
+  onConnect?: () => void;
+  onRefresh?: () => void;
 }) {
-  const [mode, setMode] = useState<"connection" | "properties">("connection");
+  const [mode, setMode] = useState<ConnectionSection>(initialSection);
   const [profile, setProfile] = useState<ConnectionProfile | null>(null);
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");
   const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "" });
   const [profileSnapshot, setProfileSnapshot] = useState<string>("");
   const [showPw, setShowPw] = useState(false);
+  // Connected-for ticker (like the classic "Connected - 00:11:39").
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(t);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedTick, setSavedTick] = useState(false);
@@ -357,6 +382,7 @@ export function ConnectionPropertiesTab({
       }
       await ipc.connectionSettingsSet(profileId, settings);
       setSavedSnapshot(JSON.stringify(settings));
+      window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
       onSaved?.();
       setSavedTick(true);
       window.setTimeout(() => setSavedTick(false), 1600);
@@ -710,23 +736,66 @@ export function ConnectionPropertiesTab({
     </div>
   );
 
+  const uptime = (() => {
+    if (!connectedLive?.connectedAt) return null;
+    const total = Math.max(0, Math.floor((Date.now() - connectedLive.connectedAt) / 1000));
+    const h = String(Math.floor(total / 3600)).padStart(2, "0");
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+    const sec = String(total % 60).padStart(2, "0");
+    return `${h}:${m}:${sec}`;
+  })();
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
-      {/* header + sub-tabs, unified with the info pages */}
-      <div className="shrink-0 border-b border-border px-6 pt-4">
-        <div className="mx-auto flex max-w-4xl items-center gap-2.5">
-          <Database className="h-5 w-5" style={{ color: s.color.accent ?? "var(--primary)" }} />
-          <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-bold text-foreground">{profile?.name ?? "Connection"}</h2>
-            <p className="font-mono text-[11.5px] text-muted-foreground">{profile ? `${profile.host}:${profile.port}` : ""}</p>
+      {/* One header for the whole connection workspace — Connection,
+          Properties, Database Info, Data Types and Search all live here so
+          there is exactly ONE page to maintain. */}
+      <div className="shrink-0 border-b border-border px-6 pt-3">
+        <div className="flex items-start gap-2.5">
+          <Database className="mt-0.5 h-5 w-5" style={{ color: s.color.accent ?? "var(--primary)" }} />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[15px] font-bold text-foreground">
+              Database Connection: {profile?.name ?? "Connection"}
+            </h2>
+            <p className="font-mono text-[11.5px] text-primary/90">{profile ? `exa://${profile.host}:${profile.port}` : ""}</p>
           </div>
-          <span className={cn("ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium", connectedLive ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", connectedLive ? "bg-emerald-500 shadow-[0_0_6px_#10b981]" : "border border-muted-foreground/50")} />
-            {connectedLive ? "Connected" : "Disconnected"}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
+                  Actions… <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {connectedLive ? (
+                  <>
+                    <DropdownMenuItem onClick={() => onRefresh?.()}>
+                      <RefreshCcw className="h-3.5 w-3.5" /> Refresh objects
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onDisconnect?.()} className="text-destructive focus:text-destructive">
+                      <Unplug className="h-3.5 w-3.5" /> Disconnect
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem onClick={() => onConnect?.()}>
+                    <Plug className="h-3.5 w-3.5" /> Connect
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <span className={cn("font-mono text-[11px]", connectedLive ? "text-muted-foreground" : "text-muted-foreground/70")}>
+              {connectedLive ? `Connected · ${uptime ?? "00:00:00"}` : "Disconnected"}
+            </span>
+          </div>
         </div>
-        <div className="mx-auto mt-3 flex max-w-4xl items-center gap-1">
-          {([["connection", "Connection", Plug], ["properties", "Properties", Settings2]] as const).map(([id, label, Ic]) => (
+        <div className="mt-2 flex items-center gap-1">
+          {([
+            ["connection", "Connection", Plug],
+            ["properties", "Properties", Settings2],
+            ["dbInfo", "Database Info", Database],
+            ["dataTypes", "Data Types", Type],
+            ["search", "Search", Search],
+          ] as const).map(([id, label, Ic]) => (
             <button
               key={id}
               onClick={() => setMode(id)}
@@ -746,7 +815,24 @@ export function ConnectionPropertiesTab({
         <div className="mx-6 mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
 
-      {mode === "connection" ? (
+      {mode === "dbInfo" ? (
+        <div className="min-h-0 flex-1">
+          <DatabaseInfoPanel profileId={profileId} connectionName={profile?.name ?? ""} />
+        </div>
+      ) : mode === "dataTypes" ? (
+        <div className="min-h-0 flex-1">
+          <DataTypesPanel profileId={profileId} connectionName={profile?.name ?? ""} />
+        </div>
+      ) : mode === "search" ? (
+        <div className="min-h-0 flex-1">
+          <ObjectSearch
+            key={profileId}
+            profileId={profileId}
+            onOpenObject={(schema, name) => onOpenObject?.(schema, name)}
+            onClose={() => setMode("connection")}
+          />
+        </div>
+      ) : mode === "connection" ? (
         <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
           <div className="mx-auto max-w-4xl space-y-4 p-6">
             <SectionCard title="Connection">
@@ -842,7 +928,8 @@ export function ConnectionPropertiesTab({
         </div>
       )}
 
-      {/* apply bar */}
+      {/* apply bar — only the editable sections need it */}
+      {mode !== "connection" && mode !== "properties" ? null : (
       <div className="flex h-11 shrink-0 items-center justify-between border-t border-border px-4">
         {mode === "properties" ? (
           <button
@@ -863,6 +950,7 @@ export function ConnectionPropertiesTab({
           {savedTick ? "Applied" : "Apply"}
         </button>
       </div>
+      )}
     </div>
   );
 }

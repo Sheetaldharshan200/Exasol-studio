@@ -65,7 +65,8 @@ Legend: [x] shipped & wired · [~] shipped, stored + partially wired (noted) · 
       Rust (best-effort batches, errors logged, never block the connect)
 - [x] **Color and Border** — per-connection accent (preset swatches + none),
       show-in checkboxes; wired to the sidebar connection row stripe/name
-      [ ] tint the workspace tab chips of that connection everywhere
+      [x] tint the workspace tab chips (top-edge stripe, live via
+      studio:conn-settings-changed broadcast)
 - [x] **SQL Editor** — initial schema selection (connection default / none /
       most recently used), handling loss of connection (no reconnect /
       reconnect / reconnect and re-execute) [~] stored; reconnect behavior
@@ -73,10 +74,23 @@ Legend: [x] shipped & wired · [~] shipped, stored + partially wired (noted) · 
 - [x] **Query Builder** — auto-join enabled/type, generate JOIN clause,
       sort columns alphabetically [~] stored for the visual query builder
 
+## 3b. Unified Database Connection page (2026-07-24)
+- [x] ONE page hosts Connection | Properties | Database Info | Data Types |
+      Search as horizontal tabs (DBVis layout) — the old Connection Info /
+      Database Info / Data Types views all render THIS component, so there is
+      a single page to maintain
+- [x] Header: "Database Connection: <name>", exa://host:port, Actions…
+      dropdown (Refresh / Disconnect / Connect), live "Connected · HH:MM:SS"
+      uptime ticker
+- [x] Results grid: removed the 1px gap between the toolbar and the sticky
+      column-header row
+- [x] Execution log: clicking a SQL no longer collapses the history dock
+- [x] Shared CopyButton (copy → spinner-when-slow → check) swept across
+      copy affordances; menu copies emit a "Copied to clipboard" notice
+
 ## 4. Follow-ups (backlog)
 - [ ] Sweep every SQL emitter (context menus, exports, edit-data grid) through
       the delimited-identifier + qualifier settings
-- [ ] Tab-chip tinting from Color and Border across the tab strip
 - [ ] "Global Properties" page (defaults inherited by every connection)
 - [ ] Per-category reset history / diff view
 

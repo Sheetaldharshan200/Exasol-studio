@@ -4,6 +4,8 @@ import { ipc, type ConnectionProfile, type ServerInfo } from "@/lib/ipc";
 export type ActiveConnection = {
   profile: ConnectionProfile;
   server: ServerInfo;
+  /** When this connection was (re)established in this app session. */
+  connectedAt?: number;
 };
 
 /**
@@ -69,7 +71,7 @@ export function useConnections() {
           if (!profile) continue;
           try {
             const server = await ipc.connect(id); // idempotent: reuses the open pool
-            setConnections((list) => [...list.filter((c) => c.profile.id !== id), { profile, server }]);
+            setConnections((list) => [...list.filter((c) => c.profile.id !== id), { profile, server, connectedAt: Date.now() }]);
             setActiveProfileId((prev) => prev ?? id);
           } catch {
             /* pool gone — skip */
@@ -83,7 +85,8 @@ export function useConnections() {
 
   /** Record an already-established connection (e.g. from the native window). */
   const adopt = useCallback((conn: ActiveConnection) => {
-    setConnections((list) => [...list.filter((c) => c.profile.id !== conn.profile.id), conn]);
+    const stamped = { ...conn, connectedAt: conn.connectedAt ?? Date.now() };
+    setConnections((list) => [...list.filter((c) => c.profile.id !== conn.profile.id), stamped]);
     setActiveProfileId(conn.profile.id);
   }, []);
 

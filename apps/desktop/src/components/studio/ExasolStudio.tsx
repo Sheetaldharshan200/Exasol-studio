@@ -90,11 +90,9 @@ import {
 import { cn } from "@/lib/utils";
 import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
-import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
-import { ConnectionInfoPanel } from "@/features/workbench/ConnectionInfoPanel";
 import { ConnectionPropertiesTab } from "@/features/connection/ConnectionPropertiesTab";
+import { CopyButton } from "@/components/ui/copy-button";
 import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
-import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
@@ -878,7 +876,22 @@ function Sidebar({
       }
       if (!dead) setAccents(next);
     })();
-    return () => { dead = true; };
+    const bump = () => setTimeout(() => { void load(); }, 50);
+    window.addEventListener("studio:conn-settings-changed", bump);
+    return () => {
+      dead = true;
+      window.removeEventListener("studio:conn-settings-changed", bump);
+    };
+    async function load() {
+      const next: Record<string, string> = {};
+      for (const p of profiles) {
+        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
+          | { color?: { accent?: string | null; showInName?: boolean } }
+          | null;
+        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
+      }
+      if (!dead) setAccents(next);
+    }
   }, [profiles]);
   const pingTargets = useMemo(
     () =>
@@ -1346,7 +1359,7 @@ function ResultsGrid({
           {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
         </span>
       </div>
-      <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
+      <div className="h-full min-h-0 flex-1 overflow-auto" style={{ fontSize }}>
         {/* border-separate (NOT collapse) so the sticky header cells carry their
             own opaque background + border — with border-collapse the row bg and
             borders stay behind and scrolling rows show through the header. */}
@@ -1596,9 +1609,7 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
             <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
               <span className="text-[12px] font-medium text-foreground">{detail.label}</span>
               <div className="flex items-center gap-1">
-                <IconButton label="Copy" onClick={() => void navigator.clipboard?.writeText(detail.value)}>
-                  <Copy className="h-3.5 w-3.5" />
-                </IconButton>
+                <CopyButton text={detail.value} className="h-7 w-7" />
                 <IconButton label="Close" onClick={() => setDetail(null)}>
                   <X className="h-3.5 w-3.5" />
                 </IconButton>
@@ -1988,6 +1999,36 @@ export function ExasolStudio({
   const tabsFor = useCallback((key: string): SqlTab[] => tabsByConn[key] ?? [], [tabsByConn]);
 
   const tabs = tabsFor(connKey);
+  // Connection accent (Properties → Color and Border → SQL tabs): tints the
+  // top edge of this connection's tab chips — the prod-vs-dev guard.
+  const [connAccent, setConnAccent] = useState<string | null>(null);
+  useEffect(() => {
+    let dead = false;
+    if (!connKey || connKey === "none") {
+      setConnAccent(null);
+      return;
+    }
+    void ipc
+      .connectionSettingsGet(connKey)
+      .then((raw) => {
+        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
+        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
+      })
+      .catch(() => {
+        if (!dead) setConnAccent(null);
+      });
+    const bump = () => {
+      void ipc.connectionSettingsGet(connKey).then((raw) => {
+        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
+        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
+      }).catch(() => undefined);
+    };
+    window.addEventListener("studio:conn-settings-changed", bump);
+    return () => {
+      dead = true;
+      window.removeEventListener("studio:conn-settings-changed", bump);
+    };
+  }, [connKey]);
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
   const activeTabId = activeTab.id;
@@ -2773,6 +2814,7 @@ export function ExasolStudio({
           setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
         }}
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
+        style={connAccent ? { boxShadow: `inset 0 2px 0 0 ${connAccent}` } : undefined}
         className={cn(
           "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
           grouped && "border-r-0",
@@ -4438,23 +4480,27 @@ export function ExasolStudio({
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
-              {activeTab.view === "connInfo" ? (
-                <ConnectionInfoPanel connection={connection} />
-              ) : activeTab.view === "connProps" ? (
+              {activeTab.view === "connInfo" || activeTab.view === "connProps" || activeTab.view === "dbInfo" || activeTab.view === "dataTypes" ? (
+                // ONE unified Database Connection page (Connection | Properties |
+                // Database Info | Data Types | Search) — the old per-view panels
+                // render inside it, so there is a single page to maintain.
                 <ConnectionPropertiesTab
                   connection={connection}
                   profileId={connection.profile.id}
+                  initialSection={
+                    activeTab.view === "connProps"
+                      ? "properties"
+                      : activeTab.view === "dbInfo"
+                        ? "dbInfo"
+                        : activeTab.view === "dataTypes"
+                          ? "dataTypes"
+                          : "connection"
+                  }
                   onSaved={() => onSaved?.()}
-                />
-              ) : activeTab.view === "dbInfo" ? (
-                <DatabaseInfoPanel
-                  profileId={connection.profile.id}
-                  connectionName={connection.profile.name}
-                />
-              ) : activeTab.view === "dataTypes" ? (
-                <DataTypesPanel
-                  profileId={connection.profile.id}
-                  connectionName={connection.profile.name}
+                  onOpenObject={(schema, name) => openObject(connection.profile.id, schema, name)}
+                  onDisconnect={() => onDisconnect(connection.profile.id)}
+                  onConnect={() => void connectSaved(connection.profile.id)}
+                  onRefresh={() => refreshConnection(connection.profile.id)}
                 />
               ) : activeTab.view === "dba" ? (
                 <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} onOpenSql={openSqlTab} />
@@ -4715,7 +4761,6 @@ export function ExasolStudio({
             const existing = tabs.find((t) => t.view === "sql" && norm(t.sql) === norm(value));
             if (existing) setActiveTabId(existing.id);
             else openSqlTab(value, "From log");
-            setHistoryOpen(false);
           }}
           onClear={() => ipc.sqlHistoryClear().then(loadHistory)}
           onRefresh={loadHistory}
