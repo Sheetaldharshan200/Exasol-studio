@@ -930,11 +930,11 @@ export function ConnectionPropertiesTab({
       ) : null}
 
       {mode === "dbInfo" && profileId !== null ? (
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
           <DatabaseInfoPanel profileId={profileId} connectionName={profile?.name ?? ""} />
         </div>
       ) : mode === "dataTypes" && profileId !== null ? (
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <DataTypesPanel profileId={profileId} connectionName={profile?.name ?? ""} />
         </div>
       ) : mode === "drivers" ? (
@@ -942,7 +942,7 @@ export function ConnectionPropertiesTab({
           <DriversSection activeDriverId={profileDraft.driverId} />
         </div>
       ) : mode === "search" && profileId !== null ? (
-        <div className="min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ObjectSearch
             key={profileId}
             profileId={profileId}

@@ -91,7 +91,10 @@ export function DatabaseInfoPanel({
   }
 
   return (
-    <div className="h-full overflow-auto bg-editor">
+    // The host container scrolls (percentage h-full inside a flex track is
+    // unreliable in WKWebView); each table also scrolls in its own box with a
+    // sticky header, like classic DB tools.
+    <div className="bg-editor">
       <div className="mx-auto max-w-5xl p-6">
         <header className="mb-5 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
@@ -169,14 +172,15 @@ function InfoTable({
       {rows.length === 0 ? (
         <div className="px-3 py-6 text-center text-xs text-muted-foreground">No matches.</div>
       ) : (
-        <table className="w-full border-collapse text-[12px]">
-          <thead>
-            <tr className="bg-secondary/30 text-left text-muted-foreground">
+        <div className="max-h-[50vh] overflow-auto [scrollbar-width:thin]">
+        <table className="w-full border-separate border-spacing-0 text-[12px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="text-left text-muted-foreground">
               {columns.map((c, i) => (
                 <th
                   key={c}
                   className={cn(
-                    "border-b border-border px-3 py-1.5 font-medium",
+                    "border-b border-border bg-secondary px-3 py-1.5 font-medium",
                     i > 0 && "border-l",
                   )}
                 >
@@ -211,6 +215,7 @@ function InfoTable({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );
