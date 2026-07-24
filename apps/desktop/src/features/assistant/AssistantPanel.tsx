@@ -872,7 +872,10 @@ export function AssistantPanel({
     const userIndex = all.slice(0, abs + 1).filter((it) => it.kind === "msg" && it.role === "user").length - 1;
     const sid = sessionRef.current;
     if (action === "copy") {
-      navigator.clipboard?.writeText(item.content).catch(() => undefined);
+      navigator.clipboard
+        ?.writeText(item.content)
+        .then(() => window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "success", title: "Copied to clipboard" } })))
+        .catch(() => undefined);
       return;
     }
     if (!sid) return;

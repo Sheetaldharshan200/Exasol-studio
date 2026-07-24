@@ -108,10 +108,14 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
 }
 
 async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
+    open_pool_sized(profile, 4).await
+}
+
+async fn open_pool_sized(profile: &ConnectionProfile, max_connections: u32) -> AppResult<ExaPool> {
     let options = build_connect_options(profile)?;
     let pool = sqlx_exasol::pool::PoolOptions::<Exasol>::new()
         .min_connections(0)
-        .max_connections(4)
+        .max_connections(max_connections.clamp(1, 16))
         .acquire_timeout(std::time::Duration::from_secs(20))
         .connect_with(options)
         .await?;
@@ -178,6 +182,8 @@ pub async fn test_connection(profile: ConnectionProfile) -> AppResult<ServerInfo
 }
 
 /// Open (or reuse) a pool for a saved profile and return server info.
+/// Honors the Connection Properties: pool size (single shared physical
+/// connection), Run-SQL-at-Connect hooks, and the keep-alive loop.
 #[tauri::command]
 pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResult<ServerInfo> {
     let profile = find_profile(&state, &profile_id)?;
@@ -189,17 +195,80 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         }
     }
 
-    let pool = open_pool(&profile).await?;
+    let settings = crate::connection_settings::read_settings(&state, &profile_id);
+    let single = crate::connection_settings::bool_at(&settings, &["physical", "singleConnection"]).unwrap_or(false);
+    let pool_size = if single {
+        1
+    } else {
+        crate::connection_settings::num_at(&settings, &["driver", "connectionPoolSize"]).unwrap_or(4) as u32
+    };
+
+    let pool = open_pool_sized(&profile, pool_size).await?;
     let info = read_server_info(&pool).await?;
+
+    // Run SQL at Connect (Connection Hooks) — best-effort, never blocks the
+    // connect; problems land in the log, not in the user's face.
+    if crate::connection_settings::bool_at(&settings, &["hooks", "connectEnabled"]).unwrap_or(false) {
+        if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "connectSql"]) {
+            run_hook_sql(&pool, sql).await;
+        }
+    }
+
+    // Connection Keep-Alive: validate on an interval while the pool lives.
+    // The task holds only a pool clone; pool.close() (disconnect) ends it.
+    if crate::connection_settings::bool_at(&settings, &["physical", "keepAlive"]).unwrap_or(false) {
+        let idle = crate::connection_settings::num_at(&settings, &["physical", "idleSeconds"])
+            .unwrap_or(120)
+            .max(10);
+        let validation = crate::connection_settings::str_at(&settings, &["physical", "validationSql"])
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("SELECT 1")
+            .to_string();
+        let ka_pool = pool.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(idle)).await;
+                if ka_pool.is_closed() {
+                    break;
+                }
+                let _ = fetch_all_rows(&ka_pool, &validation).await;
+            }
+        });
+    }
+
     state.pools.write().await.insert(profile_id.clone(), pool);
     touch_profile(&state, &profile_id)?;
     Ok(info)
 }
 
+/// Run hook SQL (one or more ;-separated statements) best-effort.
+async fn run_hook_sql(pool: &ExaPool, sql: &str) {
+    for stmt in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.to_string()))
+            .execute(pool)
+            .await
+        {
+            eprintln!("connection hook statement failed: {e}");
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<()> {
     if let Some(pool) = state.pools.write().await.remove(&profile_id) {
+        let settings = crate::connection_settings::read_settings(&state, &profile_id);
+        // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
+        if crate::connection_settings::bool_at(&settings, &["hooks", "disconnectEnabled"]).unwrap_or(false) {
+            if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "disconnectSql"]) {
+                run_hook_sql(&pool, sql).await;
+            }
+        }
         pool.close().await;
+        // Password policy "Clear at Disconnect": blank the stored password so
+        // the next connect prompts for it.
+        if crate::connection_settings::str_at(&settings, &["auth", "passwordPolicy"]) == Some("clear") {
+            let _ = crate::profiles::clear_profile_password(&state, &profile_id);
+        }
     }
     Ok(())
 }

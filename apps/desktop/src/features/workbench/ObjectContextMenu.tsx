@@ -431,7 +431,11 @@ export function ObjectContextMenu({
           <button
             key={i}
             onClick={() => {
-              if (it.kind === "copy") navigator.clipboard?.writeText(it.text ?? "");
+              if (it.kind === "copy") {
+                void navigator.clipboard?.writeText(it.text ?? "").then(() =>
+                  window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "success", title: "Copied to clipboard" } })),
+                );
+              }
               else if (it.kind === "action") onAction(it.action);
               else if (it.kind === "nav") onEditInDetails?.(it.navTab, it.navEdit);
               else onEditorSql(it.sql ?? "", it.kind === "run");

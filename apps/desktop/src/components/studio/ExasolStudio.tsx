@@ -8,6 +8,8 @@ import {
   Blocks,
   Check,
   ChevronDown,
+  ChevronUp,
+  Copy,
   ChevronLeft,
   Boxes,
   ChevronRight,
@@ -88,10 +90,9 @@ import {
 import { cn } from "@/lib/utils";
 import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { buildConnectionNodes } from "@/features/workbench/tree-model";
-import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
-import { ConnectionInfoPanel } from "@/features/workbench/ConnectionInfoPanel";
+import { ConnectionPropertiesTab } from "@/features/connection/ConnectionPropertiesTab";
+import { CopyButton } from "@/components/ui/copy-button";
 import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
-import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
@@ -179,7 +180,7 @@ const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
 
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
-type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile";
+type TabView = "sql" | "dbInfo" | "dataTypes" | "connect" | "visualizer" | "filePreview" | "marketplace" | "guides" | "object" | "dba" | "bi" | "connInfo" | "welcome" | "artifact" | "mcpConfig" | "git" | "notebook" | "skills" | "aiSettings" | "profile" | "connProps";
 
 type SqlTab = {
   id: string;
@@ -247,6 +248,7 @@ const TAB_ICON: Record<TabView, IconName> = {
   object: "table",
   bi: "dashboards",
   connInfo: "plug",
+  connProps: "sliders",
   welcome: "home",
   artifact: "file",
   git: "git",
@@ -551,6 +553,7 @@ function ConnectionSection({
   connection,
   focused,
   live,
+  accent,
   treeKey,
   collapsed,
   onToggleCollapse,
@@ -568,6 +571,8 @@ function ConnectionSection({
   focused: boolean;
   /** Server reachability: true = up, false = down, undefined = probing. */
   live?: boolean;
+  /** Connection accent color (Properties → Color and Border). */
+  accent?: string;
   treeKey: number;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -575,7 +580,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
+  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -593,10 +598,11 @@ function ConnectionSection({
     <div className="min-w-0">
       <div
         className={cn(
-          "group flex h-8 items-center gap-1.5 pr-1 pl-1.5 transition-colors",
+          "group relative flex h-8 items-center gap-1.5 pr-1 pl-1.5 transition-colors",
           focused ? "bg-secondary/60" : "hover:bg-secondary/30",
         )}
       >
+        {accent ? <span className="absolute inset-y-0 left-0 w-0.5" style={{ backgroundColor: accent }} /> : null}
         <button
           onClick={onToggleCollapse}
           aria-label={collapsed ? "Expand" : "Collapse"}
@@ -620,7 +626,7 @@ function ConnectionSection({
                 : "bg-emerald-500 shadow-[0_0_6px_#10b981]",
             )}
           />
-          <Database className={cn("h-3.5 w-3.5 shrink-0", focused ? "text-primary" : "text-muted-foreground")} />
+          <Database className={cn("h-3.5 w-3.5 shrink-0", !accent && (focused ? "text-primary" : "text-muted-foreground"))} style={accent ? { color: accent } : undefined} />
           <span className={cn("truncate text-[13px]", focused ? "font-medium text-foreground" : "text-muted-foreground")}>
             {connection.profile.name}
           </span>
@@ -651,6 +657,9 @@ function ConnectionSection({
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={() => onOpenView("connInfo")}>
                 <Plug className="h-3.5 w-3.5" /> Connection info
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("connProps")}>
+                <Settings2 className="h-3.5 w-3.5" /> Properties
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("dbInfo")}>
                 <Info className="h-3.5 w-3.5" /> Database info
@@ -828,7 +837,7 @@ function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
-  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") => void;
+  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -853,6 +862,37 @@ function Sidebar({
   // green dot = server up, red = a live connection whose server went away,
   // grey = saved server that is not running. `undefined` = not probed yet.
   const [reachable, setReachable] = useState<Record<string, boolean>>({});
+  // Connection accent colors (Properties → Color and Border → show in name).
+  const [accents, setAccents] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let dead = false;
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const p of profiles) {
+        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
+          | { color?: { accent?: string | null; showInName?: boolean } }
+          | null;
+        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
+      }
+      if (!dead) setAccents(next);
+    })();
+    const bump = () => setTimeout(() => { void load(); }, 50);
+    window.addEventListener("studio:conn-settings-changed", bump);
+    return () => {
+      dead = true;
+      window.removeEventListener("studio:conn-settings-changed", bump);
+    };
+    async function load() {
+      const next: Record<string, string> = {};
+      for (const p of profiles) {
+        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
+          | { color?: { accent?: string | null; showInName?: boolean } }
+          | null;
+        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
+      }
+      if (!dead) setAccents(next);
+    }
+  }, [profiles]);
   const pingTargets = useMemo(
     () =>
       [
@@ -1114,6 +1154,7 @@ function Sidebar({
               connection={conn}
               focused={conn.profile.id === activeProfileId}
               live={reachable[conn.profile.id]}
+              accent={accents[conn.profile.id]}
               treeKey={treeKeys[conn.profile.id] ?? 0}
               collapsed={collapsed.has(conn.profile.id)}
               onToggleCollapse={() =>
@@ -1318,7 +1359,7 @@ function ResultsGrid({
           {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
         </span>
       </div>
-      <div className="h-full min-h-0 flex-1 overflow-auto p-px" style={{ fontSize }}>
+      <div className="h-full min-h-0 flex-1 overflow-auto" style={{ fontSize }}>
         {/* border-separate (NOT collapse) so the sticky header cells carry their
             own opaque background + border — with border-collapse the row bg and
             borders stay behind and scrolling rows show through the header. */}
@@ -1421,6 +1462,176 @@ function GitLogPane() {
         )}
       </div>
     </div>
+  );
+}
+
+type LogSortKey = "time" | "status" | "command" | "exec" | "fetch" | "rows" | "message" | "sql";
+
+function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
+  const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
+  const [detail, setDetail] = useState<{ label: string; value: string; mono: boolean; sql?: string } | null>(null);
+
+  const verb = (e: HistoryEntry) => (e.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
+  const sortVal = (e: HistoryEntry, key: LogSortKey): string | number => {
+    switch (key) {
+      case "time": return e.executedAt;
+      case "status": return e.success ? 1 : 0;
+      case "command": return verb(e);
+      case "exec": return e.execMs ?? e.elapsedMs;
+      case "fetch": return e.fetchMs ?? -1;
+      case "rows": return e.rowCount;
+      case "message": return e.error ?? "";
+      case "sql": return e.sql;
+    }
+  };
+  const sorted = [...entries].sort((a, b) => {
+    const va = sortVal(a, sort.key);
+    const vb = sortVal(b, sort.key);
+    const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return cmp * sort.dir;
+  });
+  const flip = (key: LogSortKey) =>
+    setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
+
+  const HEADERS: { key: LogSortKey; label: string; width?: number | string; right?: boolean }[] = [
+    { key: "time", label: "Time", width: 78 },
+    { key: "status", label: "Status", width: 84 },
+    { key: "command", label: "Command", width: 92 },
+    { key: "exec", label: "Exec", width: 74, right: true },
+    { key: "fetch", label: "Fetch", width: 74, right: true },
+    { key: "rows", label: "Rows", width: 76, right: true },
+    { key: "message", label: "Message", width: "30%" },
+    { key: "sql", label: "SQL" },
+  ];
+  const ms = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v.toLocaleString()} ms`);
+  const cellBtn = "block w-full cursor-pointer px-2.5 py-1.5 text-left hover:bg-accent/60";
+  const openDetail = (label: string, value: string, mono = false, sql?: string) => setDetail({ label, value, mono, sql });
+
+  return (
+    <>
+      <table className="w-full table-fixed border-separate border-spacing-0 text-[12px]">
+        <colgroup>
+          {HEADERS.map((h) => (
+            <col key={h.key} style={h.width ? { width: h.width } : undefined} />
+          ))}
+        </colgroup>
+        <thead className="sticky top-0 z-10">
+          <tr className="text-left text-muted-foreground">
+            {HEADERS.map((h) => (
+              <th key={h.key} className="border-r border-b border-border bg-secondary p-0 font-medium last:border-r-0">
+                <button
+                  onClick={() => flip(h.key)}
+                  className={cn(
+                    "flex w-full items-center gap-1 px-2.5 py-1.5 hover:text-foreground",
+                    h.right && "justify-end",
+                    sort.key === h.key && "text-foreground",
+                  )}
+                >
+                  {h.label}
+                  {sort.key === h.key ? (
+                    sort.dir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                  ) : null}
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((e) => {
+            const rows = e.truncated ? `${e.rowCount.toLocaleString()}+` : e.rowCount.toLocaleString();
+            const summary =
+              `${e.success ? "Success" : "Failed"} · ${verb(e)}${e.statementCount > 1 ? ` ×${e.statementCount}` : ""} · ` +
+              `${new Date(e.executedAt).toLocaleString()} · ${e.connectionName}`;
+            return (
+              <tr key={e.id} className="align-top">
+                <td className="border-r border-b border-border p-0 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                  <button className={cellBtn} onClick={() => openDetail("Executed at", `${new Date(e.executedAt).toLocaleString()}\n\n${summary}`)}>
+                    {new Date(e.executedAt).toLocaleTimeString()}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0">
+                  <button className={cellBtn} onClick={() => openDetail("Status", e.success ? `Success\n\n${summary}` : `Failed\n\n${e.error ?? ""}\n\n${summary}`)}>
+                    <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", e.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+                      {e.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                      {e.success ? "Success" : "Failed"}
+                    </span>
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-[11px] text-muted-foreground">
+                  <button className={cellBtn} onClick={() => openDetail("Command", `${verb(e)}${e.statementCount > 1 ? ` — ${e.statementCount} statements in this run` : ""}\n\n${summary}`)}>
+                    {verb(e)}{e.statementCount > 1 ? ` ×${e.statementCount}` : ""}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-muted-foreground whitespace-nowrap">
+                  <button className={cn(cellBtn, "text-right")} onClick={() => openDetail("Execution time", `Exec ${ms(e.execMs ?? e.elapsedMs)} — until the server answered.\nFetch ${ms(e.fetchMs)} — streaming the rows.\nTotal ${ms(e.elapsedMs)}.\n\n${summary}`)}>
+                    {ms(e.execMs ?? e.elapsedMs)}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-muted-foreground whitespace-nowrap">
+                  <button className={cn(cellBtn, "text-right")} onClick={() => openDetail("Fetch time", `Fetch ${ms(e.fetchMs)} — time spent streaming rows after execution.\nExec ${ms(e.execMs ?? e.elapsedMs)} · Total ${ms(e.elapsedMs)}.\n\n${summary}`)}>
+                    {ms(e.fetchMs)}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono">
+                  <button
+                    className={cn(cellBtn, "text-right")}
+                    title={e.truncated ? "The row cap was hit — the query matched more rows than were fetched" : undefined}
+                    onClick={() => openDetail("Rows", e.truncated ? `${e.rowCount.toLocaleString()} rows fetched — the row cap was hit, so the query matched MORE rows than this. Use the result pager or a LIMIT to walk the rest.\n\n${summary}` : `${e.rowCount.toLocaleString()} rows.\n\n${summary}`)}
+                  >
+                    {rows}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0">
+                  <button
+                    className={cn(cellBtn, "truncate text-[11.5px] leading-snug", e.error ? "text-destructive" : "text-muted-foreground")}
+                    onClick={() => openDetail("Message", e.error ?? "No message — the run completed without errors.", false, e.error ? e.sql : undefined)}
+                  >
+                    {e.error ?? "—"}
+                  </button>
+                </td>
+                <td className="border-b border-border p-0 font-mono text-foreground">
+                  <button className={cn(cellBtn, "truncate")} title="Open this SQL in a query tab" onClick={() => onOpenSql(e.sql)}>
+                    {e.sql.replace(/\s+/g, " ").trim()}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {detail ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setDetail(null)}>
+          <div
+            className="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+              <span className="text-[12px] font-medium text-foreground">{detail.label}</span>
+              <div className="flex items-center gap-1">
+                <CopyButton text={detail.value} className="h-7 w-7" />
+                <IconButton label="Close" onClick={() => setDetail(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </IconButton>
+              </div>
+            </div>
+            <div className={cn("min-h-0 flex-1 overflow-auto px-3 py-2.5 text-[12px] leading-relaxed whitespace-pre-wrap break-words", detail.mono && "font-mono")}>
+              {detail.value}
+            </div>
+            {detail.sql ? (
+              <div className="shrink-0 border-t border-border px-3 py-2">
+                <button
+                  onClick={() => { onOpenSql(detail.sql!); setDetail(null); }}
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" /> Open the SQL in a query tab
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -1626,49 +1837,10 @@ function HistoryDock({
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
               ) : (
                 // Execution log, DB-tool style: every run — success or failure —
-                // with its status, command, timing, rows, and the FULL error
-                // message in its own column (not buried in a tooltip).
-                <table className="w-full table-fixed text-[12px]">
-                  <colgroup>
-                    <col style={{ width: 76 }} />
-                    <col style={{ width: 74 }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 70 }} />
-                    <col style={{ width: 64 }} />
-                    <col style={{ width: "34%" }} />
-                    <col />
-                  </colgroup>
-                  <thead className="sticky top-0 z-10 bg-secondary">
-                    <tr className="text-left text-muted-foreground">
-                      {["Time", "Status", "Command", "Exec", "Rows", "Message", "SQL"].map((h) => (
-                        <th key={h} className="border-b border-border px-2.5 py-1.5 font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => {
-                      const verb = (entry.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
-                      return (
-                        <tr key={entry.id} className="cursor-pointer border-b border-border align-top hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
-                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
-                          <td className="px-2.5 py-1.5">
-                            <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
-                              {entry.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                              {entry.success ? "ok" : "FAILED"}
-                            </span>
-                          </td>
-                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">{verb}{entry.statementCount > 1 ? ` ×${entry.statementCount}` : ""}</td>
-                          <td className="px-2.5 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{entry.elapsedMs} ms</td>
-                          <td className="px-2.5 py-1.5 text-right font-mono">{entry.rowCount}</td>
-                          <td className={cn("px-2.5 py-1.5 text-[11.5px] leading-snug break-words", entry.error ? "text-destructive" : "text-muted-foreground")} title={entry.error ?? ""}>
-                            {entry.error ?? "—"}
-                          </td>
-                          <td className="truncate px-2.5 py-1.5 font-mono text-foreground" title={entry.sql}>{entry.sql.replace(/\s+/g, " ").trim()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                // in a proper cell grid. Headers sort (tap toggles asc/desc),
+                // the SQL cell opens the statement in a query tab, and every
+                // other cell expands into a detail view with the full value.
+                <LogTable entries={entries} onOpenSql={onPick} />
               )}
             </div>
             <GitLogPane />
@@ -1827,6 +1999,36 @@ export function ExasolStudio({
   const tabsFor = useCallback((key: string): SqlTab[] => tabsByConn[key] ?? [], [tabsByConn]);
 
   const tabs = tabsFor(connKey);
+  // Connection accent (Properties → Color and Border → SQL tabs): tints the
+  // top edge of this connection's tab chips — the prod-vs-dev guard.
+  const [connAccent, setConnAccent] = useState<string | null>(null);
+  useEffect(() => {
+    let dead = false;
+    if (!connKey || connKey === "none") {
+      setConnAccent(null);
+      return;
+    }
+    void ipc
+      .connectionSettingsGet(connKey)
+      .then((raw) => {
+        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
+        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
+      })
+      .catch(() => {
+        if (!dead) setConnAccent(null);
+      });
+    const bump = () => {
+      void ipc.connectionSettingsGet(connKey).then((raw) => {
+        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
+        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
+      }).catch(() => undefined);
+    };
+    window.addEventListener("studio:conn-settings-changed", bump);
+    return () => {
+      dead = true;
+      window.removeEventListener("studio:conn-settings-changed", bump);
+    };
+  }, [connKey]);
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
   const activeTabId = activeTab.id;
@@ -2612,6 +2814,7 @@ export function ExasolStudio({
           setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
         }}
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
+        style={connAccent ? { boxShadow: `inset 0 2px 0 0 ${connAccent}` } : undefined}
         className={cn(
           "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
           grouped && "border-r-0",
@@ -2835,7 +3038,7 @@ export function ExasolStudio({
   }
 
   // Open (or focus) a read-only catalog surface for a connection.
-  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo") {
+  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
     const existing = list.find((t) => t.view === view);
@@ -2853,7 +3056,9 @@ export function ExasolStudio({
             ? "Data Types"
             : view === "connInfo"
               ? "Connection Info"
-              : "DBA",
+              : view === "connProps"
+                ? "Properties"
+                : "DBA",
       view,
       sql: "",
       response: null,
@@ -4275,17 +4480,27 @@ export function ExasolStudio({
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
-              {activeTab.view === "connInfo" ? (
-                <ConnectionInfoPanel connection={connection} />
-              ) : activeTab.view === "dbInfo" ? (
-                <DatabaseInfoPanel
+              {activeTab.view === "connInfo" || activeTab.view === "connProps" || activeTab.view === "dbInfo" || activeTab.view === "dataTypes" ? (
+                // ONE unified Database Connection page (Connection | Properties |
+                // Database Info | Data Types | Search) — the old per-view panels
+                // render inside it, so there is a single page to maintain.
+                <ConnectionPropertiesTab
+                  connection={connection}
                   profileId={connection.profile.id}
-                  connectionName={connection.profile.name}
-                />
-              ) : activeTab.view === "dataTypes" ? (
-                <DataTypesPanel
-                  profileId={connection.profile.id}
-                  connectionName={connection.profile.name}
+                  initialSection={
+                    activeTab.view === "connProps"
+                      ? "properties"
+                      : activeTab.view === "dbInfo"
+                        ? "dbInfo"
+                        : activeTab.view === "dataTypes"
+                          ? "dataTypes"
+                          : "connection"
+                  }
+                  onSaved={() => onSaved?.()}
+                  onOpenObject={(schema, name) => openObject(connection.profile.id, schema, name)}
+                  onDisconnect={() => onDisconnect(connection.profile.id)}
+                  onConnect={() => void connectSaved(connection.profile.id)}
+                  onRefresh={() => refreshConnection(connection.profile.id)}
                 />
               ) : activeTab.view === "dba" ? (
                 <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} onOpenSql={openSqlTab} />
@@ -4540,8 +4755,12 @@ export function ExasolStudio({
           open={historyOpen}
           onToggle={() => setHistoryOpen((o) => !o)}
           onPick={(value) => {
-            patchTab(activeTab.id, { sql: value });
-            setHistoryOpen(false);
+            // Focus a tab already holding this SQL; otherwise open a new one —
+            // never overwrite whatever the user has in the current editor.
+            const norm = (x: string) => x.replace(/\s+/g, " ").trim().toLowerCase();
+            const existing = tabs.find((t) => t.view === "sql" && norm(t.sql) === norm(value));
+            if (existing) setActiveTabId(existing.id);
+            else openSqlTab(value, "From log");
           }}
           onClear={() => ipc.sqlHistoryClear().then(loadHistory)}
           onRefresh={loadHistory}

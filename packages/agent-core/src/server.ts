@@ -199,7 +199,39 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // now is what external clients can query. Read-only is enforced HERE
       // because these pools carry the profiles' own credentials.
       if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "databases") {
-        return json(res, 200, { databases: db.list() });
+        const cfg0 = config.get();
+        const exposure = cfg0.gatewayExposure ?? {};
+        const caps = cfg0.gatewayCaps ?? {};
+        return json(res, 200, {
+          databases: db.list().map((c) => ({
+            ...c,
+            exposed: exposure[c.id] !== false,
+            caps: { sql: caps[c.id]?.sql !== false, nl2sql: caps[c.id]?.nl2sql !== false },
+          })),
+          services: [{ id: "dashboards", exposed: exposure["service:dashboards"] !== false }],
+        });
+      }
+      // PUT /v1/gateway/databases/:id {exposed?, caps?} — flip a connection's
+      // MCP exposure and/or its per-capability selection (persisted).
+      if (req.method === "PUT" && parts[1] === "gateway" && parts[2] === "databases" && parts[3]) {
+        const id = decodeURIComponent(parts[3]);
+        const body = await readBody<{ exposed?: boolean; caps?: Partial<Record<"sql" | "nl2sql", boolean>> }>(req);
+        if (typeof body.exposed !== "boolean" && !body.caps) return json(res, 400, { error: "exposed or caps is required" });
+        config.update((cfg) => {
+          if (typeof body.exposed === "boolean") cfg.gatewayExposure = { ...cfg.gatewayExposure, [id]: body.exposed };
+          if (body.caps) cfg.gatewayCaps = { ...cfg.gatewayCaps, [id]: { ...cfg.gatewayCaps?.[id], ...body.caps } };
+        });
+        return json(res, 200, { ok: true });
+      }
+      // PUT /v1/gateway/services/:id {exposed} — bus-level Studio services.
+      if (req.method === "PUT" && parts[1] === "gateway" && parts[2] === "services" && parts[3]) {
+        const id = `service:${decodeURIComponent(parts[3])}`;
+        const body = await readBody<{ exposed?: boolean }>(req);
+        if (typeof body.exposed !== "boolean") return json(res, 400, { error: "exposed (boolean) is required" });
+        config.update((cfg) => {
+          cfg.gatewayExposure = { ...cfg.gatewayExposure, [id]: body.exposed! };
+        });
+        return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "query") {
         const body = await readBody<{ database?: string; sql?: string }>(req);
@@ -210,10 +242,21 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const target =
           conns.find((c) => c.id === wanted) ??
           conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        const exposure = config.get().gatewayExposure ?? {};
         if (!target) {
-          const names = conns.map((c) => c.name).join(", ");
+          const names = conns.filter((c) => exposure[c.id] !== false).map((c) => c.name).join(", ");
           return json(res, 404, {
-            error: `No connected database named "${wanted}". Currently connected: ${names || "(none — connect one in Exasol Studio first)"}.`,
+            error: `No connected database named "${wanted}". Currently on the gateway: ${names || "(none — connect one in Exasol Studio first)"}.`,
+          });
+        }
+        if (exposure[target.id] === false) {
+          return json(res, 403, {
+            error: `"${target.name}" is connected in Exasol Studio, but its MCP exposure is turned OFF. Enable it in Studio under Marketplace → AI clients → Databases on the gateway.`,
+          });
+        }
+        if ((config.get().gatewayCaps ?? {})[target.id]?.sql === false) {
+          return json(res, 403, {
+            error: `The SQL service is turned off for "${target.name}" on the Studio gateway — enable it under Marketplace → AI clients → Databases on the gateway.`,
           });
         }
         if (!/^(select|with|describe|desc)\b/i.test(sql)) {
@@ -225,6 +268,59 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         const out = await db.query(target.id, sql);
         return json(res, 200, { database: target.name, ...out });
+      }
+      // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
+      // service: generates SQL grounded in the database's REAL schema but
+      // never executes it (the client inspects, then calls the query route).
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "nl2sql") {
+        const body = await readBody<{ database?: string; question?: string }>(req);
+        const wanted = (body.database ?? "").trim();
+        const question = (body.question ?? "").trim();
+        if (!wanted || !question) return json(res, 400, { error: "database and question are required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ?? conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        if (!target) return json(res, 404, { error: `No connected database named "${wanted}".` });
+        const cfg1 = config.get();
+        if ((cfg1.gatewayExposure ?? {})[target.id] === false || (cfg1.gatewayCaps ?? {})[target.id]?.nl2sql === false) {
+          return json(res, 403, {
+            error: `The text-to-SQL service is turned off for "${target.name}" on the Studio gateway — enable it under Marketplace → AI clients → Databases on the gateway.`,
+          });
+        }
+        const modelRef = cfg1.model;
+        if (!modelRef) return json(res, 400, { error: "No AI model is configured in Exasol Studio — pick one in the AI panel first." });
+        // Ground the generation in the actual schema (bounded so huge
+        // databases don't blow the prompt).
+        const cols = await db.query(
+          target.id,
+          "SELECT COLUMN_SCHEMA || '.' || COLUMN_TABLE || '.' || COLUMN_NAME || ' ' || COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT LIKE 'SYS%' ORDER BY COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_ORDINAL_POSITION LIMIT 400",
+        );
+        const schemaCtx = cols.rows.map((r) => String(r[0])).join("\n");
+        const model = registry.resolve(modelRef, { temperature: 0 });
+        const { generateText } = await import("./llm.ts");
+        const out = await generateText({
+          model,
+          system:
+            "You translate natural-language questions into a SINGLE read-only Exasol SQL statement (SELECT or WITH). Use ONLY tables and columns from the provided schema. Exasol folds unquoted identifiers to UPPERCASE; use LIMIT n (never FETCH FIRST/TOP). Return ONLY the SQL — no prose, no markdown fences.",
+          prompt: `Schema (schema.table.column type):\n${schemaCtx}\n\nQuestion: ${question}`,
+          maxSteps: 1,
+        });
+        const cleaned = out.text.replace(/^\s*```(?:sql)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+        if (!cleaned) return json(res, 500, { error: "The model returned no SQL." });
+        return json(res, 200, { database: target.name, sql: cleaned });
+      }
+      // Dashboards service: Studio's saved dashboards (their panels carry the
+      // SQL), exposed on the bus when the service toggle is on.
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "dashboards") {
+        if ((config.get().gatewayExposure ?? {})["service:dashboards"] === false) {
+          return json(res, 403, { error: "The Dashboards service is turned off on the Studio gateway — enable it under Marketplace → AI clients." });
+        }
+        if (parts[3]) {
+          const d = dashboards.get(decodeURIComponent(parts[3]));
+          if (!d) return json(res, 404, { error: "No dashboard with that id." });
+          return json(res, 200, { dashboard: d });
+        }
+        return json(res, 200, { dashboards: dashboards.list() });
       }
 
       // Dashboards: GET list / GET one / PUT save / DELETE

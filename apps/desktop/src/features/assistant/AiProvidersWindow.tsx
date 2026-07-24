@@ -20,6 +20,7 @@ import {
   type LucideIcon,
   Globe,
 } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -846,14 +847,14 @@ function GuardrailsSection({
           interactions). Export to share a base pack; import merges without losing local learning.
         </p>
         <div className="flex gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            onClick={() => void navigator.clipboard.writeText(exportTraces())}
+          <CopyButton
+            text={() => exportTraces()}
+            label="Export to clipboard"
+            iconClassName="h-3 w-3"
+            className="h-7 rounded-md border border-border px-2.5 text-[12px]"
           >
             Export to clipboard
-          </Button>
+          </CopyButton>
           <Button
             size="sm"
             variant="outline"

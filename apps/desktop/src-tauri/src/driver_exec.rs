@@ -441,6 +441,8 @@ fn execute_python(
                 row_count: r.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
                 truncated: r.get("truncated").and_then(|v| v.as_bool()).unwrap_or(false),
                 elapsed_ms: r.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0),
+                exec_ms: r.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0),
+                fetch_ms: 0,
                 error,
             });
         }

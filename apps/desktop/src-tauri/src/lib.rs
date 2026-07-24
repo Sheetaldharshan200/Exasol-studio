@@ -5,6 +5,7 @@ mod updates;
 mod bucketfs;
 mod catalog;
 mod connection;
+mod connection_settings;
 mod component_lock;
 mod driver_exec;
 mod drivers;
@@ -72,6 +73,8 @@ pub fn run() {
             profiles::delete_connection_profile,
             connection::ping_server,
             connection::test_connection,
+            connection_settings::connection_settings_get,
+            connection_settings::connection_settings_set,
             connection::connect,
             connection::disconnect,
             connection::list_open_connections,

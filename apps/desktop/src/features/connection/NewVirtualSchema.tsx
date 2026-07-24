@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, ExternalLink, Loader2, Waypoints, X } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -223,13 +224,14 @@ export function NewVirtualSchema({
                     <dt>BucketFS</dt><dd className="truncate text-foreground/90">{VS_DRIVER_BUCKET_PATH}/{selected.driverName}/</dd>
                   </dl>
                   <div className="mt-1.5 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { void navigator.clipboard?.writeText(installScript); }}
-                      className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                    <CopyButton
+                      text={installScript}
+                      label="Copy install steps"
+                      iconClassName="h-3 w-3"
+                      className="h-6 rounded-md border border-border px-1.5 text-[10.5px]"
                     >
-                      <Copy className="h-3 w-3" /> Copy install steps
-                    </button>
+                      Copy install steps
+                    </CopyButton>
                     {selected.docs ? (
                       <a href={selected.docs} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10.5px] text-primary hover:underline">
                         User guide <ExternalLink className="h-3 w-3" />

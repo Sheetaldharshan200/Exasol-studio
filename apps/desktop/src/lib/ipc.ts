@@ -336,6 +336,12 @@ export type HistoryEntry = {
   sql: string;
   statementCount: number;
   elapsedMs: number;
+  /** Query execution time (until the server answered); null on old entries. */
+  execMs?: number | null;
+  /** Row-streaming time after execution; null on old entries. */
+  fetchMs?: number | null;
+  /** True when the row cap was hit (the query matched MORE than rowCount). */
+  truncated?: boolean | null;
   success: boolean;
   error: string | null;
   rowCount: number;
@@ -541,6 +547,9 @@ export const ipc = {
     split = true,
     addHistory = true,
   ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory }),
+  connectionSettingsGet: (profileId: string) => call<unknown>("connection_settings_get", { profileId }),
+  connectionSettingsSet: (profileId: string, settings: unknown) =>
+    call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
