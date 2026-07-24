@@ -17,6 +17,17 @@ pub struct HistoryEntry {
     pub sql: String,
     pub statement_count: usize,
     pub elapsed_ms: u64,
+    /// Query execution time (until the server's first answer). None on
+    /// entries written before the exec/fetch split.
+    #[serde(default)]
+    pub exec_ms: Option<u64>,
+    /// Row-streaming time after execution.
+    #[serde(default)]
+    pub fetch_ms: Option<u64>,
+    /// True when any result set hit the row cap (the query matched MORE rows
+    /// than were fetched).
+    #[serde(default)]
+    pub truncated: Option<bool>,
     pub success: bool,
     pub error: Option<String>,
     pub row_count: u64,

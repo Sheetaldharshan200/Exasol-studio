@@ -77,6 +77,17 @@ export type AgentConfig = {
    *  parsed from limit errors). tpm = tokens-per-minute; null = probe failed.
    *  Drives lean vs full turns DYNAMICALLY — a Dev-tier key gets full mode. */
   providerLimits?: Record<string, { tpm: number | null; at: number }>;
+  /** Per-connection MCP exposure on the Studio gateway bus (profileId →
+   *  exposed). Missing entry = exposed; false = the database stays connected
+   *  in Studio but external MCP clients cannot see or query it. Keys with a
+   *  "service:" prefix flip bus-level Studio services (e.g.
+   *  "service:dashboards"). */
+  gatewayExposure?: Record<string, boolean>;
+  /** Per-connection capability selection on the gateway bus (profileId →
+   *  {sql, nl2sql}). A connection can carry several MCP services; missing
+   *  entries default to enabled. `sql` = schema discovery + read-only
+   *  queries, `nl2sql` = text-to-SQL generation. */
+  gatewayCaps?: Record<string, Partial<Record<"sql" | "nl2sql", boolean>>>;
 };
 
 const DEFAULT_CONFIG: AgentConfig = { version: 1, providers: {} };

@@ -336,6 +336,12 @@ export type HistoryEntry = {
   sql: string;
   statementCount: number;
   elapsedMs: number;
+  /** Query execution time (until the server answered); null on old entries. */
+  execMs?: number | null;
+  /** Row-streaming time after execution; null on old entries. */
+  fetchMs?: number | null;
+  /** True when the row cap was hit (the query matched MORE than rowCount). */
+  truncated?: boolean | null;
   success: boolean;
   error: string | null;
   rowCount: number;

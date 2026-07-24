@@ -26,6 +26,11 @@ pub struct StatementResult {
     pub row_count: u64,
     pub truncated: bool,
     pub elapsed_ms: u64,
+    /// Time until the server answered (first row / completion) — the query's
+    /// own execution cost.
+    pub exec_ms: u64,
+    /// Time spent streaming the rows over the wire after execution.
+    pub fetch_ms: u64,
     pub error: Option<String>,
 }
 
@@ -213,9 +218,16 @@ async fn run_statement(
         let mut rows: Vec<Vec<Value>> = Vec::new();
         let mut truncated = false;
         let mut error = None;
+        // Exec = until the server's first answer arrives (the query has run by
+        // then); everything after is fetch (streaming rows to the client).
+        let mut exec_ms: Option<u64> = None;
 
         loop {
-            match stream.try_next().await {
+            let item = stream.try_next().await;
+            if exec_ms.is_none() {
+                exec_ms = Some(started.elapsed().as_millis() as u64);
+            }
+            match item {
                 Ok(Some(row)) => {
                     if columns.is_empty() {
                         columns = row_columns(&row);
@@ -241,6 +253,8 @@ async fn run_statement(
         }
 
         let row_count = rows.len() as u64;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let exec_ms = exec_ms.unwrap_or(elapsed_ms);
         StatementResult {
             statement: statement.to_string(),
             kind: "resultSet".to_string(),
@@ -248,7 +262,9 @@ async fn run_statement(
             rows,
             row_count,
             truncated,
-            elapsed_ms: started.elapsed().as_millis() as u64,
+            elapsed_ms,
+            exec_ms,
+            fetch_ms: elapsed_ms.saturating_sub(exec_ms),
             error,
         }
     } else {
@@ -264,6 +280,8 @@ async fn run_statement(
                 row_count: done.rows_affected(),
                 truncated: false,
                 elapsed_ms: started.elapsed().as_millis() as u64,
+                exec_ms: started.elapsed().as_millis() as u64,
+                fetch_ms: 0,
                 error: None,
             },
             Err(err) => StatementResult {
@@ -274,6 +292,8 @@ async fn run_statement(
                 row_count: 0,
                 truncated: false,
                 elapsed_ms: started.elapsed().as_millis() as u64,
+                exec_ms: started.elapsed().as_millis() as u64,
+                fetch_ms: 0,
                 error: Some(err.to_string()),
             },
         }
@@ -356,6 +376,9 @@ pub async fn execute_sql(
         sql: sql.clone(),
         statement_count: statements.len(),
         elapsed_ms: total_elapsed_ms,
+        exec_ms: Some(results.iter().map(|r| r.exec_ms).sum()),
+        fetch_ms: Some(results.iter().map(|r| r.fetch_ms).sum()),
+        truncated: Some(results.iter().any(|r| r.truncated)),
         success,
         error: results.iter().find_map(|r| r.error.clone()),
         row_count: row_total,

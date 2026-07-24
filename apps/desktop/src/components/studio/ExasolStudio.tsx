@@ -8,6 +8,8 @@ import {
   Blocks,
   Check,
   ChevronDown,
+  ChevronUp,
+  Copy,
   ChevronLeft,
   Boxes,
   ChevronRight,
@@ -1424,6 +1426,178 @@ function GitLogPane() {
   );
 }
 
+type LogSortKey = "time" | "status" | "command" | "exec" | "fetch" | "rows" | "message" | "sql";
+
+function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
+  const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
+  const [detail, setDetail] = useState<{ label: string; value: string; mono: boolean; sql?: string } | null>(null);
+
+  const verb = (e: HistoryEntry) => (e.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
+  const sortVal = (e: HistoryEntry, key: LogSortKey): string | number => {
+    switch (key) {
+      case "time": return e.executedAt;
+      case "status": return e.success ? 1 : 0;
+      case "command": return verb(e);
+      case "exec": return e.execMs ?? e.elapsedMs;
+      case "fetch": return e.fetchMs ?? -1;
+      case "rows": return e.rowCount;
+      case "message": return e.error ?? "";
+      case "sql": return e.sql;
+    }
+  };
+  const sorted = [...entries].sort((a, b) => {
+    const va = sortVal(a, sort.key);
+    const vb = sortVal(b, sort.key);
+    const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return cmp * sort.dir;
+  });
+  const flip = (key: LogSortKey) =>
+    setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
+
+  const HEADERS: { key: LogSortKey; label: string; width?: number | string; right?: boolean }[] = [
+    { key: "time", label: "Time", width: 78 },
+    { key: "status", label: "Status", width: 84 },
+    { key: "command", label: "Command", width: 92 },
+    { key: "exec", label: "Exec", width: 74, right: true },
+    { key: "fetch", label: "Fetch", width: 74, right: true },
+    { key: "rows", label: "Rows", width: 76, right: true },
+    { key: "message", label: "Message", width: "30%" },
+    { key: "sql", label: "SQL" },
+  ];
+  const ms = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v.toLocaleString()} ms`);
+  const cellBtn = "block w-full cursor-pointer px-2.5 py-1.5 text-left hover:bg-accent/60";
+  const openDetail = (label: string, value: string, mono = false, sql?: string) => setDetail({ label, value, mono, sql });
+
+  return (
+    <>
+      <table className="w-full table-fixed border-separate border-spacing-0 text-[12px]">
+        <colgroup>
+          {HEADERS.map((h) => (
+            <col key={h.key} style={h.width ? { width: h.width } : undefined} />
+          ))}
+        </colgroup>
+        <thead className="sticky top-0 z-10">
+          <tr className="text-left text-muted-foreground">
+            {HEADERS.map((h) => (
+              <th key={h.key} className="border-r border-b border-border bg-secondary p-0 font-medium last:border-r-0">
+                <button
+                  onClick={() => flip(h.key)}
+                  className={cn(
+                    "flex w-full items-center gap-1 px-2.5 py-1.5 hover:text-foreground",
+                    h.right && "justify-end",
+                    sort.key === h.key && "text-foreground",
+                  )}
+                >
+                  {h.label}
+                  {sort.key === h.key ? (
+                    sort.dir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                  ) : null}
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((e) => {
+            const rows = e.truncated ? `${e.rowCount.toLocaleString()}+` : e.rowCount.toLocaleString();
+            const summary =
+              `${e.success ? "Success" : "Failed"} · ${verb(e)}${e.statementCount > 1 ? ` ×${e.statementCount}` : ""} · ` +
+              `${new Date(e.executedAt).toLocaleString()} · ${e.connectionName}`;
+            return (
+              <tr key={e.id} className="align-top">
+                <td className="border-r border-b border-border p-0 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                  <button className={cellBtn} onClick={() => openDetail("Executed at", `${new Date(e.executedAt).toLocaleString()}\n\n${summary}`)}>
+                    {new Date(e.executedAt).toLocaleTimeString()}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0">
+                  <button className={cellBtn} onClick={() => openDetail("Status", e.success ? `Success\n\n${summary}` : `Failed\n\n${e.error ?? ""}\n\n${summary}`)}>
+                    <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", e.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+                      {e.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                      {e.success ? "Success" : "Failed"}
+                    </span>
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-[11px] text-muted-foreground">
+                  <button className={cellBtn} onClick={() => openDetail("Command", `${verb(e)}${e.statementCount > 1 ? ` — ${e.statementCount} statements in this run` : ""}\n\n${summary}`)}>
+                    {verb(e)}{e.statementCount > 1 ? ` ×${e.statementCount}` : ""}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-muted-foreground whitespace-nowrap">
+                  <button className={cn(cellBtn, "text-right")} onClick={() => openDetail("Execution time", `Exec ${ms(e.execMs ?? e.elapsedMs)} — until the server answered.\nFetch ${ms(e.fetchMs)} — streaming the rows.\nTotal ${ms(e.elapsedMs)}.\n\n${summary}`)}>
+                    {ms(e.execMs ?? e.elapsedMs)}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono text-muted-foreground whitespace-nowrap">
+                  <button className={cn(cellBtn, "text-right")} onClick={() => openDetail("Fetch time", `Fetch ${ms(e.fetchMs)} — time spent streaming rows after execution.\nExec ${ms(e.execMs ?? e.elapsedMs)} · Total ${ms(e.elapsedMs)}.\n\n${summary}`)}>
+                    {ms(e.fetchMs)}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0 font-mono">
+                  <button
+                    className={cn(cellBtn, "text-right")}
+                    title={e.truncated ? "The row cap was hit — the query matched more rows than were fetched" : undefined}
+                    onClick={() => openDetail("Rows", e.truncated ? `${e.rowCount.toLocaleString()} rows fetched — the row cap was hit, so the query matched MORE rows than this. Use the result pager or a LIMIT to walk the rest.\n\n${summary}` : `${e.rowCount.toLocaleString()} rows.\n\n${summary}`)}
+                  >
+                    {rows}
+                  </button>
+                </td>
+                <td className="border-r border-b border-border p-0">
+                  <button
+                    className={cn(cellBtn, "truncate text-[11.5px] leading-snug", e.error ? "text-destructive" : "text-muted-foreground")}
+                    onClick={() => openDetail("Message", e.error ?? "No message — the run completed without errors.", false, e.error ? e.sql : undefined)}
+                  >
+                    {e.error ?? "—"}
+                  </button>
+                </td>
+                <td className="border-b border-border p-0 font-mono text-foreground">
+                  <button className={cn(cellBtn, "truncate")} title="Open this SQL in a query tab" onClick={() => onOpenSql(e.sql)}>
+                    {e.sql.replace(/\s+/g, " ").trim()}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {detail ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setDetail(null)}>
+          <div
+            className="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+              <span className="text-[12px] font-medium text-foreground">{detail.label}</span>
+              <div className="flex items-center gap-1">
+                <IconButton label="Copy" onClick={() => void navigator.clipboard?.writeText(detail.value)}>
+                  <Copy className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton label="Close" onClick={() => setDetail(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </IconButton>
+              </div>
+            </div>
+            <div className={cn("min-h-0 flex-1 overflow-auto px-3 py-2.5 text-[12px] leading-relaxed whitespace-pre-wrap break-words", detail.mono && "font-mono")}>
+              {detail.value}
+            </div>
+            {detail.sql ? (
+              <div className="shrink-0 border-t border-border px-3 py-2">
+                <button
+                  onClick={() => { onOpenSql(detail.sql!); setDetail(null); }}
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" /> Open the SQL in a query tab
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function HistoryDock({
   entries,
   open,
@@ -1626,49 +1800,10 @@ function HistoryDock({
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
               ) : (
                 // Execution log, DB-tool style: every run — success or failure —
-                // with its status, command, timing, rows, and the FULL error
-                // message in its own column (not buried in a tooltip).
-                <table className="w-full table-fixed text-[12px]">
-                  <colgroup>
-                    <col style={{ width: 76 }} />
-                    <col style={{ width: 74 }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 70 }} />
-                    <col style={{ width: 64 }} />
-                    <col style={{ width: "34%" }} />
-                    <col />
-                  </colgroup>
-                  <thead className="sticky top-0 z-10 bg-secondary">
-                    <tr className="text-left text-muted-foreground">
-                      {["Time", "Status", "Command", "Exec", "Rows", "Message", "SQL"].map((h) => (
-                        <th key={h} className="border-b border-border px-2.5 py-1.5 font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => {
-                      const verb = (entry.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
-                      return (
-                        <tr key={entry.id} className="cursor-pointer border-b border-border align-top hover:bg-accent/60" onClick={() => onPick(entry.sql)}>
-                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{new Date(entry.executedAt).toLocaleTimeString()}</td>
-                          <td className="px-2.5 py-1.5">
-                            <span className={cn("flex w-fit items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium", entry.success ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
-                              {entry.success ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                              {entry.success ? "ok" : "FAILED"}
-                            </span>
-                          </td>
-                          <td className="px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">{verb}{entry.statementCount > 1 ? ` ×${entry.statementCount}` : ""}</td>
-                          <td className="px-2.5 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{entry.elapsedMs} ms</td>
-                          <td className="px-2.5 py-1.5 text-right font-mono">{entry.rowCount}</td>
-                          <td className={cn("px-2.5 py-1.5 text-[11.5px] leading-snug break-words", entry.error ? "text-destructive" : "text-muted-foreground")} title={entry.error ?? ""}>
-                            {entry.error ?? "—"}
-                          </td>
-                          <td className="truncate px-2.5 py-1.5 font-mono text-foreground" title={entry.sql}>{entry.sql.replace(/\s+/g, " ").trim()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                // in a proper cell grid. Headers sort (tap toggles asc/desc),
+                // the SQL cell opens the statement in a query tab, and every
+                // other cell expands into a detail view with the full value.
+                <LogTable entries={entries} onOpenSql={onPick} />
               )}
             </div>
             <GitLogPane />
@@ -4540,7 +4675,12 @@ export function ExasolStudio({
           open={historyOpen}
           onToggle={() => setHistoryOpen((o) => !o)}
           onPick={(value) => {
-            patchTab(activeTab.id, { sql: value });
+            // Focus a tab already holding this SQL; otherwise open a new one —
+            // never overwrite whatever the user has in the current editor.
+            const norm = (x: string) => x.replace(/\s+/g, " ").trim().toLowerCase();
+            const existing = tabs.find((t) => t.view === "sql" && norm(t.sql) === norm(value));
+            if (existing) setActiveTabId(existing.id);
+            else openSqlTab(value, "From log");
             setHistoryOpen(false);
           }}
           onClear={() => ipc.sqlHistoryClear().then(loadHistory)}

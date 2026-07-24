@@ -226,6 +226,28 @@ export const agent = {
     await invoke("agent_grant_connection", { profileId });
   },
 
+  /** Databases registered on the MCP gateway bus (exposure + per-connection
+   *  service capabilities) plus bus-level Studio services. */
+  async gatewayDatabases(): Promise<{
+    databases: { id: string; name: string; exposed: boolean; caps: { sql: boolean; nl2sql: boolean } }[];
+    services: { id: string; exposed: boolean }[];
+  }> {
+    return api("/gateway/databases");
+  },
+
+  /** Flip one connection's MCP exposure and/or its service selection. */
+  async setGatewayExposure(
+    profileId: string,
+    patch: { exposed?: boolean; caps?: Partial<Record<"sql" | "nl2sql", boolean>> },
+  ): Promise<void> {
+    await api(`/gateway/databases/${encodeURIComponent(profileId)}`, "PUT", patch);
+  },
+
+  /** Flip a bus-level Studio service (e.g. "dashboards"). */
+  async setGatewayService(serviceId: string, exposed: boolean): Promise<void> {
+    await api(`/gateway/services/${encodeURIComponent(serviceId)}`, "PUT", { exposed });
+  },
+
   async abort(sessionId: string): Promise<void> {
     await api(`/sessions/${sessionId}/abort`, "POST");
   },

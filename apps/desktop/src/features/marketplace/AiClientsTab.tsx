@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Loader2, Plug, RefreshCcw, Unplug } from "lucide-react";
+import { Check, Copy, Database, Loader2, Plug, RefreshCcw, Unplug } from "lucide-react";
 import { AiClientMark } from "@/features/marketplace/ai-client-marks";
 import { errorMessage, ipc, type AiClientStatus } from "@/lib/ipc";
+import { agent } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
+
+/** One row in the "Databases on the gateway" bus panel. */
+type BusRow = {
+  id: string;
+  name: string;
+  host: string;
+  /** connected in Studio (registered on the bus) */
+  connected: boolean;
+  /** MCP exposure flag (only meaningful when connected) */
+  exposed: boolean;
+  /** Which MCP services this connection carries on the bus. */
+  caps: { sql: boolean; nl2sql: boolean };
+};
 
 /**
  * Marketplace → AI clients: connect OTHER AI apps (Claude, Codex, Cursor, …)
@@ -19,11 +33,81 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
 
   const [scanning, setScanning] = useState(false);
   const [prereq, setPrereq] = useState<{ ready: boolean; reason?: string | null } | null>(null);
+  const [bus, setBus] = useState<BusRow[] | null>(null);
+  const [busToggling, setBusToggling] = useState<Record<string, boolean>>({});
+
+  // The bus panel merges two sources: profiles saved in Studio (so a
+  // connection that EXISTS but is not connected still shows, with a "connect
+  // it first" state) and the sidecar's gateway registry (which of the
+  // connected ones are exposed to external MCP clients).
+  const [services, setServices] = useState<{ id: string; exposed: boolean }[]>([]);
+  const loadBus = async () => {
+    try {
+      const profiles = await ipc.listConnectionProfiles();
+      const gw = await agent.gatewayDatabases().catch(() => ({ databases: [], services: [] }) as Awaited<ReturnType<typeof agent.gatewayDatabases>>);
+      const byId = new Map(gw.databases.map((d) => [d.id, d]));
+      const rows: BusRow[] = profiles
+        .filter((p) => !p.username.startsWith("STUDIO_MCP_"))
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          host: `${p.host}:${p.port}`,
+          connected: byId.has(p.id),
+          exposed: byId.get(p.id)?.exposed ?? true,
+          caps: byId.get(p.id)?.caps ?? { sql: true, nl2sql: true },
+        }));
+      // Registered connections whose profile vanished still belong on the bus.
+      for (const d of gw.databases) {
+        if (!rows.some((r) => r.id === d.id)) rows.push({ id: d.id, name: d.name, host: "", connected: true, exposed: d.exposed, caps: d.caps });
+      }
+      rows.sort((a2, b2) => Number(b2.connected) - Number(a2.connected) || a2.name.localeCompare(b2.name));
+      setBus(rows);
+      setServices(gw.services ?? []);
+    } catch {
+      setBus([]);
+    }
+  };
+
+  async function toggleExposure(row: BusRow) {
+    setBusToggling((b) => ({ ...b, [row.id]: true }));
+    try {
+      await agent.setGatewayExposure(row.id, { exposed: !row.exposed });
+      setBus((list) => (list ?? []).map((r) => (r.id === row.id ? { ...r, exposed: !row.exposed } : r)));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusToggling((b) => ({ ...b, [row.id]: false }));
+    }
+  }
+
+  async function toggleCap(row: BusRow, cap: "sql" | "nl2sql") {
+    setBusToggling((b) => ({ ...b, [row.id]: true }));
+    try {
+      const next = !row.caps[cap];
+      await agent.setGatewayExposure(row.id, { caps: { [cap]: next } });
+      setBus((list) => (list ?? []).map((r) => (r.id === row.id ? { ...r, caps: { ...r.caps, [cap]: next } } : r)));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusToggling((b) => ({ ...b, [row.id]: false }));
+    }
+  }
+
+  async function toggleService(id: string, exposed: boolean) {
+    try {
+      await agent.setGatewayService(id, exposed);
+      setServices((list) => list.map((sv) => (sv.id === id ? { ...sv, exposed } : sv)));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   const refresh = async () => {
     setScanning(true);
     try {
       setClients(await ipc.listAiClients());
       setPrereq(await ipc.aiClientsReady().catch(() => ({ ready: true })));
+      await loadBus();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -114,8 +198,10 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
         <p>
           <span className="font-medium text-foreground">Use every connected database from other AI clients.</span> One click
           writes a single <span className="font-mono text-[11px]">exasol-studio</span> gateway into the client's own MCP
-          config (a backup is kept). The gateway speaks for <span className="font-medium text-foreground">all databases
-          connected in Studio</span> — connect or disconnect a database here and the client follows, no per-database setup.
+          config (a backup is kept). The gateway is a bus: it speaks for <span className="font-medium text-foreground">all databases
+          connected in Studio</span>, and one connection can carry several MCP services — SQL (schema + read-only queries),
+          Text to SQL (generate a statement from a question, never auto-run), and Studio services like Dashboards. Pick per
+          connection below; connect or disconnect a database and the client follows, no per-database setup.
           It is <span className="font-medium text-foreground">read-only</span>: only single SELECT / WITH / DESCRIBE
           statements are accepted, and no credentials are written to the client's config. Studio must be running for the
           gateway to answer. Restart the client after connecting.
@@ -135,6 +221,136 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
       {error ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
+
+      {/* The bus itself: which databases external clients can reach right now. */}
+      <section className="mb-5 max-w-4xl">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Databases on the gateway</p>
+          <button
+            onClick={() => void loadBus()}
+            className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCcw className="h-3 w-3" /> Refresh
+          </button>
+        </div>
+        {bus === null ? (
+          <div className="flex items-center gap-2 py-3 text-[12px] text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the gateway…
+          </div>
+        ) : bus.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/70 px-3 py-2.5 text-[12px] text-muted-foreground">
+            No connections saved yet — add one in the Databases sidebar; it appears here and on the gateway once connected.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-panel/50">
+            {bus.map((row, i) => (
+              <div key={row.id} className={cn("flex items-center gap-3 px-3 py-2", i > 0 && "border-t border-border/60")}>
+                <span
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    row.connected && row.exposed
+                      ? "bg-emerald-500 shadow-[0_0_6px_#10b981]"
+                      : row.connected
+                        ? "bg-warning"
+                        : "border border-muted-foreground/50 bg-transparent",
+                  )}
+                />
+                <Database className={cn("h-3.5 w-3.5 shrink-0", row.connected ? "text-primary" : "text-muted-foreground")} />
+                <div className="min-w-0 flex-1">
+                  <span className="text-[12.5px] font-medium text-foreground">{row.name}</span>
+                  {row.host ? <span className="ml-2 font-mono text-[10.5px] text-muted-foreground">{row.host}</span> : null}
+                </div>
+                {row.connected ? (
+                  <>
+                    {row.exposed ? (
+                      // One connection can carry several MCP services — pick
+                      // which ones ride the bus for this database.
+                      <span className="flex items-center gap-1">
+                        {([
+                          ["sql", "SQL"],
+                          ["nl2sql", "Text to SQL"],
+                        ] as const).map(([cap, label]) => (
+                          <button
+                            key={cap}
+                            onClick={() => void toggleCap(row, cap)}
+                            disabled={busToggling[row.id]}
+                            title={row.caps[cap] ? `${label} service is on the gateway — click to turn off` : `${label} service is off for this connection — click to enable`}
+                            className={cn(
+                              "rounded border px-1.5 py-px text-[9px] font-medium uppercase transition-colors disabled:opacity-50",
+                              row.caps[cap]
+                                ? "border-primary/40 bg-primary/15 text-primary"
+                                : "border-border bg-transparent text-muted-foreground line-through hover:text-foreground",
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium uppercase text-warning">MCP off</span>
+                    )}
+                    <button
+                      onClick={() => void toggleExposure(row)}
+                      disabled={busToggling[row.id]}
+                      title={row.exposed ? "Hide this database from external MCP clients" : "Expose this database to external MCP clients"}
+                      aria-label={`Turn MCP exposure ${row.exposed ? "off" : "on"} for ${row.name}`}
+                      className={cn(
+                        "relative h-4.5 w-8 shrink-0 rounded-full transition-colors disabled:opacity-50",
+                        row.exposed ? "bg-primary" : "bg-secondary",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-background shadow transition-[left]",
+                          row.exposed ? "left-4" : "left-0.5",
+                        )}
+                      />
+                    </button>
+                  </>
+                ) : (
+                  <span
+                    className="rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground"
+                    title="This connection exists in Studio but is not connected, so it is not on the gateway. Connect it in the Databases sidebar."
+                  >
+                    not connected — no MCP
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {services.length ? (
+          <div className="mt-2 overflow-hidden rounded-lg border border-border/70 bg-panel/50">
+            {services.map((sv, i) => (
+              <div key={sv.id} className={cn("flex items-center gap-3 px-3 py-2", i > 0 && "border-t border-border/60")}>
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", sv.exposed ? "bg-emerald-500 shadow-[0_0_6px_#10b981]" : "border border-muted-foreground/50 bg-transparent")} />
+                <div className="min-w-0 flex-1">
+                  <span className="text-[12.5px] font-medium capitalize text-foreground">{sv.id}</span>
+                  <span className="ml-2 text-[10.5px] text-muted-foreground">
+                    {sv.id === "dashboards" ? "Studio's saved BI dashboards (panel SQL included)" : "Studio service"}
+                  </span>
+                </div>
+                <span className={cn("rounded px-1.5 py-px text-[9px] font-medium uppercase", sv.exposed ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
+                  {sv.exposed ? "on the gateway" : "off"}
+                </span>
+                <button
+                  onClick={() => void toggleService(sv.id, !sv.exposed)}
+                  title={sv.exposed ? `Hide the ${sv.id} service from external MCP clients` : `Expose the ${sv.id} service to external MCP clients`}
+                  aria-label={`Turn the ${sv.id} service ${sv.exposed ? "off" : "on"}`}
+                  className={cn("relative h-4.5 w-8 shrink-0 rounded-full transition-colors", sv.exposed ? "bg-primary" : "bg-secondary")}
+                >
+                  <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-background shadow transition-[left]", sv.exposed ? "left-4" : "left-0.5")} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          External clients see exactly this list: connected databases with the services you left on (SQL, Text to SQL), plus
+          Studio-level services like Dashboards. A saved connection that is not connected is reported to clients as
+          unavailable until you connect it in the sidebar.
+        </p>
+      </section>
 
       {clients === null ? (
         <div className="flex items-center gap-2 py-10 text-[13px] text-muted-foreground">

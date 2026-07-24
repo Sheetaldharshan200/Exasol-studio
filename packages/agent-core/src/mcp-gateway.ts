@@ -9,8 +9,13 @@
  * pools. One MCP entry ("exasol-studio") therefore follows whatever the user
  * connects or disconnects in Studio — no per-database MCP configs.
  *
+ * The gateway is a BUS, not a single server: one connection can carry
+ * several MCP services (sql, text_to_sql), and Studio itself contributes
+ * bus-level services (dashboards). Selection lives in Studio under
+ * Marketplace → AI clients → Databases on the gateway.
+ *
  * Read-only: the sidecar rejects anything but single SELECT/WITH/DESCRIBE
- * statements on this route.
+ * statements on the query route, and generate_sql never executes.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -93,15 +98,75 @@ const DB_ARG = z
   .string()
   .describe("Which connected database to use — a name from list_databases (e.g. \"Exasol-nano\").");
 
+type GatewayDb = { id: string; name: string; exposed: boolean; caps: { sql: boolean; nl2sql: boolean } };
+
 server.tool(
   "list_databases",
-  "List every database currently connected in Exasol Studio. Call this first: every other tool takes one of these names as its `database` argument.",
+  "List the databases on the Exasol Studio gateway bus with the MCP services each one carries (sql = schema discovery + read-only queries, text_to_sql = generate_sql). Call this first: the database tools take one of these names as their `database` argument. Databases with MCP exposure turned off are reported separately and cannot be used.",
   {},
   async () => {
     try {
-      const { databases } = await studio<{ databases: { id: string; name: string }[] }>("/gateway/databases");
+      const { databases, services } = await studio<{ databases: GatewayDb[]; services: { id: string; exposed: boolean }[] }>(
+        "/gateway/databases",
+      );
       if (!databases.length) return text({ databases: [], hint: "No databases connected — connect one in Exasol Studio's sidebar." });
-      return text({ databases: databases.map((d) => d.name) });
+      const on = databases
+        .filter((d) => d.exposed)
+        .map((d) => ({
+          name: d.name,
+          services: [...(d.caps.sql ? ["sql"] : []), ...(d.caps.nl2sql ? ["text_to_sql"] : [])],
+        }));
+      const off = databases.filter((d) => !d.exposed).map((d) => d.name);
+      return text({
+        databases: on,
+        studioServices: (services ?? []).filter((sv) => sv.exposed).map((sv) => sv.id),
+        ...(off.length
+          ? { mcpDisabled: off, hint: "These are connected in Exasol Studio but their MCP exposure is off — enable them under Marketplace → AI clients → Databases on the gateway." }
+          : {}),
+      });
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "generate_sql",
+  "Text-to-SQL service: turn a natural-language question into ONE read-only Exasol SQL statement, grounded in the database's real schema. The SQL is returned for inspection and is NOT executed — review it, then run it with run_query.",
+  { database: DB_ARG, question: z.string().describe("The question to answer, in plain language.") },
+  async ({ database, question }) => {
+    try {
+      const out = await studio<{ database: string; sql: string }>("/gateway/nl2sql", {
+        method: "POST",
+        body: { database, question },
+      });
+      return text({ ...out, next: "Inspect this SQL, then execute it with run_query." });
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "list_dashboards",
+  "Dashboards service: list the BI dashboards saved in Exasol Studio (id, title, group, panel count).",
+  {},
+  async () => {
+    try {
+      return text(await studio("/gateway/dashboards"));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "get_dashboard",
+  "Dashboards service: fetch one Studio dashboard definition — its panels carry the SQL each chart runs, which you can inspect or reuse with run_query.",
+  { id: z.string().describe("Dashboard id from list_dashboards.") },
+  async ({ id }) => {
+    try {
+      return text(await studio(`/gateway/dashboards/${encodeURIComponent(id)}`));
     } catch (e) {
       return errText(e);
     }
