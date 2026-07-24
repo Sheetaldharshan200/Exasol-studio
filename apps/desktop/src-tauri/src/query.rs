@@ -2,7 +2,7 @@ use futures_util::TryStreamExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx_exasol::{AssertSqlSafe, Column, ExaPool, ExaRow, Row, TypeInfo};
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::connection::require_pool;
 use crate::error::AppResult;
@@ -310,6 +310,7 @@ pub async fn execute_sql(
     max_rows: Option<usize>,
     split: Option<bool>,
     add_history: Option<bool>,
+    progress_id: Option<String>,
 ) -> AppResult<ExecuteResponse> {
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
@@ -347,9 +348,72 @@ pub async fn execute_sql(
             .acquire()
             .await
             .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+
+        // Live progress (issues #19/#20): a side task polls the EXECUTING
+        // session's ACTIVITY from EXA_ALL_SESSIONS (Exasol reports "SELECT
+        // (42%)" style percentages there) and streams it to the frontend as
+        // `query-progress:<id>` events. try_acquire keeps it from queuing
+        // behind the batch when the pool is size 1.
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stmt_idx = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
+            let session_id: Option<String> = sqlx_exasol::query("SELECT TO_CHAR(CURRENT_SESSION)")
+                .fetch_one(&mut *conn)
+                .await
+                .ok()
+                .and_then(|row| row.try_get::<String, _>(0).ok());
+            let event = format!("query-progress:{pid}");
+            let poll_pool = pool.clone();
+            let poll_done = done.clone();
+            let poll_idx = stmt_idx.clone();
+            let total = statements.len();
+            let app2 = app.clone();
+            let started2 = started;
+            // "MERGE (37%)"-style activity → 37.
+            fn parse_percent(a: &str) -> Option<u8> {
+                let open = a.rfind('(')?;
+                let rest = &a[open + 1..];
+                let close = rest.find('%')?;
+                rest[..close].trim().parse::<u8>().ok()
+            }
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                    if poll_done.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    let mut activity: Option<String> = None;
+                    if let Some(sid) = session_id.as_deref() {
+                        if let Some(mut c) = poll_pool.try_acquire() {
+                            let sql = format!(
+                                "SELECT ACTIVITY FROM SYS.EXA_ALL_SESSIONS WHERE TO_CHAR(SESSION_ID) = '{}'",
+                                sid.replace('\'', "''")
+                            );
+                            if let Ok(row) = sqlx_exasol::query(AssertSqlSafe(sql)).fetch_one(&mut *c).await {
+                                activity = row.try_get::<String, _>(0).ok();
+                            }
+                        }
+                    }
+                    let percent = activity.as_deref().and_then(parse_percent);
+                    let _ = app2.emit(
+                        &event,
+                        json!({
+                            "statement": poll_idx.load(std::sync::atomic::Ordering::Relaxed) + 1,
+                            "total": total,
+                            "activity": activity,
+                            "percent": percent,
+                            "elapsedMs": started2.elapsed().as_millis() as u64,
+                            "finished": false,
+                        }),
+                    );
+                }
+            });
+        }
+
         let mut results = Vec::with_capacity(statements.len());
         let mut success = true;
-        for statement in &statements {
+        for (i, statement) in statements.iter().enumerate() {
+            stmt_idx.store(i, std::sync::atomic::Ordering::Relaxed);
             let result = run_statement(&pool, &mut conn, statement, max_rows).await;
             let failed = result.error.is_some();
             results.push(result);
@@ -357,6 +421,13 @@ pub async fn execute_sql(
                 success = false;
                 break; // stop the script at the first failing statement
             }
+        }
+        done.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
+            let _ = app.emit(
+                &format!("query-progress:{pid}"),
+                json!({ "finished": true, "elapsedMs": started.elapsed().as_millis() as u64 }),
+            );
         }
         (results, success)
     };

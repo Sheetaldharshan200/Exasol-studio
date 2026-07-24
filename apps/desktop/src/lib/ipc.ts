@@ -478,6 +478,9 @@ export const ipc = {
   vaultChangePassword: (oldPassword: string, newPassword: string) =>
     call<null>("vault_change_password", { oldPassword, newPassword }),
   vaultRegenerateRecovery: () => call<string[]>("vault_regenerate_recovery"),
+  driverOverridesGet: () => call<Record<string, string>>("driver_overrides_get"),
+  driverOverrideSet: (driverId: string, path: string | null) =>
+    call<Record<string, string>>("driver_override_set", { driverId, path }),
   driverStatus: (driverId: string) =>
     call<{ driverId: string; runtime: string; ready: boolean; supported: boolean; hint: string }>("driver_status", { driverId }),
   driverSetup: (driverId: string) => call<{ ok: boolean }>("driver_setup", { driverId }),
@@ -543,7 +546,8 @@ export const ipc = {
     maxRows: number,
     split = true,
     addHistory = true,
-  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory }),
+    progressId?: string,
+  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId }),
   connectionSettingsGet: (profileId: string) => call<unknown>("connection_settings_get", { profileId }),
   connectionSettingsSet: (profileId: string, settings: unknown) =>
     call<unknown>("connection_settings_set", { profileId, settings }),

@@ -60,6 +60,8 @@ pub fn run() {
             terminal::term_kill,
             drivers::list_drivers,
             driver_exec::driver_status,
+            driver_exec::driver_overrides_get,
+            driver_exec::driver_override_set,
             driver_exec::driver_setup,
             security::vault_status,
             security::vault_setup,
