@@ -50,27 +50,6 @@ pub async fn get_database_info(
     }))
 }
 
-/// Data Types tab: the SQL types the server exposes.
-#[tauri::command]
-pub async fn list_data_types(state: State<'_, AppState>, profile_id: String) -> AppResult<Value> {
-    let pool = require_pool(&state, &profile_id).await?;
-
-    let rows = fetch_first_ok(
-        &pool,
-        &[
-            "SELECT TYPE_ID, TYPE_NAME FROM SYS.EXA_SQL_TYPES ORDER BY TYPE_NAME",
-            "SELECT TYPE_ID, TYPE_NAME FROM EXA_SQL_TYPES ORDER BY TYPE_NAME",
-        ],
-    )
-    .await;
-
-    Ok(json!({
-        "types": rows.iter().map(|r| obj(vec![
-            ("typeId", cell(r, 0)), ("typeName", cell(r, 1)),
-        ])).collect::<Vec<_>>(),
-    }))
-}
-
 /// Prerequisites for the New Virtual Schema wizard: available adapter scripts
 /// and existing connection objects.
 #[tauri::command]

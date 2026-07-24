@@ -209,7 +209,6 @@ export type DatabaseInfo = {
   parameters: { name: string; sessionValue: string | null; systemValue: string | null }[];
 };
 
-export type DataType = { typeId: number | string | null; typeName: string };
 
 export type SearchHitKind = "SCHEMA" | "TABLE" | "VIEW" | "COLUMN" | "SCRIPT" | "FUNCTION";
 
@@ -423,8 +422,6 @@ export const ipc = {
   getObjectSize: (profileId: string, schema: string, object?: string) =>
     call<ObjectSize>("get_object_size", { profileId, schema, object }),
   getDatabaseInfo: (profileId: string) => call<DatabaseInfo>("get_database_info", { profileId }),
-  listDataTypes: (profileId: string) =>
-    call<{ types: DataType[] }>("list_data_types", { profileId }),
   searchObjects: (profileId: string, query: string, limit?: number) =>
     call<{ results: SearchHit[] }>("search_objects", { profileId, query, limit }),
   getSchemaGraph: (profileId: string, schema: string) =>

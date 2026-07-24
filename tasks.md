@@ -88,6 +88,27 @@ Legend: [x] shipped & wired · [~] shipped, stored + partially wired (noted) · 
 - [x] Shared CopyButton (copy → spinner-when-slow → check) swept across
       copy affordances; menu copies emit a "Copied to clipboard" notice
 
+## 3c. Data Types grid + production object search (2026-07-24)
+- [x] Data Types = full SYS.EXA_SQL_TYPES grid (every server column, booleans
+      as checkboxes, numbers right-aligned)
+- [x] Column headers: click to sort asc/desc (numeric-aware, with indicator),
+      DRAG to rearrange — order persists (localStorage)
+- [x] Find bar with next/previous occurrence (Enter / Shift+Enter, chevrons,
+      x/y counter, match + current-match highlighting, scroll-into-view)
+- [x] Object Search (connection Search tab + sidebar): type filter chips with
+      counts (All/Schemas/Tables/Views/Columns/Scripts/Functions), grouped
+      results with sticky type headers, matched-substring highlighting,
+      next/previous occurrence buttons (F3 / Shift+F3), selection counter —
+      on top of the existing ranked, bounded, debounced server-side search
+
+## 3d. One tab per connection + dead-code removal (2026-07-24)
+- [x] ⋯ menu entries (Connection info / Properties / Database info / Data
+      types) all open the SAME single "Connection" tab, switching its section
+      — no sibling tabs per view anymore
+- [x] Removed dead views (connInfo/dbInfo/dataTypes TabView members + icons),
+      deleted ConnectionInfoPanel.tsx, removed ipc.listDataTypes + DataType
+      type + mock case + Rust list_data_types command
+
 ## 4. Follow-ups (backlog)
 - [ ] Sweep every SQL emitter (context menus, exports, edit-data grid) through
       the delimited-identifier + qualifier settings
