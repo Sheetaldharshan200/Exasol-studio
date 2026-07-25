@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
-import { DriversSection } from "@/features/connection/DriversSection";
+import { DriversSection, DRIVER_ICON, type DriverReadiness } from "@/features/connection/DriversSection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -338,6 +338,7 @@ export function ConnectionPropertiesTab({
   const isNew = profileId === null;
   const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol" });
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
+  const [driverReady, setDriverReady] = useState<Record<string, DriverReadiness>>({});
   const [testState, setTestState] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
   const [profileSnapshot, setProfileSnapshot] = useState<string>("");
   const [showPw, setShowPw] = useState(false);
@@ -359,7 +360,23 @@ export function ConnectionPropertiesTab({
   useEffect(() => {
     let dead = false;
     void (async () => {
-      ipc.listDrivers().then((d) => !dead && setDrivers(d)).catch(() => undefined);
+      ipc
+        .listDrivers()
+        .then(async (d) => {
+          if (dead) return;
+          setDrivers(d);
+          const next: Record<string, DriverReadiness> = {};
+          await Promise.all(
+            d.map(async (dr) => {
+              next[dr.id] = await ipc
+                .driverStatus(dr.id)
+                .then((st) => ({ ready: st.ready, supported: st.supported, hint: st.hint }))
+                .catch(() => ({ ready: false, supported: false, hint: "" }));
+            }),
+          );
+          if (!dead) setDriverReady(next);
+        })
+        .catch(() => undefined);
       if (profileId === null) {
         const draft = {
           name: "New Connection", notes: "", host: "127.0.0.1", port: "8563",
@@ -939,7 +956,7 @@ export function ConnectionPropertiesTab({
         </div>
       ) : mode === "drivers" ? (
         <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
-          <DriversSection activeDriverId={profileDraft.driverId} />
+          <DriversSection activeDriverId={profileDraft.driverId} onStatusChange={setDriverReady} />
         </div>
       ) : mode === "search" && profileId !== null ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -999,18 +1016,45 @@ export function ConnectionPropertiesTab({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="flex h-8 min-w-56 items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2.5 text-[12.5px] text-foreground hover:border-muted-foreground">
-                      {drivers.find((d) => d.id === profileDraft.driverId)?.name ?? profileDraft.driverId}
+                      <span className="flex items-center gap-1.5">
+                        {(() => { const Ic = DRIVER_ICON[profileDraft.driverId]; return Ic ? <Ic className="h-3.5 w-3.5 text-primary" /> : null; })()}
+                        {drivers.find((d) => d.id === profileDraft.driverId)?.name ?? profileDraft.driverId}
+                      </span>
                       <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {(drivers.length ? drivers : [{ id: "sqlx-exasol", name: "Native websocket (built-in)" } as DriverInfo]).map((d) => (
-                      <DropdownMenuItem key={d.id} onClick={() => setProfileDraft((x) => ({ ...x, driverId: d.id }))}>
-                        {d.id === profileDraft.driverId ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="w-3.5" />} {d.name}
-                      </DropdownMenuItem>
-                    ))}
+                  <DropdownMenuContent align="start" className="w-64">
+                    {/* Only INSTALLED drivers are selectable — everything else
+                        lives in the Drivers tab with its Install button. */}
+                    {(drivers.length ? drivers : [{ id: "sqlx-exasol", name: "Native websocket (built-in)" } as DriverInfo])
+                      .filter((d) => (driverReady[d.id]?.ready ?? d.id === "sqlx-exasol") || d.id === profileDraft.driverId)
+                      .map((d) => {
+                        const Ic = DRIVER_ICON[d.id];
+                        const ready = driverReady[d.id]?.ready ?? d.id === "sqlx-exasol";
+                        return (
+                          <DropdownMenuItem key={d.id} onClick={() => setProfileDraft((x) => ({ ...x, driverId: d.id }))}>
+                            {d.id === profileDraft.driverId ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="w-3.5" />}
+                            {Ic ? <Ic className="h-3.5 w-3.5" /> : null} {d.name}
+                            {!ready ? <span className="ml-auto rounded bg-warning/15 px-1 py-px text-[9px] font-medium text-warning uppercase">not installed</span> : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    <DropdownMenuItem onClick={() => setMode("drivers")}>
+                      <Settings2 className="h-3.5 w-3.5" /> Manage drivers…
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <button
+                  onClick={() => setMode("drivers")}
+                  title="Manage drivers (install runtimes, custom JARs)"
+                  aria-label="Manage drivers"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </button>
+                {profileDraft.driverId && !(driverReady[profileDraft.driverId]?.ready ?? profileDraft.driverId === "sqlx-exasol") ? (
+                  <span className="text-[11px] text-warning">Runtime not installed — install it in the Drivers tab.</span>
+                ) : null}
               </div>
               <PickerRow label="Encryption" value={profileDraft.sslMode} options={SSL_MODES} onChange={(v) => setProfileDraft((x) => ({ ...x, sslMode: v }))} />
               <CheckRow label="Compression" checked={profileDraft.compression} onChange={(v) => setProfileDraft((x) => ({ ...x, compression: v }))} />

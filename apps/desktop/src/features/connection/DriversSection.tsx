@@ -1,20 +1,65 @@
 import { useEffect, useState } from "react";
-import { BadgeCheck, ExternalLink, FileArchive, Loader2, TriangleAlert, X } from "lucide-react";
+import {
+  Boxes,
+  Cable,
+  Check,
+  Coffee,
+  Download,
+  ExternalLink,
+  FileArchive,
+  FileCode2,
+  Loader2,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { errorMessage, ipc, type DriverInfo } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
+/** One glyph per driver family (Boxicons/Lucide only — never emoji). */
+export const DRIVER_ICON: Record<string, LucideIcon> = {
+  "sqlx-exasol": Zap,
+  pyexasol: FileCode2,
+  sqlalchemy: Boxes,
+  jdbc: Coffee,
+  odbc: Cable,
+};
+
+export type DriverReadiness = { ready: boolean; supported: boolean; hint: string };
+
 /**
- * Drivers section of the unified connection page (issue #22): every driver
- * Studio can speak, its runtime readiness, and — where the driver is a JAR —
- * a "use your own file" override so people can pin their own driver build.
+ * Drivers section — a clean table over every driver family: icon, protocol,
+ * live runtime status, and actions (Install runtime / custom JDBC JAR / docs).
  */
-export function DriversSection({ activeDriverId }: { activeDriverId?: string }) {
+export function DriversSection({
+  activeDriverId,
+  onStatusChange,
+}: {
+  activeDriverId?: string;
+  /** Lets the host (driver dropdown) refresh its installed-only list. */
+  onStatusChange?: (status: Record<string, DriverReadiness>) => void;
+}) {
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
-  const [status, setStatus] = useState<Record<string, { ready: boolean; supported: boolean; hint: string }>>({});
+  const [status, setStatus] = useState<Record<string, DriverReadiness>>({});
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshStatus = async (list: DriverInfo[]) => {
+    const next: Record<string, DriverReadiness> = {};
+    await Promise.all(
+      list.map(async (d) => {
+        next[d.id] = await ipc
+          .driverStatus(d.id)
+          .then((st) => ({ ready: st.ready, supported: st.supported, hint: st.hint }))
+          .catch(() => ({ ready: false, supported: false, hint: "" }));
+      }),
+    );
+    setStatus(next);
+    onStatusChange?.(next);
+  };
 
   useEffect(() => {
     let dead = false;
@@ -24,12 +69,7 @@ export function DriversSection({ activeDriverId }: { activeDriverId?: string }) 
         if (dead) return;
         setDrivers(list);
         setOverrides(await ipc.driverOverridesGet().catch(() => ({})));
-        for (const d of list) {
-          void ipc
-            .driverStatus(d.id)
-            .then((st) => !dead && setStatus((cur) => ({ ...cur, [d.id]: st })))
-            .catch(() => undefined);
-        }
+        await refreshStatus(list);
       } finally {
         if (!dead) setLoading(false);
       }
@@ -37,7 +77,21 @@ export function DriversSection({ activeDriverId }: { activeDriverId?: string }) 
     return () => {
       dead = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function install(driverId: string) {
+    setInstalling(driverId);
+    setError(null);
+    try {
+      await ipc.driverSetup(driverId);
+      await refreshStatus(drivers);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setInstalling(null);
+    }
+  }
 
   async function pickJar(driverId: string) {
     setBusy(driverId);
@@ -80,84 +134,109 @@ export function DriversSection({ activeDriverId }: { activeDriverId?: string }) 
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-3 p-6">
+    <div className="mx-auto max-w-4xl p-6">
       {error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
+        <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
-      {drivers.map((d) => {
-        const st = status[d.id];
-        const jar = overrides[d.id];
-        const canOverride = d.id === "jdbc";
-        return (
-          <div key={d.id} className="rounded-xl border border-border bg-panel/50 p-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-[13px] font-semibold text-foreground">{d.name}</h3>
-              {d.id === activeDriverId ? (
-                <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium tracking-wide text-primary uppercase">this connection</span>
-              ) : null}
-              {st ? (
-                st.ready ? (
-                  <span className="flex items-center gap-1 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium tracking-wide text-primary uppercase">
-                    <BadgeCheck className="h-2.5 w-2.5" /> ready
-                  </span>
-                ) : st.supported ? (
-                  <span className="flex items-center gap-1 rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium tracking-wide text-warning uppercase">
-                    <TriangleAlert className="h-2.5 w-2.5" /> runtime missing
-                  </span>
-                ) : (
-                  <span className="rounded bg-secondary px-1.5 py-px text-[9px] font-medium tracking-wide text-muted-foreground uppercase">not supported yet</span>
-                )
-              ) : null}
-              <a
-                href={d.docsUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="ml-auto flex items-center gap-1 text-[11px] text-primary hover:underline"
-              >
-                Docs <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">{d.protocol}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{d.description}</p>
-            {st && !st.ready && st.hint ? <p className="mt-1.5 text-[11.5px] text-warning">{st.hint}</p> : null}
-            {canOverride ? (
-              <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3">
-                <FileArchive className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {jar ? (
-                  <>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground" title={jar}>
-                      {jar}
+      <div className="overflow-hidden rounded-lg border border-border">
+        <table className="w-full border-separate border-spacing-0 text-[12px]">
+          <thead>
+            <tr className="text-left text-muted-foreground">
+              {["Driver", "Protocol", "Status", "Artifact", ""].map((h, i) => (
+                <th key={i} className="border-b border-border bg-secondary px-3 py-1.5 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {drivers.map((d) => {
+              const st = status[d.id];
+              const jar = overrides[d.id];
+              const Ic = DRIVER_ICON[d.id] ?? Zap;
+              return (
+                <tr key={d.id} className="align-top hover:bg-accent/40">
+                  <td className="border-b border-border/60 px-3 py-2 whitespace-nowrap">
+                    <span className="flex items-center gap-2">
+                      <Ic className={cn("h-4 w-4 shrink-0", st?.ready ? "text-primary" : "text-muted-foreground")} />
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-1.5 font-medium text-foreground">
+                          {d.name}
+                          {d.id === activeDriverId ? (
+                            <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium tracking-wide text-primary uppercase">in use</span>
+                          ) : null}
+                        </span>
+                        <span className="block max-w-64 truncate text-[10.5px] text-muted-foreground" title={d.description}>{d.description}</span>
+                      </span>
                     </span>
-                    <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium tracking-wide text-primary uppercase">custom jar</span>
-                    <button
-                      onClick={() => void clearJar(d.id)}
-                      disabled={busy === d.id}
-                      title="Back to the managed JAR"
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                  </td>
+                  <td className="border-b border-border/60 px-3 py-2 font-mono text-[11px] text-muted-foreground">{d.protocol}</td>
+                  <td className="border-b border-border/60 px-3 py-2 whitespace-nowrap">
+                    {st?.ready ? (
+                      <span className="flex w-fit items-center gap-1 rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">
+                        <Check className="h-2.5 w-2.5" /> Installed
+                      </span>
+                    ) : st?.supported ? (
+                      <button
+                        onClick={() => void install(d.id)}
+                        disabled={installing !== null}
+                        title={st.hint || `Install the ${d.name} runtime`}
+                        className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                      >
+                        {installing === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        {installing === d.id ? "Installing…" : "Install"}
+                      </button>
+                    ) : (
+                      <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] font-medium text-muted-foreground">Not supported yet</span>
+                    )}
+                  </td>
+                  <td className="border-b border-border/60 px-3 py-2">
+                    {d.id === "jdbc" ? (
+                      jar ? (
+                        <span className="flex items-center gap-1.5">
+                          <FileArchive className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span className="max-w-56 truncate font-mono text-[10.5px] text-foreground" title={jar}>{jar.split("/").pop()}</span>
+                          <button
+                            onClick={() => void clearJar(d.id)}
+                            disabled={busy === d.id}
+                            title="Back to the managed JAR"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => void pickJar(d.id)}
+                          disabled={busy === d.id}
+                          className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                        >
+                          {busy === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileArchive className="h-3 w-3" />} Custom JAR…
+                        </button>
+                      )
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="border-b border-border/60 px-3 py-2 text-right whitespace-nowrap">
+                    <a
+                      href={d.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`${d.name} documentation`}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
                     >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground">
-                    Managed JAR (installed with the JDBC runtime)
-                  </span>
-                )}
-                <button
-                  onClick={() => void pickJar(d.id)}
-                  disabled={busy === d.id}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
-                >
-                  {busy === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Use custom JAR…
-                </button>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        The driver a connection uses is chosen on its Connection tab (Options → Driver Type). A custom JAR applies on the
-        next connect.
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        Only installed drivers appear in a connection's Driver Type dropdown. A custom JAR takes precedence over the
+        managed one on the next connect. ODBC additionally needs Exasol's OS driver (Exasol Downloads) — detected
+        automatically once present.
       </p>
     </div>
   );
