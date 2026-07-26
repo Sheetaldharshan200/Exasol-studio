@@ -1,0 +1,1644 @@
+{
+  "scriptCompleted": true,
+  "contentDigest": "ca0d78655ea45c9d9fa0d23eff078284c875ed5c58a07a737057f452b4f004aa",
+  "files": [
+    {
+      "path": ".claude/settings.local.json",
+      "language": "json",
+      "sizeLines": 5,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".gitattributes",
+      "language": "unknown",
+      "sizeLines": 3,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".graphify/config.json",
+      "language": "json",
+      "sizeLines": 12,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/components.json",
+      "language": "json",
+      "sizeLines": 27,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/examples/viz_demo_schema.sql",
+      "language": "sql",
+      "sizeLines": 88,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/package.json",
+      "language": "json",
+      "sizeLines": 99,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/Cargo.toml",
+      "language": "toml",
+      "sizeLines": 58,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/build.rs",
+      "language": "rust",
+      "sizeLines": 3,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/capabilities/default.json",
+      "language": "json",
+      "sizeLines": 32,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/gen/schemas/acl-manifests.json",
+      "language": "json",
+      "sizeLines": 0,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/gen/schemas/capabilities.json",
+      "language": "json",
+      "sizeLines": 0,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/gen/schemas/desktop-schema.json",
+      "language": "json",
+      "sizeLines": 2674,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/gen/schemas/macOS-schema.json",
+      "language": "json",
+      "sizeLines": 2674,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml",
+      "language": "xml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/icons/android/values/ic_launcher_background.xml",
+      "language": "xml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/icons/icon.icns",
+      "language": "icns",
+      "sizeLines": 2422,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/UPSTREAM.txt",
+      "language": "txt",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_databricks_metric_view.yaml",
+      "language": "yaml",
+      "sizeLines": 73,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_materializations.sql",
+      "language": "sql",
+      "sizeLines": 39,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_metrics_semantic_definition.sql",
+      "language": "sql",
+      "sizeLines": 89,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_fixup.sql",
+      "language": "sql",
+      "sizeLines": 23,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_seed.sql",
+      "language": "sql",
+      "sizeLines": 231,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_osi.yaml",
+      "language": "yaml",
+      "sizeLines": 180,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_physical_model.sql",
+      "language": "sql",
+      "sizeLines": 59,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_semantic_queries.sql",
+      "language": "sql",
+      "sizeLines": 14,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/000_create_schemas.sql",
+      "language": "sql",
+      "sizeLines": 42,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/001_create_semantic_catalog.sql",
+      "language": "sql",
+      "sizeLines": 489,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/002_create_semantic_catalog_views.sql",
+      "language": "sql",
+      "sizeLines": 802,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/003_create_semantic_admin_scripts.sql",
+      "language": "sql",
+      "sizeLines": 11668,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/004_create_semantic_preprocessor.sql",
+      "language": "sql",
+      "sizeLines": 21,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/005_create_semantic_surface_helpers.sql",
+      "language": "sql",
+      "sizeLines": 314,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/006_create_semantic_agent_views.sql",
+      "language": "sql",
+      "sizeLines": 1558,
+      "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/python-stack/pyproject.toml",
+      "language": "toml",
+      "sizeLines": 11,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/runtime-components.lock.json",
+      "language": "json",
+      "sizeLines": 123,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/agent.rs",
+      "language": "rust",
+      "sizeLines": 291,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/ai_clients.rs",
+      "language": "rust",
+      "sizeLines": 354,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/bucketfs.rs",
+      "language": "rust",
+      "sizeLines": 110,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/catalog.rs",
+      "language": "rust",
+      "sizeLines": 366,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/component_lock.rs",
+      "language": "rust",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/connection.rs",
+      "language": "rust",
+      "sizeLines": 290,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/connection_settings.rs",
+      "language": "rust",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/driver_exec.rs",
+      "language": "rust",
+      "sizeLines": 642,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/drivers.rs",
+      "language": "rust",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/error.rs",
+      "language": "rust",
+      "sizeLines": 142,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/exapump.rs",
+      "language": "rust",
+      "sizeLines": 187,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/files.rs",
+      "language": "rust",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/fs.rs",
+      "language": "rust",
+      "sizeLines": 229,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/git.rs",
+      "language": "rust",
+      "sizeLines": 489,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/history.rs",
+      "language": "rust",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/lib.rs",
+      "language": "rust",
+      "sizeLines": 176,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_database.rs",
+      "language": "rust",
+      "sizeLines": 1518,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_llm.rs",
+      "language": "rust",
+      "sizeLines": 768,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_runtime.rs",
+      "language": "rust",
+      "sizeLines": 928,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/main.rs",
+      "language": "rust",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/market.rs",
+      "language": "rust",
+      "sizeLines": 1274,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/metadata.rs",
+      "language": "rust",
+      "sizeLines": 670,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/profiles.rs",
+      "language": "rust",
+      "sizeLines": 234,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/query.rs",
+      "language": "rust",
+      "sizeLines": 468,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/security.rs",
+      "language": "rust",
+      "sizeLines": 333,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/settings.rs",
+      "language": "rust",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/state.rs",
+      "language": "rust",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/storage.rs",
+      "language": "rust",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/terminal.rs",
+      "language": "rust",
+      "sizeLines": 157,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/updates.rs",
+      "language": "rust",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/tauri.conf.json",
+      "language": "json",
+      "sizeLines": 70,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src/app/App.tsx",
+      "language": "typescript",
+      "sizeLines": 218,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/app/global.css",
+      "language": "css",
+      "sizeLines": 779,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/code-block.tsx",
+      "language": "typescript",
+      "sizeLines": 178,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/conversation.tsx",
+      "language": "typescript",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/loader.tsx",
+      "language": "typescript",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/message.tsx",
+      "language": "typescript",
+      "sizeLines": 448,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/prompt-input.tsx",
+      "language": "typescript",
+      "sizeLines": 1413,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/shimmer.tsx",
+      "language": "typescript",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/suggestion.tsx",
+      "language": "typescript",
+      "sizeLines": 56,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ai-elements/tool.tsx",
+      "language": "typescript",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/BrandLoader.tsx",
+      "language": "typescript",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/BrandMarks.tsx",
+      "language": "typescript",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/DbMarks.tsx",
+      "language": "typescript",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/ExasolMark.tsx",
+      "language": "typescript",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/McpMark.tsx",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/brand/ThemeToggle.tsx",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/AgentCursor.tsx",
+      "language": "typescript",
+      "sizeLines": 161,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/AgentMark.tsx",
+      "language": "typescript",
+      "sizeLines": 110,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+      "language": "typescript",
+      "sizeLines": 5084,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/FloatingPet.tsx",
+      "language": "typescript",
+      "sizeLines": 552,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/PetAvatar.tsx",
+      "language": "typescript",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
+      "language": "typescript",
+      "sizeLines": 188,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/theme/theme-provider.tsx",
+      "language": "typescript",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/accordion.tsx",
+      "language": "typescript",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/alert.tsx",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/animated-beam.tsx",
+      "language": "typescript",
+      "sizeLines": 138,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/animated-list.tsx",
+      "language": "typescript",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/animated-theme-toggler.tsx",
+      "language": "typescript",
+      "sizeLines": 272,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/badge.tsx",
+      "language": "typescript",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/border-beam.tsx",
+      "language": "typescript",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/boxicons.ts",
+      "language": "typescript",
+      "sizeLines": 167,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/button-group.tsx",
+      "language": "typescript",
+      "sizeLines": 83,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/button.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/card.tsx",
+      "language": "typescript",
+      "sizeLines": 103,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/chart.tsx",
+      "language": "typescript",
+      "sizeLines": 371,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/checkbox.tsx",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/code-comparison.tsx",
+      "language": "typescript",
+      "sizeLines": 154,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/collapsible.tsx",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/command.tsx",
+      "language": "typescript",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/copy-button.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/dialog.tsx",
+      "language": "typescript",
+      "sizeLines": 168,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/dropdown-menu.tsx",
+      "language": "typescript",
+      "sizeLines": 267,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/file-tree.tsx",
+      "language": "typescript",
+      "sizeLines": 501,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/hover-card.tsx",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/icon.tsx",
+      "language": "typescript",
+      "sizeLines": 31,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/input-group.tsx",
+      "language": "typescript",
+      "sizeLines": 154,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/input.tsx",
+      "language": "typescript",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/resizable.tsx",
+      "language": "typescript",
+      "sizeLines": 58,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/scroll-area.tsx",
+      "language": "typescript",
+      "sizeLines": 53,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/scroll-progress.tsx",
+      "language": "typescript",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/select.tsx",
+      "language": "typescript",
+      "sizeLines": 197,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/separator.tsx",
+      "language": "typescript",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/sheet.tsx",
+      "language": "typescript",
+      "sizeLines": 145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/shine-border.tsx",
+      "language": "typescript",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/shiny-button.tsx",
+      "language": "typescript",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/switch.tsx",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/table.tsx",
+      "language": "typescript",
+      "sizeLines": 114,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/tabs.tsx",
+      "language": "typescript",
+      "sizeLines": 90,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/terminal.tsx",
+      "language": "typescript",
+      "sizeLines": 302,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/textarea.tsx",
+      "language": "typescript",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/components/ui/tooltip.tsx",
+      "language": "typescript",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/design-system/tokens.css",
+      "language": "css",
+      "sizeLines": 25,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "apps/desktop/src/features/artifact/ArtifactTab.tsx",
+      "language": "typescript",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/assistant/AiProvidersWindow.tsx",
+      "language": "typescript",
+      "sizeLines": 1249,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 2090,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/assistant/ModelPicker.tsx",
+      "language": "typescript",
+      "sizeLines": 178,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/assistant/provider-marks.tsx",
+      "language": "typescript",
+      "sizeLines": 52,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/bi/Dashboards.tsx",
+      "language": "typescript",
+      "sizeLines": 2086,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 263,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/BucketFsPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 356,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/ConnectRunOverlay.tsx",
+      "language": "typescript",
+      "sizeLines": 347,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/ConnectRunWindow.tsx",
+      "language": "typescript",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/ConnectionPropertiesTab.tsx",
+      "language": "typescript",
+      "sizeLines": 1155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/DriversSection.tsx",
+      "language": "typescript",
+      "sizeLines": 243,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/NewVirtualSchema.tsx",
+      "language": "typescript",
+      "sizeLines": 380,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/SourceLogo.tsx",
+      "language": "typescript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/VirtualSchemaWindow.tsx",
+      "language": "typescript",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/connection/virtual-schema-sources.ts",
+      "language": "typescript",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/onboarding/Onboarding.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/onboarding/SetupPacks.tsx",
+      "language": "typescript",
+      "sizeLines": 153,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/onboarding/Tour.tsx",
+      "language": "typescript",
+      "sizeLines": 166,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/onboarding/UpdateBanner.tsx",
+      "language": "typescript",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/security/VaultScreens.tsx",
+      "language": "typescript",
+      "sizeLines": 246,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/settings/SettingsWindow.tsx",
+      "language": "typescript",
+      "sizeLines": 603,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/ActivityRail.tsx",
+      "language": "typescript",
+      "sizeLines": 168,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/DataTypesPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 271,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/DatabaseInfoPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 222,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/DatabaseTree.tsx",
+      "language": "typescript",
+      "sizeLines": 379,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/DbaDashboard.tsx",
+      "language": "typescript",
+      "sizeLines": 413,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/EditableResultGrid.tsx",
+      "language": "typescript",
+      "sizeLines": 300,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/FavoritesPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/FileExplorer.tsx",
+      "language": "typescript",
+      "sizeLines": 600,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/FilePreviewPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 128,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/GitPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 555,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/InlineSqlDiff.tsx",
+      "language": "typescript",
+      "sizeLines": 87,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/LoadDataDialog.tsx",
+      "language": "typescript",
+      "sizeLines": 205,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/MarkdownEditor.tsx",
+      "language": "typescript",
+      "sizeLines": 285,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/MermaidView.tsx",
+      "language": "typescript",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/NotebookTab.tsx",
+      "language": "typescript",
+      "sizeLines": 1023,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/Notifications.tsx",
+      "language": "typescript",
+      "sizeLines": 260,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/ObjectContextMenu.tsx",
+      "language": "typescript",
+      "sizeLines": 576,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 518,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/ObjectSearch.tsx",
+      "language": "typescript",
+      "sizeLines": 303,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/QueryProfileView.tsx",
+      "language": "typescript",
+      "sizeLines": 270,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/SkillsTab.tsx",
+      "language": "typescript",
+      "sizeLines": 416,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/TableInfoEditor.tsx",
+      "language": "typescript",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/TableKeysEditor.tsx",
+      "language": "typescript",
+      "sizeLines": 206,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/TableStructureEditor.tsx",
+      "language": "typescript",
+      "sizeLines": 332,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/TerminalView.tsx",
+      "language": "typescript",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/UserPrivilegesEditor.tsx",
+      "language": "typescript",
+      "sizeLines": 261,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/Visualizer.tsx",
+      "language": "typescript",
+      "sizeLines": 1261,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/WelcomeScreen.tsx",
+      "language": "typescript",
+      "sizeLines": 125,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/dba-sql.ts",
+      "language": "typescript",
+      "sizeLines": 92,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/icons.ts",
+      "language": "typescript",
+      "sizeLines": 118,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/notebook-export.tsx",
+      "language": "typescript",
+      "sizeLines": 160,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/workbench/tree-model.ts",
+      "language": "typescript",
+      "sizeLines": 365,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/agent-client.ts",
+      "language": "typescript",
+      "sizeLines": 391,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/ai-window.ts",
+      "language": "typescript",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/base-traces.json",
+      "language": "json",
+      "sizeLines": 15,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/src/lib/connect-window.ts",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/dashboard-bus.ts",
+      "language": "typescript",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/favorites.ts",
+      "language": "typescript",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/install-window.ts",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/ipc-mock.ts",
+      "language": "typescript",
+      "sizeLines": 810,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/ipc.ts",
+      "language": "typescript",
+      "sizeLines": 559,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/pet-bus.ts",
+      "language": "typescript",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/platform.ts",
+      "language": "typescript",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/session-bus.ts",
+      "language": "typescript",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/settings-window.ts",
+      "language": "typescript",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/sql-completion.ts",
+      "language": "typescript",
+      "sizeLines": 292,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/term-bus.ts",
+      "language": "typescript",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/theme-presets.ts",
+      "language": "typescript",
+      "sizeLines": 196,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/ui-graph.ts",
+      "language": "typescript",
+      "sizeLines": 159,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/ui-trace.ts",
+      "language": "typescript",
+      "sizeLines": 136,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/utils.ts",
+      "language": "typescript",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/lib/vs-window.ts",
+      "language": "typescript",
+      "sizeLines": 58,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/main.tsx",
+      "language": "typescript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/state/useConnections.ts",
+      "language": "typescript",
+      "sizeLines": 133,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/tsconfig.json",
+      "language": "json",
+      "sizeLines": 22,
+      "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/vite.config.ts",
+      "language": "typescript",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "package.json",
+      "language": "json",
+      "sizeLines": 20,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/agent-core/evals/live.ts",
+      "language": "typescript",
+      "sizeLines": 151,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/evals/run.ts",
+      "language": "typescript",
+      "sizeLines": 368,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/package.json",
+      "language": "json",
+      "sizeLines": 37,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/agent-core/skills/.runtime-managed.json",
+      "language": "json",
+      "sizeLines": 17,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-agent-skills.LICENSE.txt",
+      "language": "txt",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-agent-skills.UPSTREAM.txt",
+      "language": "txt",
+      "sizeLines": 4,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-semantic-analyst/UPSTREAM.txt",
+      "language": "txt",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-semantic-analyst/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 6,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-semantic-views.LICENSE.txt",
+      "language": "txt",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method.LICENSE.txt",
+      "language": "txt",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/UPSTREAM.txt",
+      "language": "txt",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/src/a2a.ts",
+      "language": "typescript",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/artifacts.ts",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/audit.ts",
+      "language": "typescript",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/board.ts",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/capabilities.ts",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/cli.ts",
+      "language": "typescript",
+      "sizeLines": 681,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/compact.ts",
+      "language": "typescript",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/config.ts",
+      "language": "typescript",
+      "sizeLines": 144,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/csv-import.ts",
+      "language": "typescript",
+      "sizeLines": 304,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/dashboards.ts",
+      "language": "typescript",
+      "sizeLines": 216,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/db.ts",
+      "language": "typescript",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/documents.ts",
+      "language": "typescript",
+      "sizeLines": 186,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/embed.ts",
+      "language": "typescript",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/exapump.ts",
+      "language": "typescript",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/graph.ts",
+      "language": "typescript",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/index.ts",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/kb.ts",
+      "language": "typescript",
+      "sizeLines": 459,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/llm.ts",
+      "language": "typescript",
+      "sizeLines": 277,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/log.ts",
+      "language": "typescript",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/loop.ts",
+      "language": "typescript",
+      "sizeLines": 1125,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/mcp-gateway.ts",
+      "language": "typescript",
+      "sizeLines": 246,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/mcp.ts",
+      "language": "typescript",
+      "sizeLines": 239,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/memory-extract.ts",
+      "language": "typescript",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/memory.ts",
+      "language": "typescript",
+      "sizeLines": 211,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/providers.ts",
+      "language": "typescript",
+      "sizeLines": 433,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/secretbox.ts",
+      "language": "typescript",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/server.ts",
+      "language": "typescript",
+      "sizeLines": 807,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/session.ts",
+      "language": "typescript",
+      "sizeLines": 525,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/skills.ts",
+      "language": "typescript",
+      "sizeLines": 147,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/tool-repair.ts",
+      "language": "typescript",
+      "sizeLines": 426,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/tools.ts",
+      "language": "typescript",
+      "sizeLines": 1461,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/src/tui.ts",
+      "language": "typescript",
+      "sizeLines": 846,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/tsconfig.json",
+      "language": "json",
+      "sizeLines": 23,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/agent-core/tsconfig.tsbuildinfo",
+      "language": "tsbuildinfo",
+      "sizeLines": 0,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/package.json",
+      "language": "json",
+      "sizeLines": 22,
+      "fileCategory": "config"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/completion.ts",
+      "language": "typescript",
+      "sizeLines": 177,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolLexer.interp",
+      "language": "interp",
+      "sizeLines": 554,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolLexer.tokens",
+      "language": "tokens",
+      "sizeLines": 348,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolLexer.ts",
+      "language": "typescript",
+      "sizeLines": 908,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolParser.interp",
+      "language": "interp",
+      "sizeLines": 436,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolParser.tokens",
+      "language": "tokens",
+      "sizeLines": 348,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolParser.ts",
+      "language": "typescript",
+      "sizeLines": 10787,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolParserListener.ts",
+      "language": "typescript",
+      "sizeLines": 768,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/generated/ExasolParserVisitor.ts",
+      "language": "typescript",
+      "sizeLines": 493,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/grammar/ExasolLexer.g4",
+      "language": "g4",
+      "sizeLines": 87,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/grammar/ExasolParser.g4",
+      "language": "g4",
+      "sizeLines": 247,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/src/index.ts",
+      "language": "typescript",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tsconfig.json",
+      "language": "json",
+      "sizeLines": 12,
+      "fileCategory": "config"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "language": "yaml",
+      "sizeLines": 8,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "language": "json",
+      "sizeLines": 17,
+      "fileCategory": "config"
+    },
+    {
+      "path": "vercel.json",
+      "language": "json",
+      "sizeLines": 7,
+      "fileCategory": "config"
+    }
+  ],
+  "totalFiles": 268,
+  "filteredByIgnore": 304,
+  "estimatedComplexity": "large",
+  "stats": {
+    "filesScanned": 268,
+    "byCategory": {
+      "config": 29,
+      "code": 216,
+      "data": 14,
+      "docs": 7,
+      "markup": 2
+    },
+    "byLanguage": {
+      "json": 21,
+      "unknown": 1,
+      "sql": 14,
+      "toml": 2,
+      "rust": 31,
+      "xml": 2,
+      "icns": 1,
+      "txt": 7,
+      "yaml": 4,
+      "typescript": 176,
+      "css": 2,
+      "tsbuildinfo": 1,
+      "interp": 2,
+      "tokens": 2,
+      "g4": 2
+    }
+  }
+}

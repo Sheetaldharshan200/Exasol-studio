@@ -1,0 +1,6 @@
+# Machine-local scratch — never reuse across laptops
+.trash-*/
+tmp/
+*.log
+# Keep: knowledge-graph.json, meta.json, config.json, fingerprints.json,
+#       .understandignore, intermediate/scan-result.json
