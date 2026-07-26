@@ -11,3 +11,8 @@ Long-running query for QA: location-pair self-join on Dec data = 137.7 s, 9.9B i
 Wired in Rust: hooks, keep-alive, pool size, password policy. Stored-only items tracked in repo tasks.md.
 Also this session: MCP gateway service bus (per-connection sql/nl2sql caps + dashboards service), execution log Exec/Fetch/sort/cell-detail.
 
+
+## [2026-07-26] ingest | Mandatory code-quality workflow adopted — Codex review + KISS/SOLID + edge-case unit tests; new page dev-workflow-codex
+Codex CLI 0.145.0 installed globally (npm, ChatGPT auth); plugin openai-codex/codex 1.0.6 (/codex:rescue, codex-rescue subagent).
+Rule also added to repo CLAUDE.md ('Code quality workflow (mandatory)') and Claude memory (codex-review-workflow).
+

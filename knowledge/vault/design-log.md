@@ -1,3 +1,8 @@
+## 2026-07-26 — mandatory code-quality workflow (Codex)
+- Codex CLI 0.145.0 installed globally (npm, ChatGPT auth); Claude Code plugin openai-codex/codex 1.0.6 (/codex:setup, /codex:rescue, codex-rescue subagent; review gate available but off).
+- Standing rule (CLAUDE.md + wiki/pages/dev-workflow-codex.md): every substantive change → typecheck → unit tests WITH edge cases (empty/null/boundary/identifier-folding/error paths) → independent Codex review → fix all reds/valid findings BEFORE commit → log notable findings in the wiki.
+- Style: KISS (simplest thing that works) + SOLID (single responsibility first), no speculative abstraction.
+
 ## 2026-07-24 — Connection Properties page + MCP gateway service bus + log polish
 - **Connection Properties tab** (`view: "connProps"`, sidebar ⋯ → Properties): DBVis-style Connection (table-based profile editor) + Properties (category rail w/ search: Database Profile, Driver Properties, Authentication, Delimited Identifiers, Qualifiers, Physical Connection, Transaction, Encoding, SQL Statements, Connection Hooks, Color and Border, SQL Editor, Query Builder). Unified info-page design (section cards, label/value rows). Defaults…/Apply bottom bar. See wiki/pages/connection-properties.md; plan in repo-root tasks.md.
 - Settings: raw JSON per profile (`connection_settings.rs` → connection-settings.json); frontend owns shape (`ConnSettings`). Rust WIRES: connect/disconnect hooks, keep-alive (pool clone + is_closed), pool size / single shared connection, password policy (clear-at-disconnect / session-only). Rest stored + consumed at SQL emitters (sweep = backlog).

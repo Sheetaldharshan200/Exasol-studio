@@ -33,6 +33,22 @@ project evolves instead of being re-derived every session. Setup: `./scripts/set
 Rule of thumb: **read** project knowledge from graphify (code) and llm-wiki
 (decisions); **write** new durable knowledge back into llm-wiki as you learn it.
 
+## Code quality workflow (mandatory)
+
+- **Codex review before shipping**: after any substantive change, hand the
+  diff to Codex for an independent code review + quality check (Claude Code:
+  `/codex:rescue` or the `codex-rescue` subagent; CLI: `codex`). Apply valid
+  findings before committing. Codex CLI is installed globally
+  (`npm i -g @openai/codex`, ChatGPT auth).
+- **KISS + SOLID**: the simplest thing that works, no speculative
+  abstraction; single responsibility first when modules/classes are involved.
+- **Unit tests with edge cases**: new logic gets tests covering the failure
+  modes, not just the happy path — empty input, nulls, boundaries, Exasol
+  identifier case-folding, error paths. A failing test or review finding is
+  FIXED before shipping, never committed red.
+- **Record findings**: notable review findings and their fixes go into the
+  llm-wiki (`knowledge/wiki`) so the next contributor inherits them.
+
 ## Conventions that bite if ignored
 
 - **Icons only, never emoji** in the app UI — use the central Boxicons registry
