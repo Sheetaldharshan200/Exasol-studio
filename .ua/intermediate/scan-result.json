@@ -1,6 +1,6 @@
 {
   "scriptCompleted": true,
-  "contentDigest": "ca0d78655ea45c9d9fa0d23eff078284c875ed5c58a07a737057f452b4f004aa",
+  "contentDigest": "431c1469f9173734777d842ba19756f118a3086bf7e4ef6164524857e1548c52",
   "files": [
     {
       "path": ".claude/settings.local.json",
@@ -15,10 +15,748 @@
       "fileCategory": "code"
     },
     {
+      "path": ".github/hooks/impeccable.json",
+      "language": "json",
+      "sizeLines": 13,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/runtime-component-sources.json",
+      "language": "json",
+      "sizeLines": 62,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/scripts/friendly_release_names.py",
+      "language": "python",
+      "sizeLines": 92,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/scripts/refresh_runtime_components.py",
+      "language": "python",
+      "sizeLines": 440,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 166,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/adapt.md",
+      "language": "markdown",
+      "sizeLines": 312,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/adapt.native.md",
+      "language": "markdown",
+      "sizeLines": 58,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/android.md",
+      "language": "markdown",
+      "sizeLines": 40,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/animate.md",
+      "language": "markdown",
+      "sizeLines": 203,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/audit.md",
+      "language": "markdown",
+      "sizeLines": 135,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/audit.native.md",
+      "language": "markdown",
+      "sizeLines": 139,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/bolder.md",
+      "language": "markdown",
+      "sizeLines": 120,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/brand.md",
+      "language": "markdown",
+      "sizeLines": 108,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/clarify.md",
+      "language": "markdown",
+      "sizeLines": 288,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/codex.md",
+      "language": "markdown",
+      "sizeLines": 105,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/colorize.md",
+      "language": "markdown",
+      "sizeLines": 257,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/craft.md",
+      "language": "markdown",
+      "sizeLines": 123,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/critique.md",
+      "language": "markdown",
+      "sizeLines": 780,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/delight.md",
+      "language": "markdown",
+      "sizeLines": 302,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/distill.md",
+      "language": "markdown",
+      "sizeLines": 111,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/document.md",
+      "language": "markdown",
+      "sizeLines": 429,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/extract.md",
+      "language": "markdown",
+      "sizeLines": 69,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/harden.md",
+      "language": "markdown",
+      "sizeLines": 347,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/hooks.md",
+      "language": "markdown",
+      "sizeLines": 92,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/init.md",
+      "language": "markdown",
+      "sizeLines": 221,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/interaction-design.md",
+      "language": "markdown",
+      "sizeLines": 189,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/ios.md",
+      "language": "markdown",
+      "sizeLines": 45,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/layout.md",
+      "language": "markdown",
+      "sizeLines": 185,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/live.md",
+      "language": "markdown",
+      "sizeLines": 718,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/onboard.md",
+      "language": "markdown",
+      "sizeLines": 234,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/optimize.md",
+      "language": "markdown",
+      "sizeLines": 258,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/overdrive.md",
+      "language": "markdown",
+      "sizeLines": 130,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/polish.md",
+      "language": "markdown",
+      "sizeLines": 241,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/product.md",
+      "language": "markdown",
+      "sizeLines": 60,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/quieter.md",
+      "language": "markdown",
+      "sizeLines": 99,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/shape.md",
+      "language": "markdown",
+      "sizeLines": 165,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/reference/typeset.md",
+      "language": "markdown",
+      "sizeLines": 301,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/command-metadata.json",
+      "language": "json",
+      "sizeLines": 94,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/context-signals.mjs",
+      "language": "javascript",
+      "sizeLines": 226,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/context.mjs",
+      "language": "javascript",
+      "sizeLines": 1023,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/critique-storage.mjs",
+      "language": "javascript",
+      "sizeLines": 242,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detect-csp.mjs",
+      "language": "javascript",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detect.mjs",
+      "language": "javascript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/browser/injected/index.mjs",
+      "language": "javascript",
+      "sizeLines": 1937,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/cli/main.mjs",
+      "language": "javascript",
+      "sizeLines": 321,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/design-system.mjs",
+      "language": "javascript",
+      "sizeLines": 814,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/detect-antipatterns-browser.js",
+      "language": "javascript",
+      "sizeLines": 5245,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/detect-antipatterns.mjs",
+      "language": "javascript",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/engines/browser/detect-url.mjs",
+      "language": "javascript",
+      "sizeLines": 277,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/engines/regex/detect-text.mjs",
+      "language": "javascript",
+      "sizeLines": 573,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/engines/static-html/css-cascade.mjs",
+      "language": "javascript",
+      "sizeLines": 1015,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/engines/static-html/detect-html.mjs",
+      "language": "javascript",
+      "sizeLines": 234,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/engines/visual/screenshot-contrast.mjs",
+      "language": "javascript",
+      "sizeLines": 189,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/findings.mjs",
+      "language": "javascript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/node/file-system.mjs",
+      "language": "javascript",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/profile/profiler.mjs",
+      "language": "javascript",
+      "sizeLines": 166,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/registry/antipatterns.mjs",
+      "language": "javascript",
+      "sizeLines": 514,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/rules/checks.mjs",
+      "language": "javascript",
+      "sizeLines": 2703,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/shared/color.mjs",
+      "language": "javascript",
+      "sizeLines": 124,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/shared/constants.mjs",
+      "language": "javascript",
+      "sizeLines": 101,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/shared/fonts.mjs",
+      "language": "javascript",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/shared/inline-ignores.mjs",
+      "language": "javascript",
+      "sizeLines": 148,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/detector/shared/page.mjs",
+      "language": "javascript",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/hook-admin.mjs",
+      "language": "javascript",
+      "sizeLines": 661,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/hook-before-edit.mjs",
+      "language": "javascript",
+      "sizeLines": 516,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/hook-lib.mjs",
+      "language": "javascript",
+      "sizeLines": 1765,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/hook.mjs",
+      "language": "javascript",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/design-parser.mjs",
+      "language": "javascript",
+      "sizeLines": 842,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/impeccable-config.mjs",
+      "language": "javascript",
+      "sizeLines": 640,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/impeccable-paths.mjs",
+      "language": "javascript",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/is-generated.mjs",
+      "language": "javascript",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/provider.mjs",
+      "language": "javascript",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/lib/target-args.mjs",
+      "language": "javascript",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-accept.mjs",
+      "language": "javascript",
+      "sizeLines": 812,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-browser-dom.js",
+      "language": "javascript",
+      "sizeLines": 146,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-browser-session.js",
+      "language": "javascript",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-browser.js",
+      "language": "javascript",
+      "sizeLines": 11240,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-commit-manual-edits.mjs",
+      "language": "javascript",
+      "sizeLines": 1241,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-complete.mjs",
+      "language": "javascript",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-copy-edit-agent.mjs",
+      "language": "javascript",
+      "sizeLines": 683,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-discard-manual-edits.mjs",
+      "language": "javascript",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-inject.mjs",
+      "language": "javascript",
+      "sizeLines": 583,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-insert.mjs",
+      "language": "javascript",
+      "sizeLines": 272,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-manual-edit-evidence.mjs",
+      "language": "javascript",
+      "sizeLines": 363,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-poll.mjs",
+      "language": "javascript",
+      "sizeLines": 384,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-resume.mjs",
+      "language": "javascript",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-server.mjs",
+      "language": "javascript",
+      "sizeLines": 1137,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-status.mjs",
+      "language": "javascript",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-target.mjs",
+      "language": "javascript",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live-wrap.mjs",
+      "language": "javascript",
+      "sizeLines": 894,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live.mjs",
+      "language": "javascript",
+      "sizeLines": 297,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/browser-script-parts.mjs",
+      "language": "javascript",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/completion.mjs",
+      "language": "javascript",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/event-validation.mjs",
+      "language": "javascript",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/insert-ui.mjs",
+      "language": "javascript",
+      "sizeLines": 458,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/manual-apply.mjs",
+      "language": "javascript",
+      "sizeLines": 939,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/manual-edit-routes.mjs",
+      "language": "javascript",
+      "sizeLines": 357,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/manual-edits-buffer.mjs",
+      "language": "javascript",
+      "sizeLines": 152,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/session-store.mjs",
+      "language": "javascript",
+      "sizeLines": 289,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/svelte-component.mjs",
+      "language": "javascript",
+      "sizeLines": 826,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/sveltekit-adapter.mjs",
+      "language": "javascript",
+      "sizeLines": 274,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/ui-core.mjs",
+      "language": "javascript",
+      "sizeLines": 180,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/live/vocabulary.mjs",
+      "language": "javascript",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/modern-screenshot.umd.js",
+      "language": "javascript",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/palette.mjs",
+      "language": "javascript",
+      "sizeLines": 633,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/skills/impeccable/scripts/pin.mjs",
+      "language": "javascript",
+      "sizeLines": 221,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/workflows/README.md",
+      "language": "markdown",
+      "sizeLines": 102,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/_build-package.yml",
+      "language": "yaml",
+      "sizeLines": 104,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/exasol-sql-parser.yml",
+      "language": "yaml",
+      "sizeLines": 23,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-agent-skills.yml",
+      "language": "yaml",
+      "sizeLines": 21,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-ai-lab.yml",
+      "language": "yaml",
+      "sizeLines": 21,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-exapump.yml",
+      "language": "yaml",
+      "sizeLines": 21,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-json-tables.yml",
+      "language": "yaml",
+      "sizeLines": 133,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-mcp-server.yml",
+      "language": "yaml",
+      "sizeLines": 22,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/pkg-pyexasol.yml",
+      "language": "yaml",
+      "sizeLines": 22,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/refresh-runtime-components.yml",
+      "language": "yaml",
+      "sizeLines": 261,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/release-app.yml",
+      "language": "yaml",
+      "sizeLines": 180,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/update-catalog.yml",
+      "language": "yaml",
+      "sizeLines": 83,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/verify-runtime-components.yml",
+      "language": "yaml",
+      "sizeLines": 24,
+      "fileCategory": "infra"
+    },
+    {
       "path": ".graphify/config.json",
       "language": "json",
       "sizeLines": 12,
       "fileCategory": "config"
+    },
+    {
+      "path": "CLAUDE.md",
+      "language": "markdown",
+      "sizeLines": 69,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "language": "markdown",
+      "sizeLines": 45,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 125,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "apps/desktop/README.md",
+      "language": "markdown",
+      "sizeLines": 36,
+      "fileCategory": "docs"
     },
     {
       "path": "apps/desktop/components.json",
@@ -37,6 +775,12 @@
       "language": "json",
       "sizeLines": 99,
       "fileCategory": "config"
+    },
+    {
+      "path": "apps/desktop/scripts/test-markdown-editor.mjs",
+      "language": "javascript",
+      "sizeLines": 65,
+      "fileCategory": "code"
     },
     {
       "path": "apps/desktop/src-tauri/Cargo.toml",
@@ -93,15 +837,15 @@
       "fileCategory": "config"
     },
     {
-      "path": "apps/desktop/src-tauri/icons/icon.icns",
-      "language": "icns",
-      "sizeLines": 2422,
-      "fileCategory": "code"
-    },
-    {
       "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/UPSTREAM.txt",
       "language": "txt",
       "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/README.md",
+      "language": "markdown",
+      "sizeLines": 28,
       "fileCategory": "docs"
     },
     {
@@ -193,6 +937,24 @@
       "language": "sql",
       "sizeLines": 1558,
       "fileCategory": "data"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/README.md",
+      "language": "markdown",
+      "sizeLines": 27,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/install.py",
+      "language": "python",
+      "sizeLines": 324,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/probe_ready.py",
+      "language": "python",
+      "sizeLines": 60,
+      "fileCategory": "code"
     },
     {
       "path": "apps/desktop/src-tauri/resources/python-stack/pyproject.toml",
@@ -861,6 +1623,72 @@
       "fileCategory": "code"
     },
     {
+      "path": "apps/desktop/src/features/marketplace/AiClientsTab.tsx",
+      "language": "typescript",
+      "sizeLines": 417,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/ConnectorLogo.tsx",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/Docs.tsx",
+      "language": "typescript",
+      "sizeLines": 263,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/InstallWindow.tsx",
+      "language": "typescript",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/LocalExasolPanel.tsx",
+      "language": "typescript",
+      "sizeLines": 150,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/LocalSetupFloating.tsx",
+      "language": "typescript",
+      "sizeLines": 143,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/Marketplace.tsx",
+      "language": "typescript",
+      "sizeLines": 1490,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/McpConfigTab.tsx",
+      "language": "typescript",
+      "sizeLines": 274,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/McpMarketplace.tsx",
+      "language": "typescript",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/ai-client-marks.tsx",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "apps/desktop/src/features/marketplace/mcp-presets.ts",
+      "language": "typescript",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
       "path": "apps/desktop/src/features/onboarding/Onboarding.tsx",
       "language": "typescript",
       "sizeLines": 67,
@@ -1233,10 +2061,328 @@
       "fileCategory": "code"
     },
     {
+      "path": "crates/README.md",
+      "language": "markdown",
+      "sizeLines": 15,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "design-qa.md",
+      "language": "markdown",
+      "sizeLines": 29,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/EDGE-CASES.md",
+      "language": "markdown",
+      "sizeLines": 42,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/INSTALL.md",
+      "language": "markdown",
+      "sizeLines": 88,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/README.md",
+      "language": "markdown",
+      "sizeLines": 15,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/agentic-ai-blueprint.md",
+      "language": "markdown",
+      "sizeLines": 293,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/README.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/adr/ADR-0001-exasol-first-scope.md",
+      "language": "markdown",
+      "sizeLines": 29,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/adr/ADR-0002-tauri-rust-desktop.md",
+      "language": "markdown",
+      "sizeLines": 29,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/adr/ADR-0003-driver-service-boundary.md",
+      "language": "markdown",
+      "sizeLines": 29,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/adr/ADR-0004-governed-ai-action-model.md",
+      "language": "markdown",
+      "sizeLines": 28,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/adr/ADR-0005-studio-owned-local-runtime.md",
+      "language": "markdown",
+      "sizeLines": 59,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/agent-config/agent-system.yaml",
+      "language": "yaml",
+      "sizeLines": 62,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/foundation/agent-config/file-ownership.yaml",
+      "language": "yaml",
+      "sizeLines": 27,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/foundation/agent-config/multi-agent-workflow.yaml",
+      "language": "yaml",
+      "sizeLines": 56,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/foundation/agent-config/window-topology.yaml",
+      "language": "yaml",
+      "sizeLines": 40,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/foundation/agent.md",
+      "language": "markdown",
+      "sizeLines": 286,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/architecture.md",
+      "language": "markdown",
+      "sizeLines": 250,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/design.md",
+      "language": "markdown",
+      "sizeLines": 283,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/README.md",
+      "language": "markdown",
+      "sizeLines": 40,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/agent-workflow.md",
+      "language": "markdown",
+      "sizeLines": 20,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/cicd-workflow.md",
+      "language": "markdown",
+      "sizeLines": 22,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/data-flow.md",
+      "language": "markdown",
+      "sizeLines": 22,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/development-lifecycle.md",
+      "language": "markdown",
+      "sizeLines": 23,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/module-dependencies.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/repository-relationships.md",
+      "language": "markdown",
+      "sizeLines": 30,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/graphify/site/index.html",
+      "language": "html",
+      "sizeLines": 89,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "docs/foundation/graphify/system-architecture.md",
+      "language": "markdown",
+      "sizeLines": 26,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/llm-wiki.md",
+      "language": "markdown",
+      "sizeLines": 205,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/requirements.md",
+      "language": "markdown",
+      "sizeLines": 234,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/research-notes.md",
+      "language": "markdown",
+      "sizeLines": 82,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/foundation/tasks.md",
+      "language": "markdown",
+      "sizeLines": 365,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/knowledge-tools.md",
+      "language": "markdown",
+      "sizeLines": 95,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/product/exasol-studio-product-spec.md",
+      "language": "markdown",
+      "sizeLines": 1678,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/qa/manual-validation-big-data.md",
+      "language": "markdown",
+      "sizeLines": 192,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/research/data-consolidation.md",
+      "language": "markdown",
+      "sizeLines": 67,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/research/data-quality-kg-semantic-views.md",
+      "language": "markdown",
+      "sizeLines": 70,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/runtime-vs-langgraph.md",
+      "language": "markdown",
+      "sizeLines": 161,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/ui-agent-learning-research.md",
+      "language": "markdown",
+      "sizeLines": 66,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/web-deploy.md",
+      "language": "markdown",
+      "sizeLines": 47,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/README.md",
+      "language": "markdown",
+      "sizeLines": 18,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/vault/Exasol Studio — Overview.md",
+      "language": "markdown",
+      "sizeLines": 37,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/vault/Welcome.md",
+      "language": "markdown",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/vault/design-log.md",
+      "language": "markdown",
+      "sizeLines": 19,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/log.md",
+      "language": "markdown",
+      "sizeLines": 18,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/ai-integrations.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/connection-properties.md",
+      "language": "markdown",
+      "sizeLines": 59,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/dev-workflow-codex.md",
+      "language": "markdown",
+      "sizeLines": 44,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/editing-model.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/exasol-sql-gotchas.md",
+      "language": "markdown",
+      "sizeLines": 23,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "knowledge/wiki/pages/exasol-studio-overview.md",
+      "language": "markdown",
+      "sizeLines": 37,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "marketplace/catalog.json",
+      "language": "json",
+      "sizeLines": 66,
+      "fileCategory": "config"
+    },
+    {
       "path": "package.json",
       "language": "json",
       "sizeLines": 20,
       "fileCategory": "config"
+    },
+    {
+      "path": "packages/README.md",
+      "language": "markdown",
+      "sizeLines": 11,
+      "fileCategory": "docs"
     },
     {
       "path": "packages/agent-core/evals/live.ts",
@@ -1263,6 +2409,24 @@
       "fileCategory": "config"
     },
     {
+      "path": "packages/agent-core/skills/artifact-builder.md",
+      "language": "markdown",
+      "sizeLines": 31,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/dashboard-builder.md",
+      "language": "markdown",
+      "sizeLines": 13,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/data-loading-playbook.md",
+      "language": "markdown",
+      "sizeLines": 26,
+      "fileCategory": "docs"
+    },
+    {
       "path": "packages/agent-core/skills/exasol-agent-skills.LICENSE.txt",
       "language": "txt",
       "sizeLines": 21,
@@ -1272,6 +2436,282 @@
       "path": "packages/agent-core/skills/exasol-agent-skills.UPSTREAM.txt",
       "language": "txt",
       "sizeLines": 4,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 67,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/references/secrets-python.md",
+      "language": "markdown",
+      "sizeLines": 159,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/references/validation.md",
+      "language": "markdown",
+      "sizeLines": 32,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/scripts/setup_onprem.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/scripts/setup_saas.py",
+      "language": "python",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-ai-setup/scripts/validate_config.py",
+      "language": "python",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-bucketfs/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 193,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 71,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/analytics-qualify.md",
+      "language": "markdown",
+      "sizeLines": 136,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/exapump-reference.md",
+      "language": "markdown",
+      "sizeLines": 169,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/exasol-grammar-functions.md",
+      "language": "markdown",
+      "sizeLines": 887,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/exasol-grammar.md",
+      "language": "markdown",
+      "sizeLines": 853,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/exasol-reserved-keywords.md",
+      "language": "markdown",
+      "sizeLines": 99,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/exasol-sql.md",
+      "language": "markdown",
+      "sizeLines": 244,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/import-export.md",
+      "language": "markdown",
+      "sizeLines": 302,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/query-profiling.md",
+      "language": "markdown",
+      "sizeLines": 83,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/table-design.md",
+      "language": "markdown",
+      "sizeLines": 90,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-database/references/virtual-schemas.md",
+      "language": "markdown",
+      "sizeLines": 45,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-distributed-ml/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 55,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-distributed-ml/references/distributed-ml-patterns.md",
+      "language": "markdown",
+      "sizeLines": 835,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-distributed-ml/references/gpu-acceleration.md",
+      "language": "markdown",
+      "sizeLines": 261,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-distributed-ml/references/ml-performance.md",
+      "language": "markdown",
+      "sizeLines": 208,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-distributed-ml/references/model-lifecycle.md",
+      "language": "markdown",
+      "sizeLines": 175,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 73,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/deploy.md",
+      "language": "markdown",
+      "sizeLines": 113,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/enrich.md",
+      "language": "markdown",
+      "sizeLines": 129,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/explore.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/load.md",
+      "language": "markdown",
+      "sizeLines": 127,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/scale.md",
+      "language": "markdown",
+      "sizeLines": 110,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-extension-catalog/references/surface.md",
+      "language": "markdown",
+      "sizeLines": 95,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-import/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 44,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-import/references/import.md",
+      "language": "markdown",
+      "sizeLines": 157,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 46,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/references/itde-lifecycle.md",
+      "language": "markdown",
+      "sizeLines": 99,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/scripts/bring_itde_up.py",
+      "language": "python",
+      "sizeLines": 31,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/scripts/check_itde_status.py",
+      "language": "python",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/scripts/restart_itde.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-itde/scripts/take_itde_down.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 47,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/references/connections-api.md",
+      "language": "markdown",
+      "sizeLines": 85,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/scripts/check_backend.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/scripts/open_bucketfs.py",
+      "language": "python",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/scripts/open_ibis.py",
+      "language": "python",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/scripts/open_pyexasol.py",
+      "language": "python",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-notebook-connections/scripts/open_sqlalchemy.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-semantic-analyst/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 328,
       "fileCategory": "docs"
     },
     {
@@ -1287,9 +2727,81 @@
       "fileCategory": "config"
     },
     {
+      "path": "packages/agent-core/skills/exasol-semantic-analyst/references/query-workflows.md",
+      "language": "markdown",
+      "sizeLines": 279,
+      "fileCategory": "docs"
+    },
+    {
       "path": "packages/agent-core/skills/exasol-semantic-views.LICENSE.txt",
       "language": "txt",
       "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-sql.md",
+      "language": "markdown",
+      "sizeLines": 25,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-text-ai/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 72,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-text-ai/references/text-ai-extension.md",
+      "language": "markdown",
+      "sizeLines": 443,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-transformers/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 60,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-transformers/references/transformers-extension.md",
+      "language": "markdown",
+      "sizeLines": 322,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-udfs/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 290,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-udfs/references/lua-execute-scripts.md",
+      "language": "markdown",
+      "sizeLines": 97,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-udfs/references/slc-reference.md",
+      "language": "markdown",
+      "sizeLines": 295,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-udfs/references/udf-java-lua.md",
+      "language": "markdown",
+      "sizeLines": 263,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol-udfs/references/udf-python.md",
+      "language": "markdown",
+      "sizeLines": 190,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/exasol/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 103,
       "fileCategory": "docs"
     },
     {
@@ -1299,9 +2811,93 @@
       "fileCategory": "docs"
     },
     {
+      "path": "packages/agent-core/skills/fable-method/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 129,
+      "fileCategory": "docs"
+    },
+    {
       "path": "packages/agent-core/skills/fable-method/UPSTREAM.txt",
       "language": "txt",
       "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/TEMPLATE.md",
+      "language": "markdown",
+      "sizeLines": 55,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/business-ops.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/data-analysis.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/design-ux.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/devops.md",
+      "language": "markdown",
+      "sizeLines": 49,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/finance.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/legal-compliance.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/marketing.md",
+      "language": "markdown",
+      "sizeLines": 40,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/domains/research.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/examples.md",
+      "language": "markdown",
+      "sizeLines": 42,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/failure-modes.md",
+      "language": "markdown",
+      "sizeLines": 30,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/fable-method/references/flowcharts.md",
+      "language": "markdown",
+      "sizeLines": 147,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/agent-core/skills/setup-personal/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 342,
       "fileCategory": "docs"
     },
     {
@@ -1503,16 +3099,28 @@
       "fileCategory": "config"
     },
     {
-      "path": "packages/agent-core/tsconfig.tsbuildinfo",
-      "language": "tsbuildinfo",
-      "sizeLines": 0,
-      "fileCategory": "code"
+      "path": "packages/exasol-sql-parser/README.md",
+      "language": "markdown",
+      "sizeLines": 11,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "packages/exasol-sql-parser/TASKS.md",
+      "language": "markdown",
+      "sizeLines": 62,
+      "fileCategory": "docs"
     },
     {
       "path": "packages/exasol-sql-parser/package.json",
       "language": "json",
       "sizeLines": 22,
       "fileCategory": "config"
+    },
+    {
+      "path": "packages/exasol-sql-parser/scripts/postgen.mjs",
+      "language": "javascript",
+      "sizeLines": 16,
+      "fileCategory": "code"
     },
     {
       "path": "packages/exasol-sql-parser/src/completion.ts",
@@ -1587,6 +3195,54 @@
       "fileCategory": "code"
     },
     {
+      "path": "packages/exasol-sql-parser/tests/corpus/exasol-features.sql",
+      "language": "sql",
+      "sizeLines": 19,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/corpus/phase4-import-export.sql",
+      "language": "sql",
+      "sizeLines": 7,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/corpus/phase4-scripts.sql",
+      "language": "sql",
+      "sizeLines": 12,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/corpus/select-qualify.sql",
+      "language": "sql",
+      "sizeLines": 5,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/corpus/tpch-q1.sql",
+      "language": "sql",
+      "sizeLines": 8,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/corpus/tpch-q3.sql",
+      "language": "sql",
+      "sizeLines": 10,
+      "fileCategory": "data"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/goldens.ts",
+      "language": "typescript",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "packages/exasol-sql-parser/tests/run.ts",
+      "language": "typescript",
+      "sizeLines": 118,
+      "fileCategory": "code"
+    },
+    {
       "path": "packages/exasol-sql-parser/tsconfig.json",
       "language": "json",
       "sizeLines": 12,
@@ -1597,6 +3253,102 @@
       "language": "yaml",
       "sizeLines": 8,
       "fileCategory": "config"
+    },
+    {
+      "path": "ref.md",
+      "language": "markdown",
+      "sizeLines": 76,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/build-local.sh",
+      "language": "shell",
+      "sizeLines": 43,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/fetch-runtime.mjs",
+      "language": "javascript",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/gen-ui-map.mjs",
+      "language": "javascript",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/prefetch-runtime.py",
+      "language": "python",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/setup-knowledge-tools.sh",
+      "language": "shell",
+      "sizeLines": 34,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/update-homebrew-cask.sh",
+      "language": "shell",
+      "sizeLines": 134,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/verify-virtual-schema-postgres.sh",
+      "language": "shell",
+      "sizeLines": 85,
+      "fileCategory": "script"
+    },
+    {
+      "path": "services/exasol-driver-service/README.md",
+      "language": "markdown",
+      "sizeLines": 28,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "tasks.md",
+      "language": "markdown",
+      "sizeLines": 132,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "tests/README.md",
+      "language": "markdown",
+      "sizeLines": 12,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "tools/README.md",
+      "language": "markdown",
+      "sizeLines": 9,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "tools/scripts/build-graphify-html.mjs",
+      "language": "javascript",
+      "sizeLines": 108,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/scripts/check-graphify.mjs",
+      "language": "javascript",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/scripts/graphify-config.mjs",
+      "language": "javascript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/scripts/render-graphify.mjs",
+      "language": "javascript",
+      "sizeLines": 115,
+      "fileCategory": "code"
     },
     {
       "path": "tsconfig.base.json",
@@ -1611,34 +3363,39 @@
       "fileCategory": "config"
     }
   ],
-  "totalFiles": 268,
-  "filteredByIgnore": 304,
-  "estimatedComplexity": "large",
+  "totalFiles": 560,
+  "filteredByIgnore": 11,
+  "estimatedComplexity": "very-large",
   "stats": {
-    "filesScanned": 268,
+    "filesScanned": 560,
     "byCategory": {
-      "config": 29,
-      "code": 216,
-      "data": 14,
-      "docs": 7,
-      "markup": 2
+      "config": 37,
+      "code": 320,
+      "docs": 163,
+      "infra": 13,
+      "data": 20,
+      "markup": 3,
+      "script": 4
     },
     "byLanguage": {
-      "json": 21,
+      "json": 25,
       "unknown": 1,
-      "sql": 14,
+      "python": 17,
+      "markdown": 157,
+      "javascript": 76,
+      "yaml": 20,
+      "sql": 20,
       "toml": 2,
       "rust": 31,
       "xml": 2,
-      "icns": 1,
       "txt": 7,
-      "yaml": 4,
-      "typescript": 176,
+      "typescript": 189,
       "css": 2,
-      "tsbuildinfo": 1,
+      "html": 1,
       "interp": 2,
       "tokens": 2,
-      "g4": 2
+      "g4": 2,
+      "shell": 4
     }
   }
 }
