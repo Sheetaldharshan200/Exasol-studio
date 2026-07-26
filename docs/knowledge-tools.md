@@ -87,9 +87,12 @@ scratch (`.trash-*/`, `tmp/`, `*.log`) is git-ignored via `.ua/.gitignore`.
 - **Refresh after code changes**: re-run `/understand-anything:understand` —
   it reads `meta.json`'s commit hash and the fingerprints and re-analyzes only
   changed files (full re-analysis only on `--full`). Commit the updated `.ua/`.
-- Scope is **product code** (apps/desktop + packages/agent-core +
-  packages/exasol-sql-parser); vendored plugins, docs, and generated artifacts
-  are excluded in `.understandignore`.
+- Scope is the **whole repo** (1262 nodes / 1425 edges across 12 layers):
+  apps/desktop (UI + Tauri backend), packages/agent-core (+ vendored skills),
+  packages/exasol-sql-parser, the semantic-views SQL layer, `.github/skills`
+  (vendored design skill), CI/CD, docs/ADRs, knowledge bases, and tooling.
+  Only generated/binary/vendored-runtime artifacts are excluded
+  (`.ua/.understandignore`).
 - This is distinct from graphify's `graphify-out/graph.json` (the AST-based
   import/call graph). Both are committed; use graphify for
   dependency/symbol queries, `.ua` for the layer map, tour, and summaries.
