@@ -1,6 +1,6 @@
 {
  "scriptCompleted": true,
- "contentDigest": "f0b42fffb0974f127a219a33c7218044b27d6ebeafb6bb6d775f42f3d756c0ce",
+ "contentDigest": "9bfd879e01853262ae4cd63eeda24b1a82431176ada17b99662a4b6882458e86",
  "files": [
   {
    "path": ".claude/settings.local.json",
@@ -743,7 +743,7 @@
   {
    "path": "CLAUDE.md",
    "language": "markdown",
-   "sizeLines": 150,
+   "sizeLines": 166,
    "fileCategory": "docs"
   },
   {
@@ -1275,9 +1275,15 @@
    "fileCategory": "code"
   },
   {
+   "path": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "language": "typescript",
+   "sizeLines": 85,
+   "fileCategory": "code"
+  },
+  {
    "path": "apps/desktop/src/components/studio/ExasolStudio.tsx",
    "language": "typescript",
-   "sizeLines": 4062,
+   "sizeLines": 3222,
    "fileCategory": "code"
   },
   {
@@ -1305,9 +1311,27 @@
    "fileCategory": "code"
   },
   {
+   "path": "apps/desktop/src/components/studio/Sidebar.tsx",
+   "language": "typescript",
+   "sizeLines": 702,
+   "fileCategory": "code"
+  },
+  {
    "path": "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
    "language": "typescript",
    "sizeLines": 188,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/components/studio/TitleBar.tsx",
+   "language": "typescript",
+   "sizeLines": 87,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/components/studio/monaco-theme.ts",
+   "language": "typescript",
+   "sizeLines": 46,
    "fileCategory": "code"
   },
   {
@@ -1571,13 +1595,25 @@
   {
    "path": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
    "language": "typescript",
-   "sizeLines": 2090,
+   "sizeLines": 1937,
    "fileCategory": "code"
   },
   {
    "path": "apps/desktop/src/features/assistant/ModelPicker.tsx",
    "language": "typescript",
    "sizeLines": 178,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/features/assistant/chat-text.test.ts",
+   "language": "typescript",
+   "sizeLines": 215,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/features/assistant/chat-text.ts",
+   "language": "typescript",
+   "sizeLines": 176,
    "fileCategory": "code"
   },
   {
@@ -1589,13 +1625,25 @@
   {
    "path": "apps/desktop/src/features/bi/Dashboards.tsx",
    "language": "typescript",
-   "sizeLines": 2086,
+   "sizeLines": 2004,
    "fileCategory": "code"
   },
   {
    "path": "apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
    "language": "typescript",
    "sizeLines": 263,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/features/bi/report-export.test.ts",
+   "language": "typescript",
+   "sizeLines": 234,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/features/bi/report-export.ts",
+   "language": "typescript",
+   "sizeLines": 109,
    "fileCategory": "code"
   },
   {
@@ -2423,7 +2471,7 @@
   {
    "path": "knowledge/wiki/pages/kiss-hard-rules.md",
    "language": "markdown",
-   "sizeLines": 142,
+   "sizeLines": 154,
    "fileCategory": "docs"
   },
   {
@@ -3011,13 +3059,13 @@
   {
    "path": "packages/agent-core/src/csv-import.test.ts",
    "language": "typescript",
-   "sizeLines": 409,
+   "sizeLines": 448,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/csv-import.ts",
    "language": "typescript",
-   "sizeLines": 350,
+   "sizeLines": 369,
    "fileCategory": "code"
   },
   {
@@ -3149,13 +3197,13 @@
   {
    "path": "packages/agent-core/src/tool-repair.test.ts",
    "language": "typescript",
-   "sizeLines": 526,
+   "sizeLines": 442,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/tool-repair.ts",
    "language": "typescript",
-   "sizeLines": 432,
+   "sizeLines": 403,
    "fileCategory": "code"
   },
   {
@@ -3441,14 +3489,14 @@
    "fileCategory": "config"
   }
  ],
- "totalFiles": 573,
+ "totalFiles": 581,
  "filteredByIgnore": 17,
  "estimatedComplexity": "very-large",
  "stats": {
-  "filesScanned": 573,
+  "filesScanned": 581,
   "byCategory": {
    "config": 37,
-   "code": 328,
+   "code": 336,
    "docs": 166,
    "infra": 13,
    "data": 20,
@@ -3468,7 +3516,7 @@
    "rust": 31,
    "xml": 2,
    "txt": 7,
-   "typescript": 197,
+   "typescript": 205,
    "css": 2,
    "interp": 2,
    "tokens": 2,
@@ -4008,14 +4056,19 @@
   "apps/desktop/src/components/studio/AgentMark.tsx": [
    "apps/desktop/src/lib/utils.ts"
   ],
+  "apps/desktop/src/components/studio/ConnectionSwitcher.tsx": [
+   "apps/desktop/src/components/ui/select.tsx",
+   "apps/desktop/src/state/useConnections.ts"
+  ],
   "apps/desktop/src/components/studio/ExasolStudio.tsx": [
-   "apps/desktop/src/components/brand/ExasolMark.tsx",
-   "apps/desktop/src/components/brand/ThemeToggle.tsx",
    "apps/desktop/src/components/studio/AgentCursor.tsx",
+   "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
    "apps/desktop/src/components/studio/FloatingPet.tsx",
    "apps/desktop/src/components/studio/HistoryDock.tsx",
    "apps/desktop/src/components/studio/IconButton.tsx",
-   "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
+   "apps/desktop/src/components/studio/Sidebar.tsx",
+   "apps/desktop/src/components/studio/TitleBar.tsx",
+   "apps/desktop/src/components/studio/monaco-theme.ts",
    "apps/desktop/src/components/studio/tabs.ts",
    "apps/desktop/src/components/theme/theme-provider.tsx",
    "apps/desktop/src/components/ui/dropdown-menu.tsx",
@@ -4033,21 +4086,15 @@
    "apps/desktop/src/features/marketplace/Docs.tsx",
    "apps/desktop/src/features/marketplace/Marketplace.tsx",
    "apps/desktop/src/features/marketplace/McpConfigTab.tsx",
-   "apps/desktop/src/features/marketplace/McpMarketplace.tsx",
    "apps/desktop/src/features/workbench/ActivityRail.tsx",
-   "apps/desktop/src/features/workbench/DatabaseTree.tsx",
    "apps/desktop/src/features/workbench/DbaDashboard.tsx",
-   "apps/desktop/src/features/workbench/FavoritesPanel.tsx",
-   "apps/desktop/src/features/workbench/FileExplorer.tsx",
    "apps/desktop/src/features/workbench/FilePreviewPanel.tsx",
    "apps/desktop/src/features/workbench/GitPanel.tsx",
    "apps/desktop/src/features/workbench/InlineSqlDiff.tsx",
    "apps/desktop/src/features/workbench/LoadDataDialog.tsx",
    "apps/desktop/src/features/workbench/NotebookTab.tsx",
-   "apps/desktop/src/features/workbench/Notifications.tsx",
    "apps/desktop/src/features/workbench/ObjectContextMenu.tsx",
    "apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
-   "apps/desktop/src/features/workbench/ObjectSearch.tsx",
    "apps/desktop/src/features/workbench/QueryProfileView.tsx",
    "apps/desktop/src/features/workbench/SkillsTab.tsx",
    "apps/desktop/src/features/workbench/Visualizer.tsx",
@@ -4093,10 +4140,38 @@
   "apps/desktop/src/components/studio/PetAvatar.tsx": [
    "apps/desktop/src/lib/utils.ts"
   ],
+  "apps/desktop/src/components/studio/Sidebar.tsx": [
+   "apps/desktop/src/components/studio/IconButton.tsx",
+   "apps/desktop/src/components/ui/dropdown-menu.tsx",
+   "apps/desktop/src/components/ui/icon.tsx",
+   "apps/desktop/src/features/marketplace/Marketplace.tsx",
+   "apps/desktop/src/features/marketplace/McpMarketplace.tsx",
+   "apps/desktop/src/features/workbench/ActivityRail.tsx",
+   "apps/desktop/src/features/workbench/DatabaseTree.tsx",
+   "apps/desktop/src/features/workbench/FavoritesPanel.tsx",
+   "apps/desktop/src/features/workbench/FileExplorer.tsx",
+   "apps/desktop/src/features/workbench/GitPanel.tsx",
+   "apps/desktop/src/features/workbench/ObjectSearch.tsx",
+   "apps/desktop/src/features/workbench/Visualizer.tsx",
+   "apps/desktop/src/features/workbench/tree-model.ts",
+   "apps/desktop/src/lib/favorites.ts",
+   "apps/desktop/src/lib/ipc.ts",
+   "apps/desktop/src/lib/utils.ts",
+   "apps/desktop/src/state/useConnections.ts"
+  ],
   "apps/desktop/src/components/studio/ThemeCustomizer.tsx": [
    "apps/desktop/src/lib/theme-presets.ts",
    "apps/desktop/src/lib/utils.ts"
   ],
+  "apps/desktop/src/components/studio/TitleBar.tsx": [
+   "apps/desktop/src/components/brand/ExasolMark.tsx",
+   "apps/desktop/src/components/brand/ThemeToggle.tsx",
+   "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
+   "apps/desktop/src/features/workbench/Notifications.tsx",
+   "apps/desktop/src/lib/utils.ts",
+   "apps/desktop/src/state/useConnections.ts"
+  ],
+  "apps/desktop/src/components/studio/monaco-theme.ts": [],
   "apps/desktop/src/components/studio/tabs.ts": [
    "apps/desktop/src/components/ui/icon.tsx",
    "apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
@@ -4259,6 +4334,7 @@
    "apps/desktop/src/components/ui/button.tsx",
    "apps/desktop/src/components/ui/input-group.tsx",
    "apps/desktop/src/features/assistant/ModelPicker.tsx",
+   "apps/desktop/src/features/assistant/chat-text.ts",
    "apps/desktop/src/lib/agent-client.ts",
    "apps/desktop/src/lib/ai-window.ts",
    "apps/desktop/src/lib/ipc.ts",
@@ -4270,6 +4346,10 @@
    "apps/desktop/src/lib/agent-client.ts",
    "apps/desktop/src/lib/utils.ts"
   ],
+  "apps/desktop/src/features/assistant/chat-text.test.ts": [
+   "apps/desktop/src/features/assistant/chat-text.ts"
+  ],
+  "apps/desktop/src/features/assistant/chat-text.ts": [],
   "apps/desktop/src/features/assistant/provider-marks.tsx": [],
   "apps/desktop/src/features/bi/Dashboards.tsx": [
    "apps/desktop/src/components/studio/AgentMark.tsx",
@@ -4278,6 +4358,7 @@
    "apps/desktop/src/components/ui/icon.tsx",
    "apps/desktop/src/components/ui/select.tsx",
    "apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
+   "apps/desktop/src/features/bi/report-export.ts",
    "apps/desktop/src/lib/agent-client.ts",
    "apps/desktop/src/lib/dashboard-bus.ts",
    "apps/desktop/src/lib/ipc.ts",
@@ -4287,6 +4368,13 @@
    "apps/desktop/src/components/ui/chart.tsx",
    "apps/desktop/src/lib/ipc.ts",
    "apps/desktop/src/lib/utils.ts"
+  ],
+  "apps/desktop/src/features/bi/report-export.test.ts": [
+   "apps/desktop/src/features/bi/report-export.ts"
+  ],
+  "apps/desktop/src/features/bi/report-export.ts": [
+   "apps/desktop/src/lib/agent-client.ts",
+   "apps/desktop/src/lib/ipc.ts"
   ],
   "apps/desktop/src/features/connection/BucketFsPanel.tsx": [
    "apps/desktop/src/lib/ipc.ts",

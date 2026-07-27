@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "4496d3e228d946aec4f44278781adc85f9be30ae",
-  "generatedAt": "2026-07-27T09:42:01.336Z",
+  "gitCommitHash": "f4e5212f1037ccc4d837f1bebfbd8ff9da31721b",
+  "generatedAt": "2026-07-27T11:04:52.353Z",
   "files": {
     ".claude/settings.local.json": {
       "filePath": ".claude/settings.local.json",
@@ -12203,12 +12203,12 @@
     },
     "CLAUDE.md": {
       "filePath": "CLAUDE.md",
-      "contentHash": "60e416bab858992552a42a7105c878589b5ae7cf81ceb6c0ac00e0f0885803cb",
+      "contentHash": "c7a3e43c19d6de8906a8c4a1db0e0f2ba39a7bb4abcdd34a32eefd3e771f1dcd",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 151,
+      "totalLines": 167,
       "hasStructuralAnalysis": true
     },
     "CONTRIBUTING.md": {
@@ -20448,64 +20448,16 @@
       "totalLines": 111,
       "hasStructuralAnalysis": true
     },
-    "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-      "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-      "contentHash": "a49ca103688b2e4bcb1fe6322b84a54bce869eccf391945e50ee4dc04eaf96cc",
+    "apps/desktop/src/components/studio/ConnectionSwitcher.tsx": {
+      "filePath": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+      "contentHash": "cc366e7268c41038c4146699a5ff3c42ab3eb987bbc86f164c3e88bc1564b0e4",
       "functions": [
-        {
-          "name": "defineMonacoThemes",
-          "params": [
-            "monaco"
-          ],
-          "exported": false,
-          "lineCount": 40
-        },
-        {
-          "name": "TitleBar",
-          "params": [
-            "{\n  connection,\n  onConnect,\n  onDisconnect,\n  hideConnect,\n}"
-          ],
-          "exported": false,
-          "lineCount": 72
-        },
-        {
-          "name": "ConnectionSection",
-          "params": [
-            "{\n  connection,\n  focused,\n  live,\n  accent,\n  treeKey,\n  collapsed,\n  onToggleCollapse,\n  onFocus,\n  onOpenObject,\n  onRefresh,\n  onDisconnect,\n  onOpenView,\n  onNewVs,\n  onUploadDriver,\n  onContext,\n  onOpenDetails,\n}"
-          ],
-          "exported": false,
-          "lineCount": 150
-        },
-        {
-          "name": "VisualizerPanel",
-          "params": [
-            "{\n  tabs,\n  activeTabId,\n  hasConnection,\n  onOpenNew,\n  onFocus,\n  onClose,\n  onConnect,\n}"
-          ],
-          "exported": false,
-          "lineCount": 88
-        },
-        {
-          "name": "Sidebar",
-          "params": [
-            "{\n  activity,\n  connections,\n  profiles,\n  local,\n  activeProfileId,\n  treeKeys,\n  onOpenObject,\n  onConnect,\n  onConnectProfile,\n  onInstallLocal,\n  onFocusConnection,\n  onDisconnect,\n  onRefreshConnection,\n  onOpenView,\n  onNewVirtualSchema,\n  onUploadDriver,\n  onContext,\n  onOpenDetails,\n  onOpenFavorite,\n  onOpenMcpConfig,\n  onCollapse,\n  onOpenFile,\n  onOpenData,\n  onLoadData,\n  onFileDeleted,\n  filesRefresh,\n  visualizerTabs,\n  activeTabId,\n  onOpenNewVisualizer,\n  onFocusTab,\n  onCloseTab,\n}"
-          ],
-          "exported": false,
-          "lineCount": 397
-        },
-        {
-          "name": "ExasolStudio",
-          "params": [
-            "{\n  connection,\n  connections,\n  drivers,\n  profiles,\n  onConnected,\n  onFocusConnection,\n  onDisconnect,\n  onSaved,\n}"
-          ],
-          "exported": true,
-          "lineCount": 3164
-        },
         {
           "name": "Selector",
           "params": [
             "{\n  icon,\n  value,\n  options,\n  onChange,\n  disabled,\n  label,\n}"
           ],
-          "exported": false,
+          "exported": true,
           "lineCount": 35
         },
         {
@@ -20513,8 +20465,53 @@
           "params": [
             "{\n  connections,\n  activeProfileId,\n  onFocus,\n}"
           ],
-          "exported": false,
+          "exported": true,
           "lineCount": 33
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "lucide-react",
+          "specifiers": [
+            "Database"
+          ]
+        },
+        {
+          "source": "@/components/ui/select",
+          "specifiers": [
+            "Select",
+            "SelectContent",
+            "SelectItem",
+            "SelectTrigger",
+            "SelectValue"
+          ]
+        },
+        {
+          "source": "@/state/useConnections",
+          "specifiers": [
+            "ActiveConnection"
+          ]
+        }
+      ],
+      "exports": [
+        "Selector",
+        "ConnectionSwitcher"
+      ],
+      "totalLines": 86,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/components/studio/ExasolStudio.tsx": {
+      "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+      "contentHash": "6504154ca975cdde81eb03750836c39a2d0d689d040d2784641814b1e75e5b76",
+      "functions": [
+        {
+          "name": "ExasolStudio",
+          "params": [
+            "{\n  connection,\n  connections,\n  drivers,\n  profiles,\n  onConnected,\n  onFocusConnection,\n  onDisconnect,\n  onSaved,\n}"
+          ],
+          "exported": true,
+          "lineCount": 3164
         }
       ],
       "classes": [],
@@ -20524,7 +20521,6 @@
           "specifiers": [
             "useCallback",
             "useEffect",
-            "useMemo",
             "useRef",
             "useState"
           ]
@@ -20532,8 +20528,7 @@
         {
           "source": "@monaco-editor/react",
           "specifiers": [
-            "Editor",
-            "Monaco"
+            "Editor"
           ]
         },
         {
@@ -20563,7 +20558,6 @@
             "ChevronLeft",
             "Boxes",
             "ChevronRight",
-            "ChevronsDownUp",
             "Combine",
             "Database",
             "FileCode2",
@@ -20572,47 +20566,20 @@
             "ListChecks",
             "MoreHorizontal",
             "Loader2",
-            "PanelLeftClose",
             "PanelRight",
             "Pin",
             "Play",
-            "Plug",
-            "PlugZap",
             "Plus",
-            "RefreshCcw",
             "RotateCcw",
             "Save",
             "SaveAll",
             "Search",
             "Settings2",
-            "Shapes",
-            "Shield",
             "Sparkles",
             "Square",
             "Trash2",
-            "Unplug",
-            "HardDriveUpload",
-            "Waypoints",
             "X",
             "Zap"
-          ]
-        },
-        {
-          "source": "@/components/brand/ExasolMark",
-          "specifiers": [
-            "ExasolMark"
-          ]
-        },
-        {
-          "source": "@/components/brand/ThemeToggle",
-          "specifiers": [
-            "ThemeToggle"
-          ]
-        },
-        {
-          "source": "@/components/studio/ThemeCustomizer",
-          "specifiers": [
-            "ThemeCustomizer"
           ]
         },
         {
@@ -20665,18 +20632,6 @@
           ]
         },
         {
-          "source": "@/features/workbench/DatabaseTree",
-          "specifiers": [
-            "DatabaseTree"
-          ]
-        },
-        {
-          "source": "@/features/workbench/tree-model",
-          "specifiers": [
-            "buildConnectionNodes"
-          ]
-        },
-        {
           "source": "@/features/connection/ConnectionPropertiesTab",
           "specifiers": [
             "ConnectionPropertiesTab"
@@ -20692,18 +20647,6 @@
           "source": "@/features/workbench/DbaDashboard",
           "specifiers": [
             "DbaDashboard"
-          ]
-        },
-        {
-          "source": "@/features/workbench/ObjectSearch",
-          "specifiers": [
-            "ObjectSearch"
-          ]
-        },
-        {
-          "source": "@/features/workbench/FileExplorer",
-          "specifiers": [
-            "FileExplorer"
           ]
         },
         {
@@ -20804,18 +20747,6 @@
           ]
         },
         {
-          "source": "@/features/workbench/Notifications",
-          "specifiers": [
-            "Notifications"
-          ]
-        },
-        {
-          "source": "@/features/marketplace/McpMarketplace",
-          "specifiers": [
-            "McpMarketplace"
-          ]
-        },
-        {
           "source": "@/features/marketplace/McpConfigTab",
           "specifiers": [
             "McpConfigTab"
@@ -20855,12 +20786,6 @@
           ]
         },
         {
-          "source": "@/features/workbench/FavoritesPanel",
-          "specifiers": [
-            "FavoritesPanel"
-          ]
-        },
-        {
           "source": "@/features/workbench/GitPanel",
           "specifiers": [
             "GitPanel"
@@ -20875,8 +20800,7 @@
         {
           "source": "@/components/ui/icon",
           "specifiers": [
-            "Icon",
-            "IconName"
+            "Icon"
           ]
         },
         {
@@ -20888,8 +20812,7 @@
         {
           "source": "@/lib/favorites",
           "specifiers": [
-            "addFavorite",
-            "Favorite"
+            "addFavorite"
           ]
         },
         {
@@ -20918,6 +20841,31 @@
           "source": "./IconButton",
           "specifiers": [
             "IconButton"
+          ]
+        },
+        {
+          "source": "./TitleBar",
+          "specifiers": [
+            "TitleBar"
+          ]
+        },
+        {
+          "source": "./Sidebar",
+          "specifiers": [
+            "Sidebar"
+          ]
+        },
+        {
+          "source": "./ConnectionSwitcher",
+          "specifiers": [
+            "ConnectionSwitcher",
+            "Selector"
+          ]
+        },
+        {
+          "source": "./monaco-theme",
+          "specifiers": [
+            "defineMonacoThemes"
           ]
         },
         {
@@ -20991,7 +20939,7 @@
       "exports": [
         "ExasolStudio"
       ],
-      "totalLines": 4063,
+      "totalLines": 3223,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -21320,6 +21268,185 @@
       "totalLines": 107,
       "hasStructuralAnalysis": true
     },
+    "apps/desktop/src/components/studio/Sidebar.tsx": {
+      "filePath": "apps/desktop/src/components/studio/Sidebar.tsx",
+      "contentHash": "8ae18c5cb6538a903a9406cedafbe9192a0dd40b8547b0f8592de0bcd5edbbfe",
+      "functions": [
+        {
+          "name": "ConnectionSection",
+          "params": [
+            "{\n  connection,\n  focused,\n  live,\n  accent,\n  treeKey,\n  collapsed,\n  onToggleCollapse,\n  onFocus,\n  onOpenObject,\n  onRefresh,\n  onDisconnect,\n  onOpenView,\n  onNewVs,\n  onUploadDriver,\n  onContext,\n  onOpenDetails,\n}"
+          ],
+          "exported": false,
+          "lineCount": 150
+        },
+        {
+          "name": "VisualizerPanel",
+          "params": [
+            "{\n  tabs,\n  activeTabId,\n  hasConnection,\n  onOpenNew,\n  onFocus,\n  onClose,\n  onConnect,\n}"
+          ],
+          "exported": false,
+          "lineCount": 88
+        },
+        {
+          "name": "Sidebar",
+          "params": [
+            "{\n  activity,\n  connections,\n  profiles,\n  local,\n  activeProfileId,\n  treeKeys,\n  onOpenObject,\n  onConnect,\n  onConnectProfile,\n  onInstallLocal,\n  onFocusConnection,\n  onDisconnect,\n  onRefreshConnection,\n  onOpenView,\n  onNewVirtualSchema,\n  onUploadDriver,\n  onContext,\n  onOpenDetails,\n  onOpenFavorite,\n  onOpenMcpConfig,\n  onCollapse,\n  onOpenFile,\n  onOpenData,\n  onLoadData,\n  onFileDeleted,\n  filesRefresh,\n  visualizerTabs,\n  activeTabId,\n  onOpenNewVisualizer,\n  onFocusTab,\n  onCloseTab,\n}"
+          ],
+          "exported": true,
+          "lineCount": 397
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "react",
+          "specifiers": [
+            "useEffect",
+            "useMemo",
+            "useState"
+          ]
+        },
+        {
+          "source": "lucide-react",
+          "specifiers": [
+            "ChevronRight",
+            "ChevronsDownUp",
+            "Database",
+            "HardDriveUpload",
+            "Info",
+            "MoreHorizontal",
+            "PanelLeftClose",
+            "Plug",
+            "PlugZap",
+            "Plus",
+            "RefreshCcw",
+            "Search",
+            "Settings2",
+            "Shapes",
+            "Shield",
+            "Unplug",
+            "Waypoints",
+            "X"
+          ]
+        },
+        {
+          "source": "@/components/ui/dropdown-menu",
+          "specifiers": [
+            "DropdownMenu",
+            "DropdownMenuContent",
+            "DropdownMenuItem",
+            "DropdownMenuSeparator",
+            "DropdownMenuTrigger"
+          ]
+        },
+        {
+          "source": "@/components/ui/icon",
+          "specifiers": [
+            "Icon",
+            "IconName"
+          ]
+        },
+        {
+          "source": "@/features/marketplace/Marketplace",
+          "specifiers": [
+            "Marketplace"
+          ]
+        },
+        {
+          "source": "@/features/marketplace/McpMarketplace",
+          "specifiers": [
+            "McpMarketplace"
+          ]
+        },
+        {
+          "source": "@/features/workbench/ActivityRail",
+          "specifiers": [
+            "ActivityId"
+          ]
+        },
+        {
+          "source": "@/features/workbench/DatabaseTree",
+          "specifiers": [
+            "DatabaseTree"
+          ]
+        },
+        {
+          "source": "@/features/workbench/FavoritesPanel",
+          "specifiers": [
+            "FavoritesPanel"
+          ]
+        },
+        {
+          "source": "@/features/workbench/FileExplorer",
+          "specifiers": [
+            "FileExplorer"
+          ]
+        },
+        {
+          "source": "@/features/workbench/GitPanel",
+          "specifiers": [
+            "GitPanel"
+          ]
+        },
+        {
+          "source": "@/features/workbench/ObjectSearch",
+          "specifiers": [
+            "ObjectSearch"
+          ]
+        },
+        {
+          "source": "@/features/workbench/Visualizer",
+          "specifiers": [
+            "Visualizer"
+          ]
+        },
+        {
+          "source": "@/features/workbench/tree-model",
+          "specifiers": [
+            "buildConnectionNodes",
+            "TreeNode"
+          ]
+        },
+        {
+          "source": "@/lib/favorites",
+          "specifiers": [
+            "Favorite"
+          ]
+        },
+        {
+          "source": "@/lib/ipc",
+          "specifiers": [
+            "ipc",
+            "ConnectionProfile",
+            "PersonalLocalStatus"
+          ]
+        },
+        {
+          "source": "@/lib/utils",
+          "specifiers": [
+            "cn"
+          ]
+        },
+        {
+          "source": "@/state/useConnections",
+          "specifiers": [
+            "ActiveConnection"
+          ]
+        },
+        {
+          "source": "./IconButton",
+          "specifiers": [
+            "IconButton"
+          ]
+        }
+      ],
+      "exports": [
+        "Sidebar"
+      ],
+      "totalLines": 703,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src/components/studio/ThemeCustomizer.tsx": {
       "filePath": "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
       "contentHash": "992cf0432a05ed17cbed1eed57f80db2fbc31561f00bb0f1d36562ba8e111e5d",
@@ -21385,6 +21512,99 @@
         "ThemePresetPicker"
       ],
       "totalLines": 189,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/components/studio/TitleBar.tsx": {
+      "filePath": "apps/desktop/src/components/studio/TitleBar.tsx",
+      "contentHash": "04d3cbf6ca441c0503d3a1186131f154146c58344574c48651e96da9b13b22db",
+      "functions": [
+        {
+          "name": "TitleBar",
+          "params": [
+            "{\n  connection,\n  onConnect,\n  onDisconnect,\n  hideConnect,\n}"
+          ],
+          "exported": true,
+          "lineCount": 72
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "lucide-react",
+          "specifiers": [
+            "PlugZap",
+            "Unplug"
+          ]
+        },
+        {
+          "source": "@/components/brand/ExasolMark",
+          "specifiers": [
+            "ExasolMark"
+          ]
+        },
+        {
+          "source": "@/components/brand/ThemeToggle",
+          "specifiers": [
+            "ThemeToggle"
+          ]
+        },
+        {
+          "source": "@/components/studio/ThemeCustomizer",
+          "specifiers": [
+            "ThemeCustomizer"
+          ]
+        },
+        {
+          "source": "@/features/workbench/Notifications",
+          "specifiers": [
+            "Notifications"
+          ]
+        },
+        {
+          "source": "@/lib/utils",
+          "specifiers": [
+            "cn"
+          ]
+        },
+        {
+          "source": "@/state/useConnections",
+          "specifiers": [
+            "ActiveConnection"
+          ]
+        }
+      ],
+      "exports": [
+        "TitleBar"
+      ],
+      "totalLines": 88,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/components/studio/monaco-theme.ts": {
+      "filePath": "apps/desktop/src/components/studio/monaco-theme.ts",
+      "contentHash": "05b55a91eff06b6d5a739595c829988664531696c3a1485f0389e26aaaf5d84b",
+      "functions": [
+        {
+          "name": "defineMonacoThemes",
+          "params": [
+            "monaco"
+          ],
+          "exported": true,
+          "lineCount": 40
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "@monaco-editor/react",
+          "specifiers": [
+            "Monaco"
+          ]
+        }
+      ],
+      "exports": [
+        "defineMonacoThemes"
+      ],
+      "totalLines": 47,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/studio/tabs.ts": {
@@ -24394,7 +24614,7 @@
     },
     "apps/desktop/src/features/assistant/AssistantPanel.tsx": {
       "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-      "contentHash": "331d65c1c008293320b1a417db7c5ff52bb9ea74f0e7fa49a0255522896a76f4",
+      "contentHash": "e3dce11ac1763527673c17753b72a19a66fdb94d634286e2856c389cc42fe5fd",
       "functions": [
         {
           "name": "parseSlash",
@@ -24404,15 +24624,6 @@
           "returnType": "{ cmd: SlashCommand; arg: string } | null",
           "exported": false,
           "lineCount": 6
-        },
-        {
-          "name": "splitFences",
-          "params": [
-            "s"
-          ],
-          "returnType": "{ code: boolean; text: string }[]",
-          "exported": false,
-          "lineCount": 22
         },
         {
           "name": "pushProse",
@@ -24451,24 +24662,6 @@
           "lineCount": 23
         },
         {
-          "name": "relTime",
-          "params": [
-            "ts"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 7
-        },
-        {
-          "name": "argPreview",
-          "params": [
-            "args"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 11
-        },
-        {
           "name": "ToolView",
           "params": [
             "{ item }"
@@ -24483,42 +24676,6 @@
           ],
           "exported": false,
           "lineCount": 57
-        },
-        {
-          "name": "hasLeakedToolCall",
-          "params": [
-            "s"
-          ],
-          "returnType": "boolean",
-          "exported": false,
-          "lineCount": 5
-        },
-        {
-          "name": "stripToolJson",
-          "params": [
-            "s"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 31
-        },
-        {
-          "name": "reflowMarkdownTables",
-          "params": [
-            "text"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 26
-        },
-        {
-          "name": "cleanAssistant",
-          "params": [
-            "raw"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 12
         },
         {
           "name": "copyText",
@@ -24574,6 +24731,18 @@
             "useMemo",
             "useRef",
             "useState"
+          ]
+        },
+        {
+          "source": "./chat-text",
+          "specifiers": [
+            "TOOL_LABELS",
+            "argPreview",
+            "cleanAssistant",
+            "hasLeakedToolCall",
+            "relTime",
+            "splitFences",
+            "stripToolJson"
           ]
         },
         {
@@ -24753,7 +24922,7 @@
       "exports": [
         "AssistantPanel"
       ],
-      "totalLines": 2091,
+      "totalLines": 1938,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/features/assistant/ModelPicker.tsx": {
@@ -24824,6 +24993,127 @@
       "totalLines": 179,
       "hasStructuralAnalysis": true
     },
+    "apps/desktop/src/features/assistant/chat-text.test.ts": {
+      "filePath": "apps/desktop/src/features/assistant/chat-text.test.ts",
+      "contentHash": "f63153efbe05c644a1f6a47db6ff1d31a8b3923e8dca6fbe2ba1541a57e71082",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./chat-text.ts",
+          "specifiers": [
+            "TOOL_LABELS",
+            "splitFences",
+            "relTime",
+            "argPreview",
+            "hasLeakedToolCall",
+            "stripToolJson",
+            "reflowMarkdownTables",
+            "cleanAssistant"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 216,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/features/assistant/chat-text.ts": {
+      "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+      "contentHash": "23de1577d5ef060987c6d7f01b4e96c2801f24e8f9a8943d1edab8789703a5f7",
+      "functions": [
+        {
+          "name": "splitFences",
+          "params": [
+            "s"
+          ],
+          "returnType": "{ code: boolean; text: string }[]",
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "relTime",
+          "params": [
+            "ts",
+            "now"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "argPreview",
+          "params": [
+            "args"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "hasLeakedToolCall",
+          "params": [
+            "s"
+          ],
+          "returnType": "boolean",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "stripToolJson",
+          "params": [
+            "s"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "reflowMarkdownTables",
+          "params": [
+            "text"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "cleanAssistant",
+          "params": [
+            "raw"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "TOOL_LABELS",
+        "splitFences",
+        "relTime",
+        "argPreview",
+        "hasLeakedToolCall",
+        "stripToolJson",
+        "reflowMarkdownTables",
+        "cleanAssistant"
+      ],
+      "totalLines": 177,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src/features/assistant/provider-marks.tsx": {
       "filePath": "apps/desktop/src/features/assistant/provider-marks.tsx",
       "contentHash": "8cd6cc8160193893b4835380cb53a37f8390e8ca4c9fa596a7c73de654d4e659",
@@ -24865,7 +25155,7 @@
     },
     "apps/desktop/src/features/bi/Dashboards.tsx": {
       "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-      "contentHash": "d5a50435c2a5a8e9059011631630ac624e04435f2d7c6214fb88779e82ec2e8e",
+      "contentHash": "05edc325599d2a37485de90db31519b960d6268bec3c0e1bc3825053a15a0e4c",
       "functions": [
         {
           "name": "pspClient",
@@ -25005,54 +25295,6 @@
           "lineCount": 545
         },
         {
-          "name": "slugify",
-          "params": [
-            "s"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 3
-        },
-        {
-          "name": "fmtNumber",
-          "params": [
-            "raw"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 8
-        },
-        {
-          "name": "kpiText",
-          "params": [
-            "panel",
-            "result"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 7
-        },
-        {
-          "name": "mdTable",
-          "params": [
-            "result"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 12
-        },
-        {
-          "name": "buildMarkdownReport",
-          "params": [
-            "dash",
-            "panels",
-            "data"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 21
-        },
-        {
           "name": "chartPng",
           "params": [
             "viz",
@@ -25061,15 +25303,6 @@
           "returnType": "string | null",
           "exported": false,
           "lineCount": 19
-        },
-        {
-          "name": "mdToHtml",
-          "params": [
-            "md"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 30
         },
         {
           "name": "buildHtmlReport",
@@ -25101,6 +25334,17 @@
             "useMemo",
             "useRef",
             "useState"
+          ]
+        },
+        {
+          "source": "./report-export",
+          "specifiers": [
+            "MD_ROW_CAP",
+            "buildMarkdownReport",
+            "kpiText",
+            "mdTable",
+            "mdToHtml",
+            "slugify"
           ]
         },
         {
@@ -25262,7 +25506,7 @@
       "exports": [
         "DashboardsTab"
       ],
-      "totalLines": 2087,
+      "totalLines": 2004,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/features/bi/ShadcnChartPanel.tsx": {
@@ -25356,6 +25600,143 @@
         "ShadcnChartPanel"
       ],
       "totalLines": 264,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/features/bi/report-export.test.ts": {
+      "filePath": "apps/desktop/src/features/bi/report-export.test.ts",
+      "contentHash": "db5709935167ad57069ccc34ab22eb39782d7f01a4e3f43beb07d61d7b16a4a6",
+      "functions": [
+        {
+          "name": "result",
+          "params": [
+            "columns",
+            "rows"
+          ],
+          "exported": false,
+          "lineCount": 6
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./report-export.ts",
+          "specifiers": [
+            "slugify",
+            "fmtNumber",
+            "kpiText",
+            "mdTable",
+            "mdToHtml",
+            "buildMarkdownReport",
+            "MD_ROW_CAP"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 235,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/features/bi/report-export.ts": {
+      "filePath": "apps/desktop/src/features/bi/report-export.ts",
+      "contentHash": "6f6ec19186246bf95dd0edd4dfd65263c2d638a7ddefbc9bb47fb7546c6d3679",
+      "functions": [
+        {
+          "name": "slugify",
+          "params": [
+            "s"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "fmtNumber",
+          "params": [
+            "raw"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "kpiText",
+          "params": [
+            "panel",
+            "result"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "mdTable",
+          "params": [
+            "result"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "mdToHtml",
+          "params": [
+            "md"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "buildMarkdownReport",
+          "params": [
+            "dash",
+            "panels",
+            "data",
+            "now"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 21
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "@/lib/agent-client",
+          "specifiers": [
+            "DashPanel",
+            "Dashboard"
+          ]
+        },
+        {
+          "source": "@/lib/ipc",
+          "specifiers": [
+            "StatementResult"
+          ]
+        }
+      ],
+      "exports": [
+        "slugify",
+        "fmtNumber",
+        "kpiText",
+        "MD_ROW_CAP",
+        "mdTable",
+        "mdToHtml",
+        "buildMarkdownReport"
+      ],
+      "totalLines": 110,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/features/connection/BucketFsPanel.tsx": {
@@ -31714,12 +32095,12 @@
     },
     "knowledge/wiki/pages/kiss-hard-rules.md": {
       "filePath": "knowledge/wiki/pages/kiss-hard-rules.md",
-      "contentHash": "5558321b657e3a8881d2edb92f9870898c8bd00c6f03f1cc29503b2649b50c70",
+      "contentHash": "a5e827c76618388e5e2d3b26f5a461c2ce0c9b9e0d4463006af037a15129b3b8",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 143,
+      "totalLines": 155,
       "hasStructuralAnalysis": true
     },
     "marketplace/catalog.json": {
@@ -33749,7 +34130,7 @@
     },
     "packages/agent-core/src/csv-import.test.ts": {
       "filePath": "packages/agent-core/src/csv-import.test.ts",
-      "contentHash": "2e0c7a0f4ea044383d409604e45a66c5fcc620746864dc748a79ab1a8dd1afd3",
+      "contentHash": "ba13cc84b395393f65a633c164ab48cbb844e9dc9a8dedf23c9df786087feff5",
       "functions": [],
       "classes": [],
       "imports": [
@@ -33782,12 +34163,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 410,
+      "totalLines": 449,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/csv-import.ts": {
       "filePath": "packages/agent-core/src/csv-import.ts",
-      "contentHash": "8eaa07bf824507591a43f5f84beef44e83e6eec858426d5d9910c74ddd6eb191",
+      "contentHash": "bd8b598614131d61296dfe8635914c4a8c2a1ec35d50a22ebe8128836be51ea2",
       "functions": [
         {
           "name": "detectDelimiter",
@@ -33844,13 +34225,22 @@
           "lineCount": 7
         },
         {
+          "name": "varcharFor",
+          "params": [
+            "seen"
+          ],
+          "returnType": "ColType",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
           "name": "inferType",
           "params": [
             "values"
           ],
           "returnType": "ColType",
           "exported": true,
-          "lineCount": 36
+          "lineCount": 43
         },
         {
           "name": "typeToSql",
@@ -33943,7 +34333,7 @@
         "objectsToTable",
         "buildInsert"
       ],
-      "totalLines": 351,
+      "totalLines": 370,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/dashboards.ts": {

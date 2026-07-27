@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MD_ROW_CAP,
   buildMarkdownReport,
-  fmtNumber,
   kpiText,
   mdTable,
   mdToHtml,

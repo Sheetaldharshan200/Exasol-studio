@@ -23,8 +23,8 @@
    "GitHub Actions"
   ],
   "description": "Whole-repo graph. Tauri 2 (Rust) + React 19 desktop Exasol client with a Node agent-core AI sidecar, ANTLR SQL parser, database-side semantic-views layer, vendored AI agent skills, CI/CD, docs, and knowledge tooling.",
-  "analyzedAt": "2026-07-27T09:40:51.594201Z",
-  "gitCommitHash": "ada128576d45aaf3422e407376c578096c2c41be"
+  "analyzedAt": "2026-07-27T11:03:56.380004Z",
+  "gitCommitHash": "f4e5212f1037ccc4d837f1bebfbd8ff9da31721b"
  },
  "nodes": [
   {
@@ -11959,22 +11959,6 @@
    "languageNotes": "Composed of many section subcomponents (providers, in-database, guardrails, behavior, skills) within one file."
   },
   {
-   "id": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "type": "file",
-   "name": "AssistantPanel.tsx",
-   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "summary": "Core chat panel for the AI assistant: renders conversation bubbles, tool calls, permission cards, markdown/code blocks, slash commands, and session management.",
-   "tags": [
-    "component",
-    "feature",
-    "assistant",
-    "chat",
-    "markdown"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Very large component with many helper functions for parsing slash commands, fences, tool JSON, and rendering chat content."
-  },
-  {
    "id": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
    "type": "file",
    "name": "ModelPicker.tsx",
@@ -12001,22 +11985,6 @@
     "badge"
    ],
    "complexity": "simple"
-  },
-  {
-   "id": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "type": "file",
-   "name": "Dashboards.tsx",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "summary": "Comprehensive BI dashboards feature: builds query-performance, sessions, and DB-size dashboards with editable panels, charts (ECharts), KPIs, perspective tables, and markdown/HTML/PDF report export.",
-   "tags": [
-    "component",
-    "feature",
-    "bi",
-    "dashboard",
-    "data-visualization"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Contains dashboard definitions, panel editor, chart-option builder, and report-generation helpers all in one module."
   },
   {
    "id": "file:apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
@@ -12343,78 +12311,6 @@
    "complexity": "complex"
   },
   {
-   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
-   "type": "function",
-   "name": "AssistantPanel",
-   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "lineRange": [
-    245,
-    1557
-   ],
-   "summary": "Main assistant chat panel managing conversation state, streaming, tool calls, permissions, and message rendering.",
-   "tags": [
-    "component",
-    "assistant",
-    "chat",
-    "state-management"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:highlightInput",
-   "type": "function",
-   "name": "highlightInput",
-   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "lineRange": [
-    176,
-    243
-   ],
-   "summary": "Syntax-highlights the assistant input box, recognizing slash commands and inline formatting.",
-   "tags": [
-    "utility",
-    "assistant",
-    "highlighting",
-    "input"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:PermissionCard",
-   "type": "function",
-   "name": "PermissionCard",
-   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "lineRange": [
-    1659,
-    1715
-   ],
-   "summary": "Renders a permission-request card prompting the user to allow or deny an assistant tool action.",
-   "tags": [
-    "component",
-    "assistant",
-    "permission",
-    "tool-call"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:Bubble",
-   "type": "function",
-   "name": "Bubble",
-   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "lineRange": [
-    2001,
-    2087
-   ],
-   "summary": "Renders an individual chat message bubble with role styling and markdown content.",
-   "tags": [
-    "component",
-    "assistant",
-    "chat",
-    "message"
-   ],
-   "complexity": "moderate"
-  },
-  {
    "id": "function:apps/desktop/src/features/assistant/ModelPicker.tsx:ModelPicker",
    "type": "function",
    "name": "ModelPicker",
@@ -12447,95 +12343,6 @@
     "branding"
    ],
    "complexity": "simple"
-  },
-  {
-   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardsTab",
-   "type": "function",
-   "name": "DashboardsTab",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "lineRange": [
-    127,
-    351
-   ],
-   "summary": "Top-level BI dashboards tab listing available dashboards and managing selection/creation.",
-   "tags": [
-    "component",
-    "bi",
-    "dashboard"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
-   "type": "function",
-   "name": "DashboardView",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "lineRange": [
-    376,
-    717
-   ],
-   "summary": "Renders a single dashboard's grid of panels with data loading, refresh, and export controls.",
-   "tags": [
-    "component",
-    "bi",
-    "dashboard",
-    "layout"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:Panel",
-   "type": "function",
-   "name": "Panel",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "lineRange": [
-    748,
-    980
-   ],
-   "summary": "Renders a dashboard panel, dispatching to chart, KPI, table, or explore visualizations based on config.",
-   "tags": [
-    "component",
-    "bi",
-    "panel",
-    "data-visualization"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:PanelEditor",
-   "type": "function",
-   "name": "PanelEditor",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "lineRange": [
-    1352,
-    1896
-   ],
-   "summary": "Editor UI for configuring a dashboard panel's query, visualization type, and display options.",
-   "tags": [
-    "component",
-    "bi",
-    "panel",
-    "editor"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildChartOption",
-   "type": "function",
-   "name": "buildChartOption",
-   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
-   "lineRange": [
-    1148,
-    1292
-   ],
-   "summary": "Builds the ECharts option object from panel config and query result data.",
-   "tags": [
-    "utility",
-    "bi",
-    "chart",
-    "echarts"
-   ],
-   "complexity": "complex"
   },
   {
    "id": "function:apps/desktop/src/features/bi/ShadcnChartPanel.tsx:ShadcnChartPanel",
@@ -20350,22 +20157,6 @@
    "languageNotes": "Markdown reference doc organised around a capability table plus copy-pasteable shell setup blocks; it also encodes repo policy (which generated artifacts are committed and why `docs/codebase-graph.html` is a frozen snapshot)."
   },
   {
-   "id": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "type": "document",
-   "name": "kiss-hard-rules.md",
-   "filePath": "knowledge/wiki/pages/kiss-hard-rules.md",
-   "summary": "llm-wiki page recording three mandatory KISS rules \u2014 cap file size (split at ~500 lines), never ship unreachable code, and keep logic small enough to unit-test \u2014 backed by the `server.ts` 234-line dead-code precedent, the deliberate no-test-framework decision (`node:test` + Rust `#[cfg(test)]`), and the two real defects the first test pass surfaced.",
-   "tags": [
-    "documentation",
-    "process",
-    "code-quality",
-    "testing",
-    "knowledge-base"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "Markdown wiki page with YAML frontmatter (title/category/status) following the llm-wiki convention; it names offending source files and line counts directly, so it functions as an actionable refactor backlog rather than abstract guidance."
-  },
-  {
    "id": "config:packages/agent-core/package.json",
    "type": "config",
    "name": "package.json",
@@ -20380,22 +20171,6 @@
    ],
    "complexity": "moderate",
    "languageNotes": "Uses Node's built-in `node:test` runner rather than vitest/jest, so the test scripts add zero dependencies; coverage is deliberately scoped with `--test-coverage-include` to the pure logic core (`tool-repair.ts`, `csv-import.ts`) instead of the whole package."
-  },
-  {
-   "id": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "type": "file",
-   "name": "ExasolStudio.tsx",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "summary": "The Exasol Studio application shell: it owns the per-connection workspace-tab state, the SQL editor (Monaco) and its live catalog autocompletion, query execution and history, the activity rail/sidebar layout, and the wiring for every feature panel (database tree, DBA dashboard, BI dashboards, marketplace, assistant, notebooks, artifacts). Still the highest fan-out React file in the repo (56 project-internal imports) but now 4,062 lines after the first pass of a deliberate split that moved the run-status strip, results grid, git log and history dock into HistoryDock.tsx, the tab model into tabs.ts, IconButton into IconButton.tsx and the pure SQL text helpers into @/lib/sql-text.",
-   "tags": [
-    "entry-point",
-    "component",
-    "shell",
-    "sql-editor",
-    "orchestration"
-   ],
-   "complexity": "complex",
-   "languageNotes": "A single 3,164-line React function component holding ~30 useState hooks: state is bucketed per connection (Record<connKey, SqlTab[]>) so each database keeps its own workspace, with a '__none__' sentinel bucket for the disconnected state. Cross-panel coordination happens via window CustomEvents ('studio:conn-settings-changed', 'studio:git-changed') rather than a store."
   },
   {
    "id": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
@@ -20428,151 +20203,6 @@
    ],
    "complexity": "simple",
    "languageNotes": "SqlTab is a wide optional-field record rather than a discriminated union keyed on TabView \u2014 one shape covers all 18 views, with comments marking which fields belong to which view. An inline `import(\"...\").ConnectionSection` type reference avoids a top-level import cycle back into the connection feature."
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:defineMonacoThemes",
-   "type": "function",
-   "name": "defineMonacoThemes",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    65,
-    104
-   ],
-   "summary": "Registers the light and dark Monaco editor themes so the SQL editor's syntax colors track the studio's own theme tokens instead of Monaco's defaults.",
-   "tags": [
-    "utility",
-    "theming",
-    "monaco",
-    "editor"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:TitleBar",
-   "type": "function",
-   "name": "TitleBar",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    106,
-    177
-   ],
-   "summary": "The window title bar: brand mark, active-connection label and the connect/disconnect affordances, rendered above the activity rail.",
-   "tags": [
-    "component",
-    "layout",
-    "title-bar",
-    "presentational"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ConnectionSection",
-   "type": "function",
-   "name": "ConnectionSection",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    188,
-    337
-   ],
-   "summary": "One collapsible connection block in the Databases panel \u2014 renders that connection's object tree and its per-connection actions (refresh, disconnect, open view, new virtual schema, upload driver, context menu, details).",
-   "tags": [
-    "component",
-    "database-tree",
-    "connection",
-    "presentational"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:VisualizerPanel",
-   "type": "function",
-   "name": "VisualizerPanel",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    341,
-    428
-   ],
-   "summary": "Sidebar panel listing the open visualizer tabs, letting the user focus, close or create chart tabs and prompting to connect when there is no live connection.",
-   "tags": [
-    "component",
-    "sidebar",
-    "visualization",
-    "presentational"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Sidebar",
-   "type": "function",
-   "name": "Sidebar",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    430,
-    826
-   ],
-   "summary": "The activity-driven sidebar: switches between the Databases, Files, Git, Favorites, Search and Visualizer panels and threads roughly thirty shell callbacks down into each one.",
-   "tags": [
-    "component",
-    "sidebar",
-    "layout",
-    "navigation"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "type": "function",
-   "name": "ExasolStudio",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    828,
-    3991
-   ],
-   "summary": "The exported shell component. Owns per-connection tab buckets, groups and active-tab state, the Monaco editor plus its live SQL catalog, statement splitting and execution with progress/history tracking, and the routing of every TabView to its feature panel; also hosts the assistant panel, agent cursor, dialogs and keyboard shortcuts.",
-   "tags": [
-    "entry-point",
-    "component",
-    "orchestration",
-    "state-management",
-    "query-execution"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Selector",
-   "type": "function",
-   "name": "Selector",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    3993,
-    4027
-   ],
-   "summary": "Compact icon-plus-select control used in the query toolbar for schema and max-rows pickers.",
-   "tags": [
-    "component",
-    "utility",
-    "toolbar",
-    "presentational"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ConnectionSwitcher",
-   "type": "function",
-   "name": "ConnectionSwitcher",
-   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "lineRange": [
-    4030,
-    4062
-   ],
-   "summary": "Dropdown that switches the active connection, marking the currently focused profile.",
-   "tags": [
-    "component",
-    "connection",
-    "navigation",
-    "presentational"
-   ],
-   "complexity": "simple"
   },
   {
    "id": "function:apps/desktop/src/components/studio/HistoryDock.tsx:RunStatusStrip",
@@ -20855,276 +20485,6 @@
     "accessibility"
    ],
    "complexity": "simple"
-  },
-  {
-   "id": "file:packages/agent-core/src/csv-import.ts",
-   "type": "file",
-   "name": "csv-import.ts",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "summary": "Pure CSV-to-Exasol import pipeline: delimiter sniffing, RFC-style CSV parsing, header detection, identifier normalization, conservative column type inference, and DDL/INSERT SQL generation. All functions are side-effect free so the agent sidecar can plan an import before touching the database.",
-   "tags": [
-    "data-pipeline",
-    "csv-parsing",
-    "type-inference",
-    "sql-generation",
-    "serialization",
-    "tested"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Type inference deliberately loops instead of spreading into Math.max, because the 500k-row sample would overflow the call stack as spread arguments. Column types are a discriminated union (ColType) so typeToSql and cellToLiteral stay exhaustively checked by the compiler."
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:detectDelimiter",
-   "type": "function",
-   "name": "detectDelimiter",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    18,
-    36
-   ],
-   "summary": "Sniffs the field delimiter from a CSV file's first line by scoring candidate separators outside quoted regions.",
-   "tags": [
-    "csv-parsing",
-    "heuristic",
-    "utility",
-    "data-pipeline"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:parseCsv",
-   "type": "function",
-   "name": "parseCsv",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    39,
-    87
-   ],
-   "summary": "Parses raw CSV text into a CsvTable of header plus rows, handling BOM stripping, CRLF normalization, quoted fields with escaped quotes, and embedded newlines.",
-   "tags": [
-    "csv-parsing",
-    "state-machine",
-    "data-pipeline",
-    "text-processing"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
-   "type": "function",
-   "name": "resolveHeader",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    95,
-    109
-   ],
-   "summary": "Decides whether the first parsed row is a real header or data, using blank-cell and numeric-cell heuristics, and synthesizes positional column names when no header is present.",
-   "tags": [
-    "heuristic",
-    "csv-parsing",
-    "data-pipeline",
-    "validation"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
-   "type": "function",
-   "name": "normalizeColumns",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    112,
-    126
-   ],
-   "summary": "Converts arbitrary CSV header labels into valid uppercase Exasol identifiers, prefixing names that start with a digit and de-duplicating collisions.",
-   "tags": [
-    "validation",
-    "identifier-normalization",
-    "data-pipeline",
-    "utility"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "Uppercasing matches Exasol's identifier case-folding, so a normalized name resolves the same way whether or not the generated SQL quotes it."
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
-   "type": "function",
-   "name": "isCalendarDate",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    140,
-    145
-   ],
-   "summary": "Validates a YYYY-MM-DD string for real calendar validity, not just shape, by round-tripping through Date.UTC so month/day overflow such as 2024-99-99 or a non-leap-year Feb 29 is rejected.",
-   "tags": [
-    "validation",
-    "date",
-    "type-inference",
-    "edge-case-guard"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
-   "type": "function",
-   "name": "isCalendarTimestamp",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    147,
-    153
-   ],
-   "summary": "Validates a timestamp string by checking its date half with isCalendarDate and bounding the hour, minute, and second components.",
-   "tags": [
-    "validation",
-    "date",
-    "type-inference",
-    "edge-case-guard"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "type": "function",
-   "name": "inferType",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    163,
-    198
-   ],
-   "summary": "Infers a conservative Exasol column type from sampled values, testing boolean, calendar-validated timestamp and date, integer and decimal precision/scale, and finally sizing a VARCHAR with headroom. Calendar validation ensures a column containing an impossible date stays VARCHAR instead of becoming a DATE whose values would be NULLed.",
-   "tags": [
-    "type-inference",
-    "data-pipeline",
-    "validation",
-    "heuristic"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Accumulates maxima with explicit loops rather than Math.max(...values) because spreading a 600k-element sample overflows the JavaScript call stack."
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:typeToSql",
-   "type": "function",
-   "name": "typeToSql",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    200,
-    213
-   ],
-   "summary": "Renders an inferred ColType as its Exasol DDL type expression, emitting DECIMAL precision/scale and VARCHAR size where applicable.",
-   "tags": [
-    "sql-generation",
-    "serialization",
-    "type-inference",
-    "utility"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "type": "function",
-   "name": "cellToLiteral",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    234,
-    249
-   ],
-   "summary": "Renders one CSV cell as an Exasol SQL literal for its inferred column type, emitting NULL for blanks and values that fail their type's validation. VARCHAR values are now emitted in full rather than sliced to the inferred size, so oversized values fail visibly at the server instead of being silently truncated beyond the inference sample.",
-   "tags": [
-    "sql-generation",
-    "serialization",
-    "validation",
-    "data-integrity"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "The removed slice() was a silent-data-corruption bug: type inference samples at most 500k rows, so a long value past the sample was quietly cut with no error anywhere. Preferring a visible server-side rejection over a silent truncation makes the failure recoverable via the caller's per-row retry path."
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "type": "function",
-   "name": "buildPlan",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    264,
-    295
-   ],
-   "summary": "Assembles a complete ImportPlan for a parsed CSV \u2014 resolved header, normalized column names with inferred types, and the CREATE SCHEMA / DROP / CREATE TABLE statements \u2014 without emitting any INSERTs.",
-   "tags": [
-    "sql-generation",
-    "data-pipeline",
-    "orchestration",
-    "type-inference"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:valueToCell",
-   "type": "function",
-   "name": "valueToCell",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    298,
-    313
-   ],
-   "summary": "Converts an arbitrary JavaScript value into its CSV cell string form, handling null, invalid Dates, bigints, and nested objects. Nested bigints are now serialized rather than throwing during JSON.stringify.",
-   "tags": [
-    "serialization",
-    "utility",
-    "data-pipeline",
-    "edge-case-guard"
-   ],
-   "complexity": "simple",
-   "languageNotes": "JSON.stringify throws on bigint by default, so a replacer converts nested bigints to strings \u2014 otherwise a single BigInt field anywhere in an object would abort the whole conversion."
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
-   "type": "function",
-   "name": "objectsToTable",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    320,
-    333
-   ],
-   "summary": "Converts an array of heterogeneous objects into a CsvTable by unioning their keys into a stable header and serializing each value with valueToCell.",
-   "tags": [
-    "serialization",
-    "data-pipeline",
-    "utility",
-    "csv-parsing"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/csv-import.ts:buildInsert",
-   "type": "function",
-   "name": "buildInsert",
-   "filePath": "packages/agent-core/src/csv-import.ts",
-   "lineRange": [
-    342,
-    350
-   ],
-   "summary": "Builds a multi-row INSERT statement for an ImportPlan by rendering every cell through cellToLiteral, and throws on an empty batch instead of emitting syntactically invalid SQL.",
-   "tags": [
-    "sql-generation",
-    "serialization",
-    "validation",
-    "data-pipeline"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "file:packages/agent-core/src/csv-import.test.ts",
-   "type": "file",
-   "name": "csv-import.test.ts",
-   "filePath": "packages/agent-core/src/csv-import.test.ts",
-   "summary": "Unit test suite achieving 100% line coverage of csv-import.ts, exercising delimiter sniffing, quoted-field parsing, header heuristics, identifier collisions, calendar-invalid dates, full-length VARCHAR literal emission, empty-batch rejection, and nested bigint serialization.",
-   "tags": [
-    "test",
-    "unit-test",
-    "regression-coverage",
-    "data-pipeline"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Each test maps to a specific failure mode fixed in the production module \u2014 impossible dates, over-long VARCHAR values, empty INSERT batches, nested bigints \u2014 so a regression in any of them surfaces as a named failing test rather than corrupted imported data."
   },
   {
    "id": "file:packages/agent-core/src/loop.heuristics.test.ts",
@@ -21537,22 +20897,6 @@
    "complexity": "moderate"
   },
   {
-   "id": "document:CLAUDE.md",
-   "type": "document",
-   "name": "CLAUDE.md",
-   "filePath": "CLAUDE.md",
-   "summary": "The authoritative agent and contributor guide for Exasol Studio: mandates the knowledge tools (understand-anything graph, graphify, llm-wiki, obsidian-vault), the Codex-review-before-shipping quality workflow, the three hard KISS rules (file-size ceiling, no unreachable code, keep logic testable), how to run the zero-dependency test suite, and the conventions that bite (icons-not-emoji, theme-safe CSS, single cross-platform frontend, local build, commit rules).",
-   "tags": [
-    "documentation",
-    "entry-point",
-    "development",
-    "conventions",
-    "testing"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "Loaded automatically as instruction context by Claude Code, Cursor, Codex and Gemini CLI, so it doubles as machine-readable policy and human onboarding text; it also tracks live refactor state (the ExasolStudio.tsx extraction progress and current coverage numbers), which means it must be updated alongside the code it describes."
-  },
-  {
    "id": "config:package.json",
    "type": "config",
    "name": "package.json",
@@ -21631,6 +20975,1367 @@
    ],
    "complexity": "simple",
    "languageNotes": "Karpathy wiki-log convention: `## [YYYY-MM-DD] <kind> | <headline>` followed by dense prose, with GOTCHA / HIGH / STILL OPEN markers so unresolved issues stay findable. It is the index into the wiki's topic pages rather than a document to be edited in place."
+  },
+  {
+   "id": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "type": "file",
+   "name": "TitleBar.tsx",
+   "filePath": "apps/desktop/src/components/studio/TitleBar.tsx",
+   "summary": "The studio title bar chrome: Exasol brand mark, live connection indicator with Connect/Disconnect actions, the notifications tray, and the theme controls. Extracted out of the ~5,000-line ExasolStudio.tsx shell so the header is a single self-contained presentational component.",
+   "tags": [
+    "component",
+    "studio-shell",
+    "titlebar",
+    "connection-state",
+    "presentational"
+   ],
+   "complexity": "simple",
+   "languageNotes": "Uses the Tauri `data-tauri-drag-region` attribute plus `var(--wc-left/--wc-right)` window-control insets so the same header works as a native draggable title bar and as a plain web header."
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/TitleBar.tsx:TitleBar",
+   "type": "function",
+   "name": "TitleBar",
+   "filePath": "apps/desktop/src/components/studio/TitleBar.tsx",
+   "lineRange": [
+    16,
+    87
+   ],
+   "summary": "Renders the studio header from an ActiveConnection plus connect/disconnect callbacks, showing the database name and version when connected and swapping the Connect CTA for a Disconnect button. `hideConnect` suppresses the CTA while the connect view is already on screen.",
+   "tags": [
+    "component",
+    "react",
+    "connection-state",
+    "titlebar"
+   ],
+   "complexity": "simple",
+   "languageNotes": "onDisconnect is wrapped in an arrow (`() => onDisconnect()`) on purpose: passing the handler directly would forward React's MouseEvent into `disconnect(profileId?)` and be mistaken for a profile id."
+  },
+  {
+   "id": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "type": "file",
+   "name": "AssistantPanel.tsx",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "summary": "The AI assistant side panel: streams agent events into a chat transcript, renders tool-activity chips, permission prompts and rich message bubbles (code blocks, markdown tables, artifacts, attachments), and drives the composer with slash commands, @mentions and model selection. Now ~1,937 lines after the pure text helpers moved to chat-text.ts.",
+   "tags": [
+    "component",
+    "assistant",
+    "chat-ui",
+    "streaming",
+    "slash-commands"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Very large React feature component: heavy `memo`/`useCallback`/`useMemo` use plus a transparent-textarea-over-highlighted-div composer trick, where highlightInput must only change color/background (never font metrics) to stay pixel-aligned."
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "type": "function",
+   "name": "AssistantPanel",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    228,
+    1540
+   ],
+   "summary": "The panel's root component: owns conversation state, session history, provider/model selection, attachment handling and the agent event stream, and dispatches UI actions (editor insert, connect, open, dashboard save) back into the studio via callbacks.",
+   "tags": [
+    "component",
+    "assistant",
+    "state-management",
+    "event-stream",
+    "entry-point"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:highlightInput",
+   "type": "function",
+   "name": "highlightInput",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    159,
+    226
+   ],
+   "summary": "Builds the syntax-tinted overlay for the composer, coloring a leading slash command, @mentions and fenced code regions so pasted SQL reads distinctly from prose.",
+   "tags": [
+    "ui",
+    "syntax-highlighting",
+    "composer",
+    "assistant"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Only color/background is altered \u2014 never font or size \u2014 because the rendered nodes sit exactly under a transparent textarea."
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:pushProse",
+   "type": "function",
+   "name": "pushProse",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    139,
+    153
+   ],
+   "summary": "Appends a prose fragment to the composer overlay node list, wrapping any @mention in a primary-colored span.",
+   "tags": [
+    "utility",
+    "ui",
+    "composer",
+    "assistant"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:SessionGlyph",
+   "type": "function",
+   "name": "SessionGlyph",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1547,
+    1569
+   ],
+   "summary": "Renders a small deterministic glyph/avatar for a chat session so entries in the session history list are visually distinguishable.",
+   "tags": [
+    "component",
+    "assistant",
+    "session-history",
+    "presentational"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ToolView",
+   "type": "function",
+   "name": "ToolView",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1571,
+    1591
+   ],
+   "summary": "Renders one agent tool invocation as a collapsible Tool card with its label, argument preview, input and output.",
+   "tags": [
+    "component",
+    "assistant",
+    "tool-activity",
+    "presentational"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:PermissionCard",
+   "type": "function",
+   "name": "PermissionCard",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1592,
+    1648
+   ],
+   "summary": "Inline approval card for an agent action that requires user consent, surfacing what will run and returning the user's allow/deny answer to the agent stream.",
+   "tags": [
+    "component",
+    "assistant",
+    "permissions",
+    "security",
+    "event-handler"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:copyText",
+   "type": "function",
+   "name": "copyText",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1682,
+    1700
+   ],
+   "summary": "Copies text to the clipboard, falling back to a hidden-textarea execCommand path when the async Clipboard API is unavailable in the shell.",
+   "tags": [
+    "utility",
+    "clipboard",
+    "assistant",
+    "fallback"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ChatCodeBlock",
+   "type": "function",
+   "name": "ChatCodeBlock",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1702,
+    1749
+   ],
+   "summary": "Renders a fenced code block inside an assistant message with Shiki highlighting plus copy and insert-into-editor affordances.",
+   "tags": [
+    "component",
+    "assistant",
+    "code-block",
+    "syntax-highlighting"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ChatTable",
+   "type": "function",
+   "name": "ChatTable",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1757,
+    1810
+   ],
+   "summary": "Renders a markdown table from an assistant message with export actions, extracting the table data so it can be copied as CSV or markdown.",
+   "tags": [
+    "component",
+    "assistant",
+    "table",
+    "export",
+    "serialization"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:extractCode",
+   "type": "function",
+   "name": "extractCode",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1813,
+    1822
+   ],
+   "summary": "Recursively walks react-markdown children to recover the raw text of a code node, so code blocks can be copied or inserted verbatim.",
+   "tags": [
+    "utility",
+    "markdown",
+    "assistant",
+    "traversal"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:Bubble",
+   "type": "function",
+   "name": "Bubble",
+   "filePath": "apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "lineRange": [
+    1848,
+    1934
+   ],
+   "summary": "Renders a single chat message bubble \u2014 user or assistant \u2014 wiring markdown rendering, attachment chips and per-message actions such as copy, retry and branch.",
+   "tags": [
+    "component",
+    "assistant",
+    "chat-ui",
+    "markdown"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "type": "file",
+   "name": "chat-text.ts",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "summary": "Pure text helpers for the assistant chat: scrubbing leaked tool-call JSON out of assistant prose, reflowing collapsed markdown tables, splitting fenced code, and formatting tool labels and relative timestamps. Extracted from AssistantPanel.tsx so this user-facing logic is reachable and testable without mounting the panel.",
+   "tags": [
+    "utility",
+    "assistant",
+    "text-processing",
+    "sanitization",
+    "pure-functions",
+    "tested"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Deliberately dependency-free and side-effect-free \u2014 `relTime` even takes an injectable `now` \u2014 so every branch is unit-testable from Node's built-in test runner."
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:splitFences",
+   "type": "function",
+   "name": "splitFences",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    47,
+    68
+   ],
+   "summary": "Splits text into alternating prose and fenced-code regions, treating ``` or ''' as the fence marker and keeping an unterminated fence open to end-of-text so streaming/typing input still highlights.",
+   "tags": [
+    "utility",
+    "text-processing",
+    "parsing",
+    "assistant"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:relTime",
+   "type": "function",
+   "name": "relTime",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    70,
+    76
+   ],
+   "summary": "Formats a timestamp as a coarse relative string (\"just now\", \"5m ago\", \"3h ago\", \"2d ago\"). Accepts an optional `now` argument purely so tests can pin the clock.",
+   "tags": [
+    "utility",
+    "formatting",
+    "date",
+    "assistant"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:argPreview",
+   "type": "function",
+   "name": "argPreview",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    79,
+    89
+   ],
+   "summary": "Builds a one-line preview of a tool call's arguments for the activity chip, picking at most two salient keys and collapsing SQL whitespace to 60 characters.",
+   "tags": [
+    "utility",
+    "formatting",
+    "tool-activity",
+    "assistant"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:hasLeakedToolCall",
+   "type": "function",
+   "name": "hasLeakedToolCall",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    91,
+    95
+   ],
+   "summary": "Detects whether assistant prose contains tool-call JSON the model emitted by mistake, matching a `{\"name\":\"\u2026\"}` object against the known tool registry or an accompanying arguments key.",
+   "tags": [
+    "utility",
+    "validation",
+    "sanitization",
+    "assistant"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:stripToolJson",
+   "type": "function",
+   "name": "stripToolJson",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    99,
+    129
+   ],
+   "summary": "Removes every leaked `{\"name\":\u2026}` tool-call object using string-aware, brace-depth scanning; an unterminated object (streaming cut off mid-call) drops everything from its start rather than leaking raw JSON to the user.",
+   "tags": [
+    "utility",
+    "sanitization",
+    "parsing",
+    "assistant",
+    "security"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Hand-rolled scanner tracks quote and escape state so braces inside JSON strings do not confuse the depth counter \u2014 a plain regex could not do this correctly."
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:reflowMarkdownTables",
+   "type": "function",
+   "name": "reflowMarkdownTables",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    138,
+    163
+   ],
+   "summary": "Repairs a GFM table the model collapsed onto one line by detecting an inline `|---|` separator, then re-chunking every cell into header, separator and data rows of the right column count. Already-correct tables pass through untouched.",
+   "tags": [
+    "utility",
+    "markdown",
+    "text-processing",
+    "assistant"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/assistant/chat-text.ts:cleanAssistant",
+   "type": "function",
+   "name": "cleanAssistant",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.ts",
+   "lineRange": [
+    165,
+    176
+   ],
+   "summary": "The single entry point for rendering assistant prose: reflows collapsed tables, and when a leaked tool call is present strips the JSON, unwinds the tangled code fences and collapses excess blank lines so the surviving prose renders as normal chat.",
+   "tags": [
+    "utility",
+    "sanitization",
+    "assistant",
+    "entry-point",
+    "text-processing"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "file:apps/desktop/src/features/assistant/chat-text.test.ts",
+   "type": "file",
+   "name": "chat-text.test.ts",
+   "filePath": "apps/desktop/src/features/assistant/chat-text.test.ts",
+   "summary": "Unit tests for the assistant chat text helpers (32 tests across 9 describe blocks), focused on the scrubbing path: leaked tool-call detection, brace-aware JSON stripping including the unterminated/streaming-cutoff case, collapsed-table reflow, and clock-pinned relative time.",
+   "tags": [
+    "test",
+    "assistant",
+    "text-processing",
+    "edge-cases",
+    "sanitization"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Uses Node's built-in `node:test` + `node:assert/strict` \u2014 no test framework dependency."
+  },
+  {
+   "id": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "type": "file",
+   "name": "ConnectionSwitcher.tsx",
+   "filePath": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "summary": "The studio toolbar's connection switcher plus the small labelled Select wrapper it reuses; extracted from ExasolStudio.tsx so the toolbar's connection picker is a standalone presentational module.",
+   "tags": [
+    "component",
+    "toolbar",
+    "connection",
+    "presentational"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:Selector",
+   "type": "function",
+   "name": "Selector",
+   "filePath": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "lineRange": [
+    16,
+    50
+   ],
+   "summary": "Generic labelled dropdown built on the shadcn Select primitives: renders an optional leading icon, a label and a list of string options, and reports the chosen value through onChange.",
+   "tags": [
+    "component",
+    "form-control",
+    "select",
+    "reusable"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:ConnectionSwitcher",
+   "type": "function",
+   "name": "ConnectionSwitcher",
+   "filePath": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "lineRange": [
+    53,
+    85
+   ],
+   "summary": "Toolbar control listing every active connection and highlighting the current profile, calling onFocus to switch the studio to the selected connection.",
+   "tags": [
+    "component",
+    "connection",
+    "toolbar",
+    "event-handler"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "file",
+   "name": "ExasolStudio.tsx",
+   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "summary": "The application shell for the Studio workbench: it owns the tab/layout/connection state and composes the extracted modules (TitleBar, Sidebar, ConnectionSwitcher, HistoryDock, Monaco editor, assistant and feature tabs) into the running IDE surface.",
+   "tags": [
+    "entry-point",
+    "shell",
+    "component",
+    "state-management",
+    "wiring"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Deliberately kept as a thin-but-large wiring hub after presentational panels, the tab model, Monaco theming and the pure SQL helpers were extracted into sibling modules."
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "type": "function",
+   "name": "ExasolStudio",
+   "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "lineRange": [
+    59,
+    3222
+   ],
+   "summary": "Root workbench component: manages SQL tabs and tab groups, editor state and Monaco registration, query execution and history, panel sizing, and routes every feature tab (dashboards, notebooks, marketplace, artifacts, DBA, git, docs) into the layout.",
+   "tags": [
+    "component",
+    "shell",
+    "state-management",
+    "query-execution",
+    "layout"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "type": "file",
+   "name": "Sidebar.tsx",
+   "filePath": "apps/desktop/src/components/studio/Sidebar.tsx",
+   "summary": "The studio's left sidebar: the activity-switching shell plus its per-connection database-tree sections and visualizer panel, extracted from ExasolStudio.tsx.",
+   "tags": [
+    "component",
+    "navigation",
+    "sidebar",
+    "database-tree"
+   ],
+   "complexity": "complex",
+   "languageNotes": "ConnectionSection and VisualizerPanel are intentionally module-private \u2014 only Sidebar renders them, so they were moved with it rather than exported."
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/Sidebar.tsx:ConnectionSection",
+   "type": "function",
+   "name": "ConnectionSection",
+   "filePath": "apps/desktop/src/components/studio/Sidebar.tsx",
+   "lineRange": [
+    64,
+    213
+   ],
+   "summary": "Renders one connection's collapsible object-tree section, handling expand/collapse, lazy child loading, connect/disconnect affordances and the per-connection context actions.",
+   "tags": [
+    "component",
+    "database-tree",
+    "connection",
+    "lazy-loading"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/Sidebar.tsx:VisualizerPanel",
+   "type": "function",
+   "name": "VisualizerPanel",
+   "filePath": "apps/desktop/src/components/studio/Sidebar.tsx",
+   "lineRange": [
+    217,
+    304
+   ],
+   "summary": "Sidebar panel that hosts the schema visualizer, letting the user pick the schema/objects to graph and hand them to the Visualizer view.",
+   "tags": [
+    "component",
+    "visualization",
+    "sidebar-panel"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "type": "function",
+   "name": "Sidebar",
+   "filePath": "apps/desktop/src/components/studio/Sidebar.tsx",
+   "lineRange": [
+    306,
+    702
+   ],
+   "summary": "Sidebar shell that switches between activities (databases, files, favorites, git, marketplace, visualizer, object search) and renders the matching panel alongside the activity rail.",
+   "tags": [
+    "component",
+    "navigation",
+    "sidebar",
+    "activity-switching"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "type": "file",
+   "name": "monaco-theme.ts",
+   "filePath": "apps/desktop/src/components/studio/monaco-theme.ts",
+   "summary": "Registers the Monaco editor colour themes that match the Studio light and dark palettes, extracted from ExasolStudio.tsx.",
+   "tags": [
+    "utility",
+    "theming",
+    "editor",
+    "monaco"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/components/studio/monaco-theme.ts:defineMonacoThemes",
+   "type": "function",
+   "name": "defineMonacoThemes",
+   "filePath": "apps/desktop/src/components/studio/monaco-theme.ts",
+   "lineRange": [
+    7,
+    46
+   ],
+   "summary": "Defines the 'exasol-dark' and light Monaco themes with SQL token colours and editor background/foreground rules aligned to the app's design tokens.",
+   "tags": [
+    "utility",
+    "theming",
+    "monaco",
+    "initialization"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "type": "file",
+   "name": "Dashboards.tsx",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "summary": "The BI dashboards feature: the dashboard list/tab, the dashboard canvas with draggable resizable panels, per-panel visualizations (KPI, table, chart, markdown, explore) and the panel editor, plus the DOM/echarts-bound HTML and PNG export path.",
+   "tags": [
+    "component",
+    "dashboard",
+    "visualization",
+    "feature",
+    "export"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Pure formatting and markdown-report helpers were extracted to report-export.ts; chartPng, buildHtmlReport and printHtml stay here because they need echarts instances and a live DOM."
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:queryPerfDashboard",
+   "type": "function",
+   "name": "queryPerfDashboard",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    74,
+    96
+   ],
+   "summary": "Builds the built-in query-performance starter dashboard definition with its preset panels and SQL.",
+   "tags": [
+    "factory",
+    "dashboard",
+    "preset"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:sessionsDashboard",
+   "type": "function",
+   "name": "sessionsDashboard",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    99,
+    113
+   ],
+   "summary": "Builds the built-in sessions starter dashboard definition with its preset panels and SQL.",
+   "tags": [
+    "factory",
+    "dashboard",
+    "preset"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:dbSizeDashboard",
+   "type": "function",
+   "name": "dbSizeDashboard",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    116,
+    132
+   ],
+   "summary": "Builds the built-in database-size starter dashboard definition with its preset panels and SQL.",
+   "tags": [
+    "factory",
+    "dashboard",
+    "preset"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardsTab",
+   "type": "function",
+   "name": "DashboardsTab",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    136,
+    360
+   ],
+   "summary": "Dashboard list surface: loads saved dashboards for the connection, offers the built-in starter dashboards, supports create/rename/duplicate/delete, and opens one into the dashboard view.",
+   "tags": [
+    "component",
+    "dashboard",
+    "crud",
+    "list-view"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
+   "type": "function",
+   "name": "DashboardView",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    385,
+    726
+   ],
+   "summary": "Renders a single dashboard: panel grid layout with drag/resize persistence, refresh nonce handling, agent-assisted edits, and the markdown/HTML/PNG export actions.",
+   "tags": [
+    "component",
+    "dashboard",
+    "layout",
+    "export",
+    "state-management"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:Panel",
+   "type": "function",
+   "name": "Panel",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    757,
+    989
+   ],
+   "summary": "One dashboard panel: runs its query against the active connection, tracks loading/error state, dispatches to the matching visualization renderer, and exposes edit/resize/delete/viz-switch controls.",
+   "tags": [
+    "component",
+    "dashboard-panel",
+    "query-execution",
+    "error-handling"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:KpiPanel",
+   "type": "function",
+   "name": "KpiPanel",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    999,
+    1022
+   ],
+   "summary": "Renders a single headline KPI value with its unit and optional caption from the panel's first result row.",
+   "tags": [
+    "component",
+    "kpi",
+    "visualization"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:PerspectiveTable",
+   "type": "function",
+   "name": "PerspectiveTable",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1029,
+    1066
+   ],
+   "summary": "Pivot-style table visualization that groups and aggregates the result set along the configured dimensions.",
+   "tags": [
+    "component",
+    "table",
+    "visualization",
+    "aggregation"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:ExplorePanel",
+   "type": "function",
+   "name": "ExplorePanel",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1074,
+    1121
+   ],
+   "summary": "Exploratory panel that previews the result set and lets the user switch visualization type inline without opening the full editor.",
+   "tags": [
+    "component",
+    "visualization",
+    "exploration"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:TablePanel",
+   "type": "function",
+   "name": "TablePanel",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1123,
+    1150
+   ],
+   "summary": "Plain tabular visualization of a panel's statement result with column headers and row cells.",
+   "tags": [
+    "component",
+    "table",
+    "visualization"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildChartOption",
+   "type": "function",
+   "name": "buildChartOption",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1157,
+    1301
+   ],
+   "summary": "Translates a panel's chart visualization config plus its statement result into a full echarts option object, resolving series, axes, colours and theme-dependent styling.",
+   "tags": [
+    "chart",
+    "visualization",
+    "transformation",
+    "echarts"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:ChartPanel",
+   "type": "function",
+   "name": "ChartPanel",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1303,
+    1357
+   ],
+   "summary": "Mounts an echarts instance for a chart panel, feeding it the built option and handling resize and theme changes.",
+   "tags": [
+    "component",
+    "chart",
+    "visualization",
+    "echarts"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:PanelEditor",
+   "type": "function",
+   "name": "PanelEditor",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1361,
+    1905
+   ],
+   "summary": "Full panel editing dialog: SQL query entry with preview, visualization type and field selection, KPI/chart/table options, and agent-assisted panel generation before saving.",
+   "tags": [
+    "component",
+    "editor",
+    "dashboard-panel",
+    "form",
+    "agent-integration"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:chartPng",
+   "type": "function",
+   "name": "chartPng",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1922,
+    1940
+   ],
+   "summary": "Renders a chart visualization off-screen through echarts and returns it as a PNG data URL for embedding in exported reports.",
+   "tags": [
+    "export",
+    "chart",
+    "echarts",
+    "dom-dependent"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildHtmlReport",
+   "type": "function",
+   "name": "buildHtmlReport",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1942,
+    1987
+   ],
+   "summary": "Assembles a standalone HTML report document for a dashboard, escaping panel values and converting markdown panels via mdToHtml, with embedded chart images.",
+   "tags": [
+    "export",
+    "html",
+    "report",
+    "serialization"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/Dashboards.tsx:printHtml",
+   "type": "function",
+   "name": "printHtml",
+   "filePath": "apps/desktop/src/features/bi/Dashboards.tsx",
+   "lineRange": [
+    1990,
+    2004
+   ],
+   "summary": "Opens the generated HTML report in a print-ready window/iframe so the user can print or save it as PDF.",
+   "tags": [
+    "export",
+    "print",
+    "dom-dependent"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "file:apps/desktop/src/features/bi/report-export.test.ts",
+   "type": "file",
+   "name": "report-export.test.ts",
+   "filePath": "apps/desktop/src/features/bi/report-export.test.ts",
+   "summary": "Edge-case test suite (35 node:test cases) for the dashboard report/export helpers, deliberately concentrating on mdToHtml and mdTable escaping of user- and database-derived text and on fmtNumber's NULL handling.",
+   "tags": [
+    "test",
+    "edge-cases",
+    "security",
+    "report-export"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Uses the built-in node:test runner with node:assert/strict and no external test framework."
+  },
+  {
+   "id": "file:apps/desktop/src/features/bi/report-export.ts",
+   "type": "file",
+   "name": "report-export.ts",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "summary": "Pure formatting and report-building helpers for dashboards: slug generation, number/KPI formatting, markdown tables, a minimal markdown-to-HTML converter and the markdown report export.",
+   "tags": [
+    "utility",
+    "formatting",
+    "serialization",
+    "report-export",
+    "pure-functions",
+    "tested"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Extracted from Dashboards.tsx so this logic is reachable without mounting the dashboard; mdToHtml performs the HTML escaping for exported documents, making it security-relevant."
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:slugify",
+   "type": "function",
+   "name": "slugify",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    17,
+    19
+   ],
+   "summary": "Lowercases a title and collapses non-alphanumeric runs into hyphens to produce a safe export filename, falling back to 'dashboard' when nothing remains.",
+   "tags": [
+    "utility",
+    "formatting",
+    "filename"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:fmtNumber",
+   "type": "function",
+   "name": "fmtNumber",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    21,
+    33
+   ],
+   "summary": "Formats an unknown cell value as a compact human-readable number with B/M/K suffixes, returning an em dash for null, undefined or empty so a NULL cell can never masquerade as a real zero.",
+   "tags": [
+    "utility",
+    "formatting",
+    "null-safety",
+    "number"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "type": "function",
+   "name": "kpiText",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    35,
+    41
+   ],
+   "summary": "Resolves a KPI panel's configured value field against the statement result columns and returns the formatted value with its unit appended.",
+   "tags": [
+    "utility",
+    "kpi",
+    "formatting"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:mdTable",
+   "type": "function",
+   "name": "mdTable",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    45,
+    56
+   ],
+   "summary": "Renders a statement result as a GitHub-style markdown table, escaping pipes and newlines in cells and capping output at MD_ROW_CAP rows with a truncation note.",
+   "tags": [
+    "utility",
+    "markdown",
+    "serialization",
+    "escaping"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:mdToHtml",
+   "type": "function",
+   "name": "mdToHtml",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    58,
+    87
+   ],
+   "summary": "Minimal markdown-to-HTML converter supporting headings, unordered lists, bold/italic/code inline spans; escapes &, < and > first so database-derived text cannot inject live markup into exported reports.",
+   "tags": [
+    "utility",
+    "markdown",
+    "html",
+    "escaping",
+    "security"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "type": "function",
+   "name": "buildMarkdownReport",
+   "filePath": "apps/desktop/src/features/bi/report-export.ts",
+   "lineRange": [
+    89,
+    109
+   ],
+   "summary": "Builds the complete markdown export for a dashboard: title, description, export timestamp, then each panel's content as raw markdown, a bold KPI line or a markdown table plus its SQL fence.",
+   "tags": [
+    "utility",
+    "report",
+    "markdown",
+    "serialization"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "file:packages/agent-core/src/csv-import.ts",
+   "type": "file",
+   "name": "csv-import.ts",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "summary": "Turns an uploaded delimited/Parquet/JSON file into a real Exasol table: a dependency-free RFC-4180-ish parser, header sniffing, identifier folding, conservative type inference, and DDL plus literal-batched INSERT generation. This is the structured-load path, distinct from the agent's document tools used for RAG.",
+   "tags": [
+    "data-pipeline",
+    "csv",
+    "type-inference",
+    "sql-generation",
+    "agent-core",
+    "tested"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Deliberately zero-dependency and pure: every function is a string-in/string-out transform, which is what makes the whole inference and literal-rendering surface unit-testable."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:detectDelimiter",
+   "type": "function",
+   "name": "detectDelimiter",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    18,
+    36
+   ],
+   "summary": "Sniffs the field delimiter by counting comma, semicolon, tab and pipe occurrences outside quotes on the first line and picking the most frequent, defaulting to comma.",
+   "tags": [
+    "utility",
+    "csv",
+    "parsing",
+    "heuristic"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:parseCsv",
+   "type": "function",
+   "name": "parseCsv",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    39,
+    87
+   ],
+   "summary": "Parses delimited text into a CsvTable, stripping the BOM, honoring double-quote escaping and quoted newlines, normalizing CRLF, and skipping fully-empty lines. The first record becomes the tentative header.",
+   "tags": [
+    "parsing",
+    "csv",
+    "utility",
+    "serialization"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
+   "type": "function",
+   "name": "resolveHeader",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    95,
+    109
+   ],
+   "summary": "Decides whether row one is a real header or already data, requiring mostly non-empty, mostly non-numeric, fully distinct cells; otherwise synthesizes COL_1..N and keeps the first row as data.",
+   "tags": [
+    "heuristic",
+    "csv",
+    "validation",
+    "data-model"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
+   "type": "function",
+   "name": "normalizeColumns",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    112,
+    126
+   ],
+   "summary": "Folds header cells into safe UPPERCASE Exasol identifiers \u2014 non-alphanumerics to underscores, leading digits prefixed with COL_ \u2014 and de-duplicates collisions with a numeric suffix.",
+   "tags": [
+    "utility",
+    "identifier-folding",
+    "exasol",
+    "validation"
+   ],
+   "complexity": "simple",
+   "languageNotes": "Exasol folds unquoted identifiers to upper case, so normalizing here means the generated DDL and INSERTs always agree on column names."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
+   "type": "function",
+   "name": "isCalendarDate",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    140,
+    145
+   ],
+   "summary": "Validates a YYYY-MM-DD string for real calendar validity by round-tripping through Date.UTC, rejecting shape-valid but impossible values like 2024-02-30 or a non-leap-year Feb 29.",
+   "tags": [
+    "validation",
+    "date",
+    "utility",
+    "edge-cases"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
+   "type": "function",
+   "name": "isCalendarTimestamp",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    147,
+    153
+   ],
+   "summary": "Validates a timestamp string by checking the date part for calendar validity and bounding hours, minutes and seconds, so an invalid timestamp column never gets inferred as TIMESTAMP.",
+   "tags": [
+    "validation",
+    "timestamp",
+    "utility",
+    "edge-cases"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:varcharFor",
+   "type": "function",
+   "name": "varcharFor",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    166,
+    172
+   ],
+   "summary": "Sizes a VARCHAR to hold the widest sampled value with 50% headroom, rounded to 10 and capped at Exasol's 2,000,000-character maximum. Used both as the generic fallback type and as the escape hatch for numerics that exceed the DECIMAL precision ceiling.",
+   "tags": [
+    "utility",
+    "type-inference",
+    "exasol",
+    "fallback"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:inferType",
+   "type": "function",
+   "name": "inferType",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    175,
+    217
+   ],
+   "summary": "Infers a conservative Exasol column type from sampled values, testing boolean, calendar-validated timestamp/date, integer and decimal in order before falling back to VARCHAR. DECIMAL scale is no longer clamped, so 21-35 decimal places are represented exactly; anything past the 36-digit precision ceiling becomes VARCHAR so the exact text survives.",
+   "tags": [
+    "type-inference",
+    "exasol",
+    "data-model",
+    "edge-cases",
+    "precision"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Widths are computed with an explicit loop, never `Math.max(...values)` \u2014 spreading 600k arguments overflows the call stack."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:typeToSql",
+   "type": "function",
+   "name": "typeToSql",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    219,
+    232
+   ],
+   "summary": "Renders an inferred ColType as its Exasol SQL type declaration (DECIMAL(p,s), DATE, TIMESTAMP, BOOLEAN, VARCHAR(n)).",
+   "tags": [
+    "utility",
+    "sql-generation",
+    "serialization",
+    "exasol"
+   ],
+   "complexity": "simple",
+   "languageNotes": "Exhaustive switch over a discriminated union \u2014 TypeScript flags any newly added ColType variant at compile time."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
+   "type": "function",
+   "name": "cellToLiteral",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    253,
+    268
+   ],
+   "summary": "Renders one CSV cell as an Exasol SQL literal for its inferred column type, emitting NULL for blanks and for values that no longer match the type. VARCHAR values are emitted in full \u2014 never truncated to the inferred size \u2014 so an oversized value fails loudly at Exasol instead of being silently corrupted.",
+   "tags": [
+    "sql-generation",
+    "serialization",
+    "validation",
+    "exasol"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:buildPlan",
+   "type": "function",
+   "name": "buildPlan",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    283,
+    314
+   ],
+   "summary": "Builds the full ImportPlan for a parsed table: resolves the header (or trusts it for Parquet/JSON), folds column names, infers each column's type from up to 500k rows, and emits the CREATE SCHEMA, optional DROP TABLE and CREATE TABLE statements.",
+   "tags": [
+    "sql-generation",
+    "data-pipeline",
+    "type-inference",
+    "factory"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Inference samples ALL rows by default rather than the head: sampling only the first rows under-sized types on sorted data (a custkey column inferred DECIMAL(3,0) and every key >= 1000 was rejected)."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:valueToCell",
+   "type": "function",
+   "name": "valueToCell",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    317,
+    332
+   ],
+   "summary": "Converts one Parquet/JSON value into the string form the CSV pipeline expects, handling null, invalid Dates, bigint, boolean and nested objects.",
+   "tags": [
+    "utility",
+    "serialization",
+    "data-pipeline",
+    "type-coercion"
+   ],
+   "complexity": "simple",
+   "languageNotes": "JSON.stringify is given a replacer that stringifies bigint, because a nested BigInt (common in Parquet) otherwise throws and aborted the entire import."
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
+   "type": "function",
+   "name": "objectsToTable",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    339,
+    352
+   ],
+   "summary": "Converts row objects from Parquet or JSON into the same string-matrix CsvTable shape the CSV path uses, with columns as the union of all keys in first-appearance order, so inference, DDL and inserts stay one shared code path.",
+   "tags": [
+    "data-pipeline",
+    "adapter",
+    "serialization",
+    "data-model"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/csv-import.ts:buildInsert",
+   "type": "function",
+   "name": "buildInsert",
+   "filePath": "packages/agent-core/src/csv-import.ts",
+   "lineRange": [
+    361,
+    369
+   ],
+   "summary": "Builds one multi-row INSERT statement for a batch of rows using the plan's column list and per-type literal rendering. Throws on an empty batch rather than emitting invalid `INSERT \u2026 VALUES` with no tuples.",
+   "tags": [
+    "sql-generation",
+    "batching",
+    "validation",
+    "exasol"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "file:packages/agent-core/src/csv-import.test.ts",
+   "type": "file",
+   "name": "csv-import.test.ts",
+   "filePath": "packages/agent-core/src/csv-import.test.ts",
+   "summary": "Unit tests for the CSV-to-Exasol import pipeline across 9 describe blocks, covering quoted/CRLF parsing, header sniffing, identifier folding, calendar-validity type inference, the DECIMAL precision ceiling with its VARCHAR fallback, literal rendering, plan/DDL construction and the empty-batch INSERT guard.",
+   "tags": [
+    "test",
+    "csv",
+    "type-inference",
+    "edge-cases",
+    "agent-core"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Uses Node's built-in `node:test` + `node:assert/strict` \u2014 no test framework dependency."
+  },
+  {
+   "id": "document:CLAUDE.md",
+   "type": "document",
+   "name": "CLAUDE.md",
+   "filePath": "CLAUDE.md",
+   "summary": "Authoritative agent and contributor guide for Exasol Studio: mandates using the committed knowledge tools (understand-anything graph, graphify, llm-wiki, obsidian-vault) as the default way to understand and record project knowledge, codifies the Codex-review-before-shipping quality workflow and the three non-negotiable KISS hard rules (file size, reachability, testability), documents how the framework-free test suite runs, and lists the repo conventions that break things when ignored (icons over emoji, theme-safe CSS, single cross-platform frontend with platform differences confined to the ipc.ts transport tiers, local build invocation, commit/release rules).",
+   "tags": [
+    "documentation",
+    "entry-point",
+    "development",
+    "code-quality",
+    "conventions"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Loaded automatically by AI coding assistants (Claude Code, Cursor, Codex, Gemini CLI), so it doubles as machine-readable policy and human onboarding text; its instructions are mirrored in AGENTS.md for cross-tool parity. This revision records the second round of the oversized-file split with current line counts (ExasolStudio.tsx 3,223 down from 5,089; Dashboards.tsx 2,004; AssistantPanel.tsx 1,937) and the central lesson that extracting the PURE logic first is the cheapest, lowest-risk cut and the one that keeps exposing silent defects."
+  },
+  {
+   "id": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "type": "document",
+   "name": "kiss-hard-rules.md",
+   "filePath": "knowledge/wiki/pages/kiss-hard-rules.md",
+   "summary": "llm-wiki process page recording the three mandatory KISS hard rules \u2014 never let a file reach 5,000 lines (split at ~500), never ship unreachable code, and keep logic small enough to unit-test \u2014 with the before/after line-count table for the oversized-file split, the list of modules extracted out of ExasolStudio.tsx, AssistantPanel.tsx and Dashboards.tsx, how the framework-free test suite runs, and a numbered catalogue of the eight silent defects that extraction has uncovered so far.",
+   "tags": [
+    "documentation",
+    "process",
+    "code-quality",
+    "refactoring",
+    "testing"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Karpathy-pattern wiki page with YAML frontmatter (title/category/status) and Obsidian-style [[wikilinks]] to sibling pages. Its durable lessons: extract the PURE logic first (cheapest cut, least regression risk, and every module that became testable immediately yielded a real silent defect); a de-dup pattern is itself a filter that can hide its own misses, so count handler conditions rather than comment markers; noUnusedLocals is OFF so tsc will not flag imports the extraction orphaned; and the desktop test script needs the glob form node --test \"src/**/*.test.ts\" because a bare directory argument is treated as a module and fails."
   }
  ],
  "edges": [
@@ -27627,41 +28332,6 @@
    "weight": 0.8
   },
   {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:highlightInput",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:PermissionCard",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:Bubble",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
    "source": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
    "target": "function:apps/desktop/src/features/assistant/ModelPicker.tsx:ModelPicker",
    "type": "contains",
@@ -27685,48 +28355,6 @@
   {
    "source": "file:apps/desktop/src/features/assistant/provider-marks.tsx",
    "target": "function:apps/desktop/src/features/assistant/provider-marks.tsx:ProviderMark",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardsTab",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:Panel",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:PanelEditor",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildChartOption",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardsTab",
    "type": "exports",
    "direction": "forward",
    "weight": 0.8
@@ -32065,48 +32693,6 @@
    "weight": 0.5
   },
   {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "document:knowledge/wiki/pages/exasol-sql-gotchas.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
    "source": "config:packages/agent-core/package.json",
    "target": "file:packages/agent-core/src/index.ts",
    "type": "configures",
@@ -34575,126 +35161,6 @@
    "recoveredFromImportMap": true
   },
   {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/code-block.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/conversation.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/message.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/prompt-input.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/suggestion.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ai-elements/tool.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/studio/AgentMark.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ui/button.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/components/ui/input-group.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/lib/agent-client.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/lib/ai-window.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/lib/session-bus.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "target": "file:apps/desktop/src/lib/utils.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
    "source": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
    "target": "file:apps/desktop/src/features/assistant/provider-marks.tsx",
    "type": "imports",
@@ -34712,86 +35178,6 @@
   },
   {
    "source": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
-   "target": "file:apps/desktop/src/lib/utils.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/components/studio/AgentMark.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/components/ui/command.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/components/ui/dropdown-menu.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/components/ui/icon.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/components/ui/select.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/lib/agent-client.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/lib/dashboard-bus.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
    "target": "file:apps/desktop/src/lib/utils.ts",
    "type": "imports",
    "direction": "forward",
@@ -36743,398 +37129,6 @@
    "recoveredFromImportMap": true
   },
   {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/brand/ExasolMark.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/brand/ThemeToggle.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/AgentCursor.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/FloatingPet.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/ThemeCustomizer.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/studio/tabs.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/theme/theme-provider.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/ui/dropdown-menu.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/ui/icon.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/ui/input.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/ui/resizable.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/components/ui/select.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/artifact/ArtifactTab.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/assistant/AiProvidersWindow.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/connection/BucketFsPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/connection/ConnectionPropertiesTab.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/connection/NewVirtualSchema.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/marketplace/Docs.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/marketplace/Marketplace.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/marketplace/McpConfigTab.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/marketplace/McpMarketplace.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/ActivityRail.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/DatabaseTree.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/DbaDashboard.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/FavoritesPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/FileExplorer.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/FilePreviewPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/GitPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/InlineSqlDiff.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/LoadDataDialog.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/NotebookTab.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/Notifications.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/ObjectContextMenu.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/ObjectSearch.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/QueryProfileView.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/SkillsTab.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/Visualizer.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/WelcomeScreen.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/features/workbench/tree-model.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/agent-client.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/dashboard-bus.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/favorites.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/settings-window.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/sql-completion.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/sql-text.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/ui-graph.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/ui-trace.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/utils.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/lib/vs-window.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "file:apps/desktop/src/state/useConnections.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
    "source": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
    "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
    "type": "imports",
@@ -37226,62 +37220,6 @@
    "weight": 0.7
   },
   {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:defineMonacoThemes",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:TitleBar",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ConnectionSection",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:VisualizerPanel",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Sidebar",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Selector",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ConnectionSwitcher",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
    "source": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
    "target": "function:apps/desktop/src/components/studio/HistoryDock.tsx:RunStatusStrip",
    "type": "contains",
@@ -37324,13 +37262,6 @@
    "weight": 1.0
   },
   {
-   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
    "source": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
    "target": "function:apps/desktop/src/components/studio/HistoryDock.tsx:RunStatusStrip",
    "type": "exports",
@@ -37355,69 +37286,6 @@
    "source": "file:apps/desktop/src/components/studio/tabs.ts",
    "target": "function:apps/desktop/src/components/studio/tabs.ts:newTab",
    "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/HistoryDock.tsx:HistoryDock",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/HistoryDock.tsx:ResultsGrid",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/HistoryDock.tsx:RunStatusStrip",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/tabs.ts:newTab",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:defineMonacoThemes",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Sidebar",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:TitleBar",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Sidebar",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ConnectionSection",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:Sidebar",
-   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:VisualizerPanel",
-   "type": "calls",
    "direction": "forward",
    "weight": 0.8
   },
@@ -37452,34 +37320,6 @@
   {
    "source": "function:apps/desktop/src/components/studio/HistoryDock.tsx:RunStatusStrip",
    "target": "function:apps/desktop/src/lib/sql-text.ts:fmtClock",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/lib/sql-text.ts:splitStatements",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/lib/sql-text.ts:statementAtOffset",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/lib/sql-text.ts:tabTitleFromSql",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
-   "target": "function:apps/desktop/src/lib/sql-text.ts:parseSingleTable",
    "type": "calls",
    "direction": "forward",
    "weight": 0.8
@@ -37621,258 +37461,6 @@
    "source": "file:apps/desktop/src/components/studio/IconButton.tsx",
    "target": "function:apps/desktop/src/components/studio/IconButton.tsx:IconButton",
    "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.test.ts",
-   "target": "file:packages/agent-core/src/csv-import.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "file:packages/agent-core/src/csv-import.test.ts",
-   "type": "tested_by",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:detectDelimiter",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:parseCsv",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:typeToSql",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:valueToCell",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:buildInsert",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:parseCsv",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:typeToSql",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "function:packages/agent-core/src/csv-import.ts:buildInsert",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:parseCsv",
-   "target": "function:packages/agent-core/src/csv-import.ts:detectDelimiter",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "target": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "target": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "target": "function:packages/agent-core/src/csv-import.ts:inferType",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:buildPlan",
-   "target": "function:packages/agent-core/src/csv-import.ts:typeToSql",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
-   "target": "function:packages/agent-core/src/csv-import.ts:valueToCell",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/csv-import.ts:buildInsert",
-   "target": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
-   "type": "calls",
    "direction": "forward",
    "weight": 0.8
   },
@@ -38409,153 +37997,6 @@
    "weight": 0.5
   },
   {
-   "source": "document:CLAUDE.md",
-   "target": "document:docs/knowledge-tools.md",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:docs/web-deploy.md",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/lib/sql-text.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/tabs.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/server.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/csv-import.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tui.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/ui/boxicons.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:scripts/build-local.sh",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:scripts/setup-knowledge-tools.sh",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "config:package.json",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
    "source": "config:package.json",
    "target": "config:apps/desktop/package.json",
    "type": "configures",
@@ -38655,13 +38096,6 @@
   },
   {
    "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "target": "file:packages/agent-core/src/csv-import.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
    "target": "file:packages/agent-core/src/tools.ts",
    "type": "documents",
    "direction": "forward",
@@ -38683,21 +38117,7 @@
   },
   {
    "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "target": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
    "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "target": "document:CLAUDE.md",
    "type": "related",
    "direction": "forward",
    "weight": 0.5
@@ -38705,13 +38125,6 @@
   {
    "source": "document:knowledge/wiki/log.md",
    "target": "document:docs/qa/manual-validation-big-data.md",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:packages/agent-core/src/csv-import.ts",
    "type": "documents",
    "direction": "forward",
    "weight": 0.5
@@ -38740,13 +38153,6 @@
   {
    "source": "document:knowledge/wiki/log.md",
    "target": "file:apps/desktop/src-tauri/src/query.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
    "type": "documents",
    "direction": "forward",
    "weight": 0.5
@@ -38788,13 +38194,6 @@
   },
   {
    "source": "document:knowledge/wiki/log.md",
-   "target": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
    "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
    "type": "related",
    "direction": "forward",
@@ -38808,13 +38207,6 @@
    "weight": 0.5
   },
   {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "document:CLAUDE.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
    "source": "document:docs/qa/manual-validation-big-data.md",
    "target": "document:knowledge/wiki/log.md",
    "type": "related",
@@ -38822,24 +38214,8 @@
    "weight": 0.5
   },
   {
-   "source": "file:apps/desktop/src/app/App.tsx",
-   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
    "source": "file:packages/agent-core/evals/live.ts",
    "target": "file:packages/agent-core/src/loop.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/evals/run.ts",
-   "target": "file:packages/agent-core/src/csv-import.ts",
    "type": "imports",
    "direction": "forward",
    "weight": 0.7,
@@ -38888,6 +38264,1975 @@
   {
    "source": "file:packages/agent-core/src/llm.ts",
    "target": "file:packages/agent-core/src/tool-repair.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7,
+   "recoveredFromImportMap": true
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "function:apps/desktop/src/components/studio/TitleBar.tsx:TitleBar",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "function:apps/desktop/src/components/studio/TitleBar.tsx:TitleBar",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/components/brand/ExasolMark.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/components/brand/ThemeToggle.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/components/studio/ThemeCustomizer.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/Notifications.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/lib/utils.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/state/useConnections.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/code-block.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/conversation.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/message.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/prompt-input.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/suggestion.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ai-elements/tool.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/studio/AgentMark.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ui/button.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/ui/input-group.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/features/assistant/ModelPicker.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/lib/agent-client.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/lib/ai-window.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/lib/session-bus.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/lib/utils.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.test.ts",
+   "target": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:highlightInput",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:pushProse",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:SessionGlyph",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ToolView",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:PermissionCard",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:copyText",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ChatCodeBlock",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ChatTable",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:extractCode",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:Bubble",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:splitFences",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:relTime",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:argPreview",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:hasLeakedToolCall",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:stripToolJson",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:reflowMarkdownTables",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:cleanAssistant",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:splitFences",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:relTime",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:argPreview",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:hasLeakedToolCall",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:stripToolJson",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:reflowMarkdownTables",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:cleanAssistant",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "target": "file:apps/desktop/src/features/assistant/chat-text.test.ts",
+   "type": "tested_by",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:Bubble",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:cleanAssistant",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:highlightInput",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:splitFences",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:ToolView",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:argPreview",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:relTime",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:hasLeakedToolCall",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/assistant/AssistantPanel.tsx:AssistantPanel",
+   "target": "function:apps/desktop/src/features/assistant/chat-text.ts:stripToolJson",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "file:apps/desktop/src/components/ui/select.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "file:apps/desktop/src/state/useConnections.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/AgentCursor.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/FloatingPet.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/studio/tabs.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/theme/theme-provider.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/ui/dropdown-menu.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/ui/icon.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/ui/input.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/ui/resizable.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/components/ui/select.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/artifact/ArtifactTab.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/assistant/AiProvidersWindow.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/connection/BucketFsPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/connection/ConnectionPropertiesTab.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/connection/NewVirtualSchema.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/marketplace/Docs.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/marketplace/Marketplace.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/marketplace/McpConfigTab.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/ActivityRail.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/DbaDashboard.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/FilePreviewPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/GitPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/InlineSqlDiff.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/LoadDataDialog.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/NotebookTab.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/ObjectContextMenu.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/QueryProfileView.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/SkillsTab.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/Visualizer.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/WelcomeScreen.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/features/workbench/tree-model.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/agent-client.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/dashboard-bus.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/favorites.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/settings-window.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/sql-completion.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/sql-text.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/ui-graph.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/ui-trace.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/utils.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/lib/vs-window.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "file:apps/desktop/src/state/useConnections.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/components/ui/dropdown-menu.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/components/ui/icon.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/marketplace/Marketplace.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/marketplace/McpMarketplace.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/ActivityRail.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/DatabaseTree.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/FavoritesPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/FileExplorer.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/GitPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/ObjectSearch.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/Visualizer.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/features/workbench/tree-model.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/lib/favorites.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/lib/utils.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "file:apps/desktop/src/state/useConnections.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:Selector",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:Selector",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:ConnectionSwitcher",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:ConnectionSwitcher",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "target": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:ConnectionSection",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:VisualizerPanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "target": "function:apps/desktop/src/components/studio/monaco-theme.ts:defineMonacoThemes",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "target": "function:apps/desktop/src/components/studio/monaco-theme.ts:defineMonacoThemes",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "target": "function:apps/desktop/src/components/studio/monaco-theme.ts:defineMonacoThemes",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:ConnectionSwitcher",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/ExasolStudio.tsx:ExasolStudio",
+   "target": "function:apps/desktop/src/components/studio/ConnectionSwitcher.tsx:Selector",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:ConnectionSection",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/components/studio/Sidebar.tsx:Sidebar",
+   "target": "function:apps/desktop/src/components/studio/Sidebar.tsx:VisualizerPanel",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/components/studio/AgentMark.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/components/ui/command.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/components/ui/dropdown-menu.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/components/ui/icon.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/components/ui/select.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/features/bi/ShadcnChartPanel.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/features/bi/report-export.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/lib/agent-client.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/lib/dashboard-bus.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "file:apps/desktop/src/lib/utils.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.test.ts",
+   "target": "file:apps/desktop/src/features/bi/report-export.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "file:apps/desktop/src/lib/agent-client.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:queryPerfDashboard",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:sessionsDashboard",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:dbSizeDashboard",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardsTab",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:Panel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:KpiPanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:PerspectiveTable",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:ExplorePanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:TablePanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildChartOption",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:ChartPanel",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:PanelEditor",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:chartPng",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildHtmlReport",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "target": "function:apps/desktop/src/features/bi/Dashboards.tsx:printHtml",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:slugify",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:slugify",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:fmtNumber",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:fmtNumber",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdTable",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdTable",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdToHtml",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdToHtml",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/Dashboards.tsx:DashboardView",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:slugify",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildHtmlReport",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdToHtml",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/Dashboards.tsx:buildHtmlReport",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:fmtNumber",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:kpiText",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:apps/desktop/src/features/bi/report-export.ts:buildMarkdownReport",
+   "target": "function:apps/desktop/src/features/bi/report-export.ts:mdTable",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:apps/desktop/src/features/bi/report-export.ts",
+   "target": "file:apps/desktop/src/features/bi/report-export.test.ts",
+   "type": "tested_by",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.test.ts",
+   "target": "file:packages/agent-core/src/csv-import.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "file:packages/agent-core/src/csv-import.test.ts",
+   "type": "tested_by",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:detectDelimiter",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:parseCsv",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarDate",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:isCalendarTimestamp",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:varcharFor",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:inferType",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:typeToSql",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:buildPlan",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:valueToCell",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:buildInsert",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:parseCsv",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:resolveHeader",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:normalizeColumns",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:inferType",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:typeToSql",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:cellToLiteral",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:buildPlan",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:objectsToTable",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "function:packages/agent-core/src/csv-import.ts:buildInsert",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:packages/agent-core/src/csv-import.ts",
+   "target": "file:packages/agent-core/evals/run.ts",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/server.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/tui.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/lib/sql-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/tabs.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/features/bi/report-export.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/csv-import.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/tool-repair.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/ui/boxicons.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:scripts/setup-knowledge-tools.sh",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:scripts/build-local.sh",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:docs/knowledge-tools.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:docs/web-deploy.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:AGENTS.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/server.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/tui.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/lib/sql-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/tabs.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/Sidebar.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/TitleBar.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/components/studio/monaco-theme.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/features/assistant/chat-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:apps/desktop/src/features/bi/report-export.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/csv-import.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "file:packages/agent-core/src/tool-repair.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "document:CLAUDE.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "document:AGENTS.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "target": "document:knowledge/wiki/pages/exasol-sql-gotchas.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:apps/desktop/src/app/App.tsx",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7,
+   "recoveredFromImportMap": true
+  },
+  {
+   "source": "file:packages/agent-core/evals/run.ts",
+   "target": "file:packages/agent-core/src/csv-import.ts",
    "type": "imports",
    "direction": "forward",
    "weight": 0.7,
@@ -39067,7 +40412,15 @@
     "file:apps/desktop/src/components/studio/IconButton.tsx",
     "file:apps/desktop/src/components/studio/tabs.ts",
     "file:apps/desktop/src/lib/sql-text.ts",
-    "file:apps/desktop/src/lib/sql-text.test.ts"
+    "file:apps/desktop/src/lib/sql-text.test.ts",
+    "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+    "file:apps/desktop/src/components/studio/Sidebar.tsx",
+    "file:apps/desktop/src/components/studio/TitleBar.tsx",
+    "file:apps/desktop/src/components/studio/monaco-theme.ts",
+    "file:apps/desktop/src/features/assistant/chat-text.test.ts",
+    "file:apps/desktop/src/features/assistant/chat-text.ts",
+    "file:apps/desktop/src/features/bi/report-export.test.ts",
+    "file:apps/desktop/src/features/bi/report-export.ts"
    ]
   },
   {
