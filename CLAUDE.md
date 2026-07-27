@@ -48,6 +48,18 @@ summaries, and onboarding tour. See `docs/knowledge-tools.md`.
 Rule of thumb: **read** project knowledge from graphify (code) and llm-wiki
 (decisions); **write** new durable knowledge back into llm-wiki as you learn it.
 
+4. **OpenSpec** — spec-driven change workflow (`openspec/`, committed;
+   installed via `@fission-ai/openspec`). For any non-trivial feature or
+   refactor, start with `/opsx:propose "<idea>"` to generate a proposal +
+   design + delta specs + tasks, implement with `/opsx:apply`, and finish with
+   `/opsx:archive` (which folds delta specs into the main specs). Explore
+   fuzzy ideas first with `/opsx:explore`. `openspec/config.yaml` carries the
+   project context and per-artifact rules (Non-goals section required; tasks
+   that add logic must name their test file), so proposals inherit the KISS
+   rules automatically. CLI: `npx @fission-ai/openspec <cmd>` (`list`,
+   `validate`, `view`, `archive`). Slash commands are installed for Claude
+   Code, Codex, Cursor and Gemini CLI.
+
 ## Code quality workflow (mandatory)
 
 - **Codex review before shipping**: after any substantive change, hand the

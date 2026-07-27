@@ -1,0 +1,31 @@
+schema: spec-driven
+
+# Project context — shown to AI assistants when creating OpenSpec artifacts.
+context: |
+  Exasol Studio: a Tauri 2 (Rust) + React 19 / Vite / Tailwind v4 / shadcn
+  desktop Exasol database client, with a Node `agent-core` AI sidecar, an
+  ANTLR `exasol-sql-parser` package, and a database-side `exasol-semantic-views`
+  SQL layer. pnpm workspace monorepo.
+
+  Read CLAUDE.md (authoritative) / AGENTS.md before proposing. Non-negotiables:
+  - KISS hard rules: no file approaches 5,000 lines (split at ~500, >1,000
+    needs a stated reason); unreachable code is a defect; logic too big to
+    unit-test gets extracted into a pure function and tested.
+  - Tests: Node's built-in `node:test` + Rust `#[cfg(test)]` — zero test
+    frameworks, do NOT propose vitest/jest. `pnpm test` runs everything.
+  - Codex review before shipping any substantive change.
+  - Icons only (Boxicons registry / lucide-react), never emoji, in app UI.
+  - Theme-safe CSS: `var(--token)` / `color-mix(...)`, never `hsl(var(--…))`.
+  - Platform differences live ONLY in the transport tiers of
+    `apps/desktop/src/lib/ipc.ts` — never fork per-platform UI.
+  - Exasol folds unquoted identifiers to UPPERCASE; edge-case tests must cover
+    identifier case-folding, empty/null/boundary inputs, and error paths.
+  - Commits: no Co-Authored-By trailer. Releases are tag-triggered (v*).
+
+rules:
+  proposal:
+    - Include a "Non-goals" section
+    - Name the files the change touches and their current line counts if any
+      exceed 1,000 (the KISS size rules apply to every change)
+  tasks:
+    - Every task that adds logic names the test file that will cover it

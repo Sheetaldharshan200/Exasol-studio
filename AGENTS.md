@@ -32,6 +32,14 @@ A stale graph is worse than none. After any code or architectural change:
 Do this as part of the change, not "later". Scope for understand-anything is
 the whole repo (`.ua/.understandignore`).
 
+## Spec-driven changes — OpenSpec
+
+Non-trivial features/refactors go through OpenSpec (`openspec/`, committed):
+`/opsx:propose "<idea>"` → `/opsx:apply` → `/opsx:archive`. Explore fuzzy
+ideas with `/opsx:explore`. Project context and artifact rules live in
+`openspec/config.yaml`; slash commands are installed for Claude Code, Codex,
+Cursor and Gemini CLI.
+
 ## Code quality (mandatory)
 
 - After substantive changes, get an independent **Codex review**
