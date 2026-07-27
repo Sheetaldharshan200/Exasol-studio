@@ -380,8 +380,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/package.json": {
-    "mtime": 1784894044.7378354,
-    "ast_hash": "e43a5ed54e1408f9e64839594cab8c59",
+    "mtime": 1785140913.0832236,
+    "ast_hash": "10ff0d8318e96230f1ffb9f5450be7aa",
     "semantic_hash": ""
   },
   "apps/desktop/scripts/test-markdown-editor.mjs": {
@@ -735,8 +735,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1785131391.8540404,
-    "ast_hash": "00ca9928be34e3c55d3e03e10cbe541f",
+    "mtime": 1785142370.6890123,
+    "ast_hash": "50849f548dddd296bf2661a223a63cee",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -1345,13 +1345,13 @@
     "semantic_hash": ""
   },
   "package.json": {
-    "mtime": 1785133590.2414992,
-    "ast_hash": "9837624e99faf50c61f166c63ab4bbf9",
+    "mtime": 1785140842.6094222,
+    "ast_hash": "5e62aeadf3928ad42b87c737a641edaf",
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1785132253.5370288,
-    "ast_hash": "bee1553e6352acd38f691add12a84c30",
+    "mtime": 1785142254.9008932,
+    "ast_hash": "85cc2490a3aa2f6375d8e8e4ca0b92d8",
     "semantic_hash": ""
   },
   "packages/agent-core/evals/live.ts": {
@@ -1475,8 +1475,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/csv-import.ts": {
-    "mtime": 1784609901.492923,
-    "ast_hash": "846fffc81316e2fd138645f1e1f319c4",
+    "mtime": 1785142128.5645742,
+    "ast_hash": "75bb1fdeed56f84326452cf0cbc9c03a",
     "semantic_hash": ""
   },
   "packages/agent-core/src/dashboards.ts": {
@@ -1530,8 +1530,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/loop.ts": {
-    "mtime": 1785133299.0737143,
-    "ast_hash": "16cfe9eee1f481e082f5bae328324ea8",
+    "mtime": 1785142037.4110203,
+    "ast_hash": "f35e907992a971ccd8fa9a7abc905bd8",
     "semantic_hash": ""
   },
   "packages/agent-core/src/mcp.ts": {
@@ -1560,8 +1560,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/server.ts": {
-    "mtime": 1785131738.3158226,
-    "ast_hash": "e774809d54340c8452a332e21a3bb516",
+    "mtime": 1785141837.7137458,
+    "ast_hash": "85371e28a15930a6d44a5927072c77ed",
     "semantic_hash": ""
   },
   "packages/agent-core/src/session.ts": {
@@ -1575,8 +1575,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/tool-repair.ts": {
-    "mtime": 1784810575.8198135,
-    "ast_hash": "6b0d7ac143c9fb7b20508703ed857bea",
+    "mtime": 1785142143.098106,
+    "ast_hash": "6b19b77fdcdf1eaf08805c43ec1cdcc0",
     "semantic_hash": ""
   },
   "packages/agent-core/src/tools.ts": {
@@ -1970,8 +1970,8 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1785133790.0821538,
-    "ast_hash": "8a9e71404b52588bb14d0e161955feaa",
+    "mtime": 1785142491.4908524,
+    "ast_hash": "c56082c6bcf558c391f89af583237d57",
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
@@ -3000,8 +3000,8 @@
     "semantic_hash": ""
   },
   "knowledge/wiki/log.md": {
-    "mtime": 1785065903.9998548,
-    "ast_hash": "13bbc5460aa1144b2f555ab05465937e",
+    "mtime": 1785142561.3030305,
+    "ast_hash": "b897787b6cd1fc72dec389f8c5674ef3",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/ai-integrations.md": {
@@ -3025,23 +3025,23 @@
     "semantic_hash": ""
   },
   ".ua/fingerprints.json": {
-    "mtime": 1785085179.834198,
-    "ast_hash": "0f36c902f19e0a4ff2bd523ee34aea64",
+    "mtime": 1785139879.362637,
+    "ast_hash": "2a58c395640c9523f8cd2a58ad8ec2e1",
     "semantic_hash": ""
   },
   ".ua/intermediate/scan-result.json": {
-    "mtime": 1785080095.1653836,
-    "ast_hash": "604d64a35372979e7e7ebe2470bdb92b",
+    "mtime": 1785137685.4196186,
+    "ast_hash": "b220edd0b7056d2f4a885592c6ea3526",
     "semantic_hash": ""
   },
   ".ua/knowledge-graph.json": {
-    "mtime": 1785085175.7643929,
-    "ast_hash": "f2d62fddb1fe1439e988cba0015a256f",
+    "mtime": 1785139878.2997777,
+    "ast_hash": "d13da9452192b94924fd651a7c037f80",
     "semantic_hash": ""
   },
   ".ua/meta.json": {
-    "mtime": 1785085179.9853196,
-    "ast_hash": "4fb0f4ec1385e5f7e4e91c36e5f320fc",
+    "mtime": 1785139902.1386855,
+    "ast_hash": "8a8ef682ec544f518bbbbd1e64678c6a",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/ui/copy-button.tsx": {
@@ -3055,18 +3055,18 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/csv-import.test.ts": {
-    "mtime": 1785132946.5027137,
-    "ast_hash": "1a81b53133cc25b88f3ef91d7adea009",
+    "mtime": 1785142187.9980652,
+    "ast_hash": "b6f41deb62bacfcc663b1d705c3eb1b6",
     "semantic_hash": ""
   },
   "packages/agent-core/src/loop.heuristics.test.ts": {
-    "mtime": 1785133309.4152024,
-    "ast_hash": "19f70ffd961ca1e37a1483c3af9beac1",
+    "mtime": 1785142214.8943887,
+    "ast_hash": "4120b90f7823f18b326d72695ea73fdc",
     "semantic_hash": ""
   },
   "packages/agent-core/src/tool-repair.test.ts": {
-    "mtime": 1785133390.0474772,
-    "ast_hash": "2f475361e281f3b999652ea59ed9a26b",
+    "mtime": 1785142228.6955032,
+    "ast_hash": "4a55ee603fe826416ae5602b69b90892",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -3092,6 +3092,36 @@
   "knowledge/wiki/pages/kiss-hard-rules.md": {
     "mtime": 1785136156.218031,
     "ast_hash": "ae2ad1d96a8c192b819ea681ba69f07a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/HistoryDock.tsx": {
+    "mtime": 1785142299.3680727,
+    "ast_hash": "592a9233124ed43a2602e1fe8428243d",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/IconButton.tsx": {
+    "mtime": 1785141936.407339,
+    "ast_hash": "a4b93b50f37f871dd14cddd4fc0f3cfc",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/tabs.ts": {
+    "mtime": 1785141957.854899,
+    "ast_hash": "a84de89fd1952fdb3b74b28b08827d35",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-text.test.ts": {
+    "mtime": 1785140752.920633,
+    "ast_hash": "2ecea9c24b325a6a0ec729bf3161c184",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-text.ts": {
+    "mtime": 1785140561.2910764,
+    "ast_hash": "ad1b0e88f047e7939e9512be817adfeb",
+    "semantic_hash": ""
+  },
+  "knowledge/wiki/pages/codex-review-findings-2026-07.md": {
+    "mtime": 1785142526.523148,
+    "ast_hash": "3d93148b7c70123b1ce967edcf41e251",
     "semantic_hash": ""
   }
 }

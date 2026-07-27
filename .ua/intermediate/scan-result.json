@@ -1,6 +1,6 @@
 {
  "scriptCompleted": true,
- "contentDigest": "3a53f793627270c4062caed0f7078e0aca98733216ba67ae8280483b131393c2",
+ "contentDigest": "f0b42fffb0974f127a219a33c7218044b27d6ebeafb6bb6d775f42f3d756c0ce",
  "files": [
   {
    "path": ".claude/settings.local.json",
@@ -743,7 +743,7 @@
   {
    "path": "CLAUDE.md",
    "language": "markdown",
-   "sizeLines": 136,
+   "sizeLines": 150,
    "fileCategory": "docs"
   },
   {
@@ -785,7 +785,7 @@
   {
    "path": "apps/desktop/package.json",
    "language": "json",
-   "sizeLines": 99,
+   "sizeLines": 100,
    "fileCategory": "config"
   },
   {
@@ -1277,13 +1277,25 @@
   {
    "path": "apps/desktop/src/components/studio/ExasolStudio.tsx",
    "language": "typescript",
-   "sizeLines": 5089,
+   "sizeLines": 4062,
    "fileCategory": "code"
   },
   {
    "path": "apps/desktop/src/components/studio/FloatingPet.tsx",
    "language": "typescript",
    "sizeLines": 552,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/components/studio/HistoryDock.tsx",
+   "language": "typescript",
+   "sizeLines": 697,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/components/studio/IconButton.tsx",
+   "language": "typescript",
+   "sizeLines": 40,
    "fileCategory": "code"
   },
   {
@@ -1296,6 +1308,12 @@
    "path": "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
    "language": "typescript",
    "sizeLines": 188,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/components/studio/tabs.ts",
+   "language": "typescript",
+   "sizeLines": 135,
    "fileCategory": "code"
   },
   {
@@ -2013,6 +2031,18 @@
    "fileCategory": "code"
   },
   {
+   "path": "apps/desktop/src/lib/sql-text.test.ts",
+   "language": "typescript",
+   "sizeLines": 232,
+   "fileCategory": "code"
+  },
+  {
+   "path": "apps/desktop/src/lib/sql-text.ts",
+   "language": "typescript",
+   "sizeLines": 165,
+   "fileCategory": "code"
+  },
+  {
    "path": "apps/desktop/src/lib/term-bus.ts",
    "language": "typescript",
    "sizeLines": 47,
@@ -2345,13 +2375,19 @@
   {
    "path": "knowledge/wiki/log.md",
    "language": "markdown",
-   "sizeLines": 18,
+   "sizeLines": 28,
    "fileCategory": "docs"
   },
   {
    "path": "knowledge/wiki/pages/ai-integrations.md",
    "language": "markdown",
    "sizeLines": 39,
+   "fileCategory": "docs"
+  },
+  {
+   "path": "knowledge/wiki/pages/codex-review-findings-2026-07.md",
+   "language": "markdown",
+   "sizeLines": 106,
    "fileCategory": "docs"
   },
   {
@@ -2399,7 +2435,7 @@
   {
    "path": "package.json",
    "language": "json",
-   "sizeLines": 25,
+   "sizeLines": 26,
    "fileCategory": "config"
   },
   {
@@ -2975,13 +3011,13 @@
   {
    "path": "packages/agent-core/src/csv-import.test.ts",
    "language": "typescript",
-   "sizeLines": 377,
+   "sizeLines": 409,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/csv-import.ts",
    "language": "typescript",
-   "sizeLines": 304,
+   "sizeLines": 350,
    "fileCategory": "code"
   },
   {
@@ -3047,13 +3083,13 @@
   {
    "path": "packages/agent-core/src/loop.heuristics.test.ts",
    "language": "typescript",
-   "sizeLines": 185,
+   "sizeLines": 204,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/loop.ts",
    "language": "typescript",
-   "sizeLines": 1128,
+   "sizeLines": 1131,
    "fileCategory": "code"
   },
   {
@@ -3095,7 +3131,7 @@
   {
    "path": "packages/agent-core/src/server.ts",
    "language": "typescript",
-   "sizeLines": 574,
+   "sizeLines": 550,
    "fileCategory": "code"
   },
   {
@@ -3113,13 +3149,13 @@
   {
    "path": "packages/agent-core/src/tool-repair.test.ts",
    "language": "typescript",
-   "sizeLines": 515,
+   "sizeLines": 526,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/tool-repair.ts",
    "language": "typescript",
-   "sizeLines": 426,
+   "sizeLines": 432,
    "fileCategory": "code"
   },
   {
@@ -3405,15 +3441,15 @@
    "fileCategory": "config"
   }
  ],
- "totalFiles": 567,
- "filteredByIgnore": 18,
+ "totalFiles": 573,
+ "filteredByIgnore": 17,
  "estimatedComplexity": "very-large",
  "stats": {
-  "filesScanned": 567,
+  "filesScanned": 573,
   "byCategory": {
    "config": 37,
-   "code": 323,
-   "docs": 165,
+   "code": 328,
+   "docs": 166,
    "infra": 13,
    "data": 20,
    "markup": 5,
@@ -3423,7 +3459,7 @@
    "json": 25,
    "unknown": 1,
    "python": 17,
-   "markdown": 159,
+   "markdown": 160,
    "javascript": 76,
    "yaml": 20,
    "sql": 20,
@@ -3432,7 +3468,7 @@
    "rust": 31,
    "xml": 2,
    "txt": 7,
-   "typescript": 192,
+   "typescript": 197,
    "css": 2,
    "interp": 2,
    "tokens": 2,
@@ -3977,15 +4013,16 @@
    "apps/desktop/src/components/brand/ThemeToggle.tsx",
    "apps/desktop/src/components/studio/AgentCursor.tsx",
    "apps/desktop/src/components/studio/FloatingPet.tsx",
+   "apps/desktop/src/components/studio/HistoryDock.tsx",
+   "apps/desktop/src/components/studio/IconButton.tsx",
    "apps/desktop/src/components/studio/ThemeCustomizer.tsx",
+   "apps/desktop/src/components/studio/tabs.ts",
    "apps/desktop/src/components/theme/theme-provider.tsx",
-   "apps/desktop/src/components/ui/copy-button.tsx",
    "apps/desktop/src/components/ui/dropdown-menu.tsx",
    "apps/desktop/src/components/ui/icon.tsx",
    "apps/desktop/src/components/ui/input.tsx",
    "apps/desktop/src/components/ui/resizable.tsx",
    "apps/desktop/src/components/ui/select.tsx",
-   "apps/desktop/src/components/ui/tooltip.tsx",
    "apps/desktop/src/features/artifact/ArtifactTab.tsx",
    "apps/desktop/src/features/assistant/AiProvidersWindow.tsx",
    "apps/desktop/src/features/assistant/AssistantPanel.tsx",
@@ -4000,7 +4037,6 @@
    "apps/desktop/src/features/workbench/ActivityRail.tsx",
    "apps/desktop/src/features/workbench/DatabaseTree.tsx",
    "apps/desktop/src/features/workbench/DbaDashboard.tsx",
-   "apps/desktop/src/features/workbench/EditableResultGrid.tsx",
    "apps/desktop/src/features/workbench/FavoritesPanel.tsx",
    "apps/desktop/src/features/workbench/FileExplorer.tsx",
    "apps/desktop/src/features/workbench/FilePreviewPanel.tsx",
@@ -4014,7 +4050,6 @@
    "apps/desktop/src/features/workbench/ObjectSearch.tsx",
    "apps/desktop/src/features/workbench/QueryProfileView.tsx",
    "apps/desktop/src/features/workbench/SkillsTab.tsx",
-   "apps/desktop/src/features/workbench/TerminalView.tsx",
    "apps/desktop/src/features/workbench/Visualizer.tsx",
    "apps/desktop/src/features/workbench/WelcomeScreen.tsx",
    "apps/desktop/src/features/workbench/tree-model.ts",
@@ -4024,7 +4059,7 @@
    "apps/desktop/src/lib/ipc.ts",
    "apps/desktop/src/lib/settings-window.ts",
    "apps/desktop/src/lib/sql-completion.ts",
-   "apps/desktop/src/lib/term-bus.ts",
+   "apps/desktop/src/lib/sql-text.ts",
    "apps/desktop/src/lib/ui-graph.ts",
    "apps/desktop/src/lib/ui-trace.ts",
    "apps/desktop/src/lib/utils.ts",
@@ -4040,12 +4075,33 @@
    "apps/desktop/src/lib/session-bus.ts",
    "apps/desktop/src/lib/utils.ts"
   ],
+  "apps/desktop/src/components/studio/HistoryDock.tsx": [
+   "apps/desktop/src/components/studio/IconButton.tsx",
+   "apps/desktop/src/components/studio/tabs.ts",
+   "apps/desktop/src/components/ui/copy-button.tsx",
+   "apps/desktop/src/features/workbench/EditableResultGrid.tsx",
+   "apps/desktop/src/features/workbench/TerminalView.tsx",
+   "apps/desktop/src/lib/ipc.ts",
+   "apps/desktop/src/lib/sql-text.ts",
+   "apps/desktop/src/lib/term-bus.ts",
+   "apps/desktop/src/lib/utils.ts"
+  ],
+  "apps/desktop/src/components/studio/IconButton.tsx": [
+   "apps/desktop/src/components/ui/tooltip.tsx",
+   "apps/desktop/src/lib/utils.ts"
+  ],
   "apps/desktop/src/components/studio/PetAvatar.tsx": [
    "apps/desktop/src/lib/utils.ts"
   ],
   "apps/desktop/src/components/studio/ThemeCustomizer.tsx": [
    "apps/desktop/src/lib/theme-presets.ts",
    "apps/desktop/src/lib/utils.ts"
+  ],
+  "apps/desktop/src/components/studio/tabs.ts": [
+   "apps/desktop/src/components/ui/icon.tsx",
+   "apps/desktop/src/features/workbench/ObjectDetailPanel.tsx",
+   "apps/desktop/src/features/workbench/QueryProfileView.tsx",
+   "apps/desktop/src/lib/ipc.ts"
   ],
   "apps/desktop/src/components/theme/theme-provider.tsx": [],
   "apps/desktop/src/components/ui/accordion.tsx": [
@@ -4528,6 +4584,10 @@
    "apps/desktop/src/lib/ipc.ts"
   ],
   "apps/desktop/src/lib/sql-completion.ts": [],
+  "apps/desktop/src/lib/sql-text.test.ts": [
+   "apps/desktop/src/lib/sql-text.ts"
+  ],
+  "apps/desktop/src/lib/sql-text.ts": [],
   "apps/desktop/src/lib/term-bus.ts": [],
   "apps/desktop/src/lib/theme-presets.ts": [],
   "apps/desktop/src/lib/ui-graph.ts": [],
@@ -4599,6 +4659,7 @@
   "knowledge/vault/design-log.md": [],
   "knowledge/wiki/log.md": [],
   "knowledge/wiki/pages/ai-integrations.md": [],
+  "knowledge/wiki/pages/codex-review-findings-2026-07.md": [],
   "knowledge/wiki/pages/connection-properties.md": [],
   "knowledge/wiki/pages/dev-workflow-codex.md": [],
   "knowledge/wiki/pages/editing-model.md": [],

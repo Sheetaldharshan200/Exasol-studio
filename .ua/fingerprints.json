@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "8b91d63905cb999e3e2f3e32292051cecbc52587",
-  "generatedAt": "2026-07-27T08:11:19.358Z",
+  "gitCommitHash": "4496d3e228d946aec4f44278781adc85f9be30ae",
+  "generatedAt": "2026-07-27T09:42:01.336Z",
   "files": {
     ".claude/settings.local.json": {
       "filePath": ".claude/settings.local.json",
@@ -12203,12 +12203,12 @@
     },
     "CLAUDE.md": {
       "filePath": "CLAUDE.md",
-      "contentHash": "8a2a38b8d3f48fcf5aa2bd6f2c641d2f78eb30381d3b722d5735a69bce980c69",
+      "contentHash": "60e416bab858992552a42a7105c878589b5ae7cf81ceb6c0ac00e0f0885803cb",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 137,
+      "totalLines": 151,
       "hasStructuralAnalysis": true
     },
     "CONTRIBUTING.md": {
@@ -12273,12 +12273,12 @@
     },
     "apps/desktop/package.json": {
       "filePath": "apps/desktop/package.json",
-      "contentHash": "7c0693d2ae088ab2fe0668fbf0d2d03937ab7b5ea946049564a32c4208771293",
+      "contentHash": "8d9726a3396c18339f7a90e21112d31c3b961f69e1a8d0fda48039f7348feb81",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 100,
+      "totalLines": 101,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/scripts/test-markdown-editor.mjs": {
@@ -20450,35 +20450,8 @@
     },
     "apps/desktop/src/components/studio/ExasolStudio.tsx": {
       "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-      "contentHash": "69809da09a83ef534fad78e22a69fcc91023da42b23b4515483d560ea666adca",
+      "contentHash": "a49ca103688b2e4bcb1fe6322b84a54bce869eccf391945e50ee4dc04eaf96cc",
       "functions": [
-        {
-          "name": "parseSingleTable",
-          "params": [
-            "sql"
-          ],
-          "returnType": "{ schema?: string; table: string } | null",
-          "exported": false,
-          "lineCount": 15
-        },
-        {
-          "name": "tabTitleFromSql",
-          "params": [
-            "sql"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 4
-        },
-        {
-          "name": "newTab",
-          "params": [
-            "index"
-          ],
-          "returnType": "SqlTab",
-          "exported": false,
-          "lineCount": 13
-        },
         {
           "name": "defineMonacoThemes",
           "params": [
@@ -20486,42 +20459,6 @@
           ],
           "exported": false,
           "lineCount": 40
-        },
-        {
-          "name": "splitStatements",
-          "params": [
-            "sql"
-          ],
-          "returnType": "Stmt[]",
-          "exported": false,
-          "lineCount": 47
-        },
-        {
-          "name": "statementAtOffset",
-          "params": [
-            "sql",
-            "offset"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 8
-        },
-        {
-          "name": "stripSqlComments",
-          "params": [
-            "sql"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 51
-        },
-        {
-          "name": "IconButton",
-          "params": [
-            "{\n  label,\n  onClick,\n  disabled,\n  active,\n  children,\n}"
-          ],
-          "exported": false,
-          "lineCount": 32
         },
         {
           "name": "TitleBar",
@@ -20556,59 +20493,12 @@
           "lineCount": 397
         },
         {
-          "name": "fmtClock",
-          "params": [
-            "ts"
-          ],
-          "returnType": "string",
-          "exported": false,
-          "lineCount": 3
-        },
-        {
-          "name": "RunStatusStrip",
-          "params": [
-            "{\n  meta,\n  response,\n}"
-          ],
-          "exported": false,
-          "lineCount": 39
-        },
-        {
-          "name": "ResultsGrid",
-          "params": [
-            "{\n  result,\n  error,\n  onChart,\n  onProfile,\n  editable,\n  onOpenSql,\n  onCommitEdits,\n  editBusy,\n  fontSize = 12,\n  zebra = true,\n}"
-          ],
-          "exported": false,
-          "lineCount": 176
-        },
-        {
-          "name": "GitLogPane",
-          "params": [],
-          "exported": false,
-          "lineCount": 48
-        },
-        {
-          "name": "LogTable",
-          "params": [
-            "{ entries, onOpenSql }"
-          ],
-          "exported": false,
-          "lineCount": 167
-        },
-        {
-          "name": "HistoryDock",
-          "params": [
-            "{\n  entries,\n  open,\n  onToggle,\n  onPick,\n  onClear,\n  onRefresh,\n}"
-          ],
-          "exported": false,
-          "lineCount": 215
-        },
-        {
           "name": "ExasolStudio",
           "params": [
             "{\n  connection,\n  connections,\n  drivers,\n  profiles,\n  onConnected,\n  onFocusConnection,\n  onDisconnect,\n  onSaved,\n}"
           ],
           "exported": true,
-          "lineCount": 3166
+          "lineCount": 3164
         },
         {
           "name": "Selector",
@@ -20670,20 +20560,14 @@
             "Blocks",
             "Check",
             "ChevronDown",
-            "ChevronUp",
-            "Copy",
             "ChevronLeft",
             "Boxes",
             "ChevronRight",
             "ChevronsDownUp",
-            "CircleSlash2",
             "Combine",
             "Database",
-            "Eye",
             "FileCode2",
-            "NotebookPen",
             "GitCommitHorizontal",
-            "History",
             "Info",
             "ListChecks",
             "MoreHorizontal",
@@ -20698,7 +20582,6 @@
             "RefreshCcw",
             "RotateCcw",
             "Save",
-            "Pencil",
             "SaveAll",
             "Search",
             "Settings2",
@@ -20706,16 +20589,12 @@
             "Shield",
             "Sparkles",
             "Square",
-            "SquareTerminal",
-            "Table2",
-            "Terminal",
             "Trash2",
             "Unplug",
             "HardDriveUpload",
             "Waypoints",
             "X",
-            "Zap",
-            "Gauge"
+            "Zap"
           ]
         },
         {
@@ -20780,14 +20659,6 @@
           ]
         },
         {
-          "source": "@/components/ui/tooltip",
-          "specifiers": [
-            "Tooltip",
-            "TooltipContent",
-            "TooltipTrigger"
-          ]
-        },
-        {
           "source": "@/lib/utils",
           "specifiers": [
             "cn"
@@ -20809,12 +20680,6 @@
           "source": "@/features/connection/ConnectionPropertiesTab",
           "specifiers": [
             "ConnectionPropertiesTab"
-          ]
-        },
-        {
-          "source": "@/components/ui/copy-button",
-          "specifiers": [
-            "CopyButton"
           ]
         },
         {
@@ -20926,24 +20791,6 @@
           ]
         },
         {
-          "source": "@/features/workbench/TerminalView",
-          "specifiers": [
-            "TerminalView"
-          ]
-        },
-        {
-          "source": "@tauri-apps/api/core",
-          "specifiers": [
-            "invoke"
-          ]
-        },
-        {
-          "source": "@/lib/term-bus",
-          "specifiers": [
-            "termBusReady"
-          ]
-        },
-        {
           "source": "@/lib/agent-client",
           "specifiers": [
             "agentClient"
@@ -20990,12 +20837,6 @@
           "source": "@/features/workbench/LoadDataDialog",
           "specifiers": [
             "LoadDataDialog"
-          ]
-        },
-        {
-          "source": "@/features/workbench/EditableResultGrid",
-          "specifiers": [
-            "EditableResultGrid"
           ]
         },
         {
@@ -21064,6 +20905,42 @@
           ]
         },
         {
+          "source": "@/lib/sql-text",
+          "specifiers": [
+            "parseSingleTable",
+            "splitStatements",
+            "statementAtOffset",
+            "stripSqlComments",
+            "tabTitleFromSql"
+          ]
+        },
+        {
+          "source": "./IconButton",
+          "specifiers": [
+            "IconButton"
+          ]
+        },
+        {
+          "source": "./HistoryDock",
+          "specifiers": [
+            "HistoryDock",
+            "ResultsGrid",
+            "RunStatusStrip"
+          ]
+        },
+        {
+          "source": "./tabs",
+          "specifiers": [
+            "MAX_ROWS_OPTIONS",
+            "NO_CONNECTION",
+            "TAB_ICON",
+            "WELCOME_TAB",
+            "newTab",
+            "SqlTab",
+            "TabGroup"
+          ]
+        },
+        {
           "source": "@/lib/vs-window",
           "specifiers": [
             "openVsWindow",
@@ -21100,10 +20977,8 @@
             "PersonalLocalStatus",
             "DriverInfo",
             "ExecuteResponse",
-            "GitLogEntry",
             "HistoryEntry",
-            "ServerInfo",
-            "StatementResult"
+            "ServerInfo"
           ]
         },
         {
@@ -21116,7 +20991,7 @@
       "exports": [
         "ExasolStudio"
       ],
-      "totalLines": 5090,
+      "totalLines": 4063,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -21226,6 +21101,196 @@
       "totalLines": 553,
       "hasStructuralAnalysis": true
     },
+    "apps/desktop/src/components/studio/HistoryDock.tsx": {
+      "filePath": "apps/desktop/src/components/studio/HistoryDock.tsx",
+      "contentHash": "697f510c7ac090ad36ef253a6d93dce05380dce2449e8e55a10357e851df19bb",
+      "functions": [
+        {
+          "name": "RunStatusStrip",
+          "params": [
+            "{\n  meta,\n  response,\n}"
+          ],
+          "exported": true,
+          "lineCount": 39
+        },
+        {
+          "name": "ResultsGrid",
+          "params": [
+            "{\n  result,\n  error,\n  onChart,\n  onProfile,\n  editable,\n  onOpenSql,\n  onCommitEdits,\n  editBusy,\n  fontSize = 12,\n  zebra = true,\n}"
+          ],
+          "exported": true,
+          "lineCount": 176
+        },
+        {
+          "name": "GitLogPane",
+          "params": [],
+          "exported": false,
+          "lineCount": 48
+        },
+        {
+          "name": "LogTable",
+          "params": [
+            "{ entries, onOpenSql }"
+          ],
+          "exported": false,
+          "lineCount": 167
+        },
+        {
+          "name": "HistoryDock",
+          "params": [
+            "{\n  entries,\n  open,\n  onToggle,\n  onPick,\n  onClear,\n  onRefresh,\n}"
+          ],
+          "exported": true,
+          "lineCount": 215
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "react",
+          "specifiers": [
+            "useEffect",
+            "useRef",
+            "useState"
+          ]
+        },
+        {
+          "source": "@tauri-apps/api/core",
+          "specifiers": [
+            "invoke"
+          ]
+        },
+        {
+          "source": "lucide-react",
+          "specifiers": [
+            "BarChart3",
+            "Check",
+            "ChevronDown",
+            "ChevronRight",
+            "ChevronUp",
+            "CircleSlash2",
+            "Gauge",
+            "GitCommitHorizontal",
+            "History",
+            "Loader2",
+            "Pencil",
+            "Plus",
+            "RefreshCcw",
+            "SquareTerminal",
+            "Table2",
+            "Terminal",
+            "Trash2",
+            "X"
+          ]
+        },
+        {
+          "source": "@/components/ui/copy-button",
+          "specifiers": [
+            "CopyButton"
+          ]
+        },
+        {
+          "source": "@/features/workbench/EditableResultGrid",
+          "specifiers": [
+            "EditableResultGrid"
+          ]
+        },
+        {
+          "source": "@/features/workbench/TerminalView",
+          "specifiers": [
+            "TerminalView"
+          ]
+        },
+        {
+          "source": "@/lib/ipc",
+          "specifiers": [
+            "ipc"
+          ]
+        },
+        {
+          "source": "@/lib/ipc",
+          "specifiers": [
+            "ExecuteResponse",
+            "GitLogEntry",
+            "HistoryEntry",
+            "StatementResult"
+          ]
+        },
+        {
+          "source": "@/lib/sql-text",
+          "specifiers": [
+            "fmtClock"
+          ]
+        },
+        {
+          "source": "@/lib/term-bus",
+          "specifiers": [
+            "termBusReady"
+          ]
+        },
+        {
+          "source": "@/lib/utils",
+          "specifiers": [
+            "cn"
+          ]
+        },
+        {
+          "source": "./IconButton",
+          "specifiers": [
+            "IconButton"
+          ]
+        },
+        {
+          "source": "./tabs",
+          "specifiers": [
+            "SqlTab"
+          ]
+        }
+      ],
+      "exports": [
+        "RunStatusStrip",
+        "ResultsGrid",
+        "HistoryDock"
+      ],
+      "totalLines": 698,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/components/studio/IconButton.tsx": {
+      "filePath": "apps/desktop/src/components/studio/IconButton.tsx",
+      "contentHash": "671cd2d4df3b4b2717c4028b1baea105a6aee1420128b1a3b40e0f40a5083243",
+      "functions": [
+        {
+          "name": "IconButton",
+          "params": [
+            "{\n  label,\n  onClick,\n  disabled,\n  active,\n  children,\n}"
+          ],
+          "exported": true,
+          "lineCount": 32
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "@/lib/utils",
+          "specifiers": [
+            "cn"
+          ]
+        },
+        {
+          "source": "@/components/ui/tooltip",
+          "specifiers": [
+            "Tooltip",
+            "TooltipContent",
+            "TooltipTrigger"
+          ]
+        }
+      ],
+      "exports": [
+        "IconButton"
+      ],
+      "totalLines": 41,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src/components/studio/PetAvatar.tsx": {
       "filePath": "apps/desktop/src/components/studio/PetAvatar.tsx",
       "contentHash": "e9288d4b54f0440db8f5dffb5b465d8cfad0aa121c3d84c00883a7c2899e9c5b",
@@ -21320,6 +21385,57 @@
         "ThemePresetPicker"
       ],
       "totalLines": 189,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/components/studio/tabs.ts": {
+      "filePath": "apps/desktop/src/components/studio/tabs.ts",
+      "contentHash": "caebd82b76b4056f11926df9d7566e7116b969a92794f8ad159b2ec282d799a7",
+      "functions": [
+        {
+          "name": "newTab",
+          "params": [
+            "index"
+          ],
+          "returnType": "SqlTab",
+          "exported": true,
+          "lineCount": 13
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "@/components/ui/icon",
+          "specifiers": [
+            "IconName"
+          ]
+        },
+        {
+          "source": "@/features/workbench/ObjectDetailPanel",
+          "specifiers": [
+            "ObjectRef"
+          ]
+        },
+        {
+          "source": "@/features/workbench/QueryProfileView",
+          "specifiers": [
+            "ProfileData"
+          ]
+        },
+        {
+          "source": "@/lib/ipc",
+          "specifiers": [
+            "ExecuteResponse"
+          ]
+        }
+      ],
+      "exports": [
+        "MAX_ROWS_OPTIONS",
+        "newTab",
+        "TAB_ICON",
+        "WELCOME_TAB",
+        "NO_CONNECTION"
+      ],
+      "totalLines": 136,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/theme/theme-provider.tsx": {
@@ -30490,6 +30606,123 @@
       "totalLines": 293,
       "hasStructuralAnalysis": true
     },
+    "apps/desktop/src/lib/sql-text.test.ts": {
+      "filePath": "apps/desktop/src/lib/sql-text.test.ts",
+      "contentHash": "3d2bd883c02b13648365a7406d30449ef3f0413e5a2f60c2cc9503a93e70d45c",
+      "functions": [
+        {
+          "name": "texts",
+          "params": [
+            "sql"
+          ],
+          "exported": false,
+          "lineCount": 1
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./sql-text.ts",
+          "specifiers": [
+            "splitStatements",
+            "statementAtOffset",
+            "stripSqlComments",
+            "parseSingleTable",
+            "tabTitleFromSql",
+            "fmtClock"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 233,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/lib/sql-text.ts": {
+      "filePath": "apps/desktop/src/lib/sql-text.ts",
+      "contentHash": "f586d44a18d7b1f32a4c9b466ad4affcd59a790e3972be936b0b516ab9d2afc7",
+      "functions": [
+        {
+          "name": "splitStatements",
+          "params": [
+            "sql"
+          ],
+          "returnType": "Stmt[]",
+          "exported": true,
+          "lineCount": 47
+        },
+        {
+          "name": "statementAtOffset",
+          "params": [
+            "sql",
+            "offset"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "stripSqlComments",
+          "params": [
+            "sql"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 51
+        },
+        {
+          "name": "parseSingleTable",
+          "params": [
+            "sql"
+          ],
+          "returnType": "{ schema?: string; table: string } | null",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "tabTitleFromSql",
+          "params": [
+            "sql"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "fmtClock",
+          "params": [
+            "ts"
+          ],
+          "returnType": "string",
+          "exported": true,
+          "lineCount": 3
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "splitStatements",
+        "statementAtOffset",
+        "stripSqlComments",
+        "parseSingleTable",
+        "tabTitleFromSql",
+        "fmtClock"
+      ],
+      "totalLines": 166,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src/lib/term-bus.ts": {
       "filePath": "apps/desktop/src/lib/term-bus.ts",
       "contentHash": "4865c2d9e825c76287148aa75912138bcce44ace664b42172009675a1ba2a7e5",
@@ -31401,12 +31634,12 @@
     },
     "knowledge/wiki/log.md": {
       "filePath": "knowledge/wiki/log.md",
-      "contentHash": "a8acfc8dcfbb305a50a568b08dad45261de649909ea026154e6b76cabf09131e",
+      "contentHash": "d51ff8d5a57b36174d5a7f7fce0fecd42b2a71defa43013a7cbbedeedc92197e",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 19,
+      "totalLines": 29,
       "hasStructuralAnalysis": true
     },
     "knowledge/wiki/pages/ai-integrations.md": {
@@ -31417,6 +31650,16 @@
       "imports": [],
       "exports": [],
       "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/codex-review-findings-2026-07.md": {
+      "filePath": "knowledge/wiki/pages/codex-review-findings-2026-07.md",
+      "contentHash": "40ea5eb9a482c340452a7e6631156c5f8760f3ed0440700d067c78fdee7407d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 107,
       "hasStructuralAnalysis": true
     },
     "knowledge/wiki/pages/connection-properties.md": {
@@ -31491,12 +31734,12 @@
     },
     "package.json": {
       "filePath": "package.json",
-      "contentHash": "947f473fc1b938e1853ce56e747c93a958a86c94160d9293c51081ebf504f146",
+      "contentHash": "aab22e968955d0cb82da70eb8c9c42f12a1afa201f3876bfa0ca37610d81b9c5",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 26,
+      "totalLines": 27,
       "hasStructuralAnalysis": true
     },
     "packages/README.md": {
@@ -33506,7 +33749,7 @@
     },
     "packages/agent-core/src/csv-import.test.ts": {
       "filePath": "packages/agent-core/src/csv-import.test.ts",
-      "contentHash": "d003f6016530f32c07144fd04eb6065cd9444b870a602fa0497ab3a1d002c1d2",
+      "contentHash": "2e0c7a0f4ea044383d409604e45a66c5fcc620746864dc748a79ab1a8dd1afd3",
       "functions": [],
       "classes": [],
       "imports": [
@@ -33539,12 +33782,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 378,
+      "totalLines": 410,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/csv-import.ts": {
       "filePath": "packages/agent-core/src/csv-import.ts",
-      "contentHash": "924957657c2913de1709c5567140df0ebc9de8593819d58cae8f227255dcc8d6",
+      "contentHash": "8eaa07bf824507591a43f5f84beef44e83e6eec858426d5d9910c74ddd6eb191",
       "functions": [
         {
           "name": "detectDelimiter",
@@ -33583,13 +33826,31 @@
           "lineCount": 15
         },
         {
+          "name": "isCalendarDate",
+          "params": [
+            "v"
+          ],
+          "returnType": "boolean",
+          "exported": false,
+          "lineCount": 6
+        },
+        {
+          "name": "isCalendarTimestamp",
+          "params": [
+            "v"
+          ],
+          "returnType": "boolean",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
           "name": "inferType",
           "params": [
             "values"
           ],
           "returnType": "ColType",
           "exported": true,
-          "lineCount": 33
+          "lineCount": 36
         },
         {
           "name": "typeToSql",
@@ -33647,7 +33908,7 @@
           ],
           "returnType": "string",
           "exported": false,
-          "lineCount": 11
+          "lineCount": 16
         },
         {
           "name": "objectsToTable",
@@ -33666,7 +33927,7 @@
           ],
           "returnType": "string",
           "exported": true,
-          "lineCount": 8
+          "lineCount": 9
         }
       ],
       "classes": [],
@@ -33682,7 +33943,7 @@
         "objectsToTable",
         "buildInsert"
       ],
-      "totalLines": 305,
+      "totalLines": 351,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/dashboards.ts": {
@@ -34351,7 +34612,7 @@
     },
     "packages/agent-core/src/loop.heuristics.test.ts": {
       "filePath": "packages/agent-core/src/loop.heuristics.test.ts",
-      "contentHash": "30d07877bea68158e601d07d4bfdb3a2c29e1ea72c47cba2d42e3eb25e9ee63e",
+      "contentHash": "9f462608f0e301d94d170f15d90174579826d2bc8027da4d01ca5f7606027c9e",
       "functions": [],
       "classes": [],
       "imports": [
@@ -34378,12 +34639,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 186,
+      "totalLines": 205,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/loop.ts": {
       "filePath": "packages/agent-core/src/loop.ts",
-      "contentHash": "5f0ddc4fb2218df6f23c001601bfb93333428bc0ab3166321a81a958b97298c9",
+      "contentHash": "a44a553150bbe01a9d8572ee5944e262e5f320c59e55ab43fba62441eeb758e0",
       "functions": [
         {
           "name": "humanizeProviderError",
@@ -34450,7 +34711,7 @@
           ],
           "returnType": "string | null",
           "exported": true,
-          "lineCount": 14
+          "lineCount": 17
         },
         {
           "name": "looksUnfinished",
@@ -34581,7 +34842,6 @@
         {
           "source": "./tool-repair.ts",
           "specifiers": [
-            "repairCall",
             "extractTextToolCalls",
             "resolveToolName",
             "repairArgs",
@@ -34626,7 +34886,7 @@
         "extractReadSql",
         "looksUnfinished"
       ],
-      "totalLines": 1129,
+      "totalLines": 1132,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/mcp-gateway.ts": {
@@ -35143,7 +35403,7 @@
     },
     "packages/agent-core/src/server.ts": {
       "filePath": "packages/agent-core/src/server.ts",
-      "contentHash": "bd4a88094afe5297150ba8163663a8767852228eaa7ab31fe465f3d00af53c87",
+      "contentHash": "ea80b55568faf44ea2ca06eb7af47f533169aaad9a4a5b7fd44b7b521fed5df3",
       "functions": [
         {
           "name": "startServer",
@@ -35152,7 +35412,7 @@
           ],
           "returnType": "Promise<{ port: number; token: string }>",
           "exported": true,
-          "lineCount": 540
+          "lineCount": 516
         },
         {
           "name": "json",
@@ -35294,7 +35554,7 @@
       "exports": [
         "startServer"
       ],
-      "totalLines": 575,
+      "totalLines": 551,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/session.ts": {
@@ -35498,7 +35758,7 @@
     },
     "packages/agent-core/src/tool-repair.test.ts": {
       "filePath": "packages/agent-core/src/tool-repair.test.ts",
-      "contentHash": "87485ae1b8befd1531d98ee5aab6d1892bd480c6695c2d04ff5f6f35309dc93a",
+      "contentHash": "b2d5cae1cee67f72d35c05b50af75fcc6623a9bb8ddb037d3a0fc3382ea104cb",
       "functions": [],
       "classes": [],
       "imports": [
@@ -35523,18 +35783,17 @@
             "repairArgs",
             "extractTextToolCalls",
             "zodSchemaish",
-            "repairCall",
             "rescueTextCalls"
           ]
         }
       ],
       "exports": [],
-      "totalLines": 516,
+      "totalLines": 443,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/tool-repair.ts": {
       "filePath": "packages/agent-core/src/tool-repair.ts",
-      "contentHash": "18ffedd59d7c89fa5294d14f88f7c20e5e394e15b8fe3e022b6f86030880a4dc",
+      "contentHash": "3ddcd5be0a7772c0c0bf82a2b7b800290205d34ce5f04b905a6fc66d5d1e4fd3",
       "functions": [
         {
           "name": "norm",
@@ -35593,15 +35852,6 @@
           "lineCount": 31
         },
         {
-          "name": "repairCall",
-          "params": [
-            "opts"
-          ],
-          "returnType": "RepairResult",
-          "exported": true,
-          "lineCount": 26
-        },
-        {
           "name": "parseJsonAt",
           "params": [
             "text",
@@ -35647,10 +35897,9 @@
         "repairArgs",
         "extractTextToolCalls",
         "zodSchemaish",
-        "repairCall",
         "rescueTextCalls"
       ],
-      "totalLines": 427,
+      "totalLines": 404,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/tools.ts": {
