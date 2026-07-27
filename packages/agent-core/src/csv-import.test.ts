@@ -215,6 +215,45 @@ describe("inferType", () => {
     assert.ok(t.precision > t.scale, `precision ${t.precision} must exceed scale ${t.scale}`);
   });
 
+  test("21-35 decimal places are now representable exactly, not rounded", () => {
+    // The old code clamped scale to an arbitrary 20 while cellToLiteral still
+    // emitted the full literal, so the server rounded these. Exasol allows
+    // scale up to precision, so DECIMAL(31,30) is legal and lossless.
+    assert.deepEqual(inferType(["0." + "1".repeat(30)]), {
+      kind: "decimal",
+      precision: 31,
+      scale: 30,
+    });
+  });
+
+  test("a decimal beyond the 36-digit ceiling stays varchar rather than being lost", () => {
+    // 40 decimal places: 1 + 40 = 41 total digits, over the ceiling.
+    assert.equal(inferType(["0." + "1".repeat(40)]).kind, "varchar");
+    // 40 integer digits + 2 decimals = 42.
+    assert.equal(inferType(["9".repeat(40) + ".12"]).kind, "varchar");
+  });
+
+  test("a decimal that exactly fits the precision ceiling is still a decimal", () => {
+    // 20 integer digits + 16 decimals = exactly 36.
+    const t = inferType(["1".repeat(20) + "." + "2".repeat(16)]);
+    assert.deepEqual(t, { kind: "decimal", precision: 36, scale: 16 });
+  });
+
+  test("never declares a precision Exasol cannot represent", () => {
+    for (const v of [
+      "1.5",
+      "0.123456",
+      "0." + "9".repeat(19),
+      "1".repeat(18) + ".5",
+      "1".repeat(20) + "." + "2".repeat(16),
+    ]) {
+      const t = inferType([v]);
+      if (t.kind !== "decimal") continue;
+      assert.ok(t.precision <= 36, `${v}: precision ${t.precision} exceeds 36`);
+      assert.ok(t.scale <= t.precision, `${v}: scale ${t.scale} > precision ${t.precision}`);
+    }
+  });
+
   test("a single non-numeric value demotes the whole column to varchar", () => {
     assert.equal(inferType(["1", "2", "n/a"]).kind, "varchar");
     assert.equal(inferType(["2024-01-01", "not a date"]).kind, "varchar");

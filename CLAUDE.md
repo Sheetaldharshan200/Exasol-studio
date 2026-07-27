@@ -74,17 +74,30 @@ reachability, and testability. These three are non-negotiable:
    5,000 again. A file that large is not "the main one", it is a landfill:
    nobody can review it, nothing in it is testable, and defects hide in it
    indefinitely. When adding to a big file, extract instead of appending.
-   Known offenders to shrink, never grow — `ExasolStudio.tsx` (4,062, down
-   from 5,089), `AssistantPanel.tsx` (2,090), `Dashboards.tsx` (2,086),
+   Known offenders to shrink, never grow — `ExasolStudio.tsx` (3,223, down
+   from 5,089), `Dashboards.tsx` (2,004), `AssistantPanel.tsx` (1,937),
    `local_database.rs` (1,512), `tools.ts` (1,461), `loop.ts` (1,131).
 
-   `ExasolStudio.tsx` breaks along seams that already exist. Extracted so far:
-   `lib/sql-text.ts` (pure SQL text helpers — now unit-tested, which is the
-   whole point of rule 3), `studio/tabs.ts` (the tab model),
-   `studio/IconButton.tsx`, and `studio/HistoryDock.tsx` (run-status strip,
-   results grid, git log, history dock). Still inline and extractable next:
-   `TitleBar`, `ConnectionSection`, `VisualizerPanel`, `Sidebar`, `Selector`,
-   `ConnectionSwitcher`.
+   These break along seams that already exist. Extracted so far, each verified
+   with tsc + a real vite production build + the test suite:
+
+   - from `ExasolStudio.tsx`: `lib/sql-text.ts` (pure SQL text helpers),
+     `studio/tabs.ts` (tab model), `studio/IconButton.tsx`,
+     `studio/HistoryDock.tsx` (run-status strip, results grid, git log,
+     history dock), `studio/Sidebar.tsx` (sidebar + connection sections +
+     visualizer panel), `studio/TitleBar.tsx`,
+     `studio/ConnectionSwitcher.tsx`, `studio/monaco-theme.ts`
+   - from `AssistantPanel.tsx`: `assistant/chat-text.ts` — tool-call-JSON
+     scrubbing, markdown-table reflow, fence splitting, tool labels
+   - from `Dashboards.tsx`: `bi/report-export.ts` — number/KPI formatting,
+     markdown tables, markdown→HTML, the markdown report builder
+
+   **Extract the pure logic first.** It is the cheapest cut, it carries the
+   least regression risk, and it is where the bugs are: extracting these found
+   a silent VARCHAR truncation, a NULL rendering as `0` in KPI tiles, and
+   unescaped HTML in exported reports. DOM- and echarts-coupled code
+   (`chartPng`, `buildHtmlReport`, `printHtml`) deliberately stays in its
+   component — it is not pure and moving it buys nothing.
 
 2. **Don't ship code that can't run.** Unreachable code is a defect, not
    untidiness. After copy-pasting a block, verify the copy is actually
@@ -123,6 +136,9 @@ Coverage is measured on the **pure logic core**, not the React tree — UI
 wiring is expensive to cover and catches little. Current: `csv-import.ts`
 100% lines, `tool-repair.ts` 98% lines, 100% functions across both. Keep new
 pure modules at that level; don't chase a repo-wide percentage.
+
+370 tests: agent-core (`node:test`), desktop (`node:test`, glob
+`src/**/*.test.ts`), the ANTLR parser corpus, and Rust `cargo test`.
 
 The way to make frontend logic testable is to pull it OUT of the component —
 `lib/sql-text.ts` was extracted from a 5,000-line shell precisely so it could

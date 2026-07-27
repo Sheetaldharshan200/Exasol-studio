@@ -159,6 +159,18 @@ export type ColType =
   | { kind: "boolean" }
   | { kind: "varchar"; size: number };
 
+/** Exasol's hard DECIMAL limit: total significant digits. */
+const MAX_DECIMAL_PRECISION = 36;
+
+/** Size a VARCHAR to hold the widest sampled value, with headroom. */
+function varcharFor(seen: string[]): ColType {
+  let maxLen = 1;
+  for (const v of seen) maxLen = Math.max(maxLen, v.length);
+  // Round up with headroom; Exasol VARCHAR max is 2,000,000.
+  const size = Math.min(2_000_000, Math.max(20, Math.ceil((maxLen * 1.5) / 10) * 10));
+  return { kind: "varchar", size };
+}
+
 /** Infer a conservative Exasol type from a column's sampled values. */
 export function inferType(values: string[]): ColType {
   const seen = values.map((v) => v.trim()).filter((v) => v !== "");
@@ -175,7 +187,10 @@ export function inferType(values: string[]): ColType {
     // Loop, never spread: Math.max(...600k values) overflows the call stack.
     let digits = 1;
     for (const v of seen) digits = Math.max(digits, v.replace("-", "").length);
-    return { kind: "decimal", precision: Math.min(36, digits), scale: 0 };
+    // INT_RE allows at most 18 digits, so this always fits — but assert the
+    // invariant rather than silently clamping it away.
+    if (digits > MAX_DECIMAL_PRECISION) return varcharFor(seen);
+    return { kind: "decimal", precision: digits, scale: 0 };
   }
   if (seen.every((v) => INT_RE.test(v) || DEC_RE.test(v))) {
     let intDigits = 1;
@@ -185,16 +200,20 @@ export function inferType(values: string[]): ColType {
       intDigits = Math.max(intDigits, ip.length);
       scale = Math.max(scale, fp.length);
     }
-    scale = Math.min(scale, 20);
-    const precision = Math.min(36, intDigits + scale);
-    return { kind: "decimal", precision: Math.max(precision, scale + 1), scale };
+    // If the exact value does not fit an Exasol DECIMAL, keep the column as
+    // TEXT rather than declaring a type that cannot hold it. This used to clamp
+    // scale to 20 and precision to 36 while cellToLiteral still emitted the
+    // full literal, so Exasol either rounded the value or rejected the row —
+    // both silent-ish data loss for a column of exact decimals (currency,
+    // scientific measurements, crypto amounts). Preserving the text is lossless
+    // and the user can cast deliberately.
+    if (intDigits + scale > MAX_DECIMAL_PRECISION) return varcharFor(seen);
+    // intDigits is at least 1, so intDigits + scale always exceeds scale — the
+    // Math.max(…, scale + 1) that used to guard this was dead.
+    return { kind: "decimal", precision: intDigits + scale, scale };
   }
 
-  let maxLen = 1;
-  for (const v of seen) maxLen = Math.max(maxLen, v.length);
-  // Round up with headroom; Exasol VARCHAR max is 2,000,000.
-  const size = Math.min(2_000_000, Math.max(20, Math.ceil((maxLen * 1.5) / 10) * 10));
-  return { kind: "varchar", size };
+  return varcharFor(seen);
 }
 
 export function typeToSql(t: ColType): string {

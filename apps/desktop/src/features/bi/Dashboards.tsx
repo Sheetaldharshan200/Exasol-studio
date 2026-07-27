@@ -1,4 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MD_ROW_CAP,
+  buildMarkdownReport,
+  fmtNumber,
+  kpiText,
+  mdTable,
+  mdToHtml,
+  slugify,
+} from "./report-export";
 import * as echarts from "echarts";
 import { worker as pspWorker } from "@perspective-dev/client";
 import "@perspective-dev/viewer";
@@ -1895,7 +1904,6 @@ function PanelEditor({
   );
 }
 
-
 /** Prebuilt chart starters — pick a dataset, tap one, adjust, done. */
 const TEMPLATES: { label: string; hint: string; viz: "bar" | "line" | "area" | "pie" | "scatter" | "kpi" | "table" | "explore"; sql: (ds: string) => string }[] = [
   { label: "Breakdown bar", hint: "Count by a category", viz: "bar", sql: (ds) => `SELECT <category_column>, COUNT(*) AS CNT\nFROM ${ds}\nGROUP BY 1 ORDER BY 2 DESC LIMIT 20` },
@@ -1909,64 +1917,6 @@ const TEMPLATES: { label: string; hint: string; viz: "bar" | "line" | "area" | "
 ];
 
 /* ────────────────────────── Report export (md / html / pdf) ─────────────── */
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "dashboard";
-}
-
-function fmtNumber(raw: unknown): string {
-  const num = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(num)) return String(raw ?? "—");
-  if (Math.abs(num) >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
-  if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
-  if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
-  return Number.isInteger(num) ? String(num) : num.toFixed(2);
-}
-
-function kpiText(panel: DashPanel, result: StatementResult): string {
-  const viz = panel.viz as Extract<DashPanel["viz"], { type: "kpi" }>;
-  const field = viz.valueField?.toUpperCase();
-  const idx = field ? result.columns.findIndex((c) => c.name === field) : 0;
-  const value = fmtNumber(result.rows[0]?.[Math.max(idx, 0)]);
-  return viz.unit ? `${value} ${viz.unit}` : value;
-}
-
-const MD_ROW_CAP = 50;
-
-function mdTable(result: StatementResult): string {
-  const esc = (v: unknown) => String(v ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
-  const cols = result.columns.map((c) => c.name);
-  const rows = result.rows.slice(0, MD_ROW_CAP);
-  const lines = [
-    `| ${cols.join(" | ")} |`,
-    `| ${cols.map(() => "---").join(" | ")} |`,
-    ...rows.map((r) => `| ${r.map(esc).join(" | ")} |`),
-  ];
-  if (result.rows.length > MD_ROW_CAP) lines.push("", `_…${result.rows.length - MD_ROW_CAP} more rows not shown._`);
-  return lines.join("\n");
-}
-
-function buildMarkdownReport(dash: Dashboard, panels: DashPanel[], data: Map<string, StatementResult | null>): string {
-  const parts: string[] = [`# ${dash.title}`, ""];
-  if (dash.description) parts.push(dash.description, "");
-  parts.push(`_Exported from Exasol Studio · ${new Date().toLocaleString()}_`, "");
-  for (const p of panels) {
-    if (p.viz.type === "markdown") {
-      parts.push(p.viz.content, "");
-      continue;
-    }
-    parts.push(`## ${p.title || "Panel"}`, "");
-    const r = data.get(p.id);
-    if (!r) {
-      parts.push("_No data (not connected or the query failed)._", "");
-      continue;
-    }
-    if (p.viz.type === "kpi") parts.push(`**${kpiText(p, r)}**`, "");
-    else parts.push(mdTable(r), "");
-    if (p.query?.sql) parts.push("```sql", p.query.sql.trim(), "```", "");
-  }
-  return parts.join("\n");
-}
 
 /** Render one chart offscreen and snapshot it as a PNG data URL. */
 function chartPng(viz: Extract<DashPanel["viz"], { type: "echarts" }>, result: StatementResult): string | null {
@@ -1987,38 +1937,6 @@ function chartPng(viz: Extract<DashPanel["viz"], { type: "echarts" }>, result: S
   } finally {
     div.remove();
   }
-}
-
-/** Minimal markdown→HTML for narrative panels in exported reports. */
-function mdToHtml(md: string): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = (s: string) =>
-    esc(s)
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>");
-  const out: string[] = [];
-  let inList = false;
-  for (const line of md.split("\n")) {
-    const h = line.match(/^(#{1,4})\s+(.*)/);
-    const li = line.match(/^\s*[-*]\s+(.*)/);
-    if (li) {
-      if (!inList) {
-        out.push("<ul>");
-        inList = true;
-      }
-      out.push(`<li>${inline(li[1])}</li>`);
-      continue;
-    }
-    if (inList) {
-      out.push("</ul>");
-      inList = false;
-    }
-    if (h) out.push(`<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`);
-    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
-  }
-  if (inList) out.push("</ul>");
-  return out.join("\n");
 }
 
 function buildHtmlReport(dash: Dashboard, panels: DashPanel[], data: Map<string, StatementResult | null>): string {
