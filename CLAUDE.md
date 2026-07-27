@@ -74,9 +74,17 @@ reachability, and testability. These three are non-negotiable:
    5,000 again. A file that large is not "the main one", it is a landfill:
    nobody can review it, nothing in it is testable, and defects hide in it
    indefinitely. When adding to a big file, extract instead of appending.
-   Known offenders to shrink, never grow — `ExasolStudio.tsx` (5,084),
-   `AssistantPanel.tsx` (2,090), `Dashboards.tsx` (2,086),
-   `local_database.rs` (1,518), `tools.ts` (1,461), `loop.ts` (1,125).
+   Known offenders to shrink, never grow — `ExasolStudio.tsx` (4,062, down
+   from 5,089), `AssistantPanel.tsx` (2,090), `Dashboards.tsx` (2,086),
+   `local_database.rs` (1,512), `tools.ts` (1,461), `loop.ts` (1,131).
+
+   `ExasolStudio.tsx` breaks along seams that already exist. Extracted so far:
+   `lib/sql-text.ts` (pure SQL text helpers — now unit-tested, which is the
+   whole point of rule 3), `studio/tabs.ts` (the tab model),
+   `studio/IconButton.tsx`, and `studio/HistoryDock.tsx` (run-status strip,
+   results grid, git log, history dock). Still inline and extractable next:
+   `TitleBar`, `ConnectionSection`, `VisualizerPanel`, `Sidebar`, `Selector`,
+   `ConnectionSwitcher`.
 
 2. **Don't ship code that can't run.** Unreachable code is a defect, not
    untidiness. After copy-pasting a block, verify the copy is actually
@@ -115,6 +123,12 @@ Coverage is measured on the **pure logic core**, not the React tree — UI
 wiring is expensive to cover and catches little. Current: `csv-import.ts`
 100% lines, `tool-repair.ts` 98% lines, 100% functions across both. Keep new
 pure modules at that level; don't chase a repo-wide percentage.
+
+The way to make frontend logic testable is to pull it OUT of the component —
+`lib/sql-text.ts` was extracted from a 5,000-line shell precisely so it could
+be tested, and its tests mirror the Rust `split_statements` tests because the
+two splitters must agree or "Run" sends something different from what the
+server executes.
 
 ## Conventions that bite if ignored
 

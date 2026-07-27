@@ -171,6 +171,18 @@ describe("inferType", () => {
     assert.deepEqual(inferType(["2024-01-01", "1999-12-31"]), { kind: "date" });
     assert.deepEqual(inferType(["2024-01-01 10:00:00"]), { kind: "timestamp" });
     assert.deepEqual(inferType(["2024-01-01T10:00:00.123"]), { kind: "timestamp" });
+    assert.deepEqual(inferType(["2024-02-29"]), { kind: "date" }); // real leap day
+  });
+
+  test("date-SHAPED but calendar-invalid values stay varchar so they survive", () => {
+    // Shape-only matching used to infer DATE here, and cellToLiteral then
+    // NULLed every value — the column silently emptied.
+    assert.equal(inferType(["2024-99-99"]).kind, "varchar");
+    assert.equal(inferType(["2024-02-30"]).kind, "varchar");
+    assert.equal(inferType(["2023-02-29"]).kind, "varchar"); // not a leap year
+    assert.equal(inferType(["2024-13-01"]).kind, "varchar");
+    assert.equal(inferType(["2024-01-01 25:00:00"]).kind, "varchar");
+    assert.equal(inferType(["2024-01-01 10:61:00"]).kind, "varchar");
   });
 
   test("sizes integer columns by their widest value", () => {
@@ -252,8 +264,12 @@ describe("cellToLiteral", () => {
     );
   });
 
-  test("truncates a value longer than its column", () => {
-    assert.equal(cellToLiteral("abcdefghijklmno", varchar), "'abcdefghij'");
+  test("emits an over-long value in FULL rather than silently truncating it", () => {
+    // Type inference samples at most 500k rows, so a long value beyond the
+    // sample WILL exceed its column. Truncating here corrupted data with no
+    // error anywhere; now the oversized literal reaches Exasol, which rejects
+    // it and the caller's per-row retry reports the offending row.
+    assert.equal(cellToLiteral("abcdefghijklmno", varchar), "'abcdefghijklmno'");
   });
 
   test("renders typed literals with their keyword", () => {
@@ -264,6 +280,14 @@ describe("cellToLiteral", () => {
     );
     assert.equal(cellToLiteral("true", { kind: "boolean" }), "TRUE");
     assert.equal(cellToLiteral("123", { kind: "decimal", precision: 3, scale: 0 }), "123");
+  });
+
+  test("a calendar-invalid date is NULL rather than a value Exasol would reject", () => {
+    assert.equal(cellToLiteral("2024-99-99", { kind: "date" }), "NULL");
+    assert.equal(cellToLiteral("2023-02-29", { kind: "date" }), "NULL");
+    assert.equal(cellToLiteral("2024-01-01 25:00:00", { kind: "timestamp" }), "NULL");
+    // Real ones still render.
+    assert.equal(cellToLiteral("2024-02-29", { kind: "date" }), "DATE '2024-02-29'");
   });
 
   test("a value that does not fit its inferred type becomes NULL, never invalid SQL", () => {
@@ -339,6 +363,13 @@ describe("objectsToTable", () => {
     assert.deepEqual(t.rows[0], ["", "", "true", "10", '{"x":1}']);
   });
 
+  test("serializes a NESTED bigint instead of throwing", () => {
+    // Parquet rows routinely nest bigints; a bare JSON.stringify threw
+    // "Do not know how to serialize a BigInt" and aborted the whole import.
+    const t = objectsToTable([{ o: { id: 1n, nested: { n: 2n } } }]);
+    assert.equal(t.rows[0][0], '{"id":"1","nested":{"n":"2"}}');
+  });
+
   test("formats dates and drops invalid ones", () => {
     const t = objectsToTable([{ d: new Date("2024-01-01T10:00:00Z") }, { d: new Date("nope") }]);
     assert.equal(t.rows[0][0], "2024-01-01 10:00:00");
@@ -371,7 +402,8 @@ describe("buildInsert", () => {
     assert.match(buildInsert(plan, [["1", "O'Brien"]]), /'O''Brien'/);
   });
 
-  test("produces a header-only statement for no rows", () => {
-    assert.equal(buildInsert(plan, []).endsWith("VALUES\n"), true);
+  test("refuses an empty batch instead of emitting invalid SQL", () => {
+    // `INSERT INTO t (cols) VALUES` with no tuples is not valid SQL.
+    assert.throws(() => buildInsert(plan, []), /no rows/);
   });
 });

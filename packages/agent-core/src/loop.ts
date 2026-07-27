@@ -1089,8 +1089,11 @@ export function extractReadSql(text: string): string | null {
   if (!m) return null;
   const sql = m[0].trim();
   // A real query, not prose that happens to contain "select": SELECT needs a
-  // FROM (Exasol scalar SELECTs without FROM are rare enough to skip).
-  if (/^SELECT/i.test(sql) && !/\bFROM\b/i.test(sql)) return null;
+  // FROM (Exasol scalar SELECTs without FROM are rare enough to skip), and the
+  // FROM needs an actual target after it. A truncated "SELECT a FROM" used to
+  // pass this gate and get handed to run_sql, turning a stalled model into a
+  // pointless database error instead of a nudge to finish the query.
+  if (/^SELECT/i.test(sql) && !/\bFROM\s+["\w$]/i.test(sql)) return null;
   if (/\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|IMPORT|EXPORT)\b/i.test(sql)) return null;
   return sql.length >= 12 && sql.length <= 4000 ? sql : null;
 }
@@ -1107,7 +1110,7 @@ export function looksUnfinished(text: string): boolean {
   // Apostrophes are matched as ['’]: models emit the typographic U+2019 as
   // often as the ASCII one, and matching only ASCII silently finalized turns
   // that had promised to keep going. looksLikeUnacted above already did this.
-  return /\b(i['’]?ll (now )?(move on|proceed|continue|check|list|query|run|do|start|call)|moving on to|next,? (i|let['’]s|we)|let['’]?s (now )?(move|continue|proceed|check|list|query)|i will (now |then )?(proceed|continue|check|list|query|run)|now (i|let['’]?s) (will |can )?(check|list|query|proceed|move))\b[^?]*$/.test(
+  return /\b(i['’]?ll (now )?(move on|proceed|continue|check|list|query|run|do|start|call)|moving on to|next,? (i|let['’]?s|we)|let['’]?s (now )?(move|continue|proceed|check|list|query)|i will (now |then )?(proceed|continue|check|list|query|run)|now (i|let['’]?s) (will |can )?(check|list|query|proceed|move))\b[^?]*$/.test(
     tail,
   );
 }

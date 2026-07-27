@@ -303,13 +303,19 @@ export function repairCall(opts: {
   if (!resolved) return null;
   const parsed = parseLooseArgs(opts.rawInput);
   if (parsed === null) return null;
-  let schema: JsonSchemaish;
+  // No schema means we cannot repair keys or coerce types — but we must NOT
+  // then hand the tool an empty argument object. repairArgs drops every key not
+  // declared in `properties`, so an absent/failed schema lookup used to turn a
+  // perfectly good {sql: "…"} into {}, and the call failed with a misleading
+  // "missing required argument". Pass the parsed args through untouched instead.
+  let schema: JsonSchemaish | null;
   try {
-    schema = opts.getSchema(resolved) ?? {};
+    schema = opts.getSchema(resolved) ?? null;
   } catch {
-    schema = {};
+    schema = null;
   }
-  const fixed = repairArgs(parsed, schema);
+  const hasProps = !!schema && !!schema.properties && Object.keys(schema.properties).length > 0;
+  const fixed = hasProps ? repairArgs(parsed, schema!) : parsed;
   if (fixed === null) return null;
   const renamed = resolved !== opts.requestedName;
   return {

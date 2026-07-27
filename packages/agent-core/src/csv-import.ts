@@ -131,6 +131,27 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TS_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/;
 const BOOL_RE = /^(true|false)$/i;
 
+/**
+ * Shape AND calendar validity. The regexes above only check shape, so they
+ * happily accept "2024-99-99" or "2024-02-30" — which would infer a DATE column
+ * and then fail at INSERT time, or (worse) be silently NULLed. Round-tripping
+ * through Date catches month/day overflow, including non-leap-year Feb 29.
+ */
+function isCalendarDate(v: string): boolean {
+  if (!DATE_RE.test(v)) return false;
+  const [y, m, d] = v.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+function isCalendarTimestamp(v: string): boolean {
+  if (!TS_RE.test(v)) return false;
+  const [datePart, timePart] = v.split(/[ T]/);
+  if (!isCalendarDate(datePart)) return false;
+  const [hh, mm, ss] = timePart.split(":").map(Number);
+  return hh <= 23 && mm <= 59 && Math.floor(ss) <= 59;
+}
+
 export type ColType =
   | { kind: "decimal"; precision: number; scale: number }
   | { kind: "date" }
@@ -144,8 +165,11 @@ export function inferType(values: string[]): ColType {
   if (!seen.length) return { kind: "varchar", size: 100 };
 
   if (seen.every((v) => BOOL_RE.test(v))) return { kind: "boolean" };
-  if (seen.every((v) => TS_RE.test(v))) return { kind: "timestamp" };
-  if (seen.every((v) => DATE_RE.test(v))) return { kind: "date" };
+  // Calendar-validated, not just shape-matched: a column containing
+  // "2024-99-99" must NOT become a DATE, or cellToLiteral would NULL that value
+  // and the data would vanish. Such a column stays VARCHAR and round-trips.
+  if (seen.every(isCalendarTimestamp)) return { kind: "timestamp" };
+  if (seen.every(isCalendarDate)) return { kind: "date" };
 
   if (seen.every((v) => INT_RE.test(v))) {
     // Loop, never spread: Math.max(...600k values) overflows the call stack.
@@ -196,7 +220,17 @@ function litStr(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-/** Render one CSV cell as an Exasol SQL literal for its inferred column type. */
+/**
+ * Render one CSV cell as an Exasol SQL literal for its inferred column type.
+ *
+ * VARCHAR values are emitted in FULL, even when longer than the inferred column
+ * size. This used to `slice()` them to fit, which silently corrupted data: type
+ * inference samples at most `sampleSize` rows (500k by default), so a long value
+ * beyond the sample got quietly cut with no error anywhere. Now the oversized
+ * literal reaches Exasol, which rejects it with a clear error, and the caller's
+ * per-row retry path reports exactly which row was too wide. A visible failure
+ * is recoverable; silent truncation is not.
+ */
 export function cellToLiteral(raw: string, t: ColType): string {
   const v = raw.trim();
   if (v === "") return "NULL";
@@ -206,11 +240,11 @@ export function cellToLiteral(raw: string, t: ColType): string {
     case "boolean":
       return BOOL_RE.test(v) ? v.toUpperCase() : "NULL";
     case "date":
-      return DATE_RE.test(v) ? `DATE ${litStr(v)}` : "NULL";
+      return isCalendarDate(v) ? `DATE ${litStr(v)}` : "NULL";
     case "timestamp":
-      return TS_RE.test(v) ? `TIMESTAMP ${litStr(v.replace("T", " "))}` : "NULL";
+      return isCalendarTimestamp(v) ? `TIMESTAMP ${litStr(v.replace("T", " "))}` : "NULL";
     case "varchar":
-      return litStr(v.length > t.size ? v.slice(0, t.size) : v);
+      return litStr(v);
   }
 }
 
@@ -269,7 +303,12 @@ function valueToCell(v: unknown): string {
   }
   if (typeof v === "bigint") return v.toString();
   if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "object") {
+    // A NESTED bigint (common in Parquet: {id: 1n}) makes a bare
+    // JSON.stringify throw "Do not know how to serialize a BigInt", which
+    // aborted the whole import. Serialize them as strings instead.
+    return JSON.stringify(v, (_k, val) => (typeof val === "bigint" ? val.toString() : val));
+  }
   return String(v);
 }
 
@@ -293,8 +332,15 @@ export function objectsToTable(objs: Record<string, unknown>[]): CsvTable {
   return { delimiter: ",", header, rows };
 }
 
-/** Build ONE multi-row INSERT for the given rows (used per-batch and per-row). */
+/**
+ * Build ONE multi-row INSERT for the given rows (used per-batch and per-row).
+ *
+ * Throws on an empty batch rather than emitting `INSERT … VALUES` with no
+ * tuples, which is not valid SQL. Callers batch non-empty slices, so this is a
+ * contract guard, not a reachable path.
+ */
 export function buildInsert(plan: ImportPlan, rows: string[][]): string {
+  if (!rows.length) throw new Error("buildInsert: refusing to build an INSERT with no rows");
   const fq = `${quoteIdent(plan.schema)}.${quoteIdent(plan.table)}`;
   const colList = plan.columns.map((c) => quoteIdent(c.name)).join(", ");
   const values = rows

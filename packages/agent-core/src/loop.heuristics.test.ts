@@ -143,8 +143,18 @@ describe("extractReadSql", () => {
     assert.equal(extractReadSql("SELECT*FROM"), null);
     // Above the 4000-char ceiling.
     assert.equal(extractReadSql(`SELECT ${"a".repeat(4100)} FROM t`), null);
-    // Just inside the floor still works.
-    assert.equal(extractReadSql("SELECT a FROM"), "SELECT a FROM");
+  });
+
+  test("rejects a truncated statement with nothing after FROM", () => {
+    // This result can be handed straight to run_sql, so a half-written query
+    // must not qualify — it would produce a pointless database error instead of
+    // nudging the model to finish.
+    assert.equal(extractReadSql("SELECT a FROM"), null);
+    assert.equal(extractReadSql("SELECT a FROM   "), null);
+    assert.equal(extractReadSql("SELECT a FROM\n"), null);
+    // A real target still works.
+    assert.equal(extractReadSql("SELECT a FROM t2"), "SELECT a FROM t2");
+    assert.equal(extractReadSql('SELECT a FROM "T"'), 'SELECT a FROM "T"');
   });
 
   test("is case-insensitive", () => {
@@ -181,5 +191,14 @@ describe("looksUnfinished", () => {
   test("is case-insensitive and tolerates a typographic apostrophe", () => {
     assert.equal(looksUnfinished("LET'S NOW PROCEED"), true);
     assert.equal(looksUnfinished("I’ll now check the data"), true);
+  });
+
+  test("tolerates a MISSING apostrophe too", () => {
+    // Models drop apostrophes as readily as they curl them; the "Next, ..."
+    // branch used to require one while its siblings did not.
+    assert.equal(looksUnfinished("Next, lets call run_sql"), true);
+    assert.equal(looksUnfinished("Next lets query the table"), true);
+    assert.equal(looksUnfinished("Ill now check the columns"), true);
+    assert.equal(looksUnfinished("Lets now proceed"), true);
   });
 });

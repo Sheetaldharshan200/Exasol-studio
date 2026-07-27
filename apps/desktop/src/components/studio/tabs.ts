@@ -1,0 +1,135 @@
+/**
+ * Workspace-tab model for the studio shell: the tab union, its per-view state,
+ * groups, and the constants that go with them.
+ *
+ * Extracted from ExasolStudio.tsx so the shell and the panels it renders can
+ * share one definition instead of the shell owning the type everything else
+ * needs.
+ */
+import { type IconName } from "@/components/ui/icon";
+import type { ObjectRef } from "@/features/workbench/ObjectDetailPanel";
+import type { ProfileData } from "@/features/workbench/QueryProfileView";
+import type { ExecuteResponse } from "@/lib/ipc";
+
+export const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
+
+/** A workspace tab is a SQL editor, a read-only catalog surface, or the
+ * connect-to-database flow (so adding a connection doesn't hide your queries). */
+export type TabView =
+  | "sql"
+  | "connect"
+  | "visualizer"
+  | "filePreview"
+  | "marketplace"
+  | "guides"
+  | "object"
+  | "dba"
+  | "bi"
+  | "welcome"
+  | "artifact"
+  | "mcpConfig"
+  | "git"
+  | "notebook"
+  | "skills"
+  | "aiSettings"
+  | "profile"
+  | "connProps";
+
+export type SqlTab = {
+  id: string;
+  title: string;
+  view: TabView;
+  sql: string;
+  response: ExecuteResponse | null;
+  execError: string | null;
+  pinned?: boolean;
+  /** For filePreview tabs — the local file path being previewed. */
+  filePath?: string;
+  /** True when this tab's backing file was deleted on disk (title struck out). */
+  fileMissing?: boolean;
+  /** Membership in a collapsible tab group (see TabGroup). */
+  groupId?: string;
+  /** For mcpConfig tabs — which connector preset to configure. */
+  mcpPreset?: string;
+  /** For object tabs — the database object being inspected. */
+  objectRef?: ObjectRef;
+  /** For object tabs — the owning connection. */
+  objectProfileId?: string;
+  /** For object tabs — deep-link to a sub-tab (info/columns/keys) and edit mode.
+   *  Nonce forces the panel to re-apply even when the tab already exists. */
+  objNavTab?: string;
+  objNavEdit?: boolean;
+  objNavNonce?: number;
+  /** Execution lifecycle for the status strip (started/running/completed). */
+  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
+  /** For artifact tabs — the rendered HTML document. */
+  artifactHtml?: string;
+  /** For profile tabs — the computed query-performance analysis. */
+  profileData?: ProfileData;
+  /** Result pagination (0-based) for single-SELECT tabs. */
+  resultPage?: number;
+  /** For the unified connection tab — which section to show; nonce re-applies
+   *  it when the tab is already open. */
+  connSection?: import("@/features/connection/ConnectionPropertiesTab").ConnectionSection;
+  connSectionNonce?: number;
+  /** Live engine progress for the running batch (issues #19/#20). */
+  queryProgress?: {
+    statement?: number;
+    total?: number;
+    activity?: string | null;
+    percent?: number | null;
+    elapsedMs: number;
+    finished: boolean;
+  };
+};
+
+/** A collapsible group of query/view tabs shown as one chip in the tab strip. */
+export type TabGroup = { id: string; name: string; collapsed: boolean };
+
+export function newTab(index: number): SqlTab {
+  return {
+    id: `tab-${Date.now()}-${index}`,
+    title: `Untitled-${index}`,
+    view: "sql",
+    sql:
+      index === 1
+        ? `-- Welcome to Exasol Studio.\n-- Run with the toolbar or Ctrl/Cmd+Enter.\n\nSELECT *\nFROM SYS.EXA_ALL_SCHEMAS\nORDER BY SCHEMA_NAME;\n`
+        : "",
+    response: null,
+    execError: null,
+  };
+}
+
+export const TAB_ICON: Record<TabView, IconName> = {
+  sql: "querytab",
+  dba: "shield",
+  connect: "plug",
+  visualizer: "visualizer",
+  filePreview: "table",
+  mcpConfig: "plug",
+  marketplace: "marketplace",
+  guides: "guides",
+  object: "table",
+  bi: "dashboards",
+  connProps: "sliders",
+  welcome: "home",
+  artifact: "file",
+  git: "git",
+  notebook: "notebook",
+  skills: "skills",
+  aiSettings: "brain-circuit",
+  profile: "clock-dashed-half",
+};
+
+/** Shown when a connection bucket has no open tabs (VS Code-style start page). */
+export const WELCOME_TAB: SqlTab = {
+  id: "__welcome__",
+  title: "Welcome",
+  view: "welcome",
+  sql: "",
+  response: null,
+  execError: null,
+};
+
+/** Sentinel key for the not-connected tab bucket. */
+export const NO_CONNECTION = "__none__";

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T19:40:17.133Z",
+  "generatedAt": "2026-07-27T08:50:54.899Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -29,36 +29,6 @@
       "within": "ai.panel",
       "open": "settings",
       "hint": "Sidebar: Providers & Models / Guardrails (read-write policy, pet mode + companion picker, restrictions) / Behavior (steps, temperature, workspace instructions)."
-    },
-    {
-      "id": "anchor.connect.host",
-      "label": "connect host",
-      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
-    },
-    {
-      "id": "anchor.connect.name",
-      "label": "connect name",
-      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
-    },
-    {
-      "id": "anchor.connect.password",
-      "label": "connect password",
-      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
-    },
-    {
-      "id": "anchor.connect.submit",
-      "label": "connect submit",
-      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
-    },
-    {
-      "id": "anchor.connect.username",
-      "label": "connect username",
-      "where": "apps/desktop/src/features/connection/ConnectView.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/connection/ConnectView.tsx"
     },
     {
       "id": "anchor.rail.mcp",

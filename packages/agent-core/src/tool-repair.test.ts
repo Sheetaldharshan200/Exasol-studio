@@ -404,7 +404,7 @@ describe("repairCall", () => {
     assert.equal(repairCall({ requestedName: "run_sql", rawInput: "{}", tools, getSchema }), null);
   });
 
-  test("survives a schema lookup that throws", () => {
+  test("a schema lookup that throws must not discard the arguments", () => {
     const got = repairCall({
       requestedName: "run_sql",
       rawInput: '{"sql":"S"}',
@@ -413,13 +413,13 @@ describe("repairCall", () => {
         throw new Error("boom");
       },
     });
-    // No schema means no declared properties, so args are dropped but the call
-    // is still routed rather than failed.
+    // Without a schema we cannot repair keys — but dropping them turned a
+    // perfectly good call into a misleading "missing required argument".
     assert.equal(got?.toolName, "run_sql");
-    assert.equal(got?.input, "{}");
+    assert.equal(got?.input, '{"sql":"S"}');
   });
 
-  test("survives a schema lookup that returns nothing", () => {
+  test("a schema lookup that returns nothing also preserves the arguments", () => {
     const got = repairCall({
       requestedName: "run_sql",
       rawInput: '{"sql":"S"}',
@@ -427,6 +427,17 @@ describe("repairCall", () => {
       getSchema: () => undefined as unknown as ReturnType<typeof getSchema>,
     });
     assert.equal(got?.toolName, "run_sql");
+    assert.equal(got?.input, '{"sql":"S"}');
+  });
+
+  test("an empty-properties schema also preserves the arguments", () => {
+    const got = repairCall({
+      requestedName: "run_sql",
+      rawInput: '{"sql":"S"}',
+      tools,
+      getSchema: () => ({ properties: {}, required: [] }),
+    });
+    assert.equal(got?.input, '{"sql":"S"}');
   });
 
   test("returns null when no tools are exposed", () => {

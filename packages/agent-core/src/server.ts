@@ -502,30 +502,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending ui request" });
       }
 
-      // Skills: list / save / delete
-      if (parts[1] === "skills") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
-        if (req.method === "PUT") {
-          const b = await readBody<{ name: string; description?: string; body: string }>(req);
-          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
-          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // GET /v1/artifacts — list (newest first)
-      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
-        return json(res, 200, { artifacts: artifacts.list() });
-      }
-
-      // GET /v1/artifacts/:id
-      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
-        const a = artifacts.get(decodeURIComponent(parts[2]));
-        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
-      }
-
       // POST /v1/sessions/:id/abort
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "abort") {
         session.abort?.abort();
