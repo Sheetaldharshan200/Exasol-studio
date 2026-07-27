@@ -108,17 +108,41 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
 }
 
 async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
-    open_pool_sized(profile, 4).await
+    open_pool_sized(profile, 4, Vec::new()).await
 }
 
-async fn open_pool_sized(profile: &ConnectionProfile, max_connections: u32) -> AppResult<ExaPool> {
+async fn open_pool_sized(
+    profile: &ConnectionProfile,
+    max_connections: u32,
+    connect_hooks: Vec<String>,
+) -> AppResult<ExaPool> {
     let options = build_connect_options(profile)?;
-    let pool = sqlx_exasol::pool::PoolOptions::<Exasol>::new()
+    let mut opts = sqlx_exasol::pool::PoolOptions::<Exasol>::new()
         .min_connections(0)
         .max_connections(max_connections.clamp(1, 16))
-        .acquire_timeout(std::time::Duration::from_secs(20))
-        .connect_with(options)
-        .await?;
+        .acquire_timeout(std::time::Duration::from_secs(20));
+    // Run-SQL-at-Connect hooks must apply to EVERY physical session, not a
+    // one-shot connection that's returned to the pool — otherwise a session
+    // setting like ALTER SESSION never reaches the connection a later query
+    // acquires. after_connect fires as each pooled connection is established,
+    // best-effort (a bad hook logs, never fails the connection).
+    if !connect_hooks.is_empty() {
+        opts = opts.after_connect(move |conn, _meta| {
+            let hooks = connect_hooks.clone();
+            Box::pin(async move {
+                for stmt in &hooks {
+                    if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.clone()))
+                        .execute(&mut *conn)
+                        .await
+                    {
+                        eprintln!("connection hook statement failed: {e}");
+                    }
+                }
+                Ok(())
+            })
+        });
+    }
+    let pool = opts.connect_with(options).await?;
     Ok(pool)
 }
 
@@ -203,16 +227,20 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         crate::connection_settings::num_at(&settings, &["driver", "connectionPoolSize"]).unwrap_or(4) as u32
     };
 
-    let pool = open_pool_sized(&profile, pool_size).await?;
-    let info = read_server_info(&pool).await?;
+    // Run SQL at Connect (Connection Hooks): applied to every pooled session
+    // via after_connect (see open_pool_sized) so it actually reaches the
+    // connections that later queries acquire.
+    let connect_hooks: Vec<String> =
+        if crate::connection_settings::bool_at(&settings, &["hooks", "connectEnabled"]).unwrap_or(false) {
+            crate::connection_settings::str_at(&settings, &["hooks", "connectSql"])
+                .map(|sql| sql.split(';').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
-    // Run SQL at Connect (Connection Hooks) — best-effort, never blocks the
-    // connect; problems land in the log, not in the user's face.
-    if crate::connection_settings::bool_at(&settings, &["hooks", "connectEnabled"]).unwrap_or(false) {
-        if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "connectSql"]) {
-            run_hook_sql(&pool, sql).await;
-        }
-    }
+    let pool = open_pool_sized(&profile, pool_size, connect_hooks).await?;
+    let info = read_server_info(&pool).await?;
 
     // Connection Keep-Alive: validate on an interval while the pool lives.
     // The task holds only a pool clone; pool.close() (disconnect) ends it.

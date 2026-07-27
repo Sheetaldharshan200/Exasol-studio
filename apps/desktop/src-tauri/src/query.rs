@@ -1,7 +1,7 @@
 use futures_util::TryStreamExt;
 use serde::Serialize;
 use serde_json::{json, Value};
-use sqlx_exasol::{AssertSqlSafe, Column, ExaPool, ExaRow, Row, TypeInfo};
+use sqlx_exasol::{AssertSqlSafe, Column, ExaPool, ExaRow, Row, TypeInfo, ValueRef};
 use tauri::{Emitter, State};
 
 use crate::connection::require_pool;
@@ -43,35 +43,66 @@ pub struct ExecuteResponse {
 }
 
 /// Decode one cell into JSON, trying types from most to least specific.
+///
+/// NULL is resolved FIRST, from the raw value, so a genuine NULL is never
+/// confused with "no branch below matched". Everything after that point is a
+/// non-NULL value we are obliged to render as something truthful.
+///
+/// The typed ladder below goes through `try_get`, which gates on the column's
+/// DECLARED type before decoding. That gate is why the exotic Exasol types
+/// (INTERVAL, GEOMETRY, HASHTYPE, …) used to fall through every branch and
+/// land on `Value::Null` — silently rendering real data as NULL in the grid.
+/// The `try_get_unchecked` fallback skips the gate and decodes the raw wire
+/// value; Exasol's protocol is JSON, so those types arrive as JSON strings and
+/// round-trip correctly.
 fn decode_cell(row: &ExaRow, idx: usize) -> Value {
-    if let Ok(v) = row.try_get::<Option<bool>, _>(idx) {
-        return v.map(Value::from).unwrap_or(Value::Null);
+    // Authoritative NULL check — independent of any type compatibility.
+    match row.try_get_raw(idx) {
+        Ok(raw) if raw.is_null() => return Value::Null,
+        Err(_) => return Value::Null, // index out of range: nothing to decode
+        Ok(_) => {}
     }
-    if let Ok(v) = row.try_get::<Option<i64>, _>(idx) {
-        return v.map(Value::from).unwrap_or(Value::Null);
+
+    if let Ok(Some(v)) = row.try_get::<Option<bool>, _>(idx) {
+        return Value::from(v);
     }
-    if let Ok(v) = row.try_get::<Option<f64>, _>(idx) {
-        return v.map(|f| json!(f)).unwrap_or(Value::Null);
+    if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(idx) {
+        return Value::from(v);
     }
-    if let Ok(v) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
-        return v
-            .map(|d| Value::String(d.to_string()))
-            .unwrap_or(Value::Null);
+    if let Ok(Some(v)) = row.try_get::<Option<f64>, _>(idx) {
+        return json!(v);
     }
-    if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
-        return v.map(Value::String).unwrap_or(Value::Null);
+    if let Ok(Some(v)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+        return Value::String(v.to_string());
     }
-    if let Ok(v) = row.try_get::<Option<chrono::NaiveDate>, _>(idx) {
-        return v
-            .map(|d| Value::String(d.to_string()))
-            .unwrap_or(Value::Null);
+    if let Ok(Some(v)) = row.try_get::<Option<String>, _>(idx) {
+        return Value::String(v);
     }
-    if let Ok(v) = row.try_get::<Option<chrono::NaiveDateTime>, _>(idx) {
-        return v
-            .map(|d| Value::String(d.format("%Y-%m-%d %H:%M:%S%.3f").to_string()))
-            .unwrap_or(Value::Null);
+    if let Ok(Some(v)) = row.try_get::<Option<chrono::NaiveDate>, _>(idx) {
+        return Value::String(v.to_string());
     }
-    Value::Null
+    if let Ok(Some(v)) = row.try_get::<Option<chrono::NaiveDateTime>, _>(idx) {
+        return Value::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+    }
+
+    // Not NULL, but no declared-type branch matched. Decode the raw wire value
+    // without the compatibility gate rather than lying with NULL.
+    if let Ok(Some(v)) = row.try_get_unchecked::<Option<String>, _>(idx) {
+        return Value::String(v);
+    }
+    if let Ok(Some(v)) = row.try_get_unchecked::<Option<f64>, _>(idx) {
+        return json!(v);
+    }
+
+    // Genuinely undecodable and genuinely not NULL. Say so rather than render
+    // it as NULL — a visible marker is a bug report, a silent NULL is data loss.
+    Value::String(format!(
+        "<unreadable {}>",
+        row.columns()
+            .get(idx)
+            .map(|c| c.type_info().name().to_string())
+            .unwrap_or_else(|| "value".into())
+    ))
 }
 
 pub fn row_to_json(row: &ExaRow) -> Vec<Value> {
@@ -156,6 +187,17 @@ pub fn split_statements(sql: &str) -> Vec<String> {
         statements.push(trimmed.to_string());
     }
     statements
+}
+
+/// Parse a percentage out of an Exasol session ACTIVITY string like
+/// "MERGE (37%)" → Some(37). Uses the LAST parenthesis so nested labels
+/// (e.g. "COMMIT (WAIT) (5%)") read the trailing progress group. Returns
+/// None when there is no "(NN%)" group.
+fn parse_activity_percent(a: &str) -> Option<u8> {
+    let open = a.rfind('(')?;
+    let rest = &a[open + 1..];
+    let close = rest.find('%')?;
+    rest[..close].trim().parse::<u8>().ok()
 }
 
 fn is_result_set_statement(statement: &str) -> bool {
@@ -369,13 +411,6 @@ pub async fn execute_sql(
             let total = statements.len();
             let app2 = app.clone();
             let started2 = started;
-            // "MERGE (37%)"-style activity → 37.
-            fn parse_percent(a: &str) -> Option<u8> {
-                let open = a.rfind('(')?;
-                let rest = &a[open + 1..];
-                let close = rest.find('%')?;
-                rest[..close].trim().parse::<u8>().ok()
-            }
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
@@ -394,7 +429,7 @@ pub async fn execute_sql(
                             }
                         }
                     }
-                    let percent = activity.as_deref().and_then(parse_percent);
+                    let percent = activity.as_deref().and_then(parse_activity_percent);
                     let _ = app2.emit(
                         &event,
                         json!({
@@ -465,4 +500,42 @@ pub async fn execute_sql(
         total_elapsed_ms,
         success,
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::parse_activity_percent;
+
+    #[test]
+    fn parses_simple_percent() {
+        assert_eq!(parse_activity_percent("MERGE (37%)"), Some(37));
+        assert_eq!(parse_activity_percent("SELECT (0%)"), Some(0));
+        assert_eq!(parse_activity_percent("(100%)"), Some(100));
+    }
+
+    #[test]
+    fn tolerates_whitespace_inside_group() {
+        assert_eq!(parse_activity_percent("SCAN ( 42 %)"), Some(42));
+    }
+
+    #[test]
+    fn uses_last_parenthesis_group() {
+        assert_eq!(parse_activity_percent("COMMIT (WAIT) (5%)"), Some(5));
+    }
+
+    #[test]
+    fn none_when_no_percent_group() {
+        assert_eq!(parse_activity_percent(""), None);
+        assert_eq!(parse_activity_percent("EXECUTE SQL"), None);
+        assert_eq!(parse_activity_percent("(no digits%)"), None);
+        assert_eq!(parse_activity_percent("(37)"), None); // paren but no %
+        assert_eq!(parse_activity_percent("37%"), None); // % but no paren
+    }
+
+    #[test]
+    fn out_of_u8_range_is_none() {
+        // Exasol never emits >100, but a 3-digit value must not panic.
+        assert_eq!(parse_activity_percent("(999%)"), None);
+    }
 }
