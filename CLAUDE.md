@@ -7,9 +7,24 @@ repo — humans should read it too.
 
 ## Knowledge tools — use these, always
 
-This project ships with three knowledge tools. **Use them as the default way to
+This project ships with knowledge tools. **Use them as the default way to
 understand and record project knowledge**, so understanding compounds as the
 project evolves instead of being re-derived every session. Setup: `./scripts/setup-knowledge-tools.sh`.
+
+**Project-understanding questions → use the understand-anything graph FIRST.**
+For any "how does this work / where does X live / how do these pieces fit /
+what's the architecture" question, consult the committed
+`understand-anything` knowledge graph (`.ua/knowledge-graph.json`) — it carries
+per-file/function summaries, the architectural layer map, and a guided tour.
+View it with `/understand-anything:understand-dashboard`, or read
+`.ua/knowledge-graph.json` directly. **Always keep it current: after any code
+or architectural change, refresh it** by re-running
+`/understand-anything:understand` (it updates only changed files via the
+committed `meta.json` + `fingerprints.json`) and commit the updated `.ua/`.
+Do not let it drift — a stale graph is worse than none. Scope is the whole
+repo (see `.ua/.understandignore`). This complements graphify: use graphify
+for symbol/import/dependency queries, understand-anything for the layer map,
+summaries, and onboarding tour. See `docs/knowledge-tools.md`.
 
 1. **graphify** — a queryable knowledge graph of the whole codebase (AST-based,
    local, no vector store). For any question about architecture, where a symbol

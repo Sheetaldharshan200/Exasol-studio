@@ -1,0 +1,35 @@
+# .understandignore — whole-repo analysis (only generated/binary/vendored noise excluded)
+# Syntax: same as .gitignore
+
+# Generated / build artifacts
+src-tauri/target/
+apps/**/dist/
+apps/**/.vite/
+*.tsbuildinfo
+
+# Vendored binary runtime (not source)
+apps/desktop/src-tauri/resources/runtime/
+
+# Our own tool outputs (generated graphs / caches — not source)
+graphify-out/
+.ua/
+knowledge/vault/.obsidian/
+
+# Binary / non-text assets and machine files
+.DS_Store
+**/.DS_Store
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.icns
+*.ico
+*.woff
+*.woff2
+
+# Lockfiles & large generated data
+pnpm-lock.yaml
+Cargo.lock
+design-qa-comparison.html
+packages/agent-core/data/ui-map.json

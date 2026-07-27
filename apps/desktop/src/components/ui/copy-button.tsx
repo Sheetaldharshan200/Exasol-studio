@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,21 +24,36 @@ export function CopyButton({
 }) {
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const resetTimer = useRef<number | null>(null);
+  const slowTimer = useRef<number | null>(null);
+
+  // Clear any pending timers on unmount so they never setState on a gone
+  // component (e.g. a CopyButton in a dialog closed within the 1.5s window).
+  useEffect(
+    () => () => {
+      if (resetTimer.current) window.clearTimeout(resetTimer.current);
+      if (slowTimer.current) window.clearTimeout(slowTimer.current);
+    },
+    [],
+  );
 
   async function run() {
     if (state === "busy") return;
+    // Clear BOTH pending timers first — rapid clicks before the 120ms spinner
+    // fires would otherwise orphan earlier slow timers (they'd fire setState
+    // after unmount or clobber a later copy's state).
     if (resetTimer.current) window.clearTimeout(resetTimer.current);
+    if (slowTimer.current) window.clearTimeout(slowTimer.current);
     // Only surface the spinner when the copy is actually slow — instant
     // copies jump straight to the check so the animation stays calm.
-    const slow = window.setTimeout(() => setState("busy"), 120);
+    slowTimer.current = window.setTimeout(() => setState("busy"), 120);
     try {
       const value = typeof text === "function" ? await text() : text;
       await navigator.clipboard?.writeText(value);
-      window.clearTimeout(slow);
+      window.clearTimeout(slowTimer.current);
       setState("done");
       resetTimer.current = window.setTimeout(() => setState("idle"), 1500);
     } catch {
-      window.clearTimeout(slow);
+      window.clearTimeout(slowTimer.current);
       setState("idle");
     }
   }

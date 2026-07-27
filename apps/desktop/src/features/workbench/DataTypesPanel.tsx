@@ -104,7 +104,10 @@ export function DataTypesPanel({
     return out;
   }, [query, sorted, order, columns]);
 
-  useEffect(() => setCursor(0), [query, sort]);
+  // Reset the find cursor whenever the match set can shift — query, sort, OR
+  // column order (matches is derived from `order` too), so `cursor` never
+  // points past the current matches.
+  useEffect(() => setCursor(0), [query, sort, order]);
 
   const jump = (delta: number) => {
     if (!matches.length) return;

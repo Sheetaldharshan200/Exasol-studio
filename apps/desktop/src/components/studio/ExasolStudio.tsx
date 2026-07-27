@@ -868,32 +868,29 @@ function Sidebar({
   const [accents, setAccents] = useState<Record<string, string>>({});
   useEffect(() => {
     let dead = false;
-    void (async () => {
-      const next: Record<string, string> = {};
-      for (const p of profiles) {
-        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
-          | { color?: { accent?: string | null; showInName?: boolean } }
-          | null;
-        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
-      }
-      if (!dead) setAccents(next);
-    })();
-    const bump = () => setTimeout(() => { void load(); }, 50);
+    // One loader, used for the initial read and the settings-changed refresh;
+    // profiles are read in parallel (settingsSet awaits its write before the
+    // event fires, so no delay is needed before re-reading).
+    const load = async () => {
+      const pairs = await Promise.all(
+        profiles.map(async (p) => {
+          const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
+            | { color?: { accent?: string | null; showInName?: boolean } }
+            | null;
+          return raw?.color?.accent && raw.color.showInName !== false
+            ? ([p.id, raw.color.accent] as const)
+            : null;
+        }),
+      );
+      if (!dead) setAccents(Object.fromEntries(pairs.filter((x): x is readonly [string, string] => x !== null)));
+    };
+    void load();
+    const bump = () => void load();
     window.addEventListener("studio:conn-settings-changed", bump);
     return () => {
       dead = true;
       window.removeEventListener("studio:conn-settings-changed", bump);
     };
-    async function load() {
-      const next: Record<string, string> = {};
-      for (const p of profiles) {
-        const raw = (await ipc.connectionSettingsGet(p.id).catch(() => null)) as
-          | { color?: { accent?: string | null; showInName?: boolean } }
-          | null;
-        if (raw?.color?.accent && raw.color.showInName !== false) next[p.id] = raw.color.accent;
-      }
-      if (!dead) setAccents(next);
-    }
   }, [profiles]);
   const pingTargets = useMemo(
     () =>
@@ -3360,12 +3357,19 @@ export function ExasolStudio({
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
       const progressId = `qp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // The listener is set up asynchronously (dynamic import). A fast query
+      // can finish before it resolves, so `progressDone` guards both orderings:
+      // if the run ends first, the listener disposes itself the moment it
+      // attaches; otherwise `finally` disposes it. Either way it never leaks.
       let unlistenProgress: (() => void) | undefined;
+      let progressDone = false;
       if (isTauri()) {
         void import("@tauri-apps/api/event").then(async ({ listen }) => {
-          unlistenProgress = await listen<NonNullable<SqlTab["queryProgress"]>>(`query-progress:${progressId}`, (ev) => {
+          const un = await listen<NonNullable<SqlTab["queryProgress"]>>(`query-progress:${progressId}`, (ev) => {
             if (!ev.payload.finished) patchTab(tabId, { queryProgress: ev.payload });
           });
+          if (progressDone) un();
+          else unlistenProgress = un;
         });
       }
       try {
@@ -3404,6 +3408,7 @@ export function ExasolStudio({
         });
         setResultTab("messages");
       } finally {
+        progressDone = true;
         unlistenProgress?.();
         patchTab(tabId, { queryProgress: undefined });
         setRunning(false);

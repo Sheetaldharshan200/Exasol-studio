@@ -67,3 +67,32 @@ Verify: `claude mcp list` should show `llm-wiki` and `obsidian-vault` as
 - The native Python `obsidian-mcp` package is currently broken against recent
   `fastmcp`; the filesystem MCP above is the reliable "vault as folder" path and
   needs no REST-API key or running Obsidian.
+
+## understand-anything graph (`.ua/`) — committed & reusable
+
+The `/understand-anything:understand` skill produces a second, complementary
+knowledge graph under `.ua/` (dashboard-oriented: per-file/function summaries,
+architectural layers, a guided tour). It is **committed to the repo** so it
+reuses across machines/laptops — clone the repo and the graph is already there.
+
+Committed (reusable): `knowledge-graph.json` (the graph), `meta.json`
+(commit hash + timestamp — drives incremental updates), `config.json`
+(language), `fingerprints.json` (structural baseline for incremental diffs),
+`.understandignore` (scope/ignore rules), and `intermediate/scan-result.json`
+(the file inventory, so incremental runs skip the SCAN phase). Machine-local
+scratch (`.trash-*/`, `tmp/`, `*.log`) is git-ignored via `.ua/.gitignore`.
+
+- **View it**: `/understand-anything:understand-dashboard` (starts the local
+  Vite viewer at `http://127.0.0.1:5173/?token=…`).
+- **Refresh after code changes**: re-run `/understand-anything:understand` —
+  it reads `meta.json`'s commit hash and the fingerprints and re-analyzes only
+  changed files (full re-analysis only on `--full`). Commit the updated `.ua/`.
+- Scope is the **whole repo** (1262 nodes / 1425 edges across 12 layers):
+  apps/desktop (UI + Tauri backend), packages/agent-core (+ vendored skills),
+  packages/exasol-sql-parser, the semantic-views SQL layer, `.github/skills`
+  (vendored design skill), CI/CD, docs/ADRs, knowledge bases, and tooling.
+  Only generated/binary/vendored-runtime artifacts are excluded
+  (`.ua/.understandignore`).
+- This is distinct from graphify's `graphify-out/graph.json` (the AST-based
+  import/call graph). Both are committed; use graphify for
+  dependency/symbol queries, `.ua` for the layer map, tour, and summaries.
