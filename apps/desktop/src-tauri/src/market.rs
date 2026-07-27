@@ -134,22 +134,6 @@ pub(crate) fn resolve_bin(bin: &str) -> Option<PathBuf> {
     None
 }
 
-/// Resolve any working `uv` executable for read-only marketplace detection.
-/// First-install setup uses `ensure_uv` below, which deliberately requires the
-/// checksum-pinned Studio-managed version instead.
-fn uv_path() -> Option<String> {
-    if let Some(path) = resolve_bin("uv") {
-        return Some(path.to_string_lossy().to_string());
-    }
-    let mut command = Command::new("uv");
-    command.arg("--version");
-    with_path(&mut command);
-    command
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|_| "uv".into())
-}
 
 pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
     let component = &crate::component_lock::components().uv;
@@ -1143,21 +1127,6 @@ fn bin_present(bin: &str) -> bool {
     } else {
         cmd_exists_unix(bin)
     }
-}
-
-fn uv_tool_installed(pkg: &str) -> bool {
-    let Some(uv) = uv_path() else { return false };
-    let mut c = Command::new(uv);
-    c.args(["tool", "list"]);
-    with_path(&mut c);
-    c.output()
-        .map(|o| {
-            o.status.success()
-                && String::from_utf8_lossy(&o.stdout)
-                    .to_lowercase()
-                    .contains(&pkg.to_lowercase())
-        })
-        .unwrap_or(false)
 }
 
 fn python_import_ok(module: &str) -> bool {

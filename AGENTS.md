@@ -41,6 +41,20 @@ the whole repo (`.ua/.understandignore`).
   case-folding, error paths). Fix reds before shipping — never commit red.
 - Record durable findings/decisions in the **llm-wiki** (`knowledge/wiki/`).
 
+### KISS — three hard rules
+
+1. **Don't let a file reach 5,000 lines.** Split at ~500; over 1,000 needs a
+   stated reason. Extract, don't append. Shrink the known offenders
+   (`ExasolStudio.tsx`, `AssistantPanel.tsx`, `Dashboards.tsx`,
+   `local_database.rs`, `tools.ts`, `loop.ts`), never grow them.
+2. **Don't ship code that can't run.** Unreachable code is a defect. After a
+   copy-paste, verify the copy is reachable — in an `if (…) return` chain a
+   duplicated earlier branch makes later copies dead. Delete dead branches and
+   commented-out blocks in the change that orphans them.
+3. **Keep it small enough to test.** If logic needs the whole app, a sidecar,
+   or a live model to test, it's too big — extract a pure function and test
+   that. "Hard to test" is a design finding, not a reason to skip the test.
+
 ## Conventions that bite
 
 - **Icons only, never emoji** in app UI (Boxicons registry or `lucide-react`).

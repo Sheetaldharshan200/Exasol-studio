@@ -64,6 +64,35 @@ Rule of thumb: **read** project knowledge from graphify (code) and llm-wiki
 - **Record findings**: notable review findings and their fixes go into the
   llm-wiki (`knowledge/wiki`) so the next contributor inherits them.
 
+### KISS has three hard rules (not suggestions)
+
+KISS is not only "avoid abstraction" — it is also a discipline about size,
+reachability, and testability. These three are non-negotiable:
+
+1. **Don't let a file reach 5,000 lines.** Split at ~500 lines. Over 1,000
+   needs a stated reason in the PR. Nothing in this repo should ever approach
+   5,000 again. A file that large is not "the main one", it is a landfill:
+   nobody can review it, nothing in it is testable, and defects hide in it
+   indefinitely. When adding to a big file, extract instead of appending.
+   Known offenders to shrink, never grow — `ExasolStudio.tsx` (5,084),
+   `AssistantPanel.tsx` (2,090), `Dashboards.tsx` (2,086),
+   `local_database.rs` (1,518), `tools.ts` (1,461), `loop.ts` (1,125).
+
+2. **Don't ship code that can't run.** Unreachable code is a defect, not
+   untidiness. After copy-pasting a block, verify the copy is actually
+   reachable — in an `if (…) return …` chain, a duplicated earlier branch
+   makes every later copy dead. Delete dead branches, unused exports, and
+   commented-out blocks in the same change that orphans them. Precedent:
+   `packages/agent-core/src/server.ts` carried ~350 unreachable lines
+   (~40% of the file) from a route block pasted four times.
+
+3. **Keep it small enough to test.** If new logic cannot be unit-tested
+   without mounting the whole app, spawning a sidecar, or calling a live
+   model, it is too big — extract the decision into a pure function and test
+   that. Parsing, decoding, splitting, routing, and repair logic are always
+   pure-function-shaped. "It's hard to test" is a design finding, not an
+   excuse to skip the test.
+
 ## Conventions that bite if ignored
 
 - **Icons only, never emoji** in the app UI — use the central Boxicons registry

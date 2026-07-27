@@ -1289,12 +1289,6 @@ pub fn personal_local_status(state: State<'_, AppState>) -> BootstrapStatus {
     read_status(&state.data_dir)
 }
 
-/// The persisted component-state manifest — the single source of truth the
-/// Marketplace reads so its badges match what actually happened at setup.
-pub fn bootstrap_status(app: &AppHandle) -> BootstrapStatus {
-    read_status(&app.state::<AppState>().data_dir)
-}
-
 /// Component is present and verified (ready) per the manifest.
 pub fn component_ready(app: &AppHandle, name: &str) -> bool {
     read_status(&app.state::<AppState>().data_dir)

@@ -323,7 +323,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { dashboards: dashboards.list() });
       }
 
-      // Dashboards: GET list / GET one / PUT save / DELETE
+      // Audit: GET the tail of the MCP tool-denial audit log
       if (parts[1] === "audit") {
         const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
         return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
@@ -350,6 +350,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           return json(res, 200, { ok: true });
         }
       }
+      // Dashboards: GET list / GET one / GET history / POST rollback / PUT save / DELETE
       if (parts[1] === "dashboards") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
         if (req.method === "GET" && parts[2] && parts[3] === "history") {
@@ -442,84 +443,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return;
       }
 
-      // Dashboards: GET list / GET one / PUT save / DELETE
-      if (parts[1] === "audit") {
-        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
-        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
-      }
-      if (parts[1] === "mcp") {
-        if (req.method === "GET" && parts[2] === "catalog") {
-          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
-          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
-        }
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
-        if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
-          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
-          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
-          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
-          const status = mcp.list().find((x) => x.id === server.id);
-          return json(res, 200, { server: status });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
-          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          await mcp.remove(decodeURIComponent(parts[2]));
-          return json(res, 200, { ok: true });
-        }
-      }
-      if (parts[1] === "dashboards") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
-        if (req.method === "GET" && parts[2] && parts[3] === "history") {
-          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
-          const body = (await readBody(req)) as { index?: number };
-          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
-        }
-        if (req.method === "GET" && parts[2]) {
-          const d = dashboards.get(decodeURIComponent(parts[2]));
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
-        }
-        if (req.method === "PUT") {
-          try {
-            const d = dashboards.save(await readBody(req));
-            return json(res, 200, { dashboard: d });
-          } catch (e) {
-            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
-          }
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // Skills: list / save / delete
-      if (parts[1] === "skills") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
-        if (req.method === "PUT") {
-          const b = await readBody<{ name: string; description?: string; body: string }>(req);
-          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
-          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // GET /v1/artifacts — list (newest first)
-      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
-        return json(res, 200, { artifacts: artifacts.list() });
-      }
-
-      // GET /v1/artifacts/:id
-      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
-        const a = artifacts.get(decodeURIComponent(parts[2]));
-        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
-      }
-
       // POST /v1/sessions/:id/revert {userIndex} — cut history before that user message
       if (req.method === "POST" && parts[1] === "sessions" && parts[2] && parts[3] === "revert") {
         const session = sessions.get(decodeURIComponent(parts[2]));
@@ -565,167 +488,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 202, { ok: true });
       }
 
-      // Dashboards: GET list / GET one / PUT save / DELETE
-      if (parts[1] === "audit") {
-        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
-        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
-      }
-      if (parts[1] === "mcp") {
-        if (req.method === "GET" && parts[2] === "catalog") {
-          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
-          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
-        }
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
-        if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
-          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
-          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
-          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
-          const status = mcp.list().find((x) => x.id === server.id);
-          return json(res, 200, { server: status });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
-          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          await mcp.remove(decodeURIComponent(parts[2]));
-          return json(res, 200, { ok: true });
-        }
-      }
-      if (parts[1] === "dashboards") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
-        if (req.method === "GET" && parts[2] && parts[3] === "history") {
-          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
-          const body = (await readBody(req)) as { index?: number };
-          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
-        }
-        if (req.method === "GET" && parts[2]) {
-          const d = dashboards.get(decodeURIComponent(parts[2]));
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
-        }
-        if (req.method === "PUT") {
-          try {
-            const d = dashboards.save(await readBody(req));
-            return json(res, 200, { dashboard: d });
-          } catch (e) {
-            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
-          }
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // Skills: list / save / delete
-      if (parts[1] === "skills") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
-        if (req.method === "PUT") {
-          const b = await readBody<{ name: string; description?: string; body: string }>(req);
-          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
-          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // GET /v1/artifacts — list (newest first)
-      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
-        return json(res, 200, { artifacts: artifacts.list() });
-      }
-
-      // GET /v1/artifacts/:id
-      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
-        const a = artifacts.get(decodeURIComponent(parts[2]));
-        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
-      }
-
       // POST /v1/sessions/:id/permission  {id, allow}
       if (req.method === "POST" && parts[1] === "sessions" && session && parts[3] === "permission") {
         const body = await readBody<{ id: string; allow: boolean }>(req);
         const found = session.answerPermission(body.id, Boolean(body.allow));
         return json(res, found ? 200 : 404, found ? { ok: true } : { error: "no such pending permission" });
-      }
-
-      // Dashboards: GET list / GET one / PUT save / DELETE
-      if (parts[1] === "audit") {
-        const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
-        return json(res, 200, { events: mcp.audit.tail(Math.min(limit, 500)) });
-      }
-      if (parts[1] === "mcp") {
-        if (req.method === "GET" && parts[2] === "catalog") {
-          const { CONNECTOR_MANIFESTS } = await import("./mcp.ts");
-          return json(res, 200, { manifests: CONNECTOR_MANIFESTS });
-        }
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { servers: mcp.list() });
-        if (req.method === "POST" && !parts[2]) {
-          const body = (await readBody(req)) as { name: string; transport?: "stdio" | "http"; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> };
-          const isHttp = body?.transport === "http" || (!body?.command && !!body?.url);
-          if (!body?.name || (isHttp ? !body?.url : !body?.command)) return json(res, 400, { error: isHttp ? "name and url are required" : "name and command are required" });
-          const server = await mcp.add({ name: body.name, transport: body.transport, command: body.command, args: body.args ?? [], env: body.env, url: body.url, headers: body.headers });
-          const status = mcp.list().find((x) => x.id === server.id);
-          return json(res, 200, { server: status });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "reconnect") {
-          return json(res, 200, await mcp.connect(decodeURIComponent(parts[2])));
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          await mcp.remove(decodeURIComponent(parts[2]));
-          return json(res, 200, { ok: true });
-        }
-      }
-      if (parts[1] === "dashboards") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
-        if (req.method === "GET" && parts[2] && parts[3] === "history") {
-          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
-          const body = (await readBody(req)) as { index?: number };
-          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
-        }
-        if (req.method === "GET" && parts[2]) {
-          const d = dashboards.get(decodeURIComponent(parts[2]));
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
-        }
-        if (req.method === "PUT") {
-          try {
-            const d = dashboards.save(await readBody(req));
-            return json(res, 200, { dashboard: d });
-          } catch (e) {
-            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
-          }
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // Skills: list / save / delete
-      if (parts[1] === "skills") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
-        if (req.method === "PUT") {
-          const b = await readBody<{ name: string; description?: string; body: string }>(req);
-          if (!b.name || !b.body) return json(res, 400, { error: "name and body required" });
-          return json(res, 200, { skill: skills.save(b.name, b.description ?? "", b.body) });
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
-      // GET /v1/artifacts — list (newest first)
-      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
-        return json(res, 200, { artifacts: artifacts.list() });
-      }
-
-      // GET /v1/artifacts/:id
-      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
-        const a = artifacts.get(decodeURIComponent(parts[2]));
-        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
       }
 
       // POST /v1/sessions/:id/ui-result  {id, ok, detail?}
