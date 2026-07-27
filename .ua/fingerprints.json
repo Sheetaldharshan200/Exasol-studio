@@ -1,8 +1,68 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "f4e5212f1037ccc4d837f1bebfbd8ff9da31721b",
-  "generatedAt": "2026-07-27T11:04:52.353Z",
+  "gitCommitHash": "1c99e9300baba7bee4e0348add4b310118dc7c21",
+  "generatedAt": "2026-07-27T13:57:07.769Z",
   "files": {
+    ".claude/commands/opsx/apply.md": {
+      "filePath": ".claude/commands/opsx/apply.md",
+      "contentHash": "89d7cee95f269936adfa3b38e19acca09dc1780d6b448968e3315fc87f5222f4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 157,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/commands/opsx/archive.md": {
+      "filePath": ".claude/commands/opsx/archive.md",
+      "contentHash": "fd18d7258de6002efbed97ab32e9ce61f2b7d899e3be6843dd64f6f2b5d88108",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 162,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/commands/opsx/explore.md": {
+      "filePath": ".claude/commands/opsx/explore.md",
+      "contentHash": "8ed0cb6e9933a71f676ef94a5b865e5681155b04ceafbe0171160791673da156",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 176,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/commands/opsx/propose.md": {
+      "filePath": ".claude/commands/opsx/propose.md",
+      "contentHash": "b6f40402553e7348172fae8e154aa65284f49308a90d79209d2bdaae35059023",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 111,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/commands/opsx/sync.md": {
+      "filePath": ".claude/commands/opsx/sync.md",
+      "contentHash": "df2c3ba5ad9bc4d6ecc8b35427285ad6355fc12fe1574cbca7bed165396075b1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 145,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/commands/opsx/update.md": {
+      "filePath": ".claude/commands/opsx/update.md",
+      "contentHash": "6fc83c666f6f9a5955f67560183a692d1aada36de66f12bfc6a42c85e58f3c49",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 83,
+      "hasStructuralAnalysis": true
+    },
     ".claude/settings.local.json": {
       "filePath": ".claude/settings.local.json",
       "contentHash": "38e4143d08f1dbde8eb0b0c38917380933f0f999caa0b9a0bb0a46de870c6f17",
@@ -11,6 +71,366 @@
       "imports": [],
       "exports": [],
       "totalLines": 6,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-apply-change/SKILL.md": {
+      "filePath": ".claude/skills/openspec-apply-change/SKILL.md",
+      "contentHash": "83e0d2d4c47674e312fc9d29297d91e5c018a5507e6961829ee623600e2cf2ff",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 161,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-archive-change/SKILL.md": {
+      "filePath": ".claude/skills/openspec-archive-change/SKILL.md",
+      "contentHash": "85c8764715a18fbd11d16ca04bd9e15d8644bf5e4203176ad34eee192b546472",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 119,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-explore/SKILL.md": {
+      "filePath": ".claude/skills/openspec-explore/SKILL.md",
+      "contentHash": "79249f798ad0d69bf95f08f3c7a29d44d982e4c1645f1a12a21dfcd488f4ba0d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 291,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-propose/SKILL.md": {
+      "filePath": ".claude/skills/openspec-propose/SKILL.md",
+      "contentHash": "a666b2381a7d5e982d8e32183484020f518da2b795c0f387c5ff4b3cb47be0fd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 115,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-sync-specs/SKILL.md": {
+      "filePath": ".claude/skills/openspec-sync-specs/SKILL.md",
+      "contentHash": "420e5815eee33ebd642b9d038f0a5307b176923a5c1a837c4873e51de085aae3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 149,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/openspec-update-change/SKILL.md": {
+      "filePath": ".claude/skills/openspec-update-change/SKILL.md",
+      "contentHash": "82a51ed50b10ac3be479d7abc4a99fe3685ee7794078d7d8ea7bfc90ae42c2d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 87,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-apply-change/SKILL.md": {
+      "filePath": ".codex/skills/openspec-apply-change/SKILL.md",
+      "contentHash": "83e0d2d4c47674e312fc9d29297d91e5c018a5507e6961829ee623600e2cf2ff",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 161,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-archive-change/SKILL.md": {
+      "filePath": ".codex/skills/openspec-archive-change/SKILL.md",
+      "contentHash": "85c8764715a18fbd11d16ca04bd9e15d8644bf5e4203176ad34eee192b546472",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 119,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-explore/SKILL.md": {
+      "filePath": ".codex/skills/openspec-explore/SKILL.md",
+      "contentHash": "79249f798ad0d69bf95f08f3c7a29d44d982e4c1645f1a12a21dfcd488f4ba0d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 291,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-propose/SKILL.md": {
+      "filePath": ".codex/skills/openspec-propose/SKILL.md",
+      "contentHash": "a666b2381a7d5e982d8e32183484020f518da2b795c0f387c5ff4b3cb47be0fd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 115,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-sync-specs/SKILL.md": {
+      "filePath": ".codex/skills/openspec-sync-specs/SKILL.md",
+      "contentHash": "420e5815eee33ebd642b9d038f0a5307b176923a5c1a837c4873e51de085aae3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 149,
+      "hasStructuralAnalysis": true
+    },
+    ".codex/skills/openspec-update-change/SKILL.md": {
+      "filePath": ".codex/skills/openspec-update-change/SKILL.md",
+      "contentHash": "82a51ed50b10ac3be479d7abc4a99fe3685ee7794078d7d8ea7bfc90ae42c2d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 87,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-apply.md": {
+      "filePath": ".cursor/commands/opsx-apply.md",
+      "contentHash": "9381cfe98c012e56c8df98b20eec21d1068b726ced23c91766dd309373f01994",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 156,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-archive.md": {
+      "filePath": ".cursor/commands/opsx-archive.md",
+      "contentHash": "111d678a7c2ce5ddc38edaa8e049b1b8b333dd1e77e8e88f8232eb82791c087e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 161,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-explore.md": {
+      "filePath": ".cursor/commands/opsx-explore.md",
+      "contentHash": "c488d16b0d9ece0b7bc1dad6b0724bba674c7683c163c2e467f7d6d82365b71a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 175,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-propose.md": {
+      "filePath": ".cursor/commands/opsx-propose.md",
+      "contentHash": "a6f9d1d260918767637fd72e6c652b86f80713cc9d6ef324173ebfafb04700a5",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 110,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-sync.md": {
+      "filePath": ".cursor/commands/opsx-sync.md",
+      "contentHash": "597fefb57ee15e18e18997cccf82abb08e1e34e3f93e92cdadf195170f93dbc8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 144,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/commands/opsx-update.md": {
+      "filePath": ".cursor/commands/opsx-update.md",
+      "contentHash": "d0abc4e395b82c4a981b49ab13d7eb09a07a4bd937b581150ab373aa1d4dd207",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 82,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-apply-change/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-apply-change/SKILL.md",
+      "contentHash": "83e0d2d4c47674e312fc9d29297d91e5c018a5507e6961829ee623600e2cf2ff",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 161,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-archive-change/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-archive-change/SKILL.md",
+      "contentHash": "85c8764715a18fbd11d16ca04bd9e15d8644bf5e4203176ad34eee192b546472",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 119,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-explore/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-explore/SKILL.md",
+      "contentHash": "79249f798ad0d69bf95f08f3c7a29d44d982e4c1645f1a12a21dfcd488f4ba0d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 291,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-propose/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-propose/SKILL.md",
+      "contentHash": "a666b2381a7d5e982d8e32183484020f518da2b795c0f387c5ff4b3cb47be0fd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 115,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-sync-specs/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-sync-specs/SKILL.md",
+      "contentHash": "420e5815eee33ebd642b9d038f0a5307b176923a5c1a837c4873e51de085aae3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 149,
+      "hasStructuralAnalysis": true
+    },
+    ".cursor/skills/openspec-update-change/SKILL.md": {
+      "filePath": ".cursor/skills/openspec-update-change/SKILL.md",
+      "contentHash": "82a51ed50b10ac3be479d7abc4a99fe3685ee7794078d7d8ea7bfc90ae42c2d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 87,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/apply.toml": {
+      "filePath": ".gemini/commands/opsx/apply.toml",
+      "contentHash": "2d4b89c92560e615402cf9526d8b45a53bdee6e68e3a8c3aaa521eeb4da43558",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 153,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/archive.toml": {
+      "filePath": ".gemini/commands/opsx/archive.toml",
+      "contentHash": "1de04b39d1c693c5644493f5ffb300a220fd2fe843e2c59b1ad91abf0c06fcd7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 158,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/explore.toml": {
+      "filePath": ".gemini/commands/opsx/explore.toml",
+      "contentHash": "6d0e8e6f828524c6a9bfe78fa7cc07070c442686be0bea201b8b3d331aea5817",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 172,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/propose.toml": {
+      "filePath": ".gemini/commands/opsx/propose.toml",
+      "contentHash": "acff9a8fb728947d02e38bd8463d3e4c3a5079518b1e862eb6e323252f2b9407",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 107,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/sync.toml": {
+      "filePath": ".gemini/commands/opsx/sync.toml",
+      "contentHash": "6f3425d3a45d653e09bd34a1a51521622e1562e40b8726435561d331d7b9bc9b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 141,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/commands/opsx/update.toml": {
+      "filePath": ".gemini/commands/opsx/update.toml",
+      "contentHash": "707c4821b422eb2e37666ade9fda99e4e2735460dd306fccef2e9ca4d348d3af",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 79,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-apply-change/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-apply-change/SKILL.md",
+      "contentHash": "83e0d2d4c47674e312fc9d29297d91e5c018a5507e6961829ee623600e2cf2ff",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 161,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-archive-change/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-archive-change/SKILL.md",
+      "contentHash": "85c8764715a18fbd11d16ca04bd9e15d8644bf5e4203176ad34eee192b546472",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 119,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-explore/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-explore/SKILL.md",
+      "contentHash": "79249f798ad0d69bf95f08f3c7a29d44d982e4c1645f1a12a21dfcd488f4ba0d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 291,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-propose/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-propose/SKILL.md",
+      "contentHash": "a666b2381a7d5e982d8e32183484020f518da2b795c0f387c5ff4b3cb47be0fd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 115,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-sync-specs/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-sync-specs/SKILL.md",
+      "contentHash": "420e5815eee33ebd642b9d038f0a5307b176923a5c1a837c4873e51de085aae3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 149,
+      "hasStructuralAnalysis": true
+    },
+    ".gemini/skills/openspec-update-change/SKILL.md": {
+      "filePath": ".gemini/skills/openspec-update-change/SKILL.md",
+      "contentHash": "82a51ed50b10ac3be479d7abc4a99fe3685ee7794078d7d8ea7bfc90ae42c2d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 87,
       "hasStructuralAnalysis": true
     },
     ".gitattributes": {
@@ -12193,22 +12613,22 @@
     },
     "AGENTS.md": {
       "filePath": "AGENTS.md",
-      "contentHash": "4a7e2608ced14104193729d06c461deebb87c03f28731b5288a20d58493e7386",
+      "contentHash": "84c9e64ef98647f8e77cfb32c242a91b3d8ae263ffd0c2de01ef42710cb86d43",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 75,
+      "totalLines": 83,
       "hasStructuralAnalysis": true
     },
     "CLAUDE.md": {
       "filePath": "CLAUDE.md",
-      "contentHash": "c7a3e43c19d6de8906a8c4a1db0e0f2ba39a7bb4abcdd34a32eefd3e771f1dcd",
+      "contentHash": "52daa677c12bf8769214289babe60705701b5db5d7c066d171a1c36e991fff07",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 167,
+      "totalLines": 192,
       "hasStructuralAnalysis": true
     },
     "CONTRIBUTING.md": {
@@ -32015,12 +32435,12 @@
     },
     "knowledge/wiki/log.md": {
       "filePath": "knowledge/wiki/log.md",
-      "contentHash": "d51ff8d5a57b36174d5a7f7fce0fecd42b2a71defa43013a7cbbedeedc92197e",
+      "contentHash": "23f8894b279f895e7f522b7de635c34c3bddae79ef1e0d76f0b080b531ffbd2c",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 29,
+      "totalLines": 38,
       "hasStructuralAnalysis": true
     },
     "knowledge/wiki/pages/ai-integrations.md": {
@@ -32111,6 +32531,16 @@
       "imports": [],
       "exports": [],
       "totalLines": 67,
+      "hasStructuralAnalysis": true
+    },
+    "openspec/config.yaml": {
+      "filePath": "openspec/config.yaml",
+      "contentHash": "89b2c7b1eb9b52a3d07a023975fdeddc510185484f96cfe0be313bef3e179d5f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 32,
       "hasStructuralAnalysis": true
     },
     "package.json": {
@@ -35002,7 +35432,7 @@
     },
     "packages/agent-core/src/loop.heuristics.test.ts": {
       "filePath": "packages/agent-core/src/loop.heuristics.test.ts",
-      "contentHash": "9f462608f0e301d94d170f15d90174579826d2bc8027da4d01ca5f7606027c9e",
+      "contentHash": "7666510479c1b8fe199abb4f063a3b1127e64476bd07b477a46116ba53ff1ab8",
       "functions": [],
       "classes": [],
       "imports": [
@@ -35024,17 +35454,19 @@
           "specifiers": [
             "looksLikeUnacted",
             "extractReadSql",
-            "looksUnfinished"
+            "looksUnfinished",
+            "humanizeProviderError",
+            "summarize"
           ]
         }
       ],
       "exports": [],
-      "totalLines": 205,
+      "totalLines": 280,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/loop.ts": {
       "filePath": "packages/agent-core/src/loop.ts",
-      "contentHash": "a44a553150bbe01a9d8572ee5944e262e5f320c59e55ab43fba62441eeb758e0",
+      "contentHash": "f9c5041ad086ae40c2bbee03e065ef41e3cda3ab9c488d3e573c2b0cb77649a5",
       "functions": [
         {
           "name": "humanizeProviderError",
@@ -35043,7 +35475,7 @@
             "raw"
           ],
           "returnType": "string",
-          "exported": false,
+          "exported": true,
           "lineCount": 25
         },
         {
@@ -35118,7 +35550,7 @@
             "output"
           ],
           "returnType": "string",
-          "exported": false,
+          "exported": true,
           "lineCount": 13
         }
       ],
@@ -35271,12 +35703,14 @@
         }
       ],
       "exports": [
+        "humanizeProviderError",
         "runTurn",
         "looksLikeUnacted",
         "extractReadSql",
-        "looksUnfinished"
+        "looksUnfinished",
+        "summarize"
       ],
-      "totalLines": 1132,
+      "totalLines": 1133,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/mcp-gateway.ts": {
@@ -36292,9 +36726,39 @@
       "totalLines": 404,
       "hasStructuralAnalysis": true
     },
+    "packages/agent-core/src/tools.classify.test.ts": {
+      "filePath": "packages/agent-core/src/tools.classify.test.ts",
+      "contentHash": "9939d6baf726842cfde05690c789b2104f08248b935604820ebe1c02d6e63edb",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./tools.ts",
+          "specifiers": [
+            "classifySql"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 134,
+      "hasStructuralAnalysis": true
+    },
     "packages/agent-core/src/tools.ts": {
       "filePath": "packages/agent-core/src/tools.ts",
-      "contentHash": "498b8332f578420b5b24b39d00ce19402a530682410f853218da89035a086b20",
+      "contentHash": "2d98a0a03a061bd4be179b323d085b3d7c99a41f2b5d7bfda22ad8e5f057845b",
       "functions": [
         {
           "name": "classifySql",
@@ -36303,7 +36767,7 @@
           ],
           "returnType": "\"read\" | \"write\"",
           "exported": true,
-          "lineCount": 9
+          "lineCount": 18
         },
         {
           "name": "quoteIdent",
@@ -36501,7 +36965,7 @@
         "classifySql",
         "buildTools"
       ],
-      "totalLines": 1462,
+      "totalLines": 1482,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/tui.ts": {

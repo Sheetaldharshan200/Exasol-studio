@@ -1,12 +1,264 @@
 {
  "scriptCompleted": true,
- "contentDigest": "9bfd879e01853262ae4cd63eeda24b1a82431176ada17b99662a4b6882458e86",
+ "contentDigest": "6e4af56c827241d6493724872e1bf89d1573caffd487d001a908713c41e37706",
  "files": [
+  {
+   "path": ".claude/commands/opsx/apply.md",
+   "language": "markdown",
+   "sizeLines": 156,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/commands/opsx/archive.md",
+   "language": "markdown",
+   "sizeLines": 161,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/commands/opsx/explore.md",
+   "language": "markdown",
+   "sizeLines": 175,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/commands/opsx/propose.md",
+   "language": "markdown",
+   "sizeLines": 110,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/commands/opsx/sync.md",
+   "language": "markdown",
+   "sizeLines": 144,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/commands/opsx/update.md",
+   "language": "markdown",
+   "sizeLines": 82,
+   "fileCategory": "docs"
+  },
   {
    "path": ".claude/settings.local.json",
    "language": "json",
    "sizeLines": 5,
    "fileCategory": "config"
+  },
+  {
+   "path": ".claude/skills/openspec-apply-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 160,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/skills/openspec-archive-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 118,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/skills/openspec-explore/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 290,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/skills/openspec-propose/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 114,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/skills/openspec-sync-specs/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 148,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".claude/skills/openspec-update-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 86,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-apply-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 160,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-archive-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 118,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-explore/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 290,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-propose/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 114,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-sync-specs/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 148,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".codex/skills/openspec-update-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 86,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-apply.md",
+   "language": "markdown",
+   "sizeLines": 155,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-archive.md",
+   "language": "markdown",
+   "sizeLines": 160,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-explore.md",
+   "language": "markdown",
+   "sizeLines": 174,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-propose.md",
+   "language": "markdown",
+   "sizeLines": 109,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-sync.md",
+   "language": "markdown",
+   "sizeLines": 143,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/commands/opsx-update.md",
+   "language": "markdown",
+   "sizeLines": 81,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-apply-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 160,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-archive-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 118,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-explore/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 290,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-propose/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 114,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-sync-specs/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 148,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".cursor/skills/openspec-update-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 86,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/commands/opsx/apply.toml",
+   "language": "toml",
+   "sizeLines": 152,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/commands/opsx/archive.toml",
+   "language": "toml",
+   "sizeLines": 157,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/commands/opsx/explore.toml",
+   "language": "toml",
+   "sizeLines": 171,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/commands/opsx/propose.toml",
+   "language": "toml",
+   "sizeLines": 106,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/commands/opsx/sync.toml",
+   "language": "toml",
+   "sizeLines": 140,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/commands/opsx/update.toml",
+   "language": "toml",
+   "sizeLines": 78,
+   "fileCategory": "config"
+  },
+  {
+   "path": ".gemini/skills/openspec-apply-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 160,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/skills/openspec-archive-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 118,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/skills/openspec-explore/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 290,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/skills/openspec-propose/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 114,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/skills/openspec-sync-specs/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 148,
+   "fileCategory": "docs"
+  },
+  {
+   "path": ".gemini/skills/openspec-update-change/SKILL.md",
+   "language": "markdown",
+   "sizeLines": 86,
+   "fileCategory": "docs"
   },
   {
    "path": ".gitattributes",
@@ -737,13 +989,13 @@
   {
    "path": "AGENTS.md",
    "language": "markdown",
-   "sizeLines": 74,
+   "sizeLines": 82,
    "fileCategory": "docs"
   },
   {
    "path": "CLAUDE.md",
    "language": "markdown",
-   "sizeLines": 166,
+   "sizeLines": 191,
    "fileCategory": "docs"
   },
   {
@@ -1625,7 +1877,7 @@
   {
    "path": "apps/desktop/src/features/bi/Dashboards.tsx",
    "language": "typescript",
-   "sizeLines": 2004,
+   "sizeLines": 2003,
    "fileCategory": "code"
   },
   {
@@ -2423,7 +2675,7 @@
   {
    "path": "knowledge/wiki/log.md",
    "language": "markdown",
-   "sizeLines": 28,
+   "sizeLines": 37,
    "fileCategory": "docs"
   },
   {
@@ -2478,6 +2730,12 @@
    "path": "marketplace/catalog.json",
    "language": "json",
    "sizeLines": 66,
+   "fileCategory": "config"
+  },
+  {
+   "path": "openspec/config.yaml",
+   "language": "yaml",
+   "sizeLines": 31,
    "fileCategory": "config"
   },
   {
@@ -3131,13 +3389,13 @@
   {
    "path": "packages/agent-core/src/loop.heuristics.test.ts",
    "language": "typescript",
-   "sizeLines": 204,
+   "sizeLines": 279,
    "fileCategory": "code"
   },
   {
    "path": "packages/agent-core/src/loop.ts",
    "language": "typescript",
-   "sizeLines": 1131,
+   "sizeLines": 1132,
    "fileCategory": "code"
   },
   {
@@ -3207,9 +3465,15 @@
    "fileCategory": "code"
   },
   {
+   "path": "packages/agent-core/src/tools.classify.test.ts",
+   "language": "typescript",
+   "sizeLines": 133,
+   "fileCategory": "code"
+  },
+  {
    "path": "packages/agent-core/src/tools.ts",
    "language": "typescript",
-   "sizeLines": 1461,
+   "sizeLines": 1481,
    "fileCategory": "code"
   },
   {
@@ -3489,34 +3753,34 @@
    "fileCategory": "config"
   }
  ],
- "totalFiles": 581,
+ "totalFiles": 625,
  "filteredByIgnore": 17,
  "estimatedComplexity": "very-large",
  "stats": {
-  "filesScanned": 581,
+  "filesScanned": 625,
   "byCategory": {
-   "config": 37,
-   "code": 336,
-   "docs": 166,
+   "docs": 202,
+   "config": 44,
+   "code": 337,
    "infra": 13,
    "data": 20,
    "markup": 5,
    "script": 4
   },
   "byLanguage": {
+   "markdown": 196,
    "json": 25,
+   "toml": 8,
    "unknown": 1,
    "python": 17,
-   "markdown": 160,
    "javascript": 76,
-   "yaml": 20,
+   "yaml": 21,
    "sql": 20,
    "html": 3,
-   "toml": 2,
    "rust": 31,
    "xml": 2,
    "txt": 7,
-   "typescript": 205,
+   "typescript": 206,
    "css": 2,
    "interp": 2,
    "tokens": 2,
@@ -3525,7 +3789,49 @@
   }
  },
  "importMap": {
+  ".claude/commands/opsx/apply.md": [],
+  ".claude/commands/opsx/archive.md": [],
+  ".claude/commands/opsx/explore.md": [],
+  ".claude/commands/opsx/propose.md": [],
+  ".claude/commands/opsx/sync.md": [],
+  ".claude/commands/opsx/update.md": [],
   ".claude/settings.local.json": [],
+  ".claude/skills/openspec-apply-change/SKILL.md": [],
+  ".claude/skills/openspec-archive-change/SKILL.md": [],
+  ".claude/skills/openspec-explore/SKILL.md": [],
+  ".claude/skills/openspec-propose/SKILL.md": [],
+  ".claude/skills/openspec-sync-specs/SKILL.md": [],
+  ".claude/skills/openspec-update-change/SKILL.md": [],
+  ".codex/skills/openspec-apply-change/SKILL.md": [],
+  ".codex/skills/openspec-archive-change/SKILL.md": [],
+  ".codex/skills/openspec-explore/SKILL.md": [],
+  ".codex/skills/openspec-propose/SKILL.md": [],
+  ".codex/skills/openspec-sync-specs/SKILL.md": [],
+  ".codex/skills/openspec-update-change/SKILL.md": [],
+  ".cursor/commands/opsx-apply.md": [],
+  ".cursor/commands/opsx-archive.md": [],
+  ".cursor/commands/opsx-explore.md": [],
+  ".cursor/commands/opsx-propose.md": [],
+  ".cursor/commands/opsx-sync.md": [],
+  ".cursor/commands/opsx-update.md": [],
+  ".cursor/skills/openspec-apply-change/SKILL.md": [],
+  ".cursor/skills/openspec-archive-change/SKILL.md": [],
+  ".cursor/skills/openspec-explore/SKILL.md": [],
+  ".cursor/skills/openspec-propose/SKILL.md": [],
+  ".cursor/skills/openspec-sync-specs/SKILL.md": [],
+  ".cursor/skills/openspec-update-change/SKILL.md": [],
+  ".gemini/commands/opsx/apply.toml": [],
+  ".gemini/commands/opsx/archive.toml": [],
+  ".gemini/commands/opsx/explore.toml": [],
+  ".gemini/commands/opsx/propose.toml": [],
+  ".gemini/commands/opsx/sync.toml": [],
+  ".gemini/commands/opsx/update.toml": [],
+  ".gemini/skills/openspec-apply-change/SKILL.md": [],
+  ".gemini/skills/openspec-archive-change/SKILL.md": [],
+  ".gemini/skills/openspec-explore/SKILL.md": [],
+  ".gemini/skills/openspec-propose/SKILL.md": [],
+  ".gemini/skills/openspec-sync-specs/SKILL.md": [],
+  ".gemini/skills/openspec-update-change/SKILL.md": [],
   ".gitattributes": [],
   ".github/hooks/impeccable.json": [],
   ".github/runtime-component-sources.json": [],
@@ -4755,6 +5061,7 @@
   "knowledge/wiki/pages/exasol-studio-overview.md": [],
   "knowledge/wiki/pages/kiss-hard-rules.md": [],
   "marketplace/catalog.json": [],
+  "openspec/config.yaml": [],
   "package.json": [],
   "packages/README.md": [],
   "packages/agent-core/evals/live.ts": [
@@ -4988,6 +5295,9 @@
    "packages/agent-core/src/tool-repair.ts"
   ],
   "packages/agent-core/src/tool-repair.ts": [],
+  "packages/agent-core/src/tools.classify.test.ts": [
+   "packages/agent-core/src/tools.ts"
+  ],
   "packages/agent-core/src/tools.ts": [
    "packages/agent-core/src/a2a.ts",
    "packages/agent-core/src/artifacts.ts",

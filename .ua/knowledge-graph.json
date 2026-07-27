@@ -23,8 +23,8 @@
    "GitHub Actions"
   ],
   "description": "Whole-repo graph. Tauri 2 (Rust) + React 19 desktop Exasol client with a Node agent-core AI sidecar, ANTLR SQL parser, database-side semantic-views layer, vendored AI agent skills, CI/CD, docs, and knowledge tooling.",
-  "analyzedAt": "2026-07-27T11:03:56.380004Z",
-  "gitCommitHash": "f4e5212f1037ccc4d837f1bebfbd8ff9da31721b"
+  "analyzedAt": "2026-07-27T13:56:27.106622Z",
+  "gitCommitHash": "1c99e9300baba7bee4e0348add4b310118dc7c21"
  },
  "nodes": [
   {
@@ -17562,57 +17562,6 @@
    "complexity": "moderate"
   },
   {
-   "id": "file:packages/agent-core/src/tools.ts",
-   "type": "file",
-   "name": "tools.ts",
-   "filePath": "packages/agent-core/src/tools.ts",
-   "summary": "Defines the agent's full Exasol tool set \u2014 metadata queries ported from exasol/mcp-server plus SQL execution, CSV/parquet import, dashboards, memory, and UI navigation \u2014 with reads auto-running and mutations gated behind human approval.",
-   "tags": [
-    "service",
-    "agent-core",
-    "tool-calling",
-    "api-handler",
-    "database"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Central factory (buildTools) wires ~16 store dependencies and Zod-typed tool definitions into a single ToolSet."
-  },
-  {
-   "id": "function:packages/agent-core/src/tools.ts:classifySql",
-   "type": "function",
-   "name": "classifySql",
-   "filePath": "packages/agent-core/src/tools.ts",
-   "lineRange": [
-    31,
-    39
-   ],
-   "summary": "Classifies a SQL statement as a read (auto-run) or a mutation requiring human approval.",
-   "tags": [
-    "utility",
-    "validation",
-    "database"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/tools.ts:buildTools",
-   "type": "function",
-   "name": "buildTools",
-   "filePath": "packages/agent-core/src/tools.ts",
-   "lineRange": [
-    66,
-    1461
-   ],
-   "summary": "Factory that constructs and returns the complete agent ToolSet, binding every tool to the database registry, session, memory, documents, dashboards, and UI map.",
-   "tags": [
-    "factory",
-    "tool-calling",
-    "service",
-    "agent-core"
-   ],
-   "complexity": "complex"
-  },
-  {
    "id": "file:packages/agent-core/src/tui.ts",
    "type": "file",
    "name": "tui.ts",
@@ -20125,22 +20074,6 @@
    "complexity": "complex"
   },
   {
-   "id": "document:AGENTS.md",
-   "type": "document",
-   "name": "AGENTS.md",
-   "filePath": "AGENTS.md",
-   "summary": "Short, standard-named cross-tool agent instruction file (Codex, Cursor, Gemini CLI, Claude Code) that points at CLAUDE.md as the authoritative version and restates the non-negotiable always-rules: consult the committed knowledge graphs first, refresh them after every change, get a Codex review, and obey the three KISS hard rules. Also documents the zero-dependency test setup (`pnpm test`, `pnpm test:coverage`, Node `node:test` + Rust `#[cfg(test)]`, no vitest/jest).",
-   "tags": [
-    "documentation",
-    "entry-point",
-    "agent-instructions",
-    "conventions",
-    "development"
-   ],
-   "complexity": "simple",
-   "languageNotes": "AGENTS.md is an emerging cross-vendor convention: a tool-agnostic filename that many AI coding assistants auto-load, here deliberately kept as a thin pointer so CLAUDE.md stays the single source of truth."
-  },
-  {
    "id": "document:docs/knowledge-tools.md",
    "type": "document",
    "name": "knowledge-tools.md",
@@ -20487,39 +20420,6 @@
    "complexity": "simple"
   },
   {
-   "id": "file:packages/agent-core/src/loop.heuristics.test.ts",
-   "type": "file",
-   "name": "loop.heuristics.test.ts",
-   "filePath": "packages/agent-core/src/loop.heuristics.test.ts",
-   "summary": "Zero-dependency node:test suite for the three pure agent-loop heuristics exported by loop.ts \u2014 looksLikeUnacted, extractReadSql and looksUnfinished. Concentrates on the dangerous edges: prose that merely contains 'select', write statements smuggled onto the same or a later line, a truncated 'SELECT a FROM' with no target, and typographic or missing apostrophes in end-of-turn promises.",
-   "tags": [
-    "test",
-    "unit-test",
-    "heuristics",
-    "validation",
-    "agent-loop"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "Uses the built-in node:test runner and node:assert/strict, so the package needs no test-framework dependency."
-  },
-  {
-   "id": "file:packages/agent-core/src/loop.ts",
-   "type": "file",
-   "name": "loop.ts",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "summary": "The heart of the agent sidecar: runs one user turn as a multi-step LangGraph agent loop \u2014 builds the Exa system prompt, selects a lean toolset, streams progress, executes tools with approval gating, and recovers from weak-model failures (tool calls emitted as text, unacted plans, turns that stop mid-plan). Also exports the pure heuristics used to detect those failure modes.",
-   "tags": [
-    "agent-loop",
-    "entry-point",
-    "orchestration",
-    "prompt-engineering",
-    "error-recovery",
-    "tested"
-   ],
-   "complexity": "complex",
-   "languageNotes": "Composes a LangGraph state machine (buildTurnGraph plus Command returns) with hand-written recovery nodes; the pure heuristics are exported separately so they can be unit-tested without a model."
-  },
-  {
    "id": "file:packages/agent-core/src/server.ts",
    "type": "file",
    "name": "server.ts",
@@ -20566,171 +20466,6 @@
    ],
    "complexity": "complex",
    "languageNotes": "Purely deterministic \u2014 no second model call \u2014 and returns null rather than guessing, so the SDK can surface the original error to the model instead. A former repairCall() wrapper was deleted as dead code; both live repair paths compose the primitives directly because they need the parsed args object, not a JSON string."
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:humanizeProviderError",
-   "type": "function",
-   "name": "humanizeProviderError",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    122,
-    146
-   ],
-   "summary": "Translates a raw provider/API failure string into a short actionable message (bad key, per-minute token budget, quota, rate limit, context overflow, unknown model, network, server error), appending a truncated technical detail so nothing is hidden.",
-   "tags": [
-    "error-handling",
-    "utility",
-    "user-facing",
-    "provider"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:runTurn",
-   "type": "function",
-   "name": "runTurn",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    149,
-    913
-   ],
-   "summary": "Executes one user turn end to end: resolves the model, decides lean vs full prompt from the provider's token budget, ingests attachments into the document store, builds grounding from the knowledge graph, selects and progress-wraps tools, drives the LangGraph turn loop, and runs the recovery nodes that repair text-emitted tool calls or nudge a stalled model.",
-   "tags": [
-    "agent-loop",
-    "orchestration",
-    "entry-point",
-    "error-recovery",
-    "streaming"
-   ],
-   "complexity": "complex"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:buildRetrievedContext",
-   "type": "function",
-   "name": "buildRetrievedContext",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    921,
-    964
-   ],
-   "summary": "Assembles a capped grounding block for the turn by querying the schema knowledge graph with the user's text, so the model starts from real tables, columns and join conditions instead of guessing.",
-   "tags": [
-    "retrieval",
-    "grounding",
-    "knowledge-graph",
-    "prompt-engineering"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:selectTools",
-   "type": "function",
-   "name": "selectTools",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    972,
-    1011
-   ],
-   "summary": "Narrows the full toolset to the lean subset relevant to this turn, based on the user's text, whether a database connection is active, and whether the session has attached documents. Keeps prompts small enough for tight token budgets.",
-   "tags": [
-    "tool-selection",
-    "optimization",
-    "agent-loop",
-    "utility"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:wrapForProgress",
-   "type": "function",
-   "name": "wrapForProgress",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    1020,
-    1051
-   ],
-   "summary": "Decorates each tool's execute function so invocation and completion emit UI progress events and a short result summary, without the tools themselves knowing about the transport.",
-   "tags": [
-    "decorator",
-    "progress",
-    "streaming",
-    "tooling"
-   ],
-   "complexity": "moderate"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
-   "type": "function",
-   "name": "looksLikeUnacted",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    1060,
-    1075
-   ],
-   "summary": "Detects a turn where the model produced a plan or a fabricated mechanism instead of acting: hallucinated statements like EXA_PUMP, tool calls emitted as text, or real SQL paired with step-by-step \"here's what we'll do\" language. Deliberately conservative so genuine tool-free explanations pass.",
-   "tags": [
-    "heuristics",
-    "validation",
-    "error-recovery",
-    "agent-loop"
-   ],
-   "complexity": "simple"
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:extractReadSql",
-   "type": "function",
-   "name": "extractReadSql",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    1083,
-    1099
-   ],
-   "summary": "Pulls the first runnable READ-ONLY statement out of assistant text so a stalled \"here's the SQL\" turn can be rescued. Requires the statement to start a line and a SELECT to have a real target after FROM, and refuses anything containing DDL or DML.",
-   "tags": [
-    "heuristics",
-    "sql-parsing",
-    "validation",
-    "safety"
-   ],
-   "complexity": "simple",
-   "languageNotes": "The FROM-target check exists because a truncated 'SELECT a FROM' previously passed the gate and was handed to run_sql, turning a stalled model into a pointless database error instead of a nudge to finish the query."
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:looksUnfinished",
-   "type": "function",
-   "name": "looksUnfinished",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    1106,
-    1116
-   ],
-   "summary": "Checks the tail of a turn for a promise of a next action the model never took (\"I'll now check\u2026\", \"moving on to\u2026\"), treating a trailing question as a legitimate stop. Matches ASCII, typographic and missing apostrophes.",
-   "tags": [
-    "heuristics",
-    "validation",
-    "error-recovery",
-    "agent-loop"
-   ],
-   "complexity": "simple",
-   "languageNotes": "Apostrophes are matched as an optional ASCII-or-U+2019 character class, because models emit the typographic form as often as the ASCII one and sometimes omit it entirely; matching only ASCII silently finalized turns that had promised to continue."
-  },
-  {
-   "id": "function:packages/agent-core/src/loop.ts:summarize",
-   "type": "function",
-   "name": "summarize",
-   "filePath": "packages/agent-core/src/loop.ts",
-   "lineRange": [
-    1119,
-    1131
-   ],
-   "summary": "Produces a tiny model-free label for a tool result to show in the UI chip \u2014 denial, rows loaded, rows affected, row count, column count, or error text.",
-   "tags": [
-    "utility",
-    "ui",
-    "formatting",
-    "progress"
-   ],
-   "complexity": "simple"
   },
   {
    "id": "function:packages/agent-core/src/server.ts:startServer",
@@ -20959,22 +20694,6 @@
    ],
    "complexity": "complex",
    "languageNotes": "A checklist-shaped test plan built on Markdown tables with per-case IDs (LD1-LD6, B1-B5, C1-C3, D1-D4, E1-E4, F1-F10, G1-G3, H1-H3) so results are traceable. Its central Exasol gotcha is identifier case-folding: Parquet-header columns are created quoted-lowercase, so unquoted references fold to upper case and fail with 42000 \u2014 encoded as its own test case (F8)."
-  },
-  {
-   "id": "document:knowledge/wiki/log.md",
-   "type": "document",
-   "name": "log.md",
-   "filePath": "knowledge/wiki/log.md",
-   "summary": "Append-only Karpathy-format llm-wiki session log: one dated entry per working session capturing what shipped and the gotchas learned \u2014 the exapump 38M-row bulk-load benchmark and its multi-file/quoted-column traps, the Connection Properties page, adoption of the mandatory Codex review workflow, and the catch-up review that found and fixed six real defects.",
-   "tags": [
-    "documentation",
-    "knowledge-base",
-    "changelog",
-    "session-log",
-    "process"
-   ],
-   "complexity": "simple",
-   "languageNotes": "Karpathy wiki-log convention: `## [YYYY-MM-DD] <kind> | <headline>` followed by dense prose, with GOTCHA / HIGH / STILL OPEN markers so unresolved issues stay findable. It is the index into the wiki's topic pages rather than a document to be edited in place."
   },
   {
    "id": "file:apps/desktop/src/components/studio/TitleBar.tsx",
@@ -22306,22 +22025,6 @@
    "languageNotes": "Uses Node's built-in `node:test` + `node:assert/strict` \u2014 no test framework dependency."
   },
   {
-   "id": "document:CLAUDE.md",
-   "type": "document",
-   "name": "CLAUDE.md",
-   "filePath": "CLAUDE.md",
-   "summary": "Authoritative agent and contributor guide for Exasol Studio: mandates using the committed knowledge tools (understand-anything graph, graphify, llm-wiki, obsidian-vault) as the default way to understand and record project knowledge, codifies the Codex-review-before-shipping quality workflow and the three non-negotiable KISS hard rules (file size, reachability, testability), documents how the framework-free test suite runs, and lists the repo conventions that break things when ignored (icons over emoji, theme-safe CSS, single cross-platform frontend with platform differences confined to the ipc.ts transport tiers, local build invocation, commit/release rules).",
-   "tags": [
-    "documentation",
-    "entry-point",
-    "development",
-    "code-quality",
-    "conventions"
-   ],
-   "complexity": "moderate",
-   "languageNotes": "Loaded automatically by AI coding assistants (Claude Code, Cursor, Codex, Gemini CLI), so it doubles as machine-readable policy and human onboarding text; its instructions are mirrored in AGENTS.md for cross-tool parity. This revision records the second round of the oversized-file split with current line counts (ExasolStudio.tsx 3,223 down from 5,089; Dashboards.tsx 2,004; AssistantPanel.tsx 1,937) and the central lesson that extracting the PURE logic first is the cheapest, lowest-risk cut and the one that keeps exposing silent defects."
-  },
-  {
    "id": "document:knowledge/wiki/pages/kiss-hard-rules.md",
    "type": "document",
    "name": "kiss-hard-rules.md",
@@ -22336,6 +22039,880 @@
    ],
    "complexity": "moderate",
    "languageNotes": "Karpathy-pattern wiki page with YAML frontmatter (title/category/status) and Obsidian-style [[wikilinks]] to sibling pages. Its durable lessons: extract the PURE logic first (cheapest cut, least regression risk, and every module that became testable immediately yielded a real silent defect); a de-dup pattern is itself a filter that can hide its own misses, so count handler conditions rather than comment markers; noUnusedLocals is OFF so tsc will not flag imports the extraction orphaned; and the desktop test script needs the glob form node --test \"src/**/*.test.ts\" because a bare directory argument is treated as a module and fails."
+  },
+  {
+   "id": "file:packages/agent-core/src/loop.ts",
+   "type": "file",
+   "name": "loop.ts",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "summary": "Core agent turn orchestrator: runTurn assembles the system prompt (skills, memory, KB grounding, capabilities), selects and progress-wraps tools, drives the LangGraph turn graph with attempt/recover/continuation/finalize nodes, and handles provider errors, TPM backoff, phantom tool-call rescue, and post-turn memory extraction. Exports humanizeProviderError and summarize (result summarization precedence chain) for testing.",
+   "tags": [
+    "agent-loop",
+    "orchestration",
+    "service",
+    "error-handling",
+    "llm",
+    "tested"
+   ],
+   "complexity": "complex",
+   "languageNotes": "runTurn is a ~760-line async function containing nested graph-node closures (nodeAttempt, nodeRecover, nodeContinuation, nodeFinalize) wired into a LangGraph state machine."
+  },
+  {
+   "id": "file:packages/agent-core/src/loop.heuristics.test.ts",
+   "type": "file",
+   "name": "loop.heuristics.test.ts",
+   "filePath": "packages/agent-core/src/loop.heuristics.test.ts",
+   "summary": "Unit tests for loop.ts heuristics: looksLikeUnacted, looksUnfinished, extractReadSql, humanizeProviderError message mapping, and the summarize precedence chain (denied > report > rowsInserted > affectedRows > rowCount > columns > error).",
+   "tags": [
+    "test",
+    "heuristics",
+    "agent-loop",
+    "unit-tests"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "file:packages/agent-core/src/tools.ts",
+   "type": "file",
+   "name": "tools.ts",
+   "filePath": "packages/agent-core/src/tools.ts",
+   "summary": "Flat registry of the agent's Exasol tools built by buildTools: metadata/KB queries, run_sql with a hardened read/write safety gate (classifySql), CSV/parquet import, dashboards, memory, documents, UI navigation, pipelines, and researcher spawning. classifySql blinds string literals and quoted identifiers, rejects multi-statement batches and read-classified statements containing top-level INTO (closing SELECT INTO TABLE and 'SELECT 1; DROP' bypasses), and fails closed on unterminated literals.",
+   "tags": [
+    "tool-registry",
+    "security",
+    "safety-gate",
+    "sql",
+    "agent-tools",
+    "tested"
+   ],
+   "complexity": "complex",
+   "languageNotes": "Deliberately a single flat registry \u2014 buildTools spans ~1400 lines because each entry is one tool definition; the size equals the tool count (accepted in CLAUDE.md)."
+  },
+  {
+   "id": "file:packages/agent-core/src/tools.classify.test.ts",
+   "type": "file",
+   "name": "tools.classify.test.ts",
+   "filePath": "packages/agent-core/src/tools.classify.test.ts",
+   "summary": "30 unit tests pinning the hardened classifySql SQL safety gate: reads vs writes, literal/identifier blinding, and the two Codex-review bypasses \u2014 Exasol's SELECT ... INTO TABLE (CTAS) must classify as write, and multi-statement batches like 'SELECT 1; DROP TABLE t' must not classify as read.",
+   "tags": [
+    "test",
+    "security",
+    "safety-gate",
+    "sql",
+    "regression-tests"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:humanizeProviderError",
+   "type": "function",
+   "name": "humanizeProviderError",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    123,
+    147
+   ],
+   "summary": "Maps raw LLM provider error strings (401/invalid key, TPM, quota, rate limit, context length, unknown model, network, 5xx) to short user-facing messages; exported for testing.",
+   "tags": [
+    "error-handling",
+    "utility",
+    "llm",
+    "user-messaging"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:runTurn",
+   "type": "function",
+   "name": "runTurn",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    150,
+    914
+   ],
+   "summary": "Executes one full agent turn: ingests attachments, builds system prompt with memory/skills/KB grounding, compacts history, builds and selects tools, then drives the LangGraph attempt/recover/continuation/finalize state machine with phantom tool-call rescue, TPM backoff, checkpointing, and async memory extraction.",
+   "tags": [
+    "agent-loop",
+    "orchestration",
+    "state-machine",
+    "llm"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:buildRetrievedContext",
+   "type": "function",
+   "name": "buildRetrievedContext",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    922,
+    965
+   ],
+   "summary": "Builds the grounding context block from the knowledge graph: schema/table overview, table cards matching the user text, hub tables, and subsystem clusters.",
+   "tags": [
+    "retrieval",
+    "knowledge-graph",
+    "context-building",
+    "grounding"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:selectTools",
+   "type": "function",
+   "name": "selectTools",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    973,
+    1012
+   ],
+   "summary": "Prunes the full tool registry to the subset relevant for the current turn using keyword-regex matching against the user text plus always-on core tools.",
+   "tags": [
+    "tool-selection",
+    "heuristics",
+    "agent-loop",
+    "optimization"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:wrapForProgress",
+   "type": "function",
+   "name": "wrapForProgress",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    1021,
+    1052
+   ],
+   "summary": "Wraps every tool's execute function to emit progress events and count repeated identical calls before delegating to the original implementation.",
+   "tags": [
+    "instrumentation",
+    "decorator",
+    "progress-events",
+    "agent-tools"
+   ],
+   "complexity": "moderate"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
+   "type": "function",
+   "name": "looksLikeUnacted",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    1061,
+    1076
+   ],
+   "summary": "Heuristic that detects assistant text describing planned tool calls or SQL it never executed (textual tool-call markers, SQL blocks, 'I'll run...' phrasing), used to trigger recovery.",
+   "tags": [
+    "heuristics",
+    "recovery",
+    "validation",
+    "agent-loop"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:extractReadSql",
+   "type": "function",
+   "name": "extractReadSql",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    1084,
+    1100
+   ],
+   "summary": "Extracts a safe read-only SELECT/WITH statement from assistant text (fenced or inline), rejecting anything containing write keywords, so recovery can auto-execute it.",
+   "tags": [
+    "heuristics",
+    "sql",
+    "recovery",
+    "parsing"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:looksUnfinished",
+   "type": "function",
+   "name": "looksUnfinished",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    1107,
+    1117
+   ],
+   "summary": "Detects responses that trail off mid-plan ('moving on to...', trailing colon) to decide whether the turn should continue with another attempt.",
+   "tags": [
+    "heuristics",
+    "continuation",
+    "validation",
+    "agent-loop"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/loop.ts:summarize",
+   "type": "function",
+   "name": "summarize",
+   "filePath": "packages/agent-core/src/loop.ts",
+   "lineRange": [
+    1120,
+    1132
+   ],
+   "summary": "Summarizes a tool output into a one-line progress string using a strict precedence chain: denied > report > rowsInserted > affectedRows > rowCount > columns > error; exported for testing.",
+   "tags": [
+    "utility",
+    "summarization",
+    "progress-events",
+    "agent-tools"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "function:packages/agent-core/src/tools.ts:classifySql",
+   "type": "function",
+   "name": "classifySql",
+   "filePath": "packages/agent-core/src/tools.ts",
+   "lineRange": [
+    42,
+    59
+   ],
+   "summary": "Hardened read/write SQL safety gate: strips comments, blinds string literals and quoted identifiers, classifies by first keyword, rejects batches with content after a semicolon, and rejects read-classified statements containing top-level INTO (blocking SELECT ... INTO TABLE CTAS and 'SELECT 1; DROP TABLE t' bypasses). Fails closed \u2014 unterminated literals leave keywords visible and classify as write.",
+   "tags": [
+    "security",
+    "safety-gate",
+    "sql",
+    "classification",
+    "validation"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Blinding replaces '...'/\"...\" content (with doubled-quote escapes) before keyword inspection, so attacker-controlled literals can never hide or fake SQL keywords."
+  },
+  {
+   "id": "function:packages/agent-core/src/tools.ts:buildTools",
+   "type": "function",
+   "name": "buildTools",
+   "filePath": "packages/agent-core/src/tools.ts",
+   "lineRange": [
+    86,
+    1481
+   ],
+   "summary": "Constructs the agent's complete tool registry from a context of stores (db, kb, dashboards, memory, documents, skills, sessions): metadata queries, run_sql gated by classifySql, CSV/parquet import via csv-import and exapump, dashboard CRUD, memory, UI navigation, pipelines, and researcher spawning.",
+   "tags": [
+    "factory",
+    "tool-registry",
+    "agent-tools",
+    "sql",
+    "integration"
+   ],
+   "complexity": "complex"
+  },
+  {
+   "id": "document:.claude/commands/opsx/apply.md",
+   "type": "document",
+   "name": "apply.md",
+   "filePath": ".claude/commands/opsx/apply.md",
+   "summary": "Vendored OpenSpec /opsx:apply command: implement tasks from an OpenSpec change, checking them off as they complete. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/commands/opsx/archive.md",
+   "type": "document",
+   "name": "archive.md",
+   "filePath": ".claude/commands/opsx/archive.md",
+   "summary": "Vendored OpenSpec /opsx:archive command: archive a completed change and fold its delta specs into the main specs. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/commands/opsx/explore.md",
+   "type": "document",
+   "name": "explore.md",
+   "filePath": ".claude/commands/opsx/explore.md",
+   "summary": "Vendored OpenSpec /opsx:explore command: thinking-partner mode for investigating ideas and clarifying requirements before a change. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/commands/opsx/propose.md",
+   "type": "document",
+   "name": "propose.md",
+   "filePath": ".claude/commands/opsx/propose.md",
+   "summary": "Vendored OpenSpec /opsx:propose command: create a change and generate proposal, design, delta specs and tasks in one step. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/commands/opsx/sync.md",
+   "type": "document",
+   "name": "sync.md",
+   "filePath": ".claude/commands/opsx/sync.md",
+   "summary": "Vendored OpenSpec /opsx:sync command: sync delta specs from a change into the main specs without archiving. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/commands/opsx/update.md",
+   "type": "document",
+   "name": "update.md",
+   "filePath": ".claude/commands/opsx/update.md",
+   "summary": "Vendored OpenSpec /opsx:update command: revise a change's planning artifacts and keep them coherent; never edits code. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-apply.md",
+   "type": "document",
+   "name": "opsx-apply.md",
+   "filePath": ".cursor/commands/opsx-apply.md",
+   "summary": "Vendored OpenSpec /opsx:apply command: implement tasks from an OpenSpec change, checking them off as they complete. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-archive.md",
+   "type": "document",
+   "name": "opsx-archive.md",
+   "filePath": ".cursor/commands/opsx-archive.md",
+   "summary": "Vendored OpenSpec /opsx:archive command: archive a completed change and fold its delta specs into the main specs. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-explore.md",
+   "type": "document",
+   "name": "opsx-explore.md",
+   "filePath": ".cursor/commands/opsx-explore.md",
+   "summary": "Vendored OpenSpec /opsx:explore command: thinking-partner mode for investigating ideas and clarifying requirements before a change. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-propose.md",
+   "type": "document",
+   "name": "opsx-propose.md",
+   "filePath": ".cursor/commands/opsx-propose.md",
+   "summary": "Vendored OpenSpec /opsx:propose command: create a change and generate proposal, design, delta specs and tasks in one step. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-sync.md",
+   "type": "document",
+   "name": "opsx-sync.md",
+   "filePath": ".cursor/commands/opsx-sync.md",
+   "summary": "Vendored OpenSpec /opsx:sync command: sync delta specs from a change into the main specs without archiving. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/commands/opsx-update.md",
+   "type": "document",
+   "name": "opsx-update.md",
+   "filePath": ".cursor/commands/opsx-update.md",
+   "summary": "Vendored OpenSpec /opsx:update command: revise a change's planning artifacts and keep them coherent; never edits code. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/apply.toml",
+   "type": "config",
+   "name": "apply.toml",
+   "filePath": ".gemini/commands/opsx/apply.toml",
+   "summary": "Vendored OpenSpec /opsx:apply command: implement tasks from an OpenSpec change, checking them off as they complete. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/archive.toml",
+   "type": "config",
+   "name": "archive.toml",
+   "filePath": ".gemini/commands/opsx/archive.toml",
+   "summary": "Vendored OpenSpec /opsx:archive command: archive a completed change and fold its delta specs into the main specs. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/explore.toml",
+   "type": "config",
+   "name": "explore.toml",
+   "filePath": ".gemini/commands/opsx/explore.toml",
+   "summary": "Vendored OpenSpec /opsx:explore command: thinking-partner mode for investigating ideas and clarifying requirements before a change. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/propose.toml",
+   "type": "config",
+   "name": "propose.toml",
+   "filePath": ".gemini/commands/opsx/propose.toml",
+   "summary": "Vendored OpenSpec /opsx:propose command: create a change and generate proposal, design, delta specs and tasks in one step. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/sync.toml",
+   "type": "config",
+   "name": "sync.toml",
+   "filePath": ".gemini/commands/opsx/sync.toml",
+   "summary": "Vendored OpenSpec /opsx:sync command: sync delta specs from a change into the main specs without archiving. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "config:.gemini/commands/opsx/update.toml",
+   "type": "config",
+   "name": "update.toml",
+   "filePath": ".gemini/commands/opsx/update.toml",
+   "summary": "Vendored OpenSpec /opsx:update command: revise a change's planning artifacts and keep them coherent; never edits code. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:AGENTS.md",
+   "type": "document",
+   "name": "AGENTS.md",
+   "filePath": "AGENTS.md",
+   "summary": "Cross-tool agent instructions (Codex, Cursor, Gemini CLI, Claude Code) \u2014 a short, standard-named pointer to the authoritative CLAUDE.md carrying only the non-negotiable always-rules: consult the committed knowledge graphs first and refresh them after every change, route non-trivial work through the OpenSpec workflow (/opsx:propose \u2192 apply \u2192 archive), enforce Codex review plus the three KISS hard rules (file-size limits, no unreachable code, extract-to-test), and follow the framework-free node:test/#[cfg(test)] testing policy.",
+   "tags": [
+    "documentation",
+    "entry-point",
+    "agent-instructions",
+    "conventions",
+    "workflow"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Follows the emerging AGENTS.md cross-assistant convention: one standard filename that every AI coding tool picks up, deliberately kept as a thin pointer so the full detail lives in a single authoritative file (CLAUDE.md)."
+  },
+  {
+   "id": "document:CLAUDE.md",
+   "type": "document",
+   "name": "CLAUDE.md",
+   "filePath": "CLAUDE.md",
+   "summary": "Authoritative agent and contributor instructions for Exasol Studio. Mandates the four knowledge tools (understand-anything graph first, graphify for symbols, llm-wiki for decisions, OpenSpec for spec-driven changes), the mandatory code-quality workflow (Codex review before shipping, KISS's three hard rules with stated reasons for the three remaining >1,000-line files \u2014 local_database.rs as linear I/O bootstrap orchestrator, tools.ts as flat tool registry, loop.ts as one turn state machine), the zero-framework node:test testing policy, and the conventions that bite (icons not emoji, theme-safe CSS via var()/color-mix, platform differences only in ipc.ts transport tiers, tag-triggered releases).",
+   "tags": [
+    "documentation",
+    "entry-point",
+    "agent-instructions",
+    "code-quality",
+    "conventions"
+   ],
+   "complexity": "moderate",
+   "languageNotes": "Loaded automatically by AI coding assistants as system context; structured so rules are enforceable (e.g. each >1,000-line file must carry a stated reason, and the classifySql safety gate's test file is named inline)."
+  },
+  {
+   "id": "document:.claude/skills/openspec-apply-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-apply-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: implement tasks from an OpenSpec change. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/skills/openspec-archive-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-archive-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: archive a completed change after implementation. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/skills/openspec-explore/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-explore/SKILL.md",
+   "summary": "Vendored OpenSpec skill: explore mode \u2014 investigate problems and clarify requirements. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/skills/openspec-propose/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-propose/SKILL.md",
+   "summary": "Vendored OpenSpec skill: propose a new change with all artifacts generated in one step. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/skills/openspec-sync-specs/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-sync-specs/SKILL.md",
+   "summary": "Vendored OpenSpec skill: sync delta specs from a change to main specs. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.claude/skills/openspec-update-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".claude/skills/openspec-update-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: revise a change's planning artifacts and keep them coherent. (claude copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "claude"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-apply-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-apply-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: implement tasks from an OpenSpec change. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-archive-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-archive-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: archive a completed change after implementation. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-explore/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-explore/SKILL.md",
+   "summary": "Vendored OpenSpec skill: explore mode \u2014 investigate problems and clarify requirements. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-propose/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-propose/SKILL.md",
+   "summary": "Vendored OpenSpec skill: propose a new change with all artifacts generated in one step. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-sync-specs/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-sync-specs/SKILL.md",
+   "summary": "Vendored OpenSpec skill: sync delta specs from a change to main specs. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.codex/skills/openspec-update-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".codex/skills/openspec-update-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: revise a change's planning artifacts and keep them coherent. (codex copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "codex"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-apply-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-apply-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: implement tasks from an OpenSpec change. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-archive-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-archive-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: archive a completed change after implementation. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-explore/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-explore/SKILL.md",
+   "summary": "Vendored OpenSpec skill: explore mode \u2014 investigate problems and clarify requirements. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-propose/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-propose/SKILL.md",
+   "summary": "Vendored OpenSpec skill: propose a new change with all artifacts generated in one step. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-sync-specs/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-sync-specs/SKILL.md",
+   "summary": "Vendored OpenSpec skill: sync delta specs from a change to main specs. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.cursor/skills/openspec-update-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".cursor/skills/openspec-update-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: revise a change's planning artifacts and keep them coherent. (cursor copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "cursor"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-apply-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-apply-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: implement tasks from an OpenSpec change. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-archive-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-archive-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: archive a completed change after implementation. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-explore/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-explore/SKILL.md",
+   "summary": "Vendored OpenSpec skill: explore mode \u2014 investigate problems and clarify requirements. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-propose/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-propose/SKILL.md",
+   "summary": "Vendored OpenSpec skill: propose a new change with all artifacts generated in one step. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-sync-specs/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-sync-specs/SKILL.md",
+   "summary": "Vendored OpenSpec skill: sync delta specs from a change to main specs. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:.gemini/skills/openspec-update-change/SKILL.md",
+   "type": "document",
+   "name": "SKILL.md",
+   "filePath": ".gemini/skills/openspec-update-change/SKILL.md",
+   "summary": "Vendored OpenSpec skill: revise a change's planning artifacts and keep them coherent. (gemini copy)",
+   "tags": [
+    "vendored",
+    "openspec",
+    "gemini"
+   ],
+   "complexity": "simple"
+  },
+  {
+   "id": "document:knowledge/wiki/log.md",
+   "type": "document",
+   "name": "log.md",
+   "filePath": "knowledge/wiki/log.md",
+   "summary": "Append-only llm-wiki session log recording durable findings per work session: the exapump bulk-load benchmark (38M NYC Taxi rows at ~532K rows/s plus two loading gotchas), the Connection Properties page shipping, adoption of the mandatory Codex-review/KISS code-quality workflow, the six defects from the Codex catch-up review, and the classifySql safety-gate hardening (SELECT INTO TABLE and read-prefixed-batch bypasses fixed with 30 pinning tests) alongside the OpenSpec installation.",
+   "tags": [
+    "documentation",
+    "session-log",
+    "knowledge-base",
+    "review-findings",
+    "gotchas"
+   ],
+   "complexity": "simple",
+   "languageNotes": "Each entry follows a fixed '[date] category | headline' heading convention and names the wiki pages it spawned, making the log a chronological index into knowledge/wiki/pages/."
+  },
+  {
+   "id": "config:openspec/config.yaml",
+   "type": "config",
+   "name": "config.yaml",
+   "filePath": "openspec/config.yaml",
+   "summary": "OpenSpec workflow configuration injected into AI assistants when creating change artifacts: a project-context block (Tauri 2 + React 19 stack, KISS hard rules, zero-test-framework policy, icon/CSS/ipc.ts conventions, Exasol identifier case-folding) plus per-artifact rules \u2014 proposals must include a Non-goals section and name any touched files exceeding 1,000 lines, and every task that adds logic must name its covering test file.",
+   "tags": [
+    "configuration",
+    "spec-driven",
+    "workflow",
+    "code-quality",
+    "conventions"
+   ],
+   "complexity": "simple",
+   "languageNotes": "Uses a YAML literal block (context: |) to embed prose project context verbatim, so proposals inherit the repo's KISS and testing rules without the assistant re-reading CLAUDE.md."
   }
  ],
  "edges": [
@@ -30915,41 +31492,6 @@
    "weight": 0.8
   },
   {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "function:packages/agent-core/src/tools.ts:classifySql",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "function:packages/agent-core/src/tools.ts:buildTools",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "function:packages/agent-core/src/tools.ts:classifySql",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "function:packages/agent-core/src/tools.ts:buildTools",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/skills.ts",
-   "type": "depends_on",
-   "direction": "forward",
-   "weight": 0.6
-  },
-  {
    "source": "file:packages/agent-core/src/tui.ts",
    "target": "class:packages/agent-core/src/tui.ts:Spinner",
    "type": "contains",
@@ -32670,20 +33212,6 @@
    "type": "calls",
    "direction": "forward",
    "weight": 0.8
-  },
-  {
-   "source": "document:AGENTS.md",
-   "target": "document:docs/knowledge-tools.md",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:AGENTS.md",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
   },
   {
    "source": "document:docs/knowledge-tools.md",
@@ -36969,110 +37497,6 @@
    "recoveredFromImportMap": true
   },
   {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/a2a.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/artifacts.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/board.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/config.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/dashboards.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/db.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/documents.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/exapump.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/kb.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/llm.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/memory.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/session.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/tools.ts",
-   "target": "file:packages/agent-core/src/skills.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
    "source": "file:packages/exasol-sql-parser/src/completion.ts",
    "target": "file:packages/exasol-sql-parser/src/generated/ExasolLexer.ts",
    "type": "imports",
@@ -37465,146 +37889,6 @@
    "weight": 0.8
   },
   {
-   "source": "file:packages/agent-core/src/loop.heuristics.test.ts",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/artifacts.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/board.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/capabilities.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/compact.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/config.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/dashboards.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/db.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/documents.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/graph.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/kb.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/llm.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/log.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/memory-extract.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/memory.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/providers.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/session.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/skills.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
    "source": "file:packages/agent-core/src/server.ts",
    "target": "file:packages/agent-core/src/artifacts.ts",
    "type": "imports",
@@ -37649,13 +37933,6 @@
   {
    "source": "file:packages/agent-core/src/server.ts",
    "target": "file:packages/agent-core/src/log.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/server.ts",
-   "target": "file:packages/agent-core/src/loop.ts",
    "type": "imports",
    "direction": "forward",
    "weight": 0.7
@@ -37701,69 +37978,6 @@
    "type": "imports",
    "direction": "forward",
    "weight": 0.7
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:humanizeProviderError",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:runTurn",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:buildRetrievedContext",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:selectTools",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:wrapForProgress",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:extractReadSql",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:looksUnfinished",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:summarize",
-   "type": "contains",
-   "direction": "forward",
-   "weight": 1.0
   },
   {
    "source": "file:packages/agent-core/src/server.ts",
@@ -37829,34 +38043,6 @@
    "weight": 1.0
   },
   {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:runTurn",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:extractReadSql",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "function:packages/agent-core/src/loop.ts:looksUnfinished",
-   "type": "exports",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
    "source": "file:packages/agent-core/src/server.ts",
    "target": "function:packages/agent-core/src/server.ts:startServer",
    "type": "exports",
@@ -37904,90 +38090,6 @@
    "type": "exports",
    "direction": "forward",
    "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/tool-repair.ts:extractTextToolCalls",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/tool-repair.ts:resolveToolName",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/tool-repair.ts:repairArgs",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/tool-repair.ts:zodSchemaish",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/tools.ts:buildTools",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/llm.ts:runLoop",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/graph.ts:buildTurnGraph",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/compact.ts:maybeCompact",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/memory-extract.ts:extractMemories",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/loop.ts:runTurn",
-   "target": "function:packages/agent-core/src/capabilities.ts:readAgentCapabilities",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "function:packages/agent-core/src/server.ts:startServer",
-   "target": "function:packages/agent-core/src/loop.ts:runTurn",
-   "type": "calls",
-   "direction": "forward",
-   "weight": 0.8
-  },
-  {
-   "source": "file:packages/agent-core/src/loop.ts",
-   "target": "file:packages/agent-core/src/loop.heuristics.test.ts",
-   "type": "tested_by",
-   "direction": "forward",
-   "weight": 0.5
   },
   {
    "source": "file:packages/agent-core/src/tool-repair.ts",
@@ -38096,21 +38198,7 @@
   },
   {
    "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
    "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "target": "file:packages/agent-core/src/loop.ts",
    "type": "documents",
    "direction": "forward",
    "weight": 0.5
@@ -38123,123 +38211,8 @@
    "weight": 0.5
   },
   {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "document:docs/qa/manual-validation-big-data.md",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:packages/agent-core/src/server.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src-tauri/src/query.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src/lib/sql-text.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src/components/studio/tabs.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/log.md",
-   "target": "document:knowledge/wiki/pages/connection-properties.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:docs/qa/manual-validation-big-data.md",
-   "target": "document:knowledge/wiki/log.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "file:packages/agent-core/evals/live.ts",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/evals/run.ts",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
    "source": "file:packages/agent-core/evals/run.ts",
    "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "imports",
-   "direction": "forward",
-   "weight": 0.7,
-   "recoveredFromImportMap": true
-  },
-  {
-   "source": "file:packages/agent-core/src/cli.ts",
-   "target": "file:packages/agent-core/src/loop.ts",
    "type": "imports",
    "direction": "forward",
    "weight": 0.7,
@@ -39832,222 +39805,12 @@
   },
   {
    "source": "file:packages/agent-core/src/csv-import.ts",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "file:packages/agent-core/src/csv-import.ts",
    "target": "file:packages/agent-core/evals/run.ts",
    "type": "related",
    "direction": "forward",
    "weight": 0.5
   },
   {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/bi/Dashboards.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/assistant/AssistantPanel.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/loop.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/server.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tui.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/lib/sql-text.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/tabs.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/IconButton.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/HistoryDock.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/Sidebar.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/TitleBar.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/studio/monaco-theme.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/assistant/chat-text.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/features/bi/report-export.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/csv-import.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:packages/agent-core/src/tool-repair.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/components/ui/boxicons.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:apps/desktop/src/lib/ipc.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:scripts/setup-knowledge-tools.sh",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "file:scripts/build-local.sh",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:docs/knowledge-tools.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:docs/web-deploy.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:AGENTS.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:CLAUDE.md",
-   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
    "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
    "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
    "type": "documents",
@@ -40071,20 +39834,6 @@
   {
    "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
    "target": "file:apps/desktop/src-tauri/src/local_database.rs",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:packages/agent-core/src/tools.ts",
-   "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "file:packages/agent-core/src/loop.ts",
    "type": "documents",
    "direction": "forward",
    "weight": 0.5
@@ -40184,20 +39933,6 @@
    "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
    "target": "file:packages/agent-core/src/tool-repair.ts",
    "type": "documents",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "document:CLAUDE.md",
-   "type": "related",
-   "direction": "forward",
-   "weight": 0.5
-  },
-  {
-   "source": "document:knowledge/wiki/pages/kiss-hard-rules.md",
-   "target": "document:AGENTS.md",
-   "type": "related",
    "direction": "forward",
    "weight": 0.5
   },
@@ -40239,8 +39974,816 @@
    "recoveredFromImportMap": true
   },
   {
+   "source": "file:packages/agent-core/src/loop.heuristics.test.ts",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/artifacts.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/board.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/capabilities.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/compact.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/config.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/dashboards.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/db.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/documents.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/graph.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/kb.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/llm.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/log.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/memory-extract.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/memory.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/providers.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/session.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/skills.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/tool-repair.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.classify.test.ts",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/a2a.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/artifacts.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/board.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/config.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
    "source": "file:packages/agent-core/src/tools.ts",
    "target": "file:packages/agent-core/src/csv-import.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/dashboards.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/db.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/documents.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/exapump.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/kb.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/llm.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/memory.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/session.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/skills.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:humanizeProviderError",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:runTurn",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:buildRetrievedContext",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:selectTools",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:wrapForProgress",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:extractReadSql",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:looksUnfinished",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:summarize",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "function:packages/agent-core/src/tools.ts:classifySql",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "function:packages/agent-core/src/tools.ts:buildTools",
+   "type": "contains",
+   "direction": "forward",
+   "weight": 1.0
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:humanizeProviderError",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:runTurn",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:looksLikeUnacted",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:extractReadSql",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:looksUnfinished",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "function:packages/agent-core/src/loop.ts:summarize",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "function:packages/agent-core/src/tools.ts:classifySql",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "function:packages/agent-core/src/tools.ts:buildTools",
+   "type": "exports",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "file:packages/agent-core/src/loop.ts",
+   "target": "file:packages/agent-core/src/loop.heuristics.test.ts",
+   "type": "tested_by",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:packages/agent-core/src/tools.ts",
+   "target": "file:packages/agent-core/src/tools.classify.test.ts",
+   "type": "tested_by",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/tools.ts:buildTools",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/graph.ts:buildTurnGraph",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/compact.ts:maybeCompact",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/capabilities.ts:readAgentCapabilities",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/memory-extract.ts:extractMemories",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/llm.ts:runLoop",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/tool-repair.ts:extractTextToolCalls",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/tool-repair.ts:resolveToolName",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/tool-repair.ts:repairArgs",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "function:packages/agent-core/src/loop.ts:runTurn",
+   "target": "function:packages/agent-core/src/tool-repair.ts:zodSchemaish",
+   "type": "calls",
+   "direction": "forward",
+   "weight": 0.8
+  },
+  {
+   "source": "document:.claude/commands/opsx/apply.md",
+   "target": "document:.claude/skills/openspec-apply-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.claude/commands/opsx/archive.md",
+   "target": "document:.claude/skills/openspec-archive-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.claude/commands/opsx/explore.md",
+   "target": "document:.claude/skills/openspec-explore/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.claude/commands/opsx/propose.md",
+   "target": "document:.claude/skills/openspec-propose/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.claude/commands/opsx/sync.md",
+   "target": "document:.claude/skills/openspec-sync-specs/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.claude/commands/opsx/update.md",
+   "target": "document:.claude/skills/openspec-update-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-apply.md",
+   "target": "document:.cursor/skills/openspec-apply-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-archive.md",
+   "target": "document:.cursor/skills/openspec-archive-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-explore.md",
+   "target": "document:.cursor/skills/openspec-explore/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-propose.md",
+   "target": "document:.cursor/skills/openspec-propose/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-sync.md",
+   "target": "document:.cursor/skills/openspec-sync-specs/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:.cursor/commands/opsx-update.md",
+   "target": "document:.cursor/skills/openspec-update-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/apply.toml",
+   "target": "document:.gemini/skills/openspec-apply-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/archive.toml",
+   "target": "document:.gemini/skills/openspec-archive-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/explore.toml",
+   "target": "document:.gemini/skills/openspec-explore/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/propose.toml",
+   "target": "document:.gemini/skills/openspec-propose/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/sync.toml",
+   "target": "document:.gemini/skills/openspec-sync-specs/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:.gemini/commands/opsx/update.toml",
+   "target": "document:.gemini/skills/openspec-update-change/SKILL.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:AGENTS.md",
+   "target": "document:CLAUDE.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:AGENTS.md",
+   "target": "document:docs/knowledge-tools.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:AGENTS.md",
+   "target": "config:openspec/config.yaml",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:AGENTS.md",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:docs/knowledge-tools.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "document:docs/web-deploy.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "config:openspec/config.yaml",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/ui/boxicons.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src-tauri/src/local_database.rs",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/components/studio/ExasolStudio.tsx",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:apps/desktop/src/lib/sql-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:scripts/build-local.sh",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:CLAUDE.md",
+   "target": "file:scripts/setup-knowledge-tools.sh",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "document:knowledge/wiki/pages/dev-workflow-codex.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "document:knowledge/wiki/pages/kiss-hard-rules.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "document:knowledge/wiki/pages/codex-review-findings-2026-07.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "document:knowledge/wiki/pages/connection-properties.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "document:CLAUDE.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "file:packages/agent-core/src/tools.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "file:packages/agent-core/src/tools.classify.test.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "document:knowledge/wiki/log.md",
+   "target": "file:apps/desktop/src/lib/sql-text.ts",
+   "type": "documents",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:openspec/config.yaml",
+   "target": "document:CLAUDE.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:openspec/config.yaml",
+   "target": "document:AGENTS.md",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "config:openspec/config.yaml",
+   "target": "file:apps/desktop/src/lib/ipc.ts",
+   "type": "related",
+   "direction": "forward",
+   "weight": 0.5
+  },
+  {
+   "source": "file:packages/agent-core/evals/live.ts",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7,
+   "recoveredFromImportMap": true
+  },
+  {
+   "source": "file:packages/agent-core/evals/run.ts",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7,
+   "recoveredFromImportMap": true
+  },
+  {
+   "source": "file:packages/agent-core/src/cli.ts",
+   "target": "file:packages/agent-core/src/loop.ts",
+   "type": "imports",
+   "direction": "forward",
+   "weight": 0.7,
+   "recoveredFromImportMap": true
+  },
+  {
+   "source": "file:packages/agent-core/src/server.ts",
+   "target": "file:packages/agent-core/src/loop.ts",
    "type": "imports",
    "direction": "forward",
    "weight": 0.7,
@@ -40884,7 +41427,8 @@
     "document:packages/README.md",
     "document:services/exasol-driver-service/README.md",
     "document:tests/README.md",
-    "document:AGENTS.md"
+    "document:AGENTS.md",
+    "file:packages/agent-core/src/tools.classify.test.ts"
    ]
   },
   {
@@ -40923,7 +41467,50 @@
     "file:tools/scripts/graphify-config.mjs",
     "file:tools/scripts/check-graphify.mjs",
     "file:tools/scripts/render-graphify.mjs",
-    "file:tools/scripts/build-graphify-html.mjs"
+    "file:tools/scripts/build-graphify-html.mjs",
+    "config:.gemini/commands/opsx/apply.toml",
+    "config:.gemini/commands/opsx/archive.toml",
+    "config:.gemini/commands/opsx/explore.toml",
+    "config:.gemini/commands/opsx/propose.toml",
+    "config:.gemini/commands/opsx/sync.toml",
+    "config:.gemini/commands/opsx/update.toml",
+    "config:openspec/config.yaml",
+    "document:.claude/commands/opsx/apply.md",
+    "document:.claude/commands/opsx/archive.md",
+    "document:.claude/commands/opsx/explore.md",
+    "document:.claude/commands/opsx/propose.md",
+    "document:.claude/commands/opsx/sync.md",
+    "document:.claude/commands/opsx/update.md",
+    "document:.claude/skills/openspec-apply-change/SKILL.md",
+    "document:.claude/skills/openspec-archive-change/SKILL.md",
+    "document:.claude/skills/openspec-explore/SKILL.md",
+    "document:.claude/skills/openspec-propose/SKILL.md",
+    "document:.claude/skills/openspec-sync-specs/SKILL.md",
+    "document:.claude/skills/openspec-update-change/SKILL.md",
+    "document:.codex/skills/openspec-apply-change/SKILL.md",
+    "document:.codex/skills/openspec-archive-change/SKILL.md",
+    "document:.codex/skills/openspec-explore/SKILL.md",
+    "document:.codex/skills/openspec-propose/SKILL.md",
+    "document:.codex/skills/openspec-sync-specs/SKILL.md",
+    "document:.codex/skills/openspec-update-change/SKILL.md",
+    "document:.cursor/commands/opsx-apply.md",
+    "document:.cursor/commands/opsx-archive.md",
+    "document:.cursor/commands/opsx-explore.md",
+    "document:.cursor/commands/opsx-propose.md",
+    "document:.cursor/commands/opsx-sync.md",
+    "document:.cursor/commands/opsx-update.md",
+    "document:.cursor/skills/openspec-apply-change/SKILL.md",
+    "document:.cursor/skills/openspec-archive-change/SKILL.md",
+    "document:.cursor/skills/openspec-explore/SKILL.md",
+    "document:.cursor/skills/openspec-propose/SKILL.md",
+    "document:.cursor/skills/openspec-sync-specs/SKILL.md",
+    "document:.cursor/skills/openspec-update-change/SKILL.md",
+    "document:.gemini/skills/openspec-apply-change/SKILL.md",
+    "document:.gemini/skills/openspec-archive-change/SKILL.md",
+    "document:.gemini/skills/openspec-explore/SKILL.md",
+    "document:.gemini/skills/openspec-propose/SKILL.md",
+    "document:.gemini/skills/openspec-sync-specs/SKILL.md",
+    "document:.gemini/skills/openspec-update-change/SKILL.md"
    ]
   },
   {
