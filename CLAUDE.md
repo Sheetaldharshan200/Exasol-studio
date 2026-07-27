@@ -111,6 +111,19 @@ reachability, and testability. These three are non-negotiable:
    (`chartPng`, `buildHtmlReport`, `printHtml`) deliberately stays in its
    component — it is not pure and moving it buys nothing.
 
+   Stated reasons for the three remaining >1,000-line files (assessed
+   2026-07-27; their pure decision logic is tested in place, which loop.ts and
+   tools.ts both support since they import cleanly under `node:test`):
+   - `local_database.rs` (1,512) — a linear bootstrap orchestrator; every
+     function is an I/O step over the same status manifest. `fully_ready` is
+     tested.
+   - `tools.ts` (1,461) — a flat registry of the agent's tool definitions;
+     each entry is small, the count is what is large. The safety gate
+     `classifySql` is tested (`tools.classify.test.ts`).
+   - `loop.ts` (1,131) — one turn state machine plus its pure helpers, all
+     tested (`loop.heuristics.test.ts` covers the routing heuristics,
+     `humanizeProviderError`, and `summarize`).
+
 2. **Don't ship code that can't run.** Unreachable code is a defect, not
    untidiness. After copy-pasting a block, verify the copy is actually
    reachable — in an `if (…) return …` chain, a duplicated earlier branch

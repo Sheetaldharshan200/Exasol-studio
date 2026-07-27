@@ -17,7 +17,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { looksLikeUnacted, extractReadSql, looksUnfinished } from "./loop.ts";
+import {
+  looksLikeUnacted,
+  extractReadSql,
+  looksUnfinished,
+  humanizeProviderError,
+  summarize,
+} from "./loop.ts";
 
 describe("looksLikeUnacted", () => {
   test("ignores short or empty text", () => {
@@ -200,5 +206,74 @@ describe("looksUnfinished", () => {
     assert.equal(looksUnfinished("Next lets query the table"), true);
     assert.equal(looksUnfinished("Ill now check the columns"), true);
     assert.equal(looksUnfinished("Lets now proceed"), true);
+  });
+});
+
+describe("humanizeProviderError", () => {
+  test("maps the common provider failures to actionable guidance", () => {
+    const cases: [string, RegExp][] = [
+      ["401 Unauthorized: invalid api key", /API key was rejected/],
+      ["tokens per minute (TPM): Limit 8000", /per-minute token budget/],
+      ["you have exceeded your current quota", /out of quota/],
+      ["429 too many requests", /rate-limiting/],
+      ["prompt is too long: maximum context length exceeded", /context window/],
+      ["model gpt-x does not exist", /isn't available/],
+      ["fetch failed: ECONNREFUSED 127.0.0.1:11434", /Couldn't reach/],
+      ["503 service overloaded", /server-side/],
+    ];
+    for (const [raw, expect] of cases) {
+      assert.match(humanizeProviderError("openai", raw), expect, raw);
+    }
+  });
+
+  test("keeps the technical detail, truncated past 220 chars", () => {
+    const long = "401 unauthorized " + "x".repeat(300);
+    const got = humanizeProviderError("groq", long);
+    assert.ok(got.includes("(technical:"), got);
+    assert.ok(got.includes("…"), "long raw error should be truncated");
+  });
+
+  test("an unrecognized error passes through unchanged", () => {
+    assert.equal(humanizeProviderError("openai", "some novel failure"), "some novel failure");
+  });
+
+  test("an empty provider id still reads as a sentence", () => {
+    assert.match(humanizeProviderError("", "invalid api key"), /the provider/);
+  });
+});
+
+describe("summarize", () => {
+  test("denial wins over everything else", () => {
+    assert.equal(summarize({ denied: true, rowCount: 5 }), "denied by user");
+  });
+
+  test("picks the most specific numeric summary available", () => {
+    assert.equal(summarize({ rowsInserted: 10 }), "loaded 10 rows");
+    assert.equal(summarize({ affectedRows: 3 }), "3 rows affected");
+    assert.equal(summarize({ rowCount: 7 }), "7 rows");
+    assert.equal(summarize({ columns: ["a", "b"] }), "2 columns");
+  });
+
+  test("precedence holds when several fields are present together", () => {
+    assert.equal(summarize({ report: "found it", rowsInserted: 10 }), "reported found it");
+    assert.equal(summarize({ rowsInserted: 10, affectedRows: 3 }), "loaded 10 rows");
+    assert.equal(summarize({ affectedRows: 3, rowCount: 7 }), "3 rows affected");
+    assert.equal(summarize({ rowCount: 7, columns: ["a"] }), "7 rows");
+    assert.equal(summarize({ columns: ["a"], error: "boom" }), "1 columns");
+  });
+
+  test("surfaces a tool error as the summary", () => {
+    assert.equal(summarize({ error: "table not found" }), "table not found");
+  });
+
+  test("zero rows is still a real answer, not 'done'", () => {
+    assert.equal(summarize({ rowCount: 0 }), "0 rows");
+    assert.equal(summarize({ affectedRows: 0 }), "0 rows affected");
+  });
+
+  test("everything else collapses to done", () => {
+    assert.equal(summarize(null), "done");
+    assert.equal(summarize("text"), "done");
+    assert.equal(summarize({}), "done");
   });
 });

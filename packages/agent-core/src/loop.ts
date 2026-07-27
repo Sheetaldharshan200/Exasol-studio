@@ -118,8 +118,9 @@ Exasol SQL: LIMIT n (never TOP/FETCH FIRST). Unquoted identifiers fold to UPPERC
 Be concise. Prefer runnable SQL in fenced sql code blocks.`;
 
 /** Issue #15: translate raw provider/API failures into short, actionable
- * messages. The raw error is appended in parentheses so nothing is hidden. */
-function humanizeProviderError(providerId: string, raw: string): string {
+ * messages. The raw error is appended in parentheses so nothing is hidden.
+ * Exported for tests. */
+export function humanizeProviderError(providerId: string, raw: string): string {
   const r = raw.toLowerCase();
   const p = providerId || "the provider";
   let friendly: string | null = null;
@@ -1115,8 +1116,8 @@ export function looksUnfinished(text: string): boolean {
   );
 }
 
-/** Tiny, model-free summary of a tool result for the UI chip. */
-function summarize(output: unknown): string {
+/** Tiny, model-free summary of a tool result for the UI chip. Exported for tests. */
+export function summarize(output: unknown): string {
   if (output && typeof output === "object") {
     const o = output as Record<string, unknown>;
     if (o.denied) return "denied by user";

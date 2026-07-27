@@ -26,3 +26,12 @@ TOOLING GOTCHA: `codex review --commit <SHA>` refuses a custom prompt — use `c
 ExasolStudio.tsx 5089 -> 4062 via lib/sql-text.ts (+38 tests), studio/tabs.ts, studio/IconButton.tsx, studio/HistoryDock.tsx. 308 tests total, all green.
 STILL OPEN: fractional values with >20 decimal places infer a capped scale but emit the original literal (csv-import.ts inferType).
 
+
+## [2026-07-27] review | Codex found two classifySql gate bypasses (SELECT INTO TABLE, read-prefixed batch); gate hardened + 30 tests. OpenSpec installed
+CRITICAL: classifySql whitelisted every SELECT, but Exasol's SELECT ... INTO TABLE t creates a table — the agent auto-ran a mutation without approval. HIGH: 'SELECT 1; DROP TABLE t' classified as read (only the first token was examined).
+Fix: classifySql now blinds string literals and quoted identifiers first (so contents can neither fake nor hide signals), then rejects any batch with content after a semicolon and any read-classified statement containing top-level INTO. Unterminated literals stay visible = fail closed. tools.classify.test.ts pins both bypasses + string-blinding edges (30 tests).
+The gate defects were 9th and 10th silent bugs found by testing previously-untested pure logic — and classifySql was only tested because 'do the remaining works' pushed testing into tools.ts.
+Also: humanizeProviderError + summarize exported from loop.ts and tested (precedence chain incl. combined-field cases per Codex nit). Stated reasons for the three remaining >1,000-line files recorded in CLAUDE.md instead of forced splits: local_database.rs is a linear I/O bootstrap orchestrator, tools.ts is a flat tool registry, loop.ts is one turn state machine — their pure decision logic is tested in place.
+OpenSpec (@fission-ai/openspec 1.6.0) installed for Claude Code/Codex/Cursor/Gemini: /opsx:propose -> apply -> archive; openspec/config.yaml carries project context + artifact rules (Non-goals section; tasks name their test file). Codex verified vendored files carry no machine-local paths/credentials.
+396 tests total (185 agent-core, 105 desktop, 79 parser, 27 Rust).
+

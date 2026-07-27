@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-27T08:50:54.899Z",
+  "generatedAt": "2026-07-27T11:46:50.242Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -45,8 +45,8 @@
     {
       "id": "anchor.sidebar.add-connection",
       "label": "sidebar add connection",
-      "where": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/components/studio/ExasolStudio.tsx"
+      "where": "apps/desktop/src/components/studio/Sidebar.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/components/studio/Sidebar.tsx"
     },
     {
       "id": "anchor.tabs.new",
@@ -57,8 +57,8 @@
     {
       "id": "anchor.titlebar.connect",
       "label": "titlebar connect",
-      "where": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/components/studio/ExasolStudio.tsx"
+      "where": "apps/desktop/src/components/studio/TitleBar.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/components/studio/TitleBar.tsx"
     },
     {
       "id": "bi.dashboards",

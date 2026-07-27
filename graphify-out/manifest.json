@@ -965,8 +965,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/bi/Dashboards.tsx": {
-    "mtime": 1785147206.514254,
-    "ast_hash": "d22d6044f243be47ea89f65dd95aa2ff",
+    "mtime": 1785148518.4965174,
+    "ast_hash": "c4f8c86d70a569a4e06cbf600cd5dcd4",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/bi/ShadcnChartPanel.tsx": {
@@ -1530,8 +1530,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/loop.ts": {
-    "mtime": 1785143234.9482393,
-    "ast_hash": "924aea5190bb2be2ed902b51afdeea68",
+    "mtime": 1785152080.6363971,
+    "ast_hash": "c3cddb592b78375d7d4f0405a020838f",
     "semantic_hash": ""
   },
   "packages/agent-core/src/mcp.ts": {
@@ -1970,8 +1970,8 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1785147783.0185158,
-    "ast_hash": "39325bf5987e8df3cf1c97753c6db720",
+    "mtime": 1785152193.956159,
+    "ast_hash": "2c82ed64b1067e378e5065fe22af38ad",
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
@@ -3025,23 +3025,23 @@
     "semantic_hash": ""
   },
   ".ua/fingerprints.json": {
-    "mtime": 1785145321.3477733,
-    "ast_hash": "8b1c3a9f846cfdf2fc85f20e87c62bb1",
+    "mtime": 1785150292.3609786,
+    "ast_hash": "7498d48765127080879f3da06684c134",
     "semantic_hash": ""
   },
   ".ua/intermediate/scan-result.json": {
-    "mtime": 1785142711.2476497,
-    "ast_hash": "f922fcb579c16bd68e5724e980ceb711",
+    "mtime": 1785148128.2785144,
+    "ast_hash": "56e35eb307ba530bc4b8608fa1f33632",
     "semantic_hash": ""
   },
   ".ua/knowledge-graph.json": {
-    "mtime": 1785145380.954686,
-    "ast_hash": "77fbbd01e1354d8ff980b63c10ffe89a",
+    "mtime": 1785150287.1295218,
+    "ast_hash": "e6b20ba73618c9c938540fc0aa349df6",
     "semantic_hash": ""
   },
   ".ua/meta.json": {
-    "mtime": 1785145380.9370463,
-    "ast_hash": "58211e9ead7eb23a197a7006e8ff51e2",
+    "mtime": 1785150292.4158335,
+    "ast_hash": "42c36eecacf54fbb30d2b7ee604c4ab3",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/ui/copy-button.tsx": {
@@ -3060,8 +3060,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/loop.heuristics.test.ts": {
-    "mtime": 1785142214.8943887,
-    "ast_hash": "4120b90f7823f18b326d72695ea73fdc",
+    "mtime": 1785152155.1520298,
+    "ast_hash": "f86dbd4ed0930c8c83db9bf456d1f7c1",
     "semantic_hash": ""
   },
   "packages/agent-core/src/tool-repair.test.ts": {
@@ -3070,8 +3070,8 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1785133796.4751425,
-    "ast_hash": "bf5545ca21627666fb4f2dbd46b68c0d",
+    "mtime": 1785151959.3411665,
+    "ast_hash": "dad7e9cf2ce5a551ce59a6dc4a1e4d39",
     "semantic_hash": ""
   },
   "docs/research/data-consolidation.md": {
@@ -3162,6 +3162,196 @@
   "apps/desktop/src/features/bi/report-export.ts": {
     "mtime": 1785148048.0758264,
     "ast_hash": "bc55c72b989dae94f571d41dd568c877",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/src/tools.classify.test.ts": {
+    "mtime": 1785152102.8824117,
+    "ast_hash": "bfacab137ce5b01c8ded01fd48ff7708",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/apply.md": {
+    "mtime": 1785151881.6122696,
+    "ast_hash": "8ac311f21403e9e7e0293f494febd351",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/archive.md": {
+    "mtime": 1785151881.613099,
+    "ast_hash": "bd3a1d00db5200806b639c40ee69b235",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/explore.md": {
+    "mtime": 1785151881.6120162,
+    "ast_hash": "a4395a30697291e1c1a204252df4bdf5",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/propose.md": {
+    "mtime": 1785151881.6133854,
+    "ast_hash": "96785eeeeeafa9351c23accc56f0b9a1",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/sync.md": {
+    "mtime": 1785151881.6128194,
+    "ast_hash": "be9d6126ed90f60dd60f73a13246357a",
+    "semantic_hash": ""
+  },
+  ".claude/commands/opsx/update.md": {
+    "mtime": 1785151881.6125011,
+    "ast_hash": "7da86670033afd55c5e204d20eeda3c1",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-apply-change/SKILL.md": {
+    "mtime": 1785151881.6086023,
+    "ast_hash": "73640d98e355e3e4a5ecaa6116865a82",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-archive-change/SKILL.md": {
+    "mtime": 1785151881.6106136,
+    "ast_hash": "ee587087578ab9d2d283ad5b1f76371e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-explore/SKILL.md": {
+    "mtime": 1785151881.607795,
+    "ast_hash": "c4c6fe598e86d13378e0b5ecd202cec6",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-propose/SKILL.md": {
+    "mtime": 1785151881.61109,
+    "ast_hash": "140ba650e1a73dbb6d77948ccc1e2e59",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-sync-specs/SKILL.md": {
+    "mtime": 1785151881.6100686,
+    "ast_hash": "079b8e1435f5044f2563b273bd192616",
+    "semantic_hash": ""
+  },
+  ".claude/skills/openspec-update-change/SKILL.md": {
+    "mtime": 1785151881.6094189,
+    "ast_hash": "bad1ef5d059980feeb2852f5f42367bb",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-apply-change/SKILL.md": {
+    "mtime": 1785151881.617302,
+    "ast_hash": "73640d98e355e3e4a5ecaa6116865a82",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-archive-change/SKILL.md": {
+    "mtime": 1785151881.618876,
+    "ast_hash": "ee587087578ab9d2d283ad5b1f76371e",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-explore/SKILL.md": {
+    "mtime": 1785151881.6152046,
+    "ast_hash": "c4c6fe598e86d13378e0b5ecd202cec6",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-propose/SKILL.md": {
+    "mtime": 1785151881.619258,
+    "ast_hash": "140ba650e1a73dbb6d77948ccc1e2e59",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-sync-specs/SKILL.md": {
+    "mtime": 1785151881.6184661,
+    "ast_hash": "079b8e1435f5044f2563b273bd192616",
+    "semantic_hash": ""
+  },
+  ".codex/skills/openspec-update-change/SKILL.md": {
+    "mtime": 1785151881.6178875,
+    "ast_hash": "bad1ef5d059980feeb2852f5f42367bb",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-apply.md": {
+    "mtime": 1785151881.6252735,
+    "ast_hash": "906c65f24f6f75237b582e890c4e82a8",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-archive.md": {
+    "mtime": 1785151881.6265876,
+    "ast_hash": "6953f34ad70de53ca73d090e11343428",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-explore.md": {
+    "mtime": 1785151881.625029,
+    "ast_hash": "cce771047c0d8358804f168569d92be0",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-propose.md": {
+    "mtime": 1785151881.6268356,
+    "ast_hash": "dec883466276ebf545947ab4ee55994e",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-sync.md": {
+    "mtime": 1785151881.6262593,
+    "ast_hash": "9d6c39ebd9cb09453552318aaf2265c1",
+    "semantic_hash": ""
+  },
+  ".cursor/commands/opsx-update.md": {
+    "mtime": 1785151881.6256666,
+    "ast_hash": "83a1ed198d5cc23df74da0160befacc1",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-apply-change/SKILL.md": {
+    "mtime": 1785151881.6226194,
+    "ast_hash": "73640d98e355e3e4a5ecaa6116865a82",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-archive-change/SKILL.md": {
+    "mtime": 1785151881.623712,
+    "ast_hash": "ee587087578ab9d2d283ad5b1f76371e",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-explore/SKILL.md": {
+    "mtime": 1785151881.622234,
+    "ast_hash": "c4c6fe598e86d13378e0b5ecd202cec6",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-propose/SKILL.md": {
+    "mtime": 1785151881.6245413,
+    "ast_hash": "140ba650e1a73dbb6d77948ccc1e2e59",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-sync-specs/SKILL.md": {
+    "mtime": 1785151881.6232898,
+    "ast_hash": "079b8e1435f5044f2563b273bd192616",
+    "semantic_hash": ""
+  },
+  ".cursor/skills/openspec-update-change/SKILL.md": {
+    "mtime": 1785151881.6229503,
+    "ast_hash": "bad1ef5d059980feeb2852f5f42367bb",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-apply-change/SKILL.md": {
+    "mtime": 1785151881.6280286,
+    "ast_hash": "73640d98e355e3e4a5ecaa6116865a82",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-archive-change/SKILL.md": {
+    "mtime": 1785151881.6295931,
+    "ast_hash": "ee587087578ab9d2d283ad5b1f76371e",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-explore/SKILL.md": {
+    "mtime": 1785151881.6276498,
+    "ast_hash": "c4c6fe598e86d13378e0b5ecd202cec6",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-propose/SKILL.md": {
+    "mtime": 1785151881.6302302,
+    "ast_hash": "140ba650e1a73dbb6d77948ccc1e2e59",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-sync-specs/SKILL.md": {
+    "mtime": 1785151881.6290448,
+    "ast_hash": "079b8e1435f5044f2563b273bd192616",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/openspec-update-change/SKILL.md": {
+    "mtime": 1785151881.6285877,
+    "ast_hash": "bad1ef5d059980feeb2852f5f42367bb",
+    "semantic_hash": ""
+  },
+  "openspec/config.yaml": {
+    "mtime": 1785151939.1362212,
+    "ast_hash": "a5d1492c60e4fa6674a2d4439bbaf53d",
     "semantic_hash": ""
   }
 }
