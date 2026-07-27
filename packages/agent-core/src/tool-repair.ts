@@ -286,44 +286,15 @@ export function zodSchemaish(schema: unknown): { properties: Record<string, { ty
   }
 }
 
-export type RepairResult = { toolName: string; input: string; note: string } | null;
-
-/**
- * Full repair pipeline for one failed tool call. `availableTools` is the
- * tool set exposed THIS turn; `getSchema` returns the JSON schema for a tool.
- */
-export function repairCall(opts: {
-  requestedName: string;
-  rawInput: unknown;
-  tools: Record<string, unknown>;
-  getSchema: (toolName: string) => JsonSchemaish;
-}): RepairResult {
-  const available = Object.keys(opts.tools);
-  const resolved = resolveToolName(opts.requestedName, available);
-  if (!resolved) return null;
-  const parsed = parseLooseArgs(opts.rawInput);
-  if (parsed === null) return null;
-  // No schema means we cannot repair keys or coerce types — but we must NOT
-  // then hand the tool an empty argument object. repairArgs drops every key not
-  // declared in `properties`, so an absent/failed schema lookup used to turn a
-  // perfectly good {sql: "…"} into {}, and the call failed with a misleading
-  // "missing required argument". Pass the parsed args through untouched instead.
-  let schema: JsonSchemaish | null;
-  try {
-    schema = opts.getSchema(resolved) ?? null;
-  } catch {
-    schema = null;
-  }
-  const hasProps = !!schema && !!schema.properties && Object.keys(schema.properties).length > 0;
-  const fixed = hasProps ? repairArgs(parsed, schema!) : parsed;
-  if (fixed === null) return null;
-  const renamed = resolved !== opts.requestedName;
-  return {
-    toolName: resolved,
-    input: JSON.stringify(fixed),
-    note: renamed ? `${opts.requestedName} → ${resolved}` : "args repaired",
-  };
-}
+// NOTE: a `repairCall()` wrapper used to live here, bundling
+// resolveToolName → parseLooseArgs → zodSchemaish → repairArgs into one call.
+// It was removed because nothing called it: both live repair paths — the
+// text-rescue branch in loop.ts (nodeRecover) and the step loop in llm.ts —
+// compose the primitives directly, because they need the parsed args OBJECT to
+// hand to `execute()`, whereas the wrapper returned a JSON string. A tested but
+// unreachable wrapper is still dead code (KISS rule 2), and keeping it meant a
+// second copy of the repair sequence that could drift from the real one.
+// Recover it from git history if a caller ever genuinely wants that shape.
 
 // ── Text rescue ────────────────────────────────────────────────────────────
 // Small local models sometimes narrate their tool use as PROSE — fake SQL

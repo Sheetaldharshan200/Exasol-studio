@@ -24,7 +24,7 @@ import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
 import { extractMemories } from "./memory-extract.ts";
-import { repairCall, extractTextToolCalls, resolveToolName, repairArgs, zodSchemaish } from "./tool-repair.ts";
+import { extractTextToolCalls, resolveToolName, repairArgs, zodSchemaish } from "./tool-repair.ts";
 import { TurnBoard } from "./board.ts";
 import { Command } from "@langchain/langgraph";
 import { buildTurnGraph, type TurnGraphState } from "./graph.ts";

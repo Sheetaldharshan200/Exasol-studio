@@ -15,7 +15,6 @@ import {
   repairArgs,
   extractTextToolCalls,
   zodSchemaish,
-  repairCall,
   rescueTextCalls,
 } from "./tool-repair.ts";
 
@@ -359,89 +358,6 @@ describe("zodSchemaish", () => {
     (cyclic._def as Record<string, unknown>).innerType = cyclic;
     const got = zodSchemaish({ shape: { x: cyclic } });
     assert.deepEqual(got?.properties.x, {});
-  });
-});
-
-describe("repairCall", () => {
-  const tools = { run_sql: {}, list_tables: {} };
-  const getSchema = () => ({ properties: { sql: { type: "string" } }, required: ["sql"] });
-
-  test("repairs a hallucinated name and an aliased key together", () => {
-    const got = repairCall({
-      requestedName: "execute_sql",
-      rawInput: '{"query":"SELECT 1"}',
-      tools,
-      getSchema,
-    });
-    assert.deepEqual(got, {
-      toolName: "run_sql",
-      input: '{"sql":"SELECT 1"}',
-      note: "execute_sql → run_sql",
-    });
-  });
-
-  test("reports args-only repair when the name was already right", () => {
-    const got = repairCall({ requestedName: "run_sql", rawInput: '{"query":"S"}', tools, getSchema });
-    assert.equal(got?.note, "args repaired");
-    assert.equal(got?.toolName, "run_sql");
-  });
-
-  test("gives up when the tool name cannot be resolved", () => {
-    assert.equal(
-      repairCall({ requestedName: "totally_unknown", rawInput: "{}", tools, getSchema }),
-      null,
-    );
-  });
-
-  test("gives up when the arguments cannot be parsed", () => {
-    assert.equal(
-      repairCall({ requestedName: "run_sql", rawInput: "{not json", tools, getSchema }),
-      null,
-    );
-  });
-
-  test("gives up rather than invent a missing required argument", () => {
-    assert.equal(repairCall({ requestedName: "run_sql", rawInput: "{}", tools, getSchema }), null);
-  });
-
-  test("a schema lookup that throws must not discard the arguments", () => {
-    const got = repairCall({
-      requestedName: "run_sql",
-      rawInput: '{"sql":"S"}',
-      tools,
-      getSchema: () => {
-        throw new Error("boom");
-      },
-    });
-    // Without a schema we cannot repair keys — but dropping them turned a
-    // perfectly good call into a misleading "missing required argument".
-    assert.equal(got?.toolName, "run_sql");
-    assert.equal(got?.input, '{"sql":"S"}');
-  });
-
-  test("a schema lookup that returns nothing also preserves the arguments", () => {
-    const got = repairCall({
-      requestedName: "run_sql",
-      rawInput: '{"sql":"S"}',
-      tools,
-      getSchema: () => undefined as unknown as ReturnType<typeof getSchema>,
-    });
-    assert.equal(got?.toolName, "run_sql");
-    assert.equal(got?.input, '{"sql":"S"}');
-  });
-
-  test("an empty-properties schema also preserves the arguments", () => {
-    const got = repairCall({
-      requestedName: "run_sql",
-      rawInput: '{"sql":"S"}',
-      tools,
-      getSchema: () => ({ properties: {}, required: [] }),
-    });
-    assert.equal(got?.input, '{"sql":"S"}');
-  });
-
-  test("returns null when no tools are exposed", () => {
-    assert.equal(repairCall({ requestedName: "run_sql", rawInput: "{}", tools: {}, getSchema }), null);
   });
 });
 
