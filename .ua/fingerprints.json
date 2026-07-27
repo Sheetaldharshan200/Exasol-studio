@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "725d9a2083659ae07476f3e3c30c07345c2c6dd9",
-  "generatedAt": "2026-07-26T16:59:39.825Z",
+  "gitCommitHash": "8b91d63905cb999e3e2f3e32292051cecbc52587",
+  "generatedAt": "2026-07-27T08:11:19.358Z",
   "files": {
     ".claude/settings.local.json": {
       "filePath": ".claude/settings.local.json",
@@ -448,6 +448,336 @@
         "main"
       ],
       "totalLines": 441,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/SKILL.md": {
+      "filePath": ".github/skills/impeccable/SKILL.md",
+      "contentHash": "43ecc12cedbb91435b83fb56b294b6dd6caa2e00300f978c5664b3f97a6fab1a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 167,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/adapt.md": {
+      "filePath": ".github/skills/impeccable/reference/adapt.md",
+      "contentHash": "ec58806f16fc7ba29bccef08f2e158cd00be077ce05d45e943a59bd26dc6dc55",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 313,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/adapt.native.md": {
+      "filePath": ".github/skills/impeccable/reference/adapt.native.md",
+      "contentHash": "17c583cf8ad41266ea1e787b666b9d91fe13469d3d0f6af57c08e0146f9b17ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 59,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/android.md": {
+      "filePath": ".github/skills/impeccable/reference/android.md",
+      "contentHash": "b11f2187e896b375b717a05b73787f9f5791cae8e4d02d6dee05b99fefdd1da4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/animate.md": {
+      "filePath": ".github/skills/impeccable/reference/animate.md",
+      "contentHash": "746264459d5c9a4502fcd63584120be1b63253a86ac540700e52038add42c772",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 204,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/audit.md": {
+      "filePath": ".github/skills/impeccable/reference/audit.md",
+      "contentHash": "185f84aa7da5a0429fa37e3303eeba2e9e572f4e0fc1ffce812951653d8680bd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 136,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/audit.native.md": {
+      "filePath": ".github/skills/impeccable/reference/audit.native.md",
+      "contentHash": "68031de9fc19cdcdcf1d49f2f240e347c8e47293d1d898aabd07fd46aee8d706",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 140,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/bolder.md": {
+      "filePath": ".github/skills/impeccable/reference/bolder.md",
+      "contentHash": "5274885d5c2dcbb1f7bc0cbb34225692c35f5d9acf9a1eb9a47bbd4d1069207f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 121,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/brand.md": {
+      "filePath": ".github/skills/impeccable/reference/brand.md",
+      "contentHash": "d39208029aa2b519d27907edb6dfa8bc94be2f058d6faa79e6032704b0b8a662",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 109,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/clarify.md": {
+      "filePath": ".github/skills/impeccable/reference/clarify.md",
+      "contentHash": "6df9ff83413d15b63c8056fd1107470675a06a6aadc912fc3eb10e7768726794",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 289,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/codex.md": {
+      "filePath": ".github/skills/impeccable/reference/codex.md",
+      "contentHash": "b96aad405d4729a9549580a5a3d2f1ae36657a33a3344628a33700d3f22a978d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 106,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/colorize.md": {
+      "filePath": ".github/skills/impeccable/reference/colorize.md",
+      "contentHash": "4cc355b052af372e18296c68363994359138c7d50da60fe46698fcd7bf2f8f4f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 258,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/craft.md": {
+      "filePath": ".github/skills/impeccable/reference/craft.md",
+      "contentHash": "6a186a6c93738706aed12918f843824818f852b3b39640406727b4c6446fbdba",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 124,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/critique.md": {
+      "filePath": ".github/skills/impeccable/reference/critique.md",
+      "contentHash": "3c7cb78076e314b357411f1873b5e8bcda3ab16acffa17879065e0dc1273879d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 781,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/delight.md": {
+      "filePath": ".github/skills/impeccable/reference/delight.md",
+      "contentHash": "ba921feae5a64b8122ea87b03957cdbb2e1bd70d90ba01ada738d748f030e5da",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 303,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/distill.md": {
+      "filePath": ".github/skills/impeccable/reference/distill.md",
+      "contentHash": "c5f7278c5e5eab035ca5db858cb087738a18ad25fb603d08949a7e29b92e4f76",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 112,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/document.md": {
+      "filePath": ".github/skills/impeccable/reference/document.md",
+      "contentHash": "d8cea4ed0177efee2ce471777e9ad0fd08b157af56816ee6f07a8a610efd8cd8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 430,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/extract.md": {
+      "filePath": ".github/skills/impeccable/reference/extract.md",
+      "contentHash": "346a3ed037de1d6d9194fcf079b94d4f5508f1cff12a9b2a29fdf2c2995610a2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 70,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/harden.md": {
+      "filePath": ".github/skills/impeccable/reference/harden.md",
+      "contentHash": "c72525acf34d5a5e1999ed7c8d6d9589a3da0d3a9d9668bf36f897a732bd8dde",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 348,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/hooks.md": {
+      "filePath": ".github/skills/impeccable/reference/hooks.md",
+      "contentHash": "c49274625940233e17e6988489842c409fc811f1b83947cf7c0d11c5dedd8c9f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 93,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/init.md": {
+      "filePath": ".github/skills/impeccable/reference/init.md",
+      "contentHash": "846274b0667db250cd0ce31114eb91c2424c7b291e0e0c7d64db4d2acf86d976",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 222,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/interaction-design.md": {
+      "filePath": ".github/skills/impeccable/reference/interaction-design.md",
+      "contentHash": "ca0b4a91bd380095b6a53c66f524f53efe741e536938af65f9cc184075e83ed3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 190,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/ios.md": {
+      "filePath": ".github/skills/impeccable/reference/ios.md",
+      "contentHash": "9b5e8c497715b815f6737b528a1c12aa167d25ffb0782b4ed2a8d9f8eb254765",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 46,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/layout.md": {
+      "filePath": ".github/skills/impeccable/reference/layout.md",
+      "contentHash": "73149e41be7d52e3727ea51a49bedc76f95e4670fd90e6b9af4b0fdd6009b0bf",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 186,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/live.md": {
+      "filePath": ".github/skills/impeccable/reference/live.md",
+      "contentHash": "67f2b78c1620b3d761a4d8439d907e47d32740193754699b6b2110a4e99f3980",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 719,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/onboard.md": {
+      "filePath": ".github/skills/impeccable/reference/onboard.md",
+      "contentHash": "9a2c08ee2516d2ee87129e7ebe6a0895f9990c9852d1f6fa7e70be9a6a88a659",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 235,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/optimize.md": {
+      "filePath": ".github/skills/impeccable/reference/optimize.md",
+      "contentHash": "73745e94cd4a42653165a89b8c512764a036daae8e5b6da1774b4ddc1659516d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 259,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/overdrive.md": {
+      "filePath": ".github/skills/impeccable/reference/overdrive.md",
+      "contentHash": "761086faca62dd314cf31766d02239bb2bcdce7f7f5480ec171c5117482981e4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 131,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/polish.md": {
+      "filePath": ".github/skills/impeccable/reference/polish.md",
+      "contentHash": "1cea887c7614ef2385abe1e6ae94253a8d35bc3f5cdf64db383986110bcacff5",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 242,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/product.md": {
+      "filePath": ".github/skills/impeccable/reference/product.md",
+      "contentHash": "9ea8cc99ec208f4c1addc66369980ec6ee2a0ae7732aa8f14672aeed3418b6aa",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 61,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/quieter.md": {
+      "filePath": ".github/skills/impeccable/reference/quieter.md",
+      "contentHash": "fe070cf34a5fbd6e03ac7e39ef6354b740d580354b9f2b44226f33cfd85397a1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 100,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/shape.md": {
+      "filePath": ".github/skills/impeccable/reference/shape.md",
+      "contentHash": "a08dc2ddd51ee068812226d33cb1713de07fe228623fef428b60c874c329ad38",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 166,
+      "hasStructuralAnalysis": true
+    },
+    ".github/skills/impeccable/reference/typeset.md": {
+      "filePath": ".github/skills/impeccable/reference/typeset.md",
+      "contentHash": "560db7b3d2eaff6339987459835a4b5ec5aa4f519b833029fa5ff2ae86b7c153",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 302,
       "hasStructuralAnalysis": true
     },
     ".github/skills/impeccable/scripts/command-metadata.json": {
@@ -11721,6 +12051,136 @@
       "totalLines": 222,
       "hasStructuralAnalysis": true
     },
+    ".github/workflows/README.md": {
+      "filePath": ".github/workflows/README.md",
+      "contentHash": "600055cc43af1699e08c0f918a7f99f11ed073ee4f4fe48691a0e19a6a00c6c5",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 103,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/_build-package.yml": {
+      "filePath": ".github/workflows/_build-package.yml",
+      "contentHash": "37fb159c9c3c69277f7e679ac38a671fd66a6dfdb1bd2f964082d78d885a9a95",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 105,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/exasol-sql-parser.yml": {
+      "filePath": ".github/workflows/exasol-sql-parser.yml",
+      "contentHash": "c6a2e8d983156756dda58e476a26a5b2beac062cd298dc4486fcc25a1f5d74b8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 24,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-agent-skills.yml": {
+      "filePath": ".github/workflows/pkg-agent-skills.yml",
+      "contentHash": "e86c43beacaac81ecac9408be01434c2d214365e90093397240d18143dfcccfd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-ai-lab.yml": {
+      "filePath": ".github/workflows/pkg-ai-lab.yml",
+      "contentHash": "ae59b09de365b3033159a094c9fb41b4f8878dc4bc9648d0aa344bd2e17ca261",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-exapump.yml": {
+      "filePath": ".github/workflows/pkg-exapump.yml",
+      "contentHash": "1b3fb8cc493fe43a84559084bb41382f975fa556c2f50740f05ee9f72510ec2c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-json-tables.yml": {
+      "filePath": ".github/workflows/pkg-json-tables.yml",
+      "contentHash": "c3a14ab2bad32c8d72a1acf3a80ec387fe969ee0f56cfcf44888a03be2b3741a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 134,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-mcp-server.yml": {
+      "filePath": ".github/workflows/pkg-mcp-server.yml",
+      "contentHash": "4ad457fe7a7f9f503ab2d1ccdba5cf982a33b2db5f777c4bcbb75c2fd2a866e7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 23,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/pkg-pyexasol.yml": {
+      "filePath": ".github/workflows/pkg-pyexasol.yml",
+      "contentHash": "db1c74655d3b93b89f1c72c745ad412bf2fa5a3f3efc42d818f8a499beafeaf9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 23,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/refresh-runtime-components.yml": {
+      "filePath": ".github/workflows/refresh-runtime-components.yml",
+      "contentHash": "3bd7c8db5539c3c2925d96b78bde7d0cf686c5245af2c01b669ead12dd446b6d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 262,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/release-app.yml": {
+      "filePath": ".github/workflows/release-app.yml",
+      "contentHash": "5ab1d33cf4a5837204c226c2dbe656e276f7b1e0f6b87c4a27ded79bf4d8fb21",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 181,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/update-catalog.yml": {
+      "filePath": ".github/workflows/update-catalog.yml",
+      "contentHash": "35bc47bcc046058cdbc41fd0dab67a0531c1cf37f179a3f0bf0cef6237db70fe",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 84,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/verify-runtime-components.yml": {
+      "filePath": ".github/workflows/verify-runtime-components.yml",
+      "contentHash": "f62c121d58cf387a3caf702960f213c891ffbac284357aeec81fbeadc64c65de",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 25,
+      "hasStructuralAnalysis": true
+    },
     ".graphify/config.json": {
       "filePath": ".graphify/config.json",
       "contentHash": "127571cd97d98c52042cc0322aedd7682b13bd12c81681e5df38defb9f934a1e",
@@ -11729,6 +12189,56 @@
       "imports": [],
       "exports": [],
       "totalLines": 13,
+      "hasStructuralAnalysis": true
+    },
+    "AGENTS.md": {
+      "filePath": "AGENTS.md",
+      "contentHash": "4a7e2608ced14104193729d06c461deebb87c03f28731b5288a20d58493e7386",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 75,
+      "hasStructuralAnalysis": true
+    },
+    "CLAUDE.md": {
+      "filePath": "CLAUDE.md",
+      "contentHash": "8a2a38b8d3f48fcf5aa2bd6f2c641d2f78eb30381d3b722d5735a69bce980c69",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 137,
+      "hasStructuralAnalysis": true
+    },
+    "CONTRIBUTING.md": {
+      "filePath": "CONTRIBUTING.md",
+      "contentHash": "21dd85d9460da3daedf058266bf95a62eb7d2a4991482e8b8ee72e38998d84b6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 46,
+      "hasStructuralAnalysis": true
+    },
+    "README.md": {
+      "filePath": "README.md",
+      "contentHash": "4ed6d0b962f671816a615f99bd948907dbf8e401280e990d0839267ed37b339f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 126,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/README.md": {
+      "filePath": "apps/desktop/README.md",
+      "contentHash": "fc14bef89a7f3a27a7508d902d23187286bb9c90aaa746894bc52615d3fed4ef",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 37,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/components.json": {
@@ -11740,6 +12250,26 @@
       "exports": [],
       "totalLines": 28,
       "hasStructuralAnalysis": true
+    },
+    "apps/desktop/examples/viz_demo_schema.sql": {
+      "filePath": "apps/desktop/examples/viz_demo_schema.sql",
+      "contentHash": "d6a0f534b61fad9cd98ab645276040f31360262832060cecfe926980f6b17c8f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 89,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/index.html": {
+      "filePath": "apps/desktop/index.html",
+      "contentHash": "807602537435d6db5c121b150c73aa36dc56610946c35e6b9ce4b286fa247fa6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": false
     },
     "apps/desktop/package.json": {
       "filePath": "apps/desktop/package.json",
@@ -11881,6 +12411,26 @@
       "totalLines": 4,
       "hasStructuralAnalysis": false
     },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/UPSTREAM.txt": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/UPSTREAM.txt",
+      "contentHash": "ee4285e3d200465b7a4a3beb161ba98e3c6473ce05664ae5631fd4da4fbb604e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 4,
+      "hasStructuralAnalysis": false
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/README.md": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/README.md",
+      "contentHash": "95cbe65552b329d18e06939a172ab96255055b9d1cc6960f915806887e258c02",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 29,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_databricks_metric_view.yaml": {
       "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_databricks_metric_view.yaml",
       "contentHash": "8e5c1ca6a1e236fd55be56428d245d1dcefdabbc71def16c96732c4080655689",
@@ -11891,6 +12441,46 @@
       "totalLines": 74,
       "hasStructuralAnalysis": true
     },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_materializations.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_materializations.sql",
+      "contentHash": "239ebdfdcef34d32d9a1282d46d298969a478517f33718e0586ffaa534d15971",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_metrics_semantic_definition.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_metrics_semantic_definition.sql",
+      "contentHash": "0a477190f55ff55b5f2ef92725cc74612788a8f24031facf3cc710b155af6236",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 90,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_fixup.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_fixup.sql",
+      "contentHash": "04cebc44150fac1eb05f1329377e444ffe7779425f7e7054b03519ff9212dafd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 24,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_seed.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_model_seed.sql",
+      "contentHash": "a6982cd3a954a79eff98490ed0ef43a829f8fa8684e8321362da8cb5562710d1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 232,
+      "hasStructuralAnalysis": true
+    },
     "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_osi.yaml": {
       "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_osi.yaml",
       "contentHash": "492cab36acfe0e4acc72420f72891857f08f4d7b8c8cd5baf7d73f3c6613fd65",
@@ -11899,6 +12489,106 @@
       "imports": [],
       "exports": [],
       "totalLines": 181,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_physical_model.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_physical_model.sql",
+      "contentHash": "289ff64bfa693766593ea442af0d15d3279452497093e2162f6c8bd786cc3b35",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 60,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_semantic_queries.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/sales_semantic_queries.sql",
+      "contentHash": "b8588e3c4158b79245837111e4a2caf331be35723b36537c26387cb6ce6aa503",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 15,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/000_create_schemas.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/000_create_schemas.sql",
+      "contentHash": "ba3506d2a777fb173f1b0906f152236a0e2fe2619d9ee8dc38d75b343fc4345c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 43,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/001_create_semantic_catalog.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/001_create_semantic_catalog.sql",
+      "contentHash": "ae08d46a46710f7263b455b8ee146f92542e2d6245fd4d7e3d596ae29955ae08",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 490,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/002_create_semantic_catalog_views.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/002_create_semantic_catalog_views.sql",
+      "contentHash": "e1c0a8c7dbfd42c02641b20f961eca3aa23cae5abd194c7a2e7a7ae012e3340a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 803,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/003_create_semantic_admin_scripts.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/003_create_semantic_admin_scripts.sql",
+      "contentHash": "1a28b12edd2242ad7dad5c126d0cff1be3baf1210a24e4bc68e2bed2f5ceea05",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 11669,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/004_create_semantic_preprocessor.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/004_create_semantic_preprocessor.sql",
+      "contentHash": "6f5d6c2f9510f2bd95ebac0fef65a7ca4cec0d969d2d423bffa54f7d3748547b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/005_create_semantic_surface_helpers.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/005_create_semantic_surface_helpers.sql",
+      "contentHash": "448709542beddba8588bf04c31e4c5dfc5c7942f56bebe9d0454d887c72035ef",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 315,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/006_create_semantic_agent_views.sql": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/006_create_semantic_agent_views.sql",
+      "contentHash": "327b413299958fbc99f4dd28401b10f6d9273f13734727e47fea48d6c8f03321",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1559,
+      "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/README.md": {
+      "filePath": "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/README.md",
+      "contentHash": "874847c07600fd3b145fce24ba61aa44b2c121b354e3f8e28e9a90dda1829aae",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 28,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/install.py": {
@@ -12937,7 +13627,7 @@
     },
     "apps/desktop/src-tauri/src/connection.rs": {
       "filePath": "apps/desktop/src-tauri/src/connection.rs",
-      "contentHash": "4b043cbf5b059e699681b39a7b97fde45b5a53f12be1ebfefa62564d2ad7e4c8",
+      "contentHash": "6bd69786b8ee648903dd4ab8ae25e42f7b8191cad09c25dc511d75a3d1448f9d",
       "functions": [
         {
           "name": "ping_server",
@@ -12980,11 +13670,12 @@
           "name": "open_pool_sized",
           "params": [
             "profile",
-            "max_connections"
+            "max_connections",
+            "connect_hooks"
           ],
           "returnType": "AppResult<ExaPool>",
           "exported": false,
-          "lineCount": 10
+          "lineCount": 34
         },
         {
           "name": "read_server_info",
@@ -13012,7 +13703,7 @@
           ],
           "returnType": "AppResult<ServerInfo>",
           "exported": true,
-          "lineCount": 55
+          "lineCount": 59
         },
         {
           "name": "run_hook_sql",
@@ -13160,7 +13851,7 @@
         "list_open_connections",
         "require_pool"
       ],
-      "totalLines": 291,
+      "totalLines": 319,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src-tauri/src/connection_settings.rs": {
@@ -14611,7 +15302,7 @@
     },
     "apps/desktop/src-tauri/src/local_database.rs": {
       "filePath": "apps/desktop/src-tauri/src/local_database.rs",
-      "contentHash": "0c5e8eff4f3d0a8c4458d311827779ef1ffe2ebfc20d1460f3bb7c1195f71fb5",
+      "contentHash": "30f3b3781cebb8e1f4ce61410a2f189e1bb75f2ba0d59c1fafe2fae233f6d92d",
       "functions": [
         {
           "name": "waiting",
@@ -14925,15 +15616,6 @@
           "lineCount": 3
         },
         {
-          "name": "bootstrap_status",
-          "params": [
-            "app"
-          ],
-          "returnType": "BootstrapStatus",
-          "exported": true,
-          "lineCount": 3
-        },
-        {
           "name": "component_ready",
           "params": [
             "app",
@@ -15156,7 +15838,6 @@
         "sync_master_password",
         "personal_local_bootstrap",
         "personal_local_status",
-        "bootstrap_status",
         "component_ready",
         "semantic_views_installed",
         "personal_install_semantic_views",
@@ -15164,7 +15845,7 @@
         "auto_start_if_installed",
         "record_lifecycle"
       ],
-      "totalLines": 1519,
+      "totalLines": 1513,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src-tauri/src/local_llm.rs": {
@@ -16192,7 +16873,7 @@
     },
     "apps/desktop/src-tauri/src/market.rs": {
       "filePath": "apps/desktop/src-tauri/src/market.rs",
-      "contentHash": "0a7b4c40c193fc8d0e638ae3fc9c3c90f4e9fc80f4e89d3b7b971d48fdb179d7",
+      "contentHash": "de7a7d7fef19d6cd5706950ec7b0bea756137f29df54c008328d8f9e9ed1ffd9",
       "functions": [
         {
           "name": "emit_log",
@@ -16267,13 +16948,6 @@
           "returnType": "Option<PathBuf>",
           "exported": true,
           "lineCount": 12
-        },
-        {
-          "name": "uv_path",
-          "params": [],
-          "returnType": "Option<String>",
-          "exported": false,
-          "lineCount": 13
         },
         {
           "name": "ensure_uv",
@@ -16633,15 +17307,6 @@
           "lineCount": 7
         },
         {
-          "name": "uv_tool_installed",
-          "params": [
-            "pkg"
-          ],
-          "returnType": "bool",
-          "exported": false,
-          "lineCount": 14
-        },
-        {
           "name": "python_import_ok",
           "params": [
             "module"
@@ -16780,7 +17445,7 @@
         "market_detect",
         "market_dir_path"
       ],
-      "totalLines": 1275,
+      "totalLines": 1244,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src-tauri/src/metadata.rs": {
@@ -17198,7 +17863,7 @@
     },
     "apps/desktop/src-tauri/src/query.rs": {
       "filePath": "apps/desktop/src-tauri/src/query.rs",
-      "contentHash": "7dac8a348356ac9a6085c47589a36f86f39f771cbfc6e7c846d5a2c132056c85",
+      "contentHash": "9c88fa1ffee2cdf9c3de019bee847c04c1e2d0fe6a0e874bb3521270dc258b57",
       "functions": [
         {
           "name": "decode_cell",
@@ -17208,7 +17873,7 @@
           ],
           "returnType": "Value",
           "exported": false,
-          "lineCount": 30
+          "lineCount": 49
         },
         {
           "name": "row_to_json",
@@ -17246,6 +17911,15 @@
           "returnType": "Vec<String>",
           "exported": true,
           "lineCount": 58
+        },
+        {
+          "name": "parse_activity_percent",
+          "params": [
+            "a"
+          ],
+          "returnType": "Option<u8>",
+          "exported": false,
+          "lineCount": 6
         },
         {
           "name": "is_result_set_statement",
@@ -17293,7 +17967,7 @@
           ],
           "returnType": "AppResult<ExecuteResponse>",
           "exported": true,
-          "lineCount": 165
+          "lineCount": 158
         }
       ],
       "classes": [
@@ -17365,7 +18039,8 @@
             "ExaPool",
             "ExaRow",
             "Row",
-            "TypeInfo"
+            "TypeInfo",
+            "ValueRef"
           ]
         },
         {
@@ -17411,7 +18086,7 @@
         "split_statements",
         "execute_sql"
       ],
-      "totalLines": 469,
+      "totalLines": 678,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src-tauri/src/security.rs": {
@@ -18334,6 +19009,16 @@
       ],
       "totalLines": 219,
       "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/app/global.css": {
+      "filePath": "apps/desktop/src/app/global.css",
+      "contentHash": "245e2ae09f627e2457a2691a0df39ab963733ac91fb8fb6dd0898da7f81da51a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 780,
+      "hasStructuralAnalysis": false
     },
     "apps/desktop/src/components/ai-elements/code-block.tsx": {
       "filePath": "apps/desktop/src/components/ai-elements/code-block.tsx",
@@ -19765,7 +20450,7 @@
     },
     "apps/desktop/src/components/studio/ExasolStudio.tsx": {
       "filePath": "apps/desktop/src/components/studio/ExasolStudio.tsx",
-      "contentHash": "278b1c6855d738991820c1063e0aff2d0966eebe596e042e17b2aea8c067cf2b",
+      "contentHash": "69809da09a83ef534fad78e22a69fcc91023da42b23b4515483d560ea666adca",
       "functions": [
         {
           "name": "parseSingleTable",
@@ -19868,7 +20553,7 @@
             "{\n  activity,\n  connections,\n  profiles,\n  local,\n  activeProfileId,\n  treeKeys,\n  onOpenObject,\n  onConnect,\n  onConnectProfile,\n  onInstallLocal,\n  onFocusConnection,\n  onDisconnect,\n  onRefreshConnection,\n  onOpenView,\n  onNewVirtualSchema,\n  onUploadDriver,\n  onContext,\n  onOpenDetails,\n  onOpenFavorite,\n  onOpenMcpConfig,\n  onCollapse,\n  onOpenFile,\n  onOpenData,\n  onLoadData,\n  onFileDeleted,\n  filesRefresh,\n  visualizerTabs,\n  activeTabId,\n  onOpenNewVisualizer,\n  onFocusTab,\n  onCloseTab,\n}"
           ],
           "exported": false,
-          "lineCount": 400
+          "lineCount": 397
         },
         {
           "name": "fmtClock",
@@ -19923,7 +20608,7 @@
             "{\n  connection,\n  connections,\n  drivers,\n  profiles,\n  onConnected,\n  onFocusConnection,\n  onDisconnect,\n  onSaved,\n}"
           ],
           "exported": true,
-          "lineCount": 3158
+          "lineCount": 3166
         },
         {
           "name": "Selector",
@@ -20431,7 +21116,7 @@
       "exports": [
         "ExasolStudio"
       ],
-      "totalLines": 5085,
+      "totalLines": 5090,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -21666,7 +22351,7 @@
     },
     "apps/desktop/src/components/ui/copy-button.tsx": {
       "filePath": "apps/desktop/src/components/ui/copy-button.tsx",
-      "contentHash": "2b459348fd29e62c80c20d864514ebc26dd7bedfce72b8007cf26d1d8cc4241f",
+      "contentHash": "3443c2b61e7c13b618b2781b9939f28f1c3f39a2b204d127c9172ba979b4222e",
       "functions": [
         {
           "name": "CopyButton",
@@ -21674,7 +22359,7 @@
             "{\n  text,\n  label = \"Copy\",\n  className,\n  iconClassName = \"h-3.5 w-3.5\",\n  children,\n}"
           ],
           "exported": true,
-          "lineCount": 58
+          "lineCount": 73
         }
       ],
       "classes": [],
@@ -21682,6 +22367,7 @@
         {
           "source": "react",
           "specifiers": [
+            "useEffect",
             "useRef",
             "useState"
           ]
@@ -21704,7 +22390,7 @@
       "exports": [
         "CopyButton"
       ],
-      "totalLines": 68,
+      "totalLines": 83,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/components/ui/dialog.tsx": {
@@ -23268,6 +23954,16 @@
       ],
       "totalLines": 58,
       "hasStructuralAnalysis": true
+    },
+    "apps/desktop/src/design-system/tokens.css": {
+      "filePath": "apps/desktop/src/design-system/tokens.css",
+      "contentHash": "d6c78126d10c4aa5f10566024a011d26455119848a60bbf6e4144e2777ad5602",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 26,
+      "hasStructuralAnalysis": false
     },
     "apps/desktop/src/features/artifact/ArtifactTab.tsx": {
       "filePath": "apps/desktop/src/features/artifact/ArtifactTab.tsx",
@@ -26431,7 +27127,7 @@
     },
     "apps/desktop/src/features/workbench/DataTypesPanel.tsx": {
       "filePath": "apps/desktop/src/features/workbench/DataTypesPanel.tsx",
-      "contentHash": "950daf3898bfe24f16426c098cd1ae02c700689897505bc58f385122bf01cf32",
+      "contentHash": "7bfb9ee8ec2922e3c2812416076f72f847ddebb41c61148dd5989e5f43ac6e2c",
       "functions": [
         {
           "name": "pretty",
@@ -26456,7 +27152,7 @@
             "{\n  profileId,\n  connectionName,\n}"
           ],
           "exported": true,
-          "lineCount": 244
+          "lineCount": 247
         }
       ],
       "classes": [],
@@ -26497,7 +27193,7 @@
       "exports": [
         "DataTypesPanel"
       ],
-      "totalLines": 272,
+      "totalLines": 275,
       "hasStructuralAnalysis": true
     },
     "apps/desktop/src/features/workbench/DatabaseInfoPanel.tsx": {
@@ -30253,6 +30949,136 @@
       "totalLines": 26,
       "hasStructuralAnalysis": true
     },
+    "crates/README.md": {
+      "filePath": "crates/README.md",
+      "contentHash": "dfd17e2615033b125a5305716d9beaf995a26329cdc6d89942a2cc7276401013",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 16,
+      "hasStructuralAnalysis": true
+    },
+    "design-qa.md": {
+      "filePath": "design-qa.md",
+      "contentHash": "693ca8e911f462c3ee7dceeafb5cfc8f379e2e2b4d2ae12beafa43e1c56ba25a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "docs/EDGE-CASES.md": {
+      "filePath": "docs/EDGE-CASES.md",
+      "contentHash": "2f6e81d77fbd56fcc7f8e73742ddc680e678126424e38b04b0b76e223a2d369d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 43,
+      "hasStructuralAnalysis": true
+    },
+    "docs/INSTALL.md": {
+      "filePath": "docs/INSTALL.md",
+      "contentHash": "647506f06eb696e2fb8cf7da7b90c61ab2f502221e65eb1bcaad889acb1471d3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 89,
+      "hasStructuralAnalysis": true
+    },
+    "docs/README.md": {
+      "filePath": "docs/README.md",
+      "contentHash": "2c01140618b52481daa5da08362963f52a7e819088ea3a9fd3615fe52979daeb",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 16,
+      "hasStructuralAnalysis": true
+    },
+    "docs/agentic-ai-blueprint.md": {
+      "filePath": "docs/agentic-ai-blueprint.md",
+      "contentHash": "de3d44ad89b78e68825165a571a872fe03d6a3e7137484edda15352c82f52a0a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 294,
+      "hasStructuralAnalysis": true
+    },
+    "docs/codebase-graph.html": {
+      "filePath": "docs/codebase-graph.html",
+      "contentHash": "c9dbe29d61806addd0a150ba4649926933b9e27b7461999c788d07d3d47d1584",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 353,
+      "hasStructuralAnalysis": false
+    },
+    "docs/foundation/README.md": {
+      "filePath": "docs/foundation/README.md",
+      "contentHash": "8e39093aadb5cd5730f04d8b96b3e1696cfec5c6047abac001c8cb913e69ff8e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 39,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/adr/ADR-0001-exasol-first-scope.md": {
+      "filePath": "docs/foundation/adr/ADR-0001-exasol-first-scope.md",
+      "contentHash": "46a06dd356bde3bbef038215a6470c296dcaab722370a10fc2ec94c6cd80c09d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/adr/ADR-0002-tauri-rust-desktop.md": {
+      "filePath": "docs/foundation/adr/ADR-0002-tauri-rust-desktop.md",
+      "contentHash": "8a1be72791035dfbfa6a329a76a1b627a8cb8efaa3b8abca6a378cd02a0c155f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/adr/ADR-0003-driver-service-boundary.md": {
+      "filePath": "docs/foundation/adr/ADR-0003-driver-service-boundary.md",
+      "contentHash": "a9b73bf3db671eee78ca9942ac73a1199d18f0131c34170a9bf7eafa028a2892",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/adr/ADR-0004-governed-ai-action-model.md": {
+      "filePath": "docs/foundation/adr/ADR-0004-governed-ai-action-model.md",
+      "contentHash": "e4ee7a5ddaa9d0d100c0487d4511aa27cb228de9c80196d79f8c2117aa0ffff9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 29,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/adr/ADR-0005-studio-owned-local-runtime.md": {
+      "filePath": "docs/foundation/adr/ADR-0005-studio-owned-local-runtime.md",
+      "contentHash": "45fd407f6ef0546e22484b8743cba83165ff0ffb1e78391ccc8c146c4052c58d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 60,
+      "hasStructuralAnalysis": true
+    },
     "docs/foundation/agent-config/agent-system.yaml": {
       "filePath": "docs/foundation/agent-config/agent-system.yaml",
       "contentHash": "4adddb9dce696e5b110568976df98d9c5b23035cb59549b6d18fe6a7b0257557",
@@ -30293,6 +31119,366 @@
       "totalLines": 41,
       "hasStructuralAnalysis": true
     },
+    "docs/foundation/agent.md": {
+      "filePath": "docs/foundation/agent.md",
+      "contentHash": "e3cbe82387749bf1a1a4e210dccf8cee43c9f0bf5aa7ccbcbf6681d4334e3d7d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 287,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/architecture.md": {
+      "filePath": "docs/foundation/architecture.md",
+      "contentHash": "b0ae87c7c2edfd3993f1b23b78d9acfa7bcf99753ec612649ea6c06ee273059b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 251,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/design.md": {
+      "filePath": "docs/foundation/design.md",
+      "contentHash": "5e6ae4003c454bfd46996a6f41b4e7d92101a2a5384f7448eff7613ad68e127b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 284,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/README.md": {
+      "filePath": "docs/foundation/graphify/README.md",
+      "contentHash": "3d2e74502dbe70f1543fff86f84bef59cad4114497edefb0ac696720fbade1a8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/agent-workflow.md": {
+      "filePath": "docs/foundation/graphify/agent-workflow.md",
+      "contentHash": "93508a03ada27428021fae613445f75b0032de6049239032bf5ba7c867119132",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 21,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/cicd-workflow.md": {
+      "filePath": "docs/foundation/graphify/cicd-workflow.md",
+      "contentHash": "370056540b583b1a7406cfe18af4df4dd9ad6011aafa827d3c252f2e35dedfa0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 23,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/data-flow.md": {
+      "filePath": "docs/foundation/graphify/data-flow.md",
+      "contentHash": "c47e07532a378ee46d6bc8d1a54e2560677a3c0ef13cd01475c13545622614d1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 23,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/development-lifecycle.md": {
+      "filePath": "docs/foundation/graphify/development-lifecycle.md",
+      "contentHash": "dfc9004da8f021cbf3724ca9b903499dbae45739feb8b17171744d0970426d82",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 24,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/module-dependencies.md": {
+      "filePath": "docs/foundation/graphify/module-dependencies.md",
+      "contentHash": "8077223a220a628a4f3fc892bc353fa24ee105666064398f98d08a5a219152ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/repository-relationships.md": {
+      "filePath": "docs/foundation/graphify/repository-relationships.md",
+      "contentHash": "2a7ca2c23e6769547d1033d0523c27d17a618bcc9e21acdd7cede1c9b528d987",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/graphify/site/index.html": {
+      "filePath": "docs/foundation/graphify/site/index.html",
+      "contentHash": "d3d07ce256553dfe530502bfef144a59bf6df9770f93653ca5f32a81f3752edb",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 90,
+      "hasStructuralAnalysis": false
+    },
+    "docs/foundation/graphify/system-architecture.md": {
+      "filePath": "docs/foundation/graphify/system-architecture.md",
+      "contentHash": "320adbeabed624e14299848e7615040202f35c34b5187b0f25bddee18d699f62",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 27,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/llm-wiki.md": {
+      "filePath": "docs/foundation/llm-wiki.md",
+      "contentHash": "1ca5f3de97261ec317f63d73051bcb00b34846724aba312c9e05c10f9e0095d1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 206,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/requirements.md": {
+      "filePath": "docs/foundation/requirements.md",
+      "contentHash": "0b38132562b98aaa3540f12a220fb9cdb5f44626149e5395a334861bda03d0a2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 235,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/research-notes.md": {
+      "filePath": "docs/foundation/research-notes.md",
+      "contentHash": "d8937118efad5f90cf76cd8837569b7baff56d27c6ce0048e4bdb39228eb7afa",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 83,
+      "hasStructuralAnalysis": true
+    },
+    "docs/foundation/tasks.md": {
+      "filePath": "docs/foundation/tasks.md",
+      "contentHash": "aa979fd2e89c705f581d18a00e0e98a8002aa299a1ecd6f51616dbd87d2d9dab",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 366,
+      "hasStructuralAnalysis": true
+    },
+    "docs/knowledge-tools.md": {
+      "filePath": "docs/knowledge-tools.md",
+      "contentHash": "3867403acedb287d1368abbb67f97443fbb1f88b761d2de8dc2e67185c0a16a8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 99,
+      "hasStructuralAnalysis": true
+    },
+    "docs/product/exasol-studio-product-spec.md": {
+      "filePath": "docs/product/exasol-studio-product-spec.md",
+      "contentHash": "92250594c78622193015e797149990c9a584266b4d5965a1590cf7d3abb30b3a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1679,
+      "hasStructuralAnalysis": true
+    },
+    "docs/qa/manual-validation-big-data.md": {
+      "filePath": "docs/qa/manual-validation-big-data.md",
+      "contentHash": "b976a3e112680fcec630f3d1fefd1003ff0efc5649fb3fa0de21f5ca7cd8d41f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 193,
+      "hasStructuralAnalysis": true
+    },
+    "docs/research/data-consolidation.md": {
+      "filePath": "docs/research/data-consolidation.md",
+      "contentHash": "566a9843787c64049870f1216076ec9da681cf585751e8645b9bb854da7db018",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 68,
+      "hasStructuralAnalysis": true
+    },
+    "docs/research/data-quality-kg-semantic-views.md": {
+      "filePath": "docs/research/data-quality-kg-semantic-views.md",
+      "contentHash": "f85315355bdef73be68c52ea80e97de692a0ec22fdb60cf274709357bb1b7c2a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 71,
+      "hasStructuralAnalysis": true
+    },
+    "docs/runtime-vs-langgraph.md": {
+      "filePath": "docs/runtime-vs-langgraph.md",
+      "contentHash": "d5a5a9365b56858b0cd5c054e85f69987dd0090fd42ca2db73c17a38871f60ee",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 162,
+      "hasStructuralAnalysis": true
+    },
+    "docs/ui-agent-learning-research.md": {
+      "filePath": "docs/ui-agent-learning-research.md",
+      "contentHash": "942fbe46e058b6fa4b214cd37ff4fcedc03719c3d7cd6380fef4bf3b19fb0265",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 67,
+      "hasStructuralAnalysis": true
+    },
+    "docs/web-deploy.md": {
+      "filePath": "docs/web-deploy.md",
+      "contentHash": "42dc6fac366a3c30c13fdd1bf632decb074fca554a0f5a28d6308df444aba5f7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/README.md": {
+      "filePath": "knowledge/README.md",
+      "contentHash": "48a6866da3850eb9ea67a08d82a584a97aa948373943369644450d249d61b414",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 19,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/vault/Exasol Studio — Overview.md": {
+      "filePath": "knowledge/vault/Exasol Studio — Overview.md",
+      "contentHash": "2928200b9011ce246f023996d32007369ce70801ab2032130461d3c0a115a081",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 38,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/vault/Welcome.md": {
+      "filePath": "knowledge/vault/Welcome.md",
+      "contentHash": "18de079c0a7d6da7f2ef76f696805884837593d762a884a83d171308a0bad1ca",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 4,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/vault/design-log.md": {
+      "filePath": "knowledge/vault/design-log.md",
+      "contentHash": "9159e3cbfb665e5bf7d27bc1af97d3d61858359184a62753cd89ec0d8a2d369d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 20,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/log.md": {
+      "filePath": "knowledge/wiki/log.md",
+      "contentHash": "a8acfc8dcfbb305a50a568b08dad45261de649909ea026154e6b76cabf09131e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 19,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/ai-integrations.md": {
+      "filePath": "knowledge/wiki/pages/ai-integrations.md",
+      "contentHash": "e287c0c9adaa44cd2f5138236754a3edbf910e85777ca07ecd875da34faba02b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/connection-properties.md": {
+      "filePath": "knowledge/wiki/pages/connection-properties.md",
+      "contentHash": "568775b801b5090eb4b1e53b1562fd99143f2207d8bfca34a163059bf368c68c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 60,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/dev-workflow-codex.md": {
+      "filePath": "knowledge/wiki/pages/dev-workflow-codex.md",
+      "contentHash": "857052e5e759f802919b1a6e1399666a92399c2184b7879b208627f0d0c2d8d9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 45,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/editing-model.md": {
+      "filePath": "knowledge/wiki/pages/editing-model.md",
+      "contentHash": "bea66411a4687553f679700b6a3159fb23beb328df672caa041f9309c25654aa",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 39,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/exasol-sql-gotchas.md": {
+      "filePath": "knowledge/wiki/pages/exasol-sql-gotchas.md",
+      "contentHash": "82e26ce065edf59a29789a6ae7b1dea8578261b84d2a9353b69caafe413e48ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 24,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/exasol-studio-overview.md": {
+      "filePath": "knowledge/wiki/pages/exasol-studio-overview.md",
+      "contentHash": "2928200b9011ce246f023996d32007369ce70801ab2032130461d3c0a115a081",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 38,
+      "hasStructuralAnalysis": true
+    },
+    "knowledge/wiki/pages/kiss-hard-rules.md": {
+      "filePath": "knowledge/wiki/pages/kiss-hard-rules.md",
+      "contentHash": "5558321b657e3a8881d2edb92f9870898c8bd00c6f03f1cc29503b2649b50c70",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 143,
+      "hasStructuralAnalysis": true
+    },
     "marketplace/catalog.json": {
       "filePath": "marketplace/catalog.json",
       "contentHash": "04bca7c448fce2289ff1eb0d8e01f4ac18f14b599c3671bee527edcd12af83ce",
@@ -30305,12 +31491,22 @@
     },
     "package.json": {
       "filePath": "package.json",
-      "contentHash": "7d03353b305655f406cd8061fc0647426b9d5c629fda77fed72a651dc40d03d4",
+      "contentHash": "947f473fc1b938e1853ce56e747c93a958a86c94160d9293c51081ebf504f146",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 21,
+      "totalLines": 26,
+      "hasStructuralAnalysis": true
+    },
+    "packages/README.md": {
+      "filePath": "packages/README.md",
+      "contentHash": "e88dee06a0db4a3e3e7e0ac2e7ecde5d60c6a74a159968772c49083da2f308a9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 12,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/evals/live.ts": {
@@ -30496,12 +31692,12 @@
     },
     "packages/agent-core/package.json": {
       "filePath": "packages/agent-core/package.json",
-      "contentHash": "177dc07c9144c8f32cd8e95b52622308a38037237617198b3974e78f01bc4c57",
+      "contentHash": "befef4ced5e5a0523ee5f7fa43a592b4ab022240a40d43a07c46c1edb2d6fc3c",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 38,
+      "totalLines": 41,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/skills/.runtime-managed.json": {
@@ -30512,6 +31708,86 @@
       "imports": [],
       "exports": [],
       "totalLines": 18,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/artifact-builder.md": {
+      "filePath": "packages/agent-core/skills/artifact-builder.md",
+      "contentHash": "f205d257ee0f5b6dc0aa139d24e3095424fee4b293dd4bd00dd1b533d0586c4b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 32,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/dashboard-builder.md": {
+      "filePath": "packages/agent-core/skills/dashboard-builder.md",
+      "contentHash": "76588fbf1f74bb81edcb8bb2fe19585712047db92c0b98cc2723da58c0c47965",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 14,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/data-loading-playbook.md": {
+      "filePath": "packages/agent-core/skills/data-loading-playbook.md",
+      "contentHash": "ff717a7b20ade893ae96257b0a0f582fa0bc24b013006bbb0efcf6deadf6fb09",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 27,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-agent-skills.LICENSE.txt": {
+      "filePath": "packages/agent-core/skills/exasol-agent-skills.LICENSE.txt",
+      "contentHash": "b201763be80d13236ff67b2fb7cd66536af42401ab076c2ed108e1497b80b879",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": false
+    },
+    "packages/agent-core/skills/exasol-agent-skills.UPSTREAM.txt": {
+      "filePath": "packages/agent-core/skills/exasol-agent-skills.UPSTREAM.txt",
+      "contentHash": "873325e912a8d5a5f3de23b3fe6bc4ef5448823569139cabbcdba7db6ef1529c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 5,
+      "hasStructuralAnalysis": false
+    },
+    "packages/agent-core/skills/exasol-ai-setup/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-ai-setup/SKILL.md",
+      "contentHash": "8c79a2c3885c68b726661a0d83e70d424188fa9c5535e8719b8c28ff1470855b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 68,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-ai-setup/references/secrets-python.md": {
+      "filePath": "packages/agent-core/skills/exasol-ai-setup/references/secrets-python.md",
+      "contentHash": "398cbd61f7af9b3148e51488498f9335156aeba2f4fd8e1eca6ffe881e222ddf",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 160,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-ai-setup/references/validation.md": {
+      "filePath": "packages/agent-core/skills/exasol-ai-setup/references/validation.md",
+      "contentHash": "67e9240c838ed42b1facfea092bc36b60e5299d4bed64fc4fd286da8155c8658",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 33,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/skills/exasol-ai-setup/scripts/setup_onprem.py": {
@@ -30656,6 +31932,286 @@
         "main"
       ],
       "totalLines": 101,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-bucketfs/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-bucketfs/SKILL.md",
+      "contentHash": "aa30ae0f99bf17febe7befe8d38bc8c3150cdd986fe6b22fb6222d4a4353da48",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 194,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/SKILL.md",
+      "contentHash": "5150e4c7a4ec97f7832cda7749679e7a561c1512ff0f7a97ecb183c0ebbcba32",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 72,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/analytics-qualify.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/analytics-qualify.md",
+      "contentHash": "f9d24e7628c793a5efe9a75c8615d51d4c77d844bc7c1bedf469f9987223239b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 137,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/exapump-reference.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/exapump-reference.md",
+      "contentHash": "71ec8c9691463189cc60d07b3b08882a7fce464d8197d666570761d48d0d2a8a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 170,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/exasol-grammar-functions.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/exasol-grammar-functions.md",
+      "contentHash": "0eec7a1e789006fcc45fabc9e0083811badae04516786ab9f09e555fe4e35331",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 888,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/exasol-grammar.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/exasol-grammar.md",
+      "contentHash": "e0bdf7896e6429120a173336a5fdb7b4abfb07cbd035f791990fed8ebcf5cef7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 854,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/exasol-reserved-keywords.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/exasol-reserved-keywords.md",
+      "contentHash": "741231f472d7b3fa01ad41dec53813f808aa037d4c06a43b77f9109e1d75ad14",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 100,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/exasol-sql.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/exasol-sql.md",
+      "contentHash": "1d17bc01f5beaa346dffafbabf24419d7e4b2a8925ce24befb1532eff97e215d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 245,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/import-export.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/import-export.md",
+      "contentHash": "65c5e5a90e3bc493bdbabf43dd5a1d7af956ba42f683cc1d8f97fae4c4649efc",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 303,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/query-profiling.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/query-profiling.md",
+      "contentHash": "c09997ec567c8dc299d0bac2d35e71a1de1254d067a5318f17c0572fa058d339",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 84,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/table-design.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/table-design.md",
+      "contentHash": "04df1d6abd712d5d7d1f6b023a0025aaeaac37e7949c9c8e1cdb96274ec11061",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 91,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-database/references/virtual-schemas.md": {
+      "filePath": "packages/agent-core/skills/exasol-database/references/virtual-schemas.md",
+      "contentHash": "4d86f42642d6dd723a458ddfd6312e801bed5ef099530156e27bd7601efae5db",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 46,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-distributed-ml/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-distributed-ml/SKILL.md",
+      "contentHash": "455baac32bd5539daa3d07fa35d297dd5523b41600d5f56b1e6075914417b3d2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 56,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-distributed-ml/references/distributed-ml-patterns.md": {
+      "filePath": "packages/agent-core/skills/exasol-distributed-ml/references/distributed-ml-patterns.md",
+      "contentHash": "2b67aa95b7d9ce9a496d64df1a2860f81fedb4f02abf7abcf7234ef7d108d002",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 836,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-distributed-ml/references/gpu-acceleration.md": {
+      "filePath": "packages/agent-core/skills/exasol-distributed-ml/references/gpu-acceleration.md",
+      "contentHash": "0626afe892b9e66432662b74ea8f40e80f118fbe4e3846cc4d6e978836c59beb",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 262,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-distributed-ml/references/ml-performance.md": {
+      "filePath": "packages/agent-core/skills/exasol-distributed-ml/references/ml-performance.md",
+      "contentHash": "06c7f07eb2547cb56035593a356baca9c49d9781a8d201ef87c70821a86c1bc9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 209,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-distributed-ml/references/model-lifecycle.md": {
+      "filePath": "packages/agent-core/skills/exasol-distributed-ml/references/model-lifecycle.md",
+      "contentHash": "7983105b447ce4053274011bb63d5be5eae3d5b0d139588cb4e9013bf6b63c05",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 176,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/SKILL.md",
+      "contentHash": "5887db104f389e39a8eed7f10ee5800770909be15f84d8e6dd26fb4792724b91",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 74,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/deploy.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/deploy.md",
+      "contentHash": "1d69b332daca5d5f0842d19cbf6e7efaaca6b0c7a85741a2cce77eeb46973024",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 114,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/enrich.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/enrich.md",
+      "contentHash": "5ced66a8cf0093c0f8f4a766e533e2c58e1e64f05c62f89243d4d6e0adb854bd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 130,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/explore.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/explore.md",
+      "contentHash": "9a2d61662921088f2a0ec59403a65c5c5bb35388d63f18555e4d39ef651653b8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 80,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/load.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/load.md",
+      "contentHash": "22a865e1a4b59dddfdd4fab49a7a92dd4e3b00b402a6813af71f9ef3d5e552b4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 128,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/scale.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/scale.md",
+      "contentHash": "4212a3bbb7a8d316a3e5f4023012eb0d4edb4646618ff2c7be1f7d23678d3ff0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 111,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-extension-catalog/references/surface.md": {
+      "filePath": "packages/agent-core/skills/exasol-extension-catalog/references/surface.md",
+      "contentHash": "826ca490dcd2e0be10f2b55adeaba74478e7c470d483f8523d3b521a6d70e124",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 96,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-import/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-import/SKILL.md",
+      "contentHash": "d0c2e1071923b78d749063e5d2eca74ef4fac323d4e62a647a362afcfd5895cc",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 45,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-import/references/import.md": {
+      "filePath": "packages/agent-core/skills/exasol-import/references/import.md",
+      "contentHash": "4ba9aef5736373ef8956ec002c32c9445c5cda6e0f75526980b2b850ed6dfba9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 158,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-itde/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-itde/SKILL.md",
+      "contentHash": "96a04bb1071b88c34db7fc0f4b74d3c06ed8c3a57714f5988ddaa118fb7033c9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 47,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-itde/references/itde-lifecycle.md": {
+      "filePath": "packages/agent-core/skills/exasol-itde/references/itde-lifecycle.md",
+      "contentHash": "d1f480ba43303d609f4d9ddf0dc5944adf75306b592281fefd2082a9cec2f23e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 100,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/skills/exasol-itde/scripts/bring_itde_up.py": {
@@ -30843,6 +32399,26 @@
         "main"
       ],
       "totalLines": 27,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-notebook-connections/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-notebook-connections/SKILL.md",
+      "contentHash": "00767940c34a36f730ea6edad6862b2c4bb84579956d380b890ecdeb6291ecb0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-notebook-connections/references/connections-api.md": {
+      "filePath": "packages/agent-core/skills/exasol-notebook-connections/references/connections-api.md",
+      "contentHash": "243826451c34477c53185dd751e25c22931f0975fa5053872ec91c41f3f4d0ff",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 86,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/skills/exasol-notebook-connections/scripts/check_backend.py": {
@@ -31078,6 +32654,26 @@
       "totalLines": 27,
       "hasStructuralAnalysis": true
     },
+    "packages/agent-core/skills/exasol-semantic-analyst/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-semantic-analyst/SKILL.md",
+      "contentHash": "ce7f0b93ee2860ddc2dce3834b0d32720c9a62608a30859ff736a3869e8ec846",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 329,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-semantic-analyst/UPSTREAM.txt": {
+      "filePath": "packages/agent-core/skills/exasol-semantic-analyst/UPSTREAM.txt",
+      "contentHash": "1386bc6453c42817b35e51df935ea9581ac0e6b37eec43404fa42c39ba2f9567",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 4,
+      "hasStructuralAnalysis": false
+    },
     "packages/agent-core/skills/exasol-semantic-analyst/agents/openai.yaml": {
       "filePath": "packages/agent-core/skills/exasol-semantic-analyst/agents/openai.yaml",
       "contentHash": "368a8662b2032f33945e8eb455634549856c006a11563d687c8d34c5ae8acd1f",
@@ -31086,6 +32682,296 @@
       "imports": [],
       "exports": [],
       "totalLines": 7,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-semantic-analyst/references/query-workflows.md": {
+      "filePath": "packages/agent-core/skills/exasol-semantic-analyst/references/query-workflows.md",
+      "contentHash": "2b8383b2853607eece43b0ff716617c5647dc6f4eee1a208eab46492cec38e87",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 280,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-semantic-views.LICENSE.txt": {
+      "filePath": "packages/agent-core/skills/exasol-semantic-views.LICENSE.txt",
+      "contentHash": "38bc87b0e18593432acbeb48edddecc43ad0b055831c3d58aa64333fdfaca4e9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": false
+    },
+    "packages/agent-core/skills/exasol-sql.md": {
+      "filePath": "packages/agent-core/skills/exasol-sql.md",
+      "contentHash": "272a5caf4e6882641936d504b90237b4f7dfe4601143e400d14bbc71d1469cac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 26,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-text-ai/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-text-ai/SKILL.md",
+      "contentHash": "9e1a2591226daf2f59e7830c95eca7e86302bc6133b4991af203b65cec037df0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 73,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-text-ai/references/text-ai-extension.md": {
+      "filePath": "packages/agent-core/skills/exasol-text-ai/references/text-ai-extension.md",
+      "contentHash": "9d754422556d3842d125723cb0621c2e4fbfe42cb7e44bb92118b4d1e21c8f9c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 444,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-transformers/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-transformers/SKILL.md",
+      "contentHash": "3639719f3b241c1b01b64bafa581e4c4d23947402ef90ae4d3835990dd9d0693",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 61,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-transformers/references/transformers-extension.md": {
+      "filePath": "packages/agent-core/skills/exasol-transformers/references/transformers-extension.md",
+      "contentHash": "b7ebb55d35a69208fd037a717b42d1463e3efff50fefd37ed51115d5bbd9202e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 323,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-udfs/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol-udfs/SKILL.md",
+      "contentHash": "48f22a972e3b0d7e8607feb5000f9eaaac39126a50f7678b192c12cbdceb7d19",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 291,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-udfs/references/lua-execute-scripts.md": {
+      "filePath": "packages/agent-core/skills/exasol-udfs/references/lua-execute-scripts.md",
+      "contentHash": "648df29d73d1b1c425f02bdd04cd91e81fba54cca38e28ea4c2e38764dc2f52c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 98,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-udfs/references/slc-reference.md": {
+      "filePath": "packages/agent-core/skills/exasol-udfs/references/slc-reference.md",
+      "contentHash": "e54ddbf8663660c57df54d322c82ec485051beba72419e1e01772c5fc7a394d6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 296,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-udfs/references/udf-java-lua.md": {
+      "filePath": "packages/agent-core/skills/exasol-udfs/references/udf-java-lua.md",
+      "contentHash": "f47d33e523e4ec982f47ca0dac2109a8068d14a437090cf13a9a1d01c2c25ef9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 264,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol-udfs/references/udf-python.md": {
+      "filePath": "packages/agent-core/skills/exasol-udfs/references/udf-python.md",
+      "contentHash": "bf882854cdb03a1b2a832995a630cf42d66ca490e717eb588c811e845fac1206",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 191,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/exasol/SKILL.md": {
+      "filePath": "packages/agent-core/skills/exasol/SKILL.md",
+      "contentHash": "3f1475a170bcedeeb3c79f74ef52fcc80a4c6a9dd279b43f0a78c57517deb87d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 104,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method.LICENSE.txt": {
+      "filePath": "packages/agent-core/skills/fable-method.LICENSE.txt",
+      "contentHash": "36a8775a8dc54a63bf00c34319a59ec1a9185cabaea25e67738dd5cb2bfb10ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": false
+    },
+    "packages/agent-core/skills/fable-method/SKILL.md": {
+      "filePath": "packages/agent-core/skills/fable-method/SKILL.md",
+      "contentHash": "b3d1592a6096ffad6f7f9bdce0b647caa17aea1e1fde602c44fd932c867ea95f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 130,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/UPSTREAM.txt": {
+      "filePath": "packages/agent-core/skills/fable-method/UPSTREAM.txt",
+      "contentHash": "2b072e61de49536a2f1af320e40a24856e8d4fccd627e7353515f270d1f3fb90",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 4,
+      "hasStructuralAnalysis": false
+    },
+    "packages/agent-core/skills/fable-method/references/domains/TEMPLATE.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/TEMPLATE.md",
+      "contentHash": "ec7dbbed409f2e69a7be4ecdc9f0d0a051367a44fc86fd040a498918cad54f35",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 56,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/business-ops.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/business-ops.md",
+      "contentHash": "922f2597deaeca3346acd610a1fef1ea74520c4c033d25575ddeda24b95ff75e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 39,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/data-analysis.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/data-analysis.md",
+      "contentHash": "3fb1116c8a1eb58c608d13f2e639c5b99207e136bc13820a2c3746b88019a7ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 39,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/design-ux.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/design-ux.md",
+      "contentHash": "7a66cbc8e4833280d23a1c37ec1cec4b5662739c9f37dca54ce45f0947bfbcb3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/devops.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/devops.md",
+      "contentHash": "35972885538e5acd5eb330a4111c4ae8278a6eb6ff37fb0e453e18287c33707b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 50,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/finance.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/finance.md",
+      "contentHash": "0a989edd86e8f81575171693e709d7aca586139347245748d5def99e5db56fd7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/legal-compliance.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/legal-compliance.md",
+      "contentHash": "831569221ef8bdf8aff5e7051b40d24dfd0cfbc97d4c3f8872477b27386f1e02",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/marketing.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/marketing.md",
+      "contentHash": "69600e4ce29257bd6809296b9972db60704980114cdb88761aebc49696f7b02e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/domains/research.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/domains/research.md",
+      "contentHash": "d1b58fec37b9263faf69c012c540ffc4cb0f83e50dbd858a236e406ec985717f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/examples.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/examples.md",
+      "contentHash": "38164477dc5de3b98fb7167e8683c6eb2241b7aa54d802aabbed4154f24f38b3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 43,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/failure-modes.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/failure-modes.md",
+      "contentHash": "61e2130f7af1a8db4a7e93ac1aa8bfc07aa408baf9fcea2e431a63338d2aada6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/fable-method/references/flowcharts.md": {
+      "filePath": "packages/agent-core/skills/fable-method/references/flowcharts.md",
+      "contentHash": "27f01ed71ea0c4e3bf4c3e453f2205006c4ae5f2ef0d695dc78561f2c49e2122",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 148,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/skills/setup-personal/SKILL.md": {
+      "filePath": "packages/agent-core/skills/setup-personal/SKILL.md",
+      "contentHash": "489ab0c6b4bb78493fd108a14eb046a828009c7f8725ab1d452a72e1210cd529",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 343,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/a2a.ts": {
@@ -31616,6 +33502,44 @@
         "ConfigStore"
       ],
       "totalLines": 145,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/src/csv-import.test.ts": {
+      "filePath": "packages/agent-core/src/csv-import.test.ts",
+      "contentHash": "d003f6016530f32c07144fd04eb6065cd9444b870a602fa0497ab3a1d002c1d2",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./csv-import.ts",
+          "specifiers": [
+            "parseCsv",
+            "resolveHeader",
+            "normalizeColumns",
+            "inferType",
+            "typeToSql",
+            "cellToLiteral",
+            "buildPlan",
+            "objectsToTable",
+            "buildInsert"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 378,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/csv-import.ts": {
@@ -32425,9 +34349,41 @@
       "totalLines": 38,
       "hasStructuralAnalysis": true
     },
+    "packages/agent-core/src/loop.heuristics.test.ts": {
+      "filePath": "packages/agent-core/src/loop.heuristics.test.ts",
+      "contentHash": "30d07877bea68158e601d07d4bfdb3a2c29e1ea72c47cba2d42e3eb25e9ee63e",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./loop.ts",
+          "specifiers": [
+            "looksLikeUnacted",
+            "extractReadSql",
+            "looksUnfinished"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 186,
+      "hasStructuralAnalysis": true
+    },
     "packages/agent-core/src/loop.ts": {
       "filePath": "packages/agent-core/src/loop.ts",
-      "contentHash": "11d03e508039187aec70f9ad9bba08a1504a6f554cfaeb2a820f395627ec08a1",
+      "contentHash": "5f0ddc4fb2218df6f23c001601bfb93333428bc0ab3166321a81a958b97298c9",
       "functions": [
         {
           "name": "humanizeProviderError",
@@ -32503,7 +34459,7 @@
           ],
           "returnType": "boolean",
           "exported": true,
-          "lineCount": 8
+          "lineCount": 11
         },
         {
           "name": "summarize",
@@ -32670,7 +34626,7 @@
         "extractReadSql",
         "looksUnfinished"
       ],
-      "totalLines": 1126,
+      "totalLines": 1129,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/mcp-gateway.ts": {
@@ -33187,7 +35143,7 @@
     },
     "packages/agent-core/src/server.ts": {
       "filePath": "packages/agent-core/src/server.ts",
-      "contentHash": "9e46f4753f344d99a1d127a518bb2da54ee268f98a266da73b3c65fb01d5ab2a",
+      "contentHash": "bd4a88094afe5297150ba8163663a8767852228eaa7ab31fe465f3d00af53c87",
       "functions": [
         {
           "name": "startServer",
@@ -33196,7 +35152,7 @@
           ],
           "returnType": "Promise<{ port: number; token: string }>",
           "exported": true,
-          "lineCount": 773
+          "lineCount": 540
         },
         {
           "name": "json",
@@ -33338,7 +35294,7 @@
       "exports": [
         "startServer"
       ],
-      "totalLines": 808,
+      "totalLines": 575,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/session.ts": {
@@ -33538,6 +35494,42 @@
         "SkillStore"
       ],
       "totalLines": 148,
+      "hasStructuralAnalysis": true
+    },
+    "packages/agent-core/src/tool-repair.test.ts": {
+      "filePath": "packages/agent-core/src/tool-repair.test.ts",
+      "contentHash": "87485ae1b8befd1531d98ee5aab6d1892bd480c6695c2d04ff5f6f35309dc93a",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:test",
+          "specifiers": [
+            "test",
+            "describe"
+          ]
+        },
+        {
+          "source": "node:assert/strict",
+          "specifiers": [
+            "assert"
+          ]
+        },
+        {
+          "source": "./tool-repair.ts",
+          "specifiers": [
+            "resolveToolName",
+            "parseLooseArgs",
+            "repairArgs",
+            "extractTextToolCalls",
+            "zodSchemaish",
+            "repairCall",
+            "rescueTextCalls"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 516,
       "hasStructuralAnalysis": true
     },
     "packages/agent-core/src/tool-repair.ts": {
@@ -34202,6 +36194,26 @@
       "imports": [],
       "exports": [],
       "totalLines": 24,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/README.md": {
+      "filePath": "packages/exasol-sql-parser/README.md",
+      "contentHash": "aed5c03de39d840ead310ba72248644302f36664e3ce6282bf6431cef64dd0f2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 12,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/TASKS.md": {
+      "filePath": "packages/exasol-sql-parser/TASKS.md",
+      "contentHash": "04d2fc437497dfa74227acb45c05f8c640d5d6092c848cb650d2d668c89f9e6f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 63,
       "hasStructuralAnalysis": true
     },
     "packages/exasol-sql-parser/package.json": {
@@ -37596,6 +39608,66 @@
       "totalLines": 2,
       "hasStructuralAnalysis": true
     },
+    "packages/exasol-sql-parser/tests/corpus/exasol-features.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/exasol-features.sql",
+      "contentHash": "4c10c6633ab51a3172c6b9edbe043b34e51a9090ed03f07743f57eb43bf889d8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 20,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/tests/corpus/phase4-import-export.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/phase4-import-export.sql",
+      "contentHash": "501d7a5be52dcb5cf7093dbac25ddf29c7d6d1bcfd1bb107df0bf5916b4a86da",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 8,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/tests/corpus/phase4-scripts.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/phase4-scripts.sql",
+      "contentHash": "c292069d073c2fb222d2a65966cf6be1698d8eeee21274890fea681dea28674f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 13,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/tests/corpus/select-qualify.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/select-qualify.sql",
+      "contentHash": "c44de9daedb840d03457053233c9b79bf131589c78497cd55afe60a3ee585e46",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 6,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/tests/corpus/tpch-q1.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/tpch-q1.sql",
+      "contentHash": "8218ec1a6ddae5201853b65e07be374eae30bfb77743b4d8fbdf501a7e1a4bf1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 9,
+      "hasStructuralAnalysis": true
+    },
+    "packages/exasol-sql-parser/tests/corpus/tpch-q3.sql": {
+      "filePath": "packages/exasol-sql-parser/tests/corpus/tpch-q3.sql",
+      "contentHash": "e799b6f10a3892f7ff7f32e94faba6583413670dc6460d5c6a4579916aae3f54",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 11,
+      "hasStructuralAnalysis": true
+    },
     "packages/exasol-sql-parser/tests/goldens.ts": {
       "filePath": "packages/exasol-sql-parser/tests/goldens.ts",
       "contentHash": "7ba9c369cdb1392cd38e3fb5e09658992849ebc2f0f7ef7e69199fa6484608df",
@@ -37674,6 +39746,16 @@
       "imports": [],
       "exports": [],
       "totalLines": 9,
+      "hasStructuralAnalysis": true
+    },
+    "ref.md": {
+      "filePath": "ref.md",
+      "contentHash": "223c2a91e7ee101b1b595c9f19d2d32f1061dc99d0dcc2d9369cc5552b20a219",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 77,
       "hasStructuralAnalysis": true
     },
     "scripts/build-local.sh": {
@@ -37945,6 +40027,46 @@
       "imports": [],
       "exports": [],
       "totalLines": 86,
+      "hasStructuralAnalysis": true
+    },
+    "services/exasol-driver-service/README.md": {
+      "filePath": "services/exasol-driver-service/README.md",
+      "contentHash": "13f3eb226298514b8bc296414f40663108b748436a4387d81fdd2c78f8d2a2e3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 29,
+      "hasStructuralAnalysis": true
+    },
+    "tasks.md": {
+      "filePath": "tasks.md",
+      "contentHash": "a891a17b7e3700e617ba201ec8af7c5fbbb7abd02da9568f54c693f2a2fb3af9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 133,
+      "hasStructuralAnalysis": true
+    },
+    "tests/README.md": {
+      "filePath": "tests/README.md",
+      "contentHash": "e6d313b8105752f00c17bfe49e5e8dfca94c98291723f8763a6673756fd5b41b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 13,
+      "hasStructuralAnalysis": true
+    },
+    "tools/README.md": {
+      "filePath": "tools/README.md",
+      "contentHash": "3528fdbc9753c08958b3d80aed96dc698c888631e81d35252e061619945576a4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 10,
       "hasStructuralAnalysis": true
     },
     "tools/scripts/build-graphify-html.mjs": {

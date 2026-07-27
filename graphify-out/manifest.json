@@ -380,8 +380,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/package.json": {
-    "mtime": 1784728381.2572677,
-    "ast_hash": "d74eaf871bfc45f4f3c3ad570270ccca",
+    "mtime": 1784894044.7378354,
+    "ast_hash": "e43a5ed54e1408f9e64839594cab8c59",
     "semantic_hash": ""
   },
   "apps/desktop/scripts/test-markdown-editor.mjs": {
@@ -515,8 +515,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/catalog.rs": {
-    "mtime": 1784141870.7509785,
-    "ast_hash": "ac0082f2f8b9eeb0a7b06b6e499551b4",
+    "mtime": 1784889423.8192327,
+    "ast_hash": "7cc25591c80fd33e390bafd7014dad2f",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/component_lock.rs": {
@@ -525,13 +525,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/connection.rs": {
-    "mtime": 1784885440.90404,
-    "ast_hash": "896cb30f9215c55a1413b93ad5953aa1",
+    "mtime": 1785131349.222047,
+    "ast_hash": "d8504e354cdae3fe4b7ad2cb21b7136f",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/driver_exec.rs": {
-    "mtime": 1784884064.3622897,
-    "ast_hash": "07ff6b913bea55c69b46422e76ca1241",
+    "mtime": 1784893851.329737,
+    "ast_hash": "ad31e7ec9963bb860a46a2c4ab4fa360",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/drivers.rs": {
@@ -570,13 +570,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/lib.rs": {
-    "mtime": 1784885440.9248602,
-    "ast_hash": "ecacb0dbb1d0537d290ccb6319113ff5",
+    "mtime": 1784893851.3662906,
+    "ast_hash": "a898af42393b6fb1a3a107b9d1c75d41",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_database.rs": {
-    "mtime": 1784653589.1305547,
-    "ast_hash": "5edfa3f990ae5fa4364d378e6e6d9f5f",
+    "mtime": 1785132070.203109,
+    "ast_hash": "5e437b4dd7932189b279e1139bc99ef5",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_llm.rs": {
@@ -595,8 +595,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/market.rs": {
-    "mtime": 1784732071.083704,
-    "ast_hash": "c1db3eb322bd90fdb9b8c4ed043cb9b6",
+    "mtime": 1785132085.8276746,
+    "ast_hash": "4ca62882b1feb94f1663d1735770a52a",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/metadata.rs": {
@@ -610,8 +610,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/query.rs": {
-    "mtime": 1784884019.620913,
-    "ast_hash": "538d8853e3cd0749369a8402d65600ff",
+    "mtime": 1785133749.9271448,
+    "ast_hash": "1798c23b4b8969ab3c98e2731f42a16b",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/security.rs": {
@@ -735,8 +735,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1784885829.3948689,
-    "ast_hash": "aea2bb19725266189570f36158936e3b",
+    "mtime": 1785131391.8540404,
+    "ast_hash": "00ca9928be34e3c55d3e03e10cbe541f",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -950,13 +950,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/AiProvidersWindow.tsx": {
-    "mtime": 1784813538.601838,
-    "ast_hash": "db59fe0d1f425264301702f6c0b1a002",
+    "mtime": 1784887073.9758165,
+    "ast_hash": "2cf24f67709ed955d95bf94c9a5e695d",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/AssistantPanel.tsx": {
-    "mtime": 1784816735.179562,
-    "ast_hash": "c9dcf1710cbcc5bdcd89db1966f08057",
+    "mtime": 1784887048.2509768,
+    "ast_hash": "06215890db6831950720a2087dd31c18",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/ModelPicker.tsx": {
@@ -989,14 +989,9 @@
     "ast_hash": "b459fa2753047d595b79eff3162561a2",
     "semantic_hash": ""
   },
-  "apps/desktop/src/features/connection/ConnectView.tsx": {
-    "mtime": 1784798615.3275106,
-    "ast_hash": "68d3526d28c2a28639b92d8b1004cc8a",
-    "semantic_hash": ""
-  },
   "apps/desktop/src/features/connection/NewVirtualSchema.tsx": {
-    "mtime": 1784786356.7029626,
-    "ast_hash": "5975a8d0f8d86fb2e24154c38f258d93",
+    "mtime": 1784887048.2494078,
+    "ast_hash": "93118c51fa9fc1bac7a3031f7aa12e1a",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/connection/SourceLogo.tsx": {
@@ -1094,19 +1089,14 @@
     "ast_hash": "f2f7e43fcf0978e43c9aa85df6ba9d4b",
     "semantic_hash": ""
   },
-  "apps/desktop/src/features/workbench/ConnectionInfoPanel.tsx": {
-    "mtime": 1784048289.7920113,
-    "ast_hash": "d3483cbe7dd63bcdc8d023bb687d54f8",
-    "semantic_hash": ""
-  },
   "apps/desktop/src/features/workbench/DataTypesPanel.tsx": {
-    "mtime": 1783687455.910729,
-    "ast_hash": "722201914b449ce1a6aa2f6a1a2b3fc4",
+    "mtime": 1785131404.2808588,
+    "ast_hash": "1bd8f000a75805c793d336e50cc8c7eb",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/DatabaseInfoPanel.tsx": {
-    "mtime": 1784048289.7620788,
-    "ast_hash": "c700331dcb6ffccee83ca5dc5b838bcf",
+    "mtime": 1784897968.043143,
+    "ast_hash": "2d437bfbcc0c5b66ce2116968e33c8bf",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/DatabaseTree.tsx": {
@@ -1155,8 +1145,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/MarkdownEditor.tsx": {
-    "mtime": 1784724219.9786055,
-    "ast_hash": "c40df9da660b647659ba80e8b1d03924",
+    "mtime": 1784894213.7489839,
+    "ast_hash": "53a67518503d1e6dd1dddb1b3c87cefe",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/MermaidView.tsx": {
@@ -1165,8 +1155,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/NotebookTab.tsx": {
-    "mtime": 1784729444.987029,
-    "ast_hash": "5c26a60ee97c56824d004cd3b7b61768",
+    "mtime": 1784894283.8230739,
+    "ast_hash": "605adaabb435fead083be6ab830dabac",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/Notifications.tsx": {
@@ -1175,8 +1165,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/ObjectContextMenu.tsx": {
-    "mtime": 1784755382.1216645,
-    "ast_hash": "c91673c83c17d79669c6ed7330f44a18",
+    "mtime": 1784887048.2505643,
+    "ast_hash": "c5dc88fcd499713d4f98c14611a3faf9",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/ObjectDetailPanel.tsx": {
@@ -1185,8 +1175,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/ObjectSearch.tsx": {
-    "mtime": 1783687490.800062,
-    "ast_hash": "63c130a54629bf2684b93eb89ee15699",
+    "mtime": 1784887657.3166168,
+    "ast_hash": "00624ccc6eb19ca778e9ce34a3836640",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/SkillsTab.tsx": {
@@ -1265,13 +1255,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/ipc-mock.ts": {
-    "mtime": 1784885496.276215,
-    "ast_hash": "b0b4400a64e7292c086bdfaff7be6129",
+    "mtime": 1784889423.788535,
+    "ast_hash": "1402f38683489e5a9d9b56ded75daa92",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/ipc.ts": {
-    "mtime": 1784885477.567923,
-    "ast_hash": "d2935ed9d5bf920e923b172c0cd8ed6b",
+    "mtime": 1784893878.92973,
+    "ast_hash": "5794493e7bd497da0ff8ab3097d50c87",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/pet-bus.ts": {
@@ -1335,8 +1325,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/state/useConnections.ts": {
-    "mtime": 1784654177.7394006,
-    "ast_hash": "e4685065459200b095d2cc874d22ff9d",
+    "mtime": 1784886729.8704882,
+    "ast_hash": "20287eb4763773175c5f8689ecfeaa09",
     "semantic_hash": ""
   },
   "apps/desktop/tsconfig.json": {
@@ -1355,13 +1345,13 @@
     "semantic_hash": ""
   },
   "package.json": {
-    "mtime": 1782828546.2490423,
-    "ast_hash": "026549429c9b02397d3c755b6f496e42",
+    "mtime": 1785133590.2414992,
+    "ast_hash": "9837624e99faf50c61f166c63ab4bbf9",
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1784885977.8009875,
-    "ast_hash": "00a70a4e623ce1fe84f6abd8db57c050",
+    "mtime": 1785132253.5370288,
+    "ast_hash": "bee1553e6352acd38f691add12a84c30",
     "semantic_hash": ""
   },
   "packages/agent-core/evals/live.ts": {
@@ -1375,8 +1365,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/package.json": {
-    "mtime": 1784828870.2881827,
-    "ast_hash": "78165555a2e8f0f38b4b666d3f1b0ce0",
+    "mtime": 1785133584.4028397,
+    "ast_hash": "ba36e24a877ebc9aa2597ce138619697",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/.runtime-managed.json": {
@@ -1540,8 +1530,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/loop.ts": {
-    "mtime": 1784812359.8010914,
-    "ast_hash": "50bcfff4fd6623c7119861d0a81b8221",
+    "mtime": 1785133299.0737143,
+    "ast_hash": "16cfe9eee1f481e082f5bae328324ea8",
     "semantic_hash": ""
   },
   "packages/agent-core/src/mcp.ts": {
@@ -1570,8 +1560,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/server.ts": {
-    "mtime": 1784883352.3924685,
-    "ast_hash": "6a16b4a4bcd2d1872d941d91b7a55a9f",
+    "mtime": 1785131738.3158226,
+    "ast_hash": "e774809d54340c8452a332e21a3bb516",
     "semantic_hash": ""
   },
   "packages/agent-core/src/session.ts": {
@@ -1980,8 +1970,8 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1784808023.8143406,
-    "ast_hash": "80acdda80c5933aa3044970a96e5d3d5",
+    "mtime": 1785133790.0821538,
+    "ast_hash": "8a9e71404b52588bb14d0e161955feaa",
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
@@ -2000,7 +1990,7 @@
     "semantic_hash": ""
   },
   "apps/desktop/index.html": {
-    "mtime": 1783666257.2074583,
+    "mtime": 1785131828.3799784,
     "ast_hash": "0c6a444dbccb847ec1c1c37211c1f5ac",
     "semantic_hash": ""
   },
@@ -2195,8 +2185,8 @@
     "semantic_hash": ""
   },
   "docs/knowledge-tools.md": {
-    "mtime": 1784795402.8495362,
-    "ast_hash": "6752d9f4b4d12c6b8e49528b1357aa28",
+    "mtime": 1785085213.0990348,
+    "ast_hash": "9b40d3bf8b4d42123d060562a6c7797e",
     "semantic_hash": ""
   },
   "docs/product/exasol-studio-product-spec.md": {
@@ -2950,7 +2940,7 @@
     "semantic_hash": ""
   },
   "docs/codebase-graph.html": {
-    "mtime": 1784746532.1075947,
+    "mtime": 1785131828.3862906,
     "ast_hash": "cfe6a8ad7696709e31dd4bc002a7f796",
     "semantic_hash": ""
   },
@@ -2975,8 +2965,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/connection/ConnectionPropertiesTab.tsx": {
-    "mtime": 1784885783.3495893,
-    "ast_hash": "187c121a4c2c46aaf510b617e53c610a",
+    "mtime": 1784924166.838917,
+    "ast_hash": "957e55d99b50f369c02cc451725f5ff1",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/QueryProfileView.tsx": {
@@ -3005,13 +2995,13 @@
     "semantic_hash": ""
   },
   "knowledge/vault/design-log.md": {
-    "mtime": 1784886259.901176,
-    "ast_hash": "63d2d2dc73e8b51921303a47eaf39563",
+    "mtime": 1785065921.0926108,
+    "ast_hash": "115555f0043d826e47dd87e0669f7c7f",
     "semantic_hash": ""
   },
   "knowledge/wiki/log.md": {
-    "mtime": 1784886141.596931,
-    "ast_hash": "92e6fc0f06efc56c20911dee153a620d",
+    "mtime": 1785065903.9998548,
+    "ast_hash": "13bbc5460aa1144b2f555ab05465937e",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/ai-integrations.md": {
@@ -3025,8 +3015,83 @@
     "semantic_hash": ""
   },
   "tasks.md": {
-    "mtime": 1784885348.4996176,
-    "ast_hash": "d6aaf43796ce3919b9fb9092ed23e119",
+    "mtime": 1784891336.5450914,
+    "ast_hash": "244afb9468e19d58e2a7f334ba73cc67",
+    "semantic_hash": ""
+  },
+  ".ua/config.json": {
+    "mtime": 1785067716.4605348,
+    "ast_hash": "f578c551a8666c5276de17c132683bb5",
+    "semantic_hash": ""
+  },
+  ".ua/fingerprints.json": {
+    "mtime": 1785085179.834198,
+    "ast_hash": "0f36c902f19e0a4ff2bd523ee34aea64",
+    "semantic_hash": ""
+  },
+  ".ua/intermediate/scan-result.json": {
+    "mtime": 1785080095.1653836,
+    "ast_hash": "604d64a35372979e7e7ebe2470bdb92b",
+    "semantic_hash": ""
+  },
+  ".ua/knowledge-graph.json": {
+    "mtime": 1785085175.7643929,
+    "ast_hash": "f2d62fddb1fe1439e988cba0015a256f",
+    "semantic_hash": ""
+  },
+  ".ua/meta.json": {
+    "mtime": 1785085179.9853196,
+    "ast_hash": "4fb0f4ec1385e5f7e4e91c36e5f320fc",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/ui/copy-button.tsx": {
+    "mtime": 1785132024.828015,
+    "ast_hash": "0c27a446dc7388c081ecdf707dba9abc",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/connection/DriversSection.tsx": {
+    "mtime": 1784913212.2040179,
+    "ast_hash": "ac5d7869c4a40b3f8a8346196215f231",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/src/csv-import.test.ts": {
+    "mtime": 1785132946.5027137,
+    "ast_hash": "1a81b53133cc25b88f3ef91d7adea009",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/src/loop.heuristics.test.ts": {
+    "mtime": 1785133309.4152024,
+    "ast_hash": "19f70ffd961ca1e37a1483c3af9beac1",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/src/tool-repair.test.ts": {
+    "mtime": 1785133390.0474772,
+    "ast_hash": "2f475361e281f3b999652ea59ed9a26b",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1785133796.4751425,
+    "ast_hash": "bf5545ca21627666fb4f2dbd46b68c0d",
+    "semantic_hash": ""
+  },
+  "docs/research/data-consolidation.md": {
+    "mtime": 1784898058.3816185,
+    "ast_hash": "16419cb98e9ba8c9ca5c62a70ee7ef9e",
+    "semantic_hash": ""
+  },
+  "docs/research/data-quality-kg-semantic-views.md": {
+    "mtime": 1784898086.2409062,
+    "ast_hash": "a5f3084f83903a630b46f9dbeb478729",
+    "semantic_hash": ""
+  },
+  "knowledge/wiki/pages/dev-workflow-codex.md": {
+    "mtime": 1785065860.4181697,
+    "ast_hash": "9ee8a5ad5dad2ac9b3d29e7a84faf990",
+    "semantic_hash": ""
+  },
+  "knowledge/wiki/pages/kiss-hard-rules.md": {
+    "mtime": 1785136156.218031,
+    "ast_hash": "ae2ad1d96a8c192b819ea681ba69f07a",
     "semantic_hash": ""
   }
 }
