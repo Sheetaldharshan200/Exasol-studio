@@ -505,7 +505,7 @@ pub async fn execute_sql(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_activity_percent;
+    use super::{is_result_set_statement, parse_activity_percent, split_statements};
 
     #[test]
     fn parses_simple_percent() {
@@ -537,5 +537,141 @@ mod tests {
     fn out_of_u8_range_is_none() {
         // Exasol never emits >100, but a 3-digit value must not panic.
         assert_eq!(parse_activity_percent("(999%)"), None);
+    }
+
+    // ── split_statements ───────────────────────────────────────────────────
+    // A naive split(';') would shred string literals and comments, so every
+    // case below is a way that shredding shows up as a user-visible bug.
+
+    #[test]
+    fn splits_plain_statements() {
+        assert_eq!(
+            split_statements("SELECT 1; SELECT 2"),
+            vec!["SELECT 1", "SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn empty_and_whitespace_input_yields_nothing() {
+        assert!(split_statements("").is_empty());
+        assert!(split_statements("   \n\t  ").is_empty());
+        assert!(split_statements(";;;").is_empty());
+    }
+
+    #[test]
+    fn trailing_semicolon_does_not_add_an_empty_statement() {
+        assert_eq!(split_statements("SELECT 1;"), vec!["SELECT 1"]);
+        assert_eq!(split_statements("SELECT 1;  \n "), vec!["SELECT 1"]);
+    }
+
+    #[test]
+    fn statement_without_trailing_semicolon_is_kept() {
+        assert_eq!(split_statements("SELECT 1"), vec!["SELECT 1"]);
+    }
+
+    #[test]
+    fn semicolon_inside_a_single_quoted_literal_is_not_a_split() {
+        assert_eq!(
+            split_statements("SELECT 'a;b' FROM t"),
+            vec!["SELECT 'a;b' FROM t"]
+        );
+    }
+
+    #[test]
+    fn semicolon_inside_a_quoted_identifier_is_not_a_split() {
+        assert_eq!(
+            split_statements("SELECT \"we;ird\" FROM t"),
+            vec!["SELECT \"we;ird\" FROM t"]
+        );
+    }
+
+    #[test]
+    fn a_quote_inside_the_other_quote_style_is_literal_text() {
+        // The double quote here is data, so it must not open an identifier.
+        assert_eq!(
+            split_statements("SELECT 'it\"s'; SELECT 2"),
+            vec!["SELECT 'it\"s'", "SELECT 2"]
+        );
+        // ...and vice versa.
+        assert_eq!(
+            split_statements("SELECT \"it's\"; SELECT 2"),
+            vec!["SELECT \"it's\"", "SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn semicolon_inside_a_line_comment_is_not_a_split() {
+        assert_eq!(
+            split_statements("SELECT 1 -- a; b\n; SELECT 2"),
+            vec!["SELECT 1 -- a; b", "SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn semicolon_inside_a_block_comment_is_not_a_split() {
+        assert_eq!(
+            split_statements("SELECT /* a; b */ 1; SELECT 2"),
+            vec!["SELECT /* a; b */ 1", "SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn comments_are_preserved_in_the_statement_text() {
+        // Exasol hint comments are semantically meaningful — never strip them.
+        let out = split_statements("/*+ some_hint */ SELECT 1");
+        assert_eq!(out, vec!["/*+ some_hint */ SELECT 1"]);
+    }
+
+    #[test]
+    fn multiline_script_splits_and_trims() {
+        let sql = "\n  SELECT 1;\n\n  SELECT 2;\n\n";
+        assert_eq!(split_statements(sql), vec!["SELECT 1", "SELECT 2"]);
+    }
+
+    #[test]
+    fn unterminated_literal_swallows_the_rest_rather_than_mis_splitting() {
+        // Better one bad statement the server rejects than two wrong ones.
+        assert_eq!(
+            split_statements("SELECT 'oops; SELECT 2"),
+            vec!["SELECT 'oops; SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn unterminated_block_comment_swallows_the_rest() {
+        assert_eq!(
+            split_statements("SELECT 1 /* nope; SELECT 2"),
+            vec!["SELECT 1 /* nope; SELECT 2"]
+        );
+    }
+
+    #[test]
+    fn handles_non_ascii_without_slicing_mid_character() {
+        assert_eq!(
+            split_statements("SELECT 'Grüße'; SELECT 'naïve'"),
+            vec!["SELECT 'Grüße'", "SELECT 'naïve'"]
+        );
+    }
+
+    // ── is_result_set_statement ────────────────────────────────────────────
+
+    #[test]
+    fn recognizes_result_set_statements() {
+        assert!(is_result_set_statement("SELECT 1"));
+        assert!(is_result_set_statement("  select 1"));
+        assert!(is_result_set_statement("WITH x AS (SELECT 1) SELECT * FROM x"));
+    }
+
+    #[test]
+    fn does_not_treat_writes_as_result_sets() {
+        assert!(!is_result_set_statement("INSERT INTO t VALUES (1)"));
+        assert!(!is_result_set_statement("UPDATE t SET a = 1"));
+        assert!(!is_result_set_statement("CREATE TABLE t (a INT)"));
+    }
+
+    #[test]
+    fn empty_statement_is_not_a_result_set() {
+        assert!(!is_result_set_statement(""));
+        assert!(!is_result_set_statement("   "));
     }
 }

@@ -14,6 +14,9 @@
     "dev": "node --experimental-strip-types src/index.ts",
     "evals": "node --experimental-strip-types evals/run.ts",
     "evals:live": "node --experimental-strip-types evals/live.ts",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='src/tool-repair.ts' --test-coverage-include='src/csv-import.ts'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

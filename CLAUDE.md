@@ -93,6 +93,29 @@ reachability, and testability. These three are non-negotiable:
    pure-function-shaped. "It's hard to test" is a design finding, not an
    excuse to skip the test.
 
+### Running the tests
+
+```bash
+pnpm test              # everything: agent-core + sql-parser + Rust
+pnpm test:coverage     # line/branch/function coverage for the logic core
+```
+
+Individually: `pnpm test:agent-core`, `pnpm test:parser`, `pnpm test:rust`.
+During development: `pnpm --dir packages/agent-core test:watch`.
+
+**No test framework, by design.** Tests use Node's built-in `node:test` +
+`node:assert/strict` (Node 26 strips TypeScript natively) and Rust's
+`#[cfg(test)]`. Zero dependencies, consistent with the rest of the repo
+(`server.ts` and `tui.ts` are also framework-free). Do not add vitest/jest.
+
+New test files are auto-discovered: name them `*.test.ts` next to the module
+they cover (`src/foo.ts` → `src/foo.test.ts`).
+
+Coverage is measured on the **pure logic core**, not the React tree — UI
+wiring is expensive to cover and catches little. Current: `csv-import.ts`
+100% lines, `tool-repair.ts` 98% lines, 100% functions across both. Keep new
+pure modules at that level; don't chase a repo-wide percentage.
+
 ## Conventions that bite if ignored
 
 - **Icons only, never emoji** in the app UI — use the central Boxicons registry

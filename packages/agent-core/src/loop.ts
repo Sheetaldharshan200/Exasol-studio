@@ -1104,7 +1104,10 @@ export function looksUnfinished(text: string): boolean {
   if (!text) return false;
   const tail = text.trim().slice(-220).toLowerCase();
   if (tail.endsWith("?")) return false; // it's asking the user — legitimate stop
-  return /\b(i'?ll (now )?(move on|proceed|continue|check|list|query|run|do|start|call)|moving on to|next,? (i|let's|we)|let'?s (now )?(move|continue|proceed|check|list|query)|i will (now |then )?(proceed|continue|check|list|query|run)|now (i|let'?s) (will |can )?(check|list|query|proceed|move))\b[^?]*$/.test(
+  // Apostrophes are matched as ['’]: models emit the typographic U+2019 as
+  // often as the ASCII one, and matching only ASCII silently finalized turns
+  // that had promised to keep going. looksLikeUnacted above already did this.
+  return /\b(i['’]?ll (now )?(move on|proceed|continue|check|list|query|run|do|start|call)|moving on to|next,? (i|let['’]s|we)|let['’]?s (now )?(move|continue|proceed|check|list|query)|i will (now |then )?(proceed|continue|check|list|query|run)|now (i|let['’]?s) (will |can )?(check|list|query|proceed|move))\b[^?]*$/.test(
     tail,
   );
 }

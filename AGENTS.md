@@ -55,6 +55,14 @@ the whole repo (`.ua/.understandignore`).
    or a live model to test, it's too big — extract a pure function and test
    that. "Hard to test" is a design finding, not a reason to skip the test.
 
+### Tests
+
+`pnpm test` runs everything (agent-core + sql-parser + Rust); `pnpm
+test:coverage` reports coverage on the logic core. Tests use Node's built-in
+`node:test` and Rust `#[cfg(test)]` — **no framework, zero dependencies, do
+not add vitest/jest**. Name files `*.test.ts` beside the module they cover;
+they are auto-discovered.
+
 ## Conventions that bite
 
 - **Icons only, never emoji** in app UI (Boxicons registry or `lucide-react`).
