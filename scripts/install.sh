@@ -27,9 +27,9 @@ case "$OS" in
       x86_64)        ASSET="ExasolStudio-Mac-Intel.dmg" ;;
       *)             die "Unsupported macOS architecture: $ARCH" ;;
     esac
-    say "Downloading $ASSET…"
+    say "Downloading $ASSET..."
     curl -fSL --progress-bar "$BASE/$ASSET" -o "$TMP/exasol.dmg" || die "download failed"
-    say "Mounting the disk image…"
+    say "Mounting the disk image..."
     MOUNT="$(hdiutil attach -nobrowse -quiet "$TMP/exasol.dmg" | tail -1 | awk -F'\t' '{print $NF}')"
     [ -n "${MOUNT:-}" ] || die "could not mount the DMG"
     APP="$(/bin/ls -d "$MOUNT"/*.app 2>/dev/null | head -1)"
@@ -38,18 +38,18 @@ case "$OS" in
     DEST="/Applications"
     [ -w "$DEST" ] || DEST="$HOME/Applications"
     mkdir -p "$DEST"
-    say "Installing to $DEST…"
+    say "Installing to $DEST..."
     rm -rf "$DEST/$(basename "$APP")"
     cp -R "$APP" "$DEST/"
     hdiutil detach -quiet "$MOUNT" || true
-    say "Clearing the quarantine flag (unnotarized demo build)…"
+    say "Clearing the quarantine flag (unnotarized demo build)..."
     xattr -dr com.apple.quarantine "$DEST/$(basename "$APP")" 2>/dev/null || true
     say "Done. Launch it from $DEST or: open \"$DEST/$(basename "$APP")\""
     ;;
 
   Linux)
     ASSET="ExasolStudio-Linux-64bit.AppImage"
-    say "Downloading $ASSET…"
+    say "Downloading $ASSET..."
     curl -fSL --progress-bar "$BASE/$ASSET" -o "$TMP/ExasolStudio.AppImage" || die "download failed"
     # ~/.local/bin is on PATH for most distros; fall back to /usr/local/bin.
     DEST="$HOME/.local/bin"
@@ -61,7 +61,7 @@ case "$OS" in
       SUDO=""
     fi
     mkdir -p "$DEST" 2>/dev/null || true
-    say "Installing to $DEST/exasol-studio…"
+    say "Installing to $DEST/exasol-studio..."
     $SUDO install -m 0755 "$TMP/ExasolStudio.AppImage" "$DEST/exasol-studio"
     say "Done. Run: exasol-studio   (ensure $DEST is on your PATH)"
     printf '   .deb / .rpm packages are also on the release page if you prefer your package manager.\n'
