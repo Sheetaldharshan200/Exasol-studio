@@ -47,10 +47,24 @@ Update: `scoop update exasol-studio` · Remove: `scoop uninstall exasol-studio`
 > in your home folder so it never asks for an admin password. (Drop `--appdir`
 > to install to `/Applications` instead — that one asks for admin once.)
 
-> Don't have Homebrew / Scoop? One-time, no admin —
-> macOS: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` ·
-> Windows: `irm get.scoop.sh | iex`. These are a **backup** — the installer above
-> is the main path.
+### No Homebrew or Scoop? One-line direct installers
+
+These need **no package manager** — they pull the **latest release** straight
+from GitHub, pick the right build for your machine, and install it (macOS →
+`/Applications`, Linux → `~/.local/bin`, Windows → per-user, no admin).
+
+**macOS / Linux:**
+```sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/Exasol-studio/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/Sheetaldharshan200/Exasol-studio/main/scripts/install.ps1 | iex
+```
+
+Unlike the pinned Homebrew/Scoop packages, these always fetch whatever the
+newest published release is. Re-run the same command to upgrade.
 
 ### Enterprise / IT (managed fleet)
 

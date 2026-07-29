@@ -118,6 +118,10 @@ jobs:
       - name: Build & publish (draft release)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
+          # vite build SIGABRTs (exit 134) on the 7 GB macOS runners with the
+          # default V8 heap — the app bundle (Monaco/Perspective/echarts) is
+          # large. Give Node headroom that still fits the runner's RAM.
+          NODE_OPTIONS: --max-old-space-size=6144
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater signing (enables signed auto-update artifacts).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

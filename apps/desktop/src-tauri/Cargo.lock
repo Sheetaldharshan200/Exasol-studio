@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "exasol-studio"
-version = "2026.0.6"
+version = "2026.0.7"
 dependencies = [
  "aes-gcm",
  "argon2",
