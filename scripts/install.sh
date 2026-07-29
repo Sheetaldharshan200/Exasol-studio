@@ -30,7 +30,9 @@ case "$OS" in
     say "Downloading $ASSET..."
     curl -fSL --progress-bar "$BASE/$ASSET" -o "$TMP/exasol.dmg" || die "download failed"
     say "Mounting the disk image..."
-    MOUNT="$(hdiutil attach -nobrowse -quiet "$TMP/exasol.dmg" | tail -1 | awk -F'\t' '{print $NF}')"
+    # NOT -quiet: that suppresses the attach table we parse. The mount point is
+    # the last tab-field of the /Volumes/ line (it may contain spaces).
+    MOUNT="$(hdiutil attach -nobrowse -readonly "$TMP/exasol.dmg" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)"
     [ -n "${MOUNT:-}" ] || die "could not mount the DMG"
     APP="$(/bin/ls -d "$MOUNT"/*.app 2>/dev/null | head -1)"
     [ -n "${APP:-}" ] || { hdiutil detach -quiet "$MOUNT" || true; die "no .app found in the DMG"; }
