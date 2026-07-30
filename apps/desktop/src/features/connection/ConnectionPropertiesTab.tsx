@@ -306,6 +306,7 @@ export function ConnectionPropertiesTab({
   profileId,
   initialSection = "connection",
   sectionNonce,
+  initialDraft,
   onSaved,
   onOpenObject,
   onDisconnect,
@@ -317,6 +318,9 @@ export function ConnectionPropertiesTab({
   connection: ActiveConnection | null;
   /** null = NEW connection mode: same page, empty draft, Test / Save & Connect. */
   profileId: string | null;
+  /** New-connection mode: pre-fill these fields over the defaults (e.g. the
+   *  bundled Exasol Personal profile when a direct connect couldn't proceed). */
+  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
   initialSection?: ConnectionSection;
   /** Bumped when the host tab is re-targeted at a section while open. */
   sectionNonce?: number;
@@ -382,6 +386,10 @@ export function ConnectionPropertiesTab({
         const draft = {
           name: "New Connection", notes: "", host: "127.0.0.1", port: "8563",
           schema: "", username: "sys", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol",
+          // Pre-fill from a supplied draft (e.g. the bundled Exasol Personal
+          // profile) so the form isn't blank when a direct connect fell back
+          // here. Password is never pre-filled.
+          ...initialDraft,
         };
         if (dead) return;
         setProfile(null);

@@ -603,7 +603,21 @@ export function ExasolStudio({
       const server = await ipc.connect(p.id);
       await onConnected(p, server);
     } catch {
-      openConnect();
+      // Direct connect couldn't proceed (DB still starting, password cleared,
+      // etc.) — open the connect form PRE-FILLED with this profile so the user
+      // isn't handed a blank "New Connection" (esp. the bundled Exasol
+      // Personal local). Password is never pre-filled.
+      openConnect({
+        name: p.name,
+        host: p.host,
+        port: String(p.port),
+        username: p.username,
+        schema: p.schema ?? "",
+        sslMode: p.sslMode,
+        compression: p.compression,
+        driverId: p.driverId,
+        notes: p.notes ?? "",
+      });
     }
   }
 
@@ -1248,10 +1262,12 @@ export function ExasolStudio({
 
   // Open (or focus) the connect-to-database flow as a tab, so adding a
   // connection never hides the current queries — you can switch right back.
-  function openConnect() {
+  function openConnect(connectDraft?: SqlTab["connectDraft"]) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === "connect");
     if (existing) {
+      // Re-target an already-open connect tab with the new pre-fill.
+      if (connectDraft) patchTab(existing.id, { connectDraft });
       setActiveTabId(existing.id);
       return;
     }
@@ -1263,6 +1279,7 @@ export function ExasolStudio({
       sql: "",
       response: null,
       execError: null,
+      connectDraft,
     };
     updateTabs(connKey, (l) => [...l, tab]);
     setActiveTabId(tab.id);
@@ -2590,6 +2607,7 @@ export function ExasolStudio({
               <ConnectionPropertiesTab
                 connection={null}
                 profileId={null}
+                initialDraft={activeTab.connectDraft}
                 onSaved={() => void onSaved?.()}
                 onConnected={async (p, srv) => {
                   await onConnected(p, srv);
