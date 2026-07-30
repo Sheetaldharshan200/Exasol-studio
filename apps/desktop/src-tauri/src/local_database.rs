@@ -1366,19 +1366,39 @@ fn verify_started_runtime(app: &AppHandle) -> AppResult<()> {
     let data_dir = app.state::<AppState>().data_dir.clone();
     let python = venv_python(&data_dir);
     let runtime = query_ready_runtime(app, &python, &runtime)?;
-    let mut checking = read_status(&data_dir);
-    checking.step = "semantic-views".into();
-    checking.message = "Verifying Semantic Views after local runtime start…".into();
-    checking.semantic_views.state = "installing".into();
-    write_status(app, &data_dir, checking)?;
-    install_semantic_views(app, &data_dir, &runtime, &python)?;
+
+    // Semantic Views is OPT-IN. Only verify/reconcile it after a runtime start
+    // when the user has ALREADY installed it (readiness marker present) — never
+    // install it here on a plain start. Installing it unconditionally is what
+    // made it appear "automatically installed".
+    if semantic_views_installed(app) {
+        let mut checking = read_status(&data_dir);
+        checking.step = "semantic-views".into();
+        checking.message = "Verifying Semantic Views after local runtime start…".into();
+        checking.semantic_views.state = "installing".into();
+        write_status(app, &data_dir, checking)?;
+        install_semantic_views(app, &data_dir, &runtime, &python)?;
+        let mut status = read_status(&data_dir);
+        status.semantic_views.state = "ready".into();
+        status.semantic_views.error = None;
+        write_status(app, &data_dir, status)?;
+    }
+
     let mut status = read_status(&data_dir);
+    // Not opted in → report Semantic Views as not installed (self-heals a stale
+    // "ready" left by a previous auto-install), leaving it available to install.
+    if !semantic_views_installed(app) {
+        status.semantic_views = CapabilityState {
+            state: "unavailable".into(),
+            version: None,
+            error: None,
+            connection_id: None,
+        };
+    }
     status.state = "ready".into();
     status.step = "complete".into();
-    status.message = "Local Exasol and the complete AI/data stack are ready.".into();
+    status.message = "Local Exasol and the AI/data stack are ready.".into();
     status.local_ready = true;
-    status.semantic_views.state = "ready".into();
-    status.semantic_views.error = None;
     write_status(app, &data_dir, status)
 }
 
