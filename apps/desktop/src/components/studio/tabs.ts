@@ -25,6 +25,7 @@ export type TabView =
   | "object"
   | "dba"
   | "bi"
+  | "dashboard"
   | "welcome"
   | "artifact"
   | "mcpConfig"
@@ -45,6 +46,8 @@ export type SqlTab = {
   view: TabView;
   /** Result panel sub-view (defaults to "results" when unset). */
   resultView?: ResultView;
+  /** For "dashboard" tabs — the dashboard this tab renders. */
+  dashboardId?: string;
   sql: string;
   response: ExecuteResponse | null;
   execError: string | null;
@@ -117,6 +120,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   guides: "guides",
   object: "table",
   bi: "dashboards",
+  dashboard: "dashboards",
   connProps: "sliders",
   welcome: "home",
   artifact: "file",

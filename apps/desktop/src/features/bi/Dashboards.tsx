@@ -49,7 +49,6 @@ import {
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { dashboards, type Dashboard, type DashPanel } from "@/lib/agent-client";
-import { dashboardBus } from "@/lib/dashboard-bus";
 import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -135,9 +134,13 @@ const SYSTEM_DASHBOARDS = [queryPerfDashboard, sessionsDashboard, dbSizeDashboar
 export function DashboardsTab({
   profileId,
   connectionName,
+  onOpenDashboard,
 }: {
   profileId: string | null;
   connectionName: string;
+  /** When provided, a dashboard opens as its own workbench tab instead of
+   *  swapping this list view in place. */
+  onOpenDashboard?: (id: string, title: string) => void;
 }) {
   const [list, setList] = useState<Awaited<ReturnType<typeof dashboards.list>>>([]);
   const [open, setOpen] = useState<Dashboard | null>(null);
@@ -155,15 +158,18 @@ export function DashboardsTab({
   useEffect(() => {
     void refresh();
     const t = setInterval(refresh, 5000); // pick up agent-created dashboards
-    // Agent saved/edited a dashboard → open it straight away.
-    const un = dashboardBus.on((id) => {
-      void dashboards.get(id).then(setOpen).catch(() => undefined);
-    });
-    return () => {
-      clearInterval(t);
-      un();
-    };
+    return () => clearInterval(t);
   }, [refresh]);
+
+  // Open a dashboard: as its own tab when the host wires onOpenDashboard,
+  // otherwise inline (standalone use of this component).
+  const openDash = useCallback(
+    (id: string, title: string) => {
+      if (onOpenDashboard) onOpenDashboard(id, title);
+      else void dashboards.get(id).then(setOpen).catch(() => undefined);
+    },
+    [onOpenDashboard],
+  );
 
   if (open) {
     return (
@@ -221,7 +227,7 @@ export function DashboardsTab({
                       },
                     ],
                   })
-                  .then(setOpen)
+                  .then((d) => openDash(d.id, d.title))
               }
               className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-[12.5px] text-foreground hover:bg-secondary"
             >
@@ -236,7 +242,7 @@ export function DashboardsTab({
                     if (saved && !first) first = saved;
                   }
                   await refresh();
-                  if (first) setOpen(first);
+                  if (first) openDash(first.id, first.title);
                 })()
               }
               className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-[12.5px] text-foreground hover:bg-secondary"
@@ -264,7 +270,7 @@ export function DashboardsTab({
                       },
                     ],
                   })
-                  .then(setOpen)
+                  .then((d) => openDash(d.id, d.title))
               }
               className="flex min-h-[110px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
             >
@@ -283,7 +289,7 @@ export function DashboardsTab({
                     if (saved && !first) first = saved;
                   }
                   await refresh();
-                  if (first) setOpen(first);
+                  if (first) openDash(first.id, first.title);
                 })()
               }
               title="Query performance, sessions & activity, storage & size — from Exasol's system tables"
@@ -297,7 +303,7 @@ export function DashboardsTab({
               <div
                 key={d.id}
                 className="group cursor-pointer rounded-xl border border-border bg-panel/60 p-4 transition-colors hover:border-primary/40"
-                onClick={() => void dashboards.get(d.id).then(setOpen)}
+                onClick={() => void dashboards.get(d.id).then((d) => openDash(d.id, d.title))}
               >
                 <div className="flex items-center gap-1.5">
                   <Icon name="dashboards" className="h-4 w-4 shrink-0 text-primary" />
@@ -333,7 +339,7 @@ export function DashboardsTab({
                 <div
                   key={d.id}
                   className="group cursor-pointer rounded-xl border border-border bg-panel/60 p-4 transition-colors hover:border-primary/40"
-                  onClick={() => void dashboards.get(d.id).then(setOpen)}
+                  onClick={() => void dashboards.get(d.id).then((d) => openDash(d.id, d.title))}
                 >
                   <div className="flex items-center gap-1.5">
                     <Icon name="clock-dashed-half" className="h-4 w-4 shrink-0 text-primary" />
@@ -386,6 +392,53 @@ const VIZ_TILES: { key: string; hint: string; art: React.ReactNode }[] = [
   { key: "explore", hint: "Interactive pivot studio", art: (<g><rect x="8" y="6" width="10" height="6" rx="1" fill="var(--primary)" opacity="0.8"/><rect x="8" y="14" width="10" height="6" rx="1" fill="currentColor" opacity="0.35"/><rect x="21" y="6" width="19" height="14" rx="1.5" stroke="currentColor" opacity="0.5" fill="none"/><path d="M25 16 l4 -4 l3 2 l4 -5" stroke="var(--primary)" strokeWidth="1.5" fill="none"/></g>) },
   { key: "text", hint: "Markdown narrative", art: (<g fill="currentColor" opacity="0.5"><rect x="8" y="6" width="24" height="2.5" rx="1"/><rect x="8" y="11" width="32" height="2" rx="1"/><rect x="8" y="15" width="28" height="2" rx="1"/><rect x="8" y="19" width="18" height="2" rx="1"/></g>) },
 ];
+
+/** A single dashboard rendered as its own workbench tab: loads it by id, then
+ *  hands off to DashboardView. `onClose` closes the tab (the "back" affordance). */
+export function DashboardTab({
+  dashboardId,
+  profileId,
+  connectionName,
+  onClose,
+}: {
+  dashboardId: string;
+  profileId: string | null;
+  connectionName: string;
+  onClose: () => void;
+}) {
+  const [dash, setDash] = useState<Dashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setDash(null);
+    setError(null);
+    dashboards
+      .get(dashboardId)
+      .then((d) => alive && setDash(d))
+      .catch((e) => alive && setError(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [dashboardId]);
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+        <BarChart3 className="h-6 w-6 opacity-40" />
+        <p className="text-sm">Could not open this dashboard.</p>
+        <p className="max-w-md text-center text-[11.5px]">{error}</p>
+      </div>
+    );
+  }
+  if (!dash) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </div>
+    );
+  }
+  return <DashboardView dash={dash} profileId={profileId} connectionName={connectionName} onBack={onClose} />;
+}
 
 function DashboardView({
   dash: initial,

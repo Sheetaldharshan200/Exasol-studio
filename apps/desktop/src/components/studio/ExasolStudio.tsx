@@ -16,13 +16,12 @@ import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
-import { DashboardsTab } from "@/features/bi/Dashboards";
+import { DashboardsTab, DashboardTab } from "@/features/bi/Dashboards";
 import { ArtifactTab } from "@/features/artifact/ArtifactTab";
 import { artifacts as artifactClient } from "@/lib/agent-client";
 import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as DashPanelDoc } from "@/lib/agent-client";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
-import { dashboardBus } from "@/lib/dashboard-bus";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
@@ -615,9 +614,31 @@ export function ExasolStudio({
   // Plain functions (redefined each render) so they always see the CURRENT
   // connection/tabs — a useCallback([]) here froze them at the disconnected
   // first render and opened tabs in the wrong bucket.
+  // Open (or focus) a single dashboard as its own workbench tab, bound to its
+  // id. Dashboards used to open inside the one "Dashboards" list tab; now each
+  // is a first-class tab (like a query), so several can be open side by side.
+  function openDashboardTab(dashboardId: string, title?: string) {
+    // Deterministic id per (connection, dashboard): two rapid opens compute the
+    // SAME id, so the idempotent updater below appends at most once and both
+    // focus the one real tab — no duplicate-append race, no orphan active id.
+    const tabId = `tab-dash-${connKey}-${dashboardId}`;
+    const tab: SqlTab = {
+      id: tabId,
+      title: title || "Dashboard",
+      view: "dashboard",
+      dashboardId,
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => (l.some((t) => t.id === tabId) ? l : [...l, tab]));
+    setActiveTabId(tabId);
+    sidebarPanelRef.current?.collapse();
+    setSidebarOpen(false);
+  }
+
   function openSavedDashboard(id: string) {
-    openBiTab();
-    window.setTimeout(() => dashboardBus.open(id), 200);
+    openDashboardTab(id);
   }
 
   async function openArtifact(id: string, title: string) {
@@ -2026,8 +2047,7 @@ export function ExasolStudio({
       // open the dashboard instead of adding it again.
       const dup = dash.panels.find((p) => p.query && normSql(p.query.sql) === normSql(trimmed));
       if (dup) {
-        openBiTab();
-        window.setTimeout(() => dashboardBus.open(dash.id), 200);
+        openDashboardTab(dash.id, schema);
         return;
       }
 
@@ -2040,8 +2060,7 @@ export function ExasolStudio({
         viz: { type: "table" },
       };
       const saved = await dashClient.save({ ...dash, panels: [...dash.panels, panel] });
-      openBiTab();
-      window.setTimeout(() => dashboardBus.open(saved.id), 200);
+      openDashboardTab(saved.id, schema);
     } catch {
       // Agent sidecar unavailable — fall back to just opening the tab.
       void openBi();
@@ -2362,6 +2381,7 @@ export function ExasolStudio({
           activeTab.view !== "marketplace" &&
           activeTab.view !== "guides" &&
           activeTab.view !== "bi" &&
+          activeTab.view !== "dashboard" &&
           activeTab.view !== "welcome" &&
           activeTab.view !== "mcpConfig" &&
           activeTab.view !== "git" &&
@@ -2700,6 +2720,16 @@ export function ExasolStudio({
               <DashboardsTab
                 profileId={connection?.profile.id ?? null}
                 connectionName={connection?.profile.name ?? ""}
+                onOpenDashboard={openDashboardTab}
+              />
+            </div>
+          ) : activeTab.view === "dashboard" && activeTab.dashboardId ? (
+            <div className="min-h-0 flex-1">
+              <DashboardTab
+                dashboardId={activeTab.dashboardId}
+                profileId={connection?.profile.id ?? null}
+                connectionName={connection?.profile.name ?? ""}
+                onClose={() => closeTab(activeTab.id)}
               />
             </div>
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (

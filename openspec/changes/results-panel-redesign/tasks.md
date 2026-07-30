@@ -53,9 +53,19 @@ Legend: [ ] todo · [x] done. Each logic task names its test file.
       (slowest-step, selective scan, join fan-out, net, disk, index remark,
       reassuring note).
 
-## Part 5 — Dashboards as tabs
-- [ ] Add TabView `"dashboard"` + `dashboardId`; clicking a dashboard card or
-      "Show in Dashboard" opens/focuses that tab rendering `DashboardView`.
+## Part 5 — Dashboards as tabs ✅ DONE
+- [x] `tabs.ts`: new TabView `"dashboard"` + `SqlTab.dashboardId` + icon.
+- [x] `ExasolStudio.tsx`: `openDashboardTab(id, title?)` opens/focuses a tab
+      (dedupe by dashboardId); render branch for `view === "dashboard"` →
+      `<DashboardTab onClose={closeTab} />`; `"dashboard"` added to the
+      special-tab (no SQL toolbar) guard. `openSavedDashboard` (agent path) and
+      both `sendResultToDashboard` opens now call `openDashboardTab`.
+- [x] `Dashboards.tsx`: `DashboardsTab` gained `onOpenDashboard`; an `openDash`
+      helper routes every open (cards, new-dashboard, seed-System) to a tab
+      when wired, else the inline path (standalone). New exported `DashboardTab`
+      loads a dashboard by id → `DashboardView` (loading/error states).
+- [x] Retired `lib/dashboard-bus.ts` (the tab model replaces the open-in-list
+      race it worked around); removed all usages.
 
 ## Cross-cutting
 - [ ] `pnpm test` green (new *.test.ts files auto-discovered).
