@@ -426,11 +426,12 @@ pub async fn execute_sql(
         let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stmt_idx = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
-            let session_id: Option<String> = sqlx_exasol::query("SELECT TO_CHAR(CURRENT_SESSION)")
-                .fetch_one(&mut *conn)
-                .await
-                .ok()
-                .and_then(|row| row.try_get::<String, _>(0).ok());
+            // Reuse the session captured above — do NOT run another statement
+            // here. A separate SELECT would land BETWEEN the baseline and the
+            // user's query, and the plan's "first statement after baseline"
+            // would then resolve to that throwaway select (only a COMPILE part)
+            // instead of the real query.
+            let session_id: Option<String> = profile_session.clone();
             let event = format!("query-progress:{pid}");
             let poll_pool = pool.clone();
             let poll_done = done.clone();
