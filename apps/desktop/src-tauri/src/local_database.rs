@@ -172,6 +172,31 @@ fn venv_mcp_server(data_dir: &Path) -> PathBuf {
     }
 }
 
+/// The `exasol-mcp-server` executable inside a given venv root.
+fn mcp_server_bin(env: &Path) -> PathBuf {
+    if cfg!(windows) {
+        env.join("Scripts/exasol-mcp-server.exe")
+    } else {
+        env.join("bin/exasol-mcp-server")
+    }
+}
+
+/// Which MCP-server binary to run: the component's OWN isolated env when the
+/// user has independently installed/updated it there, otherwise the shared
+/// verified stack. This is what lets the MCP server be updated on its own
+/// without a Studio release — see components_update.rs.
+fn mcp_server_command(data_dir: &Path) -> PathBuf {
+    let own = mcp_server_bin(&crate::components_update::component_env(
+        data_dir,
+        crate::components_update::ComponentId::McpServer,
+    ));
+    if own.is_file() {
+        own
+    } else {
+        venv_mcp_server(data_dir)
+    }
+}
+
 fn runtime_env(runtime: &RuntimeConnection) -> [(String, String); 4] {
     [
         (
@@ -679,7 +704,7 @@ finally:
         process.kill()
         process.wait()
 "#;
-    let command = venv_mcp_server(data_dir);
+    let command = mcp_server_command(data_dir);
     if !command.is_file() {
         return Err(AppError::Storage(format!(
             "The MCP package was installed but its server command is missing: {}",
@@ -1344,6 +1369,163 @@ pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<()> {
     })
     .await
     .map_err(|error| AppError::Storage(error.to_string()))?
+}
+
+// ── Independent, isolated component updates ──────────────────────────────────
+// Each component can be updated on its own, in its own environment, without a
+// Studio release. Slice 2 wires the MCP server; the shared verified stack stays
+// the fallback so nothing breaks when a component has no independent install.
+
+use crate::components_update::{self, ComponentId, InstalledManifest};
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentInfo {
+    pub id: String,
+    pub name: String,
+    /// Currently-running version (own-env install if present, else verified).
+    pub installed: Option<String>,
+    /// Studio's pinned, known-good baseline.
+    pub verified: String,
+    /// Whether an independent install currently overrides the verified stack.
+    pub on_own_env: bool,
+    /// Whether independent one-click update/revert is available for it yet.
+    pub updatable: bool,
+}
+
+/// The Python interpreter version a component's OWN env is provisioned with.
+/// Per-component (not one shared interpreter): components can require different,
+/// even conflicting versions — `uv --python <v>` downloads/uses that exact one,
+/// so a future Python-3.11 component and a Python-3.13 component coexist. Add a
+/// component here with its own version; nothing else changes.
+fn component_python_version(id: ComponentId) -> String {
+    let c = crate::component_lock::components();
+    match id {
+        // The MCP server currently tracks the verified stack's interpreter.
+        ComponentId::McpServer => c.python_stack.python_version.clone(),
+        // Non-Python components; value is unused (no venv) but kept total.
+        _ => c.python_stack.python_version.clone(),
+    }
+}
+
+fn verified_version(id: ComponentId) -> String {
+    let c = crate::component_lock::components();
+    match id {
+        ComponentId::Personal => c.personal.version.clone(),
+        ComponentId::ExaPump => c.exapump.version.clone(),
+        ComponentId::McpServer => c.python_stack.mcp_server_version.clone(),
+        ComponentId::SemanticViews => c.semantic_views.revision.clone(),
+    }
+}
+
+/// The version actually in effect: the component's own-env manifest when it has
+/// been independently installed, otherwise the verified baseline (the shared
+/// stack is pinned to verified).
+fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
+    components_update::read_manifest(data_dir, id)
+        .map(|m| m.version)
+        .or_else(|| Some(verified_version(id)))
+}
+
+/// Enumerate managed components with their installed vs. verified versions —
+/// the data the Marketplace → Updates section renders per component.
+#[tauri::command]
+pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let ids = [
+        ComponentId::Personal,
+        ComponentId::ExaPump,
+        ComponentId::McpServer,
+        ComponentId::SemanticViews,
+    ];
+    Ok(ids
+        .iter()
+        .map(|&id| ComponentInfo {
+            id: id.slug().into(),
+            name: id.display().into(),
+            installed: installed_version(&data_dir, id),
+            verified: verified_version(id),
+            on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
+            // Slice 2 wires the MCP server; the rest arrive in a later slice.
+            updatable: matches!(id, ComponentId::McpServer),
+        })
+        .collect())
+}
+
+/// Install a specific MCP-server version into its OWN isolated venv, so it runs
+/// from there instead of the shared verified stack (see mcp_server_command).
+fn install_mcp_component(app: &AppHandle, data_dir: &Path, version: &str, channel: &str) -> AppResult<()> {
+    let uv = ensure_uv(app, JOB_ID)?;
+    let py_version = component_python_version(ComponentId::McpServer);
+    let env = components_update::component_env(data_dir, ComponentId::McpServer);
+    let env_s = env.to_string_lossy().to_string();
+    // Fresh env each time so an update never inherits a broken partial state.
+    let _ = std::fs::remove_dir_all(&env);
+    let no_env: &[(&str, &str)] = &[];
+    // uv provisions THIS component's own interpreter (downloading it if needed),
+    // so components with different Python needs don't collide.
+    if run_streamed_env(app, JOB_ID, &uv, &["venv", &env_s, "--python", &py_version], no_env)? != 0 {
+        return Err(AppError::Storage("Could not create the MCP server's isolated environment.".into()));
+    }
+    let py = components_update::component_env_python(data_dir, ComponentId::McpServer);
+    let py_s = py.to_string_lossy().to_string();
+    let spec = format!("exasol-mcp-server=={version}");
+    if run_streamed_env(app, JOB_ID, &uv, &["pip", "install", "--python", &py_s, &spec], no_env)? != 0 {
+        return Err(AppError::Storage(format!(
+            "Could not install exasol-mcp-server {version} into its own environment."
+        )));
+    }
+    if !mcp_server_bin(&env).is_file() {
+        return Err(AppError::Storage(
+            "MCP server installed but its command is missing in the new environment.".into(),
+        ));
+    }
+    components_update::write_manifest(
+        data_dir,
+        ComponentId::McpServer,
+        &InstalledManifest {
+            version: version.into(),
+            installed_at: chrono::Utc::now().to_rfc3339(),
+            channel: Some(channel.into()),
+        },
+    )
+}
+
+/// One-click independent update of a component to a chosen version (default: the
+/// verified baseline). No Studio release, no touching other components.
+#[tauri::command]
+pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
+    let component = ComponentId::from_slug(&id)
+        .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
+    if component != ComponentId::McpServer {
+        return Err(AppError::InvalidSettings(
+            "Independent update isn't available for this component yet.".into(),
+        ));
+    }
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        let data_dir = app.state::<AppState>().data_dir.clone();
+        let verified = verified_version(component);
+        let target = version.unwrap_or_else(|| verified.clone());
+        let channel = if target == verified { "verified" } else { "upstream" };
+        install_mcp_component(&app, &data_dir, &target, channel)
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+/// Revert a component to the Studio-verified baseline by dropping its
+/// independent install — it then falls back to the shared verified stack.
+#[tauri::command]
+pub async fn revert_component(app: AppHandle, id: String) -> AppResult<()> {
+    let component = ComponentId::from_slug(&id)
+        .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        let data_dir = app.state::<AppState>().data_dir.clone();
+        let _ = std::fs::remove_dir_all(components_update::component_dir(&data_dir, component));
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
 }
 
 pub fn ensure_lifecycle_idle(app: &AppHandle, action: &str) -> AppResult<()> {

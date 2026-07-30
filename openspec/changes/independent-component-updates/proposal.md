@@ -26,6 +26,21 @@ environment**, without waiting for a Studio release.
    default; a component can be updated to a newer upstream release, and a
    **Revert to verified** action restores the pinned one if an update misbehaves.
 
+## Orchestrator model (per user directive)
+Studio is an **all-in-one management place / orchestrator**, not a coupled
+bundle. Every managed component — and every FUTURE component — is an
+independent unit with:
+- its **own environment** (isolated venv/dir), and
+- its **own Python version** where relevant. Components can require different,
+  even conflicting interpreters (e.g. one needs Python < 3.12, another ≥ 3.12);
+  each env is provisioned by `uv --python <that component's version>` (uv
+  downloads the interpreter), so they coexist with nothing lost.
+
+Concretely: each component carries its own descriptor (repo, version, python
+version, install kind) and is added to a registry (`ComponentId` +
+`component_python_version`) — adding a future component is a registry entry plus
+its install recipe, never a change to how other components install.
+
 ## Non-goals
 - **Auto-update.** Updates are one-click/manual by the user's choice — nothing
   upgrades in the background.
