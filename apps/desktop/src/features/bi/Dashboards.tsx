@@ -338,13 +338,19 @@ export function DashboardsTab({
                   <div className="flex items-center gap-1.5">
                     <Icon name="clock-dashed-half" className="h-4 w-4 shrink-0 text-primary" />
                     <span className="truncate text-[13.5px] font-semibold text-foreground">{d.title}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void dashboards.remove(d.id).then(refresh); }}
-                      className="ml-auto hidden h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground group-hover:flex hover:text-destructive"
-                      aria-label="Delete dashboard"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {d.group === "System" ? (
+                      <span className="ml-auto shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground" title="System dashboards are read-only">
+                        read-only
+                      </span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void dashboards.remove(d.id).then(refresh); }}
+                        className="ml-auto hidden h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground group-hover:flex hover:text-destructive"
+                        aria-label="Delete dashboard"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                   {d.description ? <p className="mt-0.5 line-clamp-2 text-[11.5px] text-muted-foreground">{d.description}</p> : null}
                   <p className="mt-2 font-mono text-[10.5px] text-muted-foreground">{d.panels} panel{d.panels === 1 ? "" : "s"}</p>
@@ -393,6 +399,10 @@ function DashboardView({
   onBack: () => void;
 }) {
   const [dash, setDash] = useState<Dashboard>(initial);
+  // System dashboards are read-only: no panel add/edit/delete, no layout
+  // persistence, no dashboard deletion. Users can still view, refresh, and
+  // "Show in Dashboard" onto their OWN dashboards.
+  const locked = dash.group === "System";
   const [editing, setEditing] = useState<DashPanel | null>(null);
   const [history, setHistory] = useState<{ index: number; updatedAt: number; title: string; panels: number }[] | null>(null);
   async function toggleHistory() {
@@ -490,6 +500,10 @@ function DashboardView({
   }
 
   async function saveDash(next: Dashboard) {
+    // System dashboards are read-only. saveDash is the single choke point for
+    // every mutation (panel add/edit/delete/resize, viz change, auto-refresh
+    // interval), so guarding here closes all of them at once.
+    if (locked) return;
     setDash(next);
     await dashboards.save(next).catch(() => undefined);
   }
@@ -548,6 +562,7 @@ function DashboardView({
   }
 
   function persistLayout(next: readonly LayoutItem[]) {
+    if (locked) return; // System dashboards keep their canonical layout.
     const changed = next.some((l) => {
       const p = dash.panels.find((x) => x.id === l.i);
       return p && (p.grid.x !== l.x || p.grid.y !== l.y || p.grid.w !== l.w || p.grid.h !== l.h);
@@ -577,25 +592,33 @@ function DashboardView({
         </button>
         <Icon name="dashboards" className="h-4 w-4 shrink-0 text-primary" />
         <span className="truncate text-[13px] font-semibold text-foreground">{dash.title}</span>
-        <button
-          onClick={() => void toggleHistory()}
-          title="Revision history — restore any earlier version"
-          className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          History
-        </button>
+        {!locked ? (
+          <button
+            onClick={() => void toggleHistory()}
+            title="Revision history — restore any earlier version"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            History
+          </button>
+        ) : null}
         {!profileId ? (
           <span className="rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium uppercase text-warning">
             not connected
           </span>
         ) : null}
-        <button
-          onClick={addPanel}
-          className="ml-auto flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          title="Add panel"
-        >
-          <Plus className="h-3.5 w-3.5" /> Panel
-        </button>
+        {locked ? (
+          <span className="ml-auto rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground" title="System dashboards are read-only">
+            System · read-only
+          </span>
+        ) : (
+          <button
+            onClick={addPanel}
+            className="ml-auto flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+            title="Add panel"
+          >
+            <Plus className="h-3.5 w-3.5" /> Panel
+          </button>
+        )}
         <div className="relative">
           <button
             onClick={() => setExportOpen((v) => !v)}
@@ -636,24 +659,36 @@ function DashboardView({
         >
           <RefreshCcw className={cn("h-3.5 w-3.5", autoRefreshMs && "text-primary")} />
         </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className={cn("flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px]", autoRefreshMs ? "text-primary" : "text-muted-foreground hover:text-foreground")}
-              title="Auto-refresh — re-run panel queries on an interval"
+        {locked ? (
+          // Read-only: show the seeded cadence, don't let it be changed.
+          autoRefreshMs ? (
+            <span
+              className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-primary"
+              title="This dashboard auto-refreshes on a fixed interval"
             >
-              {autoRefreshMs ? `${autoRefreshMs / 1000}s` : "Live"}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Live auto-refresh</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => setAutoRefresh(0)}>Off</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAutoRefresh(5_000)}>Every 5s</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAutoRefresh(10_000)}>Every 10s</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAutoRefresh(30_000)}>Every 30s</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAutoRefresh(60_000)}>Every 60s</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {autoRefreshMs / 1000}s
+            </span>
+          ) : null
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn("flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px]", autoRefreshMs ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+                title="Auto-refresh — re-run panel queries on an interval"
+              >
+                {autoRefreshMs ? `${autoRefreshMs / 1000}s` : "Live"}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Live auto-refresh</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setAutoRefresh(0)}>Off</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAutoRefresh(5_000)}>Every 5s</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAutoRefresh(10_000)}>Every 10s</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAutoRefresh(30_000)}>Every 30s</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAutoRefresh(60_000)}>Every 60s</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
       {exportNote ? (
         <div className="border-b border-border bg-secondary/40 px-3 py-1 text-[11px] text-muted-foreground">{exportNote}</div>
@@ -691,8 +726,8 @@ function DashboardView({
             layout={layout}
             width={width - 8}
             gridConfig={{ cols: 12, rowHeight: 44, margin: [8, 8] }}
-            dragConfig={{ handle: ".dash-panel-title" }}
-            resizeConfig={{ handles: ["e", "s", "se"] }}
+            dragConfig={{ handle: ".dash-panel-title", enabled: !locked }}
+            resizeConfig={{ handles: ["e", "s", "se"], enabled: !locked }}
             onDragStop={(l) => persistLayout(l)}
             onResizeStop={(l) => persistLayout(l)}
           >
@@ -706,7 +741,9 @@ function DashboardView({
                   profileId={profileId}
                   connectionName={connectionName}
                   nonce={nonce}
+                  locked={locked}
                   onVizChange={(viz) => {
+                    if (locked) return;
                     void saveDash({ ...dash, panels: dash.panels.map((x) => (x.id === p.id ? { ...x, viz } : x)) });
                   }}
                   onEdit={() => setEditing(p)}
@@ -758,6 +795,7 @@ function Panel({
   profileId,
   connectionName,
   nonce,
+  locked,
   onEdit,
   onSize,
   onDelete,
@@ -767,6 +805,8 @@ function Panel({
   profileId: string | null;
   connectionName: string;
   nonce: number;
+  /** System panels are read-only: no resize, edit, delete, or viz change. */
+  locked?: boolean;
   onEdit: () => void;
   onSize: (w: number, h: number) => void;
   onDelete: () => void;
@@ -849,7 +889,7 @@ function Panel({
         ) : null}
         <span className="ml-auto flex items-center gap-0.5">
           {loading && !result ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
-          {onVizChange && panel.viz.type !== "markdown" ? (
+          {onVizChange && panel.viz.type !== "markdown" && !locked ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -887,47 +927,51 @@ function Panel({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {!locked ? (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground data-[state=open]:pointer-events-auto data-[state=open]:bg-secondary data-[state=open]:opacity-100"
+                    aria-label="Panel size"
+                    title="Resize panel"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuLabel>Panel size</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => onSize(3, 4)}>Small · ¼ width</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSize(6, 6)}>Medium · ½ width</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSize(6, 9)}>Tall · ½ width</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSize(12, 6)}>Wide · full width</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSize(12, 10)}>Large · full width</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <button
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground data-[state=open]:pointer-events-auto data-[state=open]:bg-secondary data-[state=open]:opacity-100"
-                aria-label="Panel size"
-                title="Resize panel"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground"
+                aria-label="Edit panel"
               >
-                <Maximize2 className="h-3 w-3" />
+                <Pencil className="h-3 w-3" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuLabel>Panel size</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => onSize(3, 4)}>Small · ¼ width</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSize(6, 6)}>Medium · ½ width</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSize(6, 9)}>Tall · ½ width</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSize(12, 6)}>Wide · full width</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSize(12, 10)}>Large · full width</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-foreground"
-            aria-label="Edit panel"
-          >
-            <Pencil className="h-3 w-3" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-destructive"
-            aria-label="Delete panel"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="pointer-events-none flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 hover:text-destructive"
+                aria-label="Delete panel"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          ) : null}
         </span>
       </div>
       <div className="min-h-0 flex-1">

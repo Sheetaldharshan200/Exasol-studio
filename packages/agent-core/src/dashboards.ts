@@ -116,6 +116,12 @@ export class DashboardStore {
   save(input: unknown): Dashboard {
     const raw = input as Record<string, unknown>;
     if (raw && typeof raw === "object" && !raw.id) raw.id = randomUUID().slice(0, 8);
+    // Read-only lock: an existing System dashboard cannot be overwritten by any
+    // client (UI, agent, external MCP). Seeding still works — seeds arrive with
+    // a blank id, so a fresh id is minted above and no stored doc exists yet.
+    if (this.get(String(raw.id))?.group === "System") {
+      throw new Error("System dashboards are read-only and cannot be modified");
+    }
     // Normalize before validating — models forget ids/grids constantly and a
     // missing coordinate must not kill an otherwise good dashboard.
     if (Array.isArray(raw?.panels)) {
@@ -188,6 +194,10 @@ export class DashboardStore {
   }
 
   delete(id: string): boolean {
+    // System dashboards are read-only — they can be re-seeded but never
+    // deleted. Guard here so no client (UI, agent, or external MCP) can remove
+    // them out from under the workbench.
+    if (this.get(id)?.group === "System") return false;
     try {
       unlinkSync(join(this.dir, `${sanitize(id)}.json`));
       return true;
