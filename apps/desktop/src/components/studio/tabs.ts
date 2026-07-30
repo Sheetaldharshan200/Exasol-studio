@@ -32,13 +32,19 @@ export type TabView =
   | "notebook"
   | "skills"
   | "aiSettings"
-  | "profile"
   | "connProps";
+
+/** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
+ *  async profile that finishes after a tab-switch can't flip another tab's
+ *  view — and each tab remembers where the user left it. */
+export type ResultView = "results" | "performance" | "dashboard";
 
 export type SqlTab = {
   id: string;
   title: string;
   view: TabView;
+  /** Result panel sub-view (defaults to "results" when unset). */
+  resultView?: ResultView;
   sql: string;
   response: ExecuteResponse | null;
   execError: string | null;
@@ -118,7 +124,6 @@ export const TAB_ICON: Record<TabView, IconName> = {
   notebook: "notebook",
   skills: "skills",
   aiSettings: "brain-circuit",
-  profile: "clock-dashed-half",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */

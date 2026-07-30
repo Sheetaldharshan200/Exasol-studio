@@ -10,13 +10,11 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   CircleSlash2,
-  Gauge,
   GitCommitHorizontal,
   History,
   Loader2,
@@ -85,8 +83,6 @@ export function RunStatusStrip({
 export function ResultsGrid({
   result,
   error,
-  onChart,
-  onProfile,
   editable,
   onOpenSql,
   onCommitEdits,
@@ -96,9 +92,6 @@ export function ResultsGrid({
 }: {
   result: StatementResult | null;
   error: string | null;
-  onChart?: () => void;
-  /** Profile the tab's SQL: step-by-step engine parts from EXA_STATISTICS. */
-  onProfile?: () => void;
   /** Present when this result maps to a single updatable table. */
   editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
   onOpenSql?: (sql: string, title?: string) => void;
@@ -180,24 +173,6 @@ export function ResultsGrid({
             className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <Pencil className="h-3.5 w-3.5" /> Edit data
-          </button>
-        ) : null}
-        {onChart ? (
-          <button
-            onClick={onChart}
-            title="Add this query as a panel to its schema's dashboard"
-            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <BarChart3 className="h-3.5 w-3.5" /> Add to dashboard
-          </button>
-        ) : null}
-        {onProfile ? (
-          <button
-            onClick={onProfile}
-            title="Run this query with profiling ON and show the engine's step-by-step execution parts"
-            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <Gauge className="h-3.5 w-3.5" /> Performance
           </button>
         ) : null}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">

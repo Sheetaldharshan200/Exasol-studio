@@ -47,12 +47,13 @@ import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes } from "./monaco-theme";
-import { HistoryDock, ResultsGrid, RunStatusStrip } from "./HistoryDock";
+import { HistoryDock } from "./HistoryDock";
+import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
-import { QueryProfileView, type ProfileData, type ProfilePart } from "@/features/workbench/QueryProfileView";
+import { type ProfileData, type ProfilePart } from "@/features/workbench/QueryProfileView";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 
@@ -108,7 +109,6 @@ export function ExasolStudio({
   const [running, setRunning] = useState(false);
   // Inline tab rename (double-click a tab title).
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
-  const [resultTab, setResultTab] = useState<"results" | "messages">("results");
   const [maxRows, setMaxRows] = useState(1000);
   const [schema, setSchema] = useState<string>("");
   const [schemas, setSchemas] = useState<string[]>([]);
@@ -414,8 +414,7 @@ export function ExasolStudio({
       refreshSqlCatalog();
       setObjAction(null);
     } catch (e) {
-      patchTab(activeTab.id, { execError: errorMessage(e) });
-      setResultTab("messages");
+      patchTab(activeTab.id, { execError: errorMessage(e), resultView: "results" });
       setObjAction(null);
     } finally {
       setRunning(false);
@@ -1152,7 +1151,7 @@ export function ExasolStudio({
     setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
     if (runNow && connection) {
       setRunning(true);
-      setResultTab("results");
+      patchTab(tab.id, { resultView: "results", profileData: undefined });
       try {
         const result = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
         updateTabs(key, (list) =>
@@ -1167,12 +1166,10 @@ export function ExasolStudio({
               : t,
           ),
         );
-        if (!result.success) setResultTab("messages");
         loadHistory();
       refreshSqlCatalog();
       } catch (e) {
         updateTabs(key, (list) => list.map((t) => (t.id === tab.id ? { ...t, execError: errorMessage(e) } : t)));
-        setResultTab("messages");
       } finally {
         setRunning(false);
       }
@@ -1563,10 +1560,9 @@ export function ExasolStudio({
       const split = scope !== "buffer";
 
       setRunning(true);
-      setResultTab("results");
       const startedAt = Date.now();
       const tabId = activeTab.id;
-      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined });
+      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined, profileData: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
@@ -1604,7 +1600,6 @@ export function ExasolStudio({
             execError: failed?.error ?? "Statement failed.",
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
           });
-          setResultTab("messages");
         } else {
           patchTab(activeTab.id, {
             response: result,
@@ -1620,7 +1615,6 @@ export function ExasolStudio({
           execError: errorMessage(err),
           runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
         });
-        setResultTab("messages");
       } finally {
         progressDone = true;
         unlistenProgress?.();
@@ -1905,18 +1899,11 @@ export function ExasolStudio({
         }
       }
       const data: ProfileData = { sql: stmt, script, commandName: wall?.commandName ?? (stmt.match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase(), parts, wall };
-      tabCounter.current += 1;
-      const tab: SqlTab = {
-        id: `tab-prof-${Date.now()}-${tabCounter.current}`,
-        title: "Performance",
-        view: "profile",
-        sql: "",
-        response: null,
-        execError: null,
-        profileData: data,
-      };
-      updateTabs(connKey, (l) => [...l, tab]);
-      setActiveIdByConn((a2) => ({ ...a2, [connKey]: tab.id }));
+      // Show the plan inline on the profiled tab's Query Performance view,
+      // bound to this query. resultView is per-tab, so switching tabs while a
+      // profile is still running never flips another tab's view — the data and
+      // the view land together on the tab that was profiled.
+      patchTab(activeTab.id, { profileData: data, resultView: "performance" });
       loadHistory();
     } catch (e) {
       pushNotification("warning", "Profiling failed", errorMessage(e));
@@ -2381,7 +2368,6 @@ export function ExasolStudio({
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
           activeTab.view !== "aiSettings" &&
-          activeTab.view !== "profile" &&
           activeTab.view !== "artifact" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -2705,10 +2691,6 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <AiProvidersWindow standalone={false} />
             </div>
-          ) : activeTab.view === "profile" && activeTab.profileData ? (
-            <div className="min-h-0 flex-1">
-              <QueryProfileView data={activeTab.profileData} onOpenSql={openSqlTab} />
-            </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
               <ArtifactTab title={activeTab.title} html={activeTab.artifactHtml ?? ""} onOpen={openArtifact} />
@@ -2857,122 +2839,31 @@ export function ExasolStudio({
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
               <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
-                <div className="flex h-full min-h-0 flex-col bg-panel">
-                  <div className="flex h-8 shrink-0 items-center gap-1 border-y border-border px-2">
-                    {(["results", "messages"] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setResultTab(t)}
-                        className={cn(
-                          "h-6 rounded-md px-2.5 text-[12px] font-medium capitalize transition",
-                          resultTab === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                    {lastResult ? (
-                      <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                        {lastResult.kind === "resultSet" ? (() => {
-                          const page = activeTab.resultPage ?? 0;
-                          const single = splitStatements(activeTab.sql).length === 1 && /^select/i.test(activeTab.sql.trim());
-                          const from = page * maxRows + (lastResult.rowCount ? 1 : 0);
-                          const to = page * maxRows + lastResult.rowCount;
-                          const hasNext = lastResult.truncated;
-                          if (!single || (page === 0 && !hasNext)) {
-                            return <>{lastResult.rowCount} rows{lastResult.truncated ? " (truncated)" : ""}</>;
-                          }
-                          return (
-                            <span className="flex items-center gap-1" title="Pages beyond the first are ordered by the first column — Exasol requires a deterministic order for OFFSET">
-                              Rows {from.toLocaleString()}–{to.toLocaleString()}
-                              <button
-                                onClick={() => void loadResultPage(page - 1)}
-                                disabled={page === 0 || paging}
-                                aria-label="Previous page"
-                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
-                              >
-                                <ChevronLeft className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => void loadResultPage(page + 1)}
-                                disabled={!hasNext || paging}
-                                aria-label="Next page"
-                                className="flex h-5 w-5 items-center justify-center rounded hover:bg-secondary hover:text-foreground disabled:opacity-35"
-                              >
-                                {paging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                              </button>
-                            </span>
-                          );
-                        })() : null}
-                        · {activeTab.response?.totalElapsedMs ?? 0} ms
-                      </span>
-                    ) : null}
-                  </div>
-                  <RunStatusStrip meta={activeTab.runMeta} response={activeTab.response} />
-                  {/* Live progress while a batch runs (issues #19/#20): the
-                      previous result stays pinned underneath; a processing
-                      overlay + engine progress bar sit on top until 100%. */}
-                  {activeTab.runMeta && !activeTab.runMeta.finishedAt ? (() => {
-                    const qp = activeTab.queryProgress;
-                    const pct = qp?.percent ?? null;
-                    return (
-                      <div className="shrink-0 border-b border-border bg-panel/60 px-3 py-2">
-                        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                          <span className="font-medium text-foreground">Processing…</span>
-                          {qp?.total && qp.total > 1 ? (
-                            <span className="font-mono text-[11px]">statement {qp.statement}/{qp.total}</span>
-                          ) : null}
-                          {qp?.activity ? (
-                            <span className="min-w-0 truncate font-mono text-[11px]">{qp.activity}</span>
-                          ) : null}
-                          <span className="ml-auto font-mono text-[11px]">
-                            {pct !== null ? `${pct}%` : `${(((qp?.elapsedMs ?? Date.now() - activeTab.runMeta.startedAt)) / 1000).toFixed(1)}s`}
-                          </span>
-                        </div>
-                        <div className="relative mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
-                          {pct !== null ? (
-                            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${pct}%` }} />
-                          ) : (
-                            <div className="exa-indeterminate" />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })() : null}
-                  <div className={cn("relative min-h-0 flex-1 overflow-auto", activeTab.runMeta && !activeTab.runMeta.finishedAt && "pointer-events-none opacity-60")}>
-                    {resultTab === "messages" ? (
-                      <ResultsGrid result={null} error={activeTab.execError} />
-                    ) : mergeResults && (activeTab.response?.results.length ?? 0) > 1 ? (
-                      // Merged view — every result set from the last execution.
-                      <div className="flex flex-col">
-                        {activeTab.response!.results.map((r, i) => (
-                          <div key={i} className="border-b border-border">
-                            <div className="bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground">
-                              #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
-                            </div>
-                            <div className="h-[280px]">
-                              <ResultsGrid result={r} error={r.error} onChart={() => void sendResultToDashboard(activeTab.sql)} onProfile={() => profileQuery(activeTab.sql)} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <ResultsGrid
-                        result={lastResult}
-                        error={lastResult?.error ?? null}
-                        onChart={() => void sendResultToDashboard(activeTab.sql)}
-                        onProfile={() => profileQuery(activeTab.sql)}
-                        editable={editTable}
-                        onOpenSql={openSqlTab}
-                        onCommitEdits={commitEdits}
-                        editBusy={running}
-                        fontSize={gridFontSize}
-                        zebra={gridZebra}
-                      />
-                    )}
-                  </div>
-                </div>
+                <ResultsPanel
+                  view={activeTab.resultView ?? "results"}
+                  onViewChange={(v) => patchTab(activeTab.id, { resultView: v })}
+                  sql={activeTab.sql}
+                  response={activeTab.response}
+                  lastResult={lastResult}
+                  execError={activeTab.execError}
+                  runMeta={activeTab.runMeta}
+                  queryProgress={activeTab.queryProgress}
+                  resultPage={activeTab.resultPage}
+                  maxRows={maxRows}
+                  mergeResults={mergeResults}
+                  editable={editTable}
+                  fontSize={gridFontSize}
+                  zebra={gridZebra}
+                  paging={paging}
+                  onPage={(page) => void loadResultPage(page)}
+                  onOpenSql={openSqlTab}
+                  onCommitEdits={commitEdits}
+                  editBusy={running}
+                  profileData={activeTab.profileData}
+                  profiling={profiling}
+                  onProfile={() => void profileQuery(activeTab.sql)}
+                  onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}
+                />
               </ResizablePanel>
             </ResizablePanelGroup>
           )}

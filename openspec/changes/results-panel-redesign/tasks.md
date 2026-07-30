@@ -2,31 +2,37 @@
 
 Legend: [ ] todo · [x] done. Each logic task names its test file.
 
-## Part 1 — Lock System dashboards (ship first, contained)
-- [ ] `Dashboards.tsx`: derive `isSystem = d.group === "System"`; hide the
-      dashboard-delete `Trash2` in BOTH list grids for system dashboards.
-- [ ] `Dashboards.tsx` `DashboardView`/`Panel`: add `locked` prop; when the open
-      dashboard is System, hide panel edit + delete + add-panel and skip layout
-      persistence; show a "System · read-only" chip.
-- [ ] Store guard: `dashboards.remove` / panel-save refuse a `group:"System"`
-      dashboard. Test: `apps/desktop/src/lib/agent-client.test.ts` (or the
-      dashboards store module's `*.test.ts`) covers remove-refusal + a
-      normal user dashboard still deletable.
+## Part 1 — Lock System dashboards (ship first, contained) ✅ DONE
+- [x] `Dashboards.tsx`: derive `locked = dash.group === "System"`; hide the
+      dashboard-delete `Trash2` (read-only chip instead) for system dashboards.
+- [x] `Dashboards.tsx` `DashboardView`/`Panel`: `locked` prop hides panel
+      viz-switcher/resize/edit/delete + add-panel + History; disables grid
+      drag/resize; no-ops `persistLayout` and `saveDash` (the mutation choke
+      point); auto-refresh shown as a static badge; "System · read-only" chip.
+- [x] Store guard: `dashboards.delete()`, `save()` and `rollback()` refuse an
+      existing `group:"System"` dashboard (blank-id seeding still works).
+      Tests: `packages/agent-core/src/dashboards.test.ts` — remove-refusal,
+      overwrite-refusal, seeding, rollback no-op, user dashboard still mutable.
 
-## Part 2 — Result actions become tabs
-- [ ] ExasolStudio: replace the results button row with a tab strip
-      `Results | Query Performance | Show in Dashboard`; keep "messages" as an
-      error state of Results. Wire Query Performance → inline profile; Show in
-      Dashboard → sendResultToDashboard + open dashboard tab.
+## Part 2 — Result actions become tabs ✅ DONE
+- [x] Extracted the result area into `components/studio/ResultsPanel.tsx`
+      (ExasolStudio.tsx 3232 → 3129). Tab strip
+      `Results | Query Performance | Show in Dashboard`; errors render in the
+      Results grid (dropped the separate "messages" tab). `resultTab` →
+      `resultView`. Query Performance renders the plan inline (empty-state →
+      "Profile this query"); `profileQuery` now patches the current tab's
+      `profileData` instead of spawning a "profile" tab (removed that TabView).
+      Show in Dashboard empty-state → `sendResultToDashboard` (full
+      dashboard-as-tab is Part 5). Removed dead `onChart`/`onProfile` from
+      `ResultsGrid`.
 
-## Part 3 — ResultsPanel (extracted) + pure helpers
-- [ ] New `features/workbench/result-stats.ts`: `filterRows`, `toCsv`,
-      `computeStats`. Test: `features/workbench/result-stats.test.ts` — cover
-      empty rows, NULL cells, commas/quotes/newlines in CSV, 0ms/0-row
-      divide-by-zero, unicode, and Exasol UPPERCASE column names.
-- [ ] New `features/workbench/ResultsPanel.tsx`: filter box + row count +
-      Export CSV + grid + right side panel (Cell Value / Query Statistics /
-      Query). Reuse `ResultsGrid` for the table body; add an `onCellClick`.
+## Part 3 — Results tab enrichment + pure helpers (core done)
+- [x] `lib/result-stats.ts`: `filterRows`, `toCsv`, `computeStats`, `cellText`.
+      Tests `lib/result-stats.test.ts` — empty rows, NULL cells,
+      commas/quotes/newlines in CSV, 0ms/0-row divide-by-zero, negative clamp.
+- [ ] `ResultsPanel.tsx` Results view: filter box + Export CSV + right-hand
+      side panel (Cell Value inspector / Query Statistics / Query SQL) using the
+      helpers above. Reuse `ResultsGrid` for the table body; add `onCellClick`.
 - [ ] `HistoryDock.tsx` `ResultsGrid`: add optional `onCellClick(value)` and a
       `highlight` filter without regressing existing callers.
 
