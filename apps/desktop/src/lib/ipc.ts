@@ -325,6 +325,11 @@ export type ExecuteResponse = {
   results: StatementResult[];
   totalElapsedMs: number;
   success: boolean;
+  /** Session that ran this batch + the statement id just before it — lets Query
+   *  Performance read the profile of this original run without re-executing.
+   *  Absent for bridge-driver connections. */
+  profileSession?: string;
+  profileBaseStmt?: string;
 };
 
 export type HistoryEntry = {

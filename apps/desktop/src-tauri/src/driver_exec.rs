@@ -504,7 +504,7 @@ fn execute_python(
         }
     }
     let total_elapsed_ms = results.iter().map(|r| r.elapsed_ms).sum();
-    Ok(ExecuteResponse { results, total_elapsed_ms, success })
+    Ok(ExecuteResponse { results, total_elapsed_ms, success, profile_session: None, profile_base_stmt: None })
 }
 
 /// The shared Python bridge: PyExasol for the `python` drivers, jaydebeapi for

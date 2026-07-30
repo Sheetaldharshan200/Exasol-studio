@@ -1197,6 +1197,8 @@ export function ExasolStudio({
                   response: result,
                   resultPage: 0,
                   execError: result.success ? null : result.results.find((r) => r.error)?.error ?? "Statement failed.",
+                  profileSession: result.profileSession,
+                  profileBaseStmt: result.profileBaseStmt,
                 }
               : t,
           ),
@@ -1644,6 +1646,9 @@ export function ExasolStudio({
                   resultPage: 0,
             execError: null,
             runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true },
+            // Anchor for reading this run's profile without re-executing.
+            profileSession: result.profileSession,
+            profileBaseStmt: result.profileBaseStmt,
           });
         }
         loadHistory();
@@ -1857,66 +1862,54 @@ export function ExasolStudio({
     return r.rows.map((row) => Object.fromEntries(cols.map((c, i) => [c, row[i]])));
   }
 
+  const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+
   async function profileQuery(sql: string) {
     const stmt = sql.trim().replace(/;\s*$/, "");
-    if (!stmt || !connection || profiling) return;
+    if (!connection || profiling) return;
     const cid = connection.profile.id;
     const cname = connection.profile.name;
+    // The query was profiled DURING its normal run (profiling is on per
+    // session — see connection.rs). We read that profile here without
+    // re-executing, using the session + pre-run statement id captured on Run.
+    const tab = activeTab;
+    const sid = tab.profileSession;
+    const base = tab.profileBaseStmt;
+    if (!sid || !base) {
+      pushNotification("warning", "Profiling unavailable", "Run the query first — its plan is captured on execution (this connection's driver may not support profiling).");
+      return;
+    }
     setProfiling(true);
     try {
-      // 1) Capture a BASELINE statement id right BEFORE the query (with profiling
-      //    already on), plus the session id, then run the query and flush so its
-      //    profile is queryable immediately. Baseline-before-query is what makes
-      //    step targeting accurate: we then pick the FIRST real statement after
-      //    it, so an implicit COMMIT/ROLLBACK (or the marker itself) can't be
-      //    mistaken for the query — that off-by-one was showing only COMPILE.
-      const runScript = [
-        "ALTER SESSION SET PROFILE = 'ON';",
-        "SELECT CURRENT_STATEMENT AS BASE_ID, CURRENT_SESSION AS SID;",
-        stmt + ";",
-        "ALTER SESSION SET PROFILE = 'OFF';",
-        "FLUSH STATISTICS;",
-      ].join("\n");
-      const runRes = await ipc.executeSql(cid, cname, runScript, 1000, true);
-      const stmtErr = runRes.results.find((r) => r.error);
-      if (stmtErr?.error) {
-        pushNotification("warning", "Profiling failed", stmtErr.error);
-        return;
-      }
-      const baseSet = runRes.results.find(
-        (r) => r.kind === "resultSet" && r.columns.some((c) => c.name.toUpperCase() === "BASE_ID"),
-      );
-      const baseRow = baseSet?.rows[0];
-      const baseIdx = baseSet ? baseSet.columns.findIndex((c) => c.name.toUpperCase() === "BASE_ID") : -1;
-      const sidIdx = baseSet ? baseSet.columns.findIndex((c) => c.name.toUpperCase() === "SID") : -1;
-      const baseId = baseRow && baseIdx >= 0 ? Number(baseRow[baseIdx]) : NaN;
-      const sid = baseRow && sidIdx >= 0 ? String(baseRow[sidIdx]) : "";
-      if (!Number.isFinite(baseId) || !sid) {
-        pushNotification("warning", "Profiling failed", "Could not determine the statement id (CURRENT_STATEMENT baseline missing).");
-        return;
-      }
+      // Flush so the just-run profile is queryable immediately (no re-run).
+      await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false).catch(() => null);
 
-      // 2) Fetch profile rows for the first non-transaction statement after the
-      //    baseline (= the query we just ran). Richest first: the per-node
-      //    detail view (IPROC) enables skew/straggler warnings; fall back to the
-      //    always-available user summary view.
+      // The profiled query is the first non-transaction statement after the
+      // baseline on that session. Richest source first (per-node IPROC detail
+      // for skew), falling back to the always-available user summary view.
       const target = (view: string) =>
-        `(SELECT MIN(STMT_ID) FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${baseId} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK'))`;
+        `(SELECT MIN(STMT_ID) FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${base} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK'))`;
       const detailView = `"$EXA_PROFILE_DETAILS_LAST_DAY"`;
       const userView = `EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY`;
       const attempts: { sql: string; source: ProfileSource }[] = [
         { sql: `SELECT * FROM ${detailView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(detailView)} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
         { sql: `SELECT * FROM ${userView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(userView)} ORDER BY PART_ID`, source: "USER_SUMMARY" },
       ];
+
+      // Small retry: statistics can take a beat to become queryable even after
+      // FLUSH. Short and bounded so it still feels instant.
       let rows: Record<string, unknown>[] = [];
       let source: ProfileSource = "USER_SUMMARY";
-      for (const attempt of attempts) {
-        const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch(() => null);
-        const set = res?.results.find((r) => r.kind === "resultSet");
-        if (res?.success && set && set.rows.length > 0) {
-          rows = resultRecords(set);
-          source = attempt.source;
-          break;
+      for (let round = 0; round < 4 && rows.length === 0; round++) {
+        if (round > 0) await sleep(250);
+        for (const attempt of attempts) {
+          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch(() => null);
+          const set = res?.results.find((r) => r.kind === "resultSet");
+          if (res?.success && set && set.rows.length > 0) {
+            rows = resultRecords(set);
+            source = attempt.source;
+            break;
+          }
         }
       }
       if (rows.length === 0) {
@@ -1924,24 +1917,18 @@ export function ExasolStudio({
         return;
       }
 
-      // Derive the (session, statement) key from the fetched rows themselves —
-      // the SQL already scoped to the right one, and using the view's own
-      // string form avoids any CURRENT_SESSION vs column representation
-      // mismatch in the normalizer's row filter.
+      // Derive the (session, statement) key from the fetched rows themselves.
       const first = rows[0];
       const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
       const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : "";
       const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
-      // Profile views carry no SQL_TEXT — use the statement we just profiled.
-      if (!plan.queryText) plan.queryText = stmt;
+      // Profile views carry no SQL_TEXT — use the statement we profiled.
+      if (!plan.queryText && stmt) plan.queryText = stmt;
       if (plan.nodes.length === 0) {
         pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
         return;
       }
-      // Show the plan inline on the profiled tab's Query Performance view.
-      // resultView is per-tab, so a profile that finishes after a tab switch
-      // lands its data and view together on the tab that was profiled.
-      patchTab(activeTab.id, { planData: plan, resultView: "performance" });
+      patchTab(tab.id, { planData: plan, resultView: "performance" });
       loadHistory();
     } catch (e) {
       pushNotification("warning", "Profiling failed", errorMessage(e));

@@ -40,6 +40,15 @@ pub struct ExecuteResponse {
     pub results: Vec<StatementResult>,
     pub total_elapsed_ms: u64,
     pub success: bool,
+    /// Session that ran this batch, and the statement id observed just BEFORE
+    /// it — the profiled query is the first statement after this baseline on
+    /// this session. Lets Query Performance read the profile of the ORIGINAL
+    /// run (profiling is on per session) without re-executing. None for
+    /// bridge-driver connections, which native profiling doesn't cover.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_session: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_base_stmt: Option<String>,
 }
 
 /// Decode one cell into JSON, trying types from most to least specific.
@@ -372,14 +381,14 @@ pub async fn execute_sql(
     // If this connection's driver is a non-native one (PyExasol, JDBC, …), run
     // the statements through that driver's runtime instead of native sqlx.
     let profile = crate::profiles::find_profile(&state, &profile_id)?;
-    let (results, success) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
+    let (results, success, profile_session, profile_base_stmt) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let resp = tokio::task::spawn_blocking(move || {
             crate::driver_exec::execute_via_driver(&app, &profile, &stmts, max_rows)
         })
         .await
         .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
-        (resp.results, resp.success)
+        (resp.results, resp.success, None, None)
     } else {
         let pool = require_pool(&state, &profile_id).await?;
         // ONE connection for the whole batch: statements from a script share a
@@ -390,6 +399,24 @@ pub async fn execute_sql(
             .acquire()
             .await
             .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+
+        // Baseline for the Query Performance view: the session + the statement
+        // id BEFORE the user's statements run. Since profiling is on per session
+        // (see connection.rs), the user's query is profiled during this run, and
+        // the profiled statement is the first one after this baseline. Reading it
+        // here is one cheap scalar query and lets the plan be fetched later
+        // without re-executing. Best-effort — profiling still works if it fails.
+        let (profile_session, profile_base_stmt): (Option<String>, Option<String>) =
+            match sqlx_exasol::query("SELECT TO_CHAR(CURRENT_SESSION), TO_CHAR(CURRENT_STATEMENT)")
+                .fetch_one(&mut *conn)
+                .await
+            {
+                Ok(row) => (
+                    row.try_get::<String, _>(0).ok(),
+                    row.try_get::<String, _>(1).ok(),
+                ),
+                Err(_) => (None, None),
+            };
 
         // Live progress (issues #19/#20): a side task polls the EXECUTING
         // session's ACTIVITY from EXA_ALL_SESSIONS (Exasol reports "SELECT
@@ -464,7 +491,7 @@ pub async fn execute_sql(
                 json!({ "finished": true, "elapsedMs": started.elapsed().as_millis() as u64 }),
             );
         }
-        (results, success)
+        (results, success, profile_session, profile_base_stmt)
     };
 
     let total_elapsed_ms = started.elapsed().as_millis() as u64;
@@ -499,6 +526,8 @@ pub async fn execute_sql(
         results,
         total_elapsed_ms,
         success,
+        profile_session,
+        profile_base_stmt,
     })
 }
 

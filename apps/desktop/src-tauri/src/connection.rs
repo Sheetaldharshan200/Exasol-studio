@@ -127,14 +127,21 @@ async fn open_pool_sized(
         .min_connections(0)
         .max_connections(max_connections.clamp(1, 16))
         .acquire_timeout(std::time::Duration::from_secs(20));
+    // Turn query profiling ON for every pooled session so a query the user runs
+    // is profiled DURING its normal execution — the Query Performance view then
+    // just flushes + reads that profile instead of re-running the query (which
+    // is why the plan appears instantly, like the VS Code extension). Prepended
+    // so it runs before any user-configured hooks.
+    let mut hooks = vec!["ALTER SESSION SET PROFILE = 'ON'".to_string()];
+    hooks.extend(connect_hooks);
     // Run-SQL-at-Connect hooks must apply to EVERY physical session, not a
     // one-shot connection that's returned to the pool — otherwise a session
     // setting like ALTER SESSION never reaches the connection a later query
     // acquires. after_connect fires as each pooled connection is established,
     // best-effort (a bad hook logs, never fails the connection).
-    if !connect_hooks.is_empty() {
+    {
         opts = opts.after_connect(move |conn, _meta| {
-            let hooks = connect_hooks.clone();
+            let hooks = hooks.clone();
             Box::pin(async move {
                 for stmt in &hooks {
                     if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.clone()))

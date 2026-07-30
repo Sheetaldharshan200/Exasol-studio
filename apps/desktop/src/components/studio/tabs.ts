@@ -78,6 +78,10 @@ export type SqlTab = {
   artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */
   planData?: Plan;
+  /** Captured on Run: the session + pre-run statement id, so the plan can be
+   *  read from the ORIGINAL profiled run without re-executing the query. */
+  profileSession?: string;
+  profileBaseStmt?: string;
   /** Result pagination (0-based) for single-SELECT tabs. */
   resultPage?: number;
   /** For the unified connection tab — which section to show; nonce re-applies
