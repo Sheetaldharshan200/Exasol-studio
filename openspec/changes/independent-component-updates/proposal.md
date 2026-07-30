@@ -41,6 +41,14 @@ version, install kind) and is added to a registry (`ComponentId` +
 `component_python_version`) — adding a future component is a registry entry plus
 its install recipe, never a change to how other components install.
 
+**Interpreter reuse (decision).** Isolation is at the venv only; the Python
+interpreter is REUSED, never duplicated. `uv --python <version>` resolves to
+uv's single managed copy of that version — already present → reused, absent →
+downloaded once and cached. So two components compatible with the same version
+share one interpreter on disk (the venvs merely reference it; no `--copies`),
+and uv hard-links cached wheels into each venv, so shared packages aren't
+re-downloaded either. Same version ⇒ reuse, not fresh disk.
+
 ## Non-goals
 - **Auto-update.** Updates are one-click/manual by the user's choice — nothing
   upgrades in the background.
