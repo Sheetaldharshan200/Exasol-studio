@@ -7,6 +7,7 @@ mod catalog;
 mod connection;
 mod connection_settings;
 mod component_lock;
+mod components_update;
 mod driver_exec;
 mod drivers;
 mod error;
