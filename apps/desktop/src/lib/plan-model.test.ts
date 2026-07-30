@@ -3,18 +3,43 @@ import assert from "node:assert/strict";
 import { classifyOperator, computeWarnings, normalizeProfileRows, type WarningThresholds } from "./plan-model.ts";
 
 test("classifyOperator recognizes operator families by substring", () => {
-  assert.equal(classifyOperator("TABLE SCAN").operatorType, "SCAN");
+  // Each case is a documented Exasol PART_NAME (docs.exasol.com › Profiling).
+  assert.equal(classifyOperator("SCAN").operatorType, "SCAN");
   assert.equal(classifyOperator("SYSTEM TABLE").operatorType, "SCAN"); // catalog read, not bookkeeping
   assert.equal(classifyOperator("PIPE JOIN").operatorType, "JOIN");
+  assert.equal(classifyOperator("FULL JOIN").operatorType, "JOIN");
+  assert.equal(classifyOperator("OUTER JOIN").operatorType, "JOIN");
+  assert.equal(classifyOperator("EXISTS").operatorType, "JOIN"); // semi-join
   assert.equal(classifyOperator("GROUP BY").operatorType, "GROUP_BY");
+  assert.equal(classifyOperator("GROUPING SETS").operatorType, "GROUP_BY");
   assert.equal(classifyOperator("PIPE AGGREGATOR").operatorType, "GROUP_BY");
+  assert.equal(classifyOperator("ANALYTIC FUNCTION").operatorType, "WINDOW");
   assert.equal(classifyOperator("SORT").operatorType, "SORT");
+  assert.equal(classifyOperator("CREATE UNION").operatorType, "SETOP");
+  assert.equal(classifyOperator("UNION TABLE").operatorType, "SETOP");
+  assert.equal(classifyOperator("CONNECT BY").operatorType, "CONNECT_BY");
   assert.equal(classifyOperator("NODE SYNC").operatorType, "SYNC");
-  assert.equal(classifyOperator("REDISTRIBUTE").operatorType, "NETWORK");
+  assert.equal(classifyOperator("DISTRIBUTE / PARTITION").operatorType, "NETWORK");
+  assert.equal(classifyOperator("REPLICATE").operatorType, "NETWORK");
+  assert.equal(classifyOperator("IMPORT").operatorType, "LOAD");
+  assert.equal(classifyOperator("EXPORT").operatorType, "LOAD");
   assert.equal(classifyOperator("INSERT").operatorType, "DML");
-  assert.equal(classifyOperator("COMPILE").operatorType, "SYSTEM");
-  assert.equal(classifyOperator("SOMETHING NEW").operatorType, "OTHER");
+  assert.equal(classifyOperator("DELETE").operatorType, "DML");
+  assert.equal(classifyOperator("QUERY CACHE RESULT").operatorType, "CACHE");
+  assert.equal(classifyOperator("PUSHDOWN").operatorType, "PUSHDOWN");
+  assert.equal(classifyOperator("COMMIT").operatorType, "TRANSACTION");
+  assert.equal(classifyOperator("ROLLBACK").operatorType, "TRANSACTION");
+  assert.equal(classifyOperator("COMPILE/EXECUTE").operatorType, "SYSTEM");
+  assert.equal(classifyOperator("COLUMN STATISTICS").operatorType, "SYSTEM");
+  assert.equal(classifyOperator("PREFERENCE PROCESSING").operatorType, "OTHER");
   assert.equal(classifyOperator("").operatorType, "OTHER");
+});
+
+test("classifyOperator ordering: specific names win over the general keyword they contain", () => {
+  assert.equal(classifyOperator("INDEX INSERT").operatorType, "INDEX"); // not DML (INSERT)
+  assert.equal(classifyOperator("INDEX CREATE").operatorType, "INDEX");
+  assert.equal(classifyOperator("WAIT FOR COMMIT").operatorType, "SYNC"); // not TRANSACTION (COMMIT)
+  assert.equal(classifyOperator("SYSTEM TABLE").operatorType, "SCAN"); // not SYSTEM
 });
 
 test("classifyOperator marks only true bookkeeping as a system step", () => {

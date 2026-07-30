@@ -6,20 +6,30 @@
 import type { OperatorType, Plan, PlanNode, PlanWarning } from "./plan-model";
 
 export const OPERATOR_BADGE: Record<OperatorType, string> = {
-  SCAN: "S", JOIN: "J", GROUP_BY: "G", SORT: "O", NETWORK: "N", DML: "D", SYSTEM: "⚙", SYNC: "‖", OTHER: "⋯",
+  SCAN: "S", JOIN: "J", GROUP_BY: "G", WINDOW: "W", SORT: "O", SETOP: "U",
+  NETWORK: "N", DML: "D", LOAD: "L", INDEX: "I", CONNECT_BY: "H", CACHE: "C",
+  PUSHDOWN: "P", TRANSACTION: "T", SYSTEM: "⚙", SYNC: "‖", OTHER: "⋯",
 };
 
-/** Operator hue. System/Other use theme tokens; the rest are chart colors
- *  chosen to stay legible on both themes (mirrors VS Code's charts palette). */
+/** Operator hue — distinct, theme-legible chart colors; bookkeeping kinds use
+ *  theme tokens. */
 export const OPERATOR_COLOR: Record<OperatorType, string> = {
-  SCAN: "#3b82f6",
-  JOIN: "#a855f7",
-  GROUP_BY: "#22c55e",
-  SORT: "#eab308",
-  NETWORK: "#f97316",
-  DML: "#ef4444",
+  SCAN: "#3b82f6",       // blue
+  JOIN: "#a855f7",       // purple
+  GROUP_BY: "#22c55e",   // green
+  WINDOW: "#14b8a6",     // teal
+  SORT: "#eab308",       // yellow
+  SETOP: "#06b6d4",      // cyan
+  NETWORK: "#f97316",    // orange
+  DML: "#ef4444",        // red
+  LOAD: "#f43f5e",       // rose
+  INDEX: "#6366f1",      // indigo
+  CONNECT_BY: "#d946ef", // fuchsia
+  CACHE: "#84cc16",      // lime
+  PUSHDOWN: "#0ea5e9",   // sky
+  TRANSACTION: "var(--muted-foreground)",
   SYSTEM: "var(--muted-foreground)",
-  SYNC: "#ec4899",
+  SYNC: "#ec4899",       // pink
   OTHER: "var(--foreground)",
 };
 
@@ -27,8 +37,9 @@ export const OPERATOR_COLOR: Record<OperatorType, string> = {
 export const HOT_COLOR = "#ef4444";
 
 export const OPERATOR_TYPE_LABEL: Record<OperatorType, string> = {
-  SCAN: "Scan", JOIN: "Join", GROUP_BY: "Group By", SORT: "Sort",
-  NETWORK: "Network", DML: "DML", SYSTEM: "System", SYNC: "Sync", OTHER: "Other",
+  SCAN: "Scan", JOIN: "Join", GROUP_BY: "Group By", WINDOW: "Window", SORT: "Sort", SETOP: "Set Op",
+  NETWORK: "Network", DML: "DML", LOAD: "Load", INDEX: "Index", CONNECT_BY: "Connect By", CACHE: "Cache",
+  PUSHDOWN: "Pushdown", TRANSACTION: "Transaction", SYSTEM: "System", SYNC: "Sync", OTHER: "Other",
 };
 
 export const WARNING_LABEL: Record<PlanWarning["type"], string> = {
@@ -120,12 +131,6 @@ export function hottestNodeId(plan: Plan): string | undefined {
   return hottest?.id;
 }
 
-/** Middle-truncate a long object caption, keeping the distinguishing tail. */
-export function middleTruncateCaption(s: string): string {
-  if (s.length <= 18) return s;
-  return `${s.slice(0, 8)}…${s.slice(-9)}`;
-}
-
 /** Rail order: real spill / dominant redistribution first, then skew by impact. */
 const WARNING_PRIORITY: Record<PlanWarning["type"], number> = {
   SPILLED_TO_DISK: 0,
@@ -156,8 +161,12 @@ export function sortedWarningItems(plan: Plan): Array<{ node: Plan["nodes"][numb
   });
 }
 
-/** Fixed legend order: data-flow operators first, then the two non-operator kinds. */
-export const LEGEND_ORDER: OperatorType[] = ["SCAN", "JOIN", "GROUP_BY", "SORT", "NETWORK", "DML", "SYNC", "SYSTEM", "OTHER"];
+/** Fixed legend order: data-flow operators first, then movement/IO, then the
+ *  bookkeeping/barrier kinds last, ending on the catch-all Other. */
+export const LEGEND_ORDER: OperatorType[] = [
+  "SCAN", "CACHE", "PUSHDOWN", "JOIN", "GROUP_BY", "WINDOW", "SORT", "SETOP", "CONNECT_BY",
+  "NETWORK", "DML", "LOAD", "INDEX", "SYNC", "TRANSACTION", "SYSTEM", "OTHER",
+];
 
 /** "N rows → M (P%)" scan selectivity; never a percentage over 100% (that
  *  would signal a data problem, not real selectivity). */

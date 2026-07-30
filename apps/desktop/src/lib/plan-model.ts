@@ -10,8 +10,17 @@
 
 // ── Operator taxonomy ──────────────────────────────────────────────────────
 
+/**
+ * Operator taxonomy. Every type below maps to real, documented Exasol profile
+ * PART_NAME values (docs.exasol.com › Profiling) — nothing is invented, so a
+ * derived type is always evidence-backed by the raw PART_NAME it came from
+ * (kept verbatim as PlanNode.operatorLabel). Unrecognized names degrade to
+ * OTHER rather than being mis-labeled.
+ */
 export type OperatorType =
-  | "SCAN" | "JOIN" | "GROUP_BY" | "SORT" | "NETWORK" | "DML" | "SYSTEM" | "SYNC" | "OTHER";
+  | "SCAN" | "JOIN" | "GROUP_BY" | "WINDOW" | "SORT" | "SETOP"
+  | "NETWORK" | "DML" | "LOAD" | "INDEX" | "CONNECT_BY" | "CACHE"
+  | "PUSHDOWN" | "TRANSACTION" | "SYSTEM" | "SYNC" | "OTHER";
 
 export interface OperatorTraits {
   producesRows: boolean;
@@ -26,28 +35,53 @@ const TRAITS_BY_TYPE: Record<OperatorType, OperatorTraits> = {
   SCAN: { producesRows: true, consumesRows: false, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
   JOIN: { producesRows: true, consumesRows: true, canSpill: true, movesDataOverNetwork: true, blocking: true, isSystemStep: false },
   GROUP_BY: { producesRows: true, consumesRows: true, canSpill: true, movesDataOverNetwork: true, blocking: true, isSystemStep: false },
+  // ANALYTIC FUNCTION — analytic/window computation; can buffer/spill, blocking.
+  WINDOW: { producesRows: true, consumesRows: true, canSpill: true, movesDataOverNetwork: false, blocking: true, isSystemStep: false },
   SORT: { producesRows: true, consumesRows: true, canSpill: true, movesDataOverNetwork: false, blocking: true, isSystemStep: false },
+  // CREATE UNION / UNION TABLE — pipelined combine, no spill/redistribution.
+  SETOP: { producesRows: true, consumesRows: true, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
   NETWORK: { producesRows: true, consumesRows: true, canSpill: false, movesDataOverNetwork: true, blocking: false, isSystemStep: false },
   DML: { producesRows: false, consumesRows: true, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
+  // IMPORT / EXPORT — move data in/out of the cluster (external transfer).
+  LOAD: { producesRows: true, consumesRows: true, canSpill: false, movesDataOverNetwork: true, blocking: false, isSystemStep: false },
+  // INDEX CREATE / INSERT / REBUILD — real internal-index work, not a row producer.
+  INDEX: { producesRows: false, consumesRows: true, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
+  // CONNECT BY — hierarchical query; iterative, can buffer/spill, blocking.
+  CONNECT_BY: { producesRows: true, consumesRows: true, canSpill: true, movesDataOverNetwork: false, blocking: true, isSystemStep: false },
+  // QUERY CACHE RESULT — reads a cached result; pure producer.
+  CACHE: { producesRows: true, consumesRows: false, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
+  // PUSHDOWN — adapter-generated remote query; fetches over the network.
+  PUSHDOWN: { producesRows: true, consumesRows: false, canSpill: false, movesDataOverNetwork: true, blocking: false, isSystemStep: false },
+  // COMMIT / ROLLBACK — transaction bookkeeping (system step for cost purposes).
+  TRANSACTION: { producesRows: false, consumesRows: false, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: true },
   SYSTEM: { producesRows: false, consumesRows: false, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: true },
-  // A sync barrier is real query time, not engine bookkeeping — kept out of the
-  // system-step total so it stays in the non-system cost denominator.
+  // NODE SYNC / WAIT FOR COMMIT — a barrier: real query time, NOT bookkeeping,
+  // so kept out of the system-step total and inside the non-system denominator.
   SYNC: { producesRows: false, consumesRows: false, canSpill: false, movesDataOverNetwork: false, blocking: true, isSystemStep: false },
   OTHER: { producesRows: true, consumesRows: true, canSpill: false, movesDataOverNetwork: false, blocking: false, isSystemStep: false },
 };
 
+// Substring rules, first match wins. Order is load-bearing: more specific names
+// must precede the general keyword they contain (e.g. INDEX INSERT before DML's
+// INSERT; WAIT FOR COMMIT before TRANSACTION's COMMIT; SYSTEM TABLE before SCAN).
 const TYPE_RULES: Array<{ type: OperatorType; test: (name: string) => boolean }> = [
-  // SYSTEM TABLE reads a catalog object and produces rows like any scan —
-  // must precede the plain SCAN rule and any SYSTEM keyword rule.
-  { type: "SCAN", test: (n) => n.includes("SYSTEM TABLE") },
+  { type: "SCAN", test: (n) => n.includes("SYSTEM TABLE") }, // catalog read, not bookkeeping
+  { type: "CACHE", test: (n) => n.includes("QUERY CACHE") },
+  { type: "INDEX", test: (n) => n.includes("INDEX") }, // INDEX CREATE/INSERT/REBUILD — before DML INSERT
+  { type: "PUSHDOWN", test: (n) => n.includes("PUSHDOWN") },
   { type: "SCAN", test: (n) => n.includes("SCAN") },
-  { type: "JOIN", test: (n) => n.includes("JOIN") },
-  { type: "GROUP_BY", test: (n) => n.includes("GROUP") || n.includes("AGGREGAT") },
+  { type: "WINDOW", test: (n) => n.includes("ANALYTIC") },
+  { type: "JOIN", test: (n) => n.includes("JOIN") || n.includes("EXISTS") }, // FULL/OUTER JOIN, EXISTS/IN (semi-join)
+  { type: "GROUP_BY", test: (n) => n.includes("GROUP") || n.includes("AGGREGAT") }, // GROUP BY, GROUPING SETS
   { type: "SORT", test: (n) => n.includes("SORT") || n.includes("ORDER BY") },
-  { type: "SYNC", test: (n) => n.includes("NODE SYNC") },
-  { type: "NETWORK", test: (n) => n.includes("NETWORK") || n.includes("DISTRIBUT") || n.includes("BROADCAST") || n.includes("REORGANIZE") || n.includes("REPLICATE") },
-  { type: "DML", test: (n) => ["INSERT", "UPDATE", "DELETE", "MERGE", "EXPORT", "IMPORT"].some((k) => n.includes(k)) },
-  { type: "SYSTEM", test: (n) => ["COMPILE", "EXECUTE", "COMMIT", "ROLLBACK", "ALTER SESSION", "COLUMN STATISTICS", "INDEX CREATE", "TRANSACTION"].some((k) => n.includes(k)) },
+  { type: "SETOP", test: (n) => n.includes("UNION") }, // CREATE UNION, UNION TABLE
+  { type: "CONNECT_BY", test: (n) => n.includes("CONNECT BY") },
+  { type: "SYNC", test: (n) => n.includes("NODE SYNC") || n.includes("WAIT FOR COMMIT") },
+  { type: "NETWORK", test: (n) => n.includes("DISTRIBUT") || n.includes("PARTITION") || n.includes("REPLICATE") || n.includes("BROADCAST") || n.includes("REORGANIZE") || n.includes("NETWORK") },
+  { type: "LOAD", test: (n) => n.includes("IMPORT") || n.includes("EXPORT") },
+  { type: "DML", test: (n) => ["INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE"].some((k) => n.includes(k)) },
+  { type: "TRANSACTION", test: (n) => n.includes("COMMIT") || n.includes("ROLLBACK") },
+  { type: "SYSTEM", test: (n) => ["COMPILE", "EXECUTE", "ALTER SESSION", "COLUMN STATISTICS", "CONSTRAINT CHECK", "RECOMPRESS", "TRANSACTION"].some((k) => n.includes(k)) },
 ];
 
 export interface OperatorClassification {

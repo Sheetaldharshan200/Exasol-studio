@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   fmtMs, fmtRows, fmtPct, fmtMiB, fmtCpuPct,
   planCategoryBreakdown, planClusterSize, planLacksDetailMetrics, hottestNodeId,
-  middleTruncateCaption, sortedWarningItems, planSourceLabel,
+  sortedWarningItems, planSourceLabel,
 } from "./plan-format.ts";
 import type { Plan, PlanNode } from "./plan-model.ts";
 
@@ -30,13 +30,6 @@ test("fmtPct / fmtMiB / fmtCpuPct edge cases", () => {
   assert.equal(fmtMiB(3), "3.0 MiB");
   assert.equal(fmtCpuPct(undefined), "—");
   assert.equal(fmtCpuPct(80), "80%");
-});
-
-test("middleTruncateCaption keeps the distinguishing tail", () => {
-  assert.equal(middleTruncateCaption("SHORT"), "SHORT");
-  const t = middleTruncateCaption("SYS.EXA_SESSION_ROLES_LONG_NAME");
-  assert.ok(t.includes("…"));
-  assert.ok(t.endsWith("LONG_NAME".slice(-9)));
 });
 
 function node(o: Partial<PlanNode>): PlanNode {

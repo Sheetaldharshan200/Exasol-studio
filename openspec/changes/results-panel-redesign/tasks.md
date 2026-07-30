@@ -59,6 +59,16 @@ Legend: [ ] todo · [x] done. Each logic task names its test file.
       right rail (Warnings summary→jump, Profile overview, Time-by-category
       bar, Legend), Query-text toggle + Copy-as-text. Codex-reviewed; fixed the
       popover viewport-clamp (flips above / caps height near the screen edge).
+- [x] Follow-up (user request): rebuilt `QueryPlanView` on **React Flow**
+      (@xyflow/react — pan/zoom, Background, Controls, MiniMap; edges = the
+      PART_ID execution sequence, never a fabricated DAG). Expanded the operator
+      taxonomy 9 → 17 types, each grounded in a documented Exasol PART_NAME
+      (Window/Set Op/Load/Index/Connect By/Cache/Pushdown/Transaction added).
+      Made it **evidence-based**: the selected-operator card cites the profile
+      column behind every number, shows the type derivation from the raw
+      PART_NAME, an "Evidence source" card names the exact profile view + whether
+      per-node skew was measurable, warnings show their raw triggering values,
+      and unmeasured values read "not measured". Codex-reviewed clean.
 
 ## Part 5 — Dashboards as tabs ✅ DONE
 - [x] `tabs.ts`: new TabView `"dashboard"` + `SqlTab.dashboardId` + icon.
