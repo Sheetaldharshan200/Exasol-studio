@@ -11,7 +11,7 @@ const delay = (ms = 120) => new Promise((resolve) => setTimeout(resolve, ms));
 const profiles: Record<string, unknown>[] = [
   {
     id: "conn-demo-1",
-    name: "Local Exasol",
+    name: "Exasol Personal (local)",
     host: "localhost",
     port: 8563,
     username: "sys",
@@ -31,7 +31,7 @@ let history: Record<string, unknown>[] = [
     id: "h-1",
     executedAt: "2026-07-09T17:22:41Z",
     profileId: "conn-demo-1",
-    connectionName: "Local Exasol",
+    connectionName: "Exasol Personal (local)",
     sql: "SELECT C_CUSTKEY, C_NAME, C_ACCTBAL FROM STARTER_KIT.CUSTOMER LIMIT 25;",
     statementCount: 1,
     elapsedMs: 231,

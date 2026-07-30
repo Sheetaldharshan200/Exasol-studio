@@ -571,7 +571,17 @@ export function ExasolStudio({
   // Connect to a saved profile from the Welcome "Recent" list (or fall back to
   // the connect form if it can't connect straight away).
   async function connectSaved(profileId: string) {
-    const p = profiles.find((x) => x.id === profileId);
+    let p = profiles.find((x) => x.id === profileId);
+    if (!p) {
+      // `profiles` is fetched at mount; the managed "Exasol Personal (local)"
+      // profile is created by the background bootstrap AFTER that, so the list
+      // can be stale. Re-fetch from disk before falling back to the blank
+      // connect form — otherwise clicking the local card opens "New
+      // Connection" instead of the real profile.
+      const fresh = await ipc.listConnectionProfiles().catch(() => [] as ConnectionProfile[]);
+      p = fresh.find((x) => x.id === profileId);
+      if (p) void Promise.resolve(onSaved?.()).catch(() => undefined); // sync the app's profile state
+    }
     if (!p) return openConnect();
     // Already open under this profile → just focus it, never reconnect (a
     // second pool to the same DB is what caused the "opened new then went

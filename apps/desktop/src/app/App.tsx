@@ -96,6 +96,13 @@ function MainApp() {
     if (!profileId || localConnectAttempt.current === profileId || connections.some((c) => c.profile.id === profileId)) return;
     void (async () => {
       const nextProfiles = await ipc.listConnectionProfiles();
+      // The managed local profile is created by the background bootstrap after
+      // the initial profile fetch, so sync the app's list once it appears —
+      // otherwise the sidebar card can't find it and clicking it falls back to
+      // the blank connect form.
+      if (!profiles.some((p) => p.id === profileId) && nextProfiles.some((p) => p.id === profileId)) {
+        void refresh().catch(() => undefined);
+      }
       const others = nextProfiles.filter((p) => p.id !== profileId && !p.username.startsWith("STUDIO_MCP_"));
       if (others.length > 0 || connections.length > 0) return; // not a zero-setup situation
       const profile = nextProfiles.find((candidate) => candidate.id === profileId);
@@ -107,7 +114,7 @@ function MainApp() {
     })().catch(() => {
       localConnectAttempt.current = null;
     });
-  }, [localStatus, connections, adopt, refresh]);
+  }, [localStatus, connections, adopt, refresh, profiles]);
 
   // Register every OPEN connection with the agent sidecar so the in-app agent
   // and the Studio MCP gateway (external AI clients) can speak for all of

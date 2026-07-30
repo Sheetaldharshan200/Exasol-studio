@@ -203,7 +203,9 @@ pub fn ensure_personal_local_profile(
         state,
         ConnectionProfile {
             id: String::new(),
-            name: "Local Exasol".into(),
+            // Match the sidebar card + onboarding wording so the connection
+            // shows the same name everywhere.
+            name: "Exasol Personal (local)".into(),
             host: host.into(),
             port,
             username: username.into(),
