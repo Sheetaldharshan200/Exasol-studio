@@ -1864,13 +1864,16 @@ export function ExasolStudio({
     const cname = connection.profile.name;
     setProfiling(true);
     try {
-      // 1) Run the statement with profiling on; capture CURRENT_STATEMENT (the
-      //    marker's own id — the profiled statement is mark-1) and the session
-      //    id, then flush so profiling data is queryable immediately.
+      // 1) Capture a BASELINE statement id right BEFORE the query (with profiling
+      //    already on), plus the session id, then run the query and flush so its
+      //    profile is queryable immediately. Baseline-before-query is what makes
+      //    step targeting accurate: we then pick the FIRST real statement after
+      //    it, so an implicit COMMIT/ROLLBACK (or the marker itself) can't be
+      //    mistaken for the query — that off-by-one was showing only COMPILE.
       const runScript = [
         "ALTER SESSION SET PROFILE = 'ON';",
+        "SELECT CURRENT_STATEMENT AS BASE_ID, CURRENT_SESSION AS SID;",
         stmt + ";",
-        "SELECT CURRENT_STATEMENT AS STMT_MARK, CURRENT_SESSION AS SID;",
         "ALTER SESSION SET PROFILE = 'OFF';",
         "FLUSH STATISTICS;",
       ].join("\n");
@@ -1880,26 +1883,30 @@ export function ExasolStudio({
         pushNotification("warning", "Profiling failed", stmtErr.error);
         return;
       }
-      const markSet = runRes.results.find(
-        (r) => r.kind === "resultSet" && r.columns.some((c) => c.name.toUpperCase() === "STMT_MARK"),
+      const baseSet = runRes.results.find(
+        (r) => r.kind === "resultSet" && r.columns.some((c) => c.name.toUpperCase() === "BASE_ID"),
       );
-      const markRow = markSet?.rows[0];
-      const markIdx = markSet ? markSet.columns.findIndex((c) => c.name.toUpperCase() === "STMT_MARK") : -1;
-      const sidIdx = markSet ? markSet.columns.findIndex((c) => c.name.toUpperCase() === "SID") : -1;
-      const markVal = markRow && markIdx >= 0 ? Number(markRow[markIdx]) : NaN;
-      const sid = markRow && sidIdx >= 0 ? String(markRow[sidIdx]) : "";
-      if (!Number.isFinite(markVal) || !sid) {
-        pushNotification("warning", "Profiling failed", "Could not determine the statement id (CURRENT_STATEMENT marker missing).");
+      const baseRow = baseSet?.rows[0];
+      const baseIdx = baseSet ? baseSet.columns.findIndex((c) => c.name.toUpperCase() === "BASE_ID") : -1;
+      const sidIdx = baseSet ? baseSet.columns.findIndex((c) => c.name.toUpperCase() === "SID") : -1;
+      const baseId = baseRow && baseIdx >= 0 ? Number(baseRow[baseIdx]) : NaN;
+      const sid = baseRow && sidIdx >= 0 ? String(baseRow[sidIdx]) : "";
+      if (!Number.isFinite(baseId) || !sid) {
+        pushNotification("warning", "Profiling failed", "Could not determine the statement id (CURRENT_STATEMENT baseline missing).");
         return;
       }
-      const targetId = markVal - 1;
 
-      // 2) Fetch the profile rows for that exact (session, statement). Richest
-      //    first: the per-node detail view (IPROC) enables skew/straggler
-      //    warnings; fall back to the always-available user summary view.
+      // 2) Fetch profile rows for the first non-transaction statement after the
+      //    baseline (= the query we just ran). Richest first: the per-node
+      //    detail view (IPROC) enables skew/straggler warnings; fall back to the
+      //    always-available user summary view.
+      const target = (view: string) =>
+        `(SELECT MIN(STMT_ID) FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${baseId} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK'))`;
+      const detailView = `"$EXA_PROFILE_DETAILS_LAST_DAY"`;
+      const userView = `EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY`;
       const attempts: { sql: string; source: ProfileSource }[] = [
-        { sql: `SELECT * FROM "$EXA_PROFILE_DETAILS_LAST_DAY" WHERE SESSION_ID = ${sid} AND STMT_ID = ${targetId} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
-        { sql: `SELECT * FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = ${sid} AND STMT_ID = ${targetId} ORDER BY PART_ID`, source: "USER_SUMMARY" },
+        { sql: `SELECT * FROM ${detailView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(detailView)} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
+        { sql: `SELECT * FROM ${userView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(userView)} ORDER BY PART_ID`, source: "USER_SUMMARY" },
       ];
       let rows: Record<string, unknown>[] = [];
       let source: ProfileSource = "USER_SUMMARY";
@@ -1913,7 +1920,7 @@ export function ExasolStudio({
         }
       }
       if (rows.length === 0) {
-        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows (it may be too fast to profile, or the account lacks statistics access).`);
+        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows (it may be too fast to profile, or the account lacks statistics access).");
         return;
       }
 
@@ -1923,12 +1930,12 @@ export function ExasolStudio({
       // mismatch in the normalizer's row filter.
       const first = rows[0];
       const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
-      const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : String(targetId);
+      const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : "";
       const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
       // Profile views carry no SQL_TEXT — use the statement we just profiled.
       if (!plan.queryText) plan.queryText = stmt;
       if (plan.nodes.length === 0) {
-        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows.`);
+        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
         return;
       }
       // Show the plan inline on the profiled tab's Query Performance view.

@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
+  ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position,
   MarkerType, useReactFlow, type Node, type Edge, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -148,16 +148,6 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
             >
               <Background color="var(--border)" gap={22} />
               <Controls className="!bottom-3 !left-3" showInteractive={false} />
-              <MiniMap
-                pannable
-                zoomable
-                className="!bottom-3 !right-3"
-                maskColor="color-mix(in srgb, var(--background) 55%, transparent)"
-                nodeColor={(n) => {
-                  const d = n.data as OperatorNodeData;
-                  return d.isHot ? HOT_COLOR : resolveColor(OPERATOR_COLOR[d.node.operatorType]);
-                }}
-              />
             </ReactFlow>
           )}
         </div>
@@ -397,14 +387,4 @@ function RailRow({ k, v }: { k: string; v: string }) {
       <dd className="truncate font-mono text-foreground" title={v}>{v}</dd>
     </div>
   );
-}
-
-/** Resolve a CSS var color to a concrete value for the MiniMap (which paints on
- *  a canvas and can't read CSS vars). Falls back to a mid grey. */
-function resolveColor(c: string): string {
-  if (!c.startsWith("var(")) return c;
-  if (typeof window === "undefined") return "#888";
-  const name = c.slice(4, -1).trim();
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || "#888";
 }

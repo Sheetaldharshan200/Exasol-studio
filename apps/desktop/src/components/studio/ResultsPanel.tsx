@@ -7,7 +7,7 @@
  * Dashboard. Query Performance renders the engine plan inline (bound to this
  * tab's query) instead of spawning a separate tab.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
@@ -81,6 +81,20 @@ export function ResultsPanel({
   onSendToDashboard: () => void;
 }) {
   const busy = Boolean(runMeta && !runMeta.finishedAt);
+
+  // Auto-profile: opening the Query Performance tab shows the plan straight away
+  // — no button. Fire once per result (guarded by autoProfiledFor so a failed
+  // profile doesn't loop), and only for a SELECT that already produced rows so
+  // we never silently re-run a write.
+  const autoProfiledFor = useRef<StatementResult | null>(null);
+  useEffect(() => {
+    if (view === "performance" && !planData && !profiling && lastResult?.kind === "resultSet") {
+      if (autoProfiledFor.current !== lastResult) {
+        autoProfiledFor.current = lastResult;
+        onProfile();
+      }
+    }
+  }, [view, planData, profiling, lastResult, onProfile]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
       <div className="flex h-8 shrink-0 items-center gap-1 border-y border-border px-2">
@@ -180,13 +194,17 @@ export function ResultsPanel({
         {view === "performance" ? (
           planData ? (
             <QueryPlanView plan={planData} onOpenSql={onOpenSql} />
+          ) : profiling || lastResult?.kind === "resultSet" ? (
+            // Auto-profiling in flight (fired by the effect above).
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <p className="text-[12.5px]">Profiling this query…</p>
+            </div>
           ) : (
-            <PanelEmpty
-              icon={Gauge}
-              title="Query Performance"
-              body="Profile this query to see the engine's step-by-step execution plan — the parts it ran, rows in and out, and where the time went."
-              action={{ label: profiling ? "Profiling…" : "Profile this query", onClick: onProfile, busy: profiling }}
-            />
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+              <Gauge className="h-6 w-6 opacity-40" />
+              <p className="text-[12.5px]">Run a SELECT to see its execution plan.</p>
+            </div>
           )
         ) : view === "dashboard" ? (
           <PanelEmpty
