@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
 import { cellText, computeStats, filterRows, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
-import { QueryProfileView, type ProfileData } from "@/features/workbench/QueryProfileView";
+import { QueryPlanView } from "./QueryPlanView";
+import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
 import type { ResultView } from "./tabs";
 
@@ -43,7 +44,7 @@ export function ResultsPanel({
   onOpenSql,
   onCommitEdits,
   editBusy,
-  profileData,
+  planData,
   profiling,
   onProfile,
   onSendToDashboard,
@@ -74,7 +75,7 @@ export function ResultsPanel({
   onOpenSql: (sql: string, title?: string) => void;
   onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   editBusy: boolean;
-  profileData?: ProfileData;
+  planData?: Plan;
   profiling: boolean;
   onProfile: () => void;
   onSendToDashboard: () => void;
@@ -177,8 +178,8 @@ export function ResultsPanel({
         : null}
       <div className={cn("relative min-h-0 flex-1 overflow-auto", busy && "pointer-events-none opacity-60")}>
         {view === "performance" ? (
-          profileData ? (
-            <QueryProfileView data={profileData} onOpenSql={onOpenSql} />
+          planData ? (
+            <QueryPlanView plan={planData} onOpenSql={onOpenSql} />
           ) : (
             <PanelEmpty
               icon={Gauge}

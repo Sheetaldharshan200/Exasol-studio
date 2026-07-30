@@ -8,7 +8,7 @@
  */
 import { type IconName } from "@/components/ui/icon";
 import type { ObjectRef } from "@/features/workbench/ObjectDetailPanel";
-import type { ProfileData } from "@/features/workbench/QueryProfileView";
+import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse } from "@/lib/ipc";
 
 export const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
@@ -76,8 +76,8 @@ export type SqlTab = {
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
   /** For artifact tabs — the rendered HTML document. */
   artifactHtml?: string;
-  /** For profile tabs — the computed query-performance analysis. */
-  profileData?: ProfileData;
+  /** Query Performance — the normalized execution plan for this tab's query. */
+  planData?: Plan;
   /** Result pagination (0-based) for single-SELECT tabs. */
   resultPage?: number;
   /** For the unified connection tab — which section to show; nonce re-applies

@@ -52,7 +52,7 @@ import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type Sq
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
-import { type ProfileData, type ProfilePart } from "@/features/workbench/QueryProfileView";
+import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 
@@ -1186,7 +1186,7 @@ export function ExasolStudio({
     setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
     if (runNow && connection) {
       setRunning(true);
-      patchTab(tab.id, { resultView: "results", profileData: undefined });
+      patchTab(tab.id, { resultView: "results", planData: undefined });
       try {
         const result = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
         updateTabs(key, (list) =>
@@ -1600,7 +1600,7 @@ export function ExasolStudio({
       setRunning(true);
       const startedAt = Date.now();
       const tabId = activeTab.id;
-      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined, profileData: undefined, resultView: "results" });
+      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined, planData: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
@@ -1850,98 +1850,91 @@ export function ExasolStudio({
   const [profiling, setProfiling] = useState(false);
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
+  // Rows of a result set as column-keyed records (column names upper-cased to
+  // match Exasol's profile view columns the normalizer reads).
+  function resultRecords(r: { columns: { name: string }[]; rows: unknown[][] }): Record<string, unknown>[] {
+    const cols = r.columns.map((c) => c.name.toUpperCase());
+    return r.rows.map((row) => Object.fromEntries(cols.map((c, i) => [c, row[i]])));
+  }
+
   async function profileQuery(sql: string) {
     const stmt = sql.trim().replace(/;\s*$/, "");
     if (!stmt || !connection || profiling) return;
-    const script = [
-      "ALTER SESSION SET PROFILE = 'ON';",
-      stmt + ";",
-      "SELECT CURRENT_STATEMENT AS STMT_MARK;",
-      "ALTER SESSION SET PROFILE = 'OFF';",
-      "FLUSH STATISTICS;",
-      "SELECT * FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = CURRENT_SESSION ORDER BY STMT_ID DESC, PART_ID LIMIT 400;",
-      "SELECT * FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = CURRENT_SESSION ORDER BY STMT_ID DESC LIMIT 20;",
-    ].join("\n");
+    const cid = connection.profile.id;
+    const cname = connection.profile.name;
     setProfiling(true);
     try {
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, script, 1000, true);
-      const bad = res.results.find((r) => r.error);
-      if (bad?.error) {
-        pushNotification("warning", "Profiling failed", bad.error);
+      // 1) Run the statement with profiling on; capture CURRENT_STATEMENT (the
+      //    marker's own id — the profiled statement is mark-1) and the session
+      //    id, then flush so profiling data is queryable immediately.
+      const runScript = [
+        "ALTER SESSION SET PROFILE = 'ON';",
+        stmt + ";",
+        "SELECT CURRENT_STATEMENT AS STMT_MARK, CURRENT_SESSION AS SID;",
+        "ALTER SESSION SET PROFILE = 'OFF';",
+        "FLUSH STATISTICS;",
+      ].join("\n");
+      const runRes = await ipc.executeSql(cid, cname, runScript, 1000, true);
+      const stmtErr = runRes.results.find((r) => r.error);
+      if (stmtErr?.error) {
+        pushNotification("warning", "Profiling failed", stmtErr.error);
         return;
       }
-      const sets = res.results.filter((r) => r.kind === "resultSet");
-      // Column-name-based accessor: exact and resilient to column order/set.
-      const by = (r: (typeof sets)[number]) => {
-        const idx = new Map(r.columns.map((c, k) => [c.name.toUpperCase(), k]));
-        return (row: unknown[], col: string) => {
-          const k = idx.get(col);
-          return k === undefined ? null : row[k];
-        };
-      };
-      const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
-      // The marker result: one row, one column STMT_MARK → profiled id = mark - 1.
-      const markSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "STMT_MARK"));
-      const mark = markSet ? num(by(markSet)(markSet.rows[0] ?? [], "STMT_MARK")) : null;
-      if (mark === null) {
+      const markSet = runRes.results.find(
+        (r) => r.kind === "resultSet" && r.columns.some((c) => c.name.toUpperCase() === "STMT_MARK"),
+      );
+      const markRow = markSet?.rows[0];
+      const markIdx = markSet ? markSet.columns.findIndex((c) => c.name.toUpperCase() === "STMT_MARK") : -1;
+      const sidIdx = markSet ? markSet.columns.findIndex((c) => c.name.toUpperCase() === "SID") : -1;
+      const markVal = markRow && markIdx >= 0 ? Number(markRow[markIdx]) : NaN;
+      const sid = markRow && sidIdx >= 0 ? String(markRow[sidIdx]) : "";
+      if (!Number.isFinite(markVal) || !sid) {
         pushNotification("warning", "Profiling failed", "Could not determine the statement id (CURRENT_STATEMENT marker missing).");
         return;
       }
-      const targetId = mark - 1;
-      const profSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "PART_NAME"));
-      const sqlSet = sets.find((r) => r.columns.some((c) => c.name.toUpperCase() === "COMMAND_CLASS") && !r.columns.some((c) => c.name.toUpperCase() === "PART_NAME"));
-      if (!profSet || !profSet.rows.length) {
-        pushNotification("warning", "No profile data", "EXA_STATISTICS returned no parts — the account may lack statistics access.");
-        return;
-      }
-      const g = by(profSet);
-      const parts: ProfilePart[] = profSet.rows
-        .filter((row) => num(g(row, "STMT_ID")) === targetId)
-        .map((row) => ({
-          partId: num(g(row, "PART_ID")) ?? 0,
-          name: String(g(row, "PART_NAME") ?? ""),
-          info: g(row, "PART_INFO") === null ? null : String(g(row, "PART_INFO")),
-          schema: g(row, "OBJECT_SCHEMA") === null ? null : String(g(row, "OBJECT_SCHEMA")),
-          object: g(row, "OBJECT_NAME") === null ? null : String(g(row, "OBJECT_NAME")),
-          objectRows: num(g(row, "OBJECT_ROWS")),
-          inRows: num(g(row, "IN_ROWS")),
-          outRows: num(g(row, "OUT_ROWS")),
-          duration: num(g(row, "DURATION")),
-          cpu: num(g(row, "CPU")),
-          tempRam: num(g(row, "TEMP_DB_RAM_PEAK")),
-          hddRead: num(g(row, "HDD_READ")),
-          hddWrite: num(g(row, "HDD_WRITE")),
-          net: num(g(row, "NET")),
-          remarks: g(row, "REMARKS") === null ? null : String(g(row, "REMARKS")),
-        }))
-        .sort((a, b) => a.partId - b.partId);
-      if (!parts.length) {
-        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows (it may be too fast to profile).`);
-        return;
-      }
-      // The statement's EXACT wall time + totals from EXA_USER_SQL_LAST_DAY.
-      let wall: ProfileData["wall"] = null;
-      if (sqlSet) {
-        const q = by(sqlSet);
-        const row = sqlSet.rows.find((r2) => num(q(r2, "STMT_ID")) === targetId);
-        if (row) {
-          wall = {
-            duration: num(q(row, "DURATION")),
-            commandName: String(q(row, "COMMAND_NAME") ?? ""),
-            rowCount: num(q(row, "ROW_COUNT")),
-            cpu: num(q(row, "CPU")),
-            tempRam: num(q(row, "TEMP_DB_RAM_PEAK")),
-            hddRead: num(q(row, "HDD_READ")),
-            net: num(q(row, "NET")),
-          };
+      const targetId = markVal - 1;
+
+      // 2) Fetch the profile rows for that exact (session, statement). Richest
+      //    first: the per-node detail view (IPROC) enables skew/straggler
+      //    warnings; fall back to the always-available user summary view.
+      const attempts: { sql: string; source: ProfileSource }[] = [
+        { sql: `SELECT * FROM "$EXA_PROFILE_DETAILS_LAST_DAY" WHERE SESSION_ID = ${sid} AND STMT_ID = ${targetId} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
+        { sql: `SELECT * FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = ${sid} AND STMT_ID = ${targetId} ORDER BY PART_ID`, source: "USER_SUMMARY" },
+      ];
+      let rows: Record<string, unknown>[] = [];
+      let source: ProfileSource = "USER_SUMMARY";
+      for (const attempt of attempts) {
+        const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch(() => null);
+        const set = res?.results.find((r) => r.kind === "resultSet");
+        if (res?.success && set && set.rows.length > 0) {
+          rows = resultRecords(set);
+          source = attempt.source;
+          break;
         }
       }
-      const data: ProfileData = { sql: stmt, script, commandName: wall?.commandName ?? (stmt.match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase(), parts, wall };
-      // Show the plan inline on the profiled tab's Query Performance view,
-      // bound to this query. resultView is per-tab, so switching tabs while a
-      // profile is still running never flips another tab's view — the data and
-      // the view land together on the tab that was profiled.
-      patchTab(activeTab.id, { profileData: data, resultView: "performance" });
+      if (rows.length === 0) {
+        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows (it may be too fast to profile, or the account lacks statistics access).`);
+        return;
+      }
+
+      // Derive the (session, statement) key from the fetched rows themselves —
+      // the SQL already scoped to the right one, and using the view's own
+      // string form avoids any CURRENT_SESSION vs column representation
+      // mismatch in the normalizer's row filter.
+      const first = rows[0];
+      const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
+      const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : String(targetId);
+      const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
+      // Profile views carry no SQL_TEXT — use the statement we just profiled.
+      if (!plan.queryText) plan.queryText = stmt;
+      if (plan.nodes.length === 0) {
+        pushNotification("warning", "No profile parts for this statement", `Statement ${targetId} produced no profile rows.`);
+        return;
+      }
+      // Show the plan inline on the profiled tab's Query Performance view.
+      // resultView is per-tab, so a profile that finishes after a tab switch
+      // lands its data and view together on the tab that was profiled.
+      patchTab(activeTab.id, { planData: plan, resultView: "performance" });
       loadHistory();
     } catch (e) {
       pushNotification("warning", "Profiling failed", errorMessage(e));
@@ -2907,7 +2900,7 @@ export function ExasolStudio({
                   onOpenSql={openSqlTab}
                   onCommitEdits={commitEdits}
                   editBusy={running}
-                  profileData={activeTab.profileData}
+                  planData={activeTab.planData}
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}

@@ -38,20 +38,27 @@ Legend: [ ] todo · [x] done. Each logic task names its test file.
       (double-click) is disabled while a filter is active (edit addresses
       unfiltered rows); selection clears on filter change (Codex findings).
 
-## Part 4 — Query Performance Plan view ✅ DONE
-- [x] The existing `QueryProfileView` already renders the exasol-vscode-style
-      plan (wall-time totals, measured bottlenecks + recommendations, per-step
-      %-of-wall bars, full engine-parts table), and Part 2 now shows it INLINE
-      in the Query Performance tab. Per the decision, the visual view is kept
-      and its pure math was extracted + tested rather than rebuilt:
-- [x] `lib/query-plan.ts`: `partsDurationSum`, `planDenominator`,
-      `computePlanRows` (share-of-wall), `analyze` (measured bottlenecks +
-      advice), `fmt`, and the `ProfilePart`/`ProfileData` types.
-      `QueryProfileView` (271 → 129 lines) imports them and re-exports the
-      types. Tests `lib/query-plan.test.ts` (12): null durations, wall-vs-sum
-      denominator, divide-by-zero share, and each analyze branch
-      (slowest-step, selective scan, join fan-out, net, disk, index remark,
-      reassuring note).
+## Part 4 — Query Performance Plan view ✅ DONE (rebuilt as an exact exasol-vscode port)
+- [x] Superseded the earlier recommendations view: the Query Performance tab is
+      now a faithful port of the exasol-labs/exasol-vscode plan tab (user asked
+      for "exactly like vscode, no dashboard nothing"). Removed the old
+      `QueryProfileView.tsx` and `lib/query-plan.ts`.
+- [x] `lib/plan-model.ts` (pure, 11 tests): operator taxonomy + traits,
+      per-node collapse (IPROC), system-step-aware cost %, warnings
+      (spill / large-redistribution / row-skew / duration-straggler), and
+      `normalizeProfileRows` — ported 1:1 from the vscode plan module.
+- [x] `lib/plan-format.ts` (pure, 17 tests): badges/colors, formatters,
+      category breakdown, hottest node, sorted warnings, scan selectivity,
+      and a plain-text `buildPlanText` export.
+- [x] `profileQuery` (ExasolStudio): fetches the per-node detail view
+      (`$EXA_PROFILE_DETAILS_LAST_DAY`, IPROC) richest-first, falls back to
+      `EXA_USER_PROFILE_LAST_DAY`, builds a `Plan`; per-node skew warnings now
+      fire. Tab carries `planData` (was `profileData`).
+- [x] `QueryPlanView.tsx`: horizontal operator flow (cost rings, connector
+      arrows with row counts, wrapping), click popovers (full metric set),
+      right rail (Warnings summary→jump, Profile overview, Time-by-category
+      bar, Legend), Query-text toggle + Copy-as-text. Codex-reviewed; fixed the
+      popover viewport-clamp (flips above / caps height near the screen edge).
 
 ## Part 5 — Dashboards as tabs ✅ DONE
 - [x] `tabs.ts`: new TabView `"dashboard"` + `SqlTab.dashboardId` + icon.
