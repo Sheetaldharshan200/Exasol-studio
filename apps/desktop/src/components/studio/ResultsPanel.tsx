@@ -7,9 +7,11 @@
  * Dashboard. Query Performance renders the engine plan inline (bound to this
  * tab's query) instead of spawning a separate tab.
  */
-import { BarChart3, ChevronLeft, ChevronRight, Gauge, Loader2, Table2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
+import { cellText, computeStats, filterRows, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
 import { QueryProfileView, type ProfileData } from "@/features/workbench/QueryProfileView";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
@@ -206,7 +208,21 @@ export function ResultsPanel({
               </div>
             ))}
           </div>
+        ) : lastResult && lastResult.kind === "resultSet" && !lastResult.error ? (
+          <ResultsView
+            result={lastResult}
+            sql={sql}
+            ranAt={runMeta?.finishedAt}
+            editable={editable}
+            onOpenSql={onOpenSql}
+            onCommitEdits={onCommitEdits}
+            editBusy={editBusy}
+            fontSize={fontSize}
+            zebra={zebra}
+          />
         ) : (
+          // No columns to filter/inspect (empty run, row-count-only, or error):
+          // the plain grid renders the right empty/error/affected-rows state.
           <ResultsGrid
             result={lastResult}
             error={lastResult?.error ?? execError}
@@ -220,6 +236,165 @@ export function ResultsPanel({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The Results view: a filter box, CSV export, the grid, and a right-hand
+ * inspector (clicked cell value / query statistics / the SQL). Filter and
+ * selection are local and reset whenever the underlying result changes.
+ */
+function ResultsView({
+  result,
+  sql,
+  ranAt,
+  editable,
+  onOpenSql,
+  onCommitEdits,
+  editBusy,
+  fontSize,
+  zebra,
+}: {
+  result: StatementResult;
+  sql: string;
+  ranAt?: number;
+  editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
+  onOpenSql: (sql: string, title?: string) => void;
+  onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
+  editBusy: boolean;
+  fontSize: number;
+  zebra: boolean;
+}) {
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<{ value: unknown; column: string; row: number; col: number } | null>(null);
+  const [showPanel, setShowPanel] = useState(true);
+  // A new result (re-run, page change, different tab) invalidates the filter
+  // and any inspected cell — their indices no longer mean anything.
+  useEffect(() => {
+    setFilter("");
+    setSelected(null);
+  }, [result]);
+
+  const displayRows = filter.trim() ? filterRows(result.rows, filter) : result.rows;
+  const stats = computeStats({ timeMs: result.elapsedMs, rows: displayRows.length, cols: result.columns.length });
+
+  function exportCsv() {
+    const csv = toCsv(result.columns, displayRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `results-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              value={filter}
+              onChange={(e) => {
+                setFilter(e.target.value);
+                // Display-row indices shift when the filter changes, so a stale
+                // highlight would point at the wrong row — drop it.
+                setSelected(null);
+              }}
+              placeholder="Filter results…"
+              className="h-6 w-full min-w-0 max-w-72 rounded-md border border-border bg-background pl-7 pr-2 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+            {filter.trim() ? `${displayRows.length.toLocaleString()} of ${result.rowCount.toLocaleString()}` : `${result.rowCount.toLocaleString()} row${result.rowCount === 1 ? "" : "s"}`}
+          </span>
+          <button
+            onClick={exportCsv}
+            title="Export the shown rows as CSV"
+            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </button>
+          <button
+            onClick={() => setShowPanel((s) => !s)}
+            title={showPanel ? "Hide details panel" : "Show details panel"}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            {showPanel ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ResultsGrid
+            result={result}
+            error={null}
+            filterQuery={filter}
+            onCellClick={(info) => {
+              setSelected(info);
+              setShowPanel(true);
+            }}
+            selected={selected ? { row: selected.row, col: selected.col } : null}
+            editable={editable}
+            onOpenSql={onOpenSql}
+            onCommitEdits={onCommitEdits}
+            editBusy={editBusy}
+            fontSize={fontSize}
+            zebra={zebra}
+            hideToolbar
+          />
+        </div>
+      </div>
+      {showPanel ? (
+        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-panel/40 p-3 [scrollbar-width:thin]">
+          <InspectorSection title="Cell Value">
+            {selected ? (
+              <>
+                <p className="mb-1 font-mono text-[10px] text-muted-foreground">{selected.column}</p>
+                <pre className="max-h-40 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground">
+                  {selected.value === null ? "null" : cellText(selected.value)}
+                </pre>
+              </>
+            ) : (
+              <p className="text-[11.5px] text-muted-foreground">Click a cell to inspect its full value.</p>
+            )}
+          </InspectorSection>
+          <InspectorSection title="Query Statistics">
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-[11.5px]">
+              <Stat label="Time" value={`${stats.timeMs} ms`} />
+              <Stat label="Rows" value={stats.rows.toLocaleString()} />
+              <Stat label="Cols" value={String(stats.cols)} />
+              <Stat label="Throughput" value={`${Math.round(stats.throughputPerSec).toLocaleString()} row/s`} />
+              <Stat label="Avg/Row" value={`${stats.avgPerRowMs.toFixed(1)} ms`} />
+            </dl>
+          </InspectorSection>
+          <InspectorSection title="Query">
+            <pre className="max-h-40 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11px] whitespace-pre-wrap break-words text-foreground">{sql.trim()}</pre>
+            {ranAt ? <p className="mt-1 text-[10px] text-muted-foreground">Ran {new Date(ranAt).toLocaleString()}</p> : null}
+          </InspectorSection>
+        </aside>
+      ) : null}
+    </div>
+  );
+}
+
+function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <p className="mb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">{title}</p>
+      {children}
+    </section>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right text-foreground">{value}</dd>
+    </>
   );
 }
 

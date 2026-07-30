@@ -30,11 +30,13 @@ Legend: [ ] todo · [x] done. Each logic task names its test file.
 - [x] `lib/result-stats.ts`: `filterRows`, `toCsv`, `computeStats`, `cellText`.
       Tests `lib/result-stats.test.ts` — empty rows, NULL cells,
       commas/quotes/newlines in CSV, 0ms/0-row divide-by-zero, negative clamp.
-- [ ] `ResultsPanel.tsx` Results view: filter box + Export CSV + right-hand
-      side panel (Cell Value inspector / Query Statistics / Query SQL) using the
-      helpers above. Reuse `ResultsGrid` for the table body; add `onCellClick`.
-- [ ] `HistoryDock.tsx` `ResultsGrid`: add optional `onCellClick(value)` and a
-      `highlight` filter without regressing existing callers.
+- [x] `ResultsPanel.tsx` Results view (`ResultsView`): filter box + Export CSV +
+      collapsible right-hand inspector (Cell Value / Query Statistics /
+      Query SQL) using the helpers above. Reuses `ResultsGrid` for the table.
+- [x] `HistoryDock.tsx` `ResultsGrid`: optional `filterQuery`, `onCellClick`,
+      `selected`, `hideToolbar` — no regression for existing callers. Edit
+      (double-click) is disabled while a filter is active (edit addresses
+      unfiltered rows); selection clears on filter change (Codex findings).
 
 ## Part 4 — Query Performance Plan view
 - [ ] New `features/workbench/QueryPlanView.tsx`: render ordered profile parts

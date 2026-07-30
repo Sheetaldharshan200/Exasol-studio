@@ -34,6 +34,7 @@ import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc } from "@/lib/ipc";
 import type { ExecuteResponse, GitLogEntry, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { fmtClock } from "@/lib/sql-text";
+import { cellText, filterRows } from "@/lib/result-stats";
 import { termBusReady } from "@/lib/term-bus";
 import { cn } from "@/lib/utils";
 import { IconButton } from "./IconButton";
@@ -89,6 +90,10 @@ export function ResultsGrid({
   editBusy,
   fontSize = 12,
   zebra = true,
+  filterQuery,
+  onCellClick,
+  selected,
+  hideToolbar = false,
 }: {
   result: StatementResult | null;
   error: string | null;
@@ -99,6 +104,15 @@ export function ResultsGrid({
   editBusy?: boolean;
   fontSize?: number;
   zebra?: boolean;
+  /** Client-side substring filter applied to the read-only rows (empty = all). */
+  filterQuery?: string;
+  /** Single-click a data cell to inspect it. Row/col index into the DISPLAYED
+   *  (post-filter) rows. */
+  onCellClick?: (info: { value: unknown; column: string; row: number; col: number }) => void;
+  /** The currently inspected cell (display indices), highlighted. */
+  selected?: { row: number; col: number } | null;
+  /** Hide the internal toolbar (Edit data + count) when the parent shows its own. */
+  hideToolbar?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   // The cell the user double-tapped — edit mode opens with THAT cell focused.
@@ -163,22 +177,30 @@ export function ResultsGrid({
       />
     );
   }
+  const filterActive = Boolean(filterQuery && filterQuery.trim());
+  const filtered = filterActive ? filterRows(result.rows, filterQuery!) : result.rows;
+  // Editing addresses unfiltered `result.rows`, but the grid shows filtered
+  // display indices — so double-click-to-edit is only safe when no filter is
+  // active. Clear the filter to edit.
+  const editableNow = canEdit && !filterActive;
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
-        {canEdit ? (
-          <button
-            onClick={() => startEditing(null)}
-            title={`Edit rows in ${editable!.table}`}
-            className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit data
-          </button>
-        ) : null}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-          {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
-        </span>
-      </div>
+      {hideToolbar ? null : (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+          {canEdit ? (
+            <button
+              onClick={() => startEditing(null)}
+              title={`Edit rows in ${editable!.table}`}
+              className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit data
+            </button>
+          ) : null}
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
+          </span>
+        </div>
+      )}
       <div className="h-full min-h-0 flex-1 overflow-auto" style={{ fontSize }}>
         {/* border-separate (NOT collapse) so the sticky header cells carry their
             own opaque background + border — with border-collapse the row bg and
@@ -203,30 +225,42 @@ export function ResultsGrid({
             </tr>
           </thead>
           <tbody className="font-mono">
-            {result.rows.map((row, rowIndex) => (
-              <tr
-                key={rowIndex}
-                title={canEdit ? "Double-click a cell to edit it" : undefined}
-                className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", canEdit && "cursor-cell")}
-              >
-                <td className="border-r border-b border-l border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
-                  {rowIndex + 1}
+            {filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={result.columns.length + 1}
+                  className="border-r border-b border-l border-border px-3 py-4 text-center text-[11px] text-muted-foreground"
+                >
+                  No rows match “{filterQuery}”.
                 </td>
-                {row.map((cell, cellIndex) => (
-                  <td
-                    key={cellIndex}
-                    onDoubleClick={
-                      canEdit
-                        ? () => startEditing({ row: rowIndex, col: cellIndex })
-                        : undefined
-                    }
-                    className="max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground"
-                  >
-                    {cell === null ? <span className="text-muted-foreground italic">null</span> : String(cell)}
-                  </td>
-                ))}
               </tr>
-            ))}
+            ) : (
+              filtered.map((row, rowIndex) => (
+                <tr
+                  key={rowIndex}
+                  title={editableNow ? "Double-click a cell to edit it" : undefined}
+                  className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", editableNow && "cursor-cell")}
+                >
+                  <td className="border-r border-b border-l border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
+                    {rowIndex + 1}
+                  </td>
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      onClick={onCellClick ? () => onCellClick({ value: cell, column: result.columns[cellIndex]?.name ?? "", row: rowIndex, col: cellIndex }) : undefined}
+                      onDoubleClick={editableNow ? () => startEditing({ row: rowIndex, col: cellIndex }) : undefined}
+                      className={cn(
+                        "max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground",
+                        onCellClick && "cursor-pointer",
+                        selected && selected.row === rowIndex && selected.col === cellIndex && "bg-primary/15 ring-1 ring-inset ring-primary/40",
+                      )}
+                    >
+                      {cell === null ? <span className="text-muted-foreground italic">null</span> : cellText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
