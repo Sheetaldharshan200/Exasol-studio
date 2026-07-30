@@ -92,9 +92,15 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
     if profile.ssl_mode != "preferred" {
         params.push(format!("ssl-mode={}", profile.ssl_mode));
     }
-    if profile.compression {
-        params.push("compression=enabled".to_string());
-    }
+    // The sqlx-exasol driver accepts only disabled | preferred | required for
+    // the `compression` parameter (NOT "enabled" — that raised "invalid
+    // connection parameter: compression"). Map our boolean explicitly so OFF is
+    // truly off: omitting it would fall back to the driver default `preferred`,
+    // which still compresses when the feature is compiled in.
+    params.push(format!(
+        "compression={}",
+        if profile.compression { "required" } else { "disabled" }
+    ));
     if let Some(schema) = profile.schema.as_deref().filter(|s| !s.trim().is_empty()) {
         params.push(format!("schema={}", percent_encode(schema.trim())));
     }
@@ -315,4 +321,37 @@ pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPo
         .get(profile_id)
         .cloned()
         .ok_or_else(|| AppError::NotConnected(profile_id.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(compression: bool) -> ConnectionProfile {
+        ConnectionProfile {
+            id: "t".into(),
+            name: "t".into(),
+            host: "127.0.0.1".into(),
+            port: 8565,
+            username: "sys".into(),
+            password: "exasol".into(),
+            schema: None,
+            notes: None,
+            ssl_mode: "preferred".into(),
+            compression,
+            driver_id: "sqlx-exasol".into(),
+            created_at: None,
+            last_used_at: None,
+        }
+    }
+
+    // Regression: the driver accepts only disabled|preferred|required for the
+    // `compression` param. We once sent `compression=enabled`, which made
+    // ExaConnectOptions::from_str fail with "invalid connection parameter:
+    // compression". Both boolean states must now parse cleanly.
+    #[test]
+    fn compression_maps_to_a_valid_driver_value() {
+        assert!(build_connect_options(&profile(true)).is_ok(), "compression=true must parse");
+        assert!(build_connect_options(&profile(false)).is_ok(), "compression=false must parse");
+    }
 }

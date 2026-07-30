@@ -196,6 +196,10 @@ pub fn ensure_personal_local_profile(
             && p.username.eq_ignore_ascii_case(username)
     }) {
         existing.password = password.into();
+        // Loopback connection — compression buys nothing and just adds CPU.
+        // Force it off so an older managed profile that was created with
+        // compression on is reconciled off, too.
+        existing.compression = false;
         return save_profile(state, existing);
     }
 
@@ -213,7 +217,8 @@ pub fn ensure_personal_local_profile(
             schema: None,
             notes: Some("Managed automatically by Exasol Studio".into()),
             ssl_mode: "preferred".into(),
-            compression: true,
+            // Off by default — loopback gains nothing from compression.
+            compression: false,
             driver_id: default_driver(),
             created_at: None,
             last_used_at: None,
