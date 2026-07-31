@@ -1513,7 +1513,24 @@ function ManagedComponents() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const norm = (v: string) => v.replace(/^v/i, "").trim();
-  const isNewer = (avail: string | null, inst: string | null) => !!avail && !!inst && norm(avail) !== norm(inst);
+  // Offer an Update only when the latest release is strictly NEWER than what's
+  // installed — numeric-segment compare (mirrors the Rust is_newer). A rolled-
+  // back or non-numeric latest must never be offered as an "update" (that would
+  // be a downgrade / ambiguous), so this returns false in those cases.
+  const isNewer = (avail: string | null, inst: string | null): boolean => {
+    if (!avail || !inst) return false;
+    const seg = (v: string) => norm(v).split(/[.\-+]/).map((p) => (/^\d+$/.test(p) ? parseInt(p, 10) : NaN));
+    const a = seg(avail);
+    const b = seg(inst);
+    if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
+    const width = Math.max(a.length, b.length);
+    for (let i = 0; i < width; i++) {
+      const x = a[i] ?? 0;
+      const y = b[i] ?? 0;
+      if (x !== y) return x > y;
+    }
+    return false;
+  };
 
   async function run(id: string, action: () => Promise<void>, ok: string) {
     setBusy(id); setNote(null);

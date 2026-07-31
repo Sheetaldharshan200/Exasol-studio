@@ -185,12 +185,14 @@ fn mcp_server_bin(env: &Path) -> PathBuf {
 /// user has independently installed/updated it there, otherwise the shared
 /// verified stack. This is what lets the MCP server be updated on its own
 /// without a Studio release — see components_update.rs.
+///
+/// The own env is used only when its install MANIFEST is present AND the binary
+/// exists — a half-built/corrupt env (binary without a manifest, written last on
+/// success) must never shadow the verified fallback and break MCP startup.
 fn mcp_server_command(data_dir: &Path) -> PathBuf {
-    let own = mcp_server_bin(&crate::components_update::component_env(
-        data_dir,
-        crate::components_update::ComponentId::McpServer,
-    ));
-    if own.is_file() {
+    let id = crate::components_update::ComponentId::McpServer;
+    let own = mcp_server_bin(&crate::components_update::component_env(data_dir, id));
+    if crate::components_update::read_manifest(data_dir, id).is_some() && own.is_file() {
         own
     } else {
         venv_mcp_server(data_dir)
@@ -1465,6 +1467,31 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
         .collect())
 }
 
+/// Re-point the MCP client config (agent/mcp-server.json) at the binary that
+/// mcp_server_command now resolves to. The config stores a concrete executable
+/// path, so after an update (own env) or a revert (back to the shared verified
+/// stack) it must be rewritten or clients keep launching the old/deleted binary.
+/// No-op when MCP hasn't been configured yet.
+fn repoint_mcp_command(data_dir: &Path) -> AppResult<()> {
+    let config = data_dir.join("agent/mcp-server.json");
+    let Ok(raw) = std::fs::read_to_string(&config) else {
+        return Ok(());
+    };
+    let mut value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| AppError::Storage(e.to_string()))?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "command".into(),
+            json!(mcp_server_command(data_dir).to_string_lossy()),
+        );
+    }
+    std::fs::write(
+        &config,
+        serde_json::to_vec_pretty(&value).map_err(|e| AppError::Storage(e.to_string()))?,
+    )?;
+    Ok(())
+}
+
 /// Install a specific MCP-server version into its OWN isolated venv, so it runs
 /// from there instead of the shared verified stack (see mcp_server_command).
 fn install_mcp_component(app: &AppHandle, data_dir: &Path, version: &str, channel: &str) -> AppResult<()> {
@@ -1520,7 +1547,9 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
         let verified = verified_version(component);
         let target = version.unwrap_or_else(|| verified.clone());
         let channel = if target == verified { "verified" } else { "upstream" };
-        install_mcp_component(&app, &data_dir, &target, channel)
+        install_mcp_component(&app, &data_dir, &target, channel)?;
+        // Point MCP clients at the newly-installed own-env binary.
+        repoint_mcp_command(&data_dir)
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?
@@ -1534,8 +1563,17 @@ pub async fn revert_component(app: AppHandle, id: String) -> AppResult<()> {
         .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let data_dir = app.state::<AppState>().data_dir.clone();
-        let _ = std::fs::remove_dir_all(components_update::component_dir(&data_dir, component));
-        Ok(())
+        let dir = components_update::component_dir(&data_dir, component);
+        // Report failure if the env couldn't actually be removed — otherwise we
+        // would claim a revert while the (possibly broken) own env still shadows
+        // the verified stack.
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(AppError::Storage(format!("Could not remove {}: {e}", dir.display()))),
+        }
+        // Point MCP clients back at the shared verified binary.
+        repoint_mcp_command(&data_dir)
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?
