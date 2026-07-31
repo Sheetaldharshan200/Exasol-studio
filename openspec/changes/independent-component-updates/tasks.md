@@ -96,17 +96,23 @@ never surfaced; a version is shown only once Studio has verified it.
       time (installOne → pickAsset), never for display.
 - [ ] **Full studio-side cutover (needs the CI pipeline):** move binary asset
       URLs + SHAs into the Studio catalog/verified lock so installs stop hitting
-      GitHub entirely. Blocked on the pipeline below.
-- [ ] **CI compatibility → sign → publish pipeline (the "trustworthy" core).**
-      GitHub Actions in the app repo: on a schedule / repository_dispatch webhook,
-      detect new upstream component versions, run a compatibility test matrix
-      (install into an isolated env + smoke test against the DB), and ONLY on
-      pass bump `runtime-components.lock.json` + `catalog.json`, sign the lock
-      (ed25519 → `.sig`), and publish to the hosting URL. Consumes the
-      already-built `verified_lock.rs` (fetch + verify + anti-downgrade). Ops
-      prerequisite: generate the keypair, set `VERIFIED_LOCK_PUBKEY_HEX` +
-      `VERIFIED_LOCK_URL`, host the lock + `.sig`. Until then the shipped pubkey
-      is empty (inert) and the baked lock is the source of truth.
+      GitHub entirely. Partially addressed: managed-component catalog "latest"
+      now derives from the validated lock (see below); asset URLs still resolved
+      from releases at install time.
+- [x] **CI compatibility matrix (already existed).** `refresh-runtime-components.yml`
+      resolves upstream → immutable set, validates on 5 platforms (build +
+      cargo test + tauri build + real Nano DB + MCP handshake), and opens a
+      human-reviewed PR that lands `runtime-components.lock.json`.
+- [x] **Catalog "latest" from the validated lock** (`update-catalog.yml`): the
+      lock-pinned components (personal, exapump, mcp-server) take their catalog
+      "latest" from the lock, not raw upstream tags. Others still track upstream.
+- [x] **Signed OTA publish scaffold (inert).** `sign_verified_lock.py` +
+      `publish-verified-lock.yml`: on a lock change, sign it (ed25519, detached,
+      base64 `.sig`) and force-publish to the `verified-lock` branch — ONLY when
+      the `VERIFIED_LOCK_SIGNING_KEY_HEX` secret is set (else no-op). Consumes
+      `verified_lock.rs`. Ops steps in `docs/verified-lock-signing.md`: generate
+      keypair, set the secret + bake `VERIFIED_LOCK_PUBKEY_HEX`, ship a release.
+      Sign→verify roundtrip validated locally.
 
 ## Cross-cutting
 - [ ] Keep it opt-in/manual (no auto-update). Notification deep-links to Updates.
