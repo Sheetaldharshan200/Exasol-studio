@@ -75,7 +75,29 @@ pub fn artifact_for(component: &ReleaseComponent) -> Option<&Artifact> {
     component.artifacts.get(&platform_key())
 }
 
+/// The signed remote override, when one has been resolved at startup (see
+/// verified_lock + init_effective). Empty → the baked lock is in force.
+static EFFECTIVE: OnceLock<RuntimeComponents> = OnceLock::new();
+
+/// Resolve the effective verified lock ONCE at startup: use the signed remote
+/// override when it verifies + is newer than the baked lock, otherwise leave the
+/// baked lock in force. Must be called before anything reads `components()`.
+pub fn init_effective(data_dir: &std::path::Path) {
+    if EFFECTIVE.get().is_some() {
+        return;
+    }
+    if let Some(over) = crate::verified_lock::resolve_override(baked(), data_dir) {
+        let _ = EFFECTIVE.set(over);
+    }
+}
+
+/// The verified component set in force: the signed remote override when present,
+/// else the app-baked lock.
 pub fn components() -> &'static RuntimeComponents {
+    EFFECTIVE.get().unwrap_or_else(baked)
+}
+
+fn baked() -> &'static RuntimeComponents {
     static COMPONENTS: OnceLock<RuntimeComponents> = OnceLock::new();
     COMPONENTS.get_or_init(|| {
         let parsed: RuntimeComponents =

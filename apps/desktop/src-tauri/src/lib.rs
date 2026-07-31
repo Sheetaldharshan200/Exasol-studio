@@ -8,6 +8,7 @@ mod connection;
 mod connection_settings;
 mod component_lock;
 mod components_update;
+mod verified_lock;
 mod driver_exec;
 mod drivers;
 mod error;
@@ -44,11 +45,15 @@ pub fn run() {
                 .app_data_dir()
                 .expect("app data directory must resolve");
             std::fs::create_dir_all(&data_dir)?;
+            // Resolve the effective verified component lock (signed remote
+            // override if valid + newer, else baked) BEFORE anything reads it.
+            crate::component_lock::init_effective(&data_dir);
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::terminal::TermRegistry::default());
             crate::updates::start(app.handle().clone());
+            crate::verified_lock::start(app.handle().clone());
             app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
             crate::local_database::auto_start_if_installed(app.handle());

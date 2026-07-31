@@ -40,11 +40,17 @@ require the lock itself to update independently.
 - [x] Updates panel is honest for ALL components now: MCP (pip, uv-hash-safe)
       gets a one-click Update; binary components show the newer upstream version
       with a "view release" link (no unverified download) or "up to date".
-- [ ] **Remote verified lock (the real production mechanism).** Fetch a signed/
-      trusted `runtime-components.lock.json` from a known URL and prefer it over
-      the app-baked one when newer + valid. This is what makes verify-or-refuse
-      binary/DB updates genuinely independent of app releases (new SHAs arrive
-      without a full Studio update). Needs a hosted manifest + signature check.
+- [x] **Remote verified lock (the real production mechanism) — app side.**
+      `verified_lock.rs`: fetch the signed lock + detached ed25519 signature from
+      a configurable URL, verify against an embedded public key, accept only when
+      valid + newer + same schema, cache it, and prefer it over the baked lock
+      (resolved once at startup via `component_lock::init_effective`; background
+      refresh applies on next launch). Safe by default: the shipped public key is
+      EMPTY, so nothing fetched is ever trusted until ops sets the real key.
+      Tests cover verify/tamper/wrong-key/short-sig and date comparison.
+      **Ops to enable:** generate an ed25519 keypair, set
+      `VERIFIED_LOCK_PUBKEY_HEX` + `VERIFIED_LOCK_URL`, host
+      `runtime-components.lock.json` + `.sig` (base64 of the 64-byte signature).
 - [ ] ExaPump: verify-or-refuse install of a lock-verified version into its own
       env (SHA-checked via obtain_artifact), run-from-own, revert. Useful once
       the remote lock can advance its verified version.

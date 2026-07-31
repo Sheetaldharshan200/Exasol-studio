@@ -44,6 +44,9 @@ rand = "0.8"
 base64 = "0.22"
 zeroize = "1"
 sha2 = "0.10"
+# Detached-signature verification of the remotely-fetched verified component
+# lock (app embeds the public key; the manifest is signed with the private key).
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 flate2 = "1"
 tar = "0.4"
 zip = "0.6"
