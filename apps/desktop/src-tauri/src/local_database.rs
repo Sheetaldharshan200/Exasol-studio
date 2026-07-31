@@ -1562,9 +1562,12 @@ fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> 
     let artifact = exapump_platform()?;
     let name = if cfg!(windows) { "exapump.exe" } else { "exapump" };
     let dir = components_update::component_dir(data_dir, ComponentId::ExaPump);
+    // Fresh dir each time: the manifest is written LAST (on success), so a
+    // failed reinstall leaves no manifest — exapump_path then won't shadow the
+    // working shared binary with a broken own-dir one.
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
     let target = dir.join(name);
-    let _ = std::fs::remove_file(&target);
     crate::local_runtime::obtain_artifact(app, JOB_ID, artifact, &target)?;
     #[cfg(unix)]
     {
@@ -1591,13 +1594,14 @@ fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> 
 /// re-running its installer. Requires the local runtime + managed Python; the
 /// installer writes the readiness marker with the new revision on success.
 fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
-    let runtime = crate::local_runtime::ensure_runtime(app, JOB_ID)?;
+    // Refuse an unconfigured setup BEFORE starting the runtime (no side effects).
     let python = venv_python(data_dir);
     if !python.is_file() {
         return Err(AppError::Storage(
             "Set up the local database first — the managed Python stack isn't installed yet.".into(),
         ));
     }
+    let runtime = crate::local_runtime::ensure_runtime(app, JOB_ID)?;
     let runtime = query_ready_runtime(app, &python, &runtime)?;
     install_semantic_views(app, data_dir, &runtime, &python)
 }
@@ -1648,8 +1652,12 @@ pub async fn revert_component(app: AppHandle, id: String) -> AppResult<()> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(AppError::Storage(format!("Could not remove {}: {e}", dir.display()))),
         }
-        // Point MCP clients back at the shared verified binary.
-        repoint_mcp_command(&data_dir)
+        // Only the MCP server has a client config to re-point; don't let an
+        // unrelated MCP-config problem fail an ExaPump revert that succeeded.
+        if component == ComponentId::McpServer {
+            repoint_mcp_command(&data_dir)?;
+        }
+        Ok(())
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?
