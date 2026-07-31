@@ -1554,8 +1554,15 @@ function ManagedComponents() {
       <div className="divide-y divide-border/60">
         {comps.map((c) => {
           const avail = available[c.id] ?? null;
-          const canUpdate = c.updatable && isNewer(avail, c.installed);
           const isBusy = busy === c.id;
+          const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
+          const linkBtn = "flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground";
+          const upToDate = <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>;
+          const upstreamLink = (ver: string) => (
+            <button onClick={() => openExternal(`https://github.com/${c.repo}/releases`)} title="Studio ships SHA-verified builds; this upstream release isn't verified yet" className={linkBtn}>
+              <ExternalLink className="h-3.5 w-3.5" /> {ver} upstream
+            </button>
+          );
           return (
             <div key={c.id} className="flex items-center gap-3 py-2.5">
               <div className="min-w-0 flex-1">
@@ -1583,31 +1590,29 @@ function ManagedComponents() {
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Revert
                   </button>
                 ) : null}
-                {c.updatable ? (
-                  canUpdate ? (
-                    <button
-                      onClick={() => void run(c.id, () => ipc.updateComponent(c.id, norm(avail!)), `${c.name} updated to ${avail}.`)}
-                      disabled={isBusy}
-                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-                    >
+                {c.updatable && c.pipManaged ? (
+                  // pip/uv: any newer upstream is index-hash-verified → offer it.
+                  isNewer(avail, c.installed) ? (
+                    <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id, norm(avail!)), `${c.name} updated to ${avail}.`)} disabled={isBusy} className={upBtn}>
                       {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {avail}
                     </button>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>
-                  )
+                  ) : upToDate
+                ) : c.updatable ? (
+                  // Binary (verify-or-refuse): install only the SHA-pinned verified
+                  // build; if verified is ahead of installed, offer it. A newer
+                  // upstream than verified is surfaced as a link, never installed.
+                  <>
+                    {isNewer(c.verified, c.installed) ? (
+                      <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
+                        {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified}
+                      </button>
+                    ) : upToDate}
+                    {isNewer(avail, c.verified) ? upstreamLink(avail!) : null}
+                  </>
                 ) : isNewer(avail, c.installed) ? (
-                  // Binary component with a newer upstream release. Verify-or-
-                  // refuse: don't download an unverified binary — surface it and
-                  // link out. It rolls into the verified set on a Studio update.
-                  <button
-                    onClick={() => openExternal(`https://github.com/${c.repo}/releases`)}
-                    title="Studio ships SHA-verified builds; this upstream release isn't verified yet"
-                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> {avail} upstream
-                  </button>
+                  upstreamLink(avail!)
                 ) : (
-                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>
+                  upToDate
                 )}
               </div>
             </div>

@@ -21,6 +21,18 @@ fn exapump_path(app: &AppHandle) -> Option<String> {
     } else {
         "exapump"
     };
+    // An independently-installed ExaPump (its own env) takes precedence over the
+    // shared managed copy — gated on its install manifest so a half-built env
+    // can't shadow the working one (mirrors the MCP server).
+    if let Ok(dd) = app.path().app_data_dir() {
+        let id = crate::components_update::ComponentId::ExaPump;
+        if crate::components_update::read_manifest(&dd, id).is_some() {
+            let own = crate::components_update::component_dir(&dd, id).join(managed_name);
+            if own.is_file() {
+                return Some(own.to_string_lossy().to_string());
+            }
+        }
+    }
     let managed = app
         .path()
         .app_data_dir()

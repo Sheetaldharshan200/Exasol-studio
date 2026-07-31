@@ -1395,6 +1395,10 @@ pub struct ComponentInfo {
     pub on_own_env: bool,
     /// Whether independent one-click update/revert is available for it yet.
     pub updatable: bool,
+    /// pip/uv-managed (hashes verified by the index) → can move to any upstream
+    /// version. False = binary (verify-or-refuse: only the SHA-pinned verified
+    /// build; upstream is shown/linked, not installed).
+    pub pip_managed: bool,
 }
 
 fn component_repo(id: ComponentId) -> String {
@@ -1461,8 +1465,10 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
             installed: installed_version(&data_dir, id),
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
-            // Slice 2 wires the MCP server; the rest arrive in a later slice.
-            updatable: matches!(id, ComponentId::McpServer),
+            // MCP (pip) + ExaPump (binary) support independent update; Personal
+            // (DB engine) and Semantic Views land in a later slice.
+            updatable: matches!(id, ComponentId::McpServer | ComponentId::ExaPump),
+            pip_managed: matches!(id, ComponentId::McpServer),
         })
         .collect())
 }
@@ -1531,25 +1537,63 @@ fn install_mcp_component(app: &AppHandle, data_dir: &Path, version: &str, channe
     )
 }
 
-/// One-click independent update of a component to a chosen version (default: the
-/// verified baseline). No Studio release, no touching other components.
+/// Install the verified ExaPump artifact into its OWN dir. Verify-or-refuse: the
+/// SHA-pinned verified build only (obtain_artifact checks the hash), so this is
+/// safe for a raw binary. exapump_path prefers it once the manifest is written;
+/// revert drops the dir and falls back to the shared managed copy.
+fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
+    let component = &crate::component_lock::components().exapump;
+    let artifact = exapump_platform()?;
+    let name = if cfg!(windows) { "exapump.exe" } else { "exapump" };
+    let dir = components_update::component_dir(data_dir, ComponentId::ExaPump);
+    std::fs::create_dir_all(&dir)?;
+    let target = dir.join(name);
+    let _ = std::fs::remove_file(&target);
+    crate::local_runtime::obtain_artifact(app, JOB_ID, artifact, &target)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&target)?.permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&target, permissions)?;
+    }
+    if run_streamed(app, JOB_ID, target.to_string_lossy().as_ref(), &["--version"])? != 0 {
+        return Err(AppError::Storage("ExaPump was installed but could not run.".into()));
+    }
+    components_update::write_manifest(
+        data_dir,
+        ComponentId::ExaPump,
+        &InstalledManifest {
+            version: component.version.clone(),
+            installed_at: chrono::Utc::now().to_rfc3339(),
+            channel: Some("verified".into()),
+        },
+    )
+}
+
+/// One-click independent update of a component. MCP (pip) can move to any
+/// upstream version (uv verifies package hashes); binaries are verify-or-refuse
+/// and always install the effective VERIFIED build (the `version` arg is ignored
+/// for them). No Studio release, no touching other components.
 #[tauri::command]
 pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
     let component = ComponentId::from_slug(&id)
         .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
-    if component != ComponentId::McpServer {
-        return Err(AppError::InvalidSettings(
-            "Independent update isn't available for this component yet.".into(),
-        ));
-    }
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let data_dir = app.state::<AppState>().data_dir.clone();
-        let verified = verified_version(component);
-        let target = version.unwrap_or_else(|| verified.clone());
-        let channel = if target == verified { "verified" } else { "upstream" };
-        install_mcp_component(&app, &data_dir, &target, channel)?;
-        // Point MCP clients at the newly-installed own-env binary.
-        repoint_mcp_command(&data_dir)
+        match component {
+            ComponentId::McpServer => {
+                let verified = verified_version(component);
+                let target = version.unwrap_or_else(|| verified.clone());
+                let channel = if target == verified { "verified" } else { "upstream" };
+                install_mcp_component(&app, &data_dir, &target, channel)?;
+                repoint_mcp_command(&data_dir)
+            }
+            ComponentId::ExaPump => install_exapump_component(&app, &data_dir),
+            _ => Err(AppError::InvalidSettings(
+                "Independent update isn't available for this component yet.".into(),
+            )),
+        }
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?

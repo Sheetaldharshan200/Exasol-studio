@@ -260,6 +260,9 @@ export type ComponentInfo = {
   onOwnEnv: boolean;
   /** Whether one-click independent update/revert is available for it yet. */
   updatable: boolean;
+  /** pip/uv-managed (index-hash-verified) → can update to any upstream version.
+   *  False = binary (verify-or-refuse: only the SHA-pinned verified build). */
+  pipManaged: boolean;
 };
 
 export type ReleaseAsset = { name: string; url: string; size: number };
