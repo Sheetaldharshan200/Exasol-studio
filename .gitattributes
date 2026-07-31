@@ -1,3 +1,11 @@
 # Preserve upstream skill/reference formatting without treating vendor whitespace as an error.
 packages/agent-core/skills/** whitespace=-trailing-space
 graphify-out/graph.json merge=graphify
+
+# These files are SHA-256-hashed into runtime-components.lock.json and verified
+# on every platform (refresh_runtime_components.py --verify). Git's Windows CRLF
+# conversion would change their bytes and break the hash check ("Python uv.lock
+# does not match…"), so pin them to LF-only, byte-identical on all platforms.
+apps/desktop/src-tauri/resources/runtime-components.lock.json -text
+apps/desktop/src-tauri/resources/python-stack/** -text
+apps/desktop/src-tauri/resources/exasol-semantic-views/** -text

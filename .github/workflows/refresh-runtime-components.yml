@@ -110,9 +110,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
       - name: Install and build application workspace
+        env:
+          # vite build SIGABRTs (exit 134) on the ~7 GB macOS runners with the
+          # default V8 heap — the app bundle (Monaco/Perspective/echarts) is
+          # large. Same headroom release-app.yml uses. Harmless on other OSes.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm install --frozen-lockfile
-          pnpm --dir packages/agent-core build
+          # build:cli (not build) so dist/exa-agent.cjs — a REQUIRED Tauri
+          # resource (tauri.conf.json) — exists before cargo test runs build.rs.
+          pnpm --dir packages/agent-core build:cli
           pnpm build:desktop
       - name: Verify generated state and Python solution
         env:
@@ -127,6 +134,8 @@ jobs:
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
             python -c "import exasol.ai.mcp.server.main, shutil; assert shutil.which('exasol-mcp-server')"
       - name: Test desktop component integration
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144 # tauri build re-runs vite (see above)
         run: |
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
           pnpm --dir apps/desktop tauri build --no-bundle
