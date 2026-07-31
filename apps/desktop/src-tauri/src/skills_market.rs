@@ -156,7 +156,7 @@ pub fn install_skills(app: &AppHandle, target_id: &str) -> AppResult<()> {
 
 /// One Studio-authored persona skill (a role pack's skill), written into an
 /// external agent that has no provider tooling of its own.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonaSkill {
     pub id: String,
@@ -246,9 +246,186 @@ pub fn install_persona(target_id: &str, skills: &[PersonaSkill]) -> AppResult<()
     }
 }
 
+/// The official skills shipped in exasol-labs/exasol-agent-skills — the ONLY
+/// ids installable individually (allowlist; anything else is refused).
+pub const OFFICIAL_SKILL_IDS: &[&str] = &[
+    "exasol",
+    "exasol-ai-setup",
+    "exasol-bucketfs",
+    "exasol-cloud-storage-extension",
+    "exasol-database",
+    "exasol-distributed-ml",
+    "exasol-document-virtual-schemas",
+    "exasol-export",
+    "exasol-extension-catalog",
+    "exasol-import",
+    "exasol-itde",
+    "exasol-jdbc-virtual-schemas",
+    "exasol-notebook-connections",
+    "exasol-text-ai",
+    "exasol-transformers",
+    "exasol-udfs",
+    "exasol-virtual-schema-adapter-development",
+    "setup-personal",
+];
+
+/// The skills-CLI agent name for a Studio target id.
+fn skills_cli_agent(target_id: &str) -> Option<&'static str> {
+    match target_id {
+        "claude-code" => Some("claude-code"),
+        "codex" => Some("codex"),
+        "cursor" => Some("cursor"),
+        _ => None,
+    }
+}
+
+/// Per-skill install command via the cross-agent `skills` CLI:
+/// `npx --yes skills add <repo> -a <agent> -s <s1>,<s2> -g -y`. Pure + tested.
+/// None for an unsupported target or an id outside the official allowlist.
+pub fn official_install_command(target_id: &str, skill_ids: &[String]) -> Option<(&'static str, Vec<String>)> {
+    let agent = skills_cli_agent(target_id)?;
+    if skill_ids.is_empty() || skill_ids.iter().any(|s| !OFFICIAL_SKILL_IDS.contains(&s.as_str())) {
+        return None;
+    }
+    Some((
+        "npx",
+        vec![
+            "--yes".into(),
+            "skills".into(),
+            "add".into(),
+            SKILLS_REPO.into(),
+            "-a".into(),
+            agent.into(),
+            "-s".into(),
+            skill_ids.join(","),
+            "-g".into(),
+            "-y".into(),
+        ],
+    ))
+}
+
+/// Split a SKILL.md into (frontmatter name, description, body). Tolerant of a
+/// missing/short frontmatter block — falls back to the id-derived name. Pure.
+pub fn parse_skill_markdown(skill_id: &str, raw: &str) -> PersonaSkill {
+    let mut name = skill_id.to_string();
+    let mut description = String::new();
+    let mut body = raw.to_string();
+    let trimmed = raw.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            let front = &rest[..end];
+            for line in front.lines() {
+                if let Some(v) = line.strip_prefix("name:") {
+                    name = v.trim().trim_matches('"').to_string();
+                } else if let Some(v) = line.strip_prefix("description:") {
+                    description = v.trim().trim_matches('"').to_string();
+                }
+            }
+            body = rest[end + 4..].trim_start_matches(['-', '\n']).to_string();
+        }
+    }
+    PersonaSkill { id: skill_id.to_string(), name, description, body }
+}
+
+/// Fetch one official skill's SKILL.md from the pinned repo (for installing it
+/// into Studio's OWN agent, which has no provider tooling). Allowlisted only.
+fn fetch_official_skill(skill_id: &str) -> AppResult<PersonaSkill> {
+    if !OFFICIAL_SKILL_IDS.contains(&skill_id) {
+        return Err(AppError::InvalidSettings(format!("unknown official skill `{skill_id}`")));
+    }
+    let url = format!(
+        "https://raw.githubusercontent.com/{SKILLS_REPO}/main/plugins/exasol/skills/{skill_id}/SKILL.md"
+    );
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .map_err(|e| AppError::Storage(format!("Could not fetch the skill: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Storage(format!(
+            "Could not fetch `{skill_id}` (HTTP {}).",
+            resp.status()
+        )));
+    }
+    let raw = resp
+        .text()
+        .map_err(|e| AppError::Storage(format!("Could not read the skill: {e}")))?;
+    Ok(parse_skill_markdown(skill_id, &raw))
+}
+
+/// Install a set of OFFICIAL skills into an external agent via the skills CLI.
+pub fn install_official(app: &AppHandle, target_id: &str, skill_ids: &[String]) -> AppResult<()> {
+    let (program, args) = official_install_command(target_id, skill_ids).ok_or_else(|| {
+        AppError::InvalidSettings("Unsupported target or unknown skill id.".into())
+    })?;
+    if !tooling_present(target_id) {
+        return Err(AppError::Storage(format!(
+            "{} isn't installed on this machine.",
+            display_name(target_id)
+        )));
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    if run_streamed(app, JOB_ID, program, &arg_refs)? != 0 {
+        return Err(AppError::Storage(format!(
+            "Installing skills into {} failed. See the log for details.",
+            display_name(target_id)
+        )));
+    }
+    Ok(())
+}
+
+/// Which OFFICIAL skills each external agent already has, by scanning the
+/// agents' skill directories: Claude Code reads `~/.claude/skills/<id>`; the
+/// cross-agent `skills` CLI installs Codex skills globally to
+/// `~/.agents/skills/<id>` (also probe `~/.codex/skills` for manual installs).
+pub fn installed_official_map() -> std::collections::HashMap<String, Vec<String>> {
+    let mut map = std::collections::HashMap::new();
+    let Some(home) = dirs::home_dir() else {
+        return map;
+    };
+    let has = |base: &Path, id: &str| base.join(id).join("SKILL.md").is_file();
+    let claude = home.join(".claude").join("skills");
+    let agents = home.join(".agents").join("skills");
+    let codex = home.join(".codex").join("skills");
+    map.insert(
+        "claude-code".to_string(),
+        OFFICIAL_SKILL_IDS.iter().filter(|id| has(&claude, id)).map(|s| s.to_string()).collect(),
+    );
+    map.insert(
+        "codex".to_string(),
+        OFFICIAL_SKILL_IDS
+            .iter()
+            .filter(|id| has(&agents, id) || has(&codex, id))
+            .map(|s| s.to_string())
+            .collect(),
+    );
+    map
+}
+
+#[tauri::command]
+pub fn skills_installed_official() -> AppResult<std::collections::HashMap<String, Vec<String>>> {
+    Ok(installed_official_map())
+}
+
 #[tauri::command]
 pub fn skills_list_targets() -> AppResult<Vec<SkillTarget>> {
     Ok(skills_targets())
+}
+
+#[tauri::command]
+pub async fn skills_install_official(app: AppHandle, target: String, skills: Vec<String>) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || install_official(&app, &target, &skills))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn skills_fetch_official(skill: String) -> AppResult<PersonaSkill> {
+    tauri::async_runtime::spawn_blocking(move || fetch_official_skill(&skill))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
 }
 
 #[tauri::command]
@@ -338,6 +515,45 @@ mod tests {
     fn install_persona_rejects_unsupported_target() {
         assert!(install_persona("codex", &[]).is_err());
         assert!(install_persona("studio", &[]).is_err());
+    }
+
+    #[test]
+    fn official_command_targets_the_skills_cli_per_agent() {
+        let skills = vec!["exasol-import".to_string(), "exasol-export".to_string()];
+        let (prog, args) = official_install_command("codex", &skills).unwrap();
+        assert_eq!(prog, "npx");
+        assert!(args.contains(&SKILLS_REPO.to_string()));
+        let a = args.iter().position(|x| x == "-a").unwrap();
+        assert_eq!(args[a + 1], "codex");
+        let s = args.iter().position(|x| x == "-s").unwrap();
+        assert_eq!(args[s + 1], "exasol-import,exasol-export");
+        assert!(args.contains(&"-g".to_string()) && args.contains(&"-y".to_string()));
+        // claude-code maps to the CLI's agent name
+        let (_, args) = official_install_command("claude-code", &skills).unwrap();
+        let a = args.iter().position(|x| x == "-a").unwrap();
+        assert_eq!(args[a + 1], "claude-code");
+    }
+
+    #[test]
+    fn official_command_refuses_unknown_ids_and_targets() {
+        let bad = vec!["rm -rf /".to_string()];
+        assert!(official_install_command("codex", &bad).is_none());
+        assert!(official_install_command("codex", &[]).is_none());
+        let ok = vec!["exasol".to_string()];
+        assert!(official_install_command("studio", &ok).is_none());
+    }
+
+    #[test]
+    fn parse_skill_markdown_extracts_frontmatter_and_body() {
+        let raw = "---\nname: exasol-import\ndescription: \"Load data fast\"\n---\n\n# Import\n\nBody here.";
+        let s = parse_skill_markdown("exasol-import", raw);
+        assert_eq!(s.name, "exasol-import");
+        assert_eq!(s.description, "Load data fast");
+        assert!(s.body.starts_with("# Import"));
+        // no frontmatter → id as name, whole text as body
+        let s2 = parse_skill_markdown("x", "just text");
+        assert_eq!(s2.name, "x");
+        assert_eq!(s2.body, "just text");
     }
 
     #[test]

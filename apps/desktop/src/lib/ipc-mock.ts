@@ -824,7 +824,12 @@ export async function mockInvoke(
       ];
     case "skills_install_target":
     case "skills_install_persona":
+    case "skills_install_official":
       return undefined;
+    case "skills_installed_official":
+      return { "claude-code": ["exasol-database"], codex: [] };
+    case "skills_fetch_official":
+      return { id: "exasol-database", name: "exasol-database", description: "Mock skill body.", body: "# Mock\n\nBody." };
 
     default:
       throw { kind: "mock", message: `mock backend: unknown command ${command}` };

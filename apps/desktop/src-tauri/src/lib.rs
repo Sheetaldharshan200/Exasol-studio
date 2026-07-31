@@ -179,6 +179,9 @@ pub fn run() {
             skills_market::skills_list_targets,
             skills_market::skills_install_target,
             skills_market::skills_install_persona,
+            skills_market::skills_install_official,
+            skills_market::skills_fetch_official,
+            skills_market::skills_installed_official,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

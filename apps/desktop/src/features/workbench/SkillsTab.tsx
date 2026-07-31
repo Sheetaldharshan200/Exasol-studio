@@ -1,116 +1,103 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Boxes, Check, Download, ExternalLink, GraduationCap, Lightbulb, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
-import { ipc, type SkillTarget } from "@/lib/ipc";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Check, ChevronDown, ExternalLink, Lightbulb, Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { agent, skills as skillsApi } from "@/lib/agent-client";
+import { ipc, type SkillTarget } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { ExasolMark } from "@/components/brand/ExasolMark";
 
 /**
- * Role-based skill packs. Each role bundles several focused, evidence-first
- * playbooks (grounded in real analytics/data-science practice). Adding a skill
- * saves it AND marks it a PRIORITY skill applied on every agent turn. Users can
- * also author their own with "Add new skill".
+ * Skills — Exasol's official agent skills (exasol-labs/exasol-agent-skills),
+ * installable one by one or as role bundles, into Studio's own agent and any
+ * detected external agent. External installs run each provider's own tooling
+ * (the cross-agent `skills` CLI / claude plugin); the Studio agent fetches the
+ * official SKILL.md and activates it. Bundles contain ONLY official skills.
  */
-type SkillDef = { id: string; name: string; desc: string; body: string };
-type Role = { id: string; name: string; icon: typeof Sparkles; blurb: string; skills: SkillDef[] };
-/** User-authored pack (persisted locally; the skills themselves live in the agent). */
-type StoredPack = { id: string; name: string; blurb: string; skills: SkillDef[] };
-const PACKS_KEY = "exasol-custom-skill-packs";
-function loadPacks(): StoredPack[] {
-  try {
-    return JSON.parse(window.localStorage.getItem(PACKS_KEY) || "[]") as StoredPack[];
-  } catch {
-    return [];
-  }
+
+type OfficialSkill = { id: string; label: string; desc: string };
+
+const OFFICIAL: OfficialSkill[] = [
+  { id: "exasol-database", label: "database", desc: "sql, schemas, profiling and exasol-specific behavior" },
+  { id: "exasol-import", label: "import", desc: "load data into exasol from files and sources" },
+  { id: "exasol-export", label: "export", desc: "move query results and tables out of exasol" },
+  { id: "exasol-bucketfs", label: "bucketfs", desc: "manage the bucket filesystem and its contents" },
+  { id: "exasol-udfs", label: "udfs", desc: "write and run user-defined functions" },
+  { id: "exasol-jdbc-virtual-schemas", label: "jdbc virtual schemas", desc: "query external databases through jdbc adapters" },
+  { id: "exasol-document-virtual-schemas", label: "document virtual schemas", desc: "map document sources into schemas" },
+  { id: "exasol-text-ai", label: "text ai", desc: "text analytics inside the database" },
+  { id: "exasol-distributed-ml", label: "distributed ml", desc: "train models across the cluster" },
+  { id: "exasol-transformers", label: "transformers", desc: "run transformer models in-database" },
+  { id: "exasol-cloud-storage-extension", label: "cloud storage", desc: "read and write cloud object storage" },
+  { id: "exasol-extension-catalog", label: "extension catalog", desc: "discover and manage extensions" },
+  { id: "exasol-notebook-connections", label: "notebook connections", desc: "connect notebooks to exasol" },
+  { id: "exasol-ai-setup", label: "ai setup", desc: "prepare the database for ai workloads" },
+  { id: "setup-personal", label: "set up personal", desc: "install and run exasol personal locally" },
+  { id: "exasol-itde", label: "itde", desc: "the integration test docker environment" },
+  { id: "exasol-virtual-schema-adapter-development", label: "adapter development", desc: "build your own virtual-schema adapters" },
+  { id: "exasol", label: "exasol core", desc: "the umbrella skill routing to the others" },
+];
+
+const byId = new Map(OFFICIAL.map((s) => [s.id, s]));
+
+/** Role bundles — curated groupings of OFFICIAL skills only. */
+const BUNDLES: { id: string; label: string; desc: string; skills: string[] }[] = [
+  { id: "data-engineer", label: "data engineer", desc: "move data in and out, storage, pipelines", skills: ["exasol-import", "exasol-export", "exasol-bucketfs", "exasol-cloud-storage-extension"] },
+  { id: "analyst", label: "analyst", desc: "query, explore and analyze", skills: ["exasol-database", "exasol-text-ai", "exasol-notebook-connections"] },
+  { id: "ml-engineer", label: "ml engineer", desc: "models and functions in the database", skills: ["exasol-distributed-ml", "exasol-transformers", "exasol-udfs", "exasol-ai-setup"] },
+  { id: "integration-developer", label: "integration developer", desc: "connect external systems via virtual schemas", skills: ["exasol-jdbc-virtual-schemas", "exasol-document-virtual-schemas", "exasol-virtual-schema-adapter-development", "exasol-extension-catalog"] },
+  { id: "getting-started", label: "getting started", desc: "a local database and the essentials", skills: ["exasol", "setup-personal", "exasol-database", "exasol-itde"] },
+];
+
+/* Brand marks (inline, currentColor) — Anthropic/Claude and OpenAI/Codex. */
+function ClaudeLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M17.304 3.541h-3.672l6.696 16.918H24Zm-10.608 0L0 20.459h3.744l1.37-3.553h7.005l1.369 3.553h3.744L10.536 3.541Zm-.371 10.223 2.291-5.946 2.292 5.946Z" />
+    </svg>
+  );
+}
+function OpenAiLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.182a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .511 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073ZM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.142-.081 4.778-2.758a.795.795 0 0 0 .393-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.495 4.494ZM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646ZM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786a4.504 4.504 0 0 1-1.648-6.117Zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667Zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66Zm-12.64 4.135-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681Zm1.098-2.365 2.602-1.5 2.607 1.5v3l-2.597 1.5-2.607-1.5Z" />
+    </svg>
+  );
 }
 
-const ROLES: Role[] = [
-  {
-    id: "data-scientist",
-    name: "Data Scientist",
-    icon: Boxes,
-    blurb: "Modeling, statistics, and features on Exasol.",
-    skills: [
-      { id: "ds-eda", name: "Exploratory analysis", desc: "Profile a dataset: shape, nulls, distributions, correlations — with SQL.", body: "When exploring a dataset on Exasol:\n- Start with shape: COUNT(*), column count, and per-column NULL/blank rates.\n- Numeric columns: MIN/MAX/AVG/STDDEV and a few PERCENTILE points; flag skew and outliers.\n- Categorical columns: top values via GROUP BY … ORDER BY COUNT(*) DESC LIMIT 20, and distinct counts (APPROXIMATE_COUNT_DISTINCT for big tables).\n- Always ground column names in the real schema first (kb_search / DESCRIBE). Show the SQL and the numbers; never invent findings." },
-      { id: "ds-features", name: "Feature engineering", desc: "Build model-ready features and train/test splits in SQL.", body: "For feature engineering on Exasol:\n- Derive features with SQL: ratios, date parts, rolling windows (OVER … ), one-hot via CASE, target/frequency encodings.\n- Deterministic train/test split with a hashed key: WHERE MOD(HASH(id),100) < 80.\n- Call out and prevent leakage (target-derived features, look-ahead in time series).\n- Produce a single model-ready table/view and describe each column's meaning." },
-      { id: "ds-stats", name: "A/B testing & stats", desc: "Design and read experiments; significance done right.", body: "For experiment analysis:\n- State the hypothesis, metric, unit of analysis, and guardrails before querying.\n- Compute per-variant sample size, mean/rate, and variance in SQL; report lift with a confidence interval, not just a point estimate.\n- Warn about peeking, multiple comparisons, and unequal exposure.\n- Be explicit about what the data does and doesn't support." },
-    ],
-  },
-  {
-    id: "bi-developer",
-    name: "BI Developer",
-    icon: BarChart3,
-    blurb: "Metrics, dashboards, and the semantic layer.",
-    skills: [
-      { id: "bi-metrics", name: "Metric definitions", desc: "Define consistent, reproducible business metrics.", body: "When defining a metric:\n- Give the exact formula, grain, filters, and de-duplication; name it consistently across the project.\n- Watch for join fan-out that double-counts measures — aggregate to the right grain first.\n- Every metric must be reproducible from a query you show." },
-      { id: "bi-dashboards", name: "Dashboard design", desc: "Build live SQL-backed dashboards that answer a question.", body: "When building a dashboard:\n- Lead with the headline number, then supporting cuts (time, segment, region).\n- Propose each panel and the SQL behind it; prefer live SQL over static text.\n- Keep it scannable: summary before detail, consistent units, semantic colors for good/warning/critical." },
-      { id: "bi-semantic", name: "Semantic modeling", desc: "Model entities & metrics in the Semantic Views layer.", body: "When a Semantic Views layer is available:\n- Model entities, their joins, and metrics there; compile through the semantic compiler rather than hand-writing physical SQL.\n- Never reconstruct metric formulas or infer physical joins after a compiler error — fix the model." },
-    ],
-  },
-  {
-    id: "analytics-engineer",
-    name: "Analytics Engineer",
-    icon: Wrench,
-    blurb: "Layered models, tests, and clean marts (dbt-style).",
-    skills: [
-      { id: "ae-layers", name: "Layered modeling", desc: "staging → intermediate → marts, with clear grain.", body: "Structure transformations in layers:\n- staging (typed, renamed, 1:1 with sources) → intermediate (joins/reshaping) → marts (business-facing).\n- Document each model's grain and keys; use surrogate + business keys.\n- Prefer idempotent, re-runnable SQL; state full-refresh vs incremental." },
-      { id: "ae-tests", name: "Data-quality tests", desc: "not-null, unique, referential integrity, freshness.", body: "Add runnable data-quality checks as SQL:\n- not-null and uniqueness on keys, referential integrity across models, freshness on load timestamps.\n- Return failing rows, not just counts, so issues are debuggable.\n- Run tests after each transform and report pass/fail plainly." },
-    ],
-  },
-  {
-    id: "data-analyst",
-    name: "Data Analyst",
-    icon: Table2,
-    blurb: "Answer business questions fast and correctly.",
-    skills: [
-      { id: "da-answer", name: "Question → SQL", desc: "Turn plain questions into correct, sanity-checked SQL.", body: "When answering a business question:\n- State assumptions (date range, filters, definitions of 'active'/'revenue').\n- Sanity-check results (row counts, nulls, obvious outliers) before presenting.\n- Lead with the one-sentence answer, then numbers, then the SQL." },
-      { id: "da-cohort", name: "Cohort & funnel", desc: "Retention, cohorts, and step-by-step funnels.", body: "For cohort/funnel analysis:\n- Define the cohort key and the time grain up front.\n- Build funnels as ordered step CTEs with per-step counts and conversion rates.\n- For retention, pivot activity by cohort period; show the triangle and call out the trend." },
-    ],
-  },
-  {
-    id: "sql-tutor",
-    name: "SQL Tutor",
-    icon: GraduationCap,
-    blurb: "Explain and teach, step by step.",
-    skills: [
-      { id: "tutor-explain", name: "Teach & explain", desc: "Beginner-friendly, jargon defined, incremental.", body: "As a SQL tutor for Exasol:\n- Explain in plain language; define terms in brackets the first time.\n- Build queries incrementally — one clause at a time, saying why.\n- Point at the learner's real tables; end with one small next step to try." },
-    ],
-  },
-];
+type Dest = {
+  id: string;
+  label: string;
+  logo: (c: string) => React.ReactNode;
+  installed: boolean;
+  installUrl?: string;
+};
 
-/** Exasol's official, curated agent skills (from exasol-labs/exasol-agent-skills)
- * — shown for discovery. Installing pushes the whole set into the chosen agent
- * via that provider's own tooling. Names are Studio-side (not fetched live). */
-const OFFICIAL_SKILLS = [
-  "Exasol database", "Import", "Export", "BucketFS", "UDFs",
-  "JDBC virtual schemas", "Document virtual schemas", "Text AI",
-  "Distributed ML", "Transformers", "Cloud storage extension",
-  "Extension catalog", "Notebook connections", "AI setup", "Set up Personal",
-];
-
-/** One selectable install destination for the multi-select. */
-type InstallTarget = { id: string; name: string; installed: boolean; installUrl?: string };
-
-/**
- * Multi-select installer: checkboxes for every agent an item can go to (all
- * detected ones checked by default), a not-installed agent shown as a link, and
- * one "Install to N" action that runs `onInstall` with the chosen ids.
- */
-function MultiInstall({ targets, onInstall, actionLabel = "Install" }: {
-  targets: InstallTarget[];
-  onInstall: (ids: string[]) => Promise<void>;
-  actionLabel?: string;
+/** The shared add menu (per skill or per bundle): a MULTI-SELECT of agents —
+ * check the destinations, then one "add" applies to all of them. Hoisted to
+ * module level so it keeps identity (and its open/selection state) across
+ * parent re-renders. */
+function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label = "add", installedIn }: {
+  rowId: string;
+  skillIds: string[];
+  allActive: boolean;
+  dests: Dest[];
+  busy: string | null;
+  onInstall: (destIds: string[], skillIds: string[], rowId: string) => void;
+  label?: string;
+  /** Whether a destination already has ALL of this row's skills. */
+  installedIn: (destId: string) => boolean;
 }) {
-  const [sel, setSel] = useState<Set<string>>(() => new Set(targets.filter((t) => t.installed).map((t) => t.id)));
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  // Re-default the selection when the set of INSTALLED targets changes (e.g.
-  // detection resolves after the picker opened) — but not on every render, so
-  // the user's manual toggles stick otherwise.
-  const installedSig = targets.filter((t) => t.installed).map((t) => t.id).sort().join(",");
-  useEffect(() => {
-    setSel(new Set(installedSig ? installedSig.split(",") : []));
-  }, [installedSig]);
+  const isBusy = busy === rowId;
+  const [sel, setSel] = useState<Set<string>>(() => new Set(["studio"]));
   const toggle = (id: string) =>
     setSel((s) => {
       const n = new Set(s);
@@ -118,144 +105,75 @@ function MultiInstall({ targets, onInstall, actionLabel = "Install" }: {
       else n.add(id);
       return n;
     });
-  const run = async () => {
-    setBusy(true);
-    setNote(null);
-    try {
-      await onInstall([...sel]);
-      setNote("Installed.");
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "Install failed.");
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {targets.map((t) =>
-          t.installed ? (
-            <label key={t.id} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11.5px] text-foreground hover:bg-secondary">
-              <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggle(t.id)} className="accent-primary" />
-              {t.name}
-            </label>
-          ) : (
-            <button
-              key={t.id}
-              onClick={() => t.installUrl && ipc.openExternal(t.installUrl).catch(() => window.open(t.installUrl, "_blank"))}
-              title={`${t.name} isn't installed — get it, then reopen this tab`}
-              className="flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-[11.5px] text-muted-foreground hover:text-foreground"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className={cn(
+            "flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] lowercase transition-colors",
+            allActive ? "text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          )}
+          disabled={isBusy}
+        >
+          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : allActive ? <Check className="h-3 w-3" /> : null}
+          {allActive ? "added" : label}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel className="text-[10px] font-normal lowercase text-muted-foreground">add to</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {dests.map((d) =>
+          d.installed ? (
+            <DropdownMenuCheckboxItem
+              key={d.id}
+              checked={sel.has(d.id)}
+              // keep the menu open while picking destinations
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={() => toggle(d.id)}
+              className="gap-2 text-[12px] lowercase"
             >
-              <ExternalLink className="h-3 w-3" /> {t.name} — not installed
-            </button>
+              {d.logo("h-3.5 w-3.5")}
+              {d.label}
+              {installedIn(d.id) ? <Check className="ml-auto h-3 w-3 text-primary" /> : null}
+            </DropdownMenuCheckboxItem>
+          ) : (
+            <DropdownMenuItem
+              key={d.id}
+              className="gap-2 text-[12px] lowercase text-muted-foreground"
+              onClick={() => d.installUrl && ipc.openExternal(d.installUrl).catch(() => window.open(d.installUrl, "_blank"))}
+            >
+              {d.logo("h-3.5 w-3.5 opacity-50")}
+              {d.label}
+              <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
+            </DropdownMenuItem>
           ),
         )}
-      </div>
-      {note ? <p className="rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
-      <button
-        onClick={() => void run()}
-        disabled={busy || sel.size === 0}
-        className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-        {actionLabel} to {sel.size} agent{sel.size === 1 ? "" : "s"}
-      </button>
-    </div>
-  );
-}
-
-/**
- * The "Exasol skills" tab: Exasol's official curated skills, installed into the
- * user's EXTERNAL agents via each provider's own tooling (`claude plugin …`,
- * `npx skills …`) — a multi-select of detected agents, never hand-writing files.
- */
-function ExasolSkillsForAgents() {
-  const [targets, setTargets] = useState<SkillTarget[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
-
-  const loadTargets = useCallback(() => {
-    setLoadError(false);
-    ipc
-      .skillsListTargets()
-      .then((t) => setTargets(t))
-      .catch(() => {
-        setTargets([]);
-        setLoadError(true);
-      });
-  }, []);
-  useEffect(() => loadTargets(), [loadTargets]);
-
-  return (
-    <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-primary" />
-        <span className="text-[13px] font-semibold text-foreground">Exasol official skills</span>
-        <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">official</span>
-      </div>
-      <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        Exasol's recommended agent skills, installed into your other AI agents via each one's own tooling. Studio never edits an agent's files by hand.
-      </p>
-      <ul className="mb-3 divide-y divide-border/50 overflow-hidden rounded-lg border border-border bg-panel/60">
-        {OFFICIAL_SKILLS.map((s) => (
-          <li key={s} className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] text-foreground">
-            <Sparkles className="h-3 w-3 shrink-0 text-primary/70" />
-            {s}
-          </li>
-        ))}
-      </ul>
-      {loadError ? (
-        <p className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
-          Couldn't check which agents are installed.
-          <button onClick={loadTargets} className="rounded border border-border px-1.5 py-px text-[11px] hover:bg-secondary hover:text-foreground">Retry</button>
-        </p>
-      ) : targets === null ? (
-        <p className="text-[11.5px] text-muted-foreground"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> Checking your agents…</p>
-      ) : targets.length === 0 ? (
-        <p className="text-[11.5px] text-muted-foreground">No supported AI agents detected on this machine.</p>
-      ) : (
-        <MultiInstall
-          targets={targets.map((t) => ({ id: t.id, name: t.name, installed: t.installed, installUrl: t.installUrl }))}
-          onInstall={async (ids) => {
-            // Attempt every selected agent; report which (if any) failed instead
-            // of stopping at the first.
-            const failed: string[] = [];
-            for (const id of ids) {
-              try {
-                await ipc.skillsInstallTarget(id);
-              } catch {
-                failed.push(targets.find((t) => t.id === id)?.name ?? id);
-              }
-            }
-            if (failed.length) throw new Error(`Couldn't install into: ${failed.join(", ")}.`);
-          }}
-        />
-      )}
-    </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={sel.size === 0}
+          onClick={() => onInstall([...sel], skillIds, rowId)}
+          className="justify-center text-[12px] lowercase text-primary focus:text-primary"
+        >
+          add to {sel.size} agent{sel.size === 1 ? "" : "s"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 export function SkillsTab() {
   const [active, setActive] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<string | null>(null);
+  const [targets, setTargets] = useState<SkillTarget[]>([]);
+  // What each EXTERNAL agent already has (scanned skill dirs), by target id.
+  const [installedMap, setInstalledMap] = useState<Record<string, string[]>>({});
+  const [busy, setBusy] = useState<string | null>(null); // "<rowId>" while installing
+  const [note, setNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ name: "", desc: "", body: "", pack: "", newPack: "" });
-  const [customPacks, setCustomPacks] = useState<StoredPack[]>(() => loadPacks());
-  const persistPacks = (next: StoredPack[]) => {
-    setCustomPacks(next);
-    window.localStorage.setItem(PACKS_KEY, JSON.stringify(next));
-  };
-  // Kit-style pack modal: click a role card to see the skills inside.
-  const [packModal, setPackModal] = useState<(typeof ROLES)[number] | null>(null);
-  // Two tabs: official Exasol skills vs persona bundles.
-  const [tab, setTab] = useState<"official" | "personas">("official");
-  // Detected external agents (for the persona multi-select) + which pack's
-  // install picker is open.
-  const [agentTargets, setAgentTargets] = useState<SkillTarget[]>([]);
-  const [packPicker, setPackPicker] = useState<(Role & { custom?: boolean }) | null>(null);
 
   const refresh = useCallback(async () => {
-    ipc.skillsListTargets().then(setAgentTargets).catch(() => undefined);
+    ipc.skillsListTargets().then(setTargets).catch(() => undefined);
+    ipc.skillsInstalledOfficial().then(setInstalledMap).catch(() => undefined);
     try {
       const { settings } = await agent.getSettings();
       setActive(new Set(settings.defaultSkills));
@@ -269,385 +187,128 @@ export function SkillsTab() {
     void refresh();
   }, [refresh]);
 
-  async function setDefault(id: string, on: boolean) {
-    const { settings } = await agent.getSettings();
-    const set = new Set(settings.defaultSkills);
-    if (on) set.add(id);
-    else set.delete(id);
-    await agent.setSettings({ defaultSkills: [...set] });
-    setActive(set);
-  }
-
-  async function toggle(skill: SkillDef) {
-    setBusy(skill.id);
-    try {
-      if (active.has(skill.id)) {
-        await setDefault(skill.id, false);
-      } else {
-        await skillsApi.save(skill.id, skill.desc, skill.body);
-        await setDefault(skill.id, true);
-      }
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  // Activate every skill in a role pack (skips ones already active).
-  async function usePack(role: (typeof ROLES)[number]) {
-    setBusy(`pack:${role.id}`);
-    try {
-      for (const sk of role.skills) {
-        if (!active.has(sk.id)) {
-          await skillsApi.save(sk.id, sk.desc, sk.body);
-          await setDefault(sk.id, true);
-        }
-      }
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  // Where a persona bundle can go: Studio's own agent (always), plus Claude Code
-  // if it's installed (written as native ~/.claude/skills). Codex/Cursor have no
-  // per-persona format, so they aren't offered here (official skills use those).
-  const personaTargets: InstallTarget[] = (() => {
-    const claude = agentTargets.find((t) => t.id === "claude-code");
-    return [
-      { id: "studio", name: "Studio agent", installed: true },
-      { id: "claude-code", name: "Claude Code", installed: !!claude?.installed, installUrl: claude?.installUrl },
-    ];
-  })();
-
-  async function installPersona(pack: Role & { custom?: boolean }, ids: string[]) {
-    // Install into each selected destination independently — one failure must
-    // not skip the others; report the ones that failed.
-    const failed: string[] = [];
-    for (const id of ids) {
-      try {
-        if (id === "studio") {
-          await usePack(pack);
-        } else if (id === "claude-code") {
-          await ipc.skillsInstallPersona(
-            "claude-code",
-            pack.skills.map((s) => ({ id: s.id, name: s.name, description: s.desc, body: s.body })),
-          );
-        }
-      } catch {
-        failed.push(id === "studio" ? "Studio agent" : "Claude Code");
-      }
-    }
-    if (failed.length) throw new Error(`Couldn't install into: ${failed.join(", ")}.`);
-  }
-
-  async function addCustom() {
-    const name = draft.name.trim();
-    if (!name || !draft.body.trim()) return;
-    if (draft.pack === "__new" && !draft.newPack.trim()) return;
-    setBusy("__new");
-    try {
-      const id = name.toLowerCase().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "") || "skill";
-      const desc = draft.desc.trim() || name;
-      await skillsApi.save(id, desc, draft.body.trim());
-      await setDefault(id, true);
-      // File the skill into a custom pack (existing or new) if one was chosen.
-      const skill: SkillDef = { id, name, desc, body: draft.body.trim() };
-      if (draft.pack === "__new") {
-        const packName = draft.newPack.trim();
-        const packId = packName.toLowerCase().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "") || "pack";
-        const existing = customPacks.find((cp) => cp.id === packId);
-        persistPacks(
-          existing
-            ? customPacks.map((cp) => (cp.id === packId ? { ...cp, skills: [...cp.skills.filter((k) => k.id !== id), skill] } : cp))
-            : [...customPacks, { id: packId, name: packName, blurb: "Custom pack", skills: [skill] }],
-        );
-      } else if (draft.pack) {
-        persistPacks(customPacks.map((cp) => (cp.id === draft.pack ? { ...cp, skills: [...cp.skills.filter((k) => k.id !== id), skill] } : cp)));
-      }
-      setDraft({ name: "", desc: "", body: "", pack: "", newPack: "" });
-      setAdding(false);
-      await refresh();
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  // Built-in role packs + the user's own packs, one grid.
-  const allPacks: (Role & { custom?: boolean })[] = [
-    ...ROLES,
-    ...customPacks.map((cp) => ({ ...cp, icon: Sparkles, custom: true as const })),
+  const ext = (id: string) => targets.find((t) => t.id === id);
+  const dests: Dest[] = [
+    { id: "studio", label: "exa-ai", logo: (c) => <ExasolMark size={14} className={c} />, installed: true },
+    { id: "claude-code", label: "claude code", logo: (c) => <ClaudeLogo className={c} />, installed: !!ext("claude-code")?.installed, installUrl: ext("claude-code")?.installUrl },
+    { id: "codex", label: "codex", logo: (c) => <OpenAiLogo className={c} />, installed: !!ext("codex")?.installed, installUrl: ext("codex")?.installUrl },
   ];
-  // User-arranged order (drag a card onto another to reorder), persisted locally.
-  const [packOrder, setPackOrder] = useState<string[]>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem("exasol-skill-pack-order") || "[]") as string[];
-    } catch {
-      return [];
+
+  /** True when `destId` already has every skill in `ids`. */
+  const installedIn = (destId: string, ids: string[]) =>
+    destId === "studio"
+      ? ids.every((id) => active.has(id))
+      : ids.every((id) => (installedMap[destId] ?? []).includes(id));
+  /** "added" only when EVERY installed agent (exa-ai + detected ones) has it. */
+  const addedEverywhere = (ids: string[]) =>
+    dests.filter((d) => d.installed).every((d) => installedIn(d.id, ids));
+
+  /** Add a set of official skills to the CHOSEN destinations (multi-select).
+   * Each destination is attempted independently; failures are named. */
+  async function installTo(destIds: string[], skillIds: string[], rowId: string) {
+    setBusy(rowId);
+    setNote(null);
+    const done: string[] = [];
+    const failed: string[] = [];
+    for (const destId of destIds) {
+      const label = dests.find((d) => d.id === destId)?.label ?? destId;
+      try {
+        if (destId === "studio") {
+          for (const id of skillIds) {
+            const s = await ipc.skillsFetchOfficial(id);
+            await skillsApi.save(s.id, s.description || byId.get(id)?.desc || s.name, s.body);
+            const { settings } = await agent.getSettings();
+            const set = new Set(settings.defaultSkills);
+            set.add(s.id);
+            await agent.setSettings({ defaultSkills: [...set] });
+          }
+        } else {
+          await ipc.skillsInstallOfficial(destId, skillIds);
+        }
+        done.push(label);
+      } catch {
+        failed.push(label);
+      }
     }
-  });
-  const orderIdx = (id: string) => {
-    const i = packOrder.indexOf(id);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-  };
-  const orderedPacks = [...allPacks].sort((a, b) => orderIdx(a.id) - orderIdx(b.id));
-  const countOn = (r: Role) => r.skills.filter((sk) => active.has(sk.id)).length;
-  const addedPacks = orderedPacks.filter((p) => countOn(p) > 0);
-  const restPacks = orderedPacks.filter((p) => countOn(p) === 0);
-  const moveBefore = (src: string, dst: string) => {
-    if (src === dst) return;
-    const ids = orderedPacks.map((p) => p.id).filter((id) => id !== src);
-    const at = ids.indexOf(dst);
-    ids.splice(at === -1 ? ids.length : at, 0, src);
-    setPackOrder(ids);
-    window.localStorage.setItem("exasol-skill-pack-order", JSON.stringify(ids));
-  };
+    if (destIds.includes("studio")) await refresh();
+    ipc.skillsInstalledOfficial().then(setInstalledMap).catch(() => undefined);
+    setNote(
+      failed.length
+        ? `added to ${done.join(", ") || "none"} — failed for ${failed.join(", ")}`
+        : `added to ${done.join(", ")}`,
+    );
+    setBusy(null);
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
         <Lightbulb className="h-4 w-4 text-primary" />
         <span className="font-heading text-[14px] font-bold text-foreground">Skills</span>
-        <span className="text-xs text-muted-foreground">{loading ? "…" : `${active.size} active`}</span>
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className="ml-auto flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add new skill
-        </button>
+        <span className="text-xs lowercase text-muted-foreground">{loading ? "…" : `${active.size} active in studio`}</span>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 [scrollbar-width:thin]">
-        <div className="mx-auto max-w-3xl">
-          <p className="mb-5 text-[12.5px] text-muted-foreground">
-            Add focused playbooks by role. Active skills become{" "}
-            <span className="font-medium text-foreground">priority skills</span> — applied on every turn in the AI panel.
+        <div className="w-full">
+          <p className="mb-4 text-[12px] lowercase leading-relaxed text-muted-foreground">
+            exasol's official agent skills — install them one by one or as a role bundle, into studio's agent, claude code or codex. external installs use each agent's own tooling.
           </p>
+          {note ? <p className="mb-3 text-[11.5px] lowercase text-primary">{note}</p> : null}
 
-          {/* Two horizontal tabs: Exasol's official skills vs persona bundles. */}
-          <div className="mb-5 inline-flex rounded-lg border border-border bg-panel p-0.5">
-            {([["official", "Exasol skills"], ["personas", "Persona bundles"]] as const).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={cn(
-                  "rounded-md px-3 py-1 text-[12px] font-medium transition-colors",
-                  tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "official" ? <ExasolSkillsForAgents /> : null}
-
-          {tab === "personas" ? (
-            <>
-          {/* Add-your-own form */}
-          {adding ? (
-            <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[13px] font-semibold text-foreground">New skill</span>
-                <button onClick={() => setAdding(false)} className="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                <input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Name (e.g. Finance analyst)" className="h-9 w-full rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
-                <input value={draft.desc} onChange={(e) => setDraft((d) => ({ ...d, desc: e.target.value }))} placeholder="One-line description" className="h-9 w-full rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
-                <div className="flex items-center gap-2">
-                  <Select value={draft.pack || "__none"} onValueChange={(v) => setDraft((d) => ({ ...d, pack: v === "__none" ? "" : v }))}>
-                    <SelectTrigger className="h-9 w-56 text-[12.5px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">No pack (standalone)</SelectItem>
-                      {customPacks.map((cp) => <SelectItem key={cp.id} value={cp.id}>{cp.name}</SelectItem>)}
-                      <SelectItem value="__new">New pack…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {draft.pack === "__new" ? (
-                    <input value={draft.newPack} onChange={(e) => setDraft((d) => ({ ...d, newPack: e.target.value }))} placeholder="Pack name" className="h-9 flex-1 rounded-lg border border-border bg-panel px-3 text-[12.5px] outline-none" />
-                  ) : null}
-                </div>
-                <textarea value={draft.body} onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} rows={6} placeholder="Instructions for the agent — how to behave for this role…" className="w-full resize-none rounded-lg border border-border bg-panel p-3 font-mono text-[12px] outline-none [scrollbar-width:thin]" />
-                <div className="flex justify-end">
-                  <button onClick={() => void addCustom()} disabled={busy === "__new" || !draft.name.trim() || !draft.body.trim()} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3.5 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                    {busy === "__new" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Add &amp; activate
-                  </button>
-                </div>
-              </div>
+          <Tabs defaultValue="official">
+            <div className="mb-4 flex items-center justify-between">
+              <TabsList className="h-8">
+                <TabsTrigger value="official" className="text-[12px] lowercase data-[state=active]:bg-primary/15 data-[state=active]:text-primary">official skills</TabsTrigger>
+                <TabsTrigger value="bundles" className="text-[12px] lowercase data-[state=active]:bg-primary/15 data-[state=active]:text-primary">bundles</TabsTrigger>
+              </TabsList>
+              <InstallMenu
+                rowId="__all"
+                label="add all"
+                skillIds={OFFICIAL.map((s) => s.id)}
+                allActive={addedEverywhere(OFFICIAL.map((s) => s.id))}
+                dests={dests}
+                busy={busy}
+                installedIn={(d) => installedIn(d, OFFICIAL.map((s) => s.id))}
+                onInstall={(d, ids, r) => void installTo(d, ids, r)}
+              />
             </div>
-          ) : null}
 
-          {/* Role packs — marketplace-kit style: + activates the whole pack,
-              clicking the card shows the skills inside. */}
-          {(() => {
-            const renderPackCard = (role: Role & { custom?: boolean }) => {
-              const Icon = role.icon;
-              const allOn = role.skills.every((sk) => active.has(sk.id));
-              const packBusy = busy === `pack:${role.id}`;
-              return (
-                <div
-                  key={role.id}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData("text/pack", role.id)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData("text/pack"); if (src) moveBefore(src, role.id); }}
-                  onClick={() => setPackModal(role)}
-                  onKeyDown={(e) => { if (e.key === "Enter") setPackModal(role); }}
-                  title="See the skills in this pack — drag to rearrange"
-                  className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-5 w-5 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{role.name}</span>
-                    <span className="shrink-0 rounded bg-secondary/70 px-1.5 py-px font-mono text-[9.5px] text-muted-foreground" title="Skills added from this pack">
-                      {countOn(role)}/{role.skills.length}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setPackPicker(role); }}
-                      disabled={packBusy}
-                      title="Install this pack into your agents"
-                      className={cn(
-                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
-                        allOn ? "text-primary" : "text-muted-foreground hover:text-primary",
-                      )}
-                    >
-                      {packBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : allOn ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
-                    </button>
-                    {"custom" in role && role.custom ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); persistPacks(customPacks.filter((cp) => cp.id !== role.id)); }}
-                        title="Remove this pack (its skills stay)"
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{role.blurb}</p>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {role.skills.map((sk) => (
-                      <span key={sk.id} className={cn("rounded px-1.5 py-px text-[10px]", active.has(sk.id) ? "bg-primary/15 text-primary" : "bg-secondary/60 text-muted-foreground")}>{sk.name}</span>
-                    ))}
-                  </div>
-                </div>
-              );
-            };
-            const grid = (list: (Role & { custom?: boolean })[]) => (
-              <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">{list.map(renderPackCard)}</div>
-            );
-            return (
-              <div className="space-y-6">
-                {addedPacks.length ? (
-                  <section>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Added</p>
-                    {grid(addedPacks)}
-                  </section>
-                ) : null}
-                {restPacks.length ? (
-                  <section>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Not added</p>
-                    {grid(restPacks)}
-                  </section>
-                ) : null}
-              </div>
-            );
-          })()}
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Persona install picker — choose which agents this bundle goes into. */}
-      {packPicker ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setPackPicker(null)}>
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="flex-1 text-[14px] font-semibold text-foreground">Install “{packPicker.name}”</span>
-              <button onClick={() => setPackPicker(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-            </div>
-            <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-              Choose the agents to install this persona's skills into. Studio's own agent activates them; Claude Code gets them as native skills.
-            </p>
-            <MultiInstall
-              targets={personaTargets}
-              onInstall={(ids) => installPersona(packPicker, ids)}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {/* Pack modal — what's inside + per-skill toggles + one-click activate. */}
-      {packModal ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setPackModal(null)}>
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start gap-2.5 px-5 pt-5">
-              <packModal.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-              <div className="min-w-0 flex-1">
-                <h3 className="text-[15px] font-semibold text-foreground">{packModal.name}</h3>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{packModal.blurb}</p>
-              </div>
-              <button onClick={() => setPackModal(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-            </div>
-            <div className="mt-3 border-t border-border px-5 py-3">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">In this pack</p>
-              <div className="space-y-2.5">
-                {packModal.skills.map((sk) => (
-                  <div key={sk.id} className="flex items-start gap-2.5">
+            <TabsContent value="official">
+              <div className="divide-y divide-border/40">
+                {OFFICIAL.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 py-2">
                     <div className="min-w-0 flex-1">
-                      <span className="text-[12.5px] font-medium text-foreground">{sk.name}</span>
-                      <p className="text-[11px] leading-snug text-muted-foreground">{sk.desc}</p>
+                      <span className={cn("text-[12.5px] lowercase", addedEverywhere([s.id]) ? "text-primary" : "text-foreground")}>{s.label}</span>
+                      <p className="truncate text-[11px] lowercase text-muted-foreground">{s.desc}</p>
                     </div>
-                    <button
-                      onClick={() => void toggle(sk)}
-                      disabled={busy === sk.id}
-                      className={cn(
-                        "flex h-6 w-20 shrink-0 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors disabled:opacity-50",
-                        active.has(sk.id) ? "border border-border text-muted-foreground hover:text-foreground" : "bg-primary text-primary-foreground hover:bg-primary/85",
-                      )}
-                    >
-                      {busy === sk.id ? <Loader2 className="h-3 w-3 animate-spin" /> : active.has(sk.id) ? <><Check className="h-3 w-3" /> Active</> : <><Plus className="h-3 w-3" /> Add</>}
-                    </button>
+                    <InstallMenu rowId={s.id} skillIds={[s.id]} allActive={addedEverywhere([s.id])} dests={dests} busy={busy} installedIn={(d) => installedIn(d, [s.id])} onInstall={(d, ids, r) => void installTo(d, ids, r)} />
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-border bg-panel/40 px-5 py-3">
-              <button onClick={() => setPackModal(null)} className="flex h-8 items-center rounded-lg border border-border px-3 text-[12.5px] text-muted-foreground hover:bg-secondary hover:text-foreground">Close</button>
-              <button
-                onClick={() => void usePack(packModal)}
-                disabled={packModal.skills.every((sk) => active.has(sk.id)) || busy === `pack:${packModal.id}`}
-                className="cta-glow flex h-8 items-center gap-1.5 rounded-lg bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {busy === `pack:${packModal.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : packModal.skills.every((sk) => active.has(sk.id)) ? <><Check className="h-3.5 w-3.5" /> All active</> : <><Sparkles className="h-3.5 w-3.5" /> Use this pack</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+            </TabsContent>
 
-function SkillCard({ name, desc, on, busy, onToggle }: { name: string; desc: string; on: boolean; busy: boolean; onToggle: () => void }) {
-  return (
-    <div className={cn("flex flex-col rounded-lg border p-3 transition-colors", on ? "border-primary/40 bg-primary/5" : "border-border bg-panel/40")}>
-      <div className="flex items-center gap-2">
-        <span className="text-[12.5px] font-medium text-foreground">{name}</span>
-        {on ? <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">priority</span> : null}
+            <TabsContent value="bundles">
+              <div className="divide-y divide-border/40">
+                {BUNDLES.map((b) => {
+                  const allActive = addedEverywhere(b.skills);
+                  return (
+                    <div key={b.id} className="flex items-start gap-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <span className={cn("text-[12.5px] lowercase", allActive ? "text-primary" : "text-foreground")}>{b.label}</span>
+                        <p className="text-[11px] lowercase text-muted-foreground">{b.desc}</p>
+                        <p className="mt-0.5 text-[10.5px] lowercase text-muted-foreground/60">
+                          {b.skills.map((id) => byId.get(id)?.label ?? id).join(" · ")}
+                        </p>
+                      </div>
+                      <InstallMenu rowId={b.id} skillIds={b.skills} allActive={allActive} dests={dests} busy={busy} installedIn={(d) => installedIn(d, b.skills)} onInstall={(d, ids, r) => void installTo(d, ids, r)} />
+                    </div>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
-      <p className="mt-1 flex-1 text-[11px] leading-relaxed text-muted-foreground">{desc}</p>
-      <button
-        onClick={onToggle}
-        disabled={busy}
-        className={cn(
-          "mt-2.5 flex h-7 items-center justify-center gap-1.5 rounded-md text-[11.5px] font-medium transition-colors disabled:opacity-50",
-          on ? "border border-border text-muted-foreground hover:bg-secondary hover:text-foreground" : "bg-primary text-primary-foreground hover:bg-primary/85",
-        )}
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : on ? <><Check className="h-3.5 w-3.5" /> Added</> : <><Plus className="h-3.5 w-3.5" /> Add</>}
-      </button>
     </div>
   );
 }

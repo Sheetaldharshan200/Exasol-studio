@@ -493,6 +493,11 @@ export const ipc = {
   skillsInstallTarget: (target: string) => call<void>("skills_install_target", { target }),
   skillsInstallPersona: (target: string, skills: { id: string; name: string; description: string; body: string }[]) =>
     call<void>("skills_install_persona", { target, skills }),
+  skillsInstallOfficial: (target: string, skills: string[]) =>
+    call<void>("skills_install_official", { target, skills }),
+  skillsFetchOfficial: (skill: string) =>
+    call<{ id: string; name: string; description: string; body: string }>("skills_fetch_official", { skill }),
+  skillsInstalledOfficial: () => call<Record<string, string[]>>("skills_installed_official"),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {
