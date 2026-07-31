@@ -25,6 +25,7 @@ import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { DriversSection, DRIVER_ICON, type DriverReadiness } from "@/features/connection/DriversSection";
+import { openConnectWindow } from "@/lib/connect-window";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -457,9 +458,13 @@ export function ConnectionPropertiesTab({
   }
 
   async function testConnection() {
+    const draft = draftProfile();
+    // Prefer the dedicated floating connect window (shows the ping → auth → db
+    // flow). Fall back to an inline test when it isn't available (browser/mock).
+    if (await openConnectWindow({ draft, mode: "test" })) return;
     setTestState({ busy: true });
     try {
-      const info = await ipc.testConnection(draftProfile());
+      const info = await ipc.testConnection(draft);
       setTestState({ busy: false, ok: true, message: `${info.databaseName ?? "Exasol"} · ${info.version ?? ""}` });
     } catch (e) {
       setTestState({ busy: false, ok: false, message: errorMessage(e) });
@@ -468,10 +473,15 @@ export function ConnectionPropertiesTab({
 
   async function saveAndConnect() {
     if (busy) return;
+    const draft = draftProfile();
+    // The floating connect window saves + connects + hands the session back to
+    // the app (EV_ESTABLISHED → App adopts it), so we don't drive adoption here.
+    // Fall back to an inline save+connect when the window can't open (browser/mock).
+    if (await openConnectWindow({ draft, mode: "connect" })) return;
     setBusy(true);
     setError(null);
     try {
-      const saved = await ipc.saveConnectionProfile(draftProfile());
+      const saved = await ipc.saveConnectionProfile(draft);
       if (settings) await ipc.connectionSettingsSet(saved.id, settings);
       const server = await ipc.connect(saved.id);
       await onConnected?.(saved, server);

@@ -80,19 +80,6 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
     }
   }
 
-  async function toggleCap(row: BusRow, cap: "sql" | "nl2sql") {
-    setBusToggling((b) => ({ ...b, [row.id]: true }));
-    try {
-      const next = !row.caps[cap];
-      await agent.setGatewayExposure(row.id, { caps: { [cap]: next } });
-      setBus((list) => (list ?? []).map((r) => (r.id === row.id ? { ...r, caps: { ...r.caps, [cap]: next } } : r)));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusToggling((b) => ({ ...b, [row.id]: false }));
-    }
-  }
-
   async function toggleService(id: string, exposed: boolean) {
     try {
       await agent.setGatewayService(id, exposed);
@@ -263,29 +250,7 @@ export function AiClientsTab({ layout = "list" }: { layout?: "grid" | "list" }) 
                 {row.connected ? (
                   <>
                     {row.exposed ? (
-                      // One connection can carry several MCP services — pick
-                      // which ones ride the bus for this database.
-                      <span className="flex items-center gap-1">
-                        {([
-                          ["sql", "SQL"],
-                          ["nl2sql", "Text to SQL"],
-                        ] as const).map(([cap, label]) => (
-                          <button
-                            key={cap}
-                            onClick={() => void toggleCap(row, cap)}
-                            disabled={busToggling[row.id]}
-                            title={row.caps[cap] ? `${label} service is on the gateway — click to turn off` : `${label} service is off for this connection — click to enable`}
-                            className={cn(
-                              "rounded border px-1.5 py-px text-[9px] font-medium uppercase transition-colors disabled:opacity-50",
-                              row.caps[cap]
-                                ? "border-primary/40 bg-primary/15 text-primary"
-                                : "border-border bg-transparent text-muted-foreground line-through hover:text-foreground",
-                            )}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </span>
+                      <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">on the gateway</span>
                     ) : (
                       <span className="rounded bg-warning/15 px-1.5 py-px text-[9px] font-medium uppercase text-warning">MCP off</span>
                     )}
