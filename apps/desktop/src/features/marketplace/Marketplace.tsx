@@ -1692,6 +1692,17 @@ function ManagedComponents() {
                   <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified}
                   </button>
+                ) : c.installed && c.installed !== c.verified ? (
+                  // Installed differs from verified but verified isn't newer →
+                  // running a custom version AHEAD of the verified baseline (e.g.
+                  // an earlier upstream update). Not "up to date" — Revert returns
+                  // it to the verified build.
+                  <span
+                    className="flex items-center gap-1 text-[11px] text-syntax-function"
+                    title={`Running ${c.installed}, newer than Studio's verified ${c.verified}. This version isn't Studio-verified — use Revert to return to the verified build.`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-syntax-function" /> custom version
+                  </span>
                 ) : (
                   upToDate
                 )}
