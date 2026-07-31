@@ -32,6 +32,7 @@ import {
   errorMessage,
   ipc,
   isTauri,
+  type ComponentInfo,
   type InstalledItem,
   type MarketCatalog,
   type MarketEnv,
@@ -991,6 +992,7 @@ export function Marketplace() {
               </div>
             </div>
 
+            {nav === "updates" ? <ManagedComponents /> : null}
             {nav === "ai-clients" ? (
               <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
@@ -1487,4 +1489,103 @@ async function simulate(
   }
   await wait(300);
   push("success", `${item.name} installed.`);
+}
+
+/**
+ * Managed components — each updates independently, in its own isolated
+ * environment, decoupled from Studio releases. Studio's verified version is the
+ * known-good baseline you can always revert to. Shown atop the Updates section.
+ */
+function ManagedComponents() {
+  const [comps, setComps] = useState<ComponentInfo[] | null>(null);
+  const [available, setAvailable] = useState<Record<string, string | null>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
+    setComps(list);
+    const entries = await Promise.all(
+      list.map(async (c) => [c.id, (await ipc.marketRelease(c.repo).catch(() => null))?.tag ?? null] as const),
+    );
+    setAvailable(Object.fromEntries(entries));
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const norm = (v: string) => v.replace(/^v/i, "").trim();
+  const isNewer = (avail: string | null, inst: string | null) => !!avail && !!inst && norm(avail) !== norm(inst);
+
+  async function run(id: string, action: () => Promise<void>, ok: string) {
+    setBusy(id); setNote(null);
+    try { await action(); setNote(ok); await refresh(); }
+    catch (e) { setNote(errorMessage(e)); }
+    finally { setBusy(null); }
+  }
+
+  if (!comps) return null;
+
+  return (
+    <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-primary" />
+        <h3 className="text-[12.5px] font-semibold text-foreground">Managed components</h3>
+      </div>
+      <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
+        Each runs in its own isolated environment (its own Python where relevant, sharing an interpreter only when versions match) and updates on its own — independent of Studio releases. The verified version is the known-good baseline you can always revert to.
+      </p>
+      {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      <div className="divide-y divide-border/60">
+        {comps.map((c) => {
+          const avail = available[c.id] ?? null;
+          const canUpdate = c.updatable && isNewer(avail, c.installed);
+          const isBusy = busy === c.id;
+          return (
+            <div key={c.id} className="flex items-center gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
+                  {c.onOwnEnv ? (
+                    <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary" title="Independently installed in its own environment">own env</span>
+                  ) : (
+                    <span className="rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground" title="Running Studio's verified version">verified</span>
+                  )}
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
+                  <span>installed {c.installed ?? "—"}</span>
+                  <span>verified {c.verified}</span>
+                  {avail ? <span>latest {avail}</span> : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {c.onOwnEnv ? (
+                  <button
+                    onClick={() => void run(c.id, () => ipc.revertComponent(c.id), `${c.name} reverted to verified ${c.verified}.`)}
+                    disabled={isBusy}
+                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
+                  >
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Revert
+                  </button>
+                ) : null}
+                {c.updatable ? (
+                  canUpdate ? (
+                    <button
+                      onClick={() => void run(c.id, () => ipc.updateComponent(c.id, norm(avail!)), `${c.name} updated to ${avail}.`)}
+                      disabled={isBusy}
+                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+                    >
+                      {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {avail}
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>
+                  )
+                ) : (
+                  <span className="text-[10.5px] text-muted-foreground/70">managed by Studio</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }

@@ -16,11 +16,14 @@ Legend: [ ] todo · [x] done. Phased so each slice ships + is Codex-reviewed.
       the chosen version into that env, write the manifest, keep the verified
       pin as the revert target. Best-effort, isolated.
 
-## Slice 3 — Commands + UI
-- [ ] Register commands in `lib.rs`; add `ipc.ts` bindings + types.
-- [ ] Marketplace → Updates: per-component row (installed vs available) with an
-      **Update** button (calls update_component) and **Revert to verified**.
-      Fed by `updates.rs` watcher output.
+## Slice 3 — Commands + UI ✅ DONE
+- [x] Registered commands in `lib.rs`; `ipc.ts` bindings + `ComponentInfo` type
+      (incl. `repo`); mock handlers.
+- [x] Marketplace → Updates: `ManagedComponents` panel — per-component row
+      (installed / verified / latest) with an **Update to X** button (calls
+      `updateComponent` with the latest upstream tag from `marketRelease`) and
+      **Revert** (to verified) when running on its own env. Only components
+      wired for independent update (MCP server, this slice) show Update.
 
 ## Slice 4 — Extend to the other components
 - [ ] ExaPump + Exasol Personal (binary version bump as an independent action).

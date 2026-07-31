@@ -1383,6 +1383,8 @@ use crate::components_update::{self, ComponentId, InstalledManifest};
 pub struct ComponentInfo {
     pub id: String,
     pub name: String,
+    /// GitHub repo (owner/name) — the UI reads its latest release for "available".
+    pub repo: String,
     /// Currently-running version (own-env install if present, else verified).
     pub installed: Option<String>,
     /// Studio's pinned, known-good baseline.
@@ -1391,6 +1393,16 @@ pub struct ComponentInfo {
     pub on_own_env: bool,
     /// Whether independent one-click update/revert is available for it yet.
     pub updatable: bool,
+}
+
+fn component_repo(id: ComponentId) -> String {
+    let c = crate::component_lock::components();
+    match id {
+        ComponentId::Personal => c.personal.repository.clone(),
+        ComponentId::ExaPump => c.exapump.repository.clone(),
+        ComponentId::McpServer => "exasol/mcp-server".to_string(),
+        ComponentId::SemanticViews => c.semantic_views.repository.clone(),
+    }
 }
 
 /// The Python interpreter version a component's OWN env is provisioned with.
@@ -1443,6 +1455,7 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
         .map(|&id| ComponentInfo {
             id: id.slug().into(),
             name: id.display().into(),
+            repo: component_repo(id),
             installed: installed_version(&data_dir, id),
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),

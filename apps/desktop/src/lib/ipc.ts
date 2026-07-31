@@ -246,6 +246,22 @@ export type PersonalLocalStatus = {
   };
   updatedAt: string;
 };
+/** A managed component and whether an independent update overrides the verified pin. */
+export type ComponentInfo = {
+  id: string;
+  name: string;
+  /** GitHub repo (owner/name) — the UI reads its latest release for "available". */
+  repo: string;
+  /** Currently-running version (own-env install if present, else verified). */
+  installed: string | null;
+  /** Studio's pinned, known-good baseline. */
+  verified: string;
+  /** True when an independent install currently overrides the verified stack. */
+  onOwnEnv: boolean;
+  /** Whether one-click independent update/revert is available for it yet. */
+  updatable: boolean;
+};
+
 export type ReleaseAsset = { name: string; url: string; size: number };
 export type Release = {
   tag: string | null;
@@ -452,6 +468,10 @@ export const ipc = {
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
   personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
+  // Independent, isolated component management.
+  listComponents: () => call<ComponentInfo[]>("list_components"),
+  updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
+  revertComponent: (id: string) => call<void>("revert_component", { id }),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {
