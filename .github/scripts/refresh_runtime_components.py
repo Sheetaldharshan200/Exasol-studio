@@ -68,7 +68,17 @@ def sha256_file(path: Path) -> str:
 def tree_digest(paths: list[Path], base: Path) -> str:
     """Hash path names and contents so a revision cannot mask vendored drift."""
     digest = hashlib.sha256()
-    files = sorted(file for path in paths for file in ([path] if path.is_file() else path.rglob("*")) if file.is_file())
+    # Sort by the relative parts TUPLE, never by Path: pathlib compares paths
+    # casefolded on Windows but case-sensitively elsewhere, so mixed-case names
+    # (LICENSE vs install.py) ordered differently per OS and the same tree hashed
+    # to different digests ("vendored content differs" only on Windows). A parts
+    # tuple compares case-sensitively on every OS AND reproduces the exact order
+    # POSIX pathlib always produced, so digests already stored in the lock
+    # remain valid.
+    files = sorted(
+        (file for path in paths for file in ([path] if path.is_file() else path.rglob("*")) if file.is_file()),
+        key=lambda file: file.relative_to(base).parts,
+    )
     for file in files:
         digest.update(file.relative_to(base).as_posix().encode("utf-8"))
         digest.update(b"\0")
