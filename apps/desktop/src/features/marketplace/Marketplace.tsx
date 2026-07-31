@@ -1595,8 +1595,19 @@ function ManagedComponents() {
                   ) : (
                     <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>
                   )
+                ) : isNewer(avail, c.installed) ? (
+                  // Binary component with a newer upstream release. Verify-or-
+                  // refuse: don't download an unverified binary — surface it and
+                  // link out. It rolls into the verified set on a Studio update.
+                  <button
+                    onClick={() => openExternal(`https://github.com/${c.repo}/releases`)}
+                    title="Studio ships SHA-verified builds; this upstream release isn't verified yet"
+                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> {avail} upstream
+                  </button>
                 ) : (
-                  <span className="text-[10.5px] text-muted-foreground/70">managed by Studio</span>
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>
                 )}
               </div>
             </div>
