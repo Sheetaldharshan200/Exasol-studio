@@ -110,6 +110,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
       - name: Install and build application workspace
+        shell: bash # Windows defaults to PowerShell; these are bash scripts.
         env:
           # vite build SIGABRTs (exit 134) on the ~7 GB macOS runners with the
           # default V8 heap — the app bundle (Monaco/Perspective/echarts) is
@@ -122,6 +123,10 @@ jobs:
           pnpm --dir packages/agent-core build:cli
           pnpm build:desktop
       - name: Verify generated state and Python solution
+        # MUST be bash: this uses bash line-continuations (\) and `python -c`
+        # quoting that PowerShell (the Windows default) mangles ("Failed to
+        # spawn: \"), which was the Windows validate failure.
+        shell: bash
         env:
           UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
         run: |
@@ -134,6 +139,7 @@ jobs:
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
             python -c "import exasol.ai.mcp.server.main, shutil; assert shutil.which('exasol-mcp-server')"
       - name: Test desktop component integration
+        shell: bash # Windows defaults to PowerShell; these are bash scripts.
         env:
           NODE_OPTIONS: --max-old-space-size=6144 # tauri build re-runs vite (see above)
         run: |
@@ -154,16 +160,27 @@ jobs:
             -p 127.0.0.1:8563:8563 \
             -v "$password_file:/run/secrets/sys_password:ro" \
             "$image" init sys_password_file=/run/secrets/sys_password
-          python - <<'PY'
-          import socket, time
-          for _ in range(120):
+          # Wait for real SQL readiness, not just an open port: Docker's port
+          # proxy accepts 8563 immediately (before Nano's engine is up), so a
+          # bare TCP connect returns instantly and the installer then hits
+          # "SSL: UNEXPECTED_EOF". Poll an actual pyexasol connection instead.
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
+          import ssl, sys, time
+          import pyexasol
+          last = None
+          for i in range(120):
               try:
-                  with socket.create_connection(("127.0.0.1", 8563), timeout=2):
-                      break
-              except OSError:
+                  c = pyexasol.connect(dsn="127.0.0.1:8563", user="sys",
+                                       password="StudioCiOnly-9mW2zK7q", encryption=True,
+                                       websocket_sslopt={"cert_reqs": ssl.CERT_NONE})
+                  c.execute("SELECT 1").fetchval()
+                  c.close()
+                  print(f"Nano SQL-ready after ~{i * 5}s")
+                  sys.exit(0)
+              except Exception as e:  # noqa: BLE001 — any failure means "not ready yet"
+                  last = e
                   time.sleep(5)
-          else:
-              raise SystemExit("Nano did not open port 8563 within ten minutes")
+          raise SystemExit(f"Nano was not SQL-ready within ten minutes: {last}")
           PY
           export EXASOL_HOST=127.0.0.1 EXASOL_PORT=8563 EXASOL_USER=sys EXASOL_PASSWORD='StudioCiOnly-9mW2zK7q'
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
