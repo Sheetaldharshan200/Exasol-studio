@@ -491,6 +491,8 @@ export const ipc = {
   backupLocalDatabase: () => call<string>("backup_local_database"),
   skillsListTargets: () => call<SkillTarget[]>("skills_list_targets"),
   skillsInstallTarget: (target: string) => call<void>("skills_install_target", { target }),
+  skillsInstallPersona: (target: string, skills: { id: string; name: string; description: string; body: string }[]) =>
+    call<void>("skills_install_persona", { target, skills }),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {

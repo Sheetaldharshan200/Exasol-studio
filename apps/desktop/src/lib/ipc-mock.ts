@@ -823,6 +823,7 @@ export async function mockInvoke(
         { id: "cursor", name: "Cursor", installed: false, installUrl: "https://cursor.com" },
       ];
     case "skills_install_target":
+    case "skills_install_persona":
       return undefined;
 
     default:

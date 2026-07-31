@@ -88,18 +88,90 @@ const OFFICIAL_SKILLS = [
   "Extension catalog", "Notebook connections", "AI setup", "Set up Personal",
 ];
 
+/** One selectable install destination for the multi-select. */
+type InstallTarget = { id: string; name: string; installed: boolean; installUrl?: string };
+
 /**
- * Skills Marketplace — the Exasol-recommended skill set, installable into every
- * AI agent the user has. Studio installs via each provider's OWN tooling
- * (`claude plugin …`, `npx skills … --agent …`), never by hand-writing skill
- * dirs; uninstalled providers are linked, not downloaded.
+ * Multi-select installer: checkboxes for every agent an item can go to (all
+ * detected ones checked by default), a not-installed agent shown as a link, and
+ * one "Install to N" action that runs `onInstall` with the chosen ids.
+ */
+function MultiInstall({ targets, onInstall, actionLabel = "Install" }: {
+  targets: InstallTarget[];
+  onInstall: (ids: string[]) => Promise<void>;
+  actionLabel?: string;
+}) {
+  const [sel, setSel] = useState<Set<string>>(() => new Set(targets.filter((t) => t.installed).map((t) => t.id)));
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  // Re-default the selection when the set of INSTALLED targets changes (e.g.
+  // detection resolves after the picker opened) — but not on every render, so
+  // the user's manual toggles stick otherwise.
+  const installedSig = targets.filter((t) => t.installed).map((t) => t.id).sort().join(",");
+  useEffect(() => {
+    setSel(new Set(installedSig ? installedSig.split(",") : []));
+  }, [installedSig]);
+  const toggle = (id: string) =>
+    setSel((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const run = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await onInstall([...sel]);
+      setNote("Installed.");
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Install failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {targets.map((t) =>
+          t.installed ? (
+            <label key={t.id} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11.5px] text-foreground hover:bg-secondary">
+              <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggle(t.id)} className="accent-primary" />
+              {t.name}
+            </label>
+          ) : (
+            <button
+              key={t.id}
+              onClick={() => t.installUrl && ipc.openExternal(t.installUrl).catch(() => window.open(t.installUrl, "_blank"))}
+              title={`${t.name} isn't installed — get it, then reopen this tab`}
+              className="flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-[11.5px] text-muted-foreground hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" /> {t.name} — not installed
+            </button>
+          ),
+        )}
+      </div>
+      {note ? <p className="rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      <button
+        onClick={() => void run()}
+        disabled={busy || sel.size === 0}
+        className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        {actionLabel} to {sel.size} agent{sel.size === 1 ? "" : "s"}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The "Exasol skills" tab: Exasol's official curated skills, installed into the
+ * user's EXTERNAL agents via each provider's own tooling (`claude plugin …`,
+ * `npx skills …`) — a multi-select of detected agents, never hand-writing files.
  */
 function ExasolSkillsForAgents() {
   const [targets, setTargets] = useState<SkillTarget[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [done, setDone] = useState<Record<string, boolean>>({});
 
   const loadTargets = useCallback(() => {
     setLoadError(false);
@@ -113,38 +185,26 @@ function ExasolSkillsForAgents() {
   }, []);
   useEffect(() => loadTargets(), [loadTargets]);
 
-  async function install(t: SkillTarget) {
-    setBusy(t.id);
-    setNote(null);
-    try {
-      await ipc.skillsInstallTarget(t.id);
-      setDone((d) => ({ ...d, [t.id]: true }));
-      setNote(`Exasol skills installed into ${t.name}.`);
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : `Could not install skills into ${t.name}.`);
-    } finally {
-      setBusy(null);
-    }
-  }
-
   return (
-    <div className="mb-6 rounded-xl border border-primary/25 bg-primary/5 p-4">
+    <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
       <div className="mb-1 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
-        <span className="text-[13px] font-semibold text-foreground">Exasol skills for your AI agents</span>
+        <span className="text-[13px] font-semibold text-foreground">Exasol official skills</span>
         <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">official</span>
       </div>
       <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        Exasol's recommended agent skills — installed into whichever agents you use, via each one's own tooling. Studio never edits an agent's files by hand.
+        Exasol's recommended agent skills, installed into your other AI agents via each one's own tooling. Studio never edits an agent's files by hand.
       </p>
-      <div className="mb-3 flex flex-wrap gap-1.5">
+      <ul className="mb-3 divide-y divide-border/50 overflow-hidden rounded-lg border border-border bg-panel/60">
         {OFFICIAL_SKILLS.map((s) => (
-          <span key={s} className="rounded border border-border bg-panel px-1.5 py-px text-[10px] text-muted-foreground">{s}</span>
+          <li key={s} className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] text-foreground">
+            <Sparkles className="h-3 w-3 shrink-0 text-primary/70" />
+            {s}
+          </li>
         ))}
-      </div>
-      {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      </ul>
       {loadError ? (
-        <p className="mb-2 flex items-center gap-2 text-[11.5px] text-muted-foreground">
+        <p className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
           Couldn't check which agents are installed.
           <button onClick={loadTargets} className="rounded border border-border px-1.5 py-px text-[11px] hover:bg-secondary hover:text-foreground">Retry</button>
         </p>
@@ -152,34 +212,24 @@ function ExasolSkillsForAgents() {
         <p className="text-[11.5px] text-muted-foreground"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> Checking your agents…</p>
       ) : targets.length === 0 ? (
         <p className="text-[11.5px] text-muted-foreground">No supported AI agents detected on this machine.</p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        {(targets ?? []).map((t) => {
-          const isBusy = busy === t.id;
-          if (!t.installed)
-            return (
-              <button
-                key={t.id}
-                onClick={() => ipc.openExternal(t.installUrl).catch(() => window.open(t.installUrl, "_blank"))}
-                title={`${t.name} isn't installed — get it, then reopen this tab`}
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> {t.name} — not installed
-              </button>
-            );
-          return (
-            <button
-              key={t.id}
-              onClick={() => void install(t)}
-              disabled={isBusy}
-              className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-            >
-              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : done[t.id] ? <Check className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
-              {done[t.id] ? `Reinstall in ${t.name}` : `Install in ${t.name}`}
-            </button>
-          );
-        })}
-      </div>
+      ) : (
+        <MultiInstall
+          targets={targets.map((t) => ({ id: t.id, name: t.name, installed: t.installed, installUrl: t.installUrl }))}
+          onInstall={async (ids) => {
+            // Attempt every selected agent; report which (if any) failed instead
+            // of stopping at the first.
+            const failed: string[] = [];
+            for (const id of ids) {
+              try {
+                await ipc.skillsInstallTarget(id);
+              } catch {
+                failed.push(targets.find((t) => t.id === id)?.name ?? id);
+              }
+            }
+            if (failed.length) throw new Error(`Couldn't install into: ${failed.join(", ")}.`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -197,8 +247,15 @@ export function SkillsTab() {
   };
   // Kit-style pack modal: click a role card to see the skills inside.
   const [packModal, setPackModal] = useState<(typeof ROLES)[number] | null>(null);
+  // Two tabs: official Exasol skills vs persona bundles.
+  const [tab, setTab] = useState<"official" | "personas">("official");
+  // Detected external agents (for the persona multi-select) + which pack's
+  // install picker is open.
+  const [agentTargets, setAgentTargets] = useState<SkillTarget[]>([]);
+  const [packPicker, setPackPicker] = useState<(Role & { custom?: boolean }) | null>(null);
 
   const refresh = useCallback(async () => {
+    ipc.skillsListTargets().then(setAgentTargets).catch(() => undefined);
     try {
       const { settings } = await agent.getSettings();
       setActive(new Set(settings.defaultSkills));
@@ -248,6 +305,38 @@ export function SkillsTab() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // Where a persona bundle can go: Studio's own agent (always), plus Claude Code
+  // if it's installed (written as native ~/.claude/skills). Codex/Cursor have no
+  // per-persona format, so they aren't offered here (official skills use those).
+  const personaTargets: InstallTarget[] = (() => {
+    const claude = agentTargets.find((t) => t.id === "claude-code");
+    return [
+      { id: "studio", name: "Studio agent", installed: true },
+      { id: "claude-code", name: "Claude Code", installed: !!claude?.installed, installUrl: claude?.installUrl },
+    ];
+  })();
+
+  async function installPersona(pack: Role & { custom?: boolean }, ids: string[]) {
+    // Install into each selected destination independently — one failure must
+    // not skip the others; report the ones that failed.
+    const failed: string[] = [];
+    for (const id of ids) {
+      try {
+        if (id === "studio") {
+          await usePack(pack);
+        } else if (id === "claude-code") {
+          await ipc.skillsInstallPersona(
+            "claude-code",
+            pack.skills.map((s) => ({ id: s.id, name: s.name, description: s.desc, body: s.body })),
+          );
+        }
+      } catch {
+        failed.push(id === "studio" ? "Studio agent" : "Claude Code");
+      }
+    }
+    if (failed.length) throw new Error(`Couldn't install into: ${failed.join(", ")}.`);
   }
 
   async function addCustom() {
@@ -333,11 +422,26 @@ export function SkillsTab() {
             <span className="font-medium text-foreground">priority skills</span> — applied on every turn in the AI panel.
           </p>
 
-          {/* Skills Marketplace: push Exasol's official skills into external
-              agents (Claude Code, Codex, Cursor). The role packs below stay
-              Studio's own in-app agent. */}
-          <ExasolSkillsForAgents />
+          {/* Two horizontal tabs: Exasol's official skills vs persona bundles. */}
+          <div className="mb-5 inline-flex rounded-lg border border-border bg-panel p-0.5">
+            {([["official", "Exasol skills"], ["personas", "Persona bundles"]] as const).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={cn(
+                  "rounded-md px-3 py-1 text-[12px] font-medium transition-colors",
+                  tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
+          {tab === "official" ? <ExasolSkillsForAgents /> : null}
+
+          {tab === "personas" ? (
+            <>
           {/* Add-your-own form */}
           {adding ? (
             <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4">
@@ -401,9 +505,9 @@ export function SkillsTab() {
                       {countOn(role)}/{role.skills.length}
                     </span>
                     <button
-                      onClick={(e) => { e.stopPropagation(); if (!allOn) void usePack(role); }}
-                      disabled={allOn || packBusy}
-                      title={allOn ? "All skills active" : "Activate this pack"}
+                      onClick={(e) => { e.stopPropagation(); setPackPicker(role); }}
+                      disabled={packBusy}
+                      title="Install this pack into your agents"
                       className={cn(
                         "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
                         allOn ? "text-primary" : "text-muted-foreground hover:text-primary",
@@ -450,8 +554,29 @@ export function SkillsTab() {
               </div>
             );
           })()}
+            </>
+          ) : null}
         </div>
       </div>
+
+      {/* Persona install picker — choose which agents this bundle goes into. */}
+      {packPicker ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" onClick={() => setPackPicker(null)}>
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="flex-1 text-[14px] font-semibold text-foreground">Install “{packPicker.name}”</span>
+              <button onClick={() => setPackPicker(null)} aria-label="Close" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
+              Choose the agents to install this persona's skills into. Studio's own agent activates them; Claude Code gets them as native skills.
+            </p>
+            <MultiInstall
+              targets={personaTargets}
+              onInstall={(ids) => installPersona(packPicker, ids)}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {/* Pack modal — what's inside + per-skill toggles + one-click activate. */}
       {packModal ? (

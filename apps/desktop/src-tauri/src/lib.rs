@@ -178,6 +178,7 @@ pub fn run() {
             local_database::backup_local_database,
             skills_market::skills_list_targets,
             skills_market::skills_install_target,
+            skills_market::skills_install_persona,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

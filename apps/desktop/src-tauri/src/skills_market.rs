@@ -7,7 +7,8 @@
 //! Skills for Studio's OWN in-app agent go through `skillsApi` in the frontend,
 //! not here.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
@@ -153,6 +154,98 @@ pub fn install_skills(app: &AppHandle, target_id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// One Studio-authored persona skill (a role pack's skill), written into an
+/// external agent that has no provider tooling of its own.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonaSkill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+}
+
+/// Whether `path` currently exists as a symlink (used to refuse writing through
+/// one, so a planted symlink can't redirect a skill write out of the root).
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// Slugify a skill id into a safe directory/skill name (lowercase, [a-z0-9-]).
+fn skill_slug(id: &str) -> String {
+    let s: String = id
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() { "skill".into() } else { s }
+}
+
+/// A Claude-Code SKILL.md for one persona skill: YAML frontmatter (name +
+/// quoted description) followed by the body. Pure so it can be unit-tested.
+fn persona_skill_md(slug: &str, skill: &PersonaSkill) -> String {
+    let desc = skill.description.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "---\nname: {slug}\ndescription: \"{desc}\"\n---\n\n# {}\n\n{}\n",
+        skill.name, skill.body
+    )
+}
+
+/// Install a Studio persona bundle into an external agent by WRITING its skills
+/// (Studio personas have no provider tooling). Only Claude Code is supported —
+/// its skills are `~/.claude/skills/<name>/SKILL.md`. The Studio local agent is
+/// handled in the frontend via the agent skill API, not here.
+pub fn install_persona(target_id: &str, skills: &[PersonaSkill]) -> AppResult<()> {
+    match target_id {
+        "claude-code" => {
+            let base = dirs::home_dir()
+                .ok_or_else(|| AppError::Storage("Could not resolve the home directory.".into()))?
+                .join(".claude")
+                .join("skills");
+            // Reject slug collisions up front so one skill can't silently
+            // clobber another (or an unrelated existing skill dir).
+            let mut seen = std::collections::HashSet::new();
+            for skill in skills {
+                let slug = skill_slug(&skill.id);
+                if !seen.insert(slug.clone()) {
+                    return Err(AppError::InvalidSettings(format!(
+                        "Two skills resolve to the same name `{slug}`; rename one before installing."
+                    )));
+                }
+            }
+            for skill in skills {
+                let slug = skill_slug(&skill.id);
+                let dir = base.join(&slug);
+                // Never follow a symlink out of the skills root: refuse if the
+                // slug dir or its SKILL.md already exists as a symlink.
+                if is_symlink(&dir) {
+                    return Err(AppError::Storage(format!(
+                        "Refusing to write through a symlink at {}.",
+                        dir.display()
+                    )));
+                }
+                std::fs::create_dir_all(&dir)?;
+                let md = dir.join("SKILL.md");
+                if is_symlink(&md) {
+                    return Err(AppError::Storage(format!(
+                        "Refusing to write through a symlink at {}.",
+                        md.display()
+                    )));
+                }
+                std::fs::write(md, persona_skill_md(&slug, skill))?;
+            }
+            Ok(())
+        }
+        _ => Err(AppError::InvalidSettings(format!(
+            "Persona bundles can't be installed into `{target_id}` (no skill format)."
+        ))),
+    }
+}
+
 #[tauri::command]
 pub fn skills_list_targets() -> AppResult<Vec<SkillTarget>> {
     Ok(skills_targets())
@@ -161,6 +254,13 @@ pub fn skills_list_targets() -> AppResult<Vec<SkillTarget>> {
 #[tauri::command]
 pub async fn skills_install_target(app: AppHandle, target: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || install_skills(&app, &target))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn skills_install_persona(target: String, skills: Vec<PersonaSkill>) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || install_persona(&target, &skills))
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?
 }
@@ -207,5 +307,46 @@ mod tests {
     fn targets_are_the_three_supported_providers() {
         let ids: Vec<String> = skills_targets().into_iter().map(|t| t.id).collect();
         assert_eq!(ids, vec!["claude-code", "codex", "cursor"]);
+    }
+
+    #[test]
+    fn skill_slug_is_safe_and_nonempty() {
+        assert_eq!(skill_slug("ds-eda"), "ds-eda");
+        assert_eq!(skill_slug("BI Metrics!"), "bi-metrics");
+        assert_eq!(skill_slug("  --x--  "), "x");
+        assert_eq!(skill_slug("***"), "skill");
+    }
+
+    #[test]
+    fn persona_skill_md_has_frontmatter_and_escapes_description() {
+        let md = persona_skill_md(
+            "ds-eda",
+            &PersonaSkill {
+                id: "ds-eda".into(),
+                name: "Exploratory analysis".into(),
+                description: "Profile a \"dataset\" with SQL".into(),
+                body: "Do the thing.".into(),
+            },
+        );
+        assert!(md.starts_with("---\nname: ds-eda\n"));
+        assert!(md.contains(r#"description: "Profile a \"dataset\" with SQL""#));
+        assert!(md.contains("# Exploratory analysis"));
+        assert!(md.trim_end().ends_with("Do the thing."));
+    }
+
+    #[test]
+    fn install_persona_rejects_unsupported_target() {
+        assert!(install_persona("codex", &[]).is_err());
+        assert!(install_persona("studio", &[]).is_err());
+    }
+
+    #[test]
+    fn install_persona_rejects_slug_collision() {
+        let dup = vec![
+            PersonaSkill { id: "a b".into(), name: "A".into(), description: String::new(), body: String::new() },
+            PersonaSkill { id: "a-b".into(), name: "B".into(), description: String::new(), body: String::new() },
+        ];
+        // Both ids slugify to "a-b" → must be rejected before any write.
+        assert!(install_persona("claude-code", &dup).is_err());
     }
 }
