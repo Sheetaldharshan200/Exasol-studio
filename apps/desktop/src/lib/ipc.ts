@@ -263,6 +263,9 @@ export type ComponentInfo = {
   /** pip/uv-managed (index-hash-verified) → can update to any upstream version.
    *  False = binary (verify-or-refuse: only the SHA-pinned verified build). */
   pipManaged: boolean;
+  /** Version is an opaque revision (not orderable semver) — compare by
+   *  inequality; "update" reconciles to the verified revision (Semantic Views). */
+  opaqueVersion: boolean;
 };
 
 export type ReleaseAsset = { name: string; url: string; size: number };

@@ -1597,6 +1597,17 @@ function ManagedComponents() {
                       {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {avail}
                     </button>
                   ) : upToDate
+                ) : c.updatable && c.opaqueVersion ? (
+                  // Opaque revision (Semantic Views, DB-side): reconcile to the
+                  // verified revision when the installed one differs. Not
+                  // installed → nothing to update here (install it from its card).
+                  !c.installed ? (
+                    <span className="text-[10.5px] text-muted-foreground/70">not installed</span>
+                  ) : c.installed !== c.verified ? (
+                    <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled to the verified revision.`)} disabled={isBusy} className={upBtn}>
+                      {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
+                    </button>
+                  ) : upToDate
                 ) : c.updatable ? (
                   // Binary (verify-or-refuse): install only the SHA-pinned verified
                   // build; if verified is ahead of installed, offer it. A newer

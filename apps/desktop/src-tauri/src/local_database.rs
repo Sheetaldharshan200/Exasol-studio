@@ -1399,6 +1399,10 @@ pub struct ComponentInfo {
     /// version. False = binary (verify-or-refuse: only the SHA-pinned verified
     /// build; upstream is shown/linked, not installed).
     pub pip_managed: bool,
+    /// The version is an opaque revision (e.g. a content hash), not an orderable
+    /// semver — compare by inequality, and "update" means reconcile to the
+    /// verified revision (Semantic Views).
+    pub opaque_version: bool,
 }
 
 fn component_repo(id: ComponentId) -> String {
@@ -1438,8 +1442,16 @@ fn verified_version(id: ComponentId) -> String {
 
 /// The version actually in effect: the component's own-env manifest when it has
 /// been independently installed, otherwise the verified baseline (the shared
-/// stack is pinned to verified).
+/// stack is pinned to verified). Semantic Views is opt-in + DB-side, so its
+/// installed version is the readiness marker's revision, or None when it hasn't
+/// been installed at all.
 fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
+    if id == ComponentId::SemanticViews {
+        return std::fs::read_to_string(data_dir.join("personal-local/semantic-example.ready"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+    }
     components_update::read_manifest(data_dir, id)
         .map(|m| m.version)
         .or_else(|| Some(verified_version(id)))
@@ -1465,10 +1477,14 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
             installed: installed_version(&data_dir, id),
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
-            // MCP (pip) + ExaPump (binary) support independent update; Personal
-            // (DB engine) and Semantic Views land in a later slice.
-            updatable: matches!(id, ComponentId::McpServer | ComponentId::ExaPump),
+            // MCP (pip), ExaPump (binary), Semantic Views (DB-side) support
+            // independent update; Personal (DB engine) lands in a later slice.
+            updatable: matches!(
+                id,
+                ComponentId::McpServer | ComponentId::ExaPump | ComponentId::SemanticViews
+            ),
             pip_managed: matches!(id, ComponentId::McpServer),
+            opaque_version: matches!(id, ComponentId::SemanticViews),
         })
         .collect())
 }
@@ -1571,6 +1587,21 @@ fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> 
     )
 }
 
+/// Reconcile Semantic Views (DB-side) to the effective verified revision by
+/// re-running its installer. Requires the local runtime + managed Python; the
+/// installer writes the readiness marker with the new revision on success.
+fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
+    let runtime = crate::local_runtime::ensure_runtime(app, JOB_ID)?;
+    let python = venv_python(data_dir);
+    if !python.is_file() {
+        return Err(AppError::Storage(
+            "Set up the local database first — the managed Python stack isn't installed yet.".into(),
+        ));
+    }
+    let runtime = query_ready_runtime(app, &python, &runtime)?;
+    install_semantic_views(app, data_dir, &runtime, &python)
+}
+
 /// One-click independent update of a component. MCP (pip) can move to any
 /// upstream version (uv verifies package hashes); binaries are verify-or-refuse
 /// and always install the effective VERIFIED build (the `version` arg is ignored
@@ -1590,8 +1621,9 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
                 repoint_mcp_command(&data_dir)
             }
             ComponentId::ExaPump => install_exapump_component(&app, &data_dir),
-            _ => Err(AppError::InvalidSettings(
-                "Independent update isn't available for this component yet.".into(),
+            ComponentId::SemanticViews => reconcile_semantic(&app, &data_dir),
+            ComponentId::Personal => Err(AppError::InvalidSettings(
+                "Independent update of the database engine isn't available yet.".into(),
             )),
         }
     })

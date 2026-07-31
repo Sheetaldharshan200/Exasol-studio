@@ -51,14 +51,17 @@ require the lock itself to update independently.
       **Ops to enable:** generate an ed25519 keypair, set
       `VERIFIED_LOCK_PUBKEY_HEX` + `VERIFIED_LOCK_URL`, host
       `runtime-components.lock.json` + `.sig` (base64 of the 64-byte signature).
-- [ ] ExaPump: verify-or-refuse install of a lock-verified version into its own
-      env (SHA-checked via obtain_artifact), run-from-own, revert. Useful once
-      the remote lock can advance its verified version.
+- [x] ExaPump: verify-or-refuse install of the lock-verified artifact into its
+      own dir (SHA-checked via obtain_artifact), run-from-own (exapump_path
+      prefers it, manifest-gated), revert to shared. UI offers "Update to
+      <verified>" when verified is ahead of installed; newer upstream is a link.
+- [x] Semantic Views: independent reconcile to the verified revision (DB-side,
+      opaque-version compare); "Update" reruns the installer, "not installed"
+      when its marker is absent (install from its own card).
 - [ ] Exasol Personal (DB engine): stop → replace verified binary → restart →
-      verify orchestration, gated by lifecycle-idle. Build on top of the remote
-      lock so there's a verified newer version to apply.
-- [ ] Semantic Views: independent reinstall of a verified revision (DB-side).
-- [ ] pyexasol stays a dependency inside the consuming env(s) (not standalone).
+      verify orchestration, gated by lifecycle-idle. Deferred — its own change
+      (risk to the running local database).
+- [x] pyexasol stays a dependency inside the consuming env(s) (not standalone).
 
 ## Cross-cutting
 - [ ] Keep it opt-in/manual (no auto-update). Notification deep-links to Updates.
