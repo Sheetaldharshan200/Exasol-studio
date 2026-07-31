@@ -58,9 +58,13 @@ require the lock itself to update independently.
 - [x] Semantic Views: independent reconcile to the verified revision (DB-side,
       opaque-version compare); "Update" reruns the installer, "not installed"
       when its marker is absent (install from its own card).
-- [ ] Exasol Personal (DB engine): stop → replace verified binary → restart →
-      verify orchestration, gated by lifecycle-idle. Deferred — its own change
-      (risk to the running local database).
+- [ ] Exasol Personal (DB engine): update the ENGINE ONLY, never the data.
+      REQUIRED safety (user directive): back up the database first, then
+      stop → replace the verified engine binary → restart → verify; on any
+      failure, restore from the backup. NEVER a force update, never collapse or
+      touch the data. Gated by lifecycle-idle; refuse if the DB is busy or the
+      backup can't be taken. Still deferred to its own careful change given the
+      risk to the running local database + the backup's size/time.
 - [x] pyexasol stays a dependency inside the consuming env(s) (not standalone).
 
 ## Cross-cutting
