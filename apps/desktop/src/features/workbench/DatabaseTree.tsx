@@ -28,6 +28,7 @@ export function DatabaseTree({
   onContext,
   initialExpandedItems,
   collapseSignal,
+  refreshSignal,
 }: {
   roots: TreeNode[];
   onOpenObject: (schema: string, name: string) => void;
@@ -39,6 +40,10 @@ export function DatabaseTree({
   initialExpandedItems?: string[];
   /** Increment to collapse every expanded node in this tree. */
   collapseSignal?: number;
+  /** Increment to refresh in place (cache-clear + stale-while-revalidate
+   *  reload of the expanded nodes) — WITHOUT remounting, so the tree never
+   *  flashes back to skeletons on refresh/reconnect. */
+  refreshSignal?: number;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialExpandedItems ?? []));
   const [states, setStates] = useState<Record<string, NodeState>>({});
@@ -91,30 +96,46 @@ export function DatabaseTree({
     setExpanded(new Set());
   }, [collapseSignal]);
 
-  // Stay live: when the catalog changes (a CREATE/DROP/import ran), drop the
-  // cached children and reload whatever is currently expanded.
-  useEffect(() => {
-    const onChanged = () => {
-      // Snapshot every known node (roots + already-loaded children) BEFORE
-      // clearing the cache, so we can re-load the ones that are expanded.
-      const known = new Map<string, TreeNode>();
-      const collect = (nodes: TreeNode[]) => {
-        for (const n of nodes) {
-          known.set(n.id, n);
-          const kids = cache.current.get(n.id);
-          if (kids) collect(kids);
-        }
-      };
-      collect(roots);
-      cache.current.clear();
-      for (const id of expanded) {
-        const node = known.get(id);
-        if (node) load(node);
+  // Cache-clearing, stale-while-revalidate reload of every expanded node — the
+  // in-place refresh used by both the catalog-changed event and refreshSignal.
+  // Keeps current children on screen (load() is SWR) so nothing flashes.
+  const reloadExpanded = useCallback(() => {
+    // Snapshot every known node (roots + already-loaded children) BEFORE
+    // clearing the cache, so we can re-load the ones that are expanded.
+    const known = new Map<string, TreeNode>();
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        known.set(n.id, n);
+        const kids = cache.current.get(n.id);
+        if (kids) collect(kids);
       }
     };
-    window.addEventListener("studio:catalog-changed", onChanged);
-    return () => window.removeEventListener("studio:catalog-changed", onChanged);
+    collect(roots);
+    cache.current.clear();
+    for (const id of expanded) {
+      const node = known.get(id);
+      if (node) load(node);
+    }
   }, [roots, load, expanded]);
+
+  // Stay live: when the catalog changes (a CREATE/DROP/import ran), refresh.
+  useEffect(() => {
+    window.addEventListener("studio:catalog-changed", reloadExpanded);
+    return () => window.removeEventListener("studio:catalog-changed", reloadExpanded);
+  }, [reloadExpanded]);
+
+  // A refresh/reconnect bumps refreshSignal — reload IN PLACE instead of
+  // remounting the tree (the old `key={treeKey}` remount reset every node to a
+  // skeleton, which read as a flicker on every refresh/open).
+  const firstRefresh = useRef(true);
+  useEffect(() => {
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
+      return;
+    }
+    reloadExpanded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   const toggle = useCallback(
     (node: TreeNode) => {

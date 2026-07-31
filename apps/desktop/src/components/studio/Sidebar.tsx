@@ -98,10 +98,11 @@ function ConnectionSection({
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onOpenDetails?: (node: import("@/features/workbench/tree-model").TreeNode) => void;
 }) {
+  // Stable across refreshes: a refresh reloads IN PLACE via refreshSignal, so
+  // roots must NOT change identity (that would remount/flicker the tree).
   const roots = useMemo(
     () => buildConnectionNodes(connection.profile.id),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [connection.profile.id, treeKey],
+    [connection.profile.id],
   );
   // Bumped to collapse every expanded node in this connection's tree.
   const [collapseSignal, setCollapseSignal] = useState(0);
@@ -199,13 +200,13 @@ function ConnectionSection({
       </div>
       {!collapsed ? (
         <DatabaseTree
-          key={treeKey}
           roots={roots}
           onOpenObject={onOpenObject}
           onOpenDetails={onOpenDetails}
           onContext={onContext}
           initialExpandedItems={["schemas"]}
           collapseSignal={collapseSignal}
+          refreshSignal={treeKey}
         />
       ) : null}
     </div>
