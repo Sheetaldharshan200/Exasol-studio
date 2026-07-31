@@ -74,6 +74,16 @@ fn date_is_newer(remote: &str, baked: &str) -> bool {
     }
 }
 
+/// The later of two RFC3339 timestamps (falls back to `a` if either is unparseable
+/// in a way that makes `b` not provably newer). Used for the monotonic floor.
+fn newer_of(a: String, b: String) -> String {
+    if date_is_newer(&b, &a) {
+        b
+    } else {
+        a
+    }
+}
+
 fn cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("verified-lock")
 }
@@ -82,6 +92,31 @@ fn cached_lock(data_dir: &Path) -> PathBuf {
 }
 fn cached_sig(data_dir: &Path) -> PathBuf {
     cache_dir(data_dir).join("runtime-components.lock.json.sig")
+}
+
+/// The `generated_at` of the currently-cached override, but only if it still
+/// verifies + parses — the anti-downgrade floor. None when there's no valid
+/// cache.
+fn cached_generated_at(data_dir: &Path) -> Option<String> {
+    let lock_bytes = std::fs::read(cached_lock(data_dir)).ok()?;
+    let sig_bytes = std::fs::read(cached_sig(data_dir)).ok()?;
+    if !verify_lock(&lock_bytes, &sig_bytes) {
+        return None;
+    }
+    serde_json::from_slice::<RuntimeComponents>(&lock_bytes)
+        .ok()
+        .map(|p| p.generated_at)
+}
+
+/// The monotonic freshness floor: the later of the baked lock and the highest
+/// lock already accepted into the cache. A fetched lock must beat this, so a
+/// host can't downgrade/replay an older (e.g. revoked) but still-validly-signed
+/// lock once a newer one has been seen.
+fn freshness_floor(baked: &RuntimeComponents, data_dir: &Path) -> String {
+    match cached_generated_at(data_dir) {
+        Some(cached) => newer_of(baked.generated_at.clone(), cached),
+        None => baked.generated_at.clone(),
+    }
 }
 
 /// The cached remote lock, but ONLY if its signature verifies, it parses, its
@@ -139,8 +174,11 @@ pub fn refresh(baked: &RuntimeComponents, data_dir: &Path) -> AppResult<bool> {
     let Ok(parsed) = serde_json::from_slice::<RuntimeComponents>(&lock_bytes) else {
         return Ok(false);
     };
+    // Must beat the monotonic floor (baked OR the highest already cached) — not
+    // merely the baked lock — so an older validly-signed lock can't be replayed
+    // over a newer one.
     if parsed.schema_version != baked.schema_version
-        || !date_is_newer(&parsed.generated_at, &baked.generated_at)
+        || !date_is_newer(&parsed.generated_at, &freshness_floor(baked, data_dir))
     {
         return Ok(false);
     }
@@ -213,6 +251,15 @@ mod tests {
         let vk = SigningKey::generate(&mut OsRng).verifying_key();
         let hex: String = vk.to_bytes().iter().map(|b| format!("{b:02x}")).collect();
         assert!(decode_pubkey(&hex).is_some());
+    }
+
+    #[test]
+    fn newer_of_picks_the_later_timestamp() {
+        // The floor advances to the later of the two — anti-downgrade.
+        assert_eq!(newer_of("2026-07-01T00:00:00Z".into(), "2026-08-01T00:00:00Z".into()), "2026-08-01T00:00:00Z");
+        assert_eq!(newer_of("2026-08-01T00:00:00Z".into(), "2026-07-01T00:00:00Z".into()), "2026-08-01T00:00:00Z");
+        // Unparseable candidate never lowers the floor.
+        assert_eq!(newer_of("2026-08-01T00:00:00Z".into(), "nope".into()), "2026-08-01T00:00:00Z");
     }
 
     #[test]
