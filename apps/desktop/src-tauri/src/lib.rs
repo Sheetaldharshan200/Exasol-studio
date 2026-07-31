@@ -174,6 +174,7 @@ pub fn run() {
             local_database::list_components,
             local_database::update_component,
             local_database::revert_component,
+            local_database::backup_local_database,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")

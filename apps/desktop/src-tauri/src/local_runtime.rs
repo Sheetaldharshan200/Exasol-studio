@@ -13,7 +13,7 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -538,6 +538,310 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     read_personal_connection(app)
 }
 
+/// Recursively copy `src` into `dst` (created if absent). Symlinks are
+/// RECREATED, never followed — so a symlink cycle can't cause infinite
+/// recursion and the copy never escapes the tree via a link. Used for the cold
+/// backup of the deployment directory.
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        // symlink_metadata does NOT follow links (unlike metadata), so a
+        // symlink is handled as a symlink instead of being traversed.
+        let ty = std::fs::symlink_metadata(&from)?.file_type();
+        if ty.is_symlink() {
+            #[cfg(unix)]
+            {
+                let target = std::fs::read_link(&from)?;
+                let _ = std::fs::remove_file(&to);
+                std::os::unix::fs::symlink(target, &to)?;
+            }
+            // Non-unix managed DBs run in Docker (no dir backup), so a symlink
+            // here isn't expected; skip rather than follow it.
+        } else if ty.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Poll until `port` stops accepting connections (the DB has fully shut down),
+/// or the timeout elapses. Returns whether the port is closed.
+fn wait_for_port_closed(port: u16, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if !port_ready(port) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    !port_ready(port)
+}
+
+/// The engine version currently installed on disk (the `launcher.version`
+/// marker written by `ensure_personal_launcher`), or None before first install.
+/// This is the REAL installed engine — distinct from the verified/target
+/// version in the lock — so the Updates panel can tell when an update is due.
+pub(crate) fn installed_personal_version(app: &AppHandle) -> Option<String> {
+    runtime_dir(app)
+        .ok()
+        .and_then(|dir| std::fs::read_to_string(dir.join("launcher.version")).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// A consistent, cold backup of Studio's own local deployment: stop the DB (if
+/// running) so the copy can't catch a half-written file, copy the WHOLE
+/// deployment directory (config + data), then restart it. Returns the backup
+/// path. Never touches the source deployment. The DB is briefly unavailable
+/// during the copy — this is an explicit, user-triggered action, not automatic.
+pub(crate) fn backup_personal_deployment(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
+    let dir = personal_deployment_dir(app)?;
+    if !dir.join("deployment.json").is_file() {
+        return Err(AppError::Storage(
+            "There's no local database to back up yet.".into(),
+        ));
+    }
+    let cli = managed_exasol(app)?;
+    let cli_s = cli.to_string_lossy().to_string();
+    let ddir = dir.to_string_lossy().to_string();
+    let port = expected_db_port(app);
+    let was_running = port_ready(port);
+    if was_running {
+        emit_log(
+            app,
+            id,
+            "Stopping the local database for a consistent backup…",
+            "info",
+        );
+        // A backup taken from a live DB can catch half-written files, so refuse
+        // to copy unless the engine actually stopped. On failure nothing has
+        // been changed and the database is left running.
+        if run_streamed(app, id, &cli_s, &["stop", "--deployment-dir", &ddir])? != 0 {
+            return Err(AppError::Storage(
+                "Could not stop the database for a consistent backup; the database was left running and nothing was changed.".into(),
+            ));
+        }
+        if !wait_for_port_closed(port, Duration::from_secs(60)) {
+            return Err(AppError::Storage(
+                "The database did not shut down in time; backup aborted so it can't capture a live database.".into(),
+            ));
+        }
+    }
+
+    let backups = runtime_dir(app)?.join("backups");
+    std::fs::create_dir_all(&backups)?;
+    // Millisecond stamp keeps backups ordered and unique without a clock format
+    // dependency; a `.partial` suffix during the copy means a crash mid-backup
+    // never leaves a directory that looks like a finished backup.
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = backups.join(format!("deployment-{stamp}"));
+    let partial = backups.join(format!(".deployment-{stamp}.partial"));
+    let _ = std::fs::remove_dir_all(&partial);
+
+    emit_log(app, id, "Backing up the local database…", "info");
+    let copied = copy_dir_all(&dir, &partial);
+
+    // Always bring the database back up, whether or not the copy succeeded.
+    if was_running {
+        emit_log(app, id, "Restarting the local database…", "info");
+        let _ = run_streamed(app, id, &cli_s, &["start", "--deployment-dir", &ddir]);
+        let _ = wait_for_port(app, id, port, Duration::from_secs(150));
+    }
+
+    match copied {
+        Ok(()) => {
+            std::fs::rename(&partial, &dest)?;
+            emit_log(
+                app,
+                id,
+                format!("Local database backed up to {}", dest.display()),
+                "success",
+            );
+            Ok(dest)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&partial);
+            Err(AppError::Storage(format!("Backup failed: {e}")))
+        }
+    }
+}
+
+/// Update the database ENGINE only, never the data. Ordered so the data is
+/// always recoverable: back up first, keep the old engine binary, stop, swap in
+/// the newer VERIFIED engine, restart + verify. On ANY failure, restore the old
+/// engine binary AND the backed-up data, then restart the old engine. Never a
+/// force update. Caller guarantees a newer verified engine exists and the
+/// runtime is idle (see `update_component`).
+///
+/// NOTE: this path only runs once the verified lock advances the engine version
+/// to one that is data-compatible with the existing deployment — which is an
+/// ops decision (the lock never advances to an incompatible engine). Until then
+/// it is unreachable (verified == installed), so it has not been exercised
+/// against a real cross-version upgrade.
+pub(crate) fn update_personal_engine(app: &AppHandle, id: &str) -> AppResult<()> {
+    let dir = personal_deployment_dir(app)?;
+    if !dir.join("deployment.json").is_file() {
+        return Err(AppError::Storage(
+            "There's no local database to update.".into(),
+        ));
+    }
+    let launcher = managed_exasol(app)?;
+    if !launcher.is_file() {
+        return Err(AppError::Storage(
+            "The database engine isn't installed yet.".into(),
+        ));
+    }
+    let launcher_s = launcher.to_string_lossy().to_string();
+    let ddir = dir.to_string_lossy().to_string();
+
+    // 1. Back up the data FIRST (stops+restarts for a consistent copy).
+    let backup = backup_personal_deployment(app, id)?;
+
+    // 2. Preserve the current engine binary + its version marker for rollback.
+    let prev_bin = launcher.with_extension("prev");
+    let _ = std::fs::remove_file(&prev_bin);
+    std::fs::copy(&launcher, &prev_bin)?;
+    let version_marker = runtime_dir(app)?.join("launcher.version");
+    let old_version = installed_personal_version(app);
+
+    // 3. Stop and CONFIRM shutdown before touching the engine binary — never
+    // swap under a live database. If it won't stop, abort with everything still
+    // intact (nothing swapped, data untouched, backup taken).
+    let port = expected_db_port(app);
+    emit_log(app, id, "Stopping the database to swap the engine…", "info");
+    let stop_ok = run_streamed(app, id, &launcher_s, &["stop", "--deployment-dir", &ddir])
+        .map(|code| code == 0)
+        .unwrap_or(false);
+    if !stop_ok || !wait_for_port_closed(port, Duration::from_secs(60)) {
+        let _ = std::fs::remove_file(&prev_bin);
+        return Err(AppError::Storage(format!(
+            "Could not stop the database to swap the engine; nothing was changed. A backup is at {}.",
+            backup.display()
+        )));
+    }
+    // Clear the marker so ensure_personal_launcher reinstalls the (newer) verified build.
+    let _ = std::fs::remove_file(&version_marker);
+
+    let swap = (|| -> AppResult<()> {
+        let new_cli = ensure_personal_launcher(app, id)?;
+        let new_cli_s = new_cli.to_string_lossy().to_string();
+        emit_log(app, id, "Starting the updated engine…", "info");
+        if run_streamed(app, id, &new_cli_s, &["start", "--deployment-dir", &ddir])? != 0 {
+            return Err(AppError::Storage("The updated engine failed to start.".into()));
+        }
+        wait_for_port(app, id, port, Duration::from_secs(150))?;
+        if !command_ok(&new_cli_s, &["info", "--deployment-dir", &ddir]) {
+            return Err(AppError::Storage(
+                "The updated engine started but `info` failed.".into(),
+            ));
+        }
+        Ok(())
+    })();
+
+    match swap {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&prev_bin);
+            emit_log(app, id, "Database engine updated.", "success");
+            Ok(())
+        }
+        Err(e) => {
+            emit_log(
+                app,
+                id,
+                format!("Engine update failed ({e}); restoring the previous engine and your data…"),
+                "err",
+            );
+            // Restore the previous engine binary + its version marker first.
+            // This is a file-level swap that doesn't touch the deployment data,
+            // so it's safe regardless of DB state. A failed binary restore is
+            // critical — report it (data untouched, backup intact).
+            if let Err(be) = std::fs::copy(&prev_bin, &launcher) {
+                return Err(AppError::Storage(format!(
+                    "Engine update failed ({e}) and restoring the previous engine binary failed: {be}. Your data is untouched and a backup is at {}.",
+                    backup.display()
+                )));
+            }
+            let _ = std::fs::remove_file(&prev_bin);
+            if let Some(v) = &old_version {
+                let _ = std::fs::write(&version_marker, v);
+            }
+            // Confirm the failed attempt's engine is fully down BEFORE mutating
+            // deployment data on disk. If it won't stop, do NOT rename/delete
+            // the deployment under a live process — leave the data as-is (we
+            // haven't touched it) and point at the intact backup.
+            let _ = run_streamed(app, id, &launcher_s, &["stop", "--deployment-dir", &ddir]);
+            if !wait_for_port_closed(port, Duration::from_secs(60)) {
+                return Err(AppError::Storage(format!(
+                    "Engine update failed ({e}); the previous engine binary was restored but the database could not be confirmed stopped, so your data was left untouched. A consistent backup is at {}. Restart the app to recover.",
+                    backup.display()
+                )));
+            }
+            // Restore the data from the backup — never leave a window with no
+            // deployment: move the failed one aside FIRST, copy the backup into
+            // place, and only drop the aside on success. If the copy fails, put
+            // the failed deployment back. The backup at `backup` stays intact
+            // regardless — we only ever copy FROM it.
+            let aside = dir.with_extension("failed-update");
+            if std::fs::remove_dir_all(&aside).is_err() && aside.exists() {
+                return Err(AppError::Storage(format!(
+                    "Engine update failed ({e}) and a stale `{}` blocks rollback; remove it and restore from the backup at {}.",
+                    aside.display(),
+                    backup.display()
+                )));
+            }
+            let moved_aside = match std::fs::rename(&dir, &aside) {
+                Ok(()) => true,
+                Err(_) => {
+                    // Couldn't move aside — clear dir directly. If THAT fails,
+                    // abort rather than blindly proceed (backup stays intact).
+                    match std::fs::remove_dir_all(&dir) {
+                        Ok(()) => false,
+                        Err(de) if de.kind() == std::io::ErrorKind::NotFound => false,
+                        Err(de) => {
+                            return Err(AppError::Storage(format!(
+                                "Engine update failed ({e}) and the deployment could not be cleared for restore: {de}. Your backup is intact at {}.",
+                                backup.display()
+                            )))
+                        }
+                    }
+                }
+            };
+            if let Err(re) = copy_dir_all(&backup, &dir) {
+                let _ = std::fs::remove_dir_all(&dir);
+                if moved_aside {
+                    if let Err(rne) = std::fs::rename(&aside, &dir) {
+                        return Err(AppError::Storage(format!(
+                            "Engine update failed AND restoring the backup failed ({re}) AND recovering the prior deployment failed ({rne}). Your backup is intact at {}.",
+                            backup.display()
+                        )));
+                    }
+                }
+                return Err(AppError::Storage(format!(
+                    "Engine update failed AND restoring the backup failed: {re}. Your backup is intact at {}.",
+                    backup.display()
+                )));
+            }
+            if moved_aside {
+                let _ = std::fs::remove_dir_all(&aside);
+            }
+            // Bring the old engine back up.
+            let _ = run_streamed(app, id, &launcher_s, &["start", "--deployment-dir", &ddir]);
+            let _ = wait_for_port(app, id, port, Duration::from_secs(150));
+            Err(AppError::Storage(format!(
+                "Engine update failed and was rolled back to the previous engine + data: {e}"
+            )))
+        }
+    }
+}
+
 fn engine_owner_path(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(runtime_dir(app)?.join("container-engine"))
 }
@@ -924,5 +1228,28 @@ mod tests {
         let image = crate::component_lock::components().nano.immutable_image();
         assert!(image.starts_with("docker.io/exasol/nano@sha256:"));
         assert_eq!(image.rsplit(':').next().unwrap().len(), 64);
+    }
+
+    #[test]
+    fn copy_dir_all_copies_nested_files_and_contents() {
+        let root =
+            std::env::temp_dir().join(format!("exasol-studio-copy-{}", std::process::id()));
+        let src = root.join("src");
+        let dst = root.join("dst");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(src.join("nested/deep")).unwrap();
+        std::fs::write(src.join("top.txt"), b"top").unwrap();
+        std::fs::write(src.join("nested/mid.txt"), b"mid").unwrap();
+        std::fs::write(src.join("nested/deep/leaf.txt"), b"leaf").unwrap();
+
+        copy_dir_all(&src, &dst).unwrap();
+
+        assert_eq!(std::fs::read(dst.join("top.txt")).unwrap(), b"top");
+        assert_eq!(std::fs::read(dst.join("nested/mid.txt")).unwrap(), b"mid");
+        assert_eq!(
+            std::fs::read(dst.join("nested/deep/leaf.txt")).unwrap(),
+            b"leaf"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

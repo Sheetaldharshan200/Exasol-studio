@@ -16,6 +16,7 @@ import {
   FileCode2,
   LayoutGrid,
   List,
+  DatabaseBackup,
   Loader2,
   Plug,
   RefreshCcw,
@@ -1611,6 +1612,19 @@ function ManagedComponents() {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
+                {c.id === "personal" ? (
+                  // The DB engine carries data — a backup is always available,
+                  // and the (backup-first) update only appears when a newer
+                  // verified engine exists.
+                  <button
+                    onClick={() => void run(c.id, async () => { await ipc.backupLocalDatabase(); }, "Local database backed up (see personal-local/backups).")}
+                    disabled={isBusy}
+                    title="Stop the database, copy config + data to a timestamped backup, then restart"
+                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
+                  >
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
+                  </button>
+                ) : null}
                 {c.onOwnEnv ? (
                   <button
                     onClick={() => void run(c.id, () => ipc.revertComponent(c.id), `${c.name} reverted to verified ${c.verified}.`)}

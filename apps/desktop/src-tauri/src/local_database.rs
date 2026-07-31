@@ -1474,15 +1474,22 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
             id: id.slug().into(),
             name: id.display().into(),
             repo: component_repo(id),
-            installed: installed_version(&data_dir, id),
+            // Personal's real installed engine is the launcher.version marker,
+            // not a component manifest — read it so the panel can tell when a
+            // newer verified engine is due.
+            installed: if id == ComponentId::Personal {
+                crate::local_runtime::installed_personal_version(&app)
+                    .or_else(|| Some(verified_version(id)))
+            } else {
+                installed_version(&data_dir, id)
+            },
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
-            // MCP (pip), ExaPump (binary), Semantic Views (DB-side) support
-            // independent update; Personal (DB engine) lands in a later slice.
-            updatable: matches!(
-                id,
-                ComponentId::McpServer | ComponentId::ExaPump | ComponentId::SemanticViews
-            ),
+            // All four components support independent update. Personal (DB
+            // engine) is verify-or-refuse + backup-first: the Update button only
+            // appears when a newer VERIFIED engine exists (today it doesn't, so
+            // it reads "up to date"); a Back up action is always available.
+            updatable: true,
             pip_managed: matches!(id, ComponentId::McpServer),
             opaque_version: matches!(id, ComponentId::SemanticViews),
         })
@@ -1626,9 +1633,25 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
             }
             ComponentId::ExaPump => install_exapump_component(&app, &data_dir),
             ComponentId::SemanticViews => reconcile_semantic(&app, &data_dir),
-            ComponentId::Personal => Err(AppError::InvalidSettings(
-                "Independent update of the database engine isn't available yet.".into(),
-            )),
+            ComponentId::Personal => {
+                // Verify-or-refuse + never a needless swap: only run the
+                // (backup-first) engine update when a NEWER verified engine
+                // actually exists. Today verified == installed, so this returns
+                // here and never stops or touches the running database.
+                let verified = verified_version(component);
+                let installed = crate::local_runtime::installed_personal_version(&app)
+                    .unwrap_or_else(|| verified.clone());
+                if !components_update::is_newer(&verified, &installed) {
+                    return Err(AppError::InvalidSettings(
+                        "The database engine is already on the verified version; there's nothing to update.".into(),
+                    ));
+                }
+                // Serialize against a concurrent backup/update, and refuse
+                // while readiness verification is running (idle gate).
+                let _guard = MaintenanceGuard::acquire()?;
+                ensure_lifecycle_idle(&app, "stop")?;
+                crate::local_runtime::update_personal_engine(&app, JOB_ID)
+            }
         }
     })
     .await
@@ -1658,6 +1681,44 @@ pub async fn revert_component(app: AppHandle, id: String) -> AppResult<()> {
             repoint_mcp_command(&data_dir)?;
         }
         Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+/// One-at-a-time gate for operations that stop/copy/swap the local database
+/// (backup, engine update). Two of them running at once would fight over the
+/// same deployment directory and engine process, so the second is refused.
+static DB_MAINTENANCE: AtomicBool = AtomicBool::new(false);
+
+struct MaintenanceGuard;
+impl MaintenanceGuard {
+    fn acquire() -> AppResult<Self> {
+        if DB_MAINTENANCE.swap(true, Ordering::SeqCst) {
+            return Err(AppError::Storage(
+                "Another database maintenance operation (backup or engine update) is already running; wait for it to finish.".into(),
+            ));
+        }
+        Ok(MaintenanceGuard)
+    }
+}
+impl Drop for MaintenanceGuard {
+    fn drop(&mut self) {
+        DB_MAINTENANCE.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Back up Studio's own local database (config + data) to a timestamped folder
+/// under `personal-local/backups`. Cold + consistent: stops the DB, copies,
+/// restarts. Safe to run any time; returns the backup path for the UI to show.
+#[tauri::command]
+pub async fn backup_local_database(app: AppHandle) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<String> {
+        let _guard = MaintenanceGuard::acquire()?;
+        // Don't stop the DB out from under readiness verification.
+        ensure_lifecycle_idle(&app, "stop")?;
+        let path = crate::local_runtime::backup_personal_deployment(&app, JOB_ID)?;
+        Ok(path.to_string_lossy().to_string())
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?

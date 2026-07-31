@@ -58,13 +58,25 @@ require the lock itself to update independently.
 - [x] Semantic Views: independent reconcile to the verified revision (DB-side,
       opaque-version compare); "Update" reruns the installer, "not installed"
       when its marker is absent (install from its own card).
-- [ ] Exasol Personal (DB engine): update the ENGINE ONLY, never the data.
-      REQUIRED safety (user directive): back up the database first, then
-      stop → replace the verified engine binary → restart → verify; on any
-      failure, restore from the backup. NEVER a force update, never collapse or
-      touch the data. Gated by lifecycle-idle; refuse if the DB is busy or the
-      backup can't be taken. Still deferred to its own careful change given the
-      risk to the running local database + the backup's size/time.
+- [x] Exasol Personal (DB engine): update the ENGINE ONLY, never the data.
+      Shipped as **backup action + dormant orchestration** (user choice):
+      - `backup_local_database` command + Marketplace "Back up" button on the
+        Personal row: cold, consistent copy (stop → copy the whole deployment
+        dir to `personal-local/backups/deployment-<ms>` via a `.partial` temp +
+        atomic rename → restart). Safe, testable, useful on its own.
+      - `update_personal_engine` (local_runtime.rs): back up first → preserve the
+        old engine binary (`.prev`) + version marker → stop → install the newer
+        VERIFIED engine → start + verify (`info`); on ANY failure restore the old
+        binary + marker + data (from the backup) + restart. Never a force update.
+      - DORMANT today: `update_component(Personal)` returns "nothing to update"
+        unless `is_newer(verified, installed)`, so it never stops/touches the
+        running DB while verified == installed. The Update button only appears
+        once the remote verified lock advances the engine to a data-compatible
+        version (an ops decision). Gated by `ensure_lifecycle_idle`.
+      - Known limitation (documented in code): the cross-version swap path has
+        not been exercised against a real newer engine (none exists yet); a
+        rolled-back update can retry on next start because the lock still pins
+        the newer version. Revisit when a newer verified engine ships.
 - [x] pyexasol stays a dependency inside the consuming env(s) (not standalone).
 
 ## Cross-cutting

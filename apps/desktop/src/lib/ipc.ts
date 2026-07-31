@@ -478,6 +478,7 @@ export const ipc = {
   listComponents: () => call<ComponentInfo[]>("list_components"),
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
+  backupLocalDatabase: () => call<string>("backup_local_database"),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {

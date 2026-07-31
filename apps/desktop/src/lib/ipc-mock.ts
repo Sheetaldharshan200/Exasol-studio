@@ -806,7 +806,7 @@ export async function mockInvoke(
 
     case "list_components":
       return [
-        { id: "personal", name: "Exasol Personal", repo: runtimeComponents.personal.repository, installed: runtimeComponents.personal.version, verified: runtimeComponents.personal.version, onOwnEnv: false, updatable: false, pipManaged: false, opaqueVersion: false },
+        { id: "personal", name: "Exasol Personal", repo: runtimeComponents.personal.repository, installed: runtimeComponents.personal.version, verified: runtimeComponents.personal.version, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: false },
         { id: "exapump", name: "ExaPump", repo: runtimeComponents.exapump.repository, installed: runtimeComponents.exapump.version, verified: runtimeComponents.exapump.version, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: false },
         { id: "mcp-server", name: "Exasol MCP Server", repo: "exasol/mcp-server", installed: runtimeComponents.pythonStack.mcpServerVersion, verified: runtimeComponents.pythonStack.mcpServerVersion, onOwnEnv: false, updatable: true, pipManaged: true, opaqueVersion: false },
         { id: "semantic-views", name: "Semantic Views", repo: runtimeComponents.semanticViews.repository, installed: runtimeComponents.semanticViews.revision, verified: runtimeComponents.semanticViews.revision, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: true },
@@ -814,6 +814,8 @@ export async function mockInvoke(
     case "update_component":
     case "revert_component":
       return undefined;
+    case "backup_local_database":
+      return "/mock/personal-local/backups/deployment-0";
 
     default:
       throw { kind: "mock", message: `mock backend: unknown command ${command}` };
