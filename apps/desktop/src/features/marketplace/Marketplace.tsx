@@ -44,6 +44,7 @@ import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
@@ -374,6 +375,9 @@ export function Marketplace() {
   const [detected, setDetected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
+  // The essential (fast, local) data has been fetched at least once — gates the
+  // brand loader so first open shows something immediately instead of hanging.
+  const [ready, setReady] = useState(false);
   const [manageLocal, setManageLocal] = useState(false);
   // Starter-pack install queue (populated from the setup step).
   const [queue, setQueue] = useState<{ id: string; name: string; status: "pending" | "installing" | "done" | "failed" }[]>([]);
@@ -394,13 +398,23 @@ export function Marketplace() {
     ipc.marketDetect().then(setDetected).catch(() => undefined);
   }, []);
 
-  // Re-check environment, installed state and latest releases WITHOUT reloading
-  // the app — a full reload would drop every open database connection.
+  // Essential state only (env, installed, detected, catalog) — these are fast,
+  // local reads. Deliberately does NOT fetch GitHub releases; that storm of
+  // network calls used to run alongside this and stall the first paint
+  // ("hanging"). `ready` flips once these settle so the loader can clear.
   const refresh = useCallback(() => {
-    ipc.marketEnv().then(setEnv).catch(() => undefined);
-    ipc.marketInstalled().then(setInstalled).catch(() => undefined);
-    ipc.marketDetect().then(setDetected).catch(() => undefined);
-    ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+    Promise.allSettled([
+      ipc.marketEnv().then(setEnv),
+      ipc.marketInstalled().then(setInstalled),
+      ipc.marketDetect().then(setDetected),
+      ipc.marketCatalog().then(setCatalog),
+    ]).finally(() => setReady(true));
+  }, []);
+
+  // Latest upstream versions (one GitHub call per repo) — slower + network, so
+  // fetched AFTER the essential data is in, filling in the "latest" labels
+  // without blocking the first render.
+  const refreshReleases = useCallback(() => {
     setLoadingReleases(true);
     Promise.allSettled(
       CATALOG.filter((c) => c.repo).map((c) => ipc.marketRelease(c.repo!).then((r) => [c.id, r] as const)),
@@ -416,6 +430,12 @@ export function Marketplace() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Kick the release fetch once the essential catalog is in — never before, so
+  // it can't compete with the first paint.
+  useEffect(() => {
+    if (catalog) refreshReleases();
+  }, [catalog, refreshReleases]);
 
   // A standalone install window finished → refresh installed/detected state.
   useEffect(() => {
@@ -833,6 +853,16 @@ export function Marketplace() {
     );
   };
 
+  // First open: show the brand loader immediately instead of a blank/janky
+  // frame while the essential catalog loads (release info streams in after).
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center bg-editor">
+        <BrandLoader label="Loading Marketplace" />
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-auto bg-editor">
       <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
@@ -871,7 +901,7 @@ export function Marketplace() {
             </div>
           ) : null}
           <button
-            onClick={refresh}
+            onClick={() => { refresh(); refreshReleases(); }}
             disabled={loadingReleases}
             title="Check for updates"
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
