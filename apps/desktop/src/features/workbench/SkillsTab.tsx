@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Boxes, Check, GraduationCap, Lightbulb, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
+import { BarChart3, Boxes, Check, Download, ExternalLink, GraduationCap, Lightbulb, Loader2, Plus, Sparkles, Table2, Trash2, Wrench, X } from "lucide-react";
+import { ipc, type SkillTarget } from "@/lib/ipc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { agent, skills as skillsApi } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,112 @@ const ROLES: Role[] = [
     ],
   },
 ];
+
+/** Exasol's official, curated agent skills (from exasol-labs/exasol-agent-skills)
+ * — shown for discovery. Installing pushes the whole set into the chosen agent
+ * via that provider's own tooling. Names are Studio-side (not fetched live). */
+const OFFICIAL_SKILLS = [
+  "Exasol database", "Import", "Export", "BucketFS", "UDFs",
+  "JDBC virtual schemas", "Document virtual schemas", "Text AI",
+  "Distributed ML", "Transformers", "Cloud storage extension",
+  "Extension catalog", "Notebook connections", "AI setup", "Set up Personal",
+];
+
+/**
+ * Skills Marketplace — the Exasol-recommended skill set, installable into every
+ * AI agent the user has. Studio installs via each provider's OWN tooling
+ * (`claude plugin …`, `npx skills … --agent …`), never by hand-writing skill
+ * dirs; uninstalled providers are linked, not downloaded.
+ */
+function ExasolSkillsForAgents() {
+  const [targets, setTargets] = useState<SkillTarget[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [done, setDone] = useState<Record<string, boolean>>({});
+
+  const loadTargets = useCallback(() => {
+    setLoadError(false);
+    ipc
+      .skillsListTargets()
+      .then((t) => setTargets(t))
+      .catch(() => {
+        setTargets([]);
+        setLoadError(true);
+      });
+  }, []);
+  useEffect(() => loadTargets(), [loadTargets]);
+
+  async function install(t: SkillTarget) {
+    setBusy(t.id);
+    setNote(null);
+    try {
+      await ipc.skillsInstallTarget(t.id);
+      setDone((d) => ({ ...d, [t.id]: true }));
+      setNote(`Exasol skills installed into ${t.name}.`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : `Could not install skills into ${t.name}.`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-primary/25 bg-primary/5 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <span className="text-[13px] font-semibold text-foreground">Exasol skills for your AI agents</span>
+        <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary">official</span>
+      </div>
+      <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
+        Exasol's recommended agent skills — installed into whichever agents you use, via each one's own tooling. Studio never edits an agent's files by hand.
+      </p>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {OFFICIAL_SKILLS.map((s) => (
+          <span key={s} className="rounded border border-border bg-panel px-1.5 py-px text-[10px] text-muted-foreground">{s}</span>
+        ))}
+      </div>
+      {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      {loadError ? (
+        <p className="mb-2 flex items-center gap-2 text-[11.5px] text-muted-foreground">
+          Couldn't check which agents are installed.
+          <button onClick={loadTargets} className="rounded border border-border px-1.5 py-px text-[11px] hover:bg-secondary hover:text-foreground">Retry</button>
+        </p>
+      ) : targets === null ? (
+        <p className="text-[11.5px] text-muted-foreground"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> Checking your agents…</p>
+      ) : targets.length === 0 ? (
+        <p className="text-[11.5px] text-muted-foreground">No supported AI agents detected on this machine.</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {(targets ?? []).map((t) => {
+          const isBusy = busy === t.id;
+          if (!t.installed)
+            return (
+              <button
+                key={t.id}
+                onClick={() => ipc.openExternal(t.installUrl).catch(() => window.open(t.installUrl, "_blank"))}
+                title={`${t.name} isn't installed — get it, then reopen this tab`}
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> {t.name} — not installed
+              </button>
+            );
+          return (
+            <button
+              key={t.id}
+              onClick={() => void install(t)}
+              disabled={isBusy}
+              className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+            >
+              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : done[t.id] ? <Check className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
+              {done[t.id] ? `Reinstall in ${t.name}` : `Install in ${t.name}`}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function SkillsTab() {
   const [active, setActive] = useState<Set<string>>(new Set());
@@ -225,6 +332,11 @@ export function SkillsTab() {
             Add focused playbooks by role. Active skills become{" "}
             <span className="font-medium text-foreground">priority skills</span> — applied on every turn in the AI panel.
           </p>
+
+          {/* Skills Marketplace: push Exasol's official skills into external
+              agents (Claude Code, Codex, Cursor). The role packs below stay
+              Studio's own in-app agent. */}
+          <ExasolSkillsForAgents />
 
           {/* Add-your-own form */}
           {adding ? (

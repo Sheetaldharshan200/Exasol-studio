@@ -268,6 +268,16 @@ export type ComponentInfo = {
   opaqueVersion: boolean;
 };
 
+/** A provider Studio can push the Exasol skills into (Skills Marketplace). */
+export type SkillTarget = {
+  id: string;
+  name: string;
+  /** The provider's own install tooling is available on this machine. */
+  installed: boolean;
+  /** Where to get the provider when it isn't installed. */
+  installUrl: string;
+};
+
 export type ReleaseAsset = { name: string; url: string; size: number };
 export type Release = {
   tag: string | null;
@@ -479,6 +489,8 @@ export const ipc = {
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
   backupLocalDatabase: () => call<string>("backup_local_database"),
+  skillsListTargets: () => call<SkillTarget[]>("skills_list_targets"),
+  skillsInstallTarget: (target: string) => call<void>("skills_install_target", { target }),
   bucketfsList: (host: string, port: number, tls: boolean, bucket: string, readPassword?: string) =>
     call<string[]>("bucketfs_list", { host, port, tls, bucket, readPassword }),
   bucketfsUpload: (args: {

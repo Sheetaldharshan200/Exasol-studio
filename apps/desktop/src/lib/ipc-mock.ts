@@ -816,6 +816,14 @@ export async function mockInvoke(
       return undefined;
     case "backup_local_database":
       return "/mock/personal-local/backups/deployment-0";
+    case "skills_list_targets":
+      return [
+        { id: "claude-code", name: "Claude Code", installed: true, installUrl: "https://docs.anthropic.com/en/docs/claude-code/overview" },
+        { id: "codex", name: "Codex", installed: false, installUrl: "https://github.com/openai/codex" },
+        { id: "cursor", name: "Cursor", installed: false, installUrl: "https://cursor.com" },
+      ];
+    case "skills_install_target":
+      return undefined;
 
     default:
       throw { kind: "mock", message: `mock backend: unknown command ${command}` };

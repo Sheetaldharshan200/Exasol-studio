@@ -260,7 +260,7 @@ pub struct MarketEnv {
     pub podman: bool,
 }
 
-fn has_binary(bin: &str) -> bool {
+pub(crate) fn has_binary(bin: &str) -> bool {
     let prog = resolve_bin(bin)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| bin.to_string());

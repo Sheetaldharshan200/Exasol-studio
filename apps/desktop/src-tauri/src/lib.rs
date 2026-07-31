@@ -8,6 +8,7 @@ mod connection;
 mod connection_settings;
 mod component_lock;
 mod components_update;
+mod skills_market;
 mod verified_lock;
 mod driver_exec;
 mod drivers;
@@ -175,6 +176,8 @@ pub fn run() {
             local_database::update_component,
             local_database::revert_component,
             local_database::backup_local_database,
+            skills_market::skills_list_targets,
+            skills_market::skills_install_target,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")
