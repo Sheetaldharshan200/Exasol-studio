@@ -79,6 +79,35 @@ require the lock itself to update independently.
         the newer version. Revisit when a newer verified engine ships.
 - [x] pyexasol stays a dependency inside the consuming env(s) (not standalone).
 
+## Slice 5 — Trust model: Studio-verified only (user directive)
+
+Directive: "don't check the actual repo directly to show the users; users should
+only know that from our studio side" — for ALL components. Upstream versions are
+never surfaced; a version is shown only once Studio has verified it.
+
+- [x] Managed Components panel is Studio-verified only: removed the per-component
+      `marketRelease` (GitHub) calls, the "latest" row, the "upstream" link, and
+      the pip-goes-upstream path. Every component now offers only "Update to
+      <verified>" (verified lock), plus the opaque reconcile (Semantic Views) and
+      "not installed" states. Revert + Back up unchanged.
+- [x] Catalog cards display "latest" from the Studio catalog (catalog.json) ONLY
+      — dropped the `?? releases[id]?.tag` fallback. GitHub releases are still
+      fetched but used solely to resolve a binary's download asset at install
+      time (installOne → pickAsset), never for display.
+- [ ] **Full studio-side cutover (needs the CI pipeline):** move binary asset
+      URLs + SHAs into the Studio catalog/verified lock so installs stop hitting
+      GitHub entirely. Blocked on the pipeline below.
+- [ ] **CI compatibility → sign → publish pipeline (the "trustworthy" core).**
+      GitHub Actions in the app repo: on a schedule / repository_dispatch webhook,
+      detect new upstream component versions, run a compatibility test matrix
+      (install into an isolated env + smoke test against the DB), and ONLY on
+      pass bump `runtime-components.lock.json` + `catalog.json`, sign the lock
+      (ed25519 → `.sig`), and publish to the hosting URL. Consumes the
+      already-built `verified_lock.rs` (fetch + verify + anti-downgrade). Ops
+      prerequisite: generate the keypair, set `VERIFIED_LOCK_PUBKEY_HEX` +
+      `VERIFIED_LOCK_URL`, host the lock + `.sig`. Until then the shipped pubkey
+      is empty (inert) and the baked lock is the source of truth.
+
 ## Cross-cutting
 - [ ] Keep it opt-in/manual (no auto-update). Notification deep-links to Updates.
 - [ ] Codex-review each slice; cargo test + tsc + vite build green before commit.

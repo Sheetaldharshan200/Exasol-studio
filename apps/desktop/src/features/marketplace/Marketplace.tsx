@@ -319,12 +319,31 @@ function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset 
   return byOsArch ?? byOs ?? assets[0];
 }
 
+/** True only when `remote` is a STRICTLY newer version than `local` (numeric
+ * segment compare; mirrors the Rust is_newer). Equal, older, or non-numeric
+ * versions return false — so an install that's rolled back or ahead of Studio's
+ * catalog is never offered a "downgrade" disguised as an update. */
+function isNewerVersion(remote: string | null | undefined, local: string | null | undefined): boolean {
+  if (!remote || !local) return false;
+  const seg = (v: string) => v.replace(/^v/i, "").trim().split(/[.\-+]/).map((p) => (/^\d+$/.test(p) ? parseInt(p, 10) : NaN));
+  const a = seg(remote);
+  const b = seg(local);
+  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
+  const width = Math.max(a.length, b.length);
+  for (let i = 0; i < width; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
     case "binary":
       return asset
-        ? [`Download ${asset.name} from the official release`, "Make it executable in Exasol Studio's managed folder", "Mark it as installed"]
+        ? ["Download the official release build for this platform", "Make it executable in Exasol Studio's managed folder", "Mark it as installed"]
         : ["No prebuilt asset was found for this platform"];
     case "uv-tool":
       return [
@@ -470,20 +489,23 @@ export function Marketplace() {
     return m;
   }, [installed]);
 
-  // Catalog is the authoritative version; fall back to the per-repo release tag.
+  // Studio catalog is the ONLY source of a displayed "latest" version — never a
+  // live per-repo tag. Users see what Studio has published/verified, not raw
+  // upstream. (GitHub releases are still fetched, but only to resolve a binary's
+  // download asset at install time — see installOne — never for display.)
   const latestFor = useCallback(
-    (id: string): string | null => catalog?.items?.[id]?.latest ?? releases[id]?.tag ?? null,
-    [catalog, releases],
+    (id: string): string | null => catalog?.items?.[id]?.latest ?? null,
+    [catalog],
   );
 
   const updatesAvailable = useMemo(
     () =>
       CATALOG.filter((item) => {
         const inst = installedMap[item.id];
-        const latest = catalog?.items?.[item.id]?.latest ?? releases[item.id]?.tag ?? null;
-        return inst && latest && latest !== inst.version;
+        const latest = catalog?.items?.[item.id]?.latest ?? null;
+        return isNewerVersion(latest, inst?.version);
       }).length,
-    [installedMap, catalog, releases],
+    [installedMap, catalog],
   );
 
   // ── Starter-pack queue ──────────────────────────────────────────────────
@@ -643,13 +665,13 @@ export function Marketplace() {
     if (nav === "updates")
       return visible.filter((i) => {
         const inst = installedMap[i.id];
-        const l = catalog?.items?.[i.id]?.latest ?? releases[i.id]?.tag ?? null;
-        return inst && l && l !== inst.version;
+        const l = catalog?.items?.[i.id]?.latest ?? null;
+        return isNewerVersion(l, inst?.version);
       });
     if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
       return visible.filter((i) => sectionOf(i.kind) === nav);
     return visible;
-  }, [nav, visible, installedMap, detected, queue, catalog, releases, driverBusy]);
+  }, [nav, visible, installedMap, detected, queue, catalog, driverBusy]);
 
   const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
@@ -682,7 +704,7 @@ export function Marketplace() {
     const isBusy = busy[item.id];
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
-    const newer = inst && latest && latest !== inst.version;
+    const newer = isNewerVersion(latest, inst?.version);
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
     const comingSoon = !did && item.install === "reference";
@@ -1533,39 +1555,21 @@ async function simulate(
  */
 function ManagedComponents() {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
-  const [available, setAvailable] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
+  // Studio-verified ONLY: the update decision comes from the verified lock
+  // (c.verified vs c.installed), never a live query to the component's repo.
+  // Users see what Studio has verified — upstream is deliberately not surfaced.
   const refresh = useCallback(async () => {
     const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
     setComps(list);
-    const entries = await Promise.all(
-      list.map(async (c) => [c.id, (await ipc.marketRelease(c.repo).catch(() => null))?.tag ?? null] as const),
-    );
-    setAvailable(Object.fromEntries(entries));
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const norm = (v: string) => v.replace(/^v/i, "").trim();
-  // Offer an Update only when the latest release is strictly NEWER than what's
-  // installed — numeric-segment compare (mirrors the Rust is_newer). A rolled-
-  // back or non-numeric latest must never be offered as an "update" (that would
-  // be a downgrade / ambiguous), so this returns false in those cases.
-  const isNewer = (avail: string | null, inst: string | null): boolean => {
-    if (!avail || !inst) return false;
-    const seg = (v: string) => norm(v).split(/[.\-+]/).map((p) => (/^\d+$/.test(p) ? parseInt(p, 10) : NaN));
-    const a = seg(avail);
-    const b = seg(inst);
-    if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
-    const width = Math.max(a.length, b.length);
-    for (let i = 0; i < width; i++) {
-      const x = a[i] ?? 0;
-      const y = b[i] ?? 0;
-      if (x !== y) return x > y;
-    }
-    return false;
-  };
+  // Offer an Update only when verified is STRICTLY newer than installed (shared
+  // helper mirrors the Rust is_newer) — never a downgrade or an equal version.
+  const isNewer = isNewerVersion;
 
   async function run(id: string, action: () => Promise<void>, ok: string) {
     setBusy(id); setNote(null);
@@ -1588,16 +1592,9 @@ function ManagedComponents() {
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
       <div className="divide-y divide-border/60">
         {comps.map((c) => {
-          const avail = available[c.id] ?? null;
           const isBusy = busy === c.id;
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
-          const linkBtn = "flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground";
           const upToDate = <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>;
-          const upstreamLink = (ver: string) => (
-            <button onClick={() => openExternal(`https://github.com/${c.repo}/releases`)} title="Studio ships SHA-verified builds; this upstream release isn't verified yet" className={linkBtn}>
-              <ExternalLink className="h-3.5 w-3.5" /> {ver} upstream
-            </button>
-          );
           return (
             <div key={c.id} className="flex items-center gap-3 py-2.5">
               <div className="min-w-0 flex-1">
@@ -1612,7 +1609,6 @@ function ManagedComponents() {
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
                   <span>installed {c.installed ?? "—"}</span>
                   <span>verified {c.verified}</span>
-                  {avail ? <span>latest {avail}</span> : null}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -1638,14 +1634,10 @@ function ManagedComponents() {
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Revert
                   </button>
                 ) : null}
-                {c.updatable && c.pipManaged ? (
-                  // pip/uv: any newer upstream is index-hash-verified → offer it.
-                  isNewer(avail, c.installed) ? (
-                    <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id, norm(avail!)), `${c.name} updated to ${avail}.`)} disabled={isBusy} className={upBtn}>
-                      {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {avail}
-                    </button>
-                  ) : upToDate
-                ) : c.updatable && c.opaqueVersion ? (
+                {/* Studio-verified ONLY. Every component updates to the version
+                    Studio has verified — never to a raw upstream release. The
+                    update is offered only when verified is ahead of installed. */}
+                {c.opaqueVersion ? (
                   // Opaque revision (Semantic Views, DB-side): reconcile to the
                   // verified revision when the installed one differs. Not
                   // installed → nothing to update here (install it from its card).
@@ -1656,20 +1648,10 @@ function ManagedComponents() {
                       {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
                     </button>
                   ) : upToDate
-                ) : c.updatable ? (
-                  // Binary (verify-or-refuse): install only the SHA-pinned verified
-                  // build; if verified is ahead of installed, offer it. A newer
-                  // upstream than verified is surfaced as a link, never installed.
-                  <>
-                    {isNewer(c.verified, c.installed) ? (
-                      <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
-                        {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified}
-                      </button>
-                    ) : upToDate}
-                    {isNewer(avail, c.verified) ? upstreamLink(avail!) : null}
-                  </>
-                ) : isNewer(avail, c.installed) ? (
-                  upstreamLink(avail!)
+                ) : isNewer(c.verified, c.installed) ? (
+                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified}
+                  </button>
                 ) : (
                   upToDate
                 )}
