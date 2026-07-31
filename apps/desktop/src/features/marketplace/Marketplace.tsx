@@ -745,6 +745,10 @@ export function Marketplace() {
     // Managed components update via the Managed Components panel (verify-or-
     // refuse), never the catalog card — so never offer a catalog "update" here.
     const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
+    // The version shown on the card: for managed components it's the AUTHORITATIVE
+    // installed version (list_components), never the catalog's "latest" (which can
+    // lag or be an upstream tag) — so the card matches the Managed Components panel.
+    const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : latest;
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
     const comingSoon = !did && item.install === "reference";
@@ -902,7 +906,7 @@ export function Marketplace() {
             ) : null}
             <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
             <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-              {latest ? <span>{latest}</span> : null}
+              {displayVersion ? <span>{displayVersion}</span> : null}
               <button onClick={() => openExternal(item.homepage)} className="flex items-center gap-0.5 hover:text-foreground">
                 GitHub <ExternalLink className="h-2.5 w-2.5" />
               </button>
