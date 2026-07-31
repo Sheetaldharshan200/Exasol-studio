@@ -27,6 +27,7 @@ import {
 export type NodeKind =
   | "server"
   | "schemas-folder"
+  | "virtual-schemas-folder"
   | "schema"
   | "virtual-schema"
   | "tables-folder"
@@ -67,6 +68,7 @@ export type NodeKind =
 export const NODE_ICON: Record<NodeKind, LucideIcon> = {
   server: Database,
   "schemas-folder": Layers,
+  "virtual-schemas-folder": Waypoints,
   schema: Boxes,
   "virtual-schema": Waypoints,
   "tables-folder": Table2,

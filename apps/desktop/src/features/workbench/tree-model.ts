@@ -16,6 +16,7 @@ export type NodeCtx = {
     | "script"
     | "function"
     | "new-schema"
+    | "new-virtual-schema"
     | "new-user"
     | "new-role"
     | "new-connection";
@@ -56,6 +57,7 @@ export function buildRoot(profileId: string, serverLabel: string): TreeNode {
     expandable: true,
     load: async () => [
       schemasFolder(profileId),
+      virtualSchemasFolder(profileId),
       systemSchemasFolder(profileId),
       dbaFolder(profileId),
     ],
@@ -70,6 +72,7 @@ export function buildRoot(profileId: string, serverLabel: string): TreeNode {
 export function buildConnectionNodes(profileId: string): TreeNode[] {
   return [
     schemasFolder(profileId),
+    virtualSchemasFolder(profileId),
     systemSchemasFolder(profileId),
     dbaFolder(profileId),
   ];
@@ -84,15 +87,48 @@ function schemasFolder(profileId: string): TreeNode {
     ctx: { type: "new-schema", name: "Schemas" },
     load: async () => {
       const overview = await ipc.getDatabaseOverview(profileId);
-      return overview.schemas.map((schema) => ({
-        id: `schema:${schema.name}`,
-        label: schema.name,
-        kind: schema.isVirtual ? "virtual-schema" : "schema",
-        badge: schema.isVirtual ? "virtual" : undefined,
-        expandable: true,
-        ctx: { type: schema.isVirtual ? "virtual-schema" : "schema", name: schema.name },
-        load: () => schemaChildren(profileId, schema.name),
-      }));
+      // Regular schemas only — virtual schemas get their own folder below.
+      return overview.schemas
+        .filter((schema) => !schema.isVirtual)
+        .map((schema) => ({
+          id: `schema:${schema.name}`,
+          label: schema.name,
+          kind: "schema" as const,
+          expandable: true,
+          ctx: { type: "schema" as const, name: schema.name },
+          load: () => schemaChildren(profileId, schema.name),
+        }));
+    },
+  };
+}
+
+/**
+ * Virtual Schemas — a distinct folder (a JDBC/document adapter over an external
+ * source), separated from regular schemas so they're easy to find and manage.
+ * The folder's context action opens the New Virtual Schema wizard; empty when
+ * none exist (or when the engine has no virtual-schema support, e.g. the
+ * lightweight local build).
+ */
+function virtualSchemasFolder(profileId: string): TreeNode {
+  return {
+    id: "virtual-schemas",
+    label: "Virtual Schemas",
+    kind: "virtual-schemas-folder",
+    expandable: true,
+    ctx: { type: "new-virtual-schema", name: "Virtual Schemas" },
+    load: async () => {
+      const overview = await ipc.getDatabaseOverview(profileId);
+      return overview.schemas
+        .filter((schema) => schema.isVirtual)
+        .map((schema) => ({
+          id: `schema:${schema.name}`,
+          label: schema.name,
+          kind: "virtual-schema" as const,
+          badge: "virtual",
+          expandable: true,
+          ctx: { type: "virtual-schema" as const, name: schema.name },
+          load: () => schemaChildren(profileId, schema.name),
+        }));
     },
   };
 }
