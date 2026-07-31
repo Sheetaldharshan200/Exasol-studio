@@ -399,17 +399,19 @@ export function Marketplace() {
     ipc.marketDetect().then(setDetected).catch(() => undefined);
   }, []);
 
-  // Essential state only (env, installed, detected, catalog) — these are fast,
-  // local reads. Deliberately does NOT fetch GitHub releases; that storm of
-  // network calls used to run alongside this and stall the first paint
-  // ("hanging"). `ready` flips once these settle so the loader can clear.
+  // Essential state only (env, installed, detected) — fast, LOCAL reads.
+  // `ready` flips once these settle so the page paints immediately from the
+  // bundled CATALOG. Deliberately excludes the remote catalog and GitHub
+  // releases: both are network calls that used to gate first paint and made
+  // the tab "hang". The remote catalog is fetched here too, but in the
+  // BACKGROUND — it only enriches "latest" labels, so it never blocks the loader.
   const refresh = useCallback(() => {
     Promise.allSettled([
       ipc.marketEnv().then(setEnv),
       ipc.marketInstalled().then(setInstalled),
       ipc.marketDetect().then(setDetected),
-      ipc.marketCatalog().then(setCatalog),
     ]).finally(() => setReady(true));
+    ipc.marketCatalog().then(setCatalog).catch(() => undefined);
   }, []);
 
   // Latest upstream versions (one GitHub call per repo) — slower + network, so
@@ -432,11 +434,13 @@ export function Marketplace() {
     refresh();
   }, [refresh]);
 
-  // Kick the release fetch once the essential catalog is in — never before, so
-  // it can't compete with the first paint.
+  // Kick the release fetch once the page is ready (painted) — never before, so
+  // it can't compete with the first paint. Gated on `ready`, not the remote
+  // catalog, so releases still load (and fill "latest") even if that network
+  // fetch is slow or fails.
   useEffect(() => {
-    if (catalog) refreshReleases();
-  }, [catalog, refreshReleases]);
+    if (ready) refreshReleases();
+  }, [ready, refreshReleases]);
 
   // A standalone install window finished → refresh installed/detected state.
   useEffect(() => {

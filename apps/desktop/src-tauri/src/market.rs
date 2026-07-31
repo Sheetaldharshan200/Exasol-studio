@@ -324,6 +324,7 @@ pub async fn market_catalog() -> AppResult<Value> {
     let resp = match client
         .get(CATALOG_URL)
         .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(6))
         .send()
         .await
     {
