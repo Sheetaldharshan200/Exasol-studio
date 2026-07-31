@@ -383,13 +383,22 @@ export function ConnectionPropertiesTab({
         })
         .catch(() => undefined);
       if (profileId === null) {
+        // Read only known fields from initialDraft (never spread it): a stray
+        // caller arg (e.g. a click event) must not pollute the draft, which
+        // would blow up the JSON.stringify snapshots below and black-screen the
+        // form. Password is never pre-filled.
+        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
         const draft = {
-          name: "New Connection", notes: "", host: "127.0.0.1", port: "8563",
-          schema: "", username: "sys", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol",
-          // Pre-fill from a supplied draft (e.g. the bundled Exasol Personal
-          // profile) so the form isn't blank when a direct connect fell back
-          // here. Password is never pre-filled.
-          ...initialDraft,
+          name: typeof d.name === "string" ? d.name : "New Connection",
+          notes: typeof d.notes === "string" ? d.notes : "",
+          host: typeof d.host === "string" ? d.host : "127.0.0.1",
+          port: typeof d.port === "string" ? d.port : "8563",
+          schema: typeof d.schema === "string" ? d.schema : "",
+          username: typeof d.username === "string" ? d.username : "sys",
+          password: "",
+          sslMode: typeof d.sslMode === "string" ? d.sslMode : "required",
+          compression: typeof d.compression === "boolean" ? d.compression : false,
+          driverId: typeof d.driverId === "string" ? d.driverId : "sqlx-exasol",
         };
         if (dead) return;
         setProfile(null);

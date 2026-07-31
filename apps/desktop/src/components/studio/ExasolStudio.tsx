@@ -2124,7 +2124,7 @@ export function ExasolStudio({
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TitleBar
         connection={connection}
-        onConnect={openConnect}
+        onConnect={() => openConnect()}
         onDisconnect={onDisconnect}
         hideConnect={activeTab.view === "connect"}
       />
@@ -2201,7 +2201,7 @@ export function ExasolStudio({
               activeProfileId={connection?.profile.id ?? null}
               treeKeys={treeKeys}
               onOpenObject={openObject}
-              onConnect={openConnect}
+              onConnect={() => openConnect()}
               onConnectProfile={(id) => void connectSaved(id)}
               onInstallLocal={() => void ipc.personalLocalBootstrap().catch(() => undefined)}
               onFocusConnection={onFocusConnection}
@@ -2657,7 +2657,7 @@ export function ExasolStudio({
                 })()}
                 onNewQuery={addTab}
                 onOpenFile={() => void openSqlFile()}
-                onConnect={openConnect}
+                onConnect={() => openConnect()}
                 onMarketplace={openMarketplace}
                 onGuides={openGuides}
                 onOpenRecent={(id) => void connectSaved(id)}
@@ -2688,7 +2688,7 @@ export function ExasolStudio({
                   // internally) so notebook SQL cells get completions too.
                   registerExasolCompletion(m, () => sqlCatalogRef.current);
                 }}
-                onConnectDb={openConnect}
+                onConnectDb={() => openConnect()}
                 onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
                 onAsk={(text, kind) => {
                   setAiOpen(true);
