@@ -16,9 +16,11 @@ Legend: [ ] todo · [x] done.
       `marketInstallRun` path and no double-listing.
 
 ## Slice 2 — Follow-ups
-- [ ] Catalog `latest` for managed components should derive from the VALIDATED
-      lock, not raw upstream tags (shared with the CI item in
-      independent-component-updates → the `update-catalog.yml` change).
+- [x] Catalog `latest` for managed components derives from the VALIDATED lock,
+      not raw upstream tags: `update-catalog.yml` reads
+      runtime-components.lock.json for exasol-personal/exasol-cloud (personal),
+      exapump, and mcp-server (pythonStack.mcpServerVersion); other items still
+      track upstream. Verified the jq/JSON assembly locally.
 - [ ] Label the AI-clients per-database `sql` / `text_to_sql` as **Studio gateway
       services** (agent-core), distinct from the installed "Exasol MCP Server"
       component, so the two are no longer conflated.

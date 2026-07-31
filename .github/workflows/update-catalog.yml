@@ -2,6 +2,10 @@ name: Update marketplace catalog
 
 # Produces marketplace/catalog.json — the single source of truth the app reads
 # for the latest version of every item and whether an update is available.
+# Trust model: components pinned in the VALIDATED runtime-components.lock.json
+# (Exasol Personal, ExaPump, MCP Server) take their "latest" from that lock —
+# the version the cross-platform compatibility matrix approved — never a raw
+# upstream release tag. Other items track their upstream latest.
 # One cheap ubuntu job; commits only when the catalog actually changed. Runs
 # after the weekly package builds (Wed) and on demand.
 
@@ -50,7 +54,18 @@ jobs:
           while IFS='|' read -r id repo homepage; do
             [ -z "$id" ] && continue
             latest="null"
-            if [ -n "$repo" ]; then
+            # Studio-verified only: for components pinned in the VALIDATED lock,
+            # the catalog "latest" IS the lock version (what the cross-platform
+            # compatibility matrix approved) — never a raw upstream release tag.
+            # Non-lock items still track their upstream latest.
+            locked=$(jq -r --arg id "$id" '
+              if $id=="exasol-personal" or $id=="exasol-cloud" then .personal.version
+              elif $id=="exapump" then .exapump.version
+              elif $id=="mcp-server" then .pythonStack.mcpServerVersion
+              else empty end' apps/desktop/src-tauri/resources/runtime-components.lock.json 2>/dev/null || true)
+            if [ -n "$locked" ] && [ "$locked" != "null" ]; then
+              latest="$locked"
+            elif [ -n "$repo" ]; then
               # No -f: a repo with no published release returns 404 with a JSON
               # body; jq then yields "null". Guard the whole pipe so set -e is happy.
               latest=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
