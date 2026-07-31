@@ -338,6 +338,17 @@ function isNewerVersion(remote: string | null | undefined, local: string | null 
   return false;
 }
 
+/** Catalog items that ARE managed components. Their installed state + version
+ * is the AUTHORITATIVE `list_components` value (single source of truth), not the
+ * marketplace manifest or a presence heuristic — and updating them lives in the
+ * Managed Components panel (verify-or-refuse), not the catalog card. */
+const CATALOG_TO_COMPONENT: Record<string, string> = {
+  "exasol-personal": "personal",
+  exapump: "exapump",
+  "mcp-server": "mcp-server",
+  "semantic-views": "semantic-views",
+};
+
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
@@ -392,6 +403,8 @@ export function Marketplace() {
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
   const [releases, setReleases] = useState<Record<string, Release>>({});
   const [installed, setInstalled] = useState<InstalledItem[]>([]);
+  // Authoritative install/version for the managed components (single source).
+  const [components, setComponents] = useState<ComponentInfo[]>([]);
   const [detected, setDetected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
@@ -416,6 +429,9 @@ export function Marketplace() {
   const refreshInstalled = useCallback(() => {
     ipc.marketInstalled().then(setInstalled).catch(() => undefined);
     ipc.marketDetect().then(setDetected).catch(() => undefined);
+    // Managed components are the source of truth for their own state — re-read
+    // after any install/update/revert so cards reflect the change immediately.
+    ipc.listComponents().then(setComponents).catch(() => undefined);
   }, []);
 
   // Essential state only (env, installed, detected) — fast, LOCAL reads.
@@ -431,6 +447,9 @@ export function Marketplace() {
       ipc.marketDetect().then(setDetected),
     ]).finally(() => setReady(true));
     ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+    // Managed-component truth: fetched in the BACKGROUND so it can never stall
+    // first paint. Until it lands, cards fall back to the marketplace manifest.
+    ipc.listComponents().then(setComponents).catch(() => undefined);
   }, []);
 
   // Latest upstream versions (one GitHub call per repo) — slower + network, so
@@ -486,8 +505,25 @@ export function Marketplace() {
   const installedMap = useMemo(() => {
     const m: Record<string, InstalledItem> = {};
     installed.forEach((i) => (m[i.id] = i));
+    // Single source of truth for managed components: PRESENCE comes from real
+    // detection (market_detect checks the actual runtime/binary/marker), and the
+    // VERSION comes from list_components — never the stale marketplace manifest.
+    // Gating on `detected` matters because list_components reports the verified
+    // version as a fallback even when a component isn't installed, so `installed`
+    // alone can't tell presence. Skip until components load (fall back to manifest).
+    if (components.length) {
+      for (const [catalogId, compId] of Object.entries(CATALOG_TO_COMPONENT)) {
+        const comp = components.find((c) => c.id === compId);
+        if (!comp) continue;
+        if (detected[catalogId] && comp.installed) {
+          m[catalogId] = { id: catalogId, version: comp.installed, path: "", filename: "" };
+        } else {
+          delete m[catalogId]; // not actually present → not installed
+        }
+      }
+    }
     return m;
-  }, [installed]);
+  }, [installed, components, detected]);
 
   // Studio catalog is the ONLY source of a displayed "latest" version — never a
   // live per-repo tag. Users see what Studio has published/verified, not raw
@@ -501,6 +537,7 @@ export function Marketplace() {
   const updatesAvailable = useMemo(
     () =>
       CATALOG.filter((item) => {
+        if (CATALOG_TO_COMPONENT[item.id]) return false; // managed → Updates panel
         const inst = installedMap[item.id];
         const latest = catalog?.items?.[item.id]?.latest ?? null;
         return isNewerVersion(latest, inst?.version);
@@ -664,6 +701,7 @@ export function Marketplace() {
       );
     if (nav === "updates")
       return visible.filter((i) => {
+        if (CATALOG_TO_COMPONENT[i.id]) return false; // managed → Managed Components panel
         const inst = installedMap[i.id];
         const l = catalog?.items?.[i.id]?.latest ?? null;
         return isNewerVersion(l, inst?.version);
@@ -704,7 +742,9 @@ export function Marketplace() {
     const isBusy = busy[item.id];
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
-    const newer = isNewerVersion(latest, inst?.version);
+    // Managed components update via the Managed Components panel (verify-or-
+    // refuse), never the catalog card — so never offer a catalog "update" here.
+    const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
     const comingSoon = !did && item.install === "reference";
