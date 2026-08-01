@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T10:27:41Z",
+  "generatedAt": "2026-08-01T10:48:19Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
@@ -22,7 +22,7 @@
     },
     "mcp-server": {
       "repo": "exasol/mcp-server",
-      "latest": "1.10.1",
+      "latest": "2.0.0",
       "homepage": "https://github.com/exasol/mcp-server",
       "mirrorTag": "mirror-mcp-server"
     },
@@ -52,7 +52,7 @@
     },
     "agent-skills": {
       "repo": "exasol-labs/exasol-agent-skills",
-      "latest": "v0.22.0",
+      "latest": "v0.23.0",
       "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
       "mirrorTag": "mirror-agent-skills"
     },
