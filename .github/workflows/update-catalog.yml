@@ -84,7 +84,12 @@ jobs:
           rm -f catalog.json
           cat marketplace/catalog.json
 
-      - name: Commit if changed
+      # main is protected (changes only via reviewed PRs), so the refreshed
+      # catalog goes through a PR like the runtime-components refresh. Auto-merge
+      # is requested so it lands as soon as a human approves — no extra step.
+      - name: Publish catalog refresh for review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -92,7 +97,17 @@ jobs:
           git add marketplace/catalog.json
           if git diff --cached --quiet; then
             echo "Catalog unchanged — nothing to commit."
-          else
-            git commit -m "chore: refresh marketplace catalog"
-            git push
+            exit 0
           fi
+          branch="automation/catalog"
+          git switch -c "$branch"
+          git commit -m "chore: refresh marketplace catalog"
+          git push --force-with-lease --set-upstream origin "$branch"
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: refresh marketplace catalog" \
+              --body "Automated catalog refresh — \"latest\" for lock-pinned components derives from the validated runtime-components lock. Approve to land (auto-merge)."
+          fi
+          gh pr merge "$branch" --auto --squash || echo "auto-merge not available — the PR awaits review."
