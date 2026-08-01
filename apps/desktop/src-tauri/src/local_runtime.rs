@@ -173,6 +173,47 @@ pub(crate) fn obtain_artifact(
     download_verified(&artifact.url, destination, &artifact.sha256)
 }
 
+/// Whether an HTTP status is worth retrying — transient server/rate-limit
+/// conditions. Other 4xx (e.g. 404) are a bad URL and won't fix themselves, so
+/// we fail fast instead of burning the backoff budget.
+fn retryable_status(status: u16) -> bool {
+    status >= 500 || status == 408 || status == 429
+}
+
+/// One download attempt into `partial`. Returns Ok on success, or
+/// (retryable, message) on failure so the caller can decide whether to retry.
+fn try_download(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    partial: &Path,
+    expected_sha256: &str,
+) -> Result<(), (bool, String)> {
+    let resp = client
+        .get(url)
+        .header("User-Agent", "exasol-studio")
+        .send()
+        // A send error means we never got a response (DNS/TLS/connection/timeout)
+        // — always transient, worth another try.
+        .map_err(|e| (true, format!("could not download {url}: {e}")))?;
+    let mut resp = match resp.error_for_status() {
+        Ok(r) => r,
+        Err(e) => {
+            let retry = e.status().map(|s| retryable_status(s.as_u16())).unwrap_or(true);
+            return Err((retry, format!("download failed for {url}: {e}")));
+        }
+    };
+    let mut file = File::create(partial).map_err(|e| (false, format!("could not create download file: {e}")))?;
+    // A broken stream mid-copy is transient (a truncated download).
+    resp.copy_to(&mut file).map_err(|e| (true, format!("could not save download: {e}")))?;
+    file.flush().map_err(|e| (false, format!("could not flush download: {e}")))?;
+    let actual = sha256_file(partial).map_err(|e| (false, format!("could not hash download: {e}")))?;
+    if !actual.eq_ignore_ascii_case(expected_sha256) {
+        // A checksum miss usually means a truncated/corrupt transfer — retry.
+        return Err((true, format!("checksum mismatch for {url}: expected {expected_sha256}, got {actual}")));
+    }
+    Ok(())
+}
+
 pub(crate) fn download_verified(
     url: &str,
     destination: &Path,
@@ -183,30 +224,39 @@ pub(crate) fn download_verified(
         .ok_or_else(|| AppError::Storage("download destination has no parent".into()))?;
     std::fs::create_dir_all(parent)?;
     let partial = destination.with_extension("partial");
-    let mut response = reqwest::blocking::Client::new()
-        .get(url)
-        .header("User-Agent", "exasol-studio")
-        .send()
-        .map_err(|e| AppError::Storage(format!("could not download {url}: {e}")))?
-        .error_for_status()
-        .map_err(|e| AppError::Storage(format!("download failed for {url}: {e}")))?;
-    let mut file = File::create(&partial)?;
-    response
-        .copy_to(&mut file)
-        .map_err(|e| AppError::Storage(format!("could not save download: {e}")))?;
-    file.flush()?;
-    let actual = sha256_file(&partial)?;
-    if !actual.eq_ignore_ascii_case(expected_sha256) {
-        let _ = std::fs::remove_file(&partial);
-        return Err(AppError::Storage(format!(
-            "checksum mismatch for {url}: expected {expected_sha256}, got {actual}"
-        )));
+
+    // Explicit timeouts so a hung connection can't stall setup forever, and a
+    // few retries with exponential backoff so a transient network blip (the
+    // common "error sending request" case) doesn't fail the whole local setup.
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| AppError::Storage(format!("could not build http client: {e}")))?;
+
+    const ATTEMPTS: u32 = 4;
+    let mut last = String::new();
+    for attempt in 1..=ATTEMPTS {
+        match try_download(&client, url, &partial, expected_sha256) {
+            Ok(()) => {
+                if destination.exists() {
+                    std::fs::remove_file(destination)?;
+                }
+                std::fs::rename(&partial, destination)?;
+                return Ok(());
+            }
+            Err((retryable, msg)) => {
+                let _ = std::fs::remove_file(&partial);
+                last = msg;
+                if !retryable || attempt == ATTEMPTS {
+                    break;
+                }
+                // 2s, 4s, 8s between the four attempts.
+                std::thread::sleep(Duration::from_secs(2u64.pow(attempt)));
+            }
+        }
     }
-    if destination.exists() {
-        std::fs::remove_file(destination)?;
-    }
-    std::fs::rename(partial, destination)?;
-    Ok(())
+    Err(AppError::Storage(last))
 }
 
 #[cfg(unix)]
@@ -1203,6 +1253,18 @@ pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retryable_status_retries_transient_not_client_errors() {
+        // Transient: server + rate-limit + request-timeout.
+        for s in [500u16, 502, 503, 504, 408, 429] {
+            assert!(retryable_status(s), "{s} should retry");
+        }
+        // Fail fast: a bad URL / auth / plain client error won't self-heal.
+        for s in [400u16, 401, 403, 404, 410, 200] {
+            assert!(!retryable_status(s), "{s} should not retry");
+        }
+    }
 
     #[test]
     fn generated_password_is_long_ascii_alphanumeric() {

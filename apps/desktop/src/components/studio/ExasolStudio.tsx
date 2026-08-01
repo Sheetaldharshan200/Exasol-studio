@@ -49,6 +49,7 @@ import { defineMonacoThemes } from "./monaco-theme";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
+import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
@@ -100,9 +101,32 @@ export function ExasolStudio({
   // database keeps its own workspace. A "__none__" bucket covers the
   // not-connected state so there is always a valid active tab.
   const connKey = connection?.profile.id ?? NO_CONNECTION;
-  const [tabsByConn, setTabsByConn] = useState<Record<string, SqlTab[]>>({});
-  const [activeIdByConn, setActiveIdByConn] = useState<Record<string, string>>({});
-  const [groupsByConn, setGroupsByConn] = useState<Record<string, TabGroup[]>>({});
+  // Hydrate the open workspace from the last session (survives the update
+  // relaunch). loadWorkspace() reads once; each map falls back to empty.
+  const restoredWorkspace = useRef(loadWorkspace()).current;
+  const [tabsByConn, setTabsByConn] = useState<Record<string, SqlTab[]>>(() => restoredWorkspace?.tabsByConn ?? {});
+  const [activeIdByConn, setActiveIdByConn] = useState<Record<string, string>>(() => restoredWorkspace?.activeIdByConn ?? {});
+  const [groupsByConn, setGroupsByConn] = useState<Record<string, TabGroup[]>>(() => restoredWorkspace?.groupsByConn ?? {});
+  // Persist the workspace (debounced) so a restart — especially the update
+  // relaunch — reopens the same tabs. Only identity/SQL is stored, not results.
+  useEffect(() => {
+    const t = window.setTimeout(() => saveWorkspace({ tabsByConn, groupsByConn, activeIdByConn }), 400);
+    return () => window.clearTimeout(t);
+  }, [tabsByConn, groupsByConn, activeIdByConn]);
+  // A `ref` always holding the latest workspace, flushed synchronously when the
+  // window is torn down (the update relaunch, or a quit) — so a change made
+  // inside the debounce window above is never lost on the way out.
+  const workspaceRef = useRef({ tabsByConn, groupsByConn, activeIdByConn });
+  workspaceRef.current = { tabsByConn, groupsByConn, activeIdByConn };
+  useEffect(() => {
+    const flush = () => saveWorkspace(workspaceRef.current);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+    };
+  }, []);
   // Right-click menu on a tab (group operations).
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const [running, setRunning] = useState(false);
