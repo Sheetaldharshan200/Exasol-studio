@@ -312,16 +312,21 @@ pub fn parse_skill_markdown(skill_id: &str, raw: &str) -> PersonaSkill {
     let mut body = raw.to_string();
     let trimmed = raw.trim_start();
     if let Some(rest) = trimmed.strip_prefix("---") {
-        if let Some(end) = rest.find("\n---") {
-            let front = &rest[..end];
-            for line in front.lines() {
-                if let Some(v) = line.strip_prefix("name:") {
-                    name = v.trim().trim_matches('"').to_string();
-                } else if let Some(v) = line.strip_prefix("description:") {
-                    description = v.trim().trim_matches('"').to_string();
+        // Only a fence that ends its line opens frontmatter — "---text" is body.
+        let fence_open = rest.starts_with('\n') || rest.starts_with("\r\n");
+        if fence_open {
+            if let Some(end) = rest.find("\n---") {
+                let front = &rest[..end];
+                for line in front.lines() {
+                    if let Some(v) = line.strip_prefix("name:") {
+                        name = v.trim().trim_matches('"').to_string();
+                    } else if let Some(v) = line.strip_prefix("description:") {
+                        description = v.trim().trim_matches('"').to_string();
+                    }
                 }
+                // Strip the closing fence + surrounding newlines, incl. CRLF \r.
+                body = rest[end + 4..].trim_start_matches(['-', '\n', '\r']).to_string();
             }
-            body = rest[end + 4..].trim_start_matches(['-', '\n']).to_string();
         }
     }
     PersonaSkill { id: skill_id.to_string(), name, description, body }
@@ -366,10 +371,17 @@ pub fn install_official(app: &AppHandle, target_id: &str, skill_ids: &[String]) 
             display_name(target_id)
         )));
     }
+    // Resolve npx to an absolute path: the packaged GUI app's own PATH is
+    // minimal, and while run_streamed augments the child PATH, resolving here
+    // removes any lookup ambiguity and yields a clear error when node is absent.
+    let resolved = crate::market::resolve_bin(program)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| program.to_string());
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    if run_streamed(app, JOB_ID, program, &arg_refs)? != 0 {
+    let code = run_streamed(app, JOB_ID, &resolved, &arg_refs)?;
+    if code != 0 {
         return Err(AppError::Storage(format!(
-            "Installing skills into {} failed. See the log for details.",
+            "Installing skills into {} failed (`{program}` exited with {code}).",
             display_name(target_id)
         )));
     }
@@ -385,7 +397,12 @@ pub fn installed_official_map() -> std::collections::HashMap<String, Vec<String>
     let Some(home) = dirs::home_dir() else {
         return map;
     };
-    let has = |base: &Path, id: &str| base.join(id).join("SKILL.md").is_file();
+    // Don't follow a symlinked skill dir out of the agent root — probe only
+    // real directories (a planted link must not steer the status scan).
+    let has = |base: &Path, id: &str| {
+        let dir = base.join(id);
+        !is_symlink(&dir) && dir.join("SKILL.md").is_file()
+    };
     let claude = home.join(".claude").join("skills");
     let agents = home.join(".agents").join("skills");
     let codex = home.join(".codex").join("skills");

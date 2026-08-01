@@ -1,38 +1,38 @@
 # Tasks
 
-Legend: [ ] todo · [x] done. Phased so each slice ships + is Codex-reviewed.
+Legend: [ ] todo · [x] done. The design evolved with user feedback across three
+rounds — the final shipped shape (commit 7b2fa6b) supersedes the earlier
+persona-pack plan.
 
-## Slice 1 — Unified catalog + Studio-agent install
-- [ ] `resources/skills-catalog.json` + a generator script that reads the
-      official repo's `plugins/exasol/skills/*/SKILL.md` frontmatter (name,
-      description) into `{ generatedAt, official: [...] }`. Baked; CI-published
-      later. Test: generator frontmatter-parse (pure).
-- [ ] Rework `SkillsTab.tsx` → Skills Marketplace: one list combining official
-      (from skills-catalog.json) + built-in role packs, source-badged
-      (`official`/`built-in`), filterable. Reuse Marketplace card styling; icons
-      only, no native selects. Built-in packs keep the current Studio-agent save.
-
-## Slice 2 — External-provider install (Claude Code + Codex + Cursor) ✅ core done
-- [x] Rust `skills_market.rs`: `install_commands(target_id)` (pure, table:
-      claude-code → `claude plugin marketplace add`/`install`; codex/cursor →
-      `npx skills add … --agent <id>`), `tooling_present` (provider CLI on PATH),
-      `skills_targets()`, `install_skills()` (run_streamed each command; refuse
-      unknown/uninstalled). Commands `skills_list_targets`/`skills_install_target`
-      registered; ipc bindings + mock + `SkillTarget` type. Tests cover the
-      command table + unknown target + the target list.
-- [x] SkillsTab → Skills Marketplace section (`ExasolSkillsForAgents`): lists the
-      official skill set, per-target Install for detected providers, external
-      link for uninstalled ones. Built-in role packs below stay Studio-agent.
-- [ ] Multi-select "install to N at once" (today it's one button per target) +
-      Studio-agent target inside the same picker.
-
-## Slice 3 — More providers + polish
-- [ ] Add Cursor / Gemini / others via the `npx skills --agent <id>` row.
-- [ ] Per-target result surfacing; "not installed" badges + install links.
-- [ ] Deep-link from onboarding / an "add skills" nudge.
+## Final shipped design (2026-08-01)
+- [x] **Official skills page** (SkillsTab full rewrite): all 18
+      exasol-labs/exasol-agent-skills listed individually (minimal divide-y
+      rows, lowercase, full width, Exasol-green tab selection) + a Bundles tab
+      whose 5 role bundles contain ONLY official skills. "add all" menu on top.
+- [x] **Multi-select add menu** (shadcn DropdownMenuCheckboxItem, stays open
+      while picking): exa-ai (ExasolMark logo) / claude code (Anthropic logo) /
+      codex (OpenAI logo); one "add to N agents" applies per destination
+      independently and names failures; uninstalled agents link out.
+- [x] **Real per-agent installed state**: skills_installed_official scans
+      ~/.claude/skills, ~/.agents/skills, ~/.codex/skills (paths verified with a
+      live skills-CLI install). "added" only when EVERY installed agent has the
+      skill; the menu ticks agents that already do; map refreshes after adds.
+- [x] **Backend**: OFFICIAL_SKILL_IDS allowlist; per-skill installs via the
+      cross-agent skills CLI (`npx skills add <repo> -a <agent> -s <ids> -g -y`
+      — per-skill support verified against the CLI's --help); exa-ai installs
+      fetch SKILL.md (frontmatter parsed) and save via the agent skill API.
+      11 Rust unit tests.
+- [x] Earlier rounds (superseded but retained in history): whole-set installs
+      via `claude plugin install exasol@exasol-skills` / `npx skills add
+      --agent codex` (still used by skills_install_target); persona SKILL.md
+      writer (skills_install_persona — symlink-refusing, collision-rejecting,
+      kept for programmatic use).
+- [x] Removed per user direction: hand-written role packs, custom-skill
+      authoring form, chip checkboxes, pack modal, drag reorder.
 
 ## Cross-cutting
-- [ ] Codex-review each slice; tsc + cargo test + vite build green before commit.
-- [ ] Trust model: official skills list comes from the Studio-side catalog, never
-      a live query to the skills repo (only the install action calls provider
-      tooling).
+- [x] Codex-reviewed across rounds (plugin-id fix, symlink/collision guards,
+      partial-failure reporting, menu hoisting); final-state review re-run
+      post-ship, findings folded in.
+- [ ] Later: surface skill descriptions fetched from the repo (baked catalog)
+      instead of hand-written one-liners; remove/uninstall actions per agent.
