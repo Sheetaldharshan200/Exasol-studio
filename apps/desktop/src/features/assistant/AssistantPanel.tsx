@@ -135,6 +135,10 @@ const SUGGESTIONS: { icon: typeof Wand2; label: string; kind: "run" | "insert"; 
 
 const SLASH_NAMES = SLASH_COMMANDS.map((c) => c.cmd);
 
+// The last active chat session, remembered across restarts (survives the
+// update relaunch) so the conversation reopens instead of starting blank.
+const ACTIVE_SESSION_KEY = "exasol-studio-active-session";
+
 /** Color @mentions within a prose fragment. */
 function pushProse(nodes: React.ReactNode[], rest: string, keyBase: number): void {
   const re = /(^|\s)(@[a-z:_]+)/gi;
@@ -363,15 +367,43 @@ export function AssistantPanel({
     };
   }, [refreshProviders]);
 
-  // Follow sessions created elsewhere (the pet): switch this panel to them.
-  useEffect(
-    () =>
-      sessionBus.on((sid) => {
-        if (sid && sid !== sessionRef.current) void switchSession(sid);
-      }),
+  // Follow sessions created elsewhere (the pet): switch this panel to them, and
+  // remember the active one so it reopens after a restart (e.g. the update
+  // relaunch). On mount, restore the last active session if it still exists —
+  // tolerant: a stale id just clears and starts a fresh chat.
+  useEffect(() => {
+    const un = sessionBus.on((sid) => {
+      if (sid && sid !== sessionRef.current) void switchSession(sid);
+      try {
+        if (sid) window.localStorage.setItem(ACTIVE_SESSION_KEY, sid);
+        else window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+      } catch {
+        /* localStorage unavailable — best-effort */
+      }
+    });
+    const saved = (() => {
+      try {
+        return window.localStorage.getItem(ACTIVE_SESSION_KEY);
+      } catch {
+        return null;
+      }
+    })();
+    if (saved && !sessionRef.current) {
+      // Pre-check it still exists so a deleted session doesn't surface an error.
+      agent
+        .sessionItems(saved)
+        .then(() => switchSession(saved))
+        .catch(() => {
+          try {
+            window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+          } catch {
+            /* ignore */
+          }
+        });
+    }
+    return un;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
 
   // Hand the target connection to the agent (password decrypts Rust-side).
   useEffect(() => {
