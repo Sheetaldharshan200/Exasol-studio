@@ -103,7 +103,9 @@ jobs:
           branch="automation/catalog"
           git switch -c "$branch"
           git commit -m "chore: refresh marketplace catalog"
-          git push --force-with-lease --set-upstream origin "$branch"
+          # Plain --force: the branch is bot-owned scratch state, and a fresh clone
+          # has no remote-tracking ref for --force-with-lease to verify against.
+          git push --force --set-upstream origin "$branch"
           if ! gh pr view "$branch" >/dev/null 2>&1; then
             gh pr create \
               --base main \
