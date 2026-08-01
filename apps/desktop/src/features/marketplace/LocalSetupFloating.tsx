@@ -6,20 +6,6 @@ import { cn } from "@/lib/utils";
 
 type LogLine = { line: string; level: string };
 
-/** Friendly labels for the setup step checklist; unknown ids are humanized. */
-const STEP_LABELS: Record<string, string> = {
-  exapump: "ExaPump",
-  pyexasol: "PyExasol",
-  uv: "uv (Python)",
-  python: "Python runtime",
-  "mcp-server": "MCP server",
-  "exasol-personal": "Exasol Personal",
-  "agent-skills": "Agent skills",
-};
-function stepLabel(key: string): string {
-  return STEP_LABELS[key] ?? key.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 /**
  * Global floating card that surfaces the Personal-Local + MCP bootstrap
  * progress anywhere in the app (not buried in the AI panel). Mirrors the
@@ -82,12 +68,17 @@ export function LocalSetupFloating() {
   const failed = status.state === "failed";
   const installing = status.state === "installing";
 
-  // Build a real step list from the component/semantic-view states so the card
-  // shows determinate progress and exactly what's installing — not a bare
-  // spinning circle.
+  // Show only the three essentials the user cares about — the local database,
+  // ExaPump, and the MCP server. The other bundled pieces (pyexasol, agent
+  // skills, Fable Method, semantic views) still install in the background; they
+  // just don't clutter this progress card.
+  const compState = (key: string) => status.components[key]?.state ?? "waiting";
+  const dbState =
+    status.localReady || status.state === "ready" ? "ready" : status.state === "failed" ? "failed" : "installing";
   const steps = [
-    ...Object.entries(status.components).map(([key, c]) => ({ key, label: stepLabel(key), state: c.state })),
-    { key: "semanticViews", label: "Semantic views", state: status.semanticViews.state },
+    { key: "personal-local", label: "Exasol Personal (local)", state: dbState },
+    { key: "exapump", label: "ExaPump", state: compState("exapump") },
+    { key: "mcp-server", label: "MCP server", state: compState("mcp-server") },
   ];
   const total = steps.length;
   const ready = steps.filter((s) => s.state === "ready").length;

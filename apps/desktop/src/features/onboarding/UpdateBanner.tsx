@@ -31,6 +31,8 @@ export function UpdateBanner() {
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  // Bytes downloaded so far (shown as MB when the server gives no total).
+  const [downloaded, setDownloaded] = useState(0);
   const updateRef = useRef<Update | null>(null);
   // Download progress accounting (bytes streamed vs. the announced total).
   const received = useRef(0);
@@ -86,6 +88,7 @@ export function UpdateBanner() {
     received.current = 0;
     total.current = null;
     setPct(null);
+    setDownloaded(0);
     setErrMsg(null);
     setPhase("downloading");
     try {
@@ -94,6 +97,7 @@ export function UpdateBanner() {
           total.current = e.data.contentLength ?? null;
         } else if (e.event === "Progress") {
           received.current += e.data.chunkLength;
+          setDownloaded(received.current);
           setPct(total.current ? Math.min(100, Math.round((received.current / total.current) * 100)) : null);
         } else if (e.event === "Finished") {
           setPct(100);
@@ -129,9 +133,6 @@ export function UpdateBanner() {
     }
   }
 
-  const showBar = phase === "downloading" || phase === "installing";
-  const indeterminate = phase === "installing" || (phase === "downloading" && pct === null);
-
   // Collapsed to a small pill so the update can keep going in the corner while
   // the user works. Shows live progress; click to reopen the full panel.
   if (minimized) {
@@ -139,7 +140,9 @@ export function UpdateBanner() {
       phase === "downloading"
         ? pct !== null
           ? `${pct}%`
-          : "Downloading"
+          : downloaded > 0
+            ? formatMB(downloaded)
+            : "Starting…"
         : phase === "installing"
           ? "Installing"
           : phase === "installed"
@@ -192,7 +195,12 @@ export function UpdateBanner() {
           </p>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
             {phase === "available" && "A newer signed build is ready to download."}
-            {phase === "downloading" && (pct !== null ? `Downloading… ${pct}%` : "Downloading…")}
+            {phase === "downloading" &&
+              (pct !== null
+                ? `Downloading… ${pct}%`
+                : downloaded > 0
+                  ? `Downloading… ${formatMB(downloaded)}`
+                  : "Starting the download…")}
             {phase === "downloaded" && "Downloaded and verified. Install it now."}
             {phase === "installing" && "Installing the update…"}
             {phase === "installed" && "Restart to finish. Your open tabs and AI sessions are kept."}
@@ -220,13 +228,13 @@ export function UpdateBanner() {
         </div>
       </div>
 
-      {showBar ? (
-        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-secondary">
-          {indeterminate ? (
-            <div className="exa-indeterminate" />
-          ) : (
-            <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct ?? 0}%` }} />
-          )}
+      {/* A calm, contained determinate bar only while downloading with a known
+          size. No indeterminate/animated sliver — the phase text and the
+          button spinner already convey activity, and the old animated loader
+          escaped its container into a big glowing blob. */}
+      {phase === "downloading" && pct !== null ? (
+        <div className="relative mt-2.5 h-1 overflow-hidden rounded-full bg-secondary">
+          <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
         </div>
       ) : null}
 
@@ -264,6 +272,11 @@ export function UpdateBanner() {
       </div>
     </div>
   );
+}
+
+/** Bytes → a compact MB label, e.g. 12.3 MB (used when there's no total %). */
+function formatMB(bytes: number): string {
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
 const btnPrimary =
