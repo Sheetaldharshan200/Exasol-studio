@@ -12,31 +12,54 @@ type Notice = {
   kind: NoticeKind;
   title: string;
   body: string;
-  time: string;
+  /** ISO timestamp — rendered as a live relative label. */
+  at: string;
   read: boolean;
   /** Navigation target — clicking the notice goes there ("git", "notebook",
    *  "marketplace:updates", "bi", "skills", or "file:<path>" to reveal). */
   go?: string;
 };
 
-const SEED: Notice[] = [
-  {
-    id: "n1",
-    kind: "success",
-    title: "Welcome to Exasol Studio",
-    body: "Connect to a database to browse schemas and run your first query.",
-    time: "just now",
-    read: false,
-  },
-  {
-    id: "n2",
-    kind: "info",
-    title: "Native driver ready",
-    body: "sqlx-exasol is set as the default connection driver.",
-    time: "1m ago",
-    read: false,
-  },
-];
+/** Mail-like persistence: notices stay until the user deletes them, across
+ * restarts. Stored locally, capped so it can never grow unbounded. */
+const STORE_KEY = "exasol-notices-v1";
+const STORE_CAP = 200;
+
+function loadNotices(): Notice[] {
+  try {
+    const raw = window.localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const list = JSON.parse(raw) as (Notice & { time?: string })[];
+      // Migrate any pre-persistence entries that carried a frozen label.
+      return list
+        .filter((n) => n && n.id && n.title)
+        .map((n) => ({ ...n, at: n.at ?? new Date().toISOString() }));
+    }
+  } catch {
+    /* fall through to the first-run seed */
+  }
+  return [
+    {
+      id: "n1",
+      kind: "success",
+      title: "Welcome to Exasol Studio",
+      body: "Connect to a database to browse schemas and run your first query.",
+      at: new Date().toISOString(),
+      read: false,
+    },
+  ];
+}
+
+/** "just now" → "5m ago" → "3h ago" → a date, computed at render time. */
+function timeAgo(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 const KIND_ICON = { info: Info, success: Zap, warning: CircleAlert } as const;
 // Each kind gets its own tinted icon chip — semantic color, readable in both themes.
@@ -48,7 +71,15 @@ const KIND_CHIP: Record<NoticeKind, string> = {
 
 export function Notifications() {
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Notice[]>(SEED);
+  const [items, setItems] = useState<Notice[]>(() => loadNotices());
+  // Persist every change so notices survive close/reopen (kept until deleted).
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORE_KEY, JSON.stringify(items.slice(0, STORE_CAP)));
+    } catch {
+      /* storage full/unavailable — the dropdown still works in-memory */
+    }
+  }, [items]);
   const ref = useRef<HTMLDivElement>(null);
   const unread = items.filter((n) => !n.read).length;
 
@@ -56,18 +87,23 @@ export function Notifications() {
   // window CustomEvent, e.g. the agent's git auto-commit).
   useEffect(() => {
     const push = (n: { kind?: NoticeKind; title: string; body: string; go?: string }) =>
-      setItems((list) => [
-        {
-          id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          kind: n.kind ?? "info",
-          title: n.title,
-          body: n.body,
-          go: n.go,
-          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          read: false,
-        },
-        ...list,
-      ]);
+      setItems((list) => {
+        // Mail-like, not nagging: the same notice (title+body) re-emitted on a
+        // later launch must not pile up as a duplicate.
+        if (list.some((x) => x.title === n.title && x.body === n.body)) return list;
+        return [
+          {
+            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            kind: n.kind ?? "info",
+            title: n.title,
+            body: n.body,
+            go: n.go,
+            at: new Date().toISOString(),
+            read: false,
+          },
+          ...list,
+        ];
+      });
     const onWin = (e: Event) => {
       const d = (e as CustomEvent<{ kind?: NoticeKind; title: string; body: string; go?: string }>).detail;
       if (d?.title) push(d);
@@ -217,7 +253,7 @@ export function Notifications() {
                               <div className="flex items-start justify-between gap-2">
                                 <span className="text-[13px] font-medium text-foreground">{n.title}</span>
                                 <span className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground">
-                                  {n.time}
+                                  {timeAgo(n.at)}
                                 </span>
                               </div>
                               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{n.body}</p>
@@ -233,7 +269,7 @@ export function Notifications() {
                                 e.stopPropagation();
                                 dismiss(n.id);
                               }}
-                              className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                              className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-background hover:text-foreground"
                             >
                               <X className="h-3 w-3" />
                             </span>
