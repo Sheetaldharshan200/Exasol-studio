@@ -266,7 +266,7 @@ pub const OFFICIAL_SKILL_IDS: &[&str] = &[
     "exasol-transformers",
     "exasol-udfs",
     "exasol-virtual-schema-adapter-development",
-    "setup-personal",
+    "exasol-setup-personal",
 ];
 
 /// The skills-CLI agent name for a Studio target id.
@@ -338,8 +338,14 @@ fn fetch_official_skill(skill_id: &str) -> AppResult<PersonaSkill> {
     if !OFFICIAL_SKILL_IDS.contains(&skill_id) {
         return Err(AppError::InvalidSettings(format!("unknown official skill `{skill_id}`")));
     }
+    // Ids are the skills-CLI names (SKILL.md frontmatter). One repo DIRECTORY
+    // differs from its frontmatter name — map it for the raw fetch.
+    let dir = match skill_id {
+        "exasol-setup-personal" => "setup-personal",
+        other => other,
+    };
     let url = format!(
-        "https://raw.githubusercontent.com/{SKILLS_REPO}/main/plugins/exasol/skills/{skill_id}/SKILL.md"
+        "https://raw.githubusercontent.com/{SKILLS_REPO}/main/plugins/exasol/skills/{dir}/SKILL.md"
     );
     let client = reqwest::blocking::Client::new();
     let resp = client
@@ -571,6 +577,17 @@ mod tests {
         let s2 = parse_skill_markdown("x", "just text");
         assert_eq!(s2.name, "x");
         assert_eq!(s2.body, "just text");
+    }
+
+    #[test]
+    fn allowlist_uses_cli_skill_names_not_directories() {
+        // The skills CLI resolves names from SKILL.md frontmatter; one repo
+        // directory (setup-personal) differs. The allowlist must carry the CLI
+        // name or the whole multi-skill install exits 1 ("Available skills:").
+        assert!(OFFICIAL_SKILL_IDS.contains(&"exasol-setup-personal"));
+        assert!(!OFFICIAL_SKILL_IDS.contains(&"setup-personal"));
+        let cmd = official_install_command("codex", &["exasol-setup-personal".to_string()]);
+        assert!(cmd.is_some());
     }
 
     #[test]

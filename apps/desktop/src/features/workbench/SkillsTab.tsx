@@ -42,7 +42,7 @@ const OFFICIAL: OfficialSkill[] = [
   { id: "exasol-extension-catalog", label: "Extension catalog", desc: "Discover and manage extensions.", icon: "extension" },
   { id: "exasol-notebook-connections", label: "Notebook connections", desc: "Connect notebooks to Exasol.", icon: "notebook" },
   { id: "exasol-ai-setup", label: "AI setup", desc: "Prepare the database for AI workloads.", icon: "brain-circuit" },
-  { id: "setup-personal", label: "Set up Personal", desc: "Install and run Exasol Personal locally.", icon: "plug" },
+  { id: "exasol-setup-personal", label: "Set up Personal", desc: "Install and run Exasol Personal locally.", icon: "plug" },
   { id: "exasol-itde", label: "ITDE", desc: "The integration-test Docker environment.", icon: "spanner" },
   { id: "exasol-virtual-schema-adapter-development", label: "Adapter development", desc: "Build your own virtual-schema adapters.", icon: "wrench" },
   { id: "exasol", label: "Exasol core", desc: "The umbrella skill routing to the others.", icon: "skills" },
@@ -56,7 +56,7 @@ const BUNDLES: { id: string; label: string; desc: string; icon: IconName; skills
   { id: "analyst", label: "Analyst", desc: "Query, explore and analyze.", icon: "dashboards", skills: ["exasol-database", "exasol-text-ai", "exasol-notebook-connections"] },
   { id: "ml-engineer", label: "ML Engineer", desc: "Models and functions in the database.", icon: "chip", skills: ["exasol-distributed-ml", "exasol-transformers", "exasol-udfs", "exasol-ai-setup"] },
   { id: "integration-developer", label: "Integration Developer", desc: "Connect external systems via virtual schemas.", icon: "git-merge", skills: ["exasol-jdbc-virtual-schemas", "exasol-document-virtual-schemas", "exasol-virtual-schema-adapter-development", "exasol-extension-catalog"] },
-  { id: "getting-started", label: "Getting Started", desc: "A local database and the essentials.", icon: "play", skills: ["exasol", "setup-personal", "exasol-database", "exasol-itde"] },
+  { id: "getting-started", label: "Getting Started", desc: "A local database and the essentials.", icon: "play", skills: ["exasol", "exasol-setup-personal", "exasol-database", "exasol-itde"] },
 ];
 
 /* Brand marks (inline, currentColor) — Anthropic/Claude and OpenAI/Codex. */
