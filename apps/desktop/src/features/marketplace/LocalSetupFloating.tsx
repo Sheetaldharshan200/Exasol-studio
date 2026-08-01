@@ -6,6 +6,20 @@ import { cn } from "@/lib/utils";
 
 type LogLine = { line: string; level: string };
 
+/** Friendly labels for the setup step checklist; unknown ids are humanized. */
+const STEP_LABELS: Record<string, string> = {
+  exapump: "ExaPump",
+  pyexasol: "PyExasol",
+  uv: "uv (Python)",
+  python: "Python runtime",
+  "mcp-server": "MCP server",
+  "exasol-personal": "Exasol Personal",
+  "agent-skills": "Agent skills",
+};
+function stepLabel(key: string): string {
+  return STEP_LABELS[key] ?? key.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /**
  * Global floating card that surfaces the Personal-Local + MCP bootstrap
  * progress anywhere in the app (not buried in the AI panel). Mirrors the
@@ -68,6 +82,18 @@ export function LocalSetupFloating() {
   const failed = status.state === "failed";
   const installing = status.state === "installing";
 
+  // Build a real step list from the component/semantic-view states so the card
+  // shows determinate progress and exactly what's installing — not a bare
+  // spinning circle.
+  const steps = [
+    ...Object.entries(status.components).map(([key, c]) => ({ key, label: stepLabel(key), state: c.state })),
+    { key: "semanticViews", label: "Semantic views", state: status.semanticViews.state },
+  ];
+  const total = steps.length;
+  const ready = steps.filter((s) => s.state === "ready").length;
+  const anyFailed = steps.some((s) => s.state === "failed");
+  const pct = total ? Math.round((ready / total) * 100) : 0;
+
   return (
     <div className="fixed bottom-4 right-4 z-[70] w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -105,6 +131,47 @@ export function LocalSetupFloating() {
           </button>
         ) : null}
       </div>
+
+      {status.state !== "ready" && total > 0 ? (
+        <div className="border-t border-border px-3 pb-2.5 pt-2">
+          {/* Determinate progress bar — real progress, not an endless spinner. */}
+          <div className="mb-2 flex items-center justify-between text-[10.5px] text-muted-foreground">
+            <span>{failed ? "Stopped" : "Installing components"}</span>
+            <span className="font-mono">{ready}/{total} ready</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+            <div
+              className={cn("h-full rounded-full transition-[width] duration-500", anyFailed ? "bg-destructive" : "bg-primary")}
+              style={{ width: `${Math.max(pct, installing ? 6 : 0)}%` }}
+            />
+          </div>
+          {/* Per-step checklist so the user sees exactly what's happening. */}
+          <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+            {steps.map((s) => (
+              <li key={s.key} className="flex items-center gap-1.5 text-[11px]">
+                {s.state === "ready" ? (
+                  <Check className="h-3 w-3 shrink-0 text-primary" />
+                ) : s.state === "installing" ? (
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                ) : s.state === "failed" ? (
+                  <ShieldAlert className="h-3 w-3 shrink-0 text-destructive" />
+                ) : (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+                )}
+                <span
+                  className={cn(
+                    "truncate",
+                    s.state === "ready" ? "text-foreground" : s.state === "failed" ? "text-destructive" : "text-muted-foreground",
+                  )}
+                  title={s.label}
+                >
+                  {s.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {expanded && logs.length > 0 ? (
         <div

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, Loader2, RotateCw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, Loader2, RotateCw, X } from "lucide-react";
 import { isTauri } from "@/lib/ipc";
 
 // Mirrors @tauri-apps/plugin-updater's Update (the bits we use) + its progress
@@ -30,6 +30,7 @@ export function UpdateBanner() {
   const [pct, setPct] = useState<number | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const updateRef = useRef<Update | null>(null);
   // Download progress accounting (bytes streamed vs. the announced total).
   const received = useRef(0);
@@ -44,11 +45,37 @@ export function UpdateBanner() {
         if (u && u.version) {
           updateRef.current = u;
           setVersion(u.version);
+          // Also surface it in the notification center (the bell), so it isn't
+          // lost if the banner is dismissed. Deduped by title+body there, and
+          // clicking it re-opens this banner via the "update" navigate target.
+          window.dispatchEvent(
+            new CustomEvent("studio:notice", {
+              detail: {
+                kind: "info",
+                title: "Update available",
+                body: `Exasol Studio ${u.version} is ready to download and install.`,
+                go: "update",
+              },
+            }),
+          );
         }
       } catch {
         /* no updater endpoint / offline / dev — ignore */
       }
     })();
+  }, []);
+
+  // Clicking the notification ("Update available") re-opens this banner even if
+  // it was dismissed.
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      if ((e as CustomEvent<{ to?: string }>).detail?.to === "update") {
+        setDismissed(false);
+        setMinimized(false);
+      }
+    };
+    window.addEventListener("studio:navigate", onNav);
+    return () => window.removeEventListener("studio:navigate", onNav);
   }, []);
 
   if (!version || dismissed) return null;
@@ -105,6 +132,42 @@ export function UpdateBanner() {
   const showBar = phase === "downloading" || phase === "installing";
   const indeterminate = phase === "installing" || (phase === "downloading" && pct === null);
 
+  // Collapsed to a small pill so the update can keep going in the corner while
+  // the user works. Shows live progress; click to reopen the full panel.
+  if (minimized) {
+    const label =
+      phase === "downloading"
+        ? pct !== null
+          ? `${pct}%`
+          : "Downloading"
+        : phase === "installing"
+          ? "Installing"
+          : phase === "installed"
+            ? "Restart"
+            : phase === "error"
+              ? "Update failed"
+              : "Update";
+    const busyPill = phase === "downloading" || phase === "installing";
+    return (
+      <button
+        onClick={() => setMinimized(false)}
+        title="Show update"
+        className="fixed bottom-4 right-4 z-[100] flex h-8 items-center gap-1.5 rounded-full border border-primary/40 bg-popover px-3 text-[11.5px] font-medium text-foreground shadow-xl hover:border-primary/60"
+      >
+        {busyPill ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+        ) : phase === "installed" ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+        ) : phase === "error" ? (
+          <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+        ) : (
+          <Download className="h-3.5 w-3.5 text-primary" />
+        )}
+        {label}
+      </button>
+    );
+  }
+
   return (
     <div className="fixed bottom-4 right-4 z-[100] w-80 rounded-xl border border-primary/40 bg-popover p-3.5 text-[12.5px] text-foreground shadow-2xl">
       <div className="flex items-start gap-2.5">
@@ -136,15 +199,25 @@ export function UpdateBanner() {
             {phase === "error" && (errMsg ?? "Something went wrong.")}
           </p>
         </div>
-        {phase === "available" || phase === "error" ? (
+        <div className="flex shrink-0 items-center gap-1">
           <button
-            onClick={() => setDismissed(true)}
-            aria-label="Dismiss"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setMinimized(true)}
+            aria-label="Minimize"
+            title="Minimize — keep it running in the corner"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <X className="h-3.5 w-3.5" />
+            <ChevronDown className="h-3.5 w-3.5" />
           </button>
-        ) : null}
+          {phase === "available" || phase === "error" ? (
+            <button
+              onClick={() => setDismissed(true)}
+              aria-label="Dismiss"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {showBar ? (
