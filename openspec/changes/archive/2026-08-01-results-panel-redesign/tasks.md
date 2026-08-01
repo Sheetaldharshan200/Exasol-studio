@@ -85,6 +85,6 @@ Legend: [ ] todo · [x] done. Each logic task names its test file.
       race it worked around); removed all usages.
 
 ## Cross-cutting
-- [ ] `pnpm test` green (new *.test.ts files auto-discovered).
+- [x] `pnpm test` green — 138 desktop + 193 agent-core tests pass; tsc clean.
 - [ ] Codex review the diff; apply valid findings before commit.
 - [ ] Build + bundle; verify in the app; no emoji, theme-safe CSS.
