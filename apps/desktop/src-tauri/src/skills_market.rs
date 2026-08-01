@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::market::{has_binary, run_streamed};
@@ -280,28 +280,30 @@ fn skills_cli_agent(target_id: &str) -> Option<&'static str> {
 }
 
 /// Per-skill install command via the cross-agent `skills` CLI:
-/// `npx --yes skills add <repo> -a <agent> -s <s1>,<s2> -g -y`. Pure + tested.
-/// None for an unsupported target or an id outside the official allowlist.
+/// `npx --yes skills add <repo> -a <agent> -s <s1> -s <s2> … -g -y`.
+/// One `-s` PER skill — a comma-joined list is treated as a single (unknown)
+/// name and the CLI exits 1 with "No matching skills found" (verified live).
+/// Pure + tested. None for an unsupported target or a non-allowlisted id.
 pub fn official_install_command(target_id: &str, skill_ids: &[String]) -> Option<(&'static str, Vec<String>)> {
     let agent = skills_cli_agent(target_id)?;
     if skill_ids.is_empty() || skill_ids.iter().any(|s| !OFFICIAL_SKILL_IDS.contains(&s.as_str())) {
         return None;
     }
-    Some((
-        "npx",
-        vec![
-            "--yes".into(),
-            "skills".into(),
-            "add".into(),
-            SKILLS_REPO.into(),
-            "-a".into(),
-            agent.into(),
-            "-s".into(),
-            skill_ids.join(","),
-            "-g".into(),
-            "-y".into(),
-        ],
-    ))
+    let mut args: Vec<String> = vec![
+        "--yes".into(),
+        "skills".into(),
+        "add".into(),
+        SKILLS_REPO.into(),
+        "-a".into(),
+        agent.into(),
+    ];
+    for id in skill_ids {
+        args.push("-s".into());
+        args.push(id.clone());
+    }
+    args.push("-g".into());
+    args.push("-y".into());
+    Some(("npx", args))
 }
 
 /// Split a SKILL.md into (frontmatter name, description, body). Tolerant of a
@@ -378,20 +380,68 @@ pub fn install_official(app: &AppHandle, target_id: &str, skill_ids: &[String]) 
         )));
     }
     // Resolve npx to an absolute path: the packaged GUI app's own PATH is
-    // minimal, and while run_streamed augments the child PATH, resolving here
-    // removes any lookup ambiguity and yields a clear error when node is absent.
+    // minimal; resolving here removes lookup ambiguity and yields a clear error
+    // when node is absent.
     let resolved = crate::market::resolve_bin(program)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| program.to_string());
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let code = run_streamed(app, JOB_ID, &resolved, &arg_refs)?;
-    if code != 0 {
+    // Capture the CLI's output so a failure carries its REAL reason (streamed
+    // logs had no visible console) — and persist it for diagnosis.
+    let output = std::process::Command::new(&resolved)
+        .args(&args)
+        .env("PATH", crate::market::augmented_path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| AppError::Storage(format!("could not run `{program}`: {e}")))?;
+    let combined = strip_ansi(&format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ));
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = std::fs::write(
+            dir.join("skills-install.log"),
+            format!("$ {resolved} {}\n{combined}", args.join(" ")),
+        );
+    }
+    if !output.status.success() {
+        // Last few meaningful lines — the CLI's own words, not a bare code.
+        let tail: Vec<&str> = combined
+            .lines()
+            .rev()
+            .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with(['│', '└', '├', '─', '◇', '●']))
+            .take(4)
+            .collect();
+        let detail: String = tail.into_iter().rev().collect::<Vec<_>>().join(" | ");
         return Err(AppError::Storage(format!(
-            "Installing skills into {} failed (`{program}` exited with {code}).",
-            display_name(target_id)
+            "Installing skills into {} failed: {}",
+            display_name(target_id),
+            if detail.is_empty() { "no output (see skills-install.log)".to_string() } else { detail }
         )));
     }
     Ok(())
+}
+
+/// Drop ANSI escape sequences so captured CLI output is readable in errors/logs.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // Skip CSI/OSC sequences: ESC [ … letter  /  ESC ] … BEL
+            if matches!(chars.peek(), Some('[')) {
+                chars.next();
+                for t in chars.by_ref() {
+                    if t.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Which OFFICIAL skills each external agent already has, by scanning the
@@ -548,8 +598,13 @@ mod tests {
         assert!(args.contains(&SKILLS_REPO.to_string()));
         let a = args.iter().position(|x| x == "-a").unwrap();
         assert_eq!(args[a + 1], "codex");
-        let s = args.iter().position(|x| x == "-s").unwrap();
-        assert_eq!(args[s + 1], "exasol-import,exasol-export");
+        // One -s PER skill — the CLI does NOT split commas (verified live:
+        // a comma list exits 1 with "No matching skills found").
+        let s_flags: Vec<usize> = args.iter().enumerate().filter(|(_, x)| *x == "-s").map(|(i, _)| i).collect();
+        assert_eq!(s_flags.len(), 2);
+        assert_eq!(args[s_flags[0] + 1], "exasol-import");
+        assert_eq!(args[s_flags[1] + 1], "exasol-export");
+        assert!(!args.iter().any(|x| x.contains(',')));
         assert!(args.contains(&"-g".to_string()) && args.contains(&"-y".to_string()));
         // claude-code maps to the CLI's agent name
         let (_, args) = official_install_command("claude-code", &skills).unwrap();
