@@ -1,3 +1,2 @@
 Source: https://github.com/exasol-labs/exasol-semantic-views
-Commit: 4499d9dd2647fbc966e72933376e9b9121e6ff49
-License: MIT (see LICENSE)
+Commit: f9f0be63a38bb93dc9af502891e48ac809c21426

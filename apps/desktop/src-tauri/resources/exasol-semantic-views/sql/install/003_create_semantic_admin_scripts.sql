@@ -2977,20 +2977,21 @@ local dup_rows = query([[
     WHERE MODEL_ID = :model_id AND UPPER(ROLE_NAME) = UPPER(:role_name) AND STATUS = 'ACTIVE'
     LIMIT 1
 ]], {model_id = model_id, role_name = role_name})
+local grant_status = 'GRANTED'
 if dup_rows ~= nil and #dup_rows > 0 then
-    return {{ model_name_actual, role_name, published_schema, 'ALREADY_GRANTED' }}
+    grant_status = 'ALREADY_GRANTED'
+else
+    query([[
+        INSERT INTO SYS_SEMANTIC.MODEL_ROLE_GRANTS (MODEL_ID, MODEL_NAME, ROLE_NAME, PUBLISHED_SCHEMA)
+        VALUES (:model_id, :model_name, :role_name, :published_schema)
+    ]], {model_id = model_id, model_name = model_name_actual, role_name = role_name, published_schema = published_schema})
 end
-
-query([[
-    INSERT INTO SYS_SEMANTIC.MODEL_ROLE_GRANTS (MODEL_ID, MODEL_NAME, ROLE_NAME, PUBLISHED_SCHEMA)
-    VALUES (:model_id, :model_name, :role_name, :published_schema)
-]], {model_id = model_id, model_name = model_name_actual, role_name = role_name, published_schema = published_schema})
 
 if published_schema ~= nil and tostring(published_schema) ~= "" then
     query("GRANT SELECT ON SCHEMA " .. quote_ident(published_schema) .. " TO " .. quote_ident(role_name))
 end
 
-exit({{ model_name_actual, role_name, published_schema, 'GRANTED' }}, [[
+exit({{ model_name_actual, role_name, published_schema, grant_status }}, [[
     MODEL_NAME VARCHAR(256),
     ROLE_NAME VARCHAR(256),
     PUBLISHED_SCHEMA VARCHAR(256),
@@ -4784,6 +4785,33 @@ function M.validate_model(model_name_arg)
 end
 
 validate_model = M.validate_model
+
+-- Test-only pure helpers. See the equivalent compiler block for why this is
+-- gated instead of becoming part of the installed runtime contract.
+if rawget(_G, "ESV_TEST_MODE") then
+    ESV_VALIDATOR_TEST_API = {
+        parse_json_text = parse_json_text,
+        valid_json_text = valid_json_text,
+        strip_string_literals = strip_string_literals,
+        aliases_in_expression = aliases_in_expression,
+        column_refs_in_expression = column_refs_in_expression,
+        schema_qualified_functions = schema_qualified_functions,
+        unsupported_functions = unsupported_functions,
+        dependency_tokens = dependency_tokens,
+        extract_json_array_values = extract_json_array_values,
+        validate_structural_rules = validate_structural_rules,
+        validate_custom_extensions = validate_custom_extensions,
+        validate_unique_keys = validate_unique_keys,
+        relationship_edges = relationship_edges,
+        find_path = find_path,
+        validate_expressions = validate_expressions,
+        extract_metric_dependencies = extract_metric_dependencies,
+        detect_metric_cycles = detect_metric_cycles,
+        validate_agent_metadata = validate_agent_metadata,
+        compute_metric_dimension_matrix = compute_metric_dimension_matrix,
+        validate_visible_metric_dimension_pairs = validate_visible_metric_dimension_pairs,
+    }
+end
 /
 -- END GENERATED VALIDATOR_RUNTIME
 
@@ -5067,6 +5095,14 @@ function M.select_materialization(ctx, selected_dimensions, selected_metrics, fi
 end
 
 select_materialization = M.select_materialization
+
+if rawget(_G, "ESV_TEST_MODE") then
+    ESV_MATERIALIZATION_TEST_API = {
+        select_materialization = M.select_materialization,
+        supported_freshness = supported_freshness,
+        allowed_rollup_policy = allowed_rollup_policy,
+    }
+end
 /
 
 CREATE OR REPLACE SCRIPT SEMANTIC_ADMIN.COMPILER_RUNTIME AS
@@ -7759,6 +7795,48 @@ compile_request_json = M.compile_request_json
 compile_sql = M.compile_sql
 compile_sql_debug = M.compile_sql_debug
 compile_sql_for_preprocessor = M.compile_sql_for_preprocessor
+
+-- Database-free tests opt into this deliberately small pure-function surface.
+-- Exasol never defines ESV_TEST_MODE, so the installed runtime's public API is
+-- unchanged. Keeping the seam here lets the unit suite exercise parser,
+-- normalization, expression, and predicate behavior without mocking a whole
+-- database catalog.
+if rawget(_G, "ESV_TEST_MODE") then
+    ESV_COMPILER_TEST_API = {
+        json_encode = json_encode,
+        json_decode = json_decode,
+        canonical_request_text = canonical_request_text,
+        compile_cache_key = compile_cache_key,
+        quote_ident = quote_ident,
+        quote_qualified = quote_qualified,
+        sql_literal = sql_literal,
+        resolve_field = resolve_field,
+        relationship_edges = relationship_edges,
+        find_path = find_path,
+        strip_string_literals = strip_string_literals,
+        aliases_in_expression = aliases_in_expression,
+        replace_identifiers = replace_identifiers,
+        expand_metric = expand_metric,
+        apply_metric_filter = apply_metric_filter,
+        build_dimension_predicate = build_dimension_predicate,
+        build_filters = build_filters,
+        plan_joins = plan_joins,
+        build_order_by = build_order_by,
+        build_sql = build_sql,
+        build_materialized_sql = build_materialized_sql,
+        sql_tokens = sql_tokens,
+        split_top_level = split_top_level,
+        unwrap_measure_part = unwrap_measure_part,
+        identifier_from_part = identifier_from_part,
+        alias_from_select_part = alias_from_select_part,
+        literal_from_tokens = literal_from_tokens,
+        find_top_level_clauses = find_top_level_clauses,
+        render_token_slice = render_token_slice,
+        parse_where_filters = parse_where_filters,
+        parse_order_by = parse_order_by,
+        collision_error = collision_error,
+    }
+end
 /
 
 CREATE OR REPLACE SCRIPT SEMANTIC_ADMIN.COMPILE_REQUEST_JSON(
@@ -8388,8 +8466,9 @@ end
 local function clause_positions(tokens, start_index)
     local positions = {}
     local ordered = {}
+    local occupied_until = start_index - 1
     for i = start_index, #tokens do
-        if tokens[i].depth == 0 then
+        if i > occupied_until and tokens[i].depth == 0 then
             for _, words in ipairs(CLAUSES) do
                 local ok = true
                 for j, word in ipairs(words) do
@@ -8404,6 +8483,11 @@ local function clause_positions(tokens, start_index)
                         positions[key_name] = {index = i, words = words}
                         ordered[#ordered + 1] = {index = i, words = words, key = key_name}
                     end
+                    -- Longer clauses such as NON ADDITIVE BY contain tokens
+                    -- that are also valid shorter clauses. Once the longest
+                    -- ordered match wins, do not reinterpret its interior.
+                    occupied_until = i + #words - 1
+                    break
                 end
             end
         end
@@ -10540,8 +10624,8 @@ end
 local function dbx_split_lines(text)
     local lines = {}
     for line in string.gmatch(tostring(text) .. "\n", "([^\n]*)\n") do
-        line = string.gsub(line, "\r$", "")
-        lines[#lines + 1] = line
+        local normalized_line = string.gsub(line, "\r$", "")
+        lines[#lines + 1] = normalized_line
     end
     return lines
 end
@@ -11518,6 +11602,28 @@ describe_semantic_metric = M.describe_semantic_metric
 explain_semantic_metric = M.explain_semantic_metric
 export_semantic_definition = M.export_semantic_definition
 preprocess_sql = M.preprocess_sql
+
+if rawget(_G, "ESV_TEST_MODE") then
+    ESV_SEMANTIC_DEFINITION_TEST_API = {
+        json_encode = json_encode,
+        json_decode = json_decode,
+        tokenize = tokenize,
+        split_top_level_text = split_top_level_text,
+        parse_literal_list = parse_literal_list,
+        parse_filter = parse_filter,
+        aggregate_parts = aggregate_parts,
+        parse_definition = parse_definition,
+        model_names_from_plan = model_names_from_plan,
+        parse_databricks_yaml = parse_databricks_yaml,
+        dbx_table_ref = dbx_table_ref,
+        dbx_rewrite_expr = dbx_rewrite_expr,
+        dbx_split_filter = dbx_split_filter,
+        dbx_aggregate = dbx_aggregate,
+        dbx_unwrap_measures = dbx_unwrap_measures,
+        dbx_translate = dbx_translate,
+        dbx_render_ddl = dbx_render_ddl,
+    }
+end
 /
 
 CREATE OR REPLACE SCRIPT SEMANTIC_ADMIN.APPLY_SEMANTIC_DEFINITION(
