@@ -380,8 +380,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/package.json": {
-    "mtime": 1785313705.7511816,
-    "ast_hash": "bab2aaee36993b76ba180250ae7c7d77",
+    "mtime": 1785604382.4355357,
+    "ast_hash": "7b16693bde48eb2f3a2586443a7e2109",
     "semantic_hash": ""
   },
   "apps/desktop/scripts/test-markdown-editor.mjs": {
@@ -465,8 +465,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/003_create_semantic_admin_scripts.sql": {
-    "mtime": 1784292465.1052742,
-    "ast_hash": "ac8e2c79803bec2b630a9f4dd9190070",
+    "mtime": 1785576496.7383373,
+    "ast_hash": "9899b70e4bd255c107a50f3cdbeaa88e",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/004_create_semantic_preprocessor.sql": {
@@ -480,18 +480,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/install/006_create_semantic_agent_views.sql": {
-    "mtime": 1784292465.1066835,
-    "ast_hash": "49872cb639da4addc6a6c32e131e29eb",
+    "mtime": 1785576496.7390556,
+    "ast_hash": "2fe30681a6b658f89f5bcc2ec05e8ff3",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/install.py": {
-    "mtime": 1784292465.1074734,
-    "ast_hash": "af6c046a3b8c3529ef3fec47d69acb50",
-    "semantic_hash": ""
-  },
-  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/probe_ready.py": {
-    "mtime": 1784292465.1077833,
-    "ast_hash": "a7dc1ddc483b906ad7be282fe58cc3bb",
+    "mtime": 1785576496.7479246,
+    "ast_hash": "224ef0284b37cd2b22409a91f07abb14",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/python-stack/pyproject.toml": {
@@ -500,8 +495,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/runtime-components.lock.json": {
-    "mtime": 1784292465.1096752,
-    "ast_hash": "fcb9c4a5a8aca7d1be971460bba9f330",
+    "mtime": 1785576496.7592514,
+    "ast_hash": "f23c63e69de12278b9b1750d01cf7920",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/agent.rs": {
@@ -585,8 +580,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_runtime.rs": {
-    "mtime": 1785480780.521886,
-    "ast_hash": "c0c3689df6f382b0079c1b44d042e255",
+    "mtime": 1785597659.6556327,
+    "ast_hash": "401b62df9635835ab8312cf0583fddfb",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/main.rs": {
@@ -645,8 +640,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/tauri.conf.json": {
-    "mtime": 1785313705.7617772,
-    "ast_hash": "33bc09165c0dd2da117b92e8ddc59d0a",
+    "mtime": 1785604382.440467,
+    "ast_hash": "bf5657c0666bf54920fd35fde1c8accb",
     "semantic_hash": ""
   },
   "apps/desktop/src/app/App.tsx": {
@@ -735,8 +730,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1785471646.8355913,
-    "ast_hash": "712b869cb8c37f01a79e93786b6efa46",
+    "mtime": 1785595596.3417692,
+    "ast_hash": "1ea75a200ff0b360658ab098fb3a0a7e",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -955,8 +950,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/AssistantPanel.tsx": {
-    "mtime": 1785146868.0599127,
-    "ast_hash": "66e5ad3ecd4e73083d8e894f3d127a52",
+    "mtime": 1785595692.3043554,
+    "ast_hash": "2c7ebfe87512fed80ee6968c5af4e900",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/ModelPicker.tsx": {
@@ -1030,8 +1025,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/LocalSetupFloating.tsx": {
-    "mtime": 1784656106.0755389,
-    "ast_hash": "076e701a9237afc20b6f46b2c289b698",
+    "mtime": 1785602917.8471172,
+    "ast_hash": "b73560ade99576cd5f83eec9aa681464",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/Marketplace.tsx": {
@@ -1070,8 +1065,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/onboarding/UpdateBanner.tsx": {
-    "mtime": 1783987801.5490625,
-    "ast_hash": "4744f6e089ab31276fc1acec5f5750bc",
+    "mtime": 1785603958.5984101,
+    "ast_hash": "e134df3eb2d6115452c55063c95d875e",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/security/VaultScreens.tsx": {
@@ -1160,8 +1155,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/Notifications.tsx": {
-    "mtime": 1784729444.9850037,
-    "ast_hash": "4c20230be8286b201c66004541a25e1c",
+    "mtime": 1785576555.5252054,
+    "ast_hash": "dfd6cf61d5c61833a45ab7da319ae12a",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/ObjectContextMenu.tsx": {
@@ -1180,8 +1175,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/SkillsTab.tsx": {
-    "mtime": 1785528534.8863964,
-    "ast_hash": "f7f5f3b1b012fa9fe1cdf8eca94b2233",
+    "mtime": 1785579300.4152894,
+    "ast_hash": "d37c5ff11eccc18490a4f7b4fea20558",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/TerminalView.tsx": {
@@ -1345,7 +1340,7 @@
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1785528740.6928809,
+    "mtime": 1785604405.8027546,
     "ast_hash": "f14a635d36137ebaf1e51b878cd8cbc4",
     "semantic_hash": ""
   },
@@ -1365,8 +1360,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/.runtime-managed.json": {
-    "mtime": 1784292465.1219351,
-    "ast_hash": "6a137fc8b4f124659ed262a8928e239e",
+    "mtime": 1785576496.7596245,
+    "ast_hash": "d8088035af837ef14c63d3a1ad679d70",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-ai-setup/scripts/setup_onprem.py": {
@@ -1955,8 +1950,8 @@
     "semantic_hash": ""
   },
   ".github/workflows/update-catalog.yml": {
-    "mtime": 1785502857.775185,
-    "ast_hash": "78f706e8099c6780cb7a17a0795fb142",
+    "mtime": 1785581282.1461177,
+    "ast_hash": "03f92ae1e6b03974dd5cfb3ec29f4f70",
     "semantic_hash": ""
   },
   ".github/workflows/verify-runtime-components.yml": {
@@ -1975,8 +1970,8 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1785313470.1790166,
-    "ast_hash": "a71d0474b8c7d00db6fb895d5124955a",
+    "mtime": 1785582896.7628324,
+    "ast_hash": "0fa17f7992d66d96212977ce517bc3d4",
     "semantic_hash": ""
   },
   "apps/desktop/README.md": {
@@ -1990,8 +1985,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/UPSTREAM.txt": {
-    "mtime": 1784292465.0987437,
-    "ast_hash": "01c2c7757e932a601e8cad426486ac88",
+    "mtime": 1785576496.7080965,
+    "ast_hash": "d436d46101dc5a1b2fd64487c5cc30db",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/resources/exasol-semantic-views/sql/examples/README.md": {
@@ -2245,8 +2240,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-agent-skills.UPSTREAM.txt": {
-    "mtime": 1784292465.1227806,
-    "ast_hash": "c0d789f3ffa276fbd2bd4a33542c95f2",
+    "mtime": 1785576496.7599826,
+    "ast_hash": "1b8c1db23edb0cee830079263a30f46a",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-ai-setup/SKILL.md": {
@@ -2265,8 +2260,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/SKILL.md": {
-    "mtime": 1784292465.1259456,
-    "ast_hash": "f718b86724869423397fac3918042f3f",
+    "mtime": 1785576496.7614133,
+    "ast_hash": "cd5ec815d3bac4ba3d10941be6b8a195",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/analytics-qualify.md": {
@@ -2275,18 +2270,18 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/exapump-reference.md": {
-    "mtime": 1784292465.1266973,
-    "ast_hash": "7f3f61b52360a5ad75540781cd4e2b4e",
+    "mtime": 1785576496.7617953,
+    "ast_hash": "f780abffebb9b5a860dd586eb9d5de0d",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/exasol-grammar-functions.md": {
-    "mtime": 1784292465.1270168,
-    "ast_hash": "78648fc00058a0f6ba71830bf3a70ba8",
+    "mtime": 1785576496.7623816,
+    "ast_hash": "87f670643cd19bd6006dfa6952f6fce6",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/exasol-grammar.md": {
-    "mtime": 1784292465.1274374,
-    "ast_hash": "83b33f277453ff8d7f25d465a79a10f1",
+    "mtime": 1785576496.7629156,
+    "ast_hash": "d6fb691bcc46cbf77497f8b0e8bcbdac",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/exasol-reserved-keywords.md": {
@@ -2299,24 +2294,14 @@
     "ast_hash": "452904a8d6753c18e3e47fc9fbebf243",
     "semantic_hash": ""
   },
-  "packages/agent-core/skills/exasol-database/references/import-export.md": {
-    "mtime": 1784292465.1283977,
-    "ast_hash": "92b6768e61594b555d6e821bc0a0188c",
-    "semantic_hash": ""
-  },
   "packages/agent-core/skills/exasol-database/references/query-profiling.md": {
-    "mtime": 1784292465.128695,
-    "ast_hash": "1068f2cc6070c32bd1f2ec875516a754",
+    "mtime": 1785576496.763419,
+    "ast_hash": "63dd4ebe0269050cbe8adb7b12d9b637",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-database/references/table-design.md": {
     "mtime": 1784292465.1289823,
     "ast_hash": "394fce22fee9f18900f7adaa6df40b99",
-    "semantic_hash": ""
-  },
-  "packages/agent-core/skills/exasol-database/references/virtual-schemas.md": {
-    "mtime": 1784292465.1292627,
-    "ast_hash": "88b8c9380a27733990239ac894ca7c3e",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-distributed-ml/SKILL.md": {
@@ -2345,8 +2330,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/SKILL.md": {
-    "mtime": 1784292465.1315923,
-    "ast_hash": "c22497936fb1245c2645219b50726751",
+    "mtime": 1785576496.7658243,
+    "ast_hash": "f8c7792b07b2aa1dd2ee7bef113968e4",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/references/deploy.md": {
@@ -2360,13 +2345,13 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/references/explore.md": {
-    "mtime": 1784292465.1327221,
-    "ast_hash": "db4bf9457249749bd6d53d934cae0cbd",
+    "mtime": 1785576496.7662723,
+    "ast_hash": "d7898ca6929ec9f32dbb0469509bf9be",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/references/load.md": {
-    "mtime": 1784292465.1330128,
-    "ast_hash": "d5868726a102b8147039e14a4be98c2d",
+    "mtime": 1785576496.7677622,
+    "ast_hash": "d74d0183e3b534550a2b909f0155ba03",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/references/scale.md": {
@@ -2375,18 +2360,18 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-extension-catalog/references/surface.md": {
-    "mtime": 1784292465.1336007,
-    "ast_hash": "5e460e3a6f87e3db51cb0fa86b0ddae7",
+    "mtime": 1785576496.768544,
+    "ast_hash": "7993d5f455aca4f74b106a933222ae0d",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-import/SKILL.md": {
-    "mtime": 1784292465.1339977,
-    "ast_hash": "d24909ad3d7172c4075a17bf62e3452f",
+    "mtime": 1785576496.7690082,
+    "ast_hash": "7d85f3bfd5bd2054ba25eec7685bf74a",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-import/references/import.md": {
-    "mtime": 1784292465.1344123,
-    "ast_hash": "c899f2d18a94aed344cd1b1fd93fc677",
+    "mtime": 1785576496.7694888,
+    "ast_hash": "483883fa4dc816b6440d5982116f7241",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol-itde/SKILL.md": {
@@ -2485,8 +2470,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/skills/exasol/SKILL.md": {
-    "mtime": 1784292465.1451368,
-    "ast_hash": "f5b84d7476d19a32d93815bf448975e0",
+    "mtime": 1785576496.772127,
+    "ast_hash": "65b3411ac671e2e664f8087350e2cedf",
     "semantic_hash": ""
   },
   "packages/agent-core/skills/fable-method.LICENSE.txt": {
@@ -3355,8 +3340,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/skills_market.rs": {
-    "mtime": 1785528440.6537437,
-    "ast_hash": "8cc03bef741f8df94af4d572aa2ce135",
+    "mtime": 1785580078.9549656,
+    "ast_hash": "29cf1c2146a41f3ae62fafee1bb6d27d",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/verified_lock.rs": {
@@ -3454,21 +3439,6 @@
     "ast_hash": "982d193ced21e0fd8af84b480bdc3c10",
     "semantic_hash": ""
   },
-  "openspec/changes/results-panel-redesign/design.md": {
-    "mtime": 1785395967.0670722,
-    "ast_hash": "4bfcc5fcf5e6a346a9d275d3f4b47ba0",
-    "semantic_hash": ""
-  },
-  "openspec/changes/results-panel-redesign/proposal.md": {
-    "mtime": 1785395942.5622587,
-    "ast_hash": "f15e3c9e3e944095e7f41168c5dbc2c2",
-    "semantic_hash": ""
-  },
-  "openspec/changes/results-panel-redesign/tasks.md": {
-    "mtime": 1785434021.2923448,
-    "ast_hash": "bb5c41fdf20279a0bdeb202109a82403",
-    "semantic_hash": ""
-  },
   "openspec/changes/skills-marketplace/design.md": {
     "mtime": 1785499557.007942,
     "ast_hash": "7d382774f08ee8e78082ca939bac7a60",
@@ -3482,6 +3452,531 @@
   "openspec/changes/skills-marketplace/tasks.md": {
     "mtime": 1785575104.7512715,
     "ast_hash": "d0cf66e6113821d82fa93b35f39fd8fa",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/lua/semantic_layer/admin/semantic_definition.lua": {
+    "mtime": 1785576496.7194562,
+    "ast_hash": "3127c02da5cc4ff7d12bf17c15e6f561",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/lua/semantic_layer/admin/validator.lua": {
+    "mtime": 1785576496.7198582,
+    "ast_hash": "1fa957b91d86935fe7bedd27f5512d01",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/lua/semantic_layer/agent/runtime.lua": {
+    "mtime": 1785576496.7211657,
+    "ast_hash": "bdc7c532be553d0889b78fdf22aa88d6",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/lua/semantic_layer/compiler/materializations.lua": {
+    "mtime": 1785576496.7231328,
+    "ast_hash": "bc3e59da8dd17b5df0f67ebe1a2fe7c0",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/lua/semantic_layer/compiler/request_json.lua": {
+    "mtime": 1785576496.723678,
+    "ast_hash": "e353f838e292fc6219a3ddee791c0d75",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/schemas/osi/0.2.0.dev0/osi-schema.json": {
+    "mtime": 1785576496.7328594,
+    "ast_hash": "6810387befb466ad1db6f3f4a1fc0dd6",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/agent_unit_test.lua": {
+    "mtime": 1785576496.7431538,
+    "ast_hash": "978a5a82f824307f89004450d8c2aa13",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/compiler_request_test.lua": {
+    "mtime": 1785576496.7433782,
+    "ast_hash": "c62fc93b30ea494367af7718f48781a2",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/compiler_unit_test.lua": {
+    "mtime": 1785576496.7436433,
+    "ast_hash": "032c97c0f8a90fdf3b38d0328923f51c",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/coverage_thresholds.lua": {
+    "mtime": 1785576496.7438984,
+    "ast_hash": "341f7db8511b0595bd63d6486a5a858a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/materialization_test.lua": {
+    "mtime": 1785576496.74414,
+    "ast_hash": "9503bdf4091eab00c191226ec326f0c6",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/materialization_unit_test.lua": {
+    "mtime": 1785576496.7443671,
+    "ast_hash": "99f7be52348ac555842b52e472584e2c",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/run.lua": {
+    "mtime": 1785576496.7446594,
+    "ast_hash": "c413f22a22335b0b6fc7d79adee3fc7e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/semantic_definition_unit_test.lua": {
+    "mtime": 1785576496.7449133,
+    "ast_hash": "74b7892150bc8d9f2d0aed54822fe575",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/validator_test.lua": {
+    "mtime": 1785576496.745417,
+    "ast_hash": "60b639888c587f75b9f59bb8e368ebf6",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/validator_unit_test.lua": {
+    "mtime": 1785576496.7456934,
+    "ast_hash": "050078ab8877e1aa0061ae053dd7b0e9",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/sql/compile_request_smoke.sql": {
+    "mtime": 1785576496.7463362,
+    "ast_hash": "bda42be3fce0350903febb1aa2416b90",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/sql/materialization_smoke.sql": {
+    "mtime": 1785576496.7465458,
+    "ast_hash": "079f51f2506b0ab02bbece4235316d37",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/sql/validation_smoke.sql": {
+    "mtime": 1785576496.7467487,
+    "ast_hash": "3c2aaf31cb2d6142b529a39d4a5070c7",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/test_osi_tool.py": {
+    "mtime": 1785576496.7469914,
+    "ast_hash": "887066926840ad347db09f0483b155be",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/test_sql_splitter.py": {
+    "mtime": 1785576496.7472122,
+    "ast_hash": "4bb39fc56a5f73ed52892719e4a97d03",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/import_databricks.py": {
+    "mtime": 1785576496.7474542,
+    "ast_hash": "8bc62dee216d122badf02c7f7c72250a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/osi.py": {
+    "mtime": 1785576496.7483046,
+    "ast_hash": "1484e2da4acd6278259b512aa83fc725",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/package_lua_scripts.py": {
+    "mtime": 1785576496.748632,
+    "ast_hash": "59e352a1864599137726a038c87a78bb",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/persona_04_jin.py": {
+    "mtime": 1785576496.7489734,
+    "ast_hash": "4531786d972221733d76e7e6c45aeb6b",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/persona_test_helper.py": {
+    "mtime": 1785576496.749286,
+    "ast_hash": "82819acc7b2b2771a88554734fd696ba",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/reset_milestone1.sql": {
+    "mtime": 1785576496.7497141,
+    "ast_hash": "24992349c998da9690544d330db765d7",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/run_compile_golden.sh": {
+    "mtime": 1785576496.7499394,
+    "ast_hash": "05e851cc5d636f85dde9a4a2e085e0d8",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/run_lua_tests.sh": {
+    "mtime": 1785576496.7501338,
+    "ast_hash": "c36fa2aae65bfe1b84d6e7b892082d62",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/run_nano_smoke.sh": {
+    "mtime": 1785576496.750397,
+    "ast_hash": "5a301a97c7b4fa135e9af2f3d7b19ef0",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/run_simulated_user_tests.py": {
+    "mtime": 1785576496.7508144,
+    "ast_hash": "41bcf34c676376ad29b3b5c658e85e38",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/run_sql_files.py": {
+    "mtime": 1785576496.7510211,
+    "ast_hash": "29a29b01fe205c78d58c8b763eea7731",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/semantic_client.py": {
+    "mtime": 1785576496.7512736,
+    "ast_hash": "a79720b5cb03b33fcd1af5ac9d9d7478",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_claude_study_issues.py": {
+    "mtime": 1785576496.7515013,
+    "ast_hash": "bbd70e61d394c986dbcb22d16f073bd6",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_compile_cache.py": {
+    "mtime": 1785576496.7517874,
+    "ast_hash": "ba4c26069528b35a4a110124ce1e5bfd",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_concurrent_compile.py": {
+    "mtime": 1785576496.7520351,
+    "ast_hash": "a9e23bd31a99da2225af218aff786339",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_databricks_import.py": {
+    "mtime": 1785576496.7525258,
+    "ast_hash": "8abe452ac8658196851b990e8400026f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_databricks_sql_compat.py": {
+    "mtime": 1785576496.7528467,
+    "ast_hash": "257b32d9307f43e9ed9f5c98c449dabf",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_dimension_discovery.py": {
+    "mtime": 1785576496.7531562,
+    "ast_hash": "f79e75d065aecdbd30ee333ae2c79712",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_group_by_inference.py": {
+    "mtime": 1785576496.7534573,
+    "ast_hash": "a9d056083089ac39470b1ef7f817223b",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone1.py": {
+    "mtime": 1785576496.7538114,
+    "ast_hash": "3891705f3342b5901c9a858158a9b03d",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone2.py": {
+    "mtime": 1785576496.7541943,
+    "ast_hash": "ea144486cb0ff8708919ffa89a121075",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone3.py": {
+    "mtime": 1785576496.7544982,
+    "ast_hash": "b58e2edb72e8b8ef4babca46df43ce6e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone4.py": {
+    "mtime": 1785576496.7549262,
+    "ast_hash": "c3be40cc104f0e02b85df6b9b7113809",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone5.py": {
+    "mtime": 1785576496.755204,
+    "ast_hash": "719da12186d950ae2a58a956e17dffb3",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_milestone6.py": {
+    "mtime": 1785576496.7554913,
+    "ast_hash": "ec2f1355e4ca34b0868f633d52508f33",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_osi_batch_import.py": {
+    "mtime": 1785576496.7558575,
+    "ast_hash": "df445740d3a2c7aff2a41e61728d568c",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_osi_export.py": {
+    "mtime": 1785576496.7561617,
+    "ast_hash": "24ed0feda6947de97c690756a0783a56",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_osi_import.py": {
+    "mtime": 1785576496.7564456,
+    "ast_hash": "d447478927907fc2c90d1cc20ac2ac02",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_osi_roundtrip.py": {
+    "mtime": 1785576496.7567613,
+    "ast_hash": "fa2887fc9f706f4426a0f866eefea464",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_runtime_performance.py": {
+    "mtime": 1785576496.757201,
+    "ast_hash": "078651ad78f0aca8354f3f7112e4f653",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_security_principals.py": {
+    "mtime": 1785576496.7574763,
+    "ast_hash": "be168cad97a292cb0b66287c6c6e4118",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_semantic_sql_phase1.py": {
+    "mtime": 1785576496.7577505,
+    "ast_hash": "5718582222a2d71836a84db582e8a892",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_semantic_sql_phase2.py": {
+    "mtime": 1785576496.7579613,
+    "ast_hash": "32a16bea6e1369c739ccc4b43392642a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/verify_sql_native_metrics.py": {
+    "mtime": 1785576496.7581964,
+    "ast_hash": "e72ae08c741b8ef414e3e6327ea90c0d",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/workspace-persist.test.ts": {
+    "mtime": 1785595579.3131437,
+    "ast_hash": "776250287c325b53020606b2e619f647",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/workspace-persist.ts": {
+    "mtime": 1785595558.655937,
+    "ast_hash": "851942e5edb5dd0d46762308567e2ca0",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/CHANGELOG.md": {
+    "mtime": 1785576496.7063608,
+    "ast_hash": "a881d0650b1cb2dfb7ec1132c6bcbcae",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/CLAUDE.md": {
+    "mtime": 1785576496.7068024,
+    "ast_hash": "75c57c47a03a5da22e00edd250892e6e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/README.md": {
+    "mtime": 1785576496.707267,
+    "ast_hash": "981bd24a45a6044c85f6744f4c623d62",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/admin-db-wide-setup.md": {
+    "mtime": 1785576496.7085779,
+    "ast_hash": "f4475d1f2a3b3f5e93a781f54889dd47",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/agent-contract.md": {
+    "mtime": 1785576496.7092233,
+    "ast_hash": "9b52db47ed8edaf73a457200189aecec",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/architecture.md": {
+    "mtime": 1785576496.7095542,
+    "ast_hash": "e25ea6d52d3c2a518e076b786b62dee2",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/creating-metrics.md": {
+    "mtime": 1785576496.7100275,
+    "ast_hash": "f26d8f5c6bd2faea5c011aeef2595301",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/databricks-metric-views.md": {
+    "mtime": 1785576496.7105565,
+    "ast_hash": "27d21c0f84047f26c68b3689b4063797",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/examples.md": {
+    "mtime": 1785576496.7112875,
+    "ast_hash": "17ee5e92dc90a4594e94478a72a867ef",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/exasol-runtime.md": {
+    "mtime": 1785576496.7124703,
+    "ast_hash": "d6b04128e0dcbdecc79f6a37e4c3aa7a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/known-issues.md": {
+    "mtime": 1785576496.7128565,
+    "ast_hash": "c25c56cce9641fa8da6915f9c8ca7b4f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/osi-format.md": {
+    "mtime": 1785576496.7134175,
+    "ast_hash": "10c1f1026a6e6ab9deccc214ad8b739b",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/runtime-testing.md": {
+    "mtime": 1785576496.713944,
+    "ast_hash": "fc3cb12665c569cf70e8307e971cd397",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/semantic-catalog.md": {
+    "mtime": 1785576496.7144237,
+    "ast_hash": "02d976df1315140763d98c349ef865a5",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/semantic-compiler.md": {
+    "mtime": 1785576496.7150445,
+    "ast_hash": "491a73f46277b20d9daae0a9f20533ae",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/semantic-sql-preprocessor.md": {
+    "mtime": 1785576496.7156732,
+    "ast_hash": "55077ee1f1f6345329bb1d3e5e9ca64a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/validation-rules.md": {
+    "mtime": 1785576496.716145,
+    "ast_hash": "2b122a2721de4b2fbf11bdf1b128d140",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/docs/virtual-schema-adapter.md": {
+    "mtime": 1785576496.71663,
+    "ast_hash": "17e120c766e738423cbd4aa654734369",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/schemas/osi/0.2.0.dev0/README.md": {
+    "mtime": 1785576496.732583,
+    "ast_hash": "fac0127c16cebb0d93f9336cd7776043",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-analyst/SKILL.md": {
+    "mtime": 1785576496.7336516,
+    "ast_hash": "e7fbdeab5188b45adc5c4e95819e4e79",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-analyst/agents/openai.yaml": {
+    "mtime": 1785576496.734318,
+    "ast_hash": "b873c60967ea91be6dd1f5dd99f37699",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-analyst/references/query-workflows.md": {
+    "mtime": 1785576496.7351124,
+    "ast_hash": "0f3cf1bc26f2a9626d8129fefa69735d",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-modeler/SKILL.md": {
+    "mtime": 1785576496.7357123,
+    "ast_hash": "c9fa06fb4ac0315e9cf08b9edad7de2f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-modeler/agents/openai.yaml": {
+    "mtime": 1785576496.7362685,
+    "ast_hash": "adcee62748bb537bae760ca22e7a94f8",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/skills/exasol-semantic-modeler/references/authoring-workflows.md": {
+    "mtime": 1785576496.7369068,
+    "ast_hash": "9e3d6a27e07a26a41d6a0658962903ee",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/databricks/orders_metric_view.yaml": {
+    "mtime": 1785576496.7401612,
+    "ast_hash": "85bf8baccdd0cd536e4cc5764582c319",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/complex_relationship.yaml": {
+    "mtime": 1785576496.7406604,
+    "ast_hash": "9c204cd2712cb2038e1d3a87f615fa42",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/invalid_relationship.yaml": {
+    "mtime": 1785576496.7409534,
+    "ast_hash": "5e124bbeb5a09bcae55d1128a8ea067a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/minimal_model.yaml": {
+    "mtime": 1785576496.7412908,
+    "ast_hash": "a8d24168057ab0530a8499073ff077f5",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/missing_datatype.yaml": {
+    "mtime": 1785576496.7415352,
+    "ast_hash": "e30cc2bb1a2843bc309b288683cc1c81",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/sales_interoperability.yaml": {
+    "mtime": 1785576496.7421167,
+    "ast_hash": "023089a2ecebb099c37f0beaf7ee6bd3",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/fixtures/osi/sales_lossless.yaml": {
+    "mtime": 1785576496.7424934,
+    "ast_hash": "268150d5347fc8efa9a1a3924b7155c3",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/lua/README.md": {
+    "mtime": 1785576496.7429078,
+    "ast_hash": "aecef9daf4a7eb424dc9b7f07a91f42f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tests/sql/README.md": {
+    "mtime": 1785576496.7461061,
+    "ast_hash": "3c5ea4af60080e289fb70aadd5a7f723",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/resources/exasol-semantic-views/tools/requirements-osi.txt": {
+    "mtime": 1785576496.7494957,
+    "ast_hash": "b3373a14e3011fce57144f7881059b78",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-08-01-results-panel-redesign/design.md": {
+    "mtime": 1785395967.0670722,
+    "ast_hash": "4bfcc5fcf5e6a346a9d275d3f4b47ba0",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-08-01-results-panel-redesign/proposal.md": {
+    "mtime": 1785395942.5622587,
+    "ast_hash": "f15e3c9e3e944095e7f41168c5dbc2c2",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-08-01-results-panel-redesign/tasks.md": {
+    "mtime": 1785583259.5090556,
+    "ast_hash": "80c9a64c2fd79c5ad622f44d9b3ccc64",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-cloud-storage-extension/SKILL.md": {
+    "mtime": 1785576496.760362,
+    "ast_hash": "dd5319a899adf9abc5fc2917d974a27e",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-cloud-storage-extension/references/cloud-storage-extension.md": {
+    "mtime": 1785576496.7608078,
+    "ast_hash": "bcf6b6330a77abb866e8397f5863e355",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-document-virtual-schemas/SKILL.md": {
+    "mtime": 1785576496.7637575,
+    "ast_hash": "5b35722ecc3152cc66aef089b62c35a4",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-document-virtual-schemas/references/document-virtual-schemas.md": {
+    "mtime": 1785576496.7641778,
+    "ast_hash": "65e57f3a08982650908ac4b57ae22809",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-export/SKILL.md": {
+    "mtime": 1785576496.7646823,
+    "ast_hash": "6020bf4409a4b9a2d9ba20dc551ef096",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-export/references/export.md": {
+    "mtime": 1785576496.7652714,
+    "ast_hash": "e8e33608010faaa30a0f2d5d187ca5a6",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-jdbc-virtual-schemas/SKILL.md": {
+    "mtime": 1785576496.769855,
+    "ast_hash": "a8766f177f3d19b514f92f7826884de8",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-jdbc-virtual-schemas/references/jdbc-virtual-schemas.md": {
+    "mtime": 1785576496.7702587,
+    "ast_hash": "c4115264c6468e879c99fef770014dd6",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-virtual-schema-adapter-development/SKILL.md": {
+    "mtime": 1785576496.7708287,
+    "ast_hash": "8ac6e81680a5ad710f9e10646d1ac49b",
+    "semantic_hash": ""
+  },
+  "packages/agent-core/skills/exasol-virtual-schema-adapter-development/references/adapter-development.md": {
+    "mtime": 1785576496.7717519,
+    "ast_hash": "85ad25d11fa969720df69737b62cb797",
     "semantic_hash": ""
   }
 }
