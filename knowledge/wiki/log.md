@@ -35,3 +35,11 @@ Also: humanizeProviderError + summarize exported from loop.ts and tested (preced
 OpenSpec (@fission-ai/openspec 1.6.0) installed for Claude Code/Codex/Cursor/Gemini: /opsx:propose -> apply -> archive; openspec/config.yaml carries project context + artifact rules (Non-goals section; tasks name their test file). Codex verified vendored files carry no machine-local paths/credentials.
 396 tests total (185 agent-core, 105 desktop, 79 parser, 27 Rust).
 
+
+## [2026-08-01] ingest | In-app updater flow, non-destructive restart, local-setup loader + fresh-wipe; release 2026.1.0
+Filed page: in-app-updater-and-fresh-restart (pull-based updater, phased download/install/restart, workspace persistence, AI session restore).
+Gotcha recorded: .exa-indeterminate needs a position:relative parent or its glow escapes into a big green blob (the UpdateBanner 'green circle').
+relaunch() -> plugin:process|restart -> needs process:allow-restart (not allow-relaunch).
+Local setup loader trimmed to Personal-local/ExaPump/MCP; verified-download got retry+backoff (retryable_status).
+graphify re-indexed: 9968 nodes / 20583 edges.
+
