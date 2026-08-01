@@ -100,6 +100,41 @@ Exa runs on **local AI models by default** (a built-in one is a click away — y
 
 Everything else you'd expect is here too: a SQL editor, schema browser, dashboards you can edit by hand, data import/export, and connection management with encrypted password storage.
 
+## What's inside
+
+A quick, honest tour of what the app actually gives you today:
+
+**Write & run SQL**
+- Monaco SQL editor with autocomplete and multi-statement runs
+- Live execution progress, and an execution log (time, status, rows, exec/fetch split)
+
+**Read results**
+- Fast, paginated result grid that prefetches the next page
+- A **Filter** box, one-click **Export CSV**, and a side inspector: click any cell to see its full value, plus query statistics (time, rows, cols, throughput, avg/row)
+- Edit rows in place for single-table results
+
+**Understand performance**
+- A **Query Performance** tab that shows Exasol's real execution plan (from profiling): per-step time share, measured bottlenecks, and concrete tuning advice — no guessing
+
+**Dashboards & BI**
+- Build dashboards by hand or ask the AI; drag/resize panels, many chart types
+- Built-in **System dashboards** (query performance, sessions, DB size) that are read-only so they can't be broken
+- Open a dashboard to view and edit it; export one as a PDF report
+
+**AI assistant & MCP**
+- Exa: ask in plain words — it inspects schemas, writes SQL, shows every step, and asks before changing data
+- Local models by default; add a cloud key only if you want to
+- Studio is one **MCP gateway** for every connected database, so other AI clients can query them through a single endpoint
+
+**Connect & manage**
+- Encrypted password vault (passwords are never shown to the AI)
+- Connection properties, driver management, virtual schemas, and data import/export
+- One-click local **Exasol Personal** for a zero-setup database
+
+**Local-first & cross-platform**
+- One codebase runs on macOS, Windows, and Linux
+- The app, the AI runtime, and the local database all run on your machine
+
 ## ⌨Prefer a terminal?
 
 Install the CLI from **AI Settings → Terminal CLI → Install command**, then:
@@ -137,3 +172,47 @@ pnpm dev:desktop                                # frontend dev mode
 Every agent failure found in the field becomes an eval case *before* it's fixed — `packages/agent-core/evals/` is both the test suite and the honest history of what small models get wrong.
 
 Releases are tag-driven (`v*`): five platforms build in parallel, the eval suite gates the release, and artifacts ship signed with auto-updater manifests. The `mirror-*` releases are internal storage for the in-app Marketplace — not downloads for humans.
+
+---
+
+## Contributing & community
+
+Issues and pull requests are welcome — it's the fastest way the app gets better.
+
+### 🐛 Found a bug?
+
+[**Open a bug report ›**](../../issues/new). Please include:
+- what you did (steps to reproduce),
+- what you expected vs. what happened, and
+- your OS and app version.
+
+### 💡 Want a feature?
+
+[**Request it ›**](../../issues/new). Describe the *problem* you're trying to
+solve, not only the solution you have in mind — it helps us find the simplest
+fix. Browse [existing issues](../../issues) first in case it's already there
+(a 👍 helps us prioritise).
+
+### 🔧 Want to contribute code?
+
+Fork the repo, branch, and open a pull request:
+
+```bash
+pnpm install                 # set up the workspace
+# ... make your change ...
+pnpm test                    # keep it green — add tests for new logic
+```
+
+Then push your branch and [**open a PR ›**](../../compare) that describes the
+change and links the issue it closes.
+
+A few house rules (all in [CONTRIBUTING.md](./CONTRIBUTING.md)):
+- **KISS** — the simplest thing that works; no speculative abstraction. Extract
+  pure logic into small, testable modules instead of growing big files.
+- **Tests, not just happy paths** — cover empty input, nulls, boundaries, and
+  error cases. Nothing is merged red.
+- **Match the codebase** — icons (not emoji) in the app UI, theme-safe CSS, one
+  codebase for every platform.
+
+New here? Skim [CONTRIBUTING.md](./CONTRIBUTING.md) and the
+[docs](./docs/README.md), and you're good to go.
