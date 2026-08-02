@@ -2476,7 +2476,7 @@ export function ExasolStudio({
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
                 >
-                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4" />}
+                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4 text-primary" />}
                 </IconButton>
                 <IconButton
                   label="Execute the current statement, or the selection (⌘/Ctrl+.)"
@@ -2484,7 +2484,7 @@ export function ExasolStudio({
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
                 >
-                  <RunCurrentIcon className="h-4 w-4" />
+                  <RunCurrentIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton
                   label="Execute the statement(s) as explain plan (⌘/Ctrl+⌥/Alt+Enter)"
@@ -2492,10 +2492,10 @@ export function ExasolStudio({
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running || !connected}
                 >
-                  <RunExplainIcon className="h-4 w-4" />
+                  <RunExplainIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton label="Execute the complete buffer as one SQL statement" onClick={() => run("buffer")} disabled={running}>
-                  <RunBufferIcon className="h-4 w-4" />
+                  <RunBufferIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
