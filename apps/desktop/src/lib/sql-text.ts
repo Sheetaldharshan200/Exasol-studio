@@ -13,9 +13,11 @@ export type Stmt = { text: string; start: number; end: number };
 
 /**
  * Split SQL into statements on top-level semicolons, ignoring semicolons inside
- * single/double quotes, line comments (--), and block comments. Mirrors the
- * backend splitter (query.rs::split_statements) so "Run" sends exactly what the
- * server will execute.
+ * single/double quotes, line comments (--), and block comments. An exaplus-style
+ * script block — a line starting with `--/` through a line holding only `/` —
+ * is ONE statement (the CREATE SCRIPT body may contain semicolons), sent
+ * without the marker lines. Mirrors the backend splitter
+ * (query.rs::split_statements) so "Run" sends exactly what the server executes.
  */
 export function splitStatements(sql: string): Stmt[] {
   const out: Stmt[] = [];
@@ -49,6 +51,43 @@ export function splitStatements(sql: string): Stmt[] {
     if (c === "'") inSingle = true;
     else if (c === '"') inDouble = true;
     else if (c === "-" && n === "-") {
+      // `--/` at the start of a line (with no statement pending) opens a
+      // script block: everything up to a line holding only `/` is one
+      // statement, semicolons and all.
+      const atLineStart = i === 0 || sql[i - 1] === "\n";
+      if (atLineStart && sql[i + 2] === "/" && sql.slice(start, i).trim() === "") {
+        const markerEol = sql.indexOf("\n", i);
+        if (markerEol < 0) {
+          start = sql.length;
+          i = sql.length;
+          break;
+        }
+        // Find the closing line that is exactly "/".
+        let close = -1;
+        let j = markerEol + 1;
+        while (j <= sql.length) {
+          const eol = sql.indexOf("\n", j);
+          const lineEnd = eol < 0 ? sql.length : eol;
+          if (sql.slice(j, lineEnd).trim() === "/") {
+            close = j + sql.slice(j, lineEnd).indexOf("/");
+            break;
+          }
+          if (eol < 0) break;
+          j = eol + 1;
+        }
+        const bodyEnd = close >= 0 ? sql.lastIndexOf("\n", close) : sql.length;
+        const text = sql.slice(markerEol + 1, bodyEnd).trim();
+        if (text) out.push({ text, start: i, end: close >= 0 ? close : sql.length });
+        if (close >= 0) {
+          const closeEol = sql.indexOf("\n", close);
+          i = closeEol < 0 ? sql.length : closeEol;
+          start = i + 1;
+        } else {
+          i = sql.length;
+          start = sql.length;
+        }
+        continue;
+      }
       inLine = true;
       i++;
     } else if (c === "/" && n === "*") {
@@ -65,14 +104,67 @@ export function splitStatements(sql: string): Stmt[] {
   return out;
 }
 
+export type ScriptBlock = { start: number; end: number; language: string | null; closed: boolean };
+
 /**
- * The statement the cursor is in — or the nearest one before it (so a cursor
- * resting after a trailing ";" still runs the query you just wrote), or the
- * whole input if it is a single unterminated statement.
+ * The `--/ … /` script blocks of a buffer, for the editor's code-block
+ * rendering (background + language chip). Line-based on purpose — visuals
+ * only; the statement splitter above is the executable authority. An
+ * unterminated block (still being typed) is reported with closed: false so
+ * the renderer can skip tinting the whole rest of the buffer.
+ */
+export function findScriptBlocks(sql: string): ScriptBlock[] {
+  const out: ScriptBlock[] = [];
+  let offset = 0;
+  let open: number | null = null;
+  for (const line of sql.split("\n")) {
+    const t = line.trim();
+    if (open === null && t.startsWith("--/")) open = offset;
+    else if (open !== null && t === "/") {
+      out.push({ start: open, end: offset + line.indexOf("/"), language: scriptLanguage(sql.slice(open, offset)), closed: true });
+      open = null;
+    }
+    offset += line.length + 1;
+  }
+  if (open !== null) out.push({ start: open, end: sql.length, language: scriptLanguage(sql.slice(open)), closed: false });
+  return out;
+}
+
+/** The script's language from its CREATE header — null until one is written
+ *  (the chip and body completions wait for an explicit language). */
+export function scriptLanguage(block: string): string | null {
+  const m = block.match(/\bCREATE\s+(?:OR\s+REPLACE\s+)?(LUA|PYTHON3|PYTHON|JAVA|R)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * The statement at the caret, following DbVisualizer's Execute Current rule:
+ * "the statement containing the caret or that ends on the line with the
+ * caret". So a caret resting just after a ";" (still on the same line) runs
+ * the statement that was just written — not the next one. Falls back to the
+ * next statement after the caret, or the whole input if it is a single
+ * unterminated statement.
  */
 export function statementAtOffset(sql: string, offset: number): string {
   const stmts = splitStatements(sql);
   if (stmts.length === 0) return sql.trim();
+  // 1. The statement whose actual text (not leading whitespace) contains the caret.
+  for (const s of stmts) {
+    const span = sql.slice(s.start, s.end);
+    const textStart = s.start + (span.length - span.trimStart().length);
+    if (offset >= textStart && offset <= s.end) return s.text;
+  }
+  // 2. A statement that ends on the caret's line — prefer the last one ending
+  //    at or before the caret (the one the user just finished typing).
+  const lineStart = sql.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+  const nl = sql.indexOf("\n", offset);
+  const lineEnd = nl < 0 ? sql.length : nl;
+  const onLine = stmts.filter((s) => s.end >= lineStart && s.end <= lineEnd);
+  if (onLine.length > 0) {
+    const before = onLine.filter((s) => s.end <= offset);
+    return (before.length > 0 ? before[before.length - 1] : onLine[0]).text;
+  }
+  // 3. The next statement after the caret, else the last one.
   for (const s of stmts) {
     if (offset <= s.end) return s.text;
   }
@@ -88,7 +180,9 @@ export type RunScope = "auto" | "statement" | "selection" | "script" | "buffer";
  *  - auto:      the selection if there is one, else the statement at the cursor
  *  - selection: the selection, or the whole buffer when nothing is selected
  *  - statement: the statement at the cursor
- *  - script/buffer: the whole buffer (script splits later; buffer runs as one)
+ *  - script:    the selection if there is one (run as a script), else the whole
+ *               buffer — matches DBVisualizer's "Execute buffer as SQL script"
+ *  - buffer:    the whole buffer, always (run as one statement)
  */
 export function pickRunSql(scope: RunScope, full: string, selection: string, cursorOffset: number): string {
   switch (scope) {
@@ -99,6 +193,7 @@ export function pickRunSql(scope: RunScope, full: string, selection: string, cur
     case "statement":
       return statementAtOffset(full, cursorOffset);
     case "script":
+      return selection.trim() ? selection : full;
     case "buffer":
       return full;
   }

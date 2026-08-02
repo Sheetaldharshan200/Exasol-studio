@@ -33,7 +33,8 @@ export type TabView =
   | "notebook"
   | "skills"
   | "aiSettings"
-  | "connProps";
+  | "connProps"
+  | "plan";
 
 /** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
  *  async profile that finishes after a tab-switch can't flip another tab's
@@ -57,6 +58,8 @@ export type SqlTab = {
   pinned?: boolean;
   /** For filePreview tabs — the local file path being previewed. */
   filePath?: string;
+  /** Buffer content at the last save/open — dirty = sql !== savedSql. */
+  savedSql?: string;
   /** True when this tab's backing file was deleted on disk (title struck out). */
   fileMissing?: boolean;
   /** Membership in a collapsible tab group (see TabGroup). */
@@ -79,7 +82,11 @@ export type SqlTab = {
   /** For artifact tabs — the rendered HTML document. */
   artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */
-  planData?: Plan;
+  planData?: Plan[];
+  /** Why the last profile attempt produced no plan — shown in the empty state. */
+  profileNote?: string;
+  /** Selected statement in Query Performance (-1 = All statements overview). */
+  planIdx?: number;
   /** Captured on Run: the session + pre-run statement id, so the plan can be
    *  read from the ORIGINAL profiled run without re-executing the query. */
   profileSession?: string;
@@ -137,6 +144,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   notebook: "notebook",
   skills: "skills",
   aiSettings: "brain-circuit",
+  plan: "clock-dashed-half",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */

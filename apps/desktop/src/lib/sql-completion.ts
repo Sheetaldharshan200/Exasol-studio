@@ -1,5 +1,6 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { languages } from "monaco-editor";
+import { findScriptBlocks } from "./sql-text";
 
 /**
  * Schema-aware Exasol autocompletion for the Monaco SQL editor.
@@ -25,12 +26,76 @@ const KEYWORDS =
 const SNIPPETS: { label: string; text: string }[] = [
   { label: "IMPORT FROM CSV AT", text: "IMPORT INTO ${1:SCHEMA.TABLE} FROM CSV AT '${2:https://…}' FILE '${3:data.csv}'" },
   { label: "EXPORT INTO CSV AT", text: "EXPORT ${1:SCHEMA.TABLE} INTO CSV AT '${2:https://…}' FILE '${3:out.csv}'" },
-  { label: "CREATE PYTHON3 UDF", text: "CREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:SCHEMA.MY_UDF}(${2:x DOUBLE}) RETURNS DOUBLE AS\ndef run(ctx):\n    return ctx.${2:x}\n/" },
-  { label: "CREATE LUA SCRIPT", text: "CREATE OR REPLACE LUA SCRIPT ${1:SCHEMA.MY_SCRIPT}() RETURNS TABLE AS\n${2:-- body}\n/" },
+  // UDF templates emit the full exaplus `--/ … /` block, which the splitter
+  // treats as ONE statement (the body may contain semicolons).
+  {
+    label: "udf CREATE LUA UDF",
+    text: "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/",
+  },
+  {
+    label: "udf CREATE PYTHON3 UDF",
+    text: "--/\nCREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\ndef run(ctx):\n    ${0:return ctx.x}\n/",
+  },
+  {
+    label: "udf CREATE JAVA UDF",
+    text: "--/\nCREATE OR REPLACE JAVA SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nclass ${1:MY_UDF} {\n    static double run(ExaMetadata exa, ExaIterator ctx) throws Exception {\n        ${0:return ctx.getDouble(\"x\");}\n    }\n}\n/",
+  },
+  {
+    label: "udf CREATE R UDF",
+    text: "--/\nCREATE OR REPLACE R SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nrun <- function(ctx) {\n    ${0:ctx$x}\n}\n/",
+  },
+  {
+    label: "udf CREATE LUA SET-EMITS UDF",
+    text: "--/\nCREATE OR REPLACE LUA SET SCRIPT ${1:MY_UDF} (${2:a DOUBLE})\nEMITS (${3:b DOUBLE}) AS\nfunction run(ctx)\n    repeat\n        ctx.emit(${0:ctx.a})\n    until not ctx.next()\nend\n/",
+  },
   { label: "CREATE VIRTUAL SCHEMA", text: "CREATE VIRTUAL SCHEMA ${1:VS_NAME} USING ${2:ADAPTER.SCRIPT} WITH ${3:CONNECTION_NAME = '…'}" },
   { label: "CREATE CONNECTION", text: "CREATE OR REPLACE CONNECTION ${1:CONN_NAME} TO '${2:https://…}' USER '${3:user}' IDENTIFIED BY '${4:secret}'" },
   { label: "MERGE INTO", text: "MERGE INTO ${1:TARGET} t USING ${2:SOURCE} s ON t.${3:ID} = s.${3:ID}\nWHEN MATCHED THEN UPDATE SET ${4:col} = s.${4:col}\nWHEN NOT MATCHED THEN INSERT VALUES (s.*)" },
 ];
+
+/** Keywords + Exasol UDF API per script language, for `--/ … /` bodies. */
+const UDF_BODY_ITEMS: Record<string, { keywords: string[]; api: { label: string; text: string }[] }> = {
+  LUA: {
+    keywords: "function end if then else elseif for while do repeat until local return break in nil true false and or not".split(" "),
+    api: [
+      { label: "ctx.emit", text: "ctx.emit(${1:value})" },
+      { label: "ctx.next", text: "ctx.next()" },
+      { label: "ctx.size", text: "ctx.size()" },
+      { label: "ctx.reset", text: "ctx.reset()" },
+      { label: "exa.meta", text: "exa.meta" },
+    ],
+  },
+  PYTHON3: {
+    keywords: "def return if elif else for while in import from as with try except finally lambda pass class yield not and or None True False".split(" "),
+    api: [
+      { label: "ctx.emit", text: "ctx.emit(${1:value})" },
+      { label: "ctx.next", text: "ctx.next()" },
+      { label: "ctx.size", text: "ctx.size()" },
+      { label: "ctx.reset", text: "ctx.reset()" },
+      { label: "exa.meta", text: "exa.meta" },
+    ],
+  },
+  JAVA: {
+    keywords: "class static void return if else for while new try catch finally throws public private protected import int long double boolean String".split(" "),
+    api: [
+      { label: "ctx.emit", text: "ctx.emit(${1:value})" },
+      { label: "ctx.next", text: "ctx.next()" },
+      { label: "ctx.getDouble", text: 'ctx.getDouble("${1:column}")' },
+      { label: "ctx.getString", text: 'ctx.getString("${1:column}")' },
+      { label: "ctx.getLong", text: 'ctx.getLong("${1:column}")' },
+      { label: "exa.getMeta", text: "exa.getMeta()" },
+    ],
+  },
+  R: {
+    keywords: "function if else for while repeat return break next in library TRUE FALSE NULL NA".split(" "),
+    api: [
+      { label: "ctx$emit", text: "ctx$emit(${1:value})" },
+      { label: "ctx$next_row", text: "ctx$next_row(${1:NA})" },
+      { label: "exa$meta", text: "exa$meta" },
+    ],
+  },
+};
+UDF_BODY_ITEMS.PYTHON = UDF_BODY_ITEMS.PYTHON3;
 
 const FUNCTIONS =
   `COUNT SUM AVG MIN MAX MEDIAN STDDEV VARIANCE CAST COALESCE NVL NVL2 DECODE NULLIF GREATEST LEAST ABS ROUND TRUNC FLOOR CEIL MOD POWER SQRT LN LOG EXP SIGN RANDOM UPPER LOWER INITCAP TRIM LTRIM RTRIM LPAD RPAD LENGTH SUBSTR INSTR REPLACE TRANSLATE CONCAT REGEXP_SUBSTR REGEXP_REPLACE REGEXP_INSTR TO_CHAR TO_DATE TO_TIMESTAMP TO_NUMBER CURRENT_DATE CURRENT_TIMESTAMP CURRENT_USER CURRENT_SCHEMA ADD_DAYS ADD_MONTHS ADD_YEARS ADD_HOURS ADD_MINUTES ADD_SECONDS DAYS_BETWEEN MONTHS_BETWEEN YEARS_BETWEEN EXTRACT DATE_TRUNC POSIX_TIME HASH_MD5 HASH_SHA256 ROW_NUMBER RANK DENSE_RANK LAG LEAD FIRST_VALUE LAST_VALUE LISTAGG GROUP_CONCAT ANY_VALUE ZEROIFNULL NULLIFZERO FROM_POSIX_TIME CONVERT_TZ SECONDS_BETWEEN MINUTES_BETWEEN HOURS_BETWEEN WEEK YEAR MONTH DAY HOUR MINUTE SECOND DAYOFWEEK DAYOFYEAR CORR COVAR_POP COVAR_SAMP PERCENTILE_CONT PERCENTILE_DISC RATIO_TO_REPORT NTILE PERCENT_RANK CUME_DIST BIT_AND BIT_OR BIT_XOR BIT_NOT BIT_SET BIT_CHECK JSON_VALUE JSON_EXTRACT IS_NUMBER IS_DATE IS_TIMESTAMP IS_BOOLEAN CHAR_LENGTH UNICODE UNICODECHR ASCII CHR REVERSE SPACE REPEAT EDIT_DISTANCE SOUNDEX COLOGNE_PHONETIC IPROC NPROC VALUE2PROC SYS_GUID SESSION_PARAMETER TYPEOF MIN_SCALE APPROXIMATE_COUNT_DISTINCT ST_DISTANCE ST_INTERSECTS ST_CONTAINS`.split(" ");
@@ -97,9 +162,117 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
   void getParser(); // warm the grammar in the background
 
   monaco.languages.registerCompletionItemProvider("sql", {
-    triggerCharacters: [".", " "],
+    triggerCharacters: [".", " ", "-", "/"],
     async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
       const cat = getCatalog();
+
+      // Inside a `--/ … /` script BODY (past the AS keyword) the language is
+      // Lua/Python/Java/R — complete THAT language, not SQL.
+      const full = model.getValue();
+      const offset = model.getOffsetAt(position);
+      const block = findScriptBlocks(full).find((b) => offset > b.start && offset <= b.end);
+      if (block?.language) {
+        const header = full.slice(block.start, block.end);
+        const asMatch = /\bAS\b/i.exec(header);
+        if (asMatch && offset > block.start + asMatch.index + 2) {
+          const wordHere = model.getWordUntilPosition(position);
+          const bodyRange = {
+            startLineNumber: position.lineNumber,
+            startColumn: wordHere.startColumn,
+            endLineNumber: position.lineNumber,
+            endColumn: wordHere.endColumn,
+          };
+          const items = UDF_BODY_ITEMS[block.language] ?? UDF_BODY_ITEMS.LUA;
+          return {
+            suggestions: [
+              ...items.keywords.map(
+                (k) =>
+                  ({
+                    label: k,
+                    kind: monaco.languages.CompletionItemKind.Keyword,
+                    insertText: k,
+                    range: bodyRange,
+                    detail: `${block.language} keyword`,
+                    sortText: "5" + k,
+                  }) as languages.CompletionItem,
+              ),
+              ...items.api.map(
+                (a) =>
+                  ({
+                    label: a.label,
+                    kind: monaco.languages.CompletionItemKind.Function,
+                    insertText: a.text,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: bodyRange,
+                    detail: "Exasol UDF API",
+                    sortText: "4" + a.label,
+                  }) as languages.CompletionItem,
+              ),
+            ],
+          };
+        }
+      }
+
+      // `/` or `/*` at the start of a line: offer the block comment.
+      const lineBefore = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const slash = /^(\s*)(\/\*?)$/.exec(lineBefore);
+      if (slash) {
+        return {
+          suggestions: [
+            {
+              label: "/* */ block comment",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "/* ${0} */",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: slash[1].length + 1,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
+              detail: "Block comment",
+              sortText: "0a",
+            },
+          ] as languages.CompletionItem[],
+        };
+      }
+
+      // Dashes at the start of a line: offer the two things they can become —
+      // a `--` line comment or a `--/ … /` UDF script block.
+      const dashes = /^(\s*)(-{1,3}\/?)$/.exec(lineBefore);
+      if (dashes) {
+        const dashRange = {
+          startLineNumber: position.lineNumber,
+          startColumn: dashes[1].length + 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        };
+        const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+        return {
+          suggestions: [
+            {
+              label: "-- comment",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "-- ${0}",
+              insertTextRules: snippet,
+              range: dashRange,
+              detail: "Line comment",
+              sortText: "0a",
+            },
+            {
+              label: "--/ UDF script block",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText:
+                "--/\nCREATE OR REPLACE ${1|LUA,PYTHON3,JAVA,R|} SCALAR SCRIPT ${2:MY_UDF} (${3:a DOUBLE})\nRETURNS ${4:DOUBLE} AS\n${0:-- body}\n/",
+              insertTextRules: snippet,
+              range: dashRange,
+              detail: "Exasol UDF — one statement, body may contain semicolons",
+              documentation: "Inserts the exaplus-style script block:\n--/\nCREATE … SCRIPT … AS\n<body>\n/",
+              sortText: "0b",
+            },
+          ] as languages.CompletionItem[],
+        };
+      }
       const before = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,

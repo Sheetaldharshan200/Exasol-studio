@@ -5,6 +5,9 @@ import { ipc, isTauri } from "@/lib/ipc";
 import { openAiProvidersWindow } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
 import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
+import { SYNTAX_DEFAULTS, SYNTAX_ROLES, sanitizeHex, syntaxSettingKey, type SyntaxRoleKey } from "@/components/studio/monaco-theme";
+import { ColorPicker } from "@/components/ui/color-picker";
+import { NumberInput } from "@/components/ui/number-input";
 
 type SettingValue = string | number | boolean;
 
@@ -87,10 +90,16 @@ const CATEGORIES: Category[] = [
     tab: "general",
     key: "sqlEditor",
     label: "SQL Editor",
-    desc: "Editing behavior for the SQL editor.",
+    desc: "Editing behavior and syntax colors for the SQL editor.",
     controls: [
       { key: "editorFontSize", label: "Editor font size", type: "number", min: 11, max: 22, unit: "px" },
       { key: "wordWrap", label: "Word wrap", type: "toggle" },
+      {
+        key: "stmtNumbers",
+        label: "Statement numbers in the margin",
+        type: "toggle",
+        help: "Shows 1], 2], … next to each statement of a multi-statement buffer, matching the result tabs.",
+      },
       { key: "autoComplete", label: "Auto-completion", type: "toggle" },
       { key: "statementDelimiter", label: "Statement delimiter", type: "text", placeholder: ";" },
     ],
@@ -241,6 +250,7 @@ const DEFAULTS: Record<string, SettingValue> = {
   metadataStaleDays: 60,
   editorFontSize: 13,
   wordWrap: false,
+  stmtNumbers: true,
   autoComplete: true,
   statementDelimiter: ";",
   maxRows: 5000,
@@ -267,13 +277,22 @@ const DEFAULTS: Record<string, SettingValue> = {
   charset: "UTF8",
   fetchSize: 5000,
   qbDefaultLimit: 100,
+  // Per-token editor colors ("synDark_keyword": "#82dd4b", …) so "Restore
+  // defaults" also resets any recolored syntax.
+  ...Object.fromEntries(
+    (["dark", "light"] as const).flatMap((t) => SYNTAX_ROLES.map((r) => [syntaxSettingKey(t, r.key), SYNTAX_DEFAULTS[t][r.key]])),
+  ),
 };
 
 export function SettingsWindow() {
-  const [tab, setTab] = useState<"general" | "database">("general");
+  // Deep link: ?cat=<category key> opens straight to that page (the status
+  // bar's Spaces/UTF-8 chips use this).
+  const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("cat") : null;
+  const requestedCat = CATEGORIES.find((c) => c.key === requested);
+  const [tab, setTab] = useState<"general" | "database">(requestedCat?.tab ?? "general");
   const [query, setQuery] = useState("");
   const [values, setValues] = useState<Record<string, SettingValue>>(DEFAULTS);
-  const [selected, setSelected] = useState<string>("appearance");
+  const [selected, setSelected] = useState<string>(requestedCat?.key ?? "appearance");
 
   useEffect(() => {
     ipc
@@ -299,6 +318,7 @@ export function SettingsWindow() {
         (c) =>
           !q ||
           c.label.toLowerCase().includes(q) ||
+          c.desc.toLowerCase().includes(q) ||
           c.controls.some((ct) => ct.label.toLowerCase().includes(q)),
       ),
     [tab, q],
@@ -314,6 +334,11 @@ export function SettingsWindow() {
   function update(key: string, value: SettingValue) {
     setValues((v) => ({ ...v, [key]: value }));
     ipc.setAppSettings({ [key]: value }).catch(() => undefined);
+  }
+
+  function updateMany(patch: Record<string, SettingValue>) {
+    setValues((v) => ({ ...v, ...patch }));
+    ipc.setAppSettings(patch).catch(() => undefined);
   }
 
   function resetDefaults() {
@@ -408,6 +433,15 @@ export function SettingsWindow() {
                     ))}
                   </div>
                   <SettingPreview catKey={current.key} values={values} />
+                  {current.key === "sqlEditor" ? (
+                    <div className="mt-7">
+                      <div className="text-[13px] font-semibold text-foreground">Syntax colors</div>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Recolor each token — keywords, strings, numbers, comments, functions, operators, punctuation, identifiers — separately for the dark and light editor themes. Applies to open editors immediately.
+                      </p>
+                      <SyntaxColorsEditor values={values} onChange={updateMany} />
+                    </div>
+                  ) : null}
                   {current.key === "appearance" ? (
                     <div className="mt-5">
                       <div className="text-[13px] text-foreground">Color theme</div>
@@ -537,6 +571,114 @@ function SettingPreview({ catKey, values }: { catKey: string; values: Record<str
   );
 }
 
+/**
+ * Per-token syntax color editor for the Monaco SQL editor: one row per syntax
+ * role, a swatch + hex field for each theme, and a live preview on both the
+ * dark and light editor backgrounds. Changes broadcast via settings:changed,
+ * so open editors recolor immediately.
+ */
+function SyntaxColorsEditor({
+  values,
+  onChange,
+}: {
+  values: Record<string, SettingValue>;
+  onChange: (patch: Record<string, SettingValue>) => void;
+}) {
+  const themes = ["dark", "light"] as const;
+  const colorOf = (t: "dark" | "light", role: SyntaxRoleKey) =>
+    sanitizeHex(values[syntaxSettingKey(t, role)]) ?? SYNTAX_DEFAULTS[t][role];
+
+  function resetColors() {
+    onChange(
+      Object.fromEntries(
+        themes.flatMap((t) => SYNTAX_ROLES.map((r) => [syntaxSettingKey(t, r.key), SYNTAX_DEFAULTS[t][r.key]])),
+      ),
+    );
+  }
+
+  return (
+    <div className="mt-5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-6 gap-y-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Token</div>
+        {themes.map((t) => (
+          <div key={t} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t === "dark" ? "Dark" : "Light"}
+          </div>
+        ))}
+        {SYNTAX_ROLES.map((role) => (
+          <div key={role.key} className="contents">
+            <div className="text-[13px] text-foreground">{role.label}</div>
+            {themes.map((t) => {
+              const key = syntaxSettingKey(t, role.key);
+              const raw = String(values[key] ?? SYNTAX_DEFAULTS[t][role.key]);
+              const hex = sanitizeHex(raw) ?? SYNTAX_DEFAULTS[t][role.key];
+              return (
+                <div key={t} className="flex items-center gap-1.5">
+                  <ColorPicker label={`${role.label} — ${t} theme`} value={hex} onChange={(next) => onChange({ [key]: next })} />
+                  <input
+                    value={raw}
+                    onChange={(e) => onChange({ [key]: e.target.value })}
+                    spellCheck={false}
+                    className={cn(
+                      "h-7 w-[4.8rem] rounded-md border bg-panel px-1.5 font-mono text-[11px] outline-none focus:border-primary/50",
+                      sanitizeHex(raw) ? "border-border" : "border-red-500/60",
+                    )}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={resetColors}
+        className="mt-4 h-7 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground"
+      >
+        Reset colors to defaults
+      </button>
+
+      <div className="mt-6">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Live preview</div>
+        <div className="grid grid-cols-2 gap-3">
+          {themes.map((t) => {
+            const c = (role: SyntaxRoleKey) => colorOf(t, role);
+            return (
+              <div
+                key={t}
+                className="overflow-x-auto rounded-lg border border-border p-3"
+                style={{ background: t === "dark" ? "#0a0a0b" : "#ffffff" }}
+              >
+                <pre className="m-0 font-mono text-[11px] leading-relaxed">
+                  <span style={{ color: c("comment"), fontStyle: "italic" }}>-- top customers</span>
+                  {"\n"}
+                  <span style={{ color: c("keyword"), fontWeight: 700 }}>SELECT</span>{" "}
+                  <span style={{ color: c("identifier") }}>"Name"</span>
+                  <span style={{ color: c("punctuation") }}>,</span> <span style={{ color: c("function") }}>ROUND</span>
+                  <span style={{ color: c("punctuation") }}>(</span>
+                  <span style={{ color: c("identifier") }}>revenue</span>
+                  <span style={{ color: c("punctuation") }}>,</span> <span style={{ color: c("number") }}>2</span>
+                  <span style={{ color: c("punctuation") }}>)</span>
+                  {"\n"}
+                  <span style={{ color: c("keyword"), fontWeight: 700 }}>FROM</span>{" "}
+                  <span style={{ color: c("identifier") }}>customers</span>{" "}
+                  <span style={{ color: c("keyword"), fontWeight: 700 }}>WHERE</span>{" "}
+                  <span style={{ color: c("identifier") }}>tier</span> <span style={{ color: c("operator") }}>=</span>{" "}
+                  <span style={{ color: c("string") }}>'gold'</span>
+                  <span style={{ color: c("punctuation") }}>;</span>
+                </pre>
+                <div className="mt-2 text-[10px] font-medium capitalize" style={{ color: t === "dark" ? "#8a8a90" : "#64748b" }}>
+                  {t}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue; onChange: (v: SettingValue) => void }) {
   return (
     <div className={cn("flex gap-4", ctrl.type === "radio" ? "flex-col" : "items-start justify-between")}>
@@ -559,13 +701,12 @@ function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue
           </button>
         ) : ctrl.type === "number" ? (
           <div className="flex items-center gap-1.5">
-            <input
-              type="number"
+            <NumberInput
               value={Number(value)}
               min={ctrl.min}
               max={ctrl.max}
-              onChange={(e) => onChange(Number(e.target.value))}
-              className="h-8 w-28 rounded-md border border-border bg-panel px-2 text-right font-mono text-[12px] outline-none focus:border-primary/50"
+              onCommit={onChange}
+              className="h-8 w-28 text-[12px]"
             />
             {ctrl.unit ? <span className="text-[11px] text-muted-foreground">{ctrl.unit}</span> : null}
           </div>

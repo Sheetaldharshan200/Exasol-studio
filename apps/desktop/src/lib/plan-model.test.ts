@@ -147,3 +147,4 @@ test("normalizeProfileRows honors custom thresholds", () => {
   const plan = normalizeProfileRows(rows, { sessionId: "1", stmtId: "10", source: "DETAILS" }, strict);
   assert.equal(plan.nodes[0].warnings.some((w) => w.type === "HIGH_SKEW"), true);
 });
+

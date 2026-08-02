@@ -1,5 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import {
   ArrowDown,
   ArrowUp,
@@ -770,6 +771,7 @@ const CellView = memo(function CellView({
                   defaultLanguage="sql"
                   theme={editorTheme}
                   beforeMount={beforeMount}
+                  loading={<BrandLoader size={32} />}
                   value={cell.src}
                   onChange={(v) => onChange(v ?? "")}
                   onMount={(ed, monaco) => {

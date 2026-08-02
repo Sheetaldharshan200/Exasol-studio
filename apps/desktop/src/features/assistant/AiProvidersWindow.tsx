@@ -23,6 +23,7 @@ import {
 import { CopyButton } from "@/components/ui/copy-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Switch } from "@/components/ui/switch";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
@@ -1061,17 +1062,13 @@ function NumberRow({
         <div className="text-[12.5px] font-medium">{label}</div>
         <div className="text-[11px] text-muted-foreground">{desc}</div>
       </div>
-      <input
-        type="number"
+      <NumberInput
         value={value}
         min={min}
         max={max}
-        step={step}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (!Number.isNaN(v)) onChange(Math.min(Math.max(v, min), max));
-        }}
-        className="h-7 w-20 shrink-0 rounded-md border border-border bg-editor px-2 text-right font-mono text-[12px] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15"
+        allowDecimal={step < 1}
+        onCommit={onChange}
+        className="h-7 w-20 shrink-0 bg-editor text-[12px] focus-visible:ring-2 focus-visible:ring-primary/15"
       />
     </div>
   );

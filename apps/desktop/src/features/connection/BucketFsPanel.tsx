@@ -3,6 +3,7 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { Check, Download, FolderOpen, HardDriveUpload, Loader2, RefreshCcw, X } from "lucide-react";
 import { errorMessage, ipc, isTauri, type ConnectionProfile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { NumberInput } from "@/components/ui/number-input";
 
 /**
  * Upload a virtual-schema driver (e.g. a JDBC jar or adapter archive) into
@@ -173,11 +174,12 @@ export function BucketFsPanel({
           <div className="grid grid-cols-3 gap-2">
             <label className="text-[11px] text-muted-foreground">
               Port
-              <input
-                type="number"
+              <NumberInput
                 value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-                className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[13px] text-foreground"
+                min={1}
+                max={65535}
+                onCommit={setPort}
+                className="mt-0.5 h-8 w-full bg-editor text-left text-[13px] text-foreground"
               />
             </label>
             <label className="text-[11px] text-muted-foreground">

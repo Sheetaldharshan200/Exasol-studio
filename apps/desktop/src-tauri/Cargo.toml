@@ -1,6 +1,6 @@
 [package]
 name = "exasol-studio"
-version = "2026.2.0"
+version = "2026.3.0"
 description = "Exasol Studio desktop backend"
 authors = ["Exasol Studio"]
 edition = "2021"
