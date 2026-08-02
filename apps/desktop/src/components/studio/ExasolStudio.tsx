@@ -2453,11 +2453,12 @@ export function ExasolStudio({
                 {/* Execute group — primary runs the selection, or the statement
                     at the cursor (DBVisualizer-style Execute). */}
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => run("auto")}
                   disabled={running}
                   aria-label="Execute"
                   title="Execute — the selected text, or the statement at the cursor (⌘/Ctrl+Enter)"
-                  className="cta-glow flex h-7 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
+                  className="flex h-7 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
                 >
                   {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
                 </button>
