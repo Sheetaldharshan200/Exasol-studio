@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, Check, Loader2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NodeCtx } from "@/features/workbench/tree-model";
 
@@ -461,7 +461,7 @@ export function ObjectActionDialog({
               danger ? "bg-destructive hover:bg-destructive/85" : "bg-primary hover:bg-primary/85",
             )}
           >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : danger ? <Trash2 className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
             {action.verb}
           </button>
         </div>
