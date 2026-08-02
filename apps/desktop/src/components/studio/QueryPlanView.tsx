@@ -17,7 +17,7 @@ import {
   MarkerType, useReactFlow, type Node, type Edge, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AlertTriangle, Copy, Check, Database } from "lucide-react";
+import { AlertTriangle, Copy, Check, Database, SquareArrowOutUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Plan, PlanNode } from "@/lib/plan-model";
 import {
@@ -39,15 +39,24 @@ function nodesPerRow(count: number): number {
 
 type OperatorNodeData = { node: PlanNode; isHot: boolean; picked: boolean };
 
-export function QueryPlanView({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void }) {
+export function QueryPlanView({
+  plan,
+  onOpenSql,
+  onOpenInTab,
+}: {
+  plan: Plan;
+  onOpenSql?: (sql: string, title?: string) => void;
+  /** When set, the toolbar offers popping this plan out as a workbench tab. */
+  onOpenInTab?: () => void;
+}) {
   return (
     <ReactFlowProvider>
-      <PlanInner plan={plan} onOpenSql={onOpenSql} />
+      <PlanInner plan={plan} onOpenSql={onOpenSql} onOpenInTab={onOpenInTab} />
     </ReactFlowProvider>
   );
 }
 
-function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void }) {
+function PlanInner({ plan, onOpenSql, onOpenInTab }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void; onOpenInTab?: () => void }) {
   void onOpenSql;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showSql, setShowSql] = useState(false);
@@ -132,9 +141,21 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
         <span className="text-[11px] text-muted-foreground">
           {plan.nodes.length} operator{plan.nodes.length === 1 ? "" : "s"} · {fmtMs(plan.totalDuration)}
         </span>
+        {onOpenInTab ? (
+          <button
+            onClick={onOpenInTab}
+            className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+            title="Open this plan visualizer in a full workbench tab"
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" /> Open in tab
+          </button>
+        ) : null}
         <button
           onClick={() => void copyText()}
-          className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className={cn(
+            "flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground",
+            !onOpenInTab && "ml-auto",
+          )}
           title="Copy the plan as text"
         >
           {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />} Copy as text

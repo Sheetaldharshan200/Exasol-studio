@@ -61,15 +61,17 @@ export function QueryPlanTabs({
     if (Number.isFinite(n) && n >= 1 && n <= plans.length) setActive(n - 1);
   }
 
+  const openInTab = (p: Plan, i: number) => onOpenPlanTab(p, `Plan · ${i + 1} ${statementVerb(p.queryText) ?? "statement"}`);
+
   if (plans.length === 0) return null;
-  if (plans.length === 1) return <QueryPlanView plan={plans[0]} onOpenSql={onOpenSql} />;
+  if (plans.length === 1) return <QueryPlanView plan={plans[0]} onOpenSql={onOpenSql} onOpenInTab={() => openInTab(plans[0], 0)} />;
 
   const totalAll = plans.reduce((s, p) => s + (p.totalDuration ?? 0), 0);
   const current = active >= 0 ? plans[active] : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:thin]">
+      <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <input
           value={goTo}
           onChange={(e) => jumpTo(e.target.value)}
@@ -110,19 +112,10 @@ export function QueryPlanTabs({
             </button>
           );
         })}
-        {current ? (
-          <button
-            onClick={() => onOpenPlanTab(current, `Plan · ${active + 1} ${statementVerb(current.queryText) ?? "statement"}`)}
-            title="Open this plan visualizer in a full workbench tab"
-            className="ml-auto flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <SquareArrowOutUpRight className="h-3.5 w-3.5" /> Open in tab
-          </button>
-        ) : null}
       </div>
       {current ? (
         <div className="min-h-0 flex-1">
-          <QueryPlanView plan={current} onOpenSql={onOpenSql} />
+          <QueryPlanView plan={current} onOpenSql={onOpenSql} onOpenInTab={() => openInTab(current, active)} />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto p-4 [scrollbar-width:thin]">
@@ -156,7 +149,7 @@ export function QueryPlanTabs({
                           aria-label="Open this plan visualizer in a full workbench tab"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onOpenPlanTab(p, `Plan · ${i + 1} ${statementVerb(p.queryText) ?? "statement"}`);
+                            openInTab(p, i);
                           }}
                           className="h-3 w-3 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                         />
