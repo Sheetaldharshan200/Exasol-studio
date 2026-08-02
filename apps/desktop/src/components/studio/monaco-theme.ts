@@ -13,6 +13,10 @@ export function defineMonacoThemes(monaco: Monaco) {
       { token: "string", foreground: "e9a94f" },
       { token: "number", foreground: "5fd0c0" },
       { token: "comment", foreground: "6a6a70", fontStyle: "italic" },
+      // Built-in functions (MOD, ROUND, …) — Monaco's "predefined" token; the
+      // base theme colours it red, so pin it to a soft blue instead.
+      { token: "predefined", foreground: "6db3f2" },
+      { token: "operator", foreground: "c9c9cf" },
     ],
     colors: {
       "editor.background": "#0a0a0b",
@@ -33,6 +37,8 @@ export function defineMonacoThemes(monaco: Monaco) {
       { token: "string", foreground: "a7681c" },
       { token: "number", foreground: "0b73a2" },
       { token: "comment", foreground: "6b7280", fontStyle: "italic" },
+      { token: "predefined", foreground: "2563eb" },
+      { token: "operator", foreground: "334155" },
     ],
     colors: {
       "editor.background": "#ffffff",
