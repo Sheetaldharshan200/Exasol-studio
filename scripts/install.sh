@@ -17,6 +17,29 @@ ARCH="$(uname -m)"
 say() { printf '\033[1;32m›\033[0m %s\n' "$1"; }
 die() { printf '\033[1;31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
 
+# Bytes on disk so far (0 before the file exists — never touch a missing path,
+# or the shell prints a redirection error into our clean loader line).
+_dlsize() { if [ -f "$1" ]; then wc -c < "$1" 2>/dev/null | tr -dc '0-9'; else printf 0; fi; }
+
+# Download with a clean spinner + MB counter (curl's own meter is noisy and its
+# unknown-size fallback prints an ugly bouncing bar). Args: <url> <out-path>.
+download() {
+  _url="$1"; _out="$2"
+  curl -fsSL "$_url" -o "$_out" &
+  _pid=$!
+  _i=0
+  while kill -0 "$_pid" 2>/dev/null; do
+    case $(( _i % 4 )) in 0) _sp='|' ;; 1) _sp='/' ;; 2) _sp='-' ;; 3) _sp='\' ;; esac
+    _b=$(_dlsize "$_out"); _b=${_b:-0}
+    printf '\r  \033[1;32m%s\033[0m  %s MB' "$_sp" "$(( _b / 1048576 ))"
+    _i=$(( _i + 1 ))
+    sleep 0.2
+  done
+  wait "$_pid" || { printf '\r\033[K'; die "download failed"; }
+  _b=$(_dlsize "$_out"); _b=${_b:-0}
+  printf '\r\033[K  \033[1;32m✓\033[0m downloaded (%s MB)\n' "$(( _b / 1048576 ))"
+}
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -28,7 +51,7 @@ case "$OS" in
       *)             die "Unsupported macOS architecture: $ARCH" ;;
     esac
     say "Downloading $ASSET..."
-    curl -fSL --progress-bar "$BASE/$ASSET" -o "$TMP/exasol.dmg" || die "download failed"
+    download "$BASE/$ASSET" "$TMP/exasol.dmg"
     say "Mounting the disk image..."
     # NOT -quiet: that suppresses the attach table we parse. The mount point is
     # the last tab-field of the /Volumes/ line (it may contain spaces).
@@ -52,7 +75,7 @@ case "$OS" in
   Linux)
     ASSET="ExasolStudio-Linux-64bit.AppImage"
     say "Downloading $ASSET..."
-    curl -fSL --progress-bar "$BASE/$ASSET" -o "$TMP/ExasolStudio.AppImage" || die "download failed"
+    download "$BASE/$ASSET" "$TMP/ExasolStudio.AppImage"
     # ~/.local/bin is on PATH for most distros; fall back to /usr/local/bin.
     DEST="$HOME/.local/bin"
     [ -d "$DEST" ] || DEST="/usr/local/bin"
