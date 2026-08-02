@@ -46,8 +46,13 @@ describe("pickRunSql — every run mode / permutation", () => {
     assert.equal(pickRunSql("statement", full, "SELECT 2", 3), "SELECT 1");
   });
 
-  test("script and buffer run the whole buffer", () => {
-    assert.equal(pickRunSql("script", full, "SELECT 2", 3), full);
+  test("script runs the selection (as a script) when there is one, else the whole buffer", () => {
+    assert.equal(pickRunSql("script", full, "SELECT 2", 3), "SELECT 2");
+    assert.equal(pickRunSql("script", full, "", 3), full);
+    assert.equal(pickRunSql("script", full, "  ", 3), full);
+  });
+
+  test("buffer always runs the whole buffer (ignores selection)", () => {
     assert.equal(pickRunSql("buffer", full, "SELECT 2", 3), full);
   });
 });

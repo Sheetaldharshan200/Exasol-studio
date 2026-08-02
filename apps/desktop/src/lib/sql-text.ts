@@ -88,7 +88,9 @@ export type RunScope = "auto" | "statement" | "selection" | "script" | "buffer";
  *  - auto:      the selection if there is one, else the statement at the cursor
  *  - selection: the selection, or the whole buffer when nothing is selected
  *  - statement: the statement at the cursor
- *  - script/buffer: the whole buffer (script splits later; buffer runs as one)
+ *  - script:    the selection if there is one (run as a script), else the whole
+ *               buffer — matches DBVisualizer's "Execute buffer as SQL script"
+ *  - buffer:    the whole buffer, always (run as one statement)
  */
 export function pickRunSql(scope: RunScope, full: string, selection: string, cursorOffset: number): string {
   switch (scope) {
@@ -99,6 +101,7 @@ export function pickRunSql(scope: RunScope, full: string, selection: string, cur
     case "statement":
       return statementAtOffset(full, cursorOffset);
     case "script":
+      return selection.trim() ? selection : full;
     case "buffer":
       return full;
   }
