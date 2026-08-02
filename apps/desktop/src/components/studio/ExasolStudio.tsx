@@ -1625,6 +1625,16 @@ export function ExasolStudio({
     // whole buffer split into statements, "buffer" the whole buffer as one.
     async (scope: "auto" | "statement" | "selection" | "script" | "buffer") => {
       if (!connection) {
+        // Say WHY nothing ran, then open the connect dialog.
+        window.dispatchEvent(
+          new CustomEvent("studio:notice", {
+            detail: {
+              kind: "info",
+              title: "No database connection",
+              body: "Connect to a database to run queries — create or pick a connection to continue.",
+            },
+          }),
+        );
         openConnect();
         return;
       }

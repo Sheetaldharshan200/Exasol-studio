@@ -40,11 +40,37 @@ export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][]
 export function resultTabLabel(
   r: { kind: "resultSet" | "rowCount"; rowCount: number; error: string | null },
   index: number,
+  /** The statement's leading verb (SELECT, INSERT, …) so a script's tabs say
+   *  WHAT ran, not just "Result N". */
+  verb?: string,
 ): string {
-  const n = index + 1;
-  if (r.error) return `Result ${n} · error`;
-  if (r.kind === "rowCount") return `Result ${n} · ${r.rowCount} affected`;
-  return `Result ${n} · ${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;
+  const head = verb ? `${index + 1} ${verb}` : `Result ${index + 1}`;
+  if (r.error) return `${head} · error`;
+  if (r.kind === "rowCount") return `${head} · ${r.rowCount} affected`;
+  return `${head} · ${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;
+}
+
+/** Leading keyword of a statement, uppercased ("SELECT", "CREATE", …),
+ *  skipping any leading comments. */
+export function statementVerb(sql: string | undefined): string | undefined {
+  let s = (sql ?? "").trim();
+  for (;;) {
+    if (s.startsWith("--")) {
+      const nl = s.indexOf("\n");
+      if (nl < 0) return undefined;
+      s = s.slice(nl + 1).trim();
+      continue;
+    }
+    if (s.startsWith("/*")) {
+      const end = s.indexOf("*/");
+      if (end < 0) return undefined;
+      s = s.slice(end + 2).trim();
+      continue;
+    }
+    break;
+  }
+  const m = s.match(/^[A-Za-z]+/);
+  return m ? m[0].toUpperCase() : undefined;
 }
 
 export type QueryStats = {

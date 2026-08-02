@@ -1,12 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cellText, filterRows, toCsv, computeStats, resultTabLabel } from "./result-stats.ts";
+import { cellText, filterRows, toCsv, computeStats, resultTabLabel, statementVerb } from "./result-stats.ts";
 
 test("resultTabLabel describes each result kind", () => {
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 42, error: null }, 1), "Result 2 · 42 rows");
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 1, error: null }, 0), "Result 1 · 1 row");
   assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 5, error: null }, 2), "Result 3 · 5 affected");
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 0, error: "boom" }, 0), "Result 1 · error");
+});
+
+test("resultTabLabel shows the statement verb when known", () => {
+  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 3, error: null }, 7, "SELECT"), "8 SELECT · 3 rows");
+  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 12, error: null }, 3, "INSERT"), "4 INSERT · 12 affected");
+  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 0, error: "boom" }, 0, "DROP"), "1 DROP · error");
+});
+
+test("statementVerb finds the leading keyword, skipping comments", () => {
+  assert.equal(statementVerb("SELECT * FROM T"), "SELECT");
+  assert.equal(statementVerb("  create or replace table T (x int)"), "CREATE");
+  assert.equal(statementVerb("-- note\nINSERT INTO T VALUES (1)"), "INSERT");
+  assert.equal(statementVerb("/* block */ DELETE FROM T"), "DELETE");
+  assert.equal(statementVerb("-- only a comment"), undefined);
+  assert.equal(statementVerb(""), undefined);
+  assert.equal(statementVerb(undefined), undefined);
 });
 
 const cols = [

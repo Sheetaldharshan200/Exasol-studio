@@ -7,11 +7,11 @@
  * Dashboard. Query Performance renders the engine plan inline (bound to this
  * tab's query) instead of spawning a separate tab.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
-import { cellText, computeStats, filterRows, resultTabLabel, toCsv } from "@/lib/result-stats";
+import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
 import { QueryPlanTabs } from "./QueryPlanTabs";
 import type { Plan } from "@/lib/plan-model";
@@ -334,14 +334,44 @@ function MultiResultView({
   zebra: boolean;
 }) {
   const [idx, setIdx] = useState(results.length - 1);
-  useEffect(() => setIdx(results.length - 1), [results]);
+  const [goTo, setGoTo] = useState("");
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setIdx(results.length - 1);
+    setGoTo("");
+  }, [results]);
+  // Keep the selected tab visible — the default (last result) starts off the
+  // right edge of a long script's strip.
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector(`[data-idx="${idx}"]`)
+      ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [idx]);
+  // Each tab is labeled with its statement's verb (SELECT/INSERT/…) so a
+  // script's tabs say what ran.
+  const verbs = useMemo(() => splitStatements(sql).map((s) => statementVerb(s.text)), [sql]);
+  function jumpTo(raw: string) {
+    setGoTo(raw.replace(/\D/g, ""));
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= results.length) setIdx(n - 1);
+  }
   const sel = results[Math.min(idx, results.length - 1)];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={stripRef} className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <input
+          value={goTo}
+          onChange={(e) => jumpTo(e.target.value)}
+          placeholder="#"
+          inputMode="numeric"
+          aria-label={`Go to result 1–${results.length}`}
+          title={`Go to result 1–${results.length}`}
+          className="h-5 w-10 shrink-0 rounded border border-border bg-editor px-1 text-center font-mono text-[10.5px] outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+        />
         {results.map((r, i) => (
           <button
             key={i}
+            data-idx={i}
             onClick={() => setIdx(i)}
             className={cn(
               "flex h-5 shrink-0 items-center gap-1 rounded px-2 text-[11px] transition",
@@ -350,7 +380,7 @@ function MultiResultView({
             )}
           >
             {r.error ? <AlertTriangle className="h-3 w-3 text-destructive" /> : null}
-            {resultTabLabel(r, i)}
+            {resultTabLabel(r, i, verbs[i])}
           </button>
         ))}
       </div>
