@@ -1624,6 +1624,16 @@ function ManagedComponents() {
 
   if (!comps) return null;
 
+  // The Updates tab lists only components that need action — a pending update or
+  // a non-verified "custom version". Rows that are already on the verified
+  // baseline are hidden (summarised below) so the tab isn't a full inventory.
+  const isUpToDate = (c: ComponentInfo) =>
+    c.opaqueVersion
+      ? Boolean(c.installed) && c.installed === c.verified
+      : !isNewer(c.verified, c.installed) && !(Boolean(c.installed) && c.installed !== c.verified);
+  const actionable = comps.filter((c) => !isUpToDate(c));
+  const upToDateCount = comps.length - actionable.length;
+
   return (
     <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
       <div className="mb-1 flex items-center gap-2">
@@ -1634,8 +1644,13 @@ function ManagedComponents() {
         Each runs in its own isolated environment (its own Python where relevant, sharing an interpreter only when versions match) and updates on its own — independent of Studio releases. The verified version is the known-good baseline you can always revert to.
       </p>
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      {actionable.length === 0 ? (
+        <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
+          <Check className="h-3.5 w-3.5 text-primary" /> All {comps.length} managed components are up to date.
+        </p>
+      ) : null}
       <div className="divide-y divide-border/60">
-        {comps.map((c) => {
+        {actionable.map((c) => {
           const isBusy = busy === c.id;
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
           const upToDate = <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>;
@@ -1715,6 +1730,11 @@ function ManagedComponents() {
           );
         })}
       </div>
+      {actionable.length > 0 && upToDateCount > 0 ? (
+        <p className="mt-2.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70">
+          <Check className="h-3 w-3 text-primary/70" /> {upToDateCount} other component{upToDateCount === 1 ? "" : "s"} up to date.
+        </p>
+      ) : null}
     </section>
   );
 }
