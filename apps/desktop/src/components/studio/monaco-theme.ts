@@ -11,6 +11,9 @@ export function defineMonacoThemes(monaco: Monaco) {
     rules: [
       { token: "keyword", foreground: "82dd4b", fontStyle: "bold" },
       { token: "string", foreground: "e9a94f" },
+      // The base vs/vs-dark themes hardcode `string.sql` to pure red, which
+      // outranks the generic `string` rule above — pin the suffixed token too.
+      { token: "string.sql", foreground: "e9a94f" },
       { token: "number", foreground: "5fd0c0" },
       { token: "comment", foreground: "6a6a70", fontStyle: "italic" },
       // Built-in functions (MOD, ROUND, …) — Monaco's "predefined" token; the
@@ -40,6 +43,7 @@ export function defineMonacoThemes(monaco: Monaco) {
     rules: [
       { token: "keyword", foreground: "157f3c", fontStyle: "bold" },
       { token: "string", foreground: "a7681c" },
+      { token: "string.sql", foreground: "a7681c" },
       { token: "number", foreground: "0b73a2" },
       { token: "comment", foreground: "6b7280", fontStyle: "italic" },
       { token: "predefined", foreground: "2563eb" },
