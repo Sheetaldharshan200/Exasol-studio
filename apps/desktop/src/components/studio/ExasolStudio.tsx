@@ -48,6 +48,7 @@ import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { EditorStatusBar } from "./EditorStatusBar";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
@@ -55,7 +56,7 @@ import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
-import { normalizeProfileRows, pickHeaviestStatement, type Plan, type ProfileSource } from "@/lib/plan-model";
+import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 
@@ -2009,29 +2010,44 @@ export function ExasolStudio({
         return;
       }
 
-      // Narrow the window to the run's heaviest statement.
-      const chosenStmt = pickHeaviestStatement(rows, stmtCount);
-      rows = rows.filter((r) => String(r.STMT_ID) === chosenStmt);
+      // ONE plan PER statement of the run (a script shows them all as tabs);
+      // keep the run's statement order.
+      const stmtIds: string[] = [];
+      const rowsByStmt = new Map<string, Record<string, unknown>[]>();
+      for (const r of rows) {
+        const id = r.STMT_ID !== undefined && r.STMT_ID !== null ? String(r.STMT_ID) : "";
+        if (!id) continue;
+        if (!rowsByStmt.has(id)) {
+          if (stmtIds.length >= stmtCount) continue; // beyond this run
+          stmtIds.push(id);
+          rowsByStmt.set(id, []);
+        }
+        rowsByStmt.get(id)!.push(r);
+      }
 
-      // Derive the (session, statement) key from the fetched rows themselves.
-      const first = rows[0];
-      const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
-      const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : "";
-      const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
-      // Profile views carry no SQL_TEXT — name the profiled statement from the
-      // SQL audit view so a script run shows WHICH statement the plan is for.
-      const sqlTextRes = await ipc
-        .executeSql(cid, cname, `SELECT SQL_TEXT FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = ${ctxSession} AND STMT_ID = ${ctxStmt}`, 1, false)
-        .catch(() => null);
-      const sqlTextSet = sqlTextRes?.results.find((r) => r.kind === "resultSet");
-      const auditText = sqlTextSet?.rows?.[0]?.[0];
-      if (typeof auditText === "string" && auditText.trim()) plan.queryText = auditText.trim();
-      else if (!plan.queryText && stmt) plan.queryText = stmt;
-      if (plan.nodes.length === 0) {
+      // Profile views carry no SQL_TEXT — name each statement from the SQL
+      // audit view so the tabs show WHICH statement each plan is for.
+      const sqlTexts = new Map<string, string>();
+      if (stmtIds.length > 0) {
+        const res = await ipc
+          .executeSql(cid, cname, `SELECT STMT_ID, SQL_TEXT FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = ${sid} AND STMT_ID IN (${stmtIds.join(", ")})`, stmtIds.length + 10, false)
+          .catch(() => null);
+        const set = res?.results.find((r) => r.kind === "resultSet");
+        for (const r of set?.rows ?? []) {
+          if (r[0] !== null && typeof r[1] === "string" && r[1].trim()) sqlTexts.set(String(r[0]), r[1].trim());
+        }
+      }
+
+      const plans: Plan[] = stmtIds.map((id) => {
+        const plan = normalizeProfileRows(rowsByStmt.get(id)!, { sessionId: sid, stmtId: id, source });
+        plan.queryText = sqlTexts.get(id) ?? plan.queryText ?? (stmtIds.length === 1 ? stmt : "");
+        return plan;
+      });
+      if (plans.every((p) => p.nodes.length === 0)) {
         pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
         return;
       }
-      patchTab(tab.id, { planData: plan, resultView: "performance" });
+      patchTab(tab.id, { planData: plans, resultView: "performance" });
       loadHistory();
     } catch (e) {
       pushNotification("warning", "Profiling failed", errorMessage(e));
@@ -2938,6 +2954,7 @@ export function ExasolStudio({
                   defaultLanguage="sql"
                   path={`${connKey}/${activeTab.id}.sql`}
                   height="100%"
+                  loading={<BrandLoader size={40} />}
                   value={activeTab.sql}
                   theme={editorTheme}
                   onChange={(value) => {

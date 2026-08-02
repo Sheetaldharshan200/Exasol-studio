@@ -276,10 +276,14 @@ const DEFAULTS: Record<string, SettingValue> = {
 };
 
 export function SettingsWindow() {
-  const [tab, setTab] = useState<"general" | "database">("general");
+  // Deep link: ?cat=<category key> opens straight to that page (the status
+  // bar's Spaces/UTF-8 chips use this).
+  const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("cat") : null;
+  const requestedCat = CATEGORIES.find((c) => c.key === requested);
+  const [tab, setTab] = useState<"general" | "database">(requestedCat?.tab ?? "general");
   const [query, setQuery] = useState("");
   const [values, setValues] = useState<Record<string, SettingValue>>(DEFAULTS);
-  const [selected, setSelected] = useState<string>("appearance");
+  const [selected, setSelected] = useState<string>(requestedCat?.key ?? "appearance");
 
   useEffect(() => {
     ipc

@@ -79,7 +79,7 @@ export type SqlTab = {
   /** For artifact tabs — the rendered HTML document. */
   artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */
-  planData?: Plan;
+  planData?: Plan[];
   /** Captured on Run: the session + pre-run statement id, so the plan can be
    *  read from the ORIGINAL profiled run without re-executing the query. */
   profileSession?: string;

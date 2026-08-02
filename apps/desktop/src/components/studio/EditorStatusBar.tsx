@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { Braces } from "lucide-react";
 import { splitStatements } from "@/lib/sql-text";
+import { openSettingsWindow } from "@/lib/settings-window";
 
 type StatusEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
+
+/** A right-side status chip — clicking opens Settings at the given page. */
+function Chip({ children, label, cat }: { children: React.ReactNode; label: string; cat: string }) {
+  return (
+    <button
+      onClick={() => void openSettingsWindow(cat)}
+      title={label}
+      className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-secondary hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
  * VS Code-style status strip under the SQL editor: cursor position (click →
@@ -58,12 +72,18 @@ export function EditorStatusBar({ editor, sql }: { editor: StatusEditor | null; 
         {statements} {statements === 1 ? "statement" : "statements"}
       </span>
       <div className="ml-auto flex items-center">
-        <span className="px-1.5">Spaces: {tabSize}</span>
-        <span className="px-1.5">UTF-8</span>
-        <span className="px-1.5">{eol}</span>
-        <span className="flex items-center gap-1 px-1.5">
+        <Chip label="Editor settings" cat="sqlEditor">
+          Spaces: {tabSize}
+        </Chip>
+        <Chip label="Encoding settings" cat="encoding">
+          UTF-8
+        </Chip>
+        <Chip label="Editor settings" cat="sqlEditor">
+          {eol}
+        </Chip>
+        <Chip label="SQL editor settings — syntax colors" cat="sqlEditor">
           <Braces className="h-3 w-3" /> SQL
-        </span>
+        </Chip>
       </div>
     </div>
   );

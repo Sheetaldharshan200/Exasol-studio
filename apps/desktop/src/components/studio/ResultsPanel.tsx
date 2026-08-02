@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
 import { cellText, computeStats, filterRows, resultTabLabel, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
-import { QueryPlanView } from "./QueryPlanView";
+import { QueryPlanTabs } from "./QueryPlanTabs";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
 import type { ResultView } from "./tabs";
@@ -75,12 +75,14 @@ export function ResultsPanel({
   onOpenSql: (sql: string, title?: string) => void;
   onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   editBusy: boolean;
-  planData?: Plan;
+  planData?: Plan[] | Plan;
   profiling: boolean;
   onProfile: () => void;
   onSendToDashboard: () => void;
 }) {
   const busy = Boolean(runMeta && !runMeta.finishedAt);
+  // Runs before this release persisted a single Plan object — normalize.
+  const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
 
   // Auto-profile: opening the Query Performance tab shows the plan straight away
   // — no button. Fire once per result (guarded by autoProfiledFor so a failed
@@ -88,7 +90,7 @@ export function ResultsPanel({
   // we never silently re-run a write.
   const autoProfiledFor = useRef<StatementResult | null>(null);
   useEffect(() => {
-    if (view === "performance" && !planData && !profiling && lastResult?.kind === "resultSet") {
+    if (view === "performance" && plans.length === 0 && !profiling && lastResult?.kind === "resultSet") {
       if (autoProfiledFor.current !== lastResult) {
         autoProfiledFor.current = lastResult;
         onProfile();
@@ -206,8 +208,8 @@ export function ResultsPanel({
             ) : null}
           </div>
         ) : view === "performance" ? (
-          planData ? (
-            <QueryPlanView plan={planData} onOpenSql={onOpenSql} />
+          plans.length > 0 ? (
+            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} />
           ) : profiling || lastResult?.kind === "resultSet" ? (
             // Auto-profiling in flight (fired by the effect above).
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">

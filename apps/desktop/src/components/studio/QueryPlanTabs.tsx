@@ -1,0 +1,125 @@
+import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
+import { type Plan } from "@/lib/plan-model";
+import { QueryPlanView } from "./QueryPlanView";
+
+/** First meaningful words of a statement for its tab label / overview row. */
+function stmtLabel(plan: Plan, index: number): string {
+  const text = (plan.queryText ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return `Statement ${index + 1}`;
+  return text.length > 46 ? `${text.slice(0, 46)}…` : text;
+}
+
+function fmtSeconds(s: number): string {
+  return s >= 1 ? `${s.toFixed(2)} s` : `${(s * 1000).toFixed(1)} ms`;
+}
+
+/**
+ * Query Performance for a whole run. A single statement renders its plan
+ * directly; a script gets one tab per statement plus an "All statements"
+ * overview (duration share per statement — click a row to open its plan).
+ * Starts on the heaviest statement: that is what you came to see.
+ */
+export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: (sql: string, title?: string) => void }) {
+  const heaviest = useMemo(() => {
+    let best = 0;
+    for (let i = 1; i < plans.length; i++) {
+      if ((plans[i].totalDuration ?? 0) > (plans[best].totalDuration ?? 0)) best = i;
+    }
+    return best;
+  }, [plans]);
+  // -1 = the "All statements" overview.
+  const [active, setActive] = useState(heaviest);
+
+  if (plans.length === 0) return null;
+  if (plans.length === 1) return <QueryPlanView plan={plans[0]} onOpenSql={onOpenSql} />;
+
+  const totalAll = plans.reduce((s, p) => s + (p.totalDuration ?? 0), 0);
+  const current = active >= 0 ? plans[active] : null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:thin]">
+        <button
+          onClick={() => setActive(-1)}
+          className={cn(
+            "flex h-6 shrink-0 items-center rounded-md px-2.5 text-[12px] font-medium transition-colors",
+            active === -1 ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          All statements
+        </button>
+        {plans.map((p, i) => (
+          <button
+            key={p.stmtId ?? i}
+            onClick={() => setActive(i)}
+            title={p.queryText}
+            className={cn(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2.5 font-mono text-[11.5px] transition-colors",
+              active === i ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {i + 1}
+            {i === heaviest ? <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Slowest statement" /> : null}
+          </button>
+        ))}
+      </div>
+      {current ? (
+        <div className="min-h-0 flex-1">
+          <QueryPlanView plan={current} onOpenSql={onOpenSql} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto p-4 [scrollbar-width:thin]">
+          <table className="w-full border-collapse text-[12px]">
+            <thead>
+              <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="w-8 pb-2 pr-2 font-semibold">#</th>
+                <th className="pb-2 pr-3 font-semibold">Statement</th>
+                <th className="w-24 pb-2 pr-3 text-right font-semibold">Time</th>
+                <th className="w-20 pb-2 pr-3 text-right font-semibold">Operators</th>
+                <th className="w-40 pb-2 font-semibold">Share of run</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plans.map((p, i) => {
+                const dur = p.totalDuration ?? 0;
+                const share = totalAll > 0 ? (dur / totalAll) * 100 : 0;
+                return (
+                  <tr
+                    key={p.stmtId ?? i}
+                    onClick={() => setActive(i)}
+                    className="cursor-pointer border-t border-border/60 transition-colors hover:bg-secondary/40"
+                  >
+                    <td className="py-2 pr-2 font-mono text-muted-foreground">{i + 1}</td>
+                    <td className="max-w-0 truncate py-2 pr-3 font-mono" title={p.queryText}>
+                      {stmtLabel(p, i)}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmtSeconds(dur)}</td>
+                    <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">{p.nodes.length}</td>
+                    <td className="py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className={cn("h-full rounded-full", i === heaviest ? "bg-primary" : "bg-primary/45")}
+                            style={{ width: `${Math.max(2, share)}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {share.toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Part durations overlap under parallel execution, so statement times are profile sums, not wall-clock. Click a
+            statement to open its plan.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

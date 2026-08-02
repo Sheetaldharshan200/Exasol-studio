@@ -19,3 +19,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </ThemeProvider>
   </React.StrictMode>
 );
+
+// Fade out the pre-React boot loader (index.html) once the app has painted.
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    const boot = document.getElementById("boot");
+    if (boot) {
+      boot.style.opacity = "0";
+      window.setTimeout(() => boot.remove(), 220);
+    }
+  }),
+);
