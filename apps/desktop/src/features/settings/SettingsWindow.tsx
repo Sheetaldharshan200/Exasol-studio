@@ -88,20 +88,13 @@ const CATEGORIES: Category[] = [
     tab: "general",
     key: "sqlEditor",
     label: "SQL Editor",
-    desc: "Editing behavior for the SQL editor.",
+    desc: "Editing behavior and syntax colors for the SQL editor.",
     controls: [
       { key: "editorFontSize", label: "Editor font size", type: "number", min: 11, max: 22, unit: "px" },
       { key: "wordWrap", label: "Word wrap", type: "toggle" },
       { key: "autoComplete", label: "Auto-completion", type: "toggle" },
       { key: "statementDelimiter", label: "Statement delimiter", type: "text", placeholder: ";" },
     ],
-  },
-  {
-    tab: "general",
-    key: "editorColors",
-    label: "SQL Editor Colors",
-    desc: "Recolor each syntax token — keywords, strings, numbers, comments, functions, operators, identifiers — separately for the dark and light editor themes.",
-    controls: [],
   },
   {
     tab: "general",
@@ -312,6 +305,7 @@ export function SettingsWindow() {
         (c) =>
           !q ||
           c.label.toLowerCase().includes(q) ||
+          c.desc.toLowerCase().includes(q) ||
           c.controls.some((ct) => ct.label.toLowerCase().includes(q)),
       ),
     [tab, q],
@@ -418,8 +412,6 @@ export function SettingsWindow() {
                     Opens the assistant's own settings — the same panel used from the AI panel — so everything stays in one place.
                   </p>
                 </div>
-              ) : current.key === "editorColors" ? (
-                <SyntaxColorsEditor values={values} onChange={updateMany} />
               ) : (
                 <>
                   <div className="mt-5 space-y-5">
@@ -428,6 +420,15 @@ export function SettingsWindow() {
                     ))}
                   </div>
                   <SettingPreview catKey={current.key} values={values} />
+                  {current.key === "sqlEditor" ? (
+                    <div className="mt-7">
+                      <div className="text-[13px] font-semibold text-foreground">Syntax colors</div>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Recolor each token — keywords, strings, numbers, comments, functions, operators, punctuation, identifiers — separately for the dark and light editor themes. Applies to open editors immediately.
+                      </p>
+                      <SyntaxColorsEditor values={values} onChange={updateMany} />
+                    </div>
+                  ) : null}
                   {current.key === "appearance" ? (
                     <div className="mt-5">
                       <div className="text-[13px] text-foreground">Color theme</div>

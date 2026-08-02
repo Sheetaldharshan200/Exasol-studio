@@ -55,7 +55,7 @@ import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
-import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
+import { normalizeProfileRows, pickHeaviestStatement, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 
@@ -1972,16 +1972,20 @@ export function ExasolStudio({
       // Flush so the just-run profile is queryable immediately (no re-run).
       await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false).catch(() => null);
 
-      // The profiled query is the first non-transaction statement after the
-      // baseline on that session. Richest source first (per-node IPROC detail
-      // for skew), falling back to the always-available user summary view.
-      const target = (view: string) =>
-        `(SELECT MIN(STMT_ID) FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${base} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK'))`;
+      // The run's statements are the first N distinct non-transaction
+      // statements after the baseline on that session (N = executed results).
+      // Fetch that whole window and show the HEAVIEST statement — a script's
+      // first statement is often trivial DDL whose profile is a lone COMPILE
+      // part, which is not what anyone wants to see. Richest source first
+      // (per-node IPROC detail for skew), then the user summary view.
+      const stmtCount = Math.max(1, tab.response?.results.length ?? 1);
       const detailView = `"$EXA_PROFILE_DETAILS_LAST_DAY"`;
       const userView = `EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY`;
+      const windowSql = (view: string, tail: string) =>
+        `SELECT * FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${base} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK') ORDER BY ${tail}`;
       const attempts: { sql: string; source: ProfileSource }[] = [
-        { sql: `SELECT * FROM ${detailView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(detailView)} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
-        { sql: `SELECT * FROM ${userView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(userView)} ORDER BY PART_ID`, source: "USER_SUMMARY" },
+        { sql: windowSql(detailView, "STMT_ID, PART_ID, IPROC"), source: "DETAILS" },
+        { sql: windowSql(userView, "STMT_ID, PART_ID"), source: "USER_SUMMARY" },
       ];
 
       // Small retry: statistics can take a beat to become queryable even after
@@ -2005,13 +2009,24 @@ export function ExasolStudio({
         return;
       }
 
+      // Narrow the window to the run's heaviest statement.
+      const chosenStmt = pickHeaviestStatement(rows, stmtCount);
+      rows = rows.filter((r) => String(r.STMT_ID) === chosenStmt);
+
       // Derive the (session, statement) key from the fetched rows themselves.
       const first = rows[0];
       const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
       const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : "";
       const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
-      // Profile views carry no SQL_TEXT — use the statement we profiled.
-      if (!plan.queryText && stmt) plan.queryText = stmt;
+      // Profile views carry no SQL_TEXT — name the profiled statement from the
+      // SQL audit view so a script run shows WHICH statement the plan is for.
+      const sqlTextRes = await ipc
+        .executeSql(cid, cname, `SELECT SQL_TEXT FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = ${ctxSession} AND STMT_ID = ${ctxStmt}`, 1, false)
+        .catch(() => null);
+      const sqlTextSet = sqlTextRes?.results.find((r) => r.kind === "resultSet");
+      const auditText = sqlTextSet?.rows?.[0]?.[0];
+      if (typeof auditText === "string" && auditText.trim()) plan.queryText = auditText.trim();
+      else if (!plan.queryText && stmt) plan.queryText = stmt;
       if (plan.nodes.length === 0) {
         pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
         return;

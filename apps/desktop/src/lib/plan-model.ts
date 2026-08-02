@@ -266,6 +266,42 @@ function toStringOrUndefined(value: unknown): string | undefined {
   return s.length > 0 ? s : undefined;
 }
 
+/**
+ * Which statement of a run to show in Query Performance. A script's first
+ * statement is often trivial DDL whose profile is a lone COMPILE part, so
+ * among the run's first `stmtCount` distinct statements (rows are ordered by
+ * STMT_ID) pick the one with the largest total DURATION — the bottleneck.
+ * Ties (or all-missing durations) fall to the statement with the most parts,
+ * then the earliest. Returns "" for no rows.
+ */
+export function pickHeaviestStatement(rows: Record<string, unknown>[], stmtCount: number): string {
+  const order: string[] = [];
+  const stats = new Map<string, { duration: number; parts: number }>();
+  for (const row of rows) {
+    const id = toStringOrUndefined(row.STMT_ID);
+    if (!id) continue;
+    if (!stats.has(id)) {
+      if (order.length >= Math.max(1, stmtCount)) continue; // beyond this run
+      order.push(id);
+      stats.set(id, { duration: 0, parts: 0 });
+    }
+    const s = stats.get(id)!;
+    s.duration += toNumber(row.DURATION) ?? 0;
+    s.parts += 1;
+  }
+  let best = "";
+  for (const id of order) {
+    if (!best) {
+      best = id;
+      continue;
+    }
+    const a = stats.get(id)!;
+    const b = stats.get(best)!;
+    if (a.duration > b.duration || (a.duration === b.duration && a.parts > b.parts)) best = id;
+  }
+  return best;
+}
+
 export function mapDbRowToRawProfileRow(row: Record<string, unknown>): RawProfileRow {
   return {
     sessionId: toStringOrUndefined(row.SESSION_ID) ?? "",

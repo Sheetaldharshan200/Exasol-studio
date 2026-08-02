@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyOperator, computeWarnings, normalizeProfileRows, type WarningThresholds } from "./plan-model.ts";
+import { classifyOperator, computeWarnings, normalizeProfileRows, pickHeaviestStatement, type WarningThresholds } from "./plan-model.ts";
 
 test("classifyOperator recognizes operator families by substring", () => {
   // Each case is a documented Exasol PART_NAME (docs.exasol.com › Profiling).
@@ -146,4 +146,43 @@ test("normalizeProfileRows honors custom thresholds", () => {
   ];
   const plan = normalizeProfileRows(rows, { sessionId: "1", stmtId: "10", source: "DETAILS" }, strict);
   assert.equal(plan.nodes[0].warnings.some((w) => w.type === "HIGH_SKEW"), true);
+});
+
+test("pickHeaviestStatement chooses the run's slowest statement, not the first", () => {
+  const rows = [
+    // stmt 30: DDL — a lone fast COMPILE part (the old MIN(STMT_ID) trap)
+    row({ STMT_ID: 30, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE", DURATION: 0.001 }),
+    // stmt 32: the heavy SELECT
+    row({ STMT_ID: 32, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE", DURATION: 0.002 }),
+    row({ STMT_ID: 32, PART_ID: 2, PART_NAME: "SCAN", DURATION: 0.4 }),
+    row({ STMT_ID: 32, PART_ID: 3, PART_NAME: "GROUP BY", DURATION: 0.2 }),
+    // stmt 34: small select
+    row({ STMT_ID: 34, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE", DURATION: 0.001 }),
+    row({ STMT_ID: 34, PART_ID: 2, PART_NAME: "SCAN", DURATION: 0.01 }),
+  ];
+  assert.equal(pickHeaviestStatement(rows, 3), "32");
+});
+
+test("pickHeaviestStatement ignores statements beyond the run's window", () => {
+  const rows = [
+    row({ STMT_ID: 30, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE", DURATION: 0.001 }),
+    // stmt 40 is a LATER query on the same session (e.g. the profile fetch itself)
+    row({ STMT_ID: 40, PART_ID: 1, PART_NAME: "SCAN", DURATION: 9.9 }),
+  ];
+  assert.equal(pickHeaviestStatement(rows, 1), "30");
+});
+
+test("pickHeaviestStatement breaks all-zero-duration ties by part count, then order", () => {
+  const rows = [
+    row({ STMT_ID: 30, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE" }),
+    row({ STMT_ID: 31, PART_ID: 1, PART_NAME: "COMPILE / EXECUTE" }),
+    row({ STMT_ID: 31, PART_ID: 2, PART_NAME: "SCAN" }),
+  ];
+  assert.equal(pickHeaviestStatement(rows, 2), "31");
+  assert.equal(pickHeaviestStatement([row({ STMT_ID: 30, PART_ID: 1 }), row({ STMT_ID: 31, PART_ID: 1 })], 2), "30");
+});
+
+test("pickHeaviestStatement handles empty input and single statements", () => {
+  assert.equal(pickHeaviestStatement([], 5), "");
+  assert.equal(pickHeaviestStatement([row({ STMT_ID: 7, PART_ID: 1, DURATION: 0.1 })], 1), "7");
 });
