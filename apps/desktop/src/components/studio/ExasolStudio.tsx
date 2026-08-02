@@ -40,7 +40,7 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
-import { parseSingleTable, splitStatements, statementAtOffset, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
@@ -1610,24 +1610,14 @@ export function ExasolStudio({
 
       const editor = editorRef.current;
       const full = activeTab.sql;
-      const selectionText = () => {
-        const sel = editor?.getSelection();
-        return sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
-      };
-      const cursorStatement = () => {
-        const model = editor?.getModel();
-        const pos = editor?.getPosition();
-        return model && pos ? statementAtOffset(full, model.getOffsetAt(pos)) : full;
-      };
-      let sqlToRun = full;
-      if (scope === "auto" && editor) {
-        const selected = selectionText();
-        sqlToRun = selected.trim() ? selected : cursorStatement();
-      } else if (scope === "selection" && editor) {
-        sqlToRun = selectionText().trim() || full;
-      } else if (scope === "statement" && editor) {
-        sqlToRun = cursorStatement();
-      }
+      // What each mode targets is pure (pickRunSql) — the editor only supplies
+      // the current selection + cursor offset.
+      const sel = editor?.getSelection();
+      const selection = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
+      const model = editor?.getModel();
+      const pos = editor?.getPosition();
+      const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
+      let sqlToRun = pickRunSql(scope, full, selection, cursorOffset);
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;

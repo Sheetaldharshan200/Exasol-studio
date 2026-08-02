@@ -79,6 +79,31 @@ export function statementAtOffset(sql: string, offset: number): string {
   return stmts[stmts.length - 1].text;
 }
 
+/** The run modes offered by the query toolbar. */
+export type RunScope = "auto" | "statement" | "selection" | "script" | "buffer";
+
+/**
+ * The SQL a given run mode targets (before comment-stripping / empty fallback).
+ * Pure so every mode/permutation is unit-testable without the editor:
+ *  - auto:      the selection if there is one, else the statement at the cursor
+ *  - selection: the selection, or the whole buffer when nothing is selected
+ *  - statement: the statement at the cursor
+ *  - script/buffer: the whole buffer (script splits later; buffer runs as one)
+ */
+export function pickRunSql(scope: RunScope, full: string, selection: string, cursorOffset: number): string {
+  switch (scope) {
+    case "auto":
+      return selection.trim() ? selection : statementAtOffset(full, cursorOffset);
+    case "selection":
+      return selection.trim() || full;
+    case "statement":
+      return statementAtOffset(full, cursorOffset);
+    case "script":
+    case "buffer":
+      return full;
+  }
+}
+
 /** Strip line (--) and block comments, preserving string literals. */
 export function stripSqlComments(sql: string): string {
   let out = "";
