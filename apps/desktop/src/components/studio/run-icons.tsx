@@ -1,29 +1,28 @@
 /**
- * Run-toolbar glyphs traced from DBVisualizer's four Execute buttons: outline
- * (not filled) strokes — a play triangle, a cursor, a triangle+lines, and a
- * triangle+branch. lucide has no equivalents. currentColor, sized by className.
+ * Run-toolbar glyphs traced from DBVisualizer's four Execute buttons
+ * (Screenshot 2026-08-02): all OUTLINE strokes, no fill —
+ *   ① play triangle   ② mouse cursor / half-arrow
+ *   ③ triangle + stacked lines   ④ triangle + branch/zigzag
+ * currentColor; sized by className like the lucide icons.
  */
 type IconProps = { className?: string };
 
-/** Execute the buffer as an SQL script — an outline play triangle. */
+const STROKE = { stroke: "currentColor", strokeWidth: 1.7, strokeLinejoin: "round" as const, strokeLinecap: "round" as const };
+
+/** Execute the buffer as an SQL script — outline play triangle. */
 export function RunScriptIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M7 4.5 L18.5 12 L7 19.5 Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M7 4.5 L19 12 L7 19.5 Z" {...STROKE} />
     </svg>
   );
 }
 
-/** Execute the current statement / selection — an outline cursor/pointer (DBVis). */
+/** Execute the current statement / selection — outline mouse cursor (half-arrow). */
 export function RunCurrentIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M6 3 L6 18 L10 14.2 L12.7 19.7 L14.9 18.7 L12.2 13.3 L17 13.3 Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
+      <path d="M6 3 L6 17.6 L9.9 13.9 L12.4 19.4 L14.4 18.5 L11.9 13 L16.6 13 Z" {...STROKE} />
     </svg>
   );
 }
@@ -32,26 +31,20 @@ export function RunCurrentIcon({ className }: IconProps) {
 export function RunBufferIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M4 5 L11.5 10 L4 15 Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <line x1="14.5" y1="7" x2="20.5" y2="7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <line x1="14.5" y1="10" x2="20.5" y2="10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <line x1="14.5" y1="13" x2="20.5" y2="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M4 5.5 L11 10 L4 14.5 Z" {...STROKE} />
+      <line x1="14" y1="7" x2="20.5" y2="7" {...STROKE} />
+      <line x1="14" y1="10" x2="20.5" y2="10" {...STROKE} />
+      <line x1="14" y1="13" x2="20.5" y2="13" {...STROKE} />
     </svg>
   );
 }
 
-/** Execute the statement(s) as explain plan — outline triangle + a branch/graph. */
+/** Execute the statement(s) as explain plan — outline triangle + branch/zigzag. */
 export function RunExplainIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M4 5 L11.5 10 L4 15 Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path
-        d="M14 10 H16 M18 6.5 H21 M18 13.5 H21 M16 10 L18 6.5 M16 10 L18 13.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M4 5.5 L11 10 L4 14.5 Z" {...STROKE} />
+      <path d="M14 14 L16.5 7 L19 14 L21 8" {...STROKE} />
     </svg>
   );
 }
