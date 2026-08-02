@@ -2466,19 +2466,18 @@ export function ExasolStudio({
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
-                {/* Execute group — DBVisualizer's four run modes. A drag-selection
-                    runs instead of the whole buffer for the script + current
-                    buttons; onMouseDown preventDefault keeps the selection on click. */}
-                <button
-                  onMouseDown={(e) => e.preventDefault()}
+                {/* Execute group — DBVisualizer's four run modes, all naked icon
+                    buttons. A drag-selection runs instead of the whole buffer for
+                    the script + current buttons; onMouseDown preventDefault keeps
+                    the selection on click. */}
+                <IconButton
+                  label="Execute the buffer as an SQL script (⌘/Ctrl+Enter) — runs the selection if there is one"
                   onClick={() => run("script")}
+                  onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
-                  aria-label="Execute the buffer as an SQL script"
-                  title="Execute the buffer as an SQL script (⌘/Ctrl+Enter) — runs the selection if there is one"
-                  className="flex h-7 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
                 >
-                  {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RunScriptIcon className="h-4 w-4" />}
-                </button>
+                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4" />}
+                </IconButton>
                 <IconButton
                   label="Execute the current statement, or the selection (⌘/Ctrl+.)"
                   onClick={() => run("auto")}
