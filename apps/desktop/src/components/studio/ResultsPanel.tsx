@@ -45,6 +45,7 @@ export function ResultsPanel({
   onCommitEdits,
   editBusy,
   planData,
+  profileNote,
   profiling,
   onProfile,
   onSendToDashboard,
@@ -76,6 +77,7 @@ export function ResultsPanel({
   onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   editBusy: boolean;
   planData?: Plan[] | Plan;
+  profileNote?: string;
   profiling: boolean;
   onProfile: () => void;
   onSendToDashboard: () => void;
@@ -106,7 +108,7 @@ export function ResultsPanel({
             onClick={() => onViewChange(t.id)}
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition",
-              view === t.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              view === t.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <t.icon className="h-3.5 w-3.5" />
@@ -222,6 +224,11 @@ export function ResultsPanel({
             <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground">
               <Gauge className="h-6 w-6 opacity-40" />
               <p className="text-[12.5px]">No execution plan yet for this run.</p>
+              {profileNote ? (
+                <p className="max-w-xl rounded-md border border-border bg-editor px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  {profileNote}
+                </p>
+              ) : null}
               <button
                 onClick={onProfile}
                 className="h-7 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-secondary"
@@ -338,7 +345,7 @@ function MultiResultView({
             onClick={() => setIdx(i)}
             className={cn(
               "flex h-5 shrink-0 items-center gap-1 rounded px-2 text-[11px] transition",
-              i === idx ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              i === idx ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
               r.error && i !== idx && "text-destructive",
             )}
           >

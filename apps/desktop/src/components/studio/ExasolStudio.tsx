@@ -1654,7 +1654,7 @@ export function ExasolStudio({
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
       // progress, not the last statement's rows sitting underneath.
-      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, resultView: "results" });
+      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, profileNote: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
@@ -1966,7 +1966,10 @@ export function ExasolStudio({
     const sid = tab.profileSession;
     const base = tab.profileBaseStmt;
     if (!sid || !base) {
-      pushNotification("warning", "Profiling unavailable", "Run the query first — its plan is captured on execution (this connection's driver may not support profiling).");
+      patchTab(tab.id, {
+        profileNote:
+          "This run did not capture a profiling baseline (restored sessions and bridge drivers cannot). Run the query again, then open Query Performance.",
+      });
       return;
     }
     setProfiling(true);
@@ -1990,14 +1993,23 @@ export function ExasolStudio({
         { sql: windowSql(userView, "STMT_ID, PART_ID"), source: "USER_SUMMARY" },
       ];
 
-      // Small retry: statistics can take a beat to become queryable even after
-      // FLUSH. Short and bounded so it still feels instant.
+      // Retry: statistics can lag a few seconds even after FLUSH. Bounded
+      // (~3s worst case) and it remembers the last DB error for the empty
+      // state, so a failure is diagnosable instead of silent.
       let rows: Record<string, unknown>[] = [];
       let source: ProfileSource = "USER_SUMMARY";
-      for (let round = 0; round < 4 && rows.length === 0; round++) {
-        if (round > 0) await sleep(250);
+      let lastError = "";
+      for (let round = 0; round < 8 && rows.length === 0; round++) {
+        if (round > 0) await sleep(350);
         for (const attempt of attempts) {
-          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch(() => null);
+          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch((e) => {
+            lastError = errorMessage(e);
+            return null;
+          });
+          if (res && !res.success) {
+            const failed = res.results.find((r) => r.error);
+            if (failed?.error) lastError = failed.error;
+          }
           const set = res?.results.find((r) => r.kind === "resultSet");
           if (res?.success && set && set.rows.length > 0) {
             rows = resultRecords(set);
@@ -2007,7 +2019,11 @@ export function ExasolStudio({
         }
       }
       if (rows.length === 0) {
-        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows (it may be too fast to profile, or the account lacks statistics access).");
+        patchTab(tab.id, {
+          profileNote:
+            `No profile rows for session ${sid}, statements after #${base} (checked $EXA_PROFILE_DETAILS_LAST_DAY and EXA_USER_PROFILE_LAST_DAY, 8 attempts over ~3s).` +
+            (lastError ? ` Last database error: ${lastError}` : " The statements may have been too fast to record, or session profiling was off for this run."),
+        });
         return;
       }
 
@@ -2045,13 +2061,13 @@ export function ExasolStudio({
         return plan;
       });
       if (plans.every((p) => p.nodes.length === 0)) {
-        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
+        patchTab(tab.id, { profileNote: "The profile rows produced no operators for any statement of this run." });
         return;
       }
-      patchTab(tab.id, { planData: plans, resultView: "performance" });
+      patchTab(tab.id, { planData: plans, resultView: "performance", profileNote: undefined });
       loadHistory();
     } catch (e) {
-      pushNotification("warning", "Profiling failed", errorMessage(e));
+      patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });
     } finally {
       setProfiling(false);
     }
@@ -3079,6 +3095,7 @@ export function ExasolStudio({
                   onCommitEdits={commitEdits}
                   editBusy={running}
                   planData={activeTab.planData}
+                  profileNote={activeTab.profileNote}
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}

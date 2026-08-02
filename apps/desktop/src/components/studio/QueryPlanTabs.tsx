@@ -44,7 +44,7 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
           onClick={() => setActive(-1)}
           className={cn(
             "flex h-6 shrink-0 items-center rounded-md px-2.5 text-[12px] font-medium transition-colors",
-            active === -1 ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+            active === -1 ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
           )}
         >
           All statements
@@ -56,7 +56,7 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
             title={p.queryText}
             className={cn(
               "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2.5 font-mono text-[11.5px] transition-colors",
-              active === i ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              active === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {i + 1}

@@ -80,6 +80,8 @@ export type SqlTab = {
   artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */
   planData?: Plan[];
+  /** Why the last profile attempt produced no plan — shown in the empty state. */
+  profileNote?: string;
   /** Captured on Run: the session + pre-run statement id, so the plan can be
    *  read from the ORIGINAL profiled run without re-executing the query. */
   profileSession?: string;
