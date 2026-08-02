@@ -47,6 +47,7 @@ import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
+import { EditorStatusBar } from "./EditorStatusBar";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
@@ -165,6 +166,9 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // Mirrors editorRef as state so the status bar re-renders when the editor
+  // mounts (a ref assignment alone wouldn't).
+  const [statusEditor, setStatusEditor] = useState<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   // The shared monaco instance + the user's per-token syntax colors, so a
   // Settings change can re-define the editor themes live.
   const monacoRef = useRef<import("@monaco-editor/react").Monaco | null>(null);
@@ -2902,7 +2906,7 @@ export function ExasolStudio({
             </div>
           ) : (
             <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel defaultSize="55%" minSize="120px" className="relative min-h-0">
+              <ResizablePanel defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
                 {inlineDiff ? (
                   <InlineSqlDiff
                     state={inlineDiff}
@@ -2913,6 +2917,7 @@ export function ExasolStudio({
                     onDecline={() => setInlineDiff(null)}
                   />
                 ) : null}
+                <div className="min-h-0 flex-1">
                 <Editor
                   beforeMount={applyMonacoThemes}
                   defaultLanguage="sql"
@@ -2928,6 +2933,7 @@ export function ExasolStudio({
                   }}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
+                    setStatusEditor(editor);
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
@@ -2994,6 +3000,8 @@ export function ExasolStudio({
                     smoothScrolling: true,
                   }}
                 />
+                </div>
+                <EditorStatusBar editor={statusEditor} sql={activeTab.sql} />
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
               <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
