@@ -29,8 +29,10 @@
       })();
     </script>
     <style>
-      /* Pre-React boot screen: theme-matched background + the Exasol X mark
-         pulsing until main.tsx dismisses it. Inline so it needs no bundle. */
+      /* Pre-React boot screen: theme-matched background + the SAME Exasol X
+         draw animation as the onboarding BrandLoader (global.css exa-draw),
+         inlined so it needs no bundle. pathLength=720 normalizes both paths
+         to the stroke length the keyframes expect — no JS measuring. */
       html { background: #ffffff; }
       html.dark { background: #0a0a0b; }
       #boot {
@@ -44,24 +46,51 @@
         transition: opacity 0.2s ease;
       }
       html.dark #boot { background: #0a0a0b; }
-      #boot svg { width: 64px; height: 64px; animation: boot-pulse 1.6s ease-in-out infinite; }
-      #boot .boot-trail { fill: #0b1730; }
-      html.dark #boot .boot-trail { fill: #ededee; }
-      @keyframes boot-pulse {
-        0%, 100% { opacity: 0.55; transform: scale(0.97); }
-        50% { opacity: 1; transform: scale(1); }
+      #boot .boot-mark { position: relative; width: 72px; height: 72px; }
+      #boot svg { position: relative; width: 72px; height: 72px; }
+      #boot .bp {
+        stroke-dasharray: 720;
+        stroke-dashoffset: 720;
+        fill-opacity: 0;
+        animation: boot-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+      #boot .bp-lead { filter: drop-shadow(0 0 6px rgba(79, 181, 138, 0.55)); }
+      #boot .bp-trail { animation-delay: 0.4s; fill: #0b1730; stroke: #0b1730; }
+      html.dark #boot .bp-trail { fill: #ededee; stroke: #ededee; }
+      @keyframes boot-draw {
+        0% { stroke-dashoffset: 720; fill-opacity: 0; }
+        32% { stroke-dashoffset: 0; fill-opacity: 0; }
+        46% { stroke-dashoffset: 0; fill-opacity: 1; }
+        74% { stroke-dashoffset: 0; fill-opacity: 1; }
+        100% { stroke-dashoffset: 720; fill-opacity: 0; }
+      }
+      #boot .boot-glow {
+        position: absolute;
+        inset: 8%;
+        border-radius: 9999px;
+        background: radial-gradient(circle, rgba(79, 181, 138, 0.45), transparent 68%);
+        filter: blur(18px);
+        animation: boot-glow 3.4s ease-in-out infinite;
+      }
+      @keyframes boot-glow {
+        0%, 100% { opacity: 0.25; transform: scale(0.92); }
+        50% { opacity: 0.7; transform: scale(1.08); }
       }
       @media (prefers-reduced-motion: reduce) {
-        #boot svg { animation: none; }
+        #boot .bp { animation: none; stroke-dashoffset: 0; fill-opacity: 1; }
+        #boot .boot-glow { animation: none; }
       }
     </style>
   </head>
   <body>
     <div id="boot" aria-hidden="true">
-      <svg viewBox="0 0 250 250" fill="none">
-        <path class="boot-trail" d="M169.575 33.6724L134.68 79.5116L161.797 114.671L223.871 33.759L169.575 33.6724ZM161.797 135.548L134.68 170.695L169.575 216.534L223.871 216.46L161.797 135.548Z" />
-        <path fill="#4fb58a" d="M27.2866 216.538L97.936 124.948L27.6179 33.79L81.8793 33.8217L152.172 124.946L81.531 216.535L27.2866 216.538Z" />
-      </svg>
+      <div class="boot-mark">
+        <span class="boot-glow"></span>
+        <svg viewBox="0 0 250 250" fill="none">
+          <path class="bp bp-trail" pathLength="720" stroke-width="2.5" stroke-linejoin="round" d="M169.575 33.6724L134.68 79.5116L161.797 114.671L223.871 33.759L169.575 33.6724ZM161.797 135.548L134.68 170.695L169.575 216.534L223.871 216.46L161.797 135.548Z" />
+          <path class="bp bp-lead" pathLength="720" fill="#4fb58a" stroke="#4fb58a" stroke-width="2.5" stroke-linejoin="round" d="M27.2866 216.538L97.936 124.948L27.6179 33.79L81.8793 33.8217L152.172 124.946L81.531 216.535L27.2866 216.538Z" />
+        </svg>
+      </div>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

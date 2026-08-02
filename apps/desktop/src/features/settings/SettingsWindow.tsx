@@ -6,6 +6,7 @@ import { openAiProvidersWindow } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
 import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
 import { SYNTAX_DEFAULTS, SYNTAX_ROLES, sanitizeHex, syntaxSettingKey, type SyntaxRoleKey } from "@/components/studio/monaco-theme";
+import { ColorPicker } from "@/components/ui/color-picker";
 
 type SettingValue = string | number | boolean;
 
@@ -605,13 +606,7 @@ function SyntaxColorsEditor({
               const hex = sanitizeHex(raw) ?? SYNTAX_DEFAULTS[t][role.key];
               return (
                 <div key={t} className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    aria-label={`${role.label} — ${t} theme`}
-                    value={hex}
-                    onChange={(e) => onChange({ [key]: e.target.value })}
-                    className="h-7 w-9 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
-                  />
+                  <ColorPicker label={`${role.label} — ${t} theme`} value={hex} onChange={(next) => onChange({ [key]: next })} />
                   <input
                     value={raw}
                     onChange={(e) => onChange({ [key]: e.target.value })}
