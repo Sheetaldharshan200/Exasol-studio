@@ -2056,7 +2056,13 @@ export function ExasolStudio({
       }
 
       const plans: Plan[] = stmtIds.map((id) => {
-        const plan = normalizeProfileRows(rowsByStmt.get(id)!, { sessionId: sid, stmtId: id, source });
+        const group = rowsByStmt.get(id)!;
+        // Derive the session key from the rows THEMSELVES: SESSION_ID arrives
+        // as a JSON number beyond 2^53 (Exasol session ids are ~1.9e18), so
+        // String(row) !== the exact TO_CHAR(CURRENT_SESSION) string, and
+        // normalizeProfileRows would filter every row out.
+        const ctxSession = group[0].SESSION_ID !== undefined && group[0].SESSION_ID !== null ? String(group[0].SESSION_ID) : sid;
+        const plan = normalizeProfileRows(group, { sessionId: ctxSession, stmtId: id, source });
         plan.queryText = sqlTexts.get(id) ?? plan.queryText ?? (stmtIds.length === 1 ? stmt : "");
         return plan;
       });

@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@/lib/monaco-setup"; // must run before any <Editor> mounts
 import { App } from "@/app/App";
 import "@/app/global.css";
 import { ThemeProvider } from "@/components/theme/theme-provider";
