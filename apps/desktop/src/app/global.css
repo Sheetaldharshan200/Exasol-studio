@@ -363,6 +363,14 @@
   }
 }
 
+/* Virtual "1] " statement-number markers injected before each statement in
+   the SQL editor (statement-badges.ts). Display-only text. */
+.exa-stmt-inline {
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+  opacity: 0.85;
+  font-weight: 600;
+}
+
 @layer components {
   /* Green CTA glow — resting halo, intensifies on hover */
   .cta-glow {

@@ -48,6 +48,8 @@ import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { EditorStatusBar } from "./EditorStatusBar";
+import { installStatementBadges } from "./statement-badges";
+import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
@@ -546,6 +548,18 @@ export function ExasolStudio({
   /** Open generated SQL (DBA actions, row edits, …) in a NEW query tab — the
    *  editor is the single place SQL is reviewed and run, so results and errors
    *  surface natively. Dialogs only confirm; they never execute. */
+  // A statement's plan visualizer as its own full-size workbench tab (the
+  // Query Performance strip's "Open in tab").
+  function openPlanTab(plan: Plan, title: string) {
+    tabCounter.current += 1;
+    const tab = newTab(tabCounter.current);
+    tab.view = "plan";
+    tab.title = title;
+    tab.planData = [plan];
+    updateTabs(connKey, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
+  }
+
   function openSqlTab(sql: string, title = "SQL") {
     tabCounter.current += 1;
     const tab = newTab(tabCounter.current);
@@ -2859,6 +2873,18 @@ export function ExasolStudio({
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
               <GitPanel full />
             </div>
+          ) : activeTab.view === "plan" ? (
+            // A statement's plan visualizer, full-size (its operator sidebar
+            // has room here that the results panel lacks).
+            <div className="min-h-0 flex-1 bg-editor">
+              {activeTab.planData?.[0] ? (
+                <QueryPlanView plan={activeTab.planData[0]} onOpenSql={openSqlTab} />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[12.5px] text-muted-foreground">
+                  This plan tab has no data — profile a query from its Query Performance view.
+                </div>
+              )}
+            </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">
               <NotebookTab
@@ -3000,6 +3026,7 @@ export function ExasolStudio({
                     editorRef.current = editor;
                     setStatusEditor(editor);
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
+                    installStatementBadges(editor, monaco);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
                       (window as unknown as Record<string, unknown>).__exaSqlAiActions = true;
@@ -3114,6 +3141,7 @@ export function ExasolStudio({
                   profileNote={activeTab.profileNote}
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
+                  onOpenPlanTab={openPlanTab}
                   onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}
                 />
               </ResizablePanel>

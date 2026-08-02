@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SquareArrowOutUpRight, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Plan } from "@/lib/plan-model";
+import { statementVerb } from "@/lib/result-stats";
 import { QueryPlanView } from "./QueryPlanView";
 
 /** First meaningful words of a statement for its tab label / overview row. */
@@ -20,7 +22,15 @@ function fmtSeconds(s: number): string {
  * overview (duration share per statement — click a row to open its plan).
  * Starts on the heaviest statement: that is what you came to see.
  */
-export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: (sql: string, title?: string) => void }) {
+export function QueryPlanTabs({
+  plans,
+  onOpenSql,
+  onOpenPlanTab,
+}: {
+  plans: Plan[];
+  onOpenSql: (sql: string, title?: string) => void;
+  onOpenPlanTab: (plan: Plan, title: string) => void;
+}) {
   const heaviest = useMemo(() => {
     let best = 0;
     for (let i = 1; i < plans.length; i++) {
@@ -36,10 +46,13 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
   // Keep the selected tab visible — the default (heaviest) or an overview
   // click can land far right, outside the scrolled strip.
   useEffect(() => {
-    stripRef.current
-      ?.querySelector(`[data-idx="${active}"]`)
-      ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-  }, [active]);
+    const raf = requestAnimationFrame(() => {
+      stripRef.current
+        ?.querySelector(`[data-idx="${active}"]`)
+        ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [active, plans]);
 
   // Jump to a statement by its number as it is typed (clamped to the run).
   function jumpTo(raw: string) {
@@ -76,21 +89,36 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
         >
           All statements
         </button>
-        {plans.map((p, i) => (
+        {plans.map((p, i) => {
+          const share = totalAll > 0 ? Math.round(((p.totalDuration ?? 0) / totalAll) * 100) : 0;
+          return (
+            <button
+              key={p.stmtId ?? i}
+              data-idx={i}
+              onClick={() => setActive(i)}
+              title={
+                (i === heaviest ? `Slowest statement of this run — ${fmtSeconds(p.totalDuration ?? 0)} (${share}% of the run)\n` : "") +
+                (p.queryText ?? "")
+              }
+              className={cn(
+                "flex h-6 shrink-0 items-center gap-1 rounded-md px-2 font-mono text-[11px] transition-colors",
+                active === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {i + 1} {statementVerb(p.queryText) ?? ""}
+              {i === heaviest ? <Timer className="h-3 w-3 text-amber-500" aria-label="Slowest statement" /> : null}
+            </button>
+          );
+        })}
+        {current ? (
           <button
-            key={p.stmtId ?? i}
-            data-idx={i}
-            onClick={() => setActive(i)}
-            title={p.queryText}
-            className={cn(
-              "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2.5 font-mono text-[11.5px] transition-colors",
-              active === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
-            )}
+            onClick={() => onOpenPlanTab(current, `Plan · ${active + 1} ${statementVerb(current.queryText) ?? "statement"}`)}
+            title="Open this plan visualizer in a full workbench tab"
+            className="ml-auto flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
-            {i + 1}
-            {i === heaviest ? <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Slowest statement" /> : null}
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" /> Open in tab
           </button>
-        ))}
+        ) : null}
       </div>
       {current ? (
         <div className="min-h-0 flex-1">
@@ -120,7 +148,19 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
                   >
                     <td className="py-2 pr-2 font-mono text-muted-foreground">{i + 1}</td>
                     <td className="max-w-0 truncate py-2 pr-3 font-mono" title={p.queryText}>
-                      {stmtLabel(p, i)}
+                      <span className="inline-flex max-w-full items-center gap-1.5">
+                        {i === heaviest ? <Timer className="h-3 w-3 shrink-0 text-amber-500" aria-label="Slowest statement" /> : null}
+                        <span className="truncate">{stmtLabel(p, i)}</span>
+                        <SquareArrowOutUpRight
+                          role="button"
+                          aria-label="Open this plan visualizer in a full workbench tab"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenPlanTab(p, `Plan · ${i + 1} ${statementVerb(p.queryText) ?? "statement"}`);
+                          }}
+                          className="h-3 w-3 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                        />
+                      </span>
                     </td>
                     <td className="py-2 pr-3 text-right font-mono tabular-nums">{fmtSeconds(dur)}</td>
                     <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">{p.nodes.length}</td>
@@ -142,9 +182,9 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
               })}
             </tbody>
           </table>
-          <p className="mt-3 text-[11px] text-muted-foreground">
-            Part durations overlap under parallel execution, so statement times are profile sums, not wall-clock. Click a
-            statement to open its plan.
+          <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Timer className="h-3 w-3 text-amber-500" /> marks the run's slowest statement. Click a row to open its plan;
+            statement times are profile sums, which overlap under parallel execution.
           </p>
         </div>
       )}

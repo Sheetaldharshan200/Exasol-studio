@@ -48,6 +48,7 @@ export function ResultsPanel({
   profileNote,
   profiling,
   onProfile,
+  onOpenPlanTab,
   onSendToDashboard,
 }: {
   view: ResultView;
@@ -80,6 +81,7 @@ export function ResultsPanel({
   profileNote?: string;
   profiling: boolean;
   onProfile: () => void;
+  onOpenPlanTab: (plan: Plan, title: string) => void;
   onSendToDashboard: () => void;
 }) {
   const busy = Boolean(runMeta && !runMeta.finishedAt);
@@ -211,7 +213,7 @@ export function ResultsPanel({
           </div>
         ) : view === "performance" ? (
           plans.length > 0 ? (
-            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} />
+            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} onOpenPlanTab={onOpenPlanTab} />
           ) : profiling ? (
             // A profile fetch is actually in flight — only then spin.
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -341,12 +343,17 @@ function MultiResultView({
     setGoTo("");
   }, [results]);
   // Keep the selected tab visible — the default (last result) starts off the
-  // right edge of a long script's strip.
+  // right edge of a long script's strip. Depends on `results` too: a rerun
+  // with the same statement count keeps idx unchanged, but the strip DOM is
+  // rebuilt and its scroll resets to the left. rAF lets layout settle first.
   useEffect(() => {
-    stripRef.current
-      ?.querySelector(`[data-idx="${idx}"]`)
-      ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-  }, [idx]);
+    const raf = requestAnimationFrame(() => {
+      stripRef.current
+        ?.querySelector(`[data-idx="${idx}"]`)
+        ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [idx, results]);
   // Each tab is labeled with its statement's verb (SELECT/INSERT/…) so a
   // script's tabs say what ran.
   const verbs = useMemo(() => splitStatements(sql).map((s) => statementVerb(s.text)), [sql]);

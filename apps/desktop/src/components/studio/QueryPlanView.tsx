@@ -29,6 +29,13 @@ import {
 
 const NODE_W = 150;
 const NODE_GAP = 56;
+const ROW_H = 200;
+
+/** Nodes per row: wrap long pipelines into a wider-than-tall grid instead of
+ *  one endless horizontal strip (a 30-part plan was ~6,000px of scrolling). */
+function nodesPerRow(count: number): number {
+  return Math.max(3, Math.ceil(Math.sqrt(count * 2)));
+}
 
 type OperatorNodeData = { node: PlanNode; isHot: boolean; picked: boolean };
 
@@ -48,29 +55,39 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
   const rf = useReactFlow();
   const hotId = hottestNodeId(plan);
 
-  // A new plan invalidates the selection.
-  useEffect(() => setSelectedId(null), [plan]);
+  // A new plan invalidates the selection and re-fits the grid to the viewport
+  // (the fitView prop only applies on first mount).
+  useEffect(() => {
+    setSelectedId(null);
+    const raf = requestAnimationFrame(() => rf.fitView({ padding: 0.2, duration: 250 }));
+    return () => cancelAnimationFrame(raf);
+  }, [plan, rf]);
 
+  const perRow = nodesPerRow(plan.nodes.length);
   const nodes: Node<OperatorNodeData>[] = useMemo(
     () =>
       plan.nodes.map((node, i) => ({
         id: node.id,
         type: "operator",
-        position: { x: i * (NODE_W + NODE_GAP), y: 0 },
+        position: { x: (i % perRow) * (NODE_W + NODE_GAP), y: Math.floor(i / perRow) * ROW_H },
         data: { node, isHot: node.id === hotId, picked: node.id === selectedId },
         draggable: false,
       })),
-    [plan, hotId, selectedId],
+    [plan, hotId, selectedId, perRow],
   );
 
   const edges: Edge[] = useMemo(
     () =>
       plan.nodes.slice(1).map((node, i) => {
         const prev = plan.nodes[i];
+        // The edge that wraps to the next row routes orthogonally so it sweeps
+        // between the rows instead of cutting across the grid.
+        const wraps = (i + 1) % perRow === 0;
         return {
           id: `${prev.id}->${node.id}`,
           source: prev.id,
           target: node.id,
+          type: wraps ? "smoothstep" : undefined,
           label: prev.rowsOut !== undefined ? `${fmtRows(prev.rowsOut)} row${prev.rowsOut === 1 ? "" : "s"}` : undefined,
           animated: true,
           markerEnd: { type: MarkerType.ArrowClosed, color: "var(--muted-foreground)" },
@@ -79,7 +96,7 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
           labelBgStyle: { fill: "var(--panel)", fillOpacity: 0.85 },
         } satisfies Edge;
       }),
-    [plan],
+    [plan, perRow],
   );
 
   const jumpTo = useCallback(

@@ -33,7 +33,8 @@ export type TabView =
   | "notebook"
   | "skills"
   | "aiSettings"
-  | "connProps";
+  | "connProps"
+  | "plan";
 
 /** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
  *  async profile that finishes after a tab-switch can't flip another tab's
@@ -139,6 +140,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   notebook: "notebook",
   skills: "skills",
   aiSettings: "brain-circuit",
+  plan: "clock-dashed-half",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
