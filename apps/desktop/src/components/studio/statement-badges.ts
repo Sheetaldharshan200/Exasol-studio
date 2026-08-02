@@ -11,6 +11,19 @@ import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
 
+/**
+ * Where a statement's number badge anchors: the statement's first LETTER, not
+ * its first character. A half-typed `-` on the line above briefly merges into
+ * the next statement — anchoring at the first letter keeps every badge on its
+ * line through that, so typing `--` never makes the margin jump.
+ */
+function badgeAnchor(sql: string, s: { text: string; start: number; end: number }): number {
+  const span = sql.slice(s.start, s.end);
+  const letter = /[A-Za-z]/.exec(span);
+  if (letter) return s.start + letter.index;
+  return s.start + (span.length - span.trimStart().length);
+}
+
 // The numbers render via CSS content — one tiny rule per number, generated on
 // demand (`.exa-stmt-badge-7::after { content: "7]" }`).
 let styledUpTo = 0;
@@ -47,10 +60,7 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
     const numbered = stmts.length >= 2 ? stmts : [];
     ensureBadgeStyles(numbered.length);
     const decorations: Decoration[] = numbered.map((s, i) => {
-      // First line of the statement's actual text, not its leading whitespace.
-      const span = sql.slice(s.start, s.end);
-      const textStart = s.start + (span.length - span.trimStart().length);
-      const pos = model.getPositionAt(textStart);
+      const pos = model.getPositionAt(badgeAnchor(sql, s));
       return {
         range: new monaco.Range(pos.lineNumber, 1, pos.lineNumber, 1),
         options: {
@@ -122,10 +132,10 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
     if (!line || !model) return;
     const sql = model.getValue();
     for (const s of splitStatements(sql)) {
+      if (model.getPositionAt(badgeAnchor(sql, s)).lineNumber !== line) continue;
+      // Select from the statement's actual text start (incl. leading comments).
       const span = sql.slice(s.start, s.end);
-      const textStart = s.start + (span.length - span.trimStart().length);
-      if (model.getPositionAt(textStart).lineNumber !== line) continue;
-      const from = model.getPositionAt(textStart);
+      const from = model.getPositionAt(s.start + (span.length - span.trimStart().length));
       // Include the trailing ";" / "/" terminator when present.
       const endOffset = s.end < sql.length && (sql[s.end] === ";" || sql[s.end] === "/") ? s.end + 1 : s.end;
       const to = model.getPositionAt(endOffset);
