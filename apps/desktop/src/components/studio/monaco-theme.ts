@@ -105,6 +105,18 @@ export function buildSyntaxRules(theme: "dark" | "light", overrides?: SyntaxColo
 }
 
 /**
+ * Bracket-pair colorization (on by default) paints () with its own depth
+ * colors, ignoring the delimiter token — so the pairs follow the user's
+ * punctuation color too, uniformly across all six depths.
+ */
+function bracketColors(theme: "dark" | "light", overrides?: SyntaxColors): Record<string, string> {
+  const c = sanitizeHex(overrides?.punctuation) ?? SYNTAX_DEFAULTS[theme].punctuation;
+  const out: Record<string, string> = {};
+  for (let i = 1; i <= 6; i++) out[`editorBracketHighlight.foreground${i}`] = c;
+  return out;
+}
+
+/**
  * Define (or re-define) the exasol-dark/exasol-light themes. Monaco applies a
  * re-defined theme immediately when it is the active one, so calling this
  * again with new overrides recolors open editors live.
@@ -115,6 +127,7 @@ export function defineMonacoThemes(monaco: Monaco, overrides?: SyntaxOverrides) 
     inherit: true,
     rules: buildSyntaxRules("dark", overrides?.dark),
     colors: {
+      ...bracketColors("dark", overrides?.dark),
       "editor.background": "#0a0a0b",
       "editor.foreground": "#ededee",
       "editor.lineHighlightBackground": "#151517",
@@ -130,6 +143,7 @@ export function defineMonacoThemes(monaco: Monaco, overrides?: SyntaxOverrides) 
     inherit: true,
     rules: buildSyntaxRules("light", overrides?.light),
     colors: {
+      ...bracketColors("light", overrides?.light),
       "editor.background": "#ffffff",
       "editor.foreground": "#0b1730",
       "editor.lineHighlightBackground": "#f1f5fb",
