@@ -17,7 +17,7 @@ import {
   MarkerType, useReactFlow, type Node, type Edge, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AlertTriangle, Copy, Check, Database } from "lucide-react";
+import { AlertTriangle, Copy, Check, Database, SquareArrowOutUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Plan, PlanNode } from "@/lib/plan-model";
 import {
@@ -29,18 +29,34 @@ import {
 
 const NODE_W = 150;
 const NODE_GAP = 56;
+const ROW_H = 200;
+
+/** Nodes per row: wrap long pipelines into a wider-than-tall grid instead of
+ *  one endless horizontal strip (a 30-part plan was ~6,000px of scrolling). */
+function nodesPerRow(count: number): number {
+  return Math.max(3, Math.ceil(Math.sqrt(count * 2)));
+}
 
 type OperatorNodeData = { node: PlanNode; isHot: boolean; picked: boolean };
 
-export function QueryPlanView({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void }) {
+export function QueryPlanView({
+  plan,
+  onOpenSql,
+  onOpenInTab,
+}: {
+  plan: Plan;
+  onOpenSql?: (sql: string, title?: string) => void;
+  /** When set, the toolbar offers popping this plan out as a workbench tab. */
+  onOpenInTab?: () => void;
+}) {
   return (
     <ReactFlowProvider>
-      <PlanInner plan={plan} onOpenSql={onOpenSql} />
+      <PlanInner plan={plan} onOpenSql={onOpenSql} onOpenInTab={onOpenInTab} />
     </ReactFlowProvider>
   );
 }
 
-function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void }) {
+function PlanInner({ plan, onOpenSql, onOpenInTab }: { plan: Plan; onOpenSql?: (sql: string, title?: string) => void; onOpenInTab?: () => void }) {
   void onOpenSql;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showSql, setShowSql] = useState(false);
@@ -48,29 +64,39 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
   const rf = useReactFlow();
   const hotId = hottestNodeId(plan);
 
-  // A new plan invalidates the selection.
-  useEffect(() => setSelectedId(null), [plan]);
+  // A new plan invalidates the selection and re-fits the grid to the viewport
+  // (the fitView prop only applies on first mount).
+  useEffect(() => {
+    setSelectedId(null);
+    const raf = requestAnimationFrame(() => rf.fitView({ padding: 0.2, duration: 250 }));
+    return () => cancelAnimationFrame(raf);
+  }, [plan, rf]);
 
+  const perRow = nodesPerRow(plan.nodes.length);
   const nodes: Node<OperatorNodeData>[] = useMemo(
     () =>
       plan.nodes.map((node, i) => ({
         id: node.id,
         type: "operator",
-        position: { x: i * (NODE_W + NODE_GAP), y: 0 },
+        position: { x: (i % perRow) * (NODE_W + NODE_GAP), y: Math.floor(i / perRow) * ROW_H },
         data: { node, isHot: node.id === hotId, picked: node.id === selectedId },
         draggable: false,
       })),
-    [plan, hotId, selectedId],
+    [plan, hotId, selectedId, perRow],
   );
 
   const edges: Edge[] = useMemo(
     () =>
       plan.nodes.slice(1).map((node, i) => {
         const prev = plan.nodes[i];
+        // The edge that wraps to the next row routes orthogonally so it sweeps
+        // between the rows instead of cutting across the grid.
+        const wraps = (i + 1) % perRow === 0;
         return {
           id: `${prev.id}->${node.id}`,
           source: prev.id,
           target: node.id,
+          type: wraps ? "smoothstep" : undefined,
           label: prev.rowsOut !== undefined ? `${fmtRows(prev.rowsOut)} row${prev.rowsOut === 1 ? "" : "s"}` : undefined,
           animated: true,
           markerEnd: { type: MarkerType.ArrowClosed, color: "var(--muted-foreground)" },
@@ -79,7 +105,7 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
           labelBgStyle: { fill: "var(--panel)", fillOpacity: 0.85 },
         } satisfies Edge;
       }),
-    [plan],
+    [plan, perRow],
   );
 
   const jumpTo = useCallback(
@@ -115,9 +141,21 @@ function PlanInner({ plan, onOpenSql }: { plan: Plan; onOpenSql?: (sql: string, 
         <span className="text-[11px] text-muted-foreground">
           {plan.nodes.length} operator{plan.nodes.length === 1 ? "" : "s"} · {fmtMs(plan.totalDuration)}
         </span>
+        {onOpenInTab ? (
+          <button
+            onClick={onOpenInTab}
+            className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+            title="Open this plan visualizer in a full workbench tab"
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" /> Open in tab
+          </button>
+        ) : null}
         <button
           onClick={() => void copyText()}
-          className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className={cn(
+            "flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground",
+            !onOpenInTab && "ml-auto",
+          )}
           title="Copy the plan as text"
         >
           {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />} Copy as text

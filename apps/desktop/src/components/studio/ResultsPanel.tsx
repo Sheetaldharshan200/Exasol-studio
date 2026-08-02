@@ -7,13 +7,14 @@
  * Dashboard. Query Performance renders the engine plan inline (bound to this
  * tab's query) instead of spawning a separate tab.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
-import { cellText, computeStats, filterRows, resultTabLabel, toCsv } from "@/lib/result-stats";
+import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
-import { QueryPlanView } from "./QueryPlanView";
+import { GoToBox } from "./GoToBox";
+import { QueryPlanTabs } from "./QueryPlanTabs";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
 import type { ResultView } from "./tabs";
@@ -45,8 +46,12 @@ export function ResultsPanel({
   onCommitEdits,
   editBusy,
   planData,
+  profileNote,
+  planIdx,
+  onPlanIdxChange,
   profiling,
   onProfile,
+  onOpenPlanTab,
   onSendToDashboard,
 }: {
   view: ResultView;
@@ -75,12 +80,18 @@ export function ResultsPanel({
   onOpenSql: (sql: string, title?: string) => void;
   onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
   editBusy: boolean;
-  planData?: Plan;
+  planData?: Plan[] | Plan;
+  profileNote?: string;
+  planIdx?: number;
+  onPlanIdxChange?: (idx: number) => void;
   profiling: boolean;
   onProfile: () => void;
+  onOpenPlanTab: (plan: Plan, title: string) => void;
   onSendToDashboard: () => void;
 }) {
   const busy = Boolean(runMeta && !runMeta.finishedAt);
+  // Runs before this release persisted a single Plan object — normalize.
+  const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
 
   // Auto-profile: opening the Query Performance tab shows the plan straight away
   // — no button. Fire once per result (guarded by autoProfiledFor so a failed
@@ -88,7 +99,7 @@ export function ResultsPanel({
   // we never silently re-run a write.
   const autoProfiledFor = useRef<StatementResult | null>(null);
   useEffect(() => {
-    if (view === "performance" && !planData && !profiling && lastResult?.kind === "resultSet") {
+    if (view === "performance" && plans.length === 0 && !profiling && lastResult?.kind === "resultSet") {
       if (autoProfiledFor.current !== lastResult) {
         autoProfiledFor.current = lastResult;
         onProfile();
@@ -104,7 +115,7 @@ export function ResultsPanel({
             onClick={() => onViewChange(t.id)}
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition",
-              view === t.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              view === t.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <t.icon className="h-3.5 w-3.5" />
@@ -206,18 +217,36 @@ export function ResultsPanel({
             ) : null}
           </div>
         ) : view === "performance" ? (
-          planData ? (
-            <QueryPlanView plan={planData} onOpenSql={onOpenSql} />
-          ) : profiling || lastResult?.kind === "resultSet" ? (
-            // Auto-profiling in flight (fired by the effect above).
+          plans.length > 0 ? (
+            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} onOpenPlanTab={onOpenPlanTab} savedIdx={planIdx} onIdxChange={onPlanIdxChange} />
+          ) : profiling ? (
+            // A profile fetch is actually in flight — only then spin.
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
               <p className="text-[12.5px]">Profiling this query…</p>
             </div>
+          ) : lastResult ? (
+            // Ran but no plan (yet): auto-profile failed or produced nothing —
+            // never a stuck spinner; explain and offer a manual retry.
+            <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground">
+              <Gauge className="h-6 w-6 opacity-40" />
+              <p className="text-[12.5px]">No execution plan yet for this run.</p>
+              {profileNote ? (
+                <p className="max-w-xl rounded-md border border-border bg-editor px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  {profileNote}
+                </p>
+              ) : null}
+              <button
+                onClick={onProfile}
+                className="h-7 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                Profile query
+              </button>
+            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
               <Gauge className="h-6 w-6 opacity-40" />
-              <p className="text-[12.5px]">Run a SELECT to see its execution plan.</p>
+              <p className="text-[12.5px]">Run a query to see its execution plan.</p>
             </div>
           )
         ) : view === "dashboard" ? (
@@ -312,23 +341,50 @@ function MultiResultView({
   zebra: boolean;
 }) {
   const [idx, setIdx] = useState(results.length - 1);
-  useEffect(() => setIdx(results.length - 1), [results]);
+  const [goTo, setGoTo] = useState("");
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setIdx(results.length - 1);
+    setGoTo("");
+  }, [results]);
+  // Keep the selected tab visible — the default (last result) starts off the
+  // right edge of a long script's strip. Depends on `results` too: a rerun
+  // with the same statement count keeps idx unchanged, but the strip DOM is
+  // rebuilt and its scroll resets to the left. rAF lets layout settle first.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      stripRef.current
+        ?.querySelector(`[data-idx="${idx}"]`)
+        ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [idx, results]);
+  // Each tab is labeled with its statement's verb (SELECT/INSERT/…) so a
+  // script's tabs say what ran.
+  const verbs = useMemo(() => splitStatements(sql).map((s) => statementVerb(s.text)), [sql]);
+  function jumpTo(raw: string) {
+    setGoTo(raw.replace(/\D/g, ""));
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= results.length) setIdx(n - 1);
+  }
   const sel = results[Math.min(idx, results.length - 1)];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={stripRef} className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <GoToBox value={goTo} onChange={jumpTo} max={results.length} className="h-5 w-10 px-1 text-[10.5px]" />
         {results.map((r, i) => (
           <button
             key={i}
+            data-idx={i}
             onClick={() => setIdx(i)}
             className={cn(
               "flex h-5 shrink-0 items-center gap-1 rounded px-2 text-[11px] transition",
-              i === idx ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              i === idx ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
               r.error && i !== idx && "text-destructive",
             )}
           >
             {r.error ? <AlertTriangle className="h-3 w-3 text-destructive" /> : null}
-            {resultTabLabel(r, i)}
+            {resultTabLabel(r, i, verbs[i])}
           </button>
         ))}
       </div>

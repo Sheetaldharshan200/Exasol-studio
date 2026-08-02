@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@/lib/monaco-setup"; // must run before any <Editor> mounts
 import { App } from "@/app/App";
 import "@/app/global.css";
 import { ThemeProvider } from "@/components/theme/theme-provider";
@@ -18,4 +19,15 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       </TooltipProvider>
     </ThemeProvider>
   </React.StrictMode>
+);
+
+// Fade out the pre-React boot loader (index.html) once the app has painted.
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    const boot = document.getElementById("boot");
+    if (boot) {
+      boot.style.opacity = "0";
+      window.setTimeout(() => boot.remove(), 220);
+    }
+  }),
 );

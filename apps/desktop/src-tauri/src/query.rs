@@ -138,30 +138,41 @@ pub async fn fetch_all_rows(pool: &ExaPool, sql: &str) -> AppResult<Vec<Vec<Valu
     Ok(rows.iter().map(row_to_json).collect())
 }
 
-/// Split a script into statements, respecting quotes, line and block comments.
+/// Split a script into statements, respecting quotes, line and block
+/// comments. An exaplus-style script block — a line starting with `--/`
+/// through a line holding only `/` — is ONE statement (a CREATE SCRIPT body
+/// may contain semicolons), sent without the marker lines. Mirrors the
+/// frontend splitter (lib/sql-text.ts::splitStatements) so "Run" sends
+/// exactly what the editor shows.
 pub fn split_statements(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
     let mut statements = Vec::new();
     let mut current = String::new();
-    let mut chars = sql.chars().peekable();
     let mut in_single = false;
     let mut in_double = false;
     let mut in_line_comment = false;
     let mut in_block_comment = false;
+    let mut i = 0usize;
 
-    while let Some(ch) = chars.next() {
+    while i < chars.len() {
+        let ch = chars[i];
+        let next = chars.get(i + 1).copied();
         if in_line_comment {
             current.push(ch);
             if ch == '\n' {
                 in_line_comment = false;
             }
+            i += 1;
             continue;
         }
         if in_block_comment {
             current.push(ch);
-            if ch == '*' && chars.peek() == Some(&'/') {
-                current.push(chars.next().unwrap());
+            if ch == '*' && next == Some('/') {
+                current.push('/');
+                i += 1;
                 in_block_comment = false;
             }
+            i += 1;
             continue;
         }
         match ch {
@@ -173,11 +184,54 @@ pub fn split_statements(sql: &str) -> Vec<String> {
                 in_double = !in_double;
                 current.push(ch);
             }
-            '-' if !in_single && !in_double && chars.peek() == Some(&'-') => {
+            '-' if !in_single && !in_double && next == Some('-') => {
+                // `--/` at the start of a line with no statement pending opens
+                // a script block ending at a line holding only `/`.
+                let at_line_start = i == 0 || chars[i - 1] == '\n';
+                if at_line_start && chars.get(i + 2) == Some(&'/') && current.trim().is_empty() {
+                    // Skip the marker line.
+                    let mut j = i;
+                    while j < chars.len() && chars[j] != '\n' {
+                        j += 1;
+                    }
+                    if j >= chars.len() {
+                        current.clear();
+                        i = chars.len();
+                        break;
+                    }
+                    j += 1; // past the marker's newline
+                    let body_start = j;
+                    // Find the line that is exactly "/" (or run to EOF).
+                    let mut body_end = chars.len();
+                    loop {
+                        let line_start = j;
+                        while j < chars.len() && chars[j] != '\n' {
+                            j += 1;
+                        }
+                        let line: String = chars[line_start..j].iter().collect();
+                        if line.trim() == "/" {
+                            body_end = line_start;
+                            j = if j < chars.len() { j + 1 } else { j };
+                            break;
+                        }
+                        if j >= chars.len() {
+                            break;
+                        }
+                        j += 1;
+                    }
+                    let body: String = chars[body_start..body_end.min(chars.len())].iter().collect();
+                    let trimmed = body.trim();
+                    if !trimmed.is_empty() {
+                        statements.push(trimmed.to_string());
+                    }
+                    current.clear();
+                    i = j;
+                    continue;
+                }
                 in_line_comment = true;
                 current.push(ch);
             }
-            '/' if !in_single && !in_double && chars.peek() == Some(&'*') => {
+            '/' if !in_single && !in_double && next == Some('*') => {
                 in_block_comment = true;
                 current.push(ch);
             }
@@ -190,6 +244,7 @@ pub fn split_statements(sql: &str) -> Vec<String> {
             }
             _ => current.push(ch),
         }
+        i += 1;
     }
     let trimmed = current.trim();
     if !trimmed.is_empty() {
@@ -751,5 +806,41 @@ mod tests {
     fn empty_statement_is_not_a_result_set() {
         assert!(!is_result_set_statement(""));
         assert!(!is_result_set_statement("   "));
+    }
+
+    #[test]
+    fn script_block_is_one_statement_despite_semicolons() {
+        let sql = "--/\nCREATE LUA SCALAR SCRIPT m (a DOUBLE)\nRETURNS DOUBLE AS\nfunction run(ctx)\n return ctx.a; \nend\n/\nSELECT m(x) FROM t;";
+        let out = split_statements(sql);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].starts_with("CREATE LUA SCALAR SCRIPT"));
+        assert!(out[0].contains("return ctx.a;"));
+        assert!(!out[0].contains("--/"));
+        assert_eq!(out[1], "SELECT m(x) FROM t");
+    }
+
+    #[test]
+    fn unterminated_script_block_runs_to_eof() {
+        let out = split_statements("--/\nCREATE LUA SCALAR SCRIPT m (a DOUBLE)\nRETURNS DOUBLE AS\nfunction run(ctx) end");
+        assert_eq!(out.len(), 1);
+        assert!(out[0].starts_with("CREATE LUA SCALAR SCRIPT"));
+    }
+
+    #[test]
+    fn double_dash_slash_mid_line_stays_a_comment() {
+        let out = split_statements("SELECT 1; --/ not a block\nSELECT 2;");
+        assert_eq!(out.len(), 2);
+        // Comment text is preserved inside the statement (existing behavior);
+        // the point is that no script block opened mid-line.
+        assert!(out[1].starts_with("--/ not a block"));
+        assert!(out[1].ends_with("SELECT 2"));
+    }
+
+    #[test]
+    fn script_block_between_statements() {
+        let sql = "SELECT 1;\n--/\nCREATE PYTHON3 SCALAR SCRIPT p (a INT)\nRETURNS INT AS\ndef run(ctx):\n    return ctx.a\n/\nSELECT 2;";
+        let out = split_statements(sql);
+        assert_eq!(out.len(), 3);
+        assert!(out[1].starts_with("CREATE PYTHON3"));
     }
 }

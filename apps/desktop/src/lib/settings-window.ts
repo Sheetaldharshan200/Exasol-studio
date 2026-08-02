@@ -8,8 +8,13 @@ export function isSettingsWindow(): boolean {
   return new URLSearchParams(window.location.search).get("view") === SETTINGS_WINDOW_LABEL;
 }
 
-/** Open Settings in a separate native window (Tauri). Returns false in a browser. */
-export async function openSettingsWindow(): Promise<boolean> {
+/**
+ * Open Settings in a separate native window (Tauri). Returns false in a
+ * browser. `category` deep-links to a settings page (e.g. "sqlEditor",
+ * "encoding") when the window is freshly created; an already-open window is
+ * just focused.
+ */
+export async function openSettingsWindow(category?: string): Promise<boolean> {
   if (!isTauri()) return false;
   try {
     const { WebviewWindow, getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
@@ -19,7 +24,7 @@ export async function openSettingsWindow(): Promise<boolean> {
       return true;
     }
     const win = new WebviewWindow(SETTINGS_WINDOW_LABEL, {
-      url: `index.html?view=${SETTINGS_WINDOW_LABEL}`,
+      url: `index.html?view=${SETTINGS_WINDOW_LABEL}${category ? `&cat=${encodeURIComponent(category)}` : ""}`,
       title: "Settings",
       width: 1000,
       height: 680,

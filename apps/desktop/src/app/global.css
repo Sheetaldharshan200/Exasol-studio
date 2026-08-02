@@ -363,6 +363,45 @@
   }
 }
 
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+}
+
+/* `--/ … /` UDF script blocks in the SQL editor: an embedded code block —
+   tinted lines with a left rule, plus a language chip on the marker line
+   (statement-badges.ts). */
+.exa-udf-block {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.exa-udf-lang {
+  color: color-mix(in srgb, var(--primary) 80%, var(--muted-foreground));
+  font-size: 0.8em;
+  font-style: italic;
+  opacity: 0.9;
+}
+/* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
+   tokenizer's comment/operator colors (!important beats the .mtk* rules). */
+.exa-udf-marker {
+  /* Color only — weight/style changes alter glyph metrics and made the
+     content shift when a block appeared or disappeared. */
+  color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
+  font-style: normal !important;
+}
+
 @layer components {
   /* Green CTA glow — resting halo, intensifies on hover */
   .cta-glow {

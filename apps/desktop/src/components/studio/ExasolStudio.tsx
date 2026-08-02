@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
-import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, FileCode2, GitCommitHorizontal, Info, MoreHorizontal, Loader2, PanelRight, Pin, Play, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X, Zap } from "lucide-react";
+import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, GitCommitHorizontal, Info, MoreHorizontal, Loader2, PanelRight, Pin, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X } from "lucide-react";
+import { RunScriptIcon, RunCurrentIcon, RunExplainIcon, RunBufferIcon } from "./run-icons";
 import { useTheme } from "@/components/theme/theme-provider";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -40,12 +41,17 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
-import { parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
-import { defineMonacoThemes } from "./monaco-theme";
+import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
+import { EditorStatusBar } from "./EditorStatusBar";
+import { installStatementBadges } from "./statement-badges";
+import { QueryPlanView } from "./QueryPlanView";
+import { BrandLoader } from "@/components/brand/BrandLoader";
+import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
@@ -151,6 +157,9 @@ export function ExasolStudio({
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [historyIdx, setHistoryIdx] = useState(-1);
+  // The editor text the user had typed before stepping into SQL history, so
+  // "next" past the newest entry restores it instead of losing it.
+  const historyDraft = useRef<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean; code?: string; codeLang?: string } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
@@ -161,6 +170,20 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // Mirrors editorRef as state so the status bar re-renders when the editor
+  // mounts (a ref assignment alone wouldn't).
+  const [statusEditor, setStatusEditor] = useState<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // The shared monaco instance + the user's per-token syntax colors, so a
+  // Settings change can re-define the editor themes live.
+  const monacoRef = useRef<import("@monaco-editor/react").Monaco | null>(null);
+  const syntaxOverridesRef = useRef<SyntaxOverrides>({});
+  const applyMonacoThemes = useCallback((m: import("@monaco-editor/react").Monaco) => {
+    monacoRef.current = m;
+    defineMonacoThemes(m, syntaxOverridesRef.current);
+  }, []);
+  // Statement-number badges in the editor margin — Settings toggle, on by default.
+  const stmtBadgesRef = useRef<{ setEnabled: (on: boolean) => void } | null>(null);
+  const stmtNumbersRef = useRef(true);
   // progressId of the query currently executing (for the Stop button to cancel).
   const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
@@ -330,6 +353,14 @@ export function ExasolStudio({
         stopOnError: typeof s.stopOnError === "boolean" ? s.stopOnError : v.stopOnError,
         stripComments: typeof s.stripComments === "boolean" ? s.stripComments : v.stripComments,
       }));
+      // Per-token editor colors: re-define the themes so open editors recolor
+      // live (Monaco re-applies a re-defined theme that is currently active).
+      syntaxOverridesRef.current = syntaxOverridesFromSettings(s);
+      if (monacoRef.current) defineMonacoThemes(monacoRef.current, syntaxOverridesRef.current);
+      if (typeof s.stmtNumbers === "boolean") {
+        stmtNumbersRef.current = s.stmtNumbers;
+        stmtBadgesRef.current?.setEnabled(s.stmtNumbers);
+      }
     };
     ipc.getAppSettings().then(apply).catch(() => undefined);
     if (!isTauri()) return;
@@ -524,6 +555,18 @@ export function ExasolStudio({
   /** Open generated SQL (DBA actions, row edits, …) in a NEW query tab — the
    *  editor is the single place SQL is reviewed and run, so results and errors
    *  surface natively. Dialogs only confirm; they never execute. */
+  // A statement's plan visualizer as its own full-size workbench tab (the
+  // Query Performance strip's "Open in tab").
+  function openPlanTab(plan: Plan, title: string) {
+    tabCounter.current += 1;
+    const tab = newTab(tabCounter.current);
+    tab.view = "plan";
+    tab.title = title;
+    tab.planData = [plan];
+    updateTabs(connKey, (list) => [...list, tab]);
+    setActiveTabId(tab.id);
+  }
+
   function openSqlTab(sql: string, title = "SQL") {
     tabCounter.current += 1;
     const tab = newTab(tabCounter.current);
@@ -964,6 +1007,7 @@ export function ExasolStudio({
       response: null,
       execError: null,
       filePath: path,
+      savedSql: content,
     };
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
@@ -1603,6 +1647,16 @@ export function ExasolStudio({
     // whole buffer split into statements, "buffer" the whole buffer as one.
     async (scope: "auto" | "statement" | "selection" | "script" | "buffer") => {
       if (!connection) {
+        // Say WHY nothing ran, then open the connect dialog.
+        window.dispatchEvent(
+          new CustomEvent("studio:notice", {
+            detail: {
+              kind: "info",
+              title: "No database connection",
+              body: "Connect to a database to run queries — create or pick a connection to continue.",
+            },
+          }),
+        );
         openConnect();
         return;
       }
@@ -1632,7 +1686,7 @@ export function ExasolStudio({
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
       // progress, not the last statement's rows sitting underneath.
-      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, resultView: "results" });
+      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, profileNote: undefined, planIdx: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
@@ -1728,7 +1782,7 @@ export function ExasolStudio({
         await ipc.writeTextFile(activeTab.filePath, activeTab.sql);
         // Re-saving recreates a file that may have been deleted — clear the flag.
         updateTabs(connKey, (list) =>
-          list.map((t) => (t.id === activeTab.id && t.fileMissing ? { ...t, fileMissing: false } : t)),
+          list.map((t) => (t.id === activeTab.id ? { ...t, fileMissing: false, savedSql: t.sql } : t)),
         );
         setFilesRefresh((n) => n + 1);
       } catch {
@@ -1743,7 +1797,7 @@ export function ExasolStudio({
     if (isTauri() && wsPath) {
       try {
         await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
-        patchTab(activeTab.id, { title: fileName });
+        patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
         setFilesRefresh((n) => n + 1);
       } catch {
         /* ignore write error */
@@ -1767,7 +1821,7 @@ export function ExasolStudio({
     const file = raw.endsWith(".sql") ? raw : `${raw}.sql`;
     try {
       await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
-      patchTab(activeTab.id, { title: file });
+      patchTab(activeTab.id, { title: file, savedSql: activeTab.sql, filePath: `${wsPath}/${file}` });
       setFilesRefresh((n) => n + 1);
     } catch {
       /* ignore */
@@ -1917,6 +1971,21 @@ export function ExasolStudio({
 
   const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
+  // Explain plan (⌘⌥Enter / toolbar): profile the selection, else the statement
+  // at the cursor — same target-selection as Execute, shown in Query Performance.
+  async function explainRun() {
+    if (!connection || running || activeTab.view !== "sql") return;
+    const editor = editorRef.current;
+    const full = activeTab.sql;
+    const sel = editor?.getSelection();
+    const selection = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
+    const model = editor?.getModel();
+    const pos = editor?.getPosition();
+    const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
+    const sql = pickRunSql("auto", full, selection, cursorOffset);
+    await profileQuery(sql.trim() || full);
+  }
+
   async function profileQuery(sql: string) {
     const stmt = sql.trim().replace(/;\s*$/, "");
     if (!connection || profiling) return;
@@ -1929,7 +1998,10 @@ export function ExasolStudio({
     const sid = tab.profileSession;
     const base = tab.profileBaseStmt;
     if (!sid || !base) {
-      pushNotification("warning", "Profiling unavailable", "Run the query first — its plan is captured on execution (this connection's driver may not support profiling).");
+      patchTab(tab.id, {
+        profileNote:
+          "This run did not capture a profiling baseline (restored sessions and bridge drivers cannot). Run the query again, then open Query Performance.",
+      });
       return;
     }
     setProfiling(true);
@@ -1937,26 +2009,39 @@ export function ExasolStudio({
       // Flush so the just-run profile is queryable immediately (no re-run).
       await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false).catch(() => null);
 
-      // The profiled query is the first non-transaction statement after the
-      // baseline on that session. Richest source first (per-node IPROC detail
-      // for skew), falling back to the always-available user summary view.
-      const target = (view: string) =>
-        `(SELECT MIN(STMT_ID) FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${base} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK'))`;
+      // The run's statements are the first N distinct non-transaction
+      // statements after the baseline on that session (N = executed results).
+      // Fetch that whole window and show the HEAVIEST statement — a script's
+      // first statement is often trivial DDL whose profile is a lone COMPILE
+      // part, which is not what anyone wants to see. Richest source first
+      // (per-node IPROC detail for skew), then the user summary view.
+      const stmtCount = Math.max(1, tab.response?.results.length ?? 1);
       const detailView = `"$EXA_PROFILE_DETAILS_LAST_DAY"`;
       const userView = `EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY`;
+      const windowSql = (view: string, tail: string) =>
+        `SELECT * FROM ${view} WHERE SESSION_ID = ${sid} AND STMT_ID > ${base} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK') ORDER BY ${tail}`;
       const attempts: { sql: string; source: ProfileSource }[] = [
-        { sql: `SELECT * FROM ${detailView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(detailView)} ORDER BY PART_ID, IPROC`, source: "DETAILS" },
-        { sql: `SELECT * FROM ${userView} WHERE SESSION_ID = ${sid} AND STMT_ID = ${target(userView)} ORDER BY PART_ID`, source: "USER_SUMMARY" },
+        { sql: windowSql(detailView, "STMT_ID, PART_ID, IPROC"), source: "DETAILS" },
+        { sql: windowSql(userView, "STMT_ID, PART_ID"), source: "USER_SUMMARY" },
       ];
 
-      // Small retry: statistics can take a beat to become queryable even after
-      // FLUSH. Short and bounded so it still feels instant.
+      // Retry: statistics can lag a few seconds even after FLUSH. Bounded
+      // (~3s worst case) and it remembers the last DB error for the empty
+      // state, so a failure is diagnosable instead of silent.
       let rows: Record<string, unknown>[] = [];
       let source: ProfileSource = "USER_SUMMARY";
-      for (let round = 0; round < 4 && rows.length === 0; round++) {
-        if (round > 0) await sleep(250);
+      let lastError = "";
+      for (let round = 0; round < 8 && rows.length === 0; round++) {
+        if (round > 0) await sleep(350);
         for (const attempt of attempts) {
-          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch(() => null);
+          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch((e) => {
+            lastError = errorMessage(e);
+            return null;
+          });
+          if (res && !res.success) {
+            const failed = res.results.find((r) => r.error);
+            if (failed?.error) lastError = failed.error;
+          }
           const set = res?.results.find((r) => r.kind === "resultSet");
           if (res?.success && set && set.rows.length > 0) {
             rows = resultRecords(set);
@@ -1966,25 +2051,61 @@ export function ExasolStudio({
         }
       }
       if (rows.length === 0) {
-        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows (it may be too fast to profile, or the account lacks statistics access).");
+        patchTab(tab.id, {
+          profileNote:
+            `No profile rows for session ${sid}, statements after #${base} (checked $EXA_PROFILE_DETAILS_LAST_DAY and EXA_USER_PROFILE_LAST_DAY, 8 attempts over ~3s).` +
+            (lastError ? ` Last database error: ${lastError}` : " The statements may have been too fast to record, or session profiling was off for this run."),
+        });
         return;
       }
 
-      // Derive the (session, statement) key from the fetched rows themselves.
-      const first = rows[0];
-      const ctxSession = first.SESSION_ID !== undefined && first.SESSION_ID !== null ? String(first.SESSION_ID) : sid;
-      const ctxStmt = first.STMT_ID !== undefined && first.STMT_ID !== null ? String(first.STMT_ID) : "";
-      const plan: Plan = normalizeProfileRows(rows, { sessionId: ctxSession, stmtId: ctxStmt, source });
-      // Profile views carry no SQL_TEXT — use the statement we profiled.
-      if (!plan.queryText && stmt) plan.queryText = stmt;
-      if (plan.nodes.length === 0) {
-        pushNotification("warning", "No profile parts for this statement", "The query produced no profile rows.");
+      // ONE plan PER statement of the run (a script shows them all as tabs);
+      // keep the run's statement order.
+      const stmtIds: string[] = [];
+      const rowsByStmt = new Map<string, Record<string, unknown>[]>();
+      for (const r of rows) {
+        const id = r.STMT_ID !== undefined && r.STMT_ID !== null ? String(r.STMT_ID) : "";
+        if (!id) continue;
+        if (!rowsByStmt.has(id)) {
+          if (stmtIds.length >= stmtCount) continue; // beyond this run
+          stmtIds.push(id);
+          rowsByStmt.set(id, []);
+        }
+        rowsByStmt.get(id)!.push(r);
+      }
+
+      // Profile views carry no SQL_TEXT — name each statement from the SQL
+      // audit view so the tabs show WHICH statement each plan is for.
+      const sqlTexts = new Map<string, string>();
+      if (stmtIds.length > 0) {
+        const res = await ipc
+          .executeSql(cid, cname, `SELECT STMT_ID, SQL_TEXT FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = ${sid} AND STMT_ID IN (${stmtIds.join(", ")})`, stmtIds.length + 10, false)
+          .catch(() => null);
+        const set = res?.results.find((r) => r.kind === "resultSet");
+        for (const r of set?.rows ?? []) {
+          if (r[0] !== null && typeof r[1] === "string" && r[1].trim()) sqlTexts.set(String(r[0]), r[1].trim());
+        }
+      }
+
+      const plans: Plan[] = stmtIds.map((id) => {
+        const group = rowsByStmt.get(id)!;
+        // Derive the session key from the rows THEMSELVES: SESSION_ID arrives
+        // as a JSON number beyond 2^53 (Exasol session ids are ~1.9e18), so
+        // String(row) !== the exact TO_CHAR(CURRENT_SESSION) string, and
+        // normalizeProfileRows would filter every row out.
+        const ctxSession = group[0].SESSION_ID !== undefined && group[0].SESSION_ID !== null ? String(group[0].SESSION_ID) : sid;
+        const plan = normalizeProfileRows(group, { sessionId: ctxSession, stmtId: id, source });
+        plan.queryText = sqlTexts.get(id) ?? plan.queryText ?? (stmtIds.length === 1 ? stmt : "");
+        return plan;
+      });
+      if (plans.every((p) => p.nodes.length === 0)) {
+        patchTab(tab.id, { profileNote: "The profile rows produced no operators for any statement of this run." });
         return;
       }
-      patchTab(tab.id, { planData: plan, resultView: "performance" });
+      patchTab(tab.id, { planData: plans, resultView: "performance", profileNote: undefined });
       loadHistory();
     } catch (e) {
-      pushNotification("warning", "Profiling failed", errorMessage(e));
+      patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });
     } finally {
       setProfiling(false);
     }
@@ -2128,12 +2249,28 @@ export function ExasolStudio({
   }
 
   // Step through SQL history into the current editor.
+  // Step through executed-SQL history. Index -1 is the user's live draft;
+  // 0 is the most recent entry. "prev" (<) goes further back, "next" (>) comes
+  // forward toward the draft. Stepping into history stashes the draft so
+  // "next" past the newest entry restores exactly what was typed.
   function historyNav(dir: "prev" | "next") {
     if (history.length === 0) return;
-    const idx =
-      dir === "prev"
-        ? Math.min((historyIdx < 0 ? -1 : historyIdx) + 1, history.length - 1)
-        : Math.max(historyIdx - 1, 0);
+    if (dir === "prev") {
+      if (historyIdx < 0) historyDraft.current = activeTab.sql ?? "";
+      const idx = Math.min(Math.max(historyIdx, -1) + 1, history.length - 1);
+      setHistoryIdx(idx);
+      const entry = history[idx];
+      if (entry) patchTab(activeTab.id, { sql: entry.sql });
+      return;
+    }
+    // next
+    if (historyIdx < 0) return; // already at the live draft
+    if (historyIdx === 0) {
+      setHistoryIdx(-1);
+      patchTab(activeTab.id, { sql: historyDraft.current ?? "" });
+      return;
+    }
+    const idx = historyIdx - 1;
     setHistoryIdx(idx);
     const entry = history[idx];
     if (entry) patchTab(activeTab.id, { sql: entry.sql });
@@ -2450,22 +2587,36 @@ export function ExasolStudio({
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
-                {/* Execute group — primary runs the selection, or the statement
-                    at the cursor (DBVisualizer-style Execute). */}
-                <button
-                  onClick={() => run("auto")}
+                {/* Execute group — DBVisualizer's four run modes, all naked icon
+                    buttons. A drag-selection runs instead of the whole buffer for
+                    the script + current buttons; onMouseDown preventDefault keeps
+                    the selection on click. */}
+                <IconButton
+                  label="Execute script (⌘⏎)"
+                  onClick={() => run("script")}
+                  onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
-                  aria-label="Execute"
-                  title="Execute — the selected text, or the statement at the cursor (⌘/Ctrl+Enter)"
-                  className="cta-glow flex h-7 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
                 >
-                  {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-                </button>
-                <IconButton label="Execute all statements (⌘/Ctrl+Shift+Enter)" onClick={() => run("script")} disabled={running}>
-                  <FileCode2 className="h-3.5 w-3.5" />
+                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4 text-primary" />}
                 </IconButton>
-                <IconButton label="Execute the whole buffer as a single statement" onClick={() => run("buffer")} disabled={running}>
-                  <Zap className="h-3.5 w-3.5" />
+                <IconButton
+                  label="Execute current (⌘.)"
+                  onClick={() => run("auto")}
+                  onMouseDown={(e) => e.preventDefault()}
+                  disabled={running}
+                >
+                  <RunCurrentIcon className="h-4 w-4 text-primary" />
+                </IconButton>
+                <IconButton label="Execute buffer as one statement (⌘⇧⏎)" onClick={() => run("buffer")} disabled={running}>
+                  <RunBufferIcon className="h-4 w-4 text-primary" />
+                </IconButton>
+                <IconButton
+                  label="Explain plan (⌘⌥⏎)"
+                  onClick={() => void explainRun()}
+                  onMouseDown={(e) => e.preventDefault()}
+                  disabled={running || !connected}
+                >
+                  <RunExplainIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
@@ -2530,9 +2681,19 @@ export function ExasolStudio({
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
                 {/* Save + history */}
-                <IconButton label="Save to the current file" onClick={saveTab}>
-                  <Save className="h-3.5 w-3.5" />
-                </IconButton>
+                {(() => {
+                  // Dirty = the buffer differs from what was last saved/opened.
+                  const tabDirty = activeTab.sql !== (activeTab.savedSql ?? "");
+                  return (
+                    <IconButton
+                      label={tabDirty ? "Save to the current file (unsaved changes)" : "Save to the current file — no changes"}
+                      onClick={saveTab}
+                      disabled={!tabDirty}
+                    >
+                      <Save className={cn("h-3.5 w-3.5", tabDirty && "text-primary")} />
+                    </IconButton>
+                  );
+                })()}
                 <IconButton label="Save as a new file…" onClick={() => setNamePrompt({ value: activeTab.title.replace(/\.sql$/, "") })}>
                   <SaveAll className="h-3.5 w-3.5" />
                 </IconButton>
@@ -2730,6 +2891,18 @@ export function ExasolStudio({
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
               <GitPanel full />
             </div>
+          ) : activeTab.view === "plan" ? (
+            // A statement's plan visualizer, full-size (its operator sidebar
+            // has room here that the results panel lacks).
+            <div className="min-h-0 flex-1 bg-editor">
+              {activeTab.planData?.[0] ? (
+                <QueryPlanView plan={activeTab.planData[0]} onOpenSql={openSqlTab} />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[12.5px] text-muted-foreground">
+                  This plan tab has no data — profile a query from its Query Performance view.
+                </div>
+              )}
+            </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">
               <NotebookTab
@@ -2738,7 +2911,7 @@ export function ExasolStudio({
                 connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
                 editorTheme={editorTheme}
                 beforeMount={(m) => {
-                  defineMonacoThemes(m);
+                  applyMonacoThemes(m);
                   // Register Exasol autocompletion on the shared monaco (guarded
                   // internally) so notebook SQL cells get completions too.
                   registerExasolCompletion(m, () => sqlCatalogRef.current);
@@ -2841,7 +3014,7 @@ export function ExasolStudio({
             </div>
           ) : (
             <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel defaultSize="55%" minSize="120px" className="relative min-h-0">
+              <ResizablePanel defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
                 {inlineDiff ? (
                   <InlineSqlDiff
                     state={inlineDiff}
@@ -2852,17 +3025,27 @@ export function ExasolStudio({
                     onDecline={() => setInlineDiff(null)}
                   />
                 ) : null}
+                <div className="min-h-0 flex-1">
                 <Editor
-                  beforeMount={defineMonacoThemes}
+                  beforeMount={applyMonacoThemes}
                   defaultLanguage="sql"
                   path={`${connKey}/${activeTab.id}.sql`}
                   height="100%"
+                  loading={<BrandLoader size={40} />}
                   value={activeTab.sql}
                   theme={editorTheme}
-                  onChange={(value) => patchTab(activeTab.id, { sql: value ?? "" })}
+                  onChange={(value) => {
+                    // A genuine user edit leaves history navigation — the typed
+                    // text is now the live draft.
+                    if (historyIdx >= 0) setHistoryIdx(-1);
+                    patchTab(activeTab.id, { sql: value ?? "" });
+                  }}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
+                    setStatusEditor(editor);
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
+                    stmtBadgesRef.current = installStatementBadges(editor, monaco);
+                    stmtBadgesRef.current.setEnabled(stmtNumbersRef.current);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
                       (window as unknown as Record<string, unknown>).__exaSqlAiActions = true;
@@ -2907,11 +3090,72 @@ export function ExasolStudio({
                         run: () => aiAskSqlRef.current(a.kind),
                       });
                     }
-                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("auto"));
-                    editor.addCommand(
-                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-                      () => void run("script"),
-                    );
+                    // DBVisualizer shortcuts as real ACTIONS so they are
+                    // searchable in the command palette, not just keybindings:
+                    // ⌘↵ script, ⌘. current, ⌘⇧↵ buffer, ⌘⌥↵ explain.
+                    const runActs = [
+                      { id: "exa.run.script", label: "Execute the buffer as an SQL script", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: () => void run("script") },
+                      { id: "exa.run.current", label: "Execute the current statement", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period], run: () => void run("auto") },
+                      { id: "exa.run.buffer", label: "Execute the complete buffer as one statement", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter], run: () => void run("buffer") },
+                      { id: "exa.run.explain", label: "Execute the statement(s) as explain plan", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.Enter], run: () => void explainRun() },
+                    ];
+                    for (const a of runActs) {
+                      editor.addAction({ id: a.id, label: a.label, keybindings: a.keys, run: a.run });
+                    }
+                    // Monaco suppresses trigger characters inside comment
+                    // tokens, so "-"/"--"/"--/" never open the dropdown on
+                    // their own — force the suggest widget for the dash
+                    // suggestions (comment vs UDF block).
+                    // onDidType exists on the widget but is absent from the
+                    // IStandaloneCodeEditor typings.
+                    (editor as unknown as { onDidType: (fn: (text: string) => void) => void }).onDidType((text) => {
+                      if (text !== "-" && text !== "/" && text !== "*") return;
+                      const pos = editor.getPosition();
+                      const mdl = editor.getModel();
+                      if (!pos || !mdl) return;
+                      const before = mdl.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
+                      if (!/^\s*(-{1,2}|--\/|\/\*?)$/.test(before)) return;
+                      // A lone "/" that CLOSES an open --/ script block is the
+                      // block terminator, not the start of a comment — popping
+                      // the dropdown there flashed the UI on every UDF edit.
+                      if (/^\s*\/$/.test(before)) {
+                        const offset = mdl.getOffsetAt(pos);
+                        const inOpenBlock = findScriptBlocks(mdl.getValue()).some((b) => !b.closed && offset > b.start);
+                        if (inOpenBlock) return;
+                      }
+                      editor.trigger("exa-dash", "editor.action.triggerSuggest", {});
+                    });
+                    // Quick UDF scaffold (also available by typing "udf" in the
+                    // editor — the completion list carries per-language templates).
+                    editor.addAction({
+                      id: "exa.insert.udf",
+                      label: "Insert UDF script template (--/ … /)",
+                      run: (ed) => {
+                        const snippet =
+                          "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/\n";
+                        const snippets = ed.getContribution("snippetController2") as unknown as { insert?: (s: string) => void } | null;
+                        if (snippets?.insert) snippets.insert(snippet);
+                        else {
+                          const sel = ed.getSelection();
+                          if (sel) ed.executeEdits("exa-udf", [{ range: sel, text: snippet.replace(/\$\{\d+:?([^}]*)\}/g, "$1") }]);
+                        }
+                      },
+                    });
+                    // Quick Access (the VS Code-style palette): ⌘P opens the
+                    // provider list (go to line, symbols, commands), ⌘⇧P goes
+                    // straight to Show And Run Commands. F1 stays built in.
+                    const openQuickAccess = (prefix: string) => {
+                      // invokeWithinContext exists on the widget but is absent
+                      // from the IStandaloneCodeEditor typings.
+                      const widget = editor as unknown as {
+                        invokeWithinContext: (fn: (accessor: { get: (id: unknown) => unknown }) => void) => void;
+                      };
+                      widget.invokeWithinContext((accessor) => {
+                        (accessor.get(IQuickInputService) as { quickAccess: { show: (v: string) => void } }).quickAccess.show(prefix);
+                      });
+                    };
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => openQuickAccess(""));
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => openQuickAccess(">"));
                   }}
                   options={{
                     automaticLayout: true,
@@ -2926,6 +3170,8 @@ export function ExasolStudio({
                     smoothScrolling: true,
                   }}
                 />
+                </div>
+                <EditorStatusBar editor={statusEditor} sql={activeTab.sql} />
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
               <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
@@ -2950,8 +3196,12 @@ export function ExasolStudio({
                   onCommitEdits={commitEdits}
                   editBusy={running}
                   planData={activeTab.planData}
+                  profileNote={activeTab.profileNote}
+                  planIdx={activeTab.planIdx}
+                  onPlanIdxChange={(i) => patchTab(activeTab.id, { planIdx: i })}
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
+                  onOpenPlanTab={openPlanTab}
                   onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}
                 />
               </ResizablePanel>

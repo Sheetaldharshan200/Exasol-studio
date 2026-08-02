@@ -47,6 +47,7 @@ import {
   X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import {
   Select,
   SelectContent,
@@ -1161,7 +1162,7 @@ export function Visualizer({
                 </SelectContent>
               </Select>
               <span>Limit</span>
-              <Input value={String(limit)} onChange={(e) => setLimit(Number(e.target.value) || 0)} inputMode="numeric" className="h-6 w-16 text-xs" />
+              <NumberInput value={limit} min={0} onCommit={setLimit} className="h-6 w-16 border-input bg-transparent text-xs" />
             </div>
           </div>
 
