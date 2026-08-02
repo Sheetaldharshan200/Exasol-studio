@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { type Plan } from "@/lib/plan-model";
 import { statementVerb } from "@/lib/result-stats";
 import { QueryPlanView } from "./QueryPlanView";
+import { GoToBox } from "./GoToBox";
 
 /** First meaningful words of a statement for its tab label / overview row. */
 function stmtLabel(plan: Plan, index: number): string {
@@ -26,10 +27,16 @@ export function QueryPlanTabs({
   plans,
   onOpenSql,
   onOpenPlanTab,
+  savedIdx,
+  onIdxChange,
 }: {
   plans: Plan[];
   onOpenSql: (sql: string, title?: string) => void;
   onOpenPlanTab: (plan: Plan, title: string) => void;
+  /** Selection persisted on the tab, so leaving and returning (or popping the
+   *  plan out and closing it) continues where the user left off. */
+  savedIdx?: number;
+  onIdxChange?: (idx: number) => void;
 }) {
   const heaviest = useMemo(() => {
     let best = 0;
@@ -39,7 +46,13 @@ export function QueryPlanTabs({
     return best;
   }, [plans]);
   // -1 = the "All statements" overview.
-  const [active, setActive] = useState(heaviest);
+  const [active, setActiveState] = useState(
+    savedIdx !== undefined && savedIdx >= -1 && savedIdx < plans.length ? savedIdx : heaviest,
+  );
+  const setActive = (i: number) => {
+    setActiveState(i);
+    onIdxChange?.(i);
+  };
   const [goTo, setGoTo] = useState("");
   const stripRef = useRef<HTMLDivElement>(null);
 
@@ -61,7 +74,7 @@ export function QueryPlanTabs({
     if (Number.isFinite(n) && n >= 1 && n <= plans.length) setActive(n - 1);
   }
 
-  const openInTab = (p: Plan, i: number) => onOpenPlanTab(p, `Plan · ${i + 1} ${statementVerb(p.queryText) ?? "statement"}`);
+  const openInTab = (p: Plan, i: number) => onOpenPlanTab(p, `Plan · ${i + 1}] ${statementVerb(p.queryText) ?? "statement"}`);
 
   if (plans.length === 0) return null;
   if (plans.length === 1) return <QueryPlanView plan={plans[0]} onOpenSql={onOpenSql} onOpenInTab={() => openInTab(plans[0], 0)} />;
@@ -72,15 +85,7 @@ export function QueryPlanTabs({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <input
-          value={goTo}
-          onChange={(e) => jumpTo(e.target.value)}
-          placeholder="#"
-          inputMode="numeric"
-          aria-label={`Go to statement 1–${plans.length}`}
-          title={`Go to statement 1–${plans.length}`}
-          className="h-6 w-11 shrink-0 rounded-md border border-border bg-editor px-1.5 text-center font-mono text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-        />
+        <GoToBox value={goTo} onChange={jumpTo} max={plans.length} side="left" className="h-6 w-11 px-1.5 text-[11px]" />
         <button
           data-idx={-1}
           onClick={() => setActive(-1)}
@@ -107,11 +112,12 @@ export function QueryPlanTabs({
                 active === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {i + 1} {statementVerb(p.queryText) ?? ""}
+              {i + 1}] {statementVerb(p.queryText) ?? ""}
               {i === heaviest ? <Timer className="h-3 w-3 text-amber-500" aria-label="Slowest statement" /> : null}
             </button>
           );
         })}
+        <GoToBox value={goTo} onChange={jumpTo} max={plans.length} side="right" className="h-6 w-11 px-1.5 text-[11px]" />
       </div>
       {current ? (
         <div className="min-h-0 flex-1">
@@ -139,7 +145,7 @@ export function QueryPlanTabs({
                     onClick={() => setActive(i)}
                     className="cursor-pointer border-t border-border/60 transition-colors hover:bg-secondary/40"
                   >
-                    <td className="py-2 pr-2 font-mono text-muted-foreground">{i + 1}</td>
+                    <td className="py-2 pr-2 font-mono text-muted-foreground">{i + 1}]</td>
                     <td className="max-w-0 truncate py-2 pr-3 font-mono" title={p.queryText}>
                       <span className="inline-flex max-w-full items-center gap-1.5">
                         {i === heaviest ? <Timer className="h-3 w-3 shrink-0 text-amber-500" aria-label="Slowest statement" /> : null}

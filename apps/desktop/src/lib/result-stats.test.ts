@@ -9,10 +9,10 @@ test("resultTabLabel describes each result kind", () => {
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 0, error: "boom" }, 0), "Result 1 · error");
 });
 
-test("resultTabLabel shows the statement verb when known", () => {
-  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 3, error: null }, 7, "SELECT"), "8 SELECT · 3 rows");
-  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 12, error: null }, 3, "INSERT"), "4 INSERT · 12 affected");
-  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 0, error: "boom" }, 0, "DROP"), "1 DROP · error");
+test("resultTabLabel shows the statement verb with editor-style numbering", () => {
+  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 3, error: null }, 7, "SELECT"), "8] SELECT · 3 rows");
+  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 12, error: null }, 3, "INSERT"), "4] INSERT · 12 affected");
+  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 0, error: "boom" }, 0, "DROP"), "1] DROP · error");
 });
 
 test("statementVerb finds the leading keyword, skipping comments", () => {

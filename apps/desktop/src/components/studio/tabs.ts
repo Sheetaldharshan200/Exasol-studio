@@ -83,6 +83,8 @@ export type SqlTab = {
   planData?: Plan[];
   /** Why the last profile attempt produced no plan — shown in the empty state. */
   profileNote?: string;
+  /** Selected statement in Query Performance (-1 = All statements overview). */
+  planIdx?: number;
   /** Captured on Run: the session + pre-run statement id, so the plan can be
    *  read from the ORIGINAL profiled run without re-executing the query. */
   profileSession?: string;

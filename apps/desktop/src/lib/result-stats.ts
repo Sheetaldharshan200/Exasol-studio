@@ -44,7 +44,8 @@ export function resultTabLabel(
    *  WHAT ran, not just "Result N". */
   verb?: string,
 ): string {
-  const head = verb ? `${index + 1} ${verb}` : `Result ${index + 1}`;
+  // "8] SELECT" — the same "N]" numbering as the editor's statement markers.
+  const head = verb ? `${index + 1}] ${verb}` : `Result ${index + 1}`;
   if (r.error) return `${head} · error`;
   if (r.kind === "rowCount") return `${head} · ${r.rowCount} affected`;
   return `${head} · ${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;

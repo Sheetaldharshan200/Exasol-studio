@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
 import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
+import { GoToBox } from "./GoToBox";
 import { QueryPlanTabs } from "./QueryPlanTabs";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
@@ -46,6 +47,8 @@ export function ResultsPanel({
   editBusy,
   planData,
   profileNote,
+  planIdx,
+  onPlanIdxChange,
   profiling,
   onProfile,
   onOpenPlanTab,
@@ -79,6 +82,8 @@ export function ResultsPanel({
   editBusy: boolean;
   planData?: Plan[] | Plan;
   profileNote?: string;
+  planIdx?: number;
+  onPlanIdxChange?: (idx: number) => void;
   profiling: boolean;
   onProfile: () => void;
   onOpenPlanTab: (plan: Plan, title: string) => void;
@@ -213,7 +218,7 @@ export function ResultsPanel({
           </div>
         ) : view === "performance" ? (
           plans.length > 0 ? (
-            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} onOpenPlanTab={onOpenPlanTab} />
+            <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} onOpenPlanTab={onOpenPlanTab} savedIdx={planIdx} onIdxChange={onPlanIdxChange} />
           ) : profiling ? (
             // A profile fetch is actually in flight — only then spin.
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -366,15 +371,7 @@ function MultiResultView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={stripRef} className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <input
-          value={goTo}
-          onChange={(e) => jumpTo(e.target.value)}
-          placeholder="#"
-          inputMode="numeric"
-          aria-label={`Go to result 1–${results.length}`}
-          title={`Go to result 1–${results.length}`}
-          className="h-5 w-10 shrink-0 rounded border border-border bg-editor px-1 text-center font-mono text-[10.5px] outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-        />
+        <GoToBox value={goTo} onChange={jumpTo} max={results.length} side="left" className="h-5 w-10 px-1 text-[10.5px]" />
         {results.map((r, i) => (
           <button
             key={i}
@@ -390,6 +387,7 @@ function MultiResultView({
             {resultTabLabel(r, i, verbs[i])}
           </button>
         ))}
+        <GoToBox value={goTo} onChange={jumpTo} max={results.length} side="right" className="h-5 w-10 px-1 text-[10.5px]" />
       </div>
       <div className="min-h-0 flex-1">
         {sel.kind === "resultSet" && !sel.error ? (
