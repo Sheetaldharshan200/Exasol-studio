@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { type Plan } from "@/lib/plan-model";
 import { QueryPlanView } from "./QueryPlanView";
@@ -30,6 +30,23 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
   }, [plans]);
   // -1 = the "All statements" overview.
   const [active, setActive] = useState(heaviest);
+  const [goTo, setGoTo] = useState("");
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Keep the selected tab visible — the default (heaviest) or an overview
+  // click can land far right, outside the scrolled strip.
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector(`[data-idx="${active}"]`)
+      ?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [active]);
+
+  // Jump to a statement by its number as it is typed (clamped to the run).
+  function jumpTo(raw: string) {
+    setGoTo(raw.replace(/\D/g, ""));
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= plans.length) setActive(n - 1);
+  }
 
   if (plans.length === 0) return null;
   if (plans.length === 1) return <QueryPlanView plan={plans[0]} onOpenSql={onOpenSql} />;
@@ -39,8 +56,18 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:thin]">
+      <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:thin]">
+        <input
+          value={goTo}
+          onChange={(e) => jumpTo(e.target.value)}
+          placeholder="#"
+          inputMode="numeric"
+          aria-label={`Go to statement 1–${plans.length}`}
+          title={`Go to statement 1–${plans.length}`}
+          className="h-6 w-11 shrink-0 rounded-md border border-border bg-editor px-1.5 text-center font-mono text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+        />
         <button
+          data-idx={-1}
           onClick={() => setActive(-1)}
           className={cn(
             "flex h-6 shrink-0 items-center rounded-md px-2.5 text-[12px] font-medium transition-colors",
@@ -52,6 +79,7 @@ export function QueryPlanTabs({ plans, onOpenSql }: { plans: Plan[]; onOpenSql: 
         {plans.map((p, i) => (
           <button
             key={p.stmtId ?? i}
+            data-idx={i}
             onClick={() => setActive(i)}
             title={p.queryText}
             className={cn(
