@@ -46,7 +46,7 @@ import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
-import { defineMonacoThemes } from "./monaco-theme";
+import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
@@ -165,6 +165,14 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // The shared monaco instance + the user's per-token syntax colors, so a
+  // Settings change can re-define the editor themes live.
+  const monacoRef = useRef<import("@monaco-editor/react").Monaco | null>(null);
+  const syntaxOverridesRef = useRef<SyntaxOverrides>({});
+  const applyMonacoThemes = useCallback((m: import("@monaco-editor/react").Monaco) => {
+    monacoRef.current = m;
+    defineMonacoThemes(m, syntaxOverridesRef.current);
+  }, []);
   // progressId of the query currently executing (for the Stop button to cancel).
   const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
@@ -334,6 +342,10 @@ export function ExasolStudio({
         stopOnError: typeof s.stopOnError === "boolean" ? s.stopOnError : v.stopOnError,
         stripComments: typeof s.stripComments === "boolean" ? s.stripComments : v.stripComments,
       }));
+      // Per-token editor colors: re-define the themes so open editors recolor
+      // live (Monaco re-applies a re-defined theme that is currently active).
+      syntaxOverridesRef.current = syntaxOverridesFromSettings(s);
+      if (monacoRef.current) defineMonacoThemes(monacoRef.current, syntaxOverridesRef.current);
     };
     ipc.getAppSettings().then(apply).catch(() => undefined);
     if (!isTauri()) return;
@@ -2787,7 +2799,7 @@ export function ExasolStudio({
                 connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
                 editorTheme={editorTheme}
                 beforeMount={(m) => {
-                  defineMonacoThemes(m);
+                  applyMonacoThemes(m);
                   // Register Exasol autocompletion on the shared monaco (guarded
                   // internally) so notebook SQL cells get completions too.
                   registerExasolCompletion(m, () => sqlCatalogRef.current);
@@ -2902,7 +2914,7 @@ export function ExasolStudio({
                   />
                 ) : null}
                 <Editor
-                  beforeMount={defineMonacoThemes}
+                  beforeMount={applyMonacoThemes}
                   defaultLanguage="sql"
                   path={`${connKey}/${activeTab.id}.sql`}
                   height="100%"
