@@ -137,6 +137,25 @@ describe("statementAtOffset", () => {
     assert.equal(statementAtOffset(sql, 8), "SELECT 1");
   });
 
+  test("DBVis rule: caret after ';' on the same line runs the finished statement", () => {
+    // Caret right past the ';' (offset 9), still on the statement's line —
+    // runs SELECT 1, not the next statement.
+    assert.equal(statementAtOffset(sql, 9), "SELECT 1");
+    const multi = "SELECT 1;\nSELECT 2;";
+    assert.equal(statementAtOffset(multi, 9), "SELECT 1"); // after ';', line 1
+    assert.equal(statementAtOffset(multi, 10), "SELECT 2"); // start of line 2
+  });
+
+  test("DBVis rule: caret at line start before a statement on that line runs it", () => {
+    const indented = "SELECT 1;\n  SELECT 2;";
+    assert.equal(statementAtOffset(indented, 10), "SELECT 2");
+  });
+
+  test("caret on a blank line between statements runs the next statement", () => {
+    const gap = "SELECT 1;\n\nSELECT 2;";
+    assert.equal(statementAtOffset(gap, 10), "SELECT 2");
+  });
+
   test("a cursor past the end returns the last statement", () => {
     assert.equal(statementAtOffset(sql, 9999), "SELECT 3");
   });

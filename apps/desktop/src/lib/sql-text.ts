@@ -66,13 +66,33 @@ export function splitStatements(sql: string): Stmt[] {
 }
 
 /**
- * The statement the cursor is in — or the nearest one before it (so a cursor
- * resting after a trailing ";" still runs the query you just wrote), or the
- * whole input if it is a single unterminated statement.
+ * The statement at the caret, following DbVisualizer's Execute Current rule:
+ * "the statement containing the caret or that ends on the line with the
+ * caret". So a caret resting just after a ";" (still on the same line) runs
+ * the statement that was just written — not the next one. Falls back to the
+ * next statement after the caret, or the whole input if it is a single
+ * unterminated statement.
  */
 export function statementAtOffset(sql: string, offset: number): string {
   const stmts = splitStatements(sql);
   if (stmts.length === 0) return sql.trim();
+  // 1. The statement whose actual text (not leading whitespace) contains the caret.
+  for (const s of stmts) {
+    const span = sql.slice(s.start, s.end);
+    const textStart = s.start + (span.length - span.trimStart().length);
+    if (offset >= textStart && offset <= s.end) return s.text;
+  }
+  // 2. A statement that ends on the caret's line — prefer the last one ending
+  //    at or before the caret (the one the user just finished typing).
+  const lineStart = sql.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+  const nl = sql.indexOf("\n", offset);
+  const lineEnd = nl < 0 ? sql.length : nl;
+  const onLine = stmts.filter((s) => s.end >= lineStart && s.end <= lineEnd);
+  if (onLine.length > 0) {
+    const before = onLine.filter((s) => s.end <= offset);
+    return (before.length > 0 ? before[before.length - 1] : onLine[0]).text;
+  }
+  // 3. The next statement after the caret, else the last one.
   for (const s of stmts) {
     if (offset <= s.end) return s.text;
   }
