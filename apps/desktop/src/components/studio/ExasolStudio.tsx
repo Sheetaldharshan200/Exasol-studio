@@ -2502,7 +2502,7 @@ export function ExasolStudio({
                     the script + current buttons; onMouseDown preventDefault keeps
                     the selection on click. */}
                 <IconButton
-                  label="Execute the buffer as an SQL script (⌘/Ctrl+Enter) — runs the selection if there is one"
+                  label="Execute script (⌘⏎)"
                   onClick={() => run("script")}
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
@@ -2510,18 +2510,18 @@ export function ExasolStudio({
                   {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4 text-primary" />}
                 </IconButton>
                 <IconButton
-                  label="Execute the current statement, or the selection (⌘/Ctrl+.)"
+                  label="Execute current (⌘.)"
                   onClick={() => run("auto")}
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
                 >
                   <RunCurrentIcon className="h-4 w-4 text-primary" />
                 </IconButton>
-                <IconButton label="Execute the complete buffer as one SQL statement" onClick={() => run("buffer")} disabled={running}>
+                <IconButton label="Execute buffer as one statement" onClick={() => run("buffer")} disabled={running}>
                   <RunBufferIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton
-                  label="Execute the statement(s) as explain plan (⌘/Ctrl+⌥/Alt+Enter)"
+                  label="Explain plan (⌘⌥⏎)"
                   onClick={() => void explainRun()}
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running || !connected}
