@@ -55,7 +55,7 @@ export function ResultsPanel({
   response: ExecuteResponse | null;
   lastResult: StatementResult | null;
   execError: string | null;
-  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
+  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean; sql?: string };
   queryProgress?: {
     statement?: number;
     total?: number;
@@ -192,10 +192,18 @@ export function ResultsPanel({
         : null}
       <div className={cn("relative min-h-0 flex-1 overflow-auto", busy && "pointer-events-none")}>
         {busy ? (
-          // A run is in flight — show ITS progress, not the previous result.
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <p className="text-[12.5px]">Running your query…</p>
+          // A run is in flight — show ITS progress + the exact SQL running, not
+          // the previous result.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="text-[12.5px]">Running your query…</span>
+            </div>
+            {runMeta?.sql ? (
+              <pre className="max-h-40 w-full max-w-2xl overflow-auto rounded-md border border-border bg-editor px-3 py-2 text-left font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground [scrollbar-width:thin]">
+                {runMeta.sql.trim()}
+              </pre>
+            ) : null}
           </div>
         ) : view === "performance" ? (
           planData ? (

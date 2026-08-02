@@ -1632,7 +1632,7 @@ export function ExasolStudio({
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
       // progress, not the last statement's rows sitting underneath.
-      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope }, queryProgress: undefined, planData: undefined, resultView: "results" });
+      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
