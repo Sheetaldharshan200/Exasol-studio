@@ -231,7 +231,7 @@ export function ResultsGrid({
                   colSpan={result.columns.length + 1}
                   className="border-r border-b border-l border-border px-3 py-4 text-center text-[11px] text-muted-foreground"
                 >
-                  No rows match “{filterQuery}”.
+                  {filterActive ? <>No rows match “{filterQuery}”.</> : "No rows found."}
                 </td>
               </tr>
             ) : (

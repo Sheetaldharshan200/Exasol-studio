@@ -1,34 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { AlertTriangle, Check, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NodeCtx } from "@/features/workbench/tree-model";
 
-/** A form field in an object action dialog. */
-export type ActionField = {
-  key: string;
-  label: string;
-  type?: "text" | "password" | "textarea" | "select" | "number";
-  value?: string;
-  placeholder?: string;
-  help?: string;
-  options?: { value: string; label: string }[];
-  required?: boolean;
-};
-
 /**
- * A CRUD/DDL action on a database object. Rendered as a **form** (when it has
- * fields) or a **confirmation** (when it doesn't) — never a raw SQL editor. The
- * generated SQL runs silently after the user saves/confirms.
+ * A destructive/DDL action rendered as a **confirmation** (never a form or a
+ * raw SQL editor). Creates and edits generate editable SQL via `kind: "gen"`;
+ * only irreversible operations (Drop, Kill, …) keep this confirm step, after
+ * which the generated SQL runs.
  */
 export type ObjectAction = {
   title: string;
-  /** Primary button label, e.g. "Rename", "Drop", "Create". */
+  /** Primary button label, e.g. "Drop", "Kill". */
   verb: string;
   danger?: boolean;
-  /** Extra explanation, especially the "cannot be undone" note for confirms. */
+  /** Explanation, especially the "cannot be undone" note. */
   message?: string;
-  fields?: ActionField[];
-  buildSql: (v: Record<string, string>) => string;
+  buildSql: () => string;
 };
 
 type Item =
@@ -39,10 +27,6 @@ type Item =
 
 function q(schema: string | undefined, name: string): string {
   return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
-/** Escape a value for use inside a single-quoted SQL string literal. */
-function lit(s: string): string {
-  return (s ?? "").replace(/'/g, "''");
 }
 
 function label(schema: string | undefined, name: string): string {
@@ -270,65 +254,20 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Copy name", kind: "copy", text: ctx.name },
       ];
     }
+    // Create actions generate editable SQL in the editor (inspect-before-run) —
+    // the same pattern as every other operation here — instead of a modal form.
     case "new-schema":
-      return [
-        {
-          label: "New schema…",
-          kind: "action",
-          action: {
-            title: "Create schema",
-            verb: "Create",
-            fields: [{ key: "name", label: "Schema name", value: "NEW_SCHEMA", required: true }],
-            buildSql: (v) => `CREATE SCHEMA ${q(undefined, v.name)};`,
-          },
-        },
-      ];
+      return [{ label: "New schema — generate SQL", kind: "gen", sql: `CREATE SCHEMA NEW_SCHEMA;` }];
     case "new-user":
-      return [
-        {
-          label: "New user…",
-          kind: "action",
-          action: {
-            title: "Create user",
-            verb: "Create",
-            fields: [
-              { key: "name", label: "User name", value: "NEW_USER", required: true },
-              { key: "pw", label: "Password", type: "password", required: true },
-            ],
-            buildSql: (v) => `CREATE USER ${q(undefined, v.name)} IDENTIFIED BY "${v.pw}";`,
-          },
-        },
-      ];
+      return [{ label: "New user — generate SQL", kind: "gen", sql: `CREATE USER NEW_USER IDENTIFIED BY "password";` }];
     case "new-role":
-      return [
-        {
-          label: "New role…",
-          kind: "action",
-          action: {
-            title: "Create role",
-            verb: "Create",
-            fields: [{ key: "name", label: "Role name", value: "NEW_ROLE", required: true }],
-            buildSql: (v) => `CREATE ROLE ${q(undefined, v.name)};`,
-          },
-        },
-      ];
+      return [{ label: "New role — generate SQL", kind: "gen", sql: `CREATE ROLE NEW_ROLE;` }];
     case "new-connection":
       return [
         {
-          label: "New connection…",
-          kind: "action",
-          action: {
-            title: "Create connection",
-            verb: "Create",
-            fields: [
-              { key: "name", label: "Connection name", value: "NEW_CONNECTION", required: true },
-              { key: "to", label: "Target (host:port / URL)", required: true },
-              { key: "user", label: "User", placeholder: "optional" },
-              { key: "pw", label: "Password", type: "password", placeholder: "optional" },
-            ],
-            buildSql: (v) =>
-              `CREATE CONNECTION ${q(undefined, v.name)} TO '${lit(v.to)}'${v.user ? ` USER '${lit(v.user)}' IDENTIFIED BY '${lit(v.pw)}'` : ""};`,
-          },
+          label: "New connection — generate SQL",
+          kind: "gen",
+          sql: `CREATE CONNECTION NEW_CONNECTION TO 'host:port' USER 'user' IDENTIFIED BY 'password';`,
         },
       ];
     case "session":
@@ -469,9 +408,9 @@ export function ObjectContextMenu({
 }
 
 /**
- * Form (for edits/creates) or confirmation (for destructive ops) for an object
- * action. No SQL is shown — the user fills fields or confirms, and the caller
- * runs the generated statement.
+ * Confirmation for a destructive/DDL action. No form and no SQL editor — the
+ * user confirms and the caller runs the generated statement. (Creates/edits use
+ * `kind: "gen"` and never reach here.)
  */
 export function ObjectActionDialog({
   action,
@@ -484,21 +423,16 @@ export function ObjectActionDialog({
   onSubmit: (sql: string) => void;
   onClose: () => void;
 }) {
-  const [vals, setVals] = useState<Record<string, string>>(() =>
-    Object.fromEntries((action.fields ?? []).map((f) => [f.key, f.value ?? ""])),
-  );
   const danger = Boolean(action.danger);
-  const missing = (action.fields ?? []).some((f) => f.required && !vals[f.key]?.trim());
-
   const submit = () => {
-    if (missing || busy) return;
-    onSubmit(action.buildSql(vals));
+    if (busy) return;
+    onSubmit(action.buildSql());
   };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
+        className="flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -509,50 +443,11 @@ export function ObjectActionDialog({
           </button>
         </div>
 
-        <div className="space-y-3 overflow-auto p-4 [scrollbar-width:thin]">
-          {action.message ? (
+        {action.message ? (
+          <div className="p-4">
             <p className={cn("text-[12px] leading-relaxed", danger ? "text-destructive" : "text-muted-foreground")}>{action.message}</p>
-          ) : null}
-          {(action.fields ?? []).map((f) => (
-            <label key={f.key} className="block text-[11px] text-muted-foreground">
-              {f.label}
-              {f.type === "textarea" ? (
-                <textarea
-                  value={vals[f.key] ?? ""}
-                  placeholder={f.placeholder}
-                  rows={4}
-                  onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))}
-                  className="mt-0.5 w-full resize-none rounded-md border border-border bg-editor p-2 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/50 [scrollbar-width:thin]"
-                />
-              ) : f.type === "select" ? (
-                <select
-                  value={vals[f.key] ?? ""}
-                  onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))}
-                  className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[12.5px] text-foreground outline-none focus:border-primary/50"
-                >
-                  {(f.options ?? []).map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={f.type === "password" ? "password" : f.type === "number" ? "number" : "text"}
-                  value={vals[f.key] ?? ""}
-                  placeholder={f.placeholder}
-                  autoFocus={f.key === (action.fields ?? [])[0]?.key}
-                  onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && f.type !== "textarea") submit();
-                  }}
-                  className="mt-0.5 h-8 w-full rounded-md border border-border bg-editor px-2 text-[12.5px] text-foreground outline-none focus:border-primary/50"
-                />
-              )}
-              {f.help ? <span className="mt-0.5 block text-[10.5px] text-muted-foreground/70">{f.help}</span> : null}
-            </label>
-          ))}
-        </div>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
           <button onClick={onClose} className="h-8 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:text-foreground">
@@ -560,7 +455,7 @@ export function ObjectActionDialog({
           </button>
           <button
             onClick={submit}
-            disabled={busy || missing}
+            disabled={busy}
             className={cn(
               "flex h-8 items-center gap-1.5 rounded-md px-3.5 text-[12px] font-medium text-primary-foreground disabled:opacity-50",
               danger ? "bg-destructive hover:bg-destructive/85" : "bg-primary hover:bg-primary/85",
