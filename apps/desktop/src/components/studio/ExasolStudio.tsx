@@ -152,6 +152,9 @@ export function ExasolStudio({
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [historyIdx, setHistoryIdx] = useState(-1);
+  // The editor text the user had typed before stepping into SQL history, so
+  // "next" past the newest entry restores it instead of losing it.
+  const historyDraft = useRef<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean; code?: string; codeLang?: string } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
@@ -2144,12 +2147,28 @@ export function ExasolStudio({
   }
 
   // Step through SQL history into the current editor.
+  // Step through executed-SQL history. Index -1 is the user's live draft;
+  // 0 is the most recent entry. "prev" (<) goes further back, "next" (>) comes
+  // forward toward the draft. Stepping into history stashes the draft so
+  // "next" past the newest entry restores exactly what was typed.
   function historyNav(dir: "prev" | "next") {
     if (history.length === 0) return;
-    const idx =
-      dir === "prev"
-        ? Math.min((historyIdx < 0 ? -1 : historyIdx) + 1, history.length - 1)
-        : Math.max(historyIdx - 1, 0);
+    if (dir === "prev") {
+      if (historyIdx < 0) historyDraft.current = activeTab.sql ?? "";
+      const idx = Math.min(Math.max(historyIdx, -1) + 1, history.length - 1);
+      setHistoryIdx(idx);
+      const entry = history[idx];
+      if (entry) patchTab(activeTab.id, { sql: entry.sql });
+      return;
+    }
+    // next
+    if (historyIdx < 0) return; // already at the live draft
+    if (historyIdx === 0) {
+      setHistoryIdx(-1);
+      patchTab(activeTab.id, { sql: historyDraft.current ?? "" });
+      return;
+    }
+    const idx = historyIdx - 1;
     setHistoryIdx(idx);
     const entry = history[idx];
     if (entry) patchTab(activeTab.id, { sql: entry.sql });
@@ -2889,7 +2908,12 @@ export function ExasolStudio({
                   height="100%"
                   value={activeTab.sql}
                   theme={editorTheme}
-                  onChange={(value) => patchTab(activeTab.id, { sql: value ?? "" })}
+                  onChange={(value) => {
+                    // A genuine user edit leaves history navigation — the typed
+                    // text is now the live draft.
+                    if (historyIdx >= 0) setHistoryIdx(-1);
+                    patchTab(activeTab.id, { sql: value ?? "" });
+                  }}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);

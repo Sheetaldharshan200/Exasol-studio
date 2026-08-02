@@ -17,6 +17,11 @@ export function defineMonacoThemes(monaco: Monaco) {
       // base theme colours it red, so pin it to a soft blue instead.
       { token: "predefined", foreground: "6db3f2" },
       { token: "operator", foreground: "c9c9cf" },
+      // Double-quoted identifiers ("Col Name") — Monaco tags the quotes
+      // "identifier.quote", which the base theme colours red. Match the normal
+      // editor text so quoted identifiers read like the columns they are.
+      { token: "identifier.quote", foreground: "ededee" },
+      { token: "identifier", foreground: "ededee" },
     ],
     colors: {
       "editor.background": "#0a0a0b",
@@ -39,6 +44,8 @@ export function defineMonacoThemes(monaco: Monaco) {
       { token: "comment", foreground: "6b7280", fontStyle: "italic" },
       { token: "predefined", foreground: "2563eb" },
       { token: "operator", foreground: "334155" },
+      { token: "identifier.quote", foreground: "0b1730" },
+      { token: "identifier", foreground: "0b1730" },
     ],
     colors: {
       "editor.background": "#ffffff",
