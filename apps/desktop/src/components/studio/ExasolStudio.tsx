@@ -181,6 +181,9 @@ export function ExasolStudio({
     monacoRef.current = m;
     defineMonacoThemes(m, syntaxOverridesRef.current);
   }, []);
+  // Statement-number badges in the editor margin — Settings toggle, on by default.
+  const stmtBadgesRef = useRef<{ setEnabled: (on: boolean) => void } | null>(null);
+  const stmtNumbersRef = useRef(true);
   // progressId of the query currently executing (for the Stop button to cancel).
   const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
@@ -354,6 +357,10 @@ export function ExasolStudio({
       // live (Monaco re-applies a re-defined theme that is currently active).
       syntaxOverridesRef.current = syntaxOverridesFromSettings(s);
       if (monacoRef.current) defineMonacoThemes(monacoRef.current, syntaxOverridesRef.current);
+      if (typeof s.stmtNumbers === "boolean") {
+        stmtNumbersRef.current = s.stmtNumbers;
+        stmtBadgesRef.current?.setEnabled(s.stmtNumbers);
+      }
     };
     ipc.getAppSettings().then(apply).catch(() => undefined);
     if (!isTauri()) return;
@@ -3026,7 +3033,8 @@ export function ExasolStudio({
                     editorRef.current = editor;
                     setStatusEditor(editor);
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
-                    installStatementBadges(editor, monaco);
+                    stmtBadgesRef.current = installStatementBadges(editor, monaco);
+                    stmtBadgesRef.current.setEnabled(stmtNumbersRef.current);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
                       (window as unknown as Record<string, unknown>).__exaSqlAiActions = true;

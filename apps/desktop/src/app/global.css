@@ -363,12 +363,20 @@
   }
 }
 
-/* Virtual "1] " statement-number markers injected before each statement in
-   the SQL editor (statement-badges.ts). Display-only text. */
-.exa-stmt-inline {
-  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
-  opacity: 0.85;
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
   font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
 }
 
 @layer components {

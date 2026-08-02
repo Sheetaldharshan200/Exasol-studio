@@ -94,6 +94,12 @@ const CATEGORIES: Category[] = [
     controls: [
       { key: "editorFontSize", label: "Editor font size", type: "number", min: 11, max: 22, unit: "px" },
       { key: "wordWrap", label: "Word wrap", type: "toggle" },
+      {
+        key: "stmtNumbers",
+        label: "Statement numbers in the margin",
+        type: "toggle",
+        help: "Shows 1], 2], … next to each statement of a multi-statement buffer, matching the result tabs.",
+      },
       { key: "autoComplete", label: "Auto-completion", type: "toggle" },
       { key: "statementDelimiter", label: "Statement delimiter", type: "text", placeholder: ";" },
     ],
@@ -244,6 +250,7 @@ const DEFAULTS: Record<string, SettingValue> = {
   metadataStaleDays: 60,
   editorFontSize: 13,
   wordWrap: false,
+  stmtNumbers: true,
   autoComplete: true,
   statementDelimiter: ";",
   maxRows: 5000,
