@@ -39,12 +39,12 @@ export function RunBufferIcon({ className }: IconProps) {
   );
 }
 
-/** Execute the statement(s) as explain plan — outline triangle + branch/zigzag. */
+/** Execute the statement(s) as explain plan — outline triangle + an "N" glyph. */
 export function RunExplainIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
       <path d="M4 5.5 L11 10 L4 14.5 Z" {...STROKE} />
-      <path d="M14 14 L16.5 7 L19 14 L21 8" {...STROKE} />
+      <path d="M14.5 15 L14.5 7 L20 15 L20 7" {...STROKE} />
     </svg>
   );
 }
