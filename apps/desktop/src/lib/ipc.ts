@@ -599,6 +599,9 @@ export const ipc = {
     addHistory = true,
     progressId?: string,
   ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId }),
+  /** Cancel the running query registered under `progressId` (Stop). Returns
+   *  true when a kill was issued, false when nothing was running. */
+  cancelQuery: (progressId: string) => call<boolean>("cancel_query", { progressId }),
   connectionSettingsGet: (profileId: string) => call<unknown>("connection_settings_get", { profileId }),
   connectionSettingsSet: (profileId: string, settings: unknown) =>
     call<unknown>("connection_settings_set", { profileId, settings }),

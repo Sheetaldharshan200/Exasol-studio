@@ -161,6 +161,8 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // progressId of the query currently executing (for the Stop button to cancel).
+  const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
   const sqlCatalogRef = useRef<SqlCatalog>(emptyCatalog());
   const refreshSqlCatalog = useCallback(() => {
@@ -1643,6 +1645,8 @@ export function ExasolStudio({
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
       const progressId = `qp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Expose it so the Stop button can cancel THIS run.
+      runningProgressId.current = progressId;
       // The listener is set up asynchronously (dynamic import). A fast query
       // can finish before it resolves, so `progressDone` guards both orderings:
       // if the run ends first, the listener disposes itself the moment it
@@ -1697,12 +1701,33 @@ export function ExasolStudio({
       } finally {
         progressDone = true;
         unlistenProgress?.();
+        runningProgressId.current = null;
         patchTab(tabId, { queryProgress: undefined });
         setRunning(false);
       }
     },
     [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
   );
+
+  // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
+  const [stopping, setStopping] = useState(false);
+  const cancelRunning = useCallback(async () => {
+    const pid = runningProgressId.current;
+    if (!pid || stopping) return;
+    setStopping(true);
+    try {
+      const killed = await ipc.cancelQuery(pid);
+      pushNotification(
+        killed ? "info" : "warning",
+        killed ? "Stopping query" : "Nothing to stop",
+        killed ? "Cancelling the running statement…" : "The query already finished.",
+      );
+    } catch (e) {
+      pushNotification("warning", "Could not stop the query", errorMessage(e));
+    } finally {
+      setStopping(false);
+    }
+  }, [stopping]);
 
   async function saveTab() {
     // A tab opened from an existing file saves back to that same file.
@@ -2456,8 +2481,8 @@ export function ExasolStudio({
                 <IconButton label="Open Dashboards" onClick={openBi}>
                   <BarChart3 className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Stop" disabled={!running}>
-                  <Square className="h-3.5 w-3.5" />
+                <IconButton label="Stop the running query" onClick={() => void cancelRunning()} disabled={!running || stopping}>
+                  {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
                 </IconButton>
 
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
