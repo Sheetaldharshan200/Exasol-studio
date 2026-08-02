@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
-import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, FileCode2, GitCommitHorizontal, Info, ListChecks, MoreHorizontal, Loader2, PanelRight, Pin, Play, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X, Zap } from "lucide-react";
+import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, FileCode2, GitCommitHorizontal, Info, MoreHorizontal, Loader2, PanelRight, Pin, Play, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X, Zap } from "lucide-react";
 import { useTheme } from "@/components/theme/theme-provider";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1595,7 +1595,11 @@ export function ExasolStudio({
   }
 
   const run = useCallback(
-    async (scope: "statement" | "selection" | "script" | "buffer") => {
+    // "auto" is the primary Execute (DBVisualizer-style): the selected text if
+    // there is a selection, otherwise the statement at the cursor. "selection"
+    // forces selection-only, "statement" the cursor statement, "script" the
+    // whole buffer split into statements, "buffer" the whole buffer as one.
+    async (scope: "auto" | "statement" | "selection" | "script" | "buffer") => {
       if (!connection) {
         openConnect();
         return;
@@ -1604,15 +1608,23 @@ export function ExasolStudio({
 
       const editor = editorRef.current;
       const full = activeTab.sql;
+      const selectionText = () => {
+        const sel = editor?.getSelection();
+        return sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
+      };
+      const cursorStatement = () => {
+        const model = editor?.getModel();
+        const pos = editor?.getPosition();
+        return model && pos ? statementAtOffset(full, model.getOffsetAt(pos)) : full;
+      };
       let sqlToRun = full;
-      if (scope === "selection" && editor) {
-        const sel = editor.getSelection();
-        const selected = sel ? editor.getModel()?.getValueInRange(sel) ?? "" : "";
-        sqlToRun = selected.trim() || full;
+      if (scope === "auto" && editor) {
+        const selected = selectionText();
+        sqlToRun = selected.trim() ? selected : cursorStatement();
+      } else if (scope === "selection" && editor) {
+        sqlToRun = selectionText().trim() || full;
       } else if (scope === "statement" && editor) {
-        const model = editor.getModel();
-        const pos = editor.getPosition();
-        if (model && pos) sqlToRun = statementAtOffset(full, model.getOffsetAt(pos));
+        sqlToRun = cursorStatement();
       }
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
@@ -2421,24 +2433,22 @@ export function ExasolStudio({
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
               <>
-                {/* Execute group */}
+                {/* Execute group — primary runs the selection, or the statement
+                    at the cursor (DBVisualizer-style Execute). */}
                 <button
-                  onClick={() => run("statement")}
+                  onClick={() => run("auto")}
                   disabled={running}
-                  title="Execute current statement (Ctrl/Cmd+Enter)"
-                  className="cta-glow flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
+                  aria-label="Execute"
+                  title="Execute — the selected text, or the statement at the cursor (⌘/Ctrl+Enter)"
+                  className="cta-glow flex h-7 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50"
                 >
                   {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-                  Run
                 </button>
-                <IconButton label="Execute buffer as a SQL script" onClick={() => run("script")} disabled={running}>
+                <IconButton label="Execute all statements (⌘/Ctrl+Shift+Enter)" onClick={() => run("script")} disabled={running}>
                   <FileCode2 className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Execute complete buffer as one statement" onClick={() => run("buffer")} disabled={running}>
+                <IconButton label="Execute the whole buffer as a single statement" onClick={() => run("buffer")} disabled={running}>
                   <Zap className="h-3.5 w-3.5" />
-                </IconButton>
-                <IconButton label="Run selection" onClick={() => run("selection")} disabled={running}>
-                  <ListChecks className="h-3.5 w-3.5" />
                 </IconButton>
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
@@ -2876,7 +2886,7 @@ export function ExasolStudio({
                         run: () => aiAskSqlRef.current(a.kind),
                       });
                     }
-                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("statement"));
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("auto"));
                     editor.addCommand(
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
                       () => void run("script"),

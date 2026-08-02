@@ -938,6 +938,20 @@ fn install_semantic_views(
 ) -> AppResult<()> {
     let semantic_revision = &crate::component_lock::components().semantic_views.revision;
     let marker = data_dir.join("personal-local/semantic-example.ready");
+    // Record the components-update manifest so the Managed Components page shows
+    // Semantic Views as installed. Without this it reads no manifest and shows
+    // "not installed" even though the framework is in place (marker + status).
+    let record_installed = || {
+        components_update::write_manifest(
+            data_dir,
+            ComponentId::SemanticViews,
+            &InstalledManifest {
+                version: semantic_revision.clone(),
+                installed_at: chrono::Utc::now().to_rfc3339(),
+                channel: Some("verified".into()),
+            },
+        )
+    };
     let previously_ready = std::fs::read_to_string(&marker)
         .ok()
         .is_some_and(|version| version.trim() == semantic_revision);
@@ -958,7 +972,7 @@ fn install_semantic_views(
     ];
     if previously_ready {
         match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
-            0 => return Ok(()),
+            0 => return record_installed(),
             4 => return Err(AppError::Storage("Existing SALES/MART objects are incomplete or user-owned; automatic setup refused to reset them.".into())),
             _ => emit_log(app, JOB_ID, "Persisted Semantic Views readiness is stale; reconciling the managed installation…", "info"),
         }
@@ -991,7 +1005,7 @@ fn install_semantic_views(
         code => return Err(AppError::Storage(format!("Semantic Views readiness probe exited with code {code}."))),
     }
     std::fs::write(marker, semantic_revision)?;
-    Ok(())
+    record_installed()
 }
 
 /// Unified-credential model: the local database's SYS password is the Studio master
