@@ -104,7 +104,7 @@ export function splitStatements(sql: string): Stmt[] {
   return out;
 }
 
-export type ScriptBlock = { start: number; end: number; language: string; closed: boolean };
+export type ScriptBlock = { start: number; end: number; language: string | null; closed: boolean };
 
 /**
  * The `--/ … /` script blocks of a buffer, for the editor's code-block
@@ -130,10 +130,11 @@ export function findScriptBlocks(sql: string): ScriptBlock[] {
   return out;
 }
 
-/** The script's language from its CREATE header; Exasol defaults to Lua. */
-export function scriptLanguage(block: string): string {
+/** The script's language from its CREATE header — null until one is written
+ *  (the chip and body completions wait for an explicit language). */
+export function scriptLanguage(block: string): string | null {
   const m = block.match(/\bCREATE\s+(?:OR\s+REPLACE\s+)?(LUA|PYTHON3|PYTHON|JAVA|R)\b/i);
-  return m ? m[1].toUpperCase() : "LUA";
+  return m ? m[1].toUpperCase() : null;
 }
 
 /**

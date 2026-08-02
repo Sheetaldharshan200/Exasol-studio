@@ -31,11 +31,13 @@ function ensureBadgeStyles(count: number) {
 /** Keep badges in sync with the buffer; returns the enable/disable handle. */
 export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { setEnabled: (on: boolean) => void } {
   let enabled = true;
+  let lastKey = "";
   const collection = editor.createDecorationsCollection();
   const update = () => {
     const model = editor.getModel();
     if (!enabled || !model) {
       collection.clear();
+      lastKey = "";
       return;
     }
     const sql = model.getValue();
@@ -70,14 +72,34 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         range: new monaco.Range(from.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
         options: { isWholeLine: true, className: "exa-udf-block" },
       });
+      // The delimiters (`--/` line + closing `/`) style as block markers, not
+      // as the comment / operator colors the SQL tokenizer would give them.
       decorations.push({
-        range: new monaco.Range(from.lineNumber, model.getLineMaxColumn(from.lineNumber), from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
-        options: {
-          after: { content: `  ${block.language} script`, inlineClassName: "exa-udf-lang" },
-          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        },
+        range: new monaco.Range(from.lineNumber, 1, from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
+        options: { inlineClassName: "exa-udf-marker" },
       });
+      decorations.push({
+        range: new monaco.Range(to.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
+        options: { inlineClassName: "exa-udf-marker" },
+      });
+      // Language chip only once the CREATE header names a language.
+      if (block.language) {
+        decorations.push({
+          range: new monaco.Range(from.lineNumber, model.getLineMaxColumn(from.lineNumber), from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
+          options: {
+            after: { content: `  ${block.language} script`, inlineClassName: "exa-udf-lang" },
+            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        });
+      }
     }
+    // Re-apply ONLY on structural change — replacing identical decorations on
+    // every keystroke made the margin and block tint visibly push around.
+    const key = decorations
+      .map((d) => `${d.range.startLineNumber}:${d.range.endLineNumber}:${d.options.glyphMarginClassName ?? d.options.className ?? d.options.inlineClassName ?? ""}:${d.options.after?.content ?? ""}`)
+      .join("|");
+    if (key === lastKey) return;
+    lastKey = key;
     collection.set(decorations);
   };
   update();

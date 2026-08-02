@@ -393,6 +393,13 @@
   font-style: italic;
   opacity: 0.9;
 }
+/* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
+   tokenizer's comment/operator colors (!important beats the .mtk* rules). */
+.exa-udf-marker {
+  color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
+  font-weight: 600;
+  font-style: normal !important;
+}
 
 @layer components {
   /* Green CTA glow — resting halo, intensifies on hover */

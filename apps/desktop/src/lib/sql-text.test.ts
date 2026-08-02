@@ -341,8 +341,9 @@ describe("script blocks (--/ … /)", () => {
     assert.equal(findScriptBlocks("--/\nCREATE LUA SCALAR SCRIPT m (a INT)")[0].closed, false);
   });
 
-  test("scriptLanguage defaults to LUA when no language keyword is present", () => {
-    assert.equal(scriptLanguage("--/\nCREATE SCRIPT s AS\nend"), "LUA");
+  test("scriptLanguage is null until an explicit language keyword appears", () => {
+    assert.equal(scriptLanguage("--/\nCREATE SCRIPT s AS\nend"), null);
+    assert.equal(scriptLanguage("--/\n"), null);
     assert.equal(scriptLanguage("--/\nCREATE OR REPLACE JAVA SCALAR SCRIPT j (a INT) RETURNS INT AS"), "JAVA");
     assert.equal(scriptLanguage("--/\ncreate r scalar script r1 (x double) returns double as"), "R");
   });

@@ -3091,6 +3091,22 @@ export function ExasolStudio({
                     for (const a of runActs) {
                       editor.addAction({ id: a.id, label: a.label, keybindings: a.keys, run: a.run });
                     }
+                    // Monaco suppresses trigger characters inside comment
+                    // tokens, so "-"/"--"/"--/" never open the dropdown on
+                    // their own — force the suggest widget for the dash
+                    // suggestions (comment vs UDF block).
+                    // onDidType exists on the widget but is absent from the
+                    // IStandaloneCodeEditor typings.
+                    (editor as unknown as { onDidType: (fn: (text: string) => void) => void }).onDidType((text) => {
+                      if (text !== "-" && text !== "/") return;
+                      const pos = editor.getPosition();
+                      const mdl = editor.getModel();
+                      if (!pos || !mdl) return;
+                      const before = mdl.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
+                      if (/^\s*(-{1,2}|--\/)$/.test(before)) {
+                        editor.trigger("exa-dash", "editor.action.triggerSuggest", {});
+                      }
+                    });
                     // Quick UDF scaffold (also available by typing "udf" in the
                     // editor — the completion list carries per-language templates).
                     editor.addAction({
