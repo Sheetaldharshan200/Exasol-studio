@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cellText, filterRows, toCsv, computeStats } from "./result-stats.ts";
+import { cellText, filterRows, toCsv, computeStats, resultTabLabel } from "./result-stats.ts";
+
+test("resultTabLabel describes each result kind", () => {
+  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 42, error: null }, 1), "Result 2 · 42 rows");
+  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 1, error: null }, 0), "Result 1 · 1 row");
+  assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 5, error: null }, 2), "Result 3 · 5 affected");
+  assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 0, error: "boom" }, 0), "Result 1 · error");
+});
 
 const cols = [
   { name: "ID", typeName: "DECIMAL" },

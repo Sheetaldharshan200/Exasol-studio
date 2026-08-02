@@ -8,10 +8,10 @@
  * tab's query) instead of spawning a separate tab.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
-import { cellText, computeStats, filterRows, toCsv } from "@/lib/result-stats";
+import { cellText, computeStats, filterRows, resultTabLabel, toCsv } from "@/lib/result-stats";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
 import { QueryPlanView } from "./QueryPlanView";
 import type { Plan } from "@/lib/plan-model";
@@ -219,20 +219,34 @@ export function ResultsPanel({
             body="Add this query as a panel and open it on its schema's dashboard, where you can chart it and pin it alongside related metrics."
             action={{ label: "Open in dashboard", onClick: onSendToDashboard }}
           />
-        ) : mergeResults && (response?.results.length ?? 0) > 1 ? (
-          // Merged view — every result set from the last execution.
-          <div className="flex flex-col">
-            {response!.results.map((r, i) => (
-              <div key={i} className="border-b border-border">
-                <div className="bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground">
-                  #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+        ) : (response?.results.length ?? 0) > 1 ? (
+          mergeResults ? (
+            // Merged view — every result set stacked (toggle in the toolbar).
+            <div className="flex flex-col">
+              {response!.results.map((r, i) => (
+                <div key={i} className="border-b border-border">
+                  <div className="bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground">
+                    #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                  </div>
+                  <div className="h-[280px]">
+                    <ResultsGrid result={r} error={r.error} />
+                  </div>
                 </div>
-                <div className="h-[280px]">
-                  <ResultsGrid result={r} error={r.error} />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            // One tab per statement's result (DBVisualizer-style).
+            <MultiResultView
+              results={response!.results}
+              sql={sql}
+              ranAt={runMeta?.finishedAt}
+              onOpenSql={onOpenSql}
+              onCommitEdits={onCommitEdits}
+              editBusy={editBusy}
+              fontSize={fontSize}
+              zebra={zebra}
+            />
+          )
         ) : lastResult && lastResult.kind === "resultSet" && !lastResult.error ? (
           <ResultsView
             result={lastResult}
@@ -258,6 +272,73 @@ export function ResultsPanel({
             fontSize={fontSize}
             zebra={zebra}
           />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+/**
+ * Multi-statement run: one tab per statement's result (DBVisualizer-style).
+ * Defaults to the last result; each tab shows its rows (or the row-count /
+ * error state). The selected index resets when a new run replaces the results.
+ */
+function MultiResultView({
+  results,
+  sql,
+  ranAt,
+  onOpenSql,
+  onCommitEdits,
+  editBusy,
+  fontSize,
+  zebra,
+}: {
+  results: StatementResult[];
+  sql: string;
+  ranAt?: number;
+  onOpenSql: (sql: string, title?: string) => void;
+  onCommitEdits: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
+  editBusy: boolean;
+  fontSize: number;
+  zebra: boolean;
+}) {
+  const [idx, setIdx] = useState(results.length - 1);
+  useEffect(() => setIdx(results.length - 1), [results]);
+  const sel = results[Math.min(idx, results.length - 1)];
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {results.map((r, i) => (
+          <button
+            key={i}
+            onClick={() => setIdx(i)}
+            className={cn(
+              "flex h-5 shrink-0 items-center gap-1 rounded px-2 text-[11px] transition",
+              i === idx ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              r.error && i !== idx && "text-destructive",
+            )}
+          >
+            {r.error ? <AlertTriangle className="h-3 w-3 text-destructive" /> : null}
+            {resultTabLabel(r, i)}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1">
+        {sel.kind === "resultSet" && !sel.error ? (
+          <ResultsView
+            result={sel}
+            sql={sql}
+            ranAt={ranAt}
+            editable={null}
+            onOpenSql={onOpenSql}
+            onCommitEdits={onCommitEdits}
+            editBusy={editBusy}
+            fontSize={fontSize}
+            zebra={zebra}
+          />
+        ) : (
+          <ResultsGrid result={sel} error={sel.error} fontSize={fontSize} zebra={zebra} />
         )}
       </div>
     </div>

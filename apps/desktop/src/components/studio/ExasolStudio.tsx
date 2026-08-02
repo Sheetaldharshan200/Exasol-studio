@@ -2489,6 +2489,25 @@ export function ExasolStudio({
 
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
+                {/* Max rows — in the execute toolbar, next to Run (DBVis-style) */}
+                <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span>Max rows</span>
+                  <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
+                    <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
+                      <SelectValue placeholder="1,000" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MAX_ROWS_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n.toLocaleString()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+
                 {/* Transactions */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2627,21 +2646,6 @@ export function ExasolStudio({
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
-                <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
-                  <span>Max rows</span>
-                  <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
-                    <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
-                      <SelectValue placeholder="1,000" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MAX_ROWS_OPTIONS.map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n.toLocaleString()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </>
             ) : null}
           </div>
