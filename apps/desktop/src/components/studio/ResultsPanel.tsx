@@ -190,8 +190,14 @@ export function ResultsPanel({
             );
           })()
         : null}
-      <div className={cn("relative min-h-0 flex-1 overflow-auto", busy && "pointer-events-none opacity-60")}>
-        {view === "performance" ? (
+      <div className={cn("relative min-h-0 flex-1 overflow-auto", busy && "pointer-events-none")}>
+        {busy ? (
+          // A run is in flight — show ITS progress, not the previous result.
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <p className="text-[12.5px]">Running your query…</p>
+          </div>
+        ) : view === "performance" ? (
           planData ? (
             <QueryPlanView plan={planData} onOpenSql={onOpenSql} />
           ) : profiling || lastResult?.kind === "resultSet" ? (
