@@ -25,8 +25,28 @@ const KEYWORDS =
 const SNIPPETS: { label: string; text: string }[] = [
   { label: "IMPORT FROM CSV AT", text: "IMPORT INTO ${1:SCHEMA.TABLE} FROM CSV AT '${2:https://…}' FILE '${3:data.csv}'" },
   { label: "EXPORT INTO CSV AT", text: "EXPORT ${1:SCHEMA.TABLE} INTO CSV AT '${2:https://…}' FILE '${3:out.csv}'" },
-  { label: "CREATE PYTHON3 UDF", text: "CREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:SCHEMA.MY_UDF}(${2:x DOUBLE}) RETURNS DOUBLE AS\ndef run(ctx):\n    return ctx.${2:x}\n/" },
-  { label: "CREATE LUA SCRIPT", text: "CREATE OR REPLACE LUA SCRIPT ${1:SCHEMA.MY_SCRIPT}() RETURNS TABLE AS\n${2:-- body}\n/" },
+  // UDF templates emit the full exaplus `--/ … /` block, which the splitter
+  // treats as ONE statement (the body may contain semicolons).
+  {
+    label: "udf CREATE LUA UDF",
+    text: "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/",
+  },
+  {
+    label: "udf CREATE PYTHON3 UDF",
+    text: "--/\nCREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\ndef run(ctx):\n    ${0:return ctx.x}\n/",
+  },
+  {
+    label: "udf CREATE JAVA UDF",
+    text: "--/\nCREATE OR REPLACE JAVA SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nclass ${1:MY_UDF} {\n    static double run(ExaMetadata exa, ExaIterator ctx) throws Exception {\n        ${0:return ctx.getDouble(\"x\");}\n    }\n}\n/",
+  },
+  {
+    label: "udf CREATE R UDF",
+    text: "--/\nCREATE OR REPLACE R SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nrun <- function(ctx) {\n    ${0:ctx$x}\n}\n/",
+  },
+  {
+    label: "udf CREATE LUA SET-EMITS UDF",
+    text: "--/\nCREATE OR REPLACE LUA SET SCRIPT ${1:MY_UDF} (${2:a DOUBLE})\nEMITS (${3:b DOUBLE}) AS\nfunction run(ctx)\n    repeat\n        ctx.emit(${0:ctx.a})\n    until not ctx.next()\nend\n/",
+  },
   { label: "CREATE VIRTUAL SCHEMA", text: "CREATE VIRTUAL SCHEMA ${1:VS_NAME} USING ${2:ADAPTER.SCRIPT} WITH ${3:CONNECTION_NAME = '…'}" },
   { label: "CREATE CONNECTION", text: "CREATE OR REPLACE CONNECTION ${1:CONN_NAME} TO '${2:https://…}' USER '${3:user}' IDENTIFIED BY '${4:secret}'" },
   { label: "MERGE INTO", text: "MERGE INTO ${1:TARGET} t USING ${2:SOURCE} s ON t.${3:ID} = s.${3:ID}\nWHEN MATCHED THEN UPDATE SET ${4:col} = s.${4:col}\nWHEN NOT MATCHED THEN INSERT VALUES (s.*)" },

@@ -3091,6 +3091,22 @@ export function ExasolStudio({
                     for (const a of runActs) {
                       editor.addAction({ id: a.id, label: a.label, keybindings: a.keys, run: a.run });
                     }
+                    // Quick UDF scaffold (also available by typing "udf" in the
+                    // editor — the completion list carries per-language templates).
+                    editor.addAction({
+                      id: "exa.insert.udf",
+                      label: "Insert UDF script template (--/ … /)",
+                      run: (ed) => {
+                        const snippet =
+                          "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/\n";
+                        const snippets = ed.getContribution("snippetController2") as unknown as { insert?: (s: string) => void } | null;
+                        if (snippets?.insert) snippets.insert(snippet);
+                        else {
+                          const sel = ed.getSelection();
+                          if (sel) ed.executeEdits("exa-udf", [{ range: sel, text: snippet.replace(/\$\{\d+:?([^}]*)\}/g, "$1") }]);
+                        }
+                      },
+                    });
                     // Quick Access (the VS Code-style palette): ⌘P opens the
                     // provider list (go to line, symbols, commands), ⌘⇧P goes
                     // straight to Show And Run Commands. F1 stays built in.

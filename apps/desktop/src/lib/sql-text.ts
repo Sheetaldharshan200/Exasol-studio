@@ -13,9 +13,11 @@ export type Stmt = { text: string; start: number; end: number };
 
 /**
  * Split SQL into statements on top-level semicolons, ignoring semicolons inside
- * single/double quotes, line comments (--), and block comments. Mirrors the
- * backend splitter (query.rs::split_statements) so "Run" sends exactly what the
- * server will execute.
+ * single/double quotes, line comments (--), and block comments. An exaplus-style
+ * script block — a line starting with `--/` through a line holding only `/` —
+ * is ONE statement (the CREATE SCRIPT body may contain semicolons), sent
+ * without the marker lines. Mirrors the backend splitter
+ * (query.rs::split_statements) so "Run" sends exactly what the server executes.
  */
 export function splitStatements(sql: string): Stmt[] {
   const out: Stmt[] = [];
@@ -49,6 +51,43 @@ export function splitStatements(sql: string): Stmt[] {
     if (c === "'") inSingle = true;
     else if (c === '"') inDouble = true;
     else if (c === "-" && n === "-") {
+      // `--/` at the start of a line (with no statement pending) opens a
+      // script block: everything up to a line holding only `/` is one
+      // statement, semicolons and all.
+      const atLineStart = i === 0 || sql[i - 1] === "\n";
+      if (atLineStart && sql[i + 2] === "/" && sql.slice(start, i).trim() === "") {
+        const markerEol = sql.indexOf("\n", i);
+        if (markerEol < 0) {
+          start = sql.length;
+          i = sql.length;
+          break;
+        }
+        // Find the closing line that is exactly "/".
+        let close = -1;
+        let j = markerEol + 1;
+        while (j <= sql.length) {
+          const eol = sql.indexOf("\n", j);
+          const lineEnd = eol < 0 ? sql.length : eol;
+          if (sql.slice(j, lineEnd).trim() === "/") {
+            close = j + sql.slice(j, lineEnd).indexOf("/");
+            break;
+          }
+          if (eol < 0) break;
+          j = eol + 1;
+        }
+        const bodyEnd = close >= 0 ? sql.lastIndexOf("\n", close) : sql.length;
+        const text = sql.slice(markerEol + 1, bodyEnd).trim();
+        if (text) out.push({ text, start: i, end: close >= 0 ? close : sql.length });
+        if (close >= 0) {
+          const closeEol = sql.indexOf("\n", close);
+          i = closeEol < 0 ? sql.length : closeEol;
+          start = i + 1;
+        } else {
+          i = sql.length;
+          start = sql.length;
+        }
+        continue;
+      }
       inLine = true;
       i++;
     } else if (c === "/" && n === "*") {
@@ -63,6 +102,36 @@ export function splitStatements(sql: string): Stmt[] {
   const tail = sql.slice(start).trim();
   if (tail) out.push({ text: tail, start, end: sql.length });
   return out;
+}
+
+export type ScriptBlock = { start: number; end: number; language: string };
+
+/**
+ * The `--/ … /` script blocks of a buffer, for the editor's code-block
+ * rendering (background + language chip). Line-based on purpose — visuals
+ * only; the statement splitter above is the executable authority.
+ */
+export function findScriptBlocks(sql: string): ScriptBlock[] {
+  const out: ScriptBlock[] = [];
+  let offset = 0;
+  let open: number | null = null;
+  for (const line of sql.split("\n")) {
+    const t = line.trim();
+    if (open === null && t.startsWith("--/")) open = offset;
+    else if (open !== null && t === "/") {
+      out.push({ start: open, end: offset + line.indexOf("/"), language: scriptLanguage(sql.slice(open, offset)) });
+      open = null;
+    }
+    offset += line.length + 1;
+  }
+  if (open !== null) out.push({ start: open, end: sql.length, language: scriptLanguage(sql.slice(open)) });
+  return out;
+}
+
+/** The script's language from its CREATE header; Exasol defaults to Lua. */
+export function scriptLanguage(block: string): string {
+  const m = block.match(/\bCREATE\s+(?:OR\s+REPLACE\s+)?(LUA|PYTHON3|PYTHON|JAVA|R)\b/i);
+  return m ? m[1].toUpperCase() : "LUA";
 }
 
 /**

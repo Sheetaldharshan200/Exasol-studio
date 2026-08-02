@@ -18,6 +18,8 @@ import {
   tabTitleFromSql,
   fmtClock,
   pickRunSql,
+  findScriptBlocks,
+  scriptLanguage,
 } from "./sql-text.ts";
 
 describe("pickRunSql — every run mode / permutation", () => {
@@ -285,5 +287,60 @@ describe("fmtClock", () => {
   test("does not use a 12-hour suffix", () => {
     const s = fmtClock(Date.UTC(2024, 0, 1, 13, 45, 30));
     assert.ok(!/AM|PM/i.test(s), `expected 24-hour output, got ${s}`);
+  });
+});
+
+describe("script blocks (--/ … /)", () => {
+  const udf =
+    "--/\nCREATE LUA SCALAR SCRIPT m (a DOUBLE)\nRETURNS DOUBLE AS\nfunction run(ctx)\n return ctx.a; \nend\n/\nSELECT m(x) FROM t;";
+
+  test("script_block_is_one_statement_despite_semicolons", () => {
+    const out = splitStatements(udf);
+    assert.equal(out.length, 2);
+    assert.ok(out[0].text.startsWith("CREATE LUA SCALAR SCRIPT"));
+    assert.ok(out[0].text.includes("return ctx.a;"));
+    assert.ok(!out[0].text.includes("--/"));
+    assert.equal(out[1].text, "SELECT m(x) FROM t");
+  });
+
+  test("unterminated_script_block_runs_to_eof", () => {
+    const out = splitStatements("--/\nCREATE LUA SCALAR SCRIPT m (a DOUBLE)\nRETURNS DOUBLE AS\nfunction run(ctx) end");
+    assert.equal(out.length, 1);
+    assert.ok(out[0].text.startsWith("CREATE LUA SCALAR SCRIPT"));
+  });
+
+  test("double_dash_slash_mid_line_stays_a_comment", () => {
+    const out = splitStatements("SELECT 1; --/ not a block\nSELECT 2;");
+    assert.equal(out.length, 2);
+    assert.ok(out[1].text.startsWith("--/ not a block"));
+    assert.ok(out[1].text.endsWith("SELECT 2"));
+  });
+
+  test("script_block_between_statements", () => {
+    const sql = "SELECT 1;\n--/\nCREATE PYTHON3 SCALAR SCRIPT p (a INT)\nRETURNS INT AS\ndef run(ctx):\n    return ctx.a\n/\nSELECT 2;";
+    const out = splitStatements(sql);
+    assert.equal(out.length, 3);
+    assert.ok(out[1].text.startsWith("CREATE PYTHON3"));
+  });
+
+  test("statementAtOffset resolves a caret inside the script body to the whole script", () => {
+    const offset = udf.indexOf("return ctx.a");
+    assert.ok(statementAtOffset(udf, offset).startsWith("CREATE LUA SCALAR SCRIPT"));
+  });
+
+  test("findScriptBlocks reports span and language", () => {
+    const blocks = findScriptBlocks(udf);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].start, 0);
+    assert.equal(udf[blocks[0].end], "/");
+    assert.equal(blocks[0].language, "LUA");
+    assert.equal(findScriptBlocks("--/\nCREATE PYTHON3 SET SCRIPT s (a INT) EMITS (b INT) AS\npass\n/")[0].language, "PYTHON3");
+    assert.deepEqual(findScriptBlocks("SELECT 1;"), []);
+  });
+
+  test("scriptLanguage defaults to LUA when no language keyword is present", () => {
+    assert.equal(scriptLanguage("--/\nCREATE SCRIPT s AS\nend"), "LUA");
+    assert.equal(scriptLanguage("--/\nCREATE OR REPLACE JAVA SCALAR SCRIPT j (a INT) RETURNS INT AS"), "JAVA");
+    assert.equal(scriptLanguage("--/\ncreate r scalar script r1 (x double) returns double as"), "R");
   });
 });
