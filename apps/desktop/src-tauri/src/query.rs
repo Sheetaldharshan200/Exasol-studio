@@ -418,6 +418,17 @@ pub async fn execute_sql(
                 Err(_) => (None, None),
             };
 
+        // Register this run as cancellable (Stop → KILL STATEMENT) now that the
+        // executing session id is known; removed the moment the batch finishes.
+        if let (Some(pid), Some(sid)) = (
+            progress_id.as_ref().filter(|p| !p.is_empty()),
+            profile_session.as_ref(),
+        ) {
+            if let Ok(mut m) = state.running_queries.lock() {
+                m.insert(pid.clone(), (profile_id.clone(), sid.clone()));
+            }
+        }
+
         // Live progress (issues #19/#20): a side task polls the EXECUTING
         // session's ACTIVITY from EXA_ALL_SESSIONS (Exasol reports "SELECT
         // (42%)" style percentages there) and streams it to the frontend as
@@ -487,6 +498,10 @@ pub async fn execute_sql(
         }
         done.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
+            // No longer cancellable — the batch has finished.
+            if let Ok(mut m) = state.running_queries.lock() {
+                m.remove(pid);
+            }
             let _ = app.emit(
                 &format!("query-progress:{pid}"),
                 json!({ "finished": true, "elapsedMs": started.elapsed().as_millis() as u64 }),
@@ -530,6 +545,39 @@ pub async fn execute_sql(
         profile_session,
         profile_base_stmt,
     })
+}
+
+/// Cancel a running query (the Stop button). Looks up the run registered by
+/// execute_sql under `progress_id`, then cancels its CURRENT statement via
+/// `KILL STATEMENT IN SESSION <id>` on a spare pool connection — the session
+/// (and its connection) survives, matching a SQL client's "Stop". Returns true
+/// when a kill was issued, false when nothing was running under that id.
+#[tauri::command]
+pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> AppResult<bool> {
+    let target = state
+        .running_queries
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&progress_id).cloned());
+    let (profile_id, session_id) = match target {
+        Some(t) => t,
+        None => return Ok(false),
+    };
+    // The session id is interpolated into SQL — it must be a plain number.
+    if session_id.is_empty() || !session_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Ok(false);
+    }
+    let pool = require_pool(&state, &profile_id).await?;
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    let kill = format!("KILL STATEMENT IN SESSION {session_id}");
+    sqlx_exasol::query(AssertSqlSafe(kill))
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    Ok(true)
 }
 
 

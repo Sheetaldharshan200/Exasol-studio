@@ -40,7 +40,7 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
-import { parseSingleTable, splitStatements, statementAtOffset, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
@@ -161,6 +161,8 @@ export function ExasolStudio({
   const [objAction, setObjAction] = useState<{ profileId: string; action: ObjectAction } | null>(null);
 
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  // progressId of the query currently executing (for the Stop button to cancel).
+  const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
   const sqlCatalogRef = useRef<SqlCatalog>(emptyCatalog());
   const refreshSqlCatalog = useCallback(() => {
@@ -1608,24 +1610,14 @@ export function ExasolStudio({
 
       const editor = editorRef.current;
       const full = activeTab.sql;
-      const selectionText = () => {
-        const sel = editor?.getSelection();
-        return sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
-      };
-      const cursorStatement = () => {
-        const model = editor?.getModel();
-        const pos = editor?.getPosition();
-        return model && pos ? statementAtOffset(full, model.getOffsetAt(pos)) : full;
-      };
-      let sqlToRun = full;
-      if (scope === "auto" && editor) {
-        const selected = selectionText();
-        sqlToRun = selected.trim() ? selected : cursorStatement();
-      } else if (scope === "selection" && editor) {
-        sqlToRun = selectionText().trim() || full;
-      } else if (scope === "statement" && editor) {
-        sqlToRun = cursorStatement();
-      }
+      // What each mode targets is pure (pickRunSql) — the editor only supplies
+      // the current selection + cursor offset.
+      const sel = editor?.getSelection();
+      const selection = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
+      const model = editor?.getModel();
+      const pos = editor?.getPosition();
+      const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
+      let sqlToRun = pickRunSql(scope, full, selection, cursorOffset);
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;
@@ -1638,11 +1630,15 @@ export function ExasolStudio({
       setRunning(true);
       const startedAt = Date.now();
       const tabId = activeTab.id;
-      patchTab(tabId, { execError: null, runMeta: { startedAt, scope }, queryProgress: undefined, planData: undefined, resultView: "results" });
+      // Clear the previous result immediately so the panel shows THIS run's
+      // progress, not the last statement's rows sitting underneath.
+      patchTab(tabId, { response: null, resultPage: 0, execError: null, runMeta: { startedAt, scope, sql: sqlToRun }, queryProgress: undefined, planData: undefined, resultView: "results" });
       // Live engine progress: the backend polls the executing session's
       // ACTIVITY and streams it here; the old result stays pinned until the
       // new one is 100% done.
       const progressId = `qp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Expose it so the Stop button can cancel THIS run.
+      runningProgressId.current = progressId;
       // The listener is set up asynchronously (dynamic import). A fast query
       // can finish before it resolves, so `progressDone` guards both orderings:
       // if the run ends first, the listener disposes itself the moment it
@@ -1697,12 +1693,33 @@ export function ExasolStudio({
       } finally {
         progressDone = true;
         unlistenProgress?.();
+        runningProgressId.current = null;
         patchTab(tabId, { queryProgress: undefined });
         setRunning(false);
       }
     },
     [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
   );
+
+  // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
+  const [stopping, setStopping] = useState(false);
+  const cancelRunning = useCallback(async () => {
+    const pid = runningProgressId.current;
+    if (!pid || stopping) return;
+    setStopping(true);
+    try {
+      const killed = await ipc.cancelQuery(pid);
+      pushNotification(
+        killed ? "info" : "warning",
+        killed ? "Stopping query" : "Nothing to stop",
+        killed ? "Cancelling the running statement…" : "The query already finished.",
+      );
+    } catch (e) {
+      pushNotification("warning", "Could not stop the query", errorMessage(e));
+    } finally {
+      setStopping(false);
+    }
+  }, [stopping]);
 
   async function saveTab() {
     // A tab opened from an existing file saves back to that same file.
@@ -2456,9 +2473,28 @@ export function ExasolStudio({
                 <IconButton label="Open Dashboards" onClick={openBi}>
                   <BarChart3 className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Stop" disabled={!running}>
-                  <Square className="h-3.5 w-3.5" />
+                <IconButton label="Stop the running query" onClick={() => void cancelRunning()} disabled={!running || stopping}>
+                  {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
                 </IconButton>
+
+                <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+
+                {/* Max rows — in the execute toolbar, next to Run (DBVis-style) */}
+                <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span>Max rows</span>
+                  <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
+                    <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
+                      <SelectValue placeholder="1,000" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MAX_ROWS_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n.toLocaleString()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
@@ -2600,21 +2636,6 @@ export function ExasolStudio({
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
-                <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
-                  <span>Max rows</span>
-                  <Select value={String(maxRows)} onValueChange={(v) => setMaxRows(Number(v))}>
-                    <SelectTrigger className="h-6 w-24 shrink-0 text-xs" size="sm">
-                      <SelectValue placeholder="1,000" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MAX_ROWS_OPTIONS.map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n.toLocaleString()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </>
             ) : null}
           </div>
