@@ -35,6 +35,18 @@ export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][]
   return [header, ...body].join("\r\n");
 }
 
+/** A short tab label for one statement's result in a multi-result run, e.g.
+ *  "Result 2 · 42 rows", "Result 3 · error", "Result 1 · 5 affected". */
+export function resultTabLabel(
+  r: { kind: "resultSet" | "rowCount"; rowCount: number; error: string | null },
+  index: number,
+): string {
+  const n = index + 1;
+  if (r.error) return `Result ${n} · error`;
+  if (r.kind === "rowCount") return `Result ${n} · ${r.rowCount} affected`;
+  return `Result ${n} · ${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;
+}
+
 export type QueryStats = {
   /** Wall-clock the statement took, in milliseconds. */
   timeMs: number;

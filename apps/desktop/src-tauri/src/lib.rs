@@ -157,6 +157,7 @@ pub fn run() {
             settings::set_app_settings,
             market::market_dir_path,
             query::execute_sql,
+            query::cancel_query,
             history::sql_history_list,
             history::sql_history_clear,
             agent::agent_api,

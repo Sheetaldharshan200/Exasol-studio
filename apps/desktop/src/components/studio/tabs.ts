@@ -72,8 +72,10 @@ export type SqlTab = {
   objNavTab?: string;
   objNavEdit?: boolean;
   objNavNonce?: number;
-  /** Execution lifecycle for the status strip (started/running/completed). */
-  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean };
+  /** Execution lifecycle for the status strip (started/running/completed).
+   *  `sql` is the exact statement(s) this run executed (may be a selection or
+   *  the cursor statement, not the whole buffer) — shown while it runs. */
+  runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean; sql?: string };
   /** For artifact tabs — the rendered HTML document. */
   artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */

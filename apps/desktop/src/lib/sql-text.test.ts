@@ -17,7 +17,40 @@ import {
   parseSingleTable,
   tabTitleFromSql,
   fmtClock,
+  pickRunSql,
 } from "./sql-text.ts";
+
+describe("pickRunSql — every run mode / permutation", () => {
+  const full = "SELECT 1;\nSELECT 2;\nSELECT 3";
+  // offsets: cursor in "SELECT 2" ≈ 13, in "SELECT 1" ≈ 3.
+
+  test("auto runs the selection when there is one", () => {
+    assert.equal(pickRunSql("auto", full, "SELECT 2", 3), "SELECT 2");
+    // whitespace-only selection is treated as no selection
+    assert.equal(pickRunSql("auto", full, "   \n ", 3), "SELECT 1");
+  });
+
+  test("auto runs the statement at the cursor when nothing is selected", () => {
+    assert.equal(pickRunSql("auto", full, "", 3), "SELECT 1");
+    assert.equal(pickRunSql("auto", full, "", 13), "SELECT 2");
+    assert.equal(pickRunSql("auto", full, "", 25), "SELECT 3");
+  });
+
+  test("selection runs the selection, else the whole buffer", () => {
+    assert.equal(pickRunSql("selection", full, "SELECT 3", 0), "SELECT 3");
+    assert.equal(pickRunSql("selection", full, "", 0), full);
+    assert.equal(pickRunSql("selection", full, "  ", 0), full);
+  });
+
+  test("statement always runs the statement at the cursor (ignores selection)", () => {
+    assert.equal(pickRunSql("statement", full, "SELECT 2", 3), "SELECT 1");
+  });
+
+  test("script and buffer run the whole buffer", () => {
+    assert.equal(pickRunSql("script", full, "SELECT 2", 3), full);
+    assert.equal(pickRunSql("buffer", full, "SELECT 2", 3), full);
+  });
+});
 
 const texts = (sql: string) => splitStatements(sql).map((s) => s.text);
 
