@@ -53,14 +53,17 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         range: new monaco.Range(pos.lineNumber, 1, pos.lineNumber, 1),
         options: {
           glyphMarginClassName: `exa-stmt-badge exa-stmt-badge-${i + 1}`,
-          glyphMarginHoverMessage: { value: `Statement ${i + 1}` },
+          glyphMarginHoverMessage: { value: `Statement ${i + 1} — click to select it` },
           stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
         },
       };
     });
     // `--/ … /` UDF script blocks render as an embedded code block: a tinted
-    // whole-line background plus a language chip on the marker line.
+    // whole-line background plus a language chip on the marker line. Blocks
+    // still being typed (no closing "/") stay unpainted — tinting the whole
+    // rest of the buffer mid-keystroke reads as the editor jumping around.
     for (const block of findScriptBlocks(sql)) {
+      if (!block.closed) continue;
       const from = model.getPositionAt(block.start);
       const to = model.getPositionAt(block.end);
       decorations.push({
@@ -78,9 +81,42 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
     collection.set(decorations);
   };
   update();
-  const subs = [editor.onDidChangeModelContent(update), editor.onDidChangeModel(update)];
+  // Debounced on typing: re-splitting and re-numbering on EVERY keystroke made
+  // the margin churn (a lone "-" merges statements until the next char lands).
+  let timer: number | undefined;
+  const scheduleUpdate = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(update, 200);
+  };
+  const subs = [editor.onDidChangeModelContent(scheduleUpdate), editor.onDidChangeModel(update)];
+
+  // Clicking a statement's number selects the whole statement (script blocks
+  // select marker line through the closing "/").
+  const mouseSub = editor.onMouseDown((e) => {
+    if (!enabled) return;
+    if (e.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return;
+    const line = e.target.position?.lineNumber;
+    const model = editor.getModel();
+    if (!line || !model) return;
+    const sql = model.getValue();
+    for (const s of splitStatements(sql)) {
+      const span = sql.slice(s.start, s.end);
+      const textStart = s.start + (span.length - span.trimStart().length);
+      if (model.getPositionAt(textStart).lineNumber !== line) continue;
+      const from = model.getPositionAt(textStart);
+      // Include the trailing ";" / "/" terminator when present.
+      const endOffset = s.end < sql.length && (sql[s.end] === ";" || sql[s.end] === "/") ? s.end + 1 : s.end;
+      const to = model.getPositionAt(endOffset);
+      editor.setSelection({ startLineNumber: from.lineNumber, startColumn: from.column, endLineNumber: to.lineNumber, endColumn: to.column });
+      editor.focus();
+      return;
+    }
+  });
+
   editor.onDidDispose(() => {
     subs.forEach((s) => s.dispose());
+    mouseSub.dispose();
+    window.clearTimeout(timer);
     collection.clear();
   });
   return {

@@ -117,9 +117,47 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
   void getParser(); // warm the grammar in the background
 
   monaco.languages.registerCompletionItemProvider("sql", {
-    triggerCharacters: [".", " "],
+    triggerCharacters: [".", " ", "-"],
     async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
       const cat = getCatalog();
+
+      // Dashes at the start of a line: offer the two things they can become —
+      // a `--` line comment or a `--/ … /` UDF script block.
+      const lineBefore = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const dashes = /^(\s*)(-{1,3}\/?)$/.exec(lineBefore);
+      if (dashes) {
+        const dashRange = {
+          startLineNumber: position.lineNumber,
+          startColumn: dashes[1].length + 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        };
+        const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+        return {
+          suggestions: [
+            {
+              label: "-- comment",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "-- ${0}",
+              insertTextRules: snippet,
+              range: dashRange,
+              detail: "Line comment",
+              sortText: "0a",
+            },
+            {
+              label: "--/ UDF script block",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText:
+                "--/\nCREATE OR REPLACE ${1|LUA,PYTHON3,JAVA,R|} SCALAR SCRIPT ${2:MY_UDF} (${3:a DOUBLE})\nRETURNS ${4:DOUBLE} AS\n${0:-- body}\n/",
+              insertTextRules: snippet,
+              range: dashRange,
+              detail: "Exasol UDF — one statement, body may contain semicolons",
+              documentation: "Inserts the exaplus-style script block:\n--/\nCREATE … SCRIPT … AS\n<body>\n/",
+              sortText: "0b",
+            },
+          ] as languages.CompletionItem[],
+        };
+      }
       const before = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,

@@ -104,12 +104,14 @@ export function splitStatements(sql: string): Stmt[] {
   return out;
 }
 
-export type ScriptBlock = { start: number; end: number; language: string };
+export type ScriptBlock = { start: number; end: number; language: string; closed: boolean };
 
 /**
  * The `--/ … /` script blocks of a buffer, for the editor's code-block
  * rendering (background + language chip). Line-based on purpose — visuals
- * only; the statement splitter above is the executable authority.
+ * only; the statement splitter above is the executable authority. An
+ * unterminated block (still being typed) is reported with closed: false so
+ * the renderer can skip tinting the whole rest of the buffer.
  */
 export function findScriptBlocks(sql: string): ScriptBlock[] {
   const out: ScriptBlock[] = [];
@@ -119,12 +121,12 @@ export function findScriptBlocks(sql: string): ScriptBlock[] {
     const t = line.trim();
     if (open === null && t.startsWith("--/")) open = offset;
     else if (open !== null && t === "/") {
-      out.push({ start: open, end: offset + line.indexOf("/"), language: scriptLanguage(sql.slice(open, offset)) });
+      out.push({ start: open, end: offset + line.indexOf("/"), language: scriptLanguage(sql.slice(open, offset)), closed: true });
       open = null;
     }
     offset += line.length + 1;
   }
-  if (open !== null) out.push({ start: open, end: sql.length, language: scriptLanguage(sql.slice(open)) });
+  if (open !== null) out.push({ start: open, end: sql.length, language: scriptLanguage(sql.slice(open)), closed: false });
   return out;
 }
 

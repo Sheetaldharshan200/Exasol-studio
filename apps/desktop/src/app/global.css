@@ -370,6 +370,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 }
 .exa-stmt-badge::after {
   font-family: "JetBrains Mono", ui-monospace, monospace;

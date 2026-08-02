@@ -328,14 +328,17 @@ describe("script blocks (--/ … /)", () => {
     assert.ok(statementAtOffset(udf, offset).startsWith("CREATE LUA SCALAR SCRIPT"));
   });
 
-  test("findScriptBlocks reports span and language", () => {
+  test("findScriptBlocks reports span, language, and closed state", () => {
     const blocks = findScriptBlocks(udf);
     assert.equal(blocks.length, 1);
     assert.equal(blocks[0].start, 0);
     assert.equal(udf[blocks[0].end], "/");
     assert.equal(blocks[0].language, "LUA");
+    assert.equal(blocks[0].closed, true);
     assert.equal(findScriptBlocks("--/\nCREATE PYTHON3 SET SCRIPT s (a INT) EMITS (b INT) AS\npass\n/")[0].language, "PYTHON3");
     assert.deepEqual(findScriptBlocks("SELECT 1;"), []);
+    // A block still being typed is reported unclosed.
+    assert.equal(findScriptBlocks("--/\nCREATE LUA SCALAR SCRIPT m (a INT)")[0].closed, false);
   });
 
   test("scriptLanguage defaults to LUA when no language keyword is present", () => {
