@@ -49,6 +49,7 @@ import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { BrandLoader } from "@/components/brand/BrandLoader";
+import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
@@ -2552,7 +2553,7 @@ export function ExasolStudio({
                 >
                   <RunCurrentIcon className="h-4 w-4 text-primary" />
                 </IconButton>
-                <IconButton label="Execute buffer as one statement" onClick={() => run("buffer")} disabled={running}>
+                <IconButton label="Execute buffer as one statement (⌘⇧⏎)" onClick={() => run("buffer")} disabled={running}>
                   <RunBufferIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton
@@ -3011,13 +3012,33 @@ export function ExasolStudio({
                         run: () => aiAskSqlRef.current(a.kind),
                       });
                     }
-                    // DBVisualizer shortcuts: ⌘↵ script, ⌘. current, ⌘⌥↵ explain.
-                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void run("script"));
-                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => void run("auto"));
-                    editor.addCommand(
-                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.Enter,
-                      () => void explainRun(),
-                    );
+                    // DBVisualizer shortcuts as real ACTIONS so they are
+                    // searchable in the command palette, not just keybindings:
+                    // ⌘↵ script, ⌘. current, ⌘⇧↵ buffer, ⌘⌥↵ explain.
+                    const runActs = [
+                      { id: "exa.run.script", label: "Execute the buffer as an SQL script", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: () => void run("script") },
+                      { id: "exa.run.current", label: "Execute the current statement", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period], run: () => void run("auto") },
+                      { id: "exa.run.buffer", label: "Execute the complete buffer as one statement", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter], run: () => void run("buffer") },
+                      { id: "exa.run.explain", label: "Execute the statement(s) as explain plan", keys: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.Enter], run: () => void explainRun() },
+                    ];
+                    for (const a of runActs) {
+                      editor.addAction({ id: a.id, label: a.label, keybindings: a.keys, run: a.run });
+                    }
+                    // Quick Access (the VS Code-style palette): ⌘P opens the
+                    // provider list (go to line, symbols, commands), ⌘⇧P goes
+                    // straight to Show And Run Commands. F1 stays built in.
+                    const openQuickAccess = (prefix: string) => {
+                      // invokeWithinContext exists on the widget but is absent
+                      // from the IStandaloneCodeEditor typings.
+                      const widget = editor as unknown as {
+                        invokeWithinContext: (fn: (accessor: { get: (id: unknown) => unknown }) => void) => void;
+                      };
+                      widget.invokeWithinContext((accessor) => {
+                        (accessor.get(IQuickInputService) as { quickAccess: { show: (v: string) => void } }).quickAccess.show(prefix);
+                      });
+                    };
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => openQuickAccess(""));
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => openQuickAccess(">"));
                   }}
                   options={{
                     automaticLayout: true,

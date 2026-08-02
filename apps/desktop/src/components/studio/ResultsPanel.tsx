@@ -210,16 +210,29 @@ export function ResultsPanel({
         ) : view === "performance" ? (
           plans.length > 0 ? (
             <QueryPlanTabs plans={plans} onOpenSql={onOpenSql} />
-          ) : profiling || lastResult?.kind === "resultSet" ? (
-            // Auto-profiling in flight (fired by the effect above).
+          ) : profiling ? (
+            // A profile fetch is actually in flight — only then spin.
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
               <p className="text-[12.5px]">Profiling this query…</p>
             </div>
+          ) : lastResult ? (
+            // Ran but no plan (yet): auto-profile failed or produced nothing —
+            // never a stuck spinner; explain and offer a manual retry.
+            <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground">
+              <Gauge className="h-6 w-6 opacity-40" />
+              <p className="text-[12.5px]">No execution plan yet for this run.</p>
+              <button
+                onClick={onProfile}
+                className="h-7 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                Profile query
+              </button>
+            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
               <Gauge className="h-6 w-6 opacity-40" />
-              <p className="text-[12.5px]">Run a SELECT to see its execution plan.</p>
+              <p className="text-[12.5px]">Run a query to see its execution plan.</p>
             </div>
           )
         ) : view === "dashboard" ? (
