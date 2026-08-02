@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
 import { SYNTAX_DEFAULTS, SYNTAX_ROLES, sanitizeHex, syntaxSettingKey, type SyntaxRoleKey } from "@/components/studio/monaco-theme";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { NumberInput } from "@/components/ui/number-input";
 
 type SettingValue = string | number | boolean;
 
@@ -693,13 +694,12 @@ function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue
           </button>
         ) : ctrl.type === "number" ? (
           <div className="flex items-center gap-1.5">
-            <input
-              type="number"
+            <NumberInput
               value={Number(value)}
               min={ctrl.min}
               max={ctrl.max}
-              onChange={(e) => onChange(Number(e.target.value))}
-              className="h-8 w-28 rounded-md border border-border bg-panel px-2 text-right font-mono text-[12px] outline-none focus:border-primary/50"
+              onCommit={onChange}
+              className="h-8 w-28 text-[12px]"
             />
             {ctrl.unit ? <span className="text-[11px] text-muted-foreground">{ctrl.unit}</span> : null}
           </div>

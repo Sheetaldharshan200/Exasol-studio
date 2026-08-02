@@ -84,8 +84,8 @@ export function QueryPlanTabs({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <GoToBox value={goTo} onChange={jumpTo} max={plans.length} side="left" className="h-6 w-11 px-1.5 text-[11px]" />
+      <div ref={stripRef} className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <GoToBox value={goTo} onChange={jumpTo} max={plans.length} className="h-6 w-11 px-1.5 text-[11px]" />
         <button
           data-idx={-1}
           onClick={() => setActive(-1)}
@@ -117,7 +117,6 @@ export function QueryPlanTabs({
             </button>
           );
         })}
-        <GoToBox value={goTo} onChange={jumpTo} max={plans.length} side="right" className="h-6 w-11 px-1.5 text-[11px]" />
       </div>
       {current ? (
         <div className="min-h-0 flex-1">

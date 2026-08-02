@@ -370,8 +370,8 @@ function MultiResultView({
   const sel = results[Math.min(idx, results.length - 1)];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={stripRef} className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <GoToBox value={goTo} onChange={jumpTo} max={results.length} side="left" className="h-5 w-10 px-1 text-[10.5px]" />
+      <div ref={stripRef} className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-border pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <GoToBox value={goTo} onChange={jumpTo} max={results.length} className="h-5 w-10 px-1 text-[10.5px]" />
         {results.map((r, i) => (
           <button
             key={i}
@@ -387,7 +387,6 @@ function MultiResultView({
             {resultTabLabel(r, i, verbs[i])}
           </button>
         ))}
-        <GoToBox value={goTo} onChange={jumpTo} max={results.length} side="right" className="h-5 w-10 px-1 text-[10.5px]" />
       </div>
       <div className="min-h-0 flex-1">
         {sel.kind === "resultSet" && !sel.error ? (

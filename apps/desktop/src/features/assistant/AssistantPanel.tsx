@@ -1051,6 +1051,12 @@ export function AssistantPanel({
           <span className="truncate text-[13px] font-semibold text-foreground" title={title}>
             {showSessions ? "Chat history" : title}
           </span>
+          <span
+            className="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary"
+            title="Exa AI is in beta — under development; expect rough edges."
+          >
+            Beta
+          </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <button
@@ -1186,6 +1192,7 @@ export function AssistantPanel({
                 SQL generation, tuning and answers — grounded in Exasol.
                 {ollama?.running ? " Running on your local models." : ""}
               </p>
+              <p className="text-[10.5px] text-muted-foreground/70">Beta — under development.</p>
               <Suggestions className="mt-4 justify-center">
                 {SUGGESTIONS.map((s) => (
                   <Suggestion
