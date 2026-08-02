@@ -41,7 +41,7 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 
-import { parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
@@ -3114,9 +3114,16 @@ export function ExasolStudio({
                       const mdl = editor.getModel();
                       if (!pos || !mdl) return;
                       const before = mdl.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
-                      if (/^\s*(-{1,2}|--\/|\/\*?)$/.test(before)) {
-                        editor.trigger("exa-dash", "editor.action.triggerSuggest", {});
+                      if (!/^\s*(-{1,2}|--\/|\/\*?)$/.test(before)) return;
+                      // A lone "/" that CLOSES an open --/ script block is the
+                      // block terminator, not the start of a comment — popping
+                      // the dropdown there flashed the UI on every UDF edit.
+                      if (/^\s*\/$/.test(before)) {
+                        const offset = mdl.getOffsetAt(pos);
+                        const inOpenBlock = findScriptBlocks(mdl.getValue()).some((b) => !b.closed && offset > b.start);
+                        if (inOpenBlock) return;
                       }
+                      editor.trigger("exa-dash", "editor.action.triggerSuggest", {});
                     });
                     // Quick UDF scaffold (also available by typing "udf" in the
                     // editor — the completion list carries per-language templates).

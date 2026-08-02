@@ -396,8 +396,9 @@
 /* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
    tokenizer's comment/operator colors (!important beats the .mtk* rules). */
 .exa-udf-marker {
+  /* Color only — weight/style changes alter glyph metrics and made the
+     content shift when a block appeared or disappeared. */
   color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
-  font-weight: 600;
   font-style: normal !important;
 }
 
