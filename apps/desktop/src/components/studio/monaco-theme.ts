@@ -7,18 +7,28 @@
  */
 import { type Monaco } from "@monaco-editor/react";
 
-/** The syntax roles a user can recolor. Each maps to 1+ Monarch tokens. */
+/**
+ * The syntax roles a user can recolor. Each maps to EVERY Monarch token the
+ * SQL grammar can emit for that role — including the `.sql`-suffixed variants
+ * the base vs/vs-dark themes pin to their own colors (string.sql pure red,
+ * predefined.sql magenta, operator.sql slate), which outrank any generic rule.
+ * Miss one and that token silently keeps the base color.
+ */
 export const SYNTAX_ROLES = [
-  { key: "keyword", label: "Keywords", tokens: ["keyword"] },
-  // The base vs/vs-dark themes hardcode `string.sql` to pure red, which
-  // outranks a generic `string` rule — so the role pins both tokens.
+  // keyword.block = BEGIN/CASE/END, .choice = WHEN/THEN, .try/.catch = TRY/CATCH scopes.
+  { key: "keyword", label: "Keywords", tokens: ["keyword", "keyword.block", "keyword.choice", "keyword.try", "keyword.catch"] },
+  // Single-quoted literals (also N'…'); string.sql beats a generic rule.
   { key: "string", label: "Strings", tokens: ["string", "string.sql"] },
-  { key: "number", label: "Numbers", tokens: ["number"] },
-  { key: "comment", label: "Comments", tokens: ["comment"] },
-  { key: "function", label: "Built-in functions", tokens: ["predefined"] },
-  { key: "operator", label: "Operators", tokens: ["operator"] },
-  // Double-quoted identifiers get `identifier.quote` delimiters (red in the
-  // base theme), so the role covers plain and quoted identifiers together.
+  { key: "number", label: "Numbers", tokens: ["number", "number.hex"] },
+  // comment.quote is the /* and */ delimiters of block comments.
+  { key: "comment", label: "Comments", tokens: ["comment", "comment.quote"] },
+  // Built-in functions AND built-in variables/pseudo-columns (@@…, $…).
+  { key: "function", label: "Built-in functions", tokens: ["predefined", "predefined.sql"] },
+  { key: "operator", label: "Operators", tokens: ["operator", "operator.sql"] },
+  // Commas, semicolons, dots, and (round/square) brackets.
+  { key: "punctuation", label: "Punctuation", tokens: ["delimiter", "delimiter.parenthesis", "delimiter.square"] },
+  // Plain identifiers — tables, columns, and UDF/script names (anything not in
+  // Monaco's built-in list) — plus the quotes of "quoted identifiers".
   { key: "identifier", label: "Identifiers", tokens: ["identifier", "identifier.quote"] },
 ] as const;
 
@@ -34,6 +44,7 @@ export const SYNTAX_DEFAULTS: Record<"dark" | "light", Record<SyntaxRoleKey, str
     comment: "#6a6a70",
     function: "#6db3f2",
     operator: "#c9c9cf",
+    punctuation: "#9d9da6",
     identifier: "#ededee",
   },
   light: {
@@ -43,6 +54,7 @@ export const SYNTAX_DEFAULTS: Record<"dark" | "light", Record<SyntaxRoleKey, str
     comment: "#6b7280",
     function: "#2563eb",
     operator: "#334155",
+    punctuation: "#64748b",
     identifier: "#0b1730",
   },
 };

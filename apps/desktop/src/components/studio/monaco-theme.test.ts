@@ -39,6 +39,35 @@ describe("buildSyntaxRules", () => {
     assert.equal(rules.find((r) => r.token === "string.sql")?.foreground, "e9a94f");
   });
 
+  // Every token monaco-editor's SQL Monarch grammar can emit (except "white",
+  // which has no color), from esm/vs/basic-languages/sql/sql.js. If an upgrade
+  // adds a token this misses, syntax exists that user colors can't reach.
+  const GRAMMAR_TOKENS = [
+    "keyword", "keyword.block", "keyword.choice", "keyword.try", "keyword.catch",
+    "string", "number", "comment", "comment.quote", "predefined", "operator",
+    "identifier", "identifier.quote", "delimiter", "delimiter.parenthesis", "delimiter.square",
+  ];
+  // The .sql-specific rules the base vs/vs-dark themes define (themes.js) —
+  // each MUST be overridden exactly, or the base color wins (string.sql red,
+  // predefined.sql magenta, operator.sql slate…).
+  const BASE_SQL_RULES = ["string.sql", "predefined.sql", "operator.sql", "number.hex"];
+
+  test("every grammar token and base-theme .sql rule is covered by a role", () => {
+    const covered = new Set(buildSyntaxRules("dark").map((r) => r.token));
+    for (const t of [...GRAMMAR_TOKENS, ...BASE_SQL_RULES]) {
+      assert.ok(covered.has(t), `token "${t}" is not recolorable`);
+    }
+  });
+
+  test("all keyword variants stay bold", () => {
+    const rules = buildSyntaxRules("dark", { keyword: "#111111" });
+    for (const t of ["keyword", "keyword.block", "keyword.choice", "keyword.try", "keyword.catch"]) {
+      const r = rules.find((x) => x.token === t);
+      assert.equal(r?.foreground, "111111", t);
+      assert.equal(r?.fontStyle, "bold", t);
+    }
+  });
+
   test("an override recolors all of the role's tokens", () => {
     const rules = buildSyntaxRules("dark", { identifier: "#ff8800" });
     assert.equal(rules.find((r) => r.token === "identifier")?.foreground, "ff8800");

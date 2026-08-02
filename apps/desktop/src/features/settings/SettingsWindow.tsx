@@ -646,18 +646,18 @@ function SyntaxColorsEditor({
                   {"\n"}
                   <span style={{ color: c("keyword"), fontWeight: 700 }}>SELECT</span>{" "}
                   <span style={{ color: c("identifier") }}>"Name"</span>
-                  <span style={{ color: c("operator") }}>,</span> <span style={{ color: c("function") }}>ROUND</span>
-                  <span style={{ color: c("operator") }}>(</span>
+                  <span style={{ color: c("punctuation") }}>,</span> <span style={{ color: c("function") }}>ROUND</span>
+                  <span style={{ color: c("punctuation") }}>(</span>
                   <span style={{ color: c("identifier") }}>revenue</span>
-                  <span style={{ color: c("operator") }}>,</span> <span style={{ color: c("number") }}>2</span>
-                  <span style={{ color: c("operator") }}>)</span>
+                  <span style={{ color: c("punctuation") }}>,</span> <span style={{ color: c("number") }}>2</span>
+                  <span style={{ color: c("punctuation") }}>)</span>
                   {"\n"}
                   <span style={{ color: c("keyword"), fontWeight: 700 }}>FROM</span>{" "}
                   <span style={{ color: c("identifier") }}>customers</span>{" "}
                   <span style={{ color: c("keyword"), fontWeight: 700 }}>WHERE</span>{" "}
                   <span style={{ color: c("identifier") }}>tier</span> <span style={{ color: c("operator") }}>=</span>{" "}
                   <span style={{ color: c("string") }}>'gold'</span>
-                  <span style={{ color: c("operator") }}>;</span>
+                  <span style={{ color: c("punctuation") }}>;</span>
                 </pre>
                 <div className="mt-2 text-[10px] font-medium capitalize" style={{ color: t === "dark" ? "#8a8a90" : "#64748b" }}>
                   {t}
