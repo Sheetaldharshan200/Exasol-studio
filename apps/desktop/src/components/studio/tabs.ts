@@ -58,6 +58,8 @@ export type SqlTab = {
   pinned?: boolean;
   /** For filePreview tabs — the local file path being previewed. */
   filePath?: string;
+  /** Buffer content at the last save/open — dirty = sql !== savedSql. */
+  savedSql?: string;
   /** True when this tab's backing file was deleted on disk (title struck out). */
   fileMissing?: boolean;
   /** Membership in a collapsible tab group (see TabGroup). */

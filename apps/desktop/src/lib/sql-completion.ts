@@ -162,7 +162,7 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
   void getParser(); // warm the grammar in the background
 
   monaco.languages.registerCompletionItemProvider("sql", {
-    triggerCharacters: [".", " ", "-"],
+    triggerCharacters: [".", " ", "-", "/"],
     async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
       const cat = getCatalog();
 
@@ -213,9 +213,32 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
         }
       }
 
+      // `/` or `/*` at the start of a line: offer the block comment.
+      const lineBefore = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const slash = /^(\s*)(\/\*?)$/.exec(lineBefore);
+      if (slash) {
+        return {
+          suggestions: [
+            {
+              label: "/* */ block comment",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "/* ${0} */",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: slash[1].length + 1,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
+              detail: "Block comment",
+              sortText: "0a",
+            },
+          ] as languages.CompletionItem[],
+        };
+      }
+
       // Dashes at the start of a line: offer the two things they can become —
       // a `--` line comment or a `--/ … /` UDF script block.
-      const lineBefore = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
       const dashes = /^(\s*)(-{1,3}\/?)$/.exec(lineBefore);
       if (dashes) {
         const dashRange = {

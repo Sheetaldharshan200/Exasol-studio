@@ -1007,6 +1007,7 @@ export function ExasolStudio({
       response: null,
       execError: null,
       filePath: path,
+      savedSql: content,
     };
     updateTabs(connKey, (list) => [...list, tab]);
     setActiveTabId(tab.id);
@@ -1781,7 +1782,7 @@ export function ExasolStudio({
         await ipc.writeTextFile(activeTab.filePath, activeTab.sql);
         // Re-saving recreates a file that may have been deleted — clear the flag.
         updateTabs(connKey, (list) =>
-          list.map((t) => (t.id === activeTab.id && t.fileMissing ? { ...t, fileMissing: false } : t)),
+          list.map((t) => (t.id === activeTab.id ? { ...t, fileMissing: false, savedSql: t.sql } : t)),
         );
         setFilesRefresh((n) => n + 1);
       } catch {
@@ -1796,7 +1797,7 @@ export function ExasolStudio({
     if (isTauri() && wsPath) {
       try {
         await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
-        patchTab(activeTab.id, { title: fileName });
+        patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
         setFilesRefresh((n) => n + 1);
       } catch {
         /* ignore write error */
@@ -1820,7 +1821,7 @@ export function ExasolStudio({
     const file = raw.endsWith(".sql") ? raw : `${raw}.sql`;
     try {
       await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
-      patchTab(activeTab.id, { title: file });
+      patchTab(activeTab.id, { title: file, savedSql: activeTab.sql, filePath: `${wsPath}/${file}` });
       setFilesRefresh((n) => n + 1);
     } catch {
       /* ignore */
@@ -2680,9 +2681,19 @@ export function ExasolStudio({
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
                 {/* Save + history */}
-                <IconButton label="Save to the current file" onClick={saveTab}>
-                  <Save className="h-3.5 w-3.5" />
-                </IconButton>
+                {(() => {
+                  // Dirty = the buffer differs from what was last saved/opened.
+                  const tabDirty = activeTab.sql !== (activeTab.savedSql ?? "");
+                  return (
+                    <IconButton
+                      label={tabDirty ? "Save to the current file (unsaved changes)" : "Save to the current file — no changes"}
+                      onClick={saveTab}
+                      disabled={!tabDirty}
+                    >
+                      <Save className={cn("h-3.5 w-3.5", tabDirty && "text-primary")} />
+                    </IconButton>
+                  );
+                })()}
                 <IconButton label="Save as a new file…" onClick={() => setNamePrompt({ value: activeTab.title.replace(/\.sql$/, "") })}>
                   <SaveAll className="h-3.5 w-3.5" />
                 </IconButton>
@@ -3098,12 +3109,12 @@ export function ExasolStudio({
                     // onDidType exists on the widget but is absent from the
                     // IStandaloneCodeEditor typings.
                     (editor as unknown as { onDidType: (fn: (text: string) => void) => void }).onDidType((text) => {
-                      if (text !== "-" && text !== "/") return;
+                      if (text !== "-" && text !== "/" && text !== "*") return;
                       const pos = editor.getPosition();
                       const mdl = editor.getModel();
                       if (!pos || !mdl) return;
                       const before = mdl.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
-                      if (/^\s*(-{1,2}|--\/)$/.test(before)) {
+                      if (/^\s*(-{1,2}|--\/|\/\*?)$/.test(before)) {
                         editor.trigger("exa-dash", "editor.action.triggerSuggest", {});
                       }
                     });
