@@ -18,6 +18,8 @@ export type BackupSchedule = {
   /** IANA zone ("Asia/Kolkata"); empty/missing = the system zone. */
   timezone?: string;
   enabled: boolean;
+  /** Epoch ms of the last occurrence Studio handled (fired or caught up). */
+  lastRunAt?: number;
 };
 
 export function systemZone(): string {
@@ -74,6 +76,21 @@ export function nextRun(s: BackupSchedule, from: Date): Date {
     if (candidate > from) return candidate;
   }
   return new Date(from.getTime() + 86_400_000); // unreachable fallback
+}
+
+/**
+ * The occurrence that is DUE at `now`: the first occurrence after the last
+ * handled one (or after creation) that has already passed. Null when nothing
+ * is due. This is how a backup missed while the computer was off gets caught
+ * up on the next launch — the missed wall-clock time is returned so the
+ * notification can say what was skipped.
+ */
+export function dueRun(s: BackupSchedule, now: Date): Date | null {
+  if (!s.enabled) return null;
+  const created = parseInt(s.id.replace(/\D/g, ""), 10); // ids are "sched-<epoch>"
+  const baseline = new Date(s.lastRunAt ?? (Number.isFinite(created) && created > 0 ? created : now.getTime()));
+  const n = nextRun(s, baseline);
+  return n <= now ? n : null;
 }
 
 /** "02:00 Asia/Kolkata" rendered for the schedule list. */

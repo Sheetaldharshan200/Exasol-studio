@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Check, DatabaseBackup, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type StatementResult } from "@/lib/ipc";
 import { ResultsGrid } from "@/components/studio/HistoryDock";
 
 /**
@@ -86,15 +86,26 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
     void load();
   }, [load]);
 
-  // Schedules persist in app settings (per connection).
+  // Schedules persist in app settings (per connection); the settings:changed
+  // broadcast keeps the list live when the scheduler stamps lastRunAt.
   useEffect(() => {
-    ipc
-      .getAppSettings()
-      .then((s) => {
-        const raw = s[settingsKey(profileId)];
-        if (typeof raw === "string") setSchedules(JSON.parse(raw) as BackupSchedule[]);
-      })
-      .catch(() => undefined);
+    const read = (s: Record<string, unknown>) => {
+      const raw = s[settingsKey(profileId)];
+      if (typeof raw !== "string") return;
+      try {
+        setSchedules(JSON.parse(raw) as BackupSchedule[]);
+      } catch {
+        /* malformed blob — keep current state */
+      }
+    };
+    ipc.getAppSettings().then(read).catch(() => undefined);
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<Record<string, unknown>>("settings:changed", (e) => read(e.payload));
+    })();
+    return () => unlisten?.();
   }, [profileId]);
   function saveSchedules(next: BackupSchedule[]) {
     setSchedules(next);
@@ -141,9 +152,11 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
         </div>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
           Schedules apply to this connection's entire database and fire at the wall-clock time of the timezone you pick
-          (daylight-saving shifts included). Exasol executes backups through its administration layer (EXAoperation / c4),
-          not the SQL connection — Studio keeps your plan here and the recorded backup events below, so drift between the
-          two is visible at a glance.
+          (daylight-saving shifts included). Studio checks them every minute while it is running — if the computer is off
+          or asleep at the scheduled time, the missed run is detected on the next launch and announced with a
+          notification, so nothing slips silently. Exasol executes backups through its administration layer
+          (EXAoperation / c4), not the SQL connection — Studio keeps your plan and the recorded backup events below side
+          by side, so drift between the two is visible at a glance.
         </p>
         <div className="mt-2 space-y-1.5">
           {schedules.length === 0 && !draft ? (
@@ -164,8 +177,9 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
               {s.enabled ? (
                 <span
                   className="ml-auto font-mono text-[11px] text-muted-foreground"
-                  title="Next run, shown in YOUR local time"
+                  title="Next run and last handled run, shown in YOUR local time"
                 >
+                  {s.lastRunAt ? `last: ${new Date(s.lastRunAt).toLocaleString([], { hour12: false })} · ` : ""}
                   next: {nextRun(s, new Date()).toLocaleString([], { hour12: false })} local
                 </span>
               ) : (

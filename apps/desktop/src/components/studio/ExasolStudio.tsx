@@ -32,6 +32,7 @@ import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LogsPanel } from "@/features/connection/LogsPanel";
 import { BackupsPanel } from "@/features/connection/BackupsPanel";
+import { startBackupScheduler } from "@/features/connection/backup-scheduler";
 import { HealthPanel } from "@/features/connection/HealthPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/features/workbench/ObjectContextMenu";
@@ -287,6 +288,16 @@ export function ExasolStudio({
   }, [connKey]);
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
+
+  // Backup schedules tick every minute while Studio runs; the getter reads a
+  // ref so the interval survives connection-list changes. Missed occurrences
+  // (computer off/asleep) are caught up on launch with a notification.
+  const schedulerConnsRef = useRef(connections);
+  schedulerConnsRef.current = connections;
+  useEffect(
+    () => startBackupScheduler(() => schedulerConnsRef.current.map((c) => ({ id: c.profile.id, name: c.profile.name }))),
+    [],
+  );
 
   // Focus the editor whenever the ACTIVE TAB becomes a SQL tab (new tab, tab
   // switch), so a fresh query tab is immediately typeable — the caret blinks

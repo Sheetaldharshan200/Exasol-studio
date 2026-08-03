@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeSchedule, nextRun, utcFromZoned, zonedParts, type BackupSchedule } from "./backup-schedule.ts";
+import { describeSchedule, dueRun, nextRun, utcFromZoned, zonedParts, type BackupSchedule } from "./backup-schedule.ts";
 
 const sched = (over: Partial<BackupSchedule>): BackupSchedule => ({
   id: "1",
@@ -81,4 +81,24 @@ test("describeSchedule names the zone", () => {
 test("tolerates malformed time as midnight", () => {
   const n = nextRun(sched({ time: "xx" }), FROM);
   assert.equal(n.getTime(), Date.UTC(2026, 7, 6, 0, 0));
+});
+
+test("dueRun: nothing due before the first occurrence; the missed one after", () => {
+  const created = Date.UTC(2026, 7, 5, 9, 0); // Wed 09:00 UTC
+  const s: BackupSchedule = { id: `sched-${created}`, label: "n", frequency: "daily", time: "02:00", weekday: 0, timezone: "UTC", enabled: true };
+  // Before tonight's 02:00 → nothing due.
+  assert.equal(dueRun(s, new Date(Date.UTC(2026, 7, 5, 12, 0))), null);
+  // The machine was off overnight; at 09:00 next day the 02:00 run is due.
+  const due = dueRun(s, new Date(Date.UTC(2026, 7, 6, 9, 0)));
+  assert.equal(due?.getTime(), Date.UTC(2026, 7, 6, 2, 0));
+});
+
+test("dueRun: lastRunAt advances the baseline; disabled schedules never fire", () => {
+  const s: BackupSchedule = {
+    id: "sched-1", label: "n", frequency: "daily", time: "02:00", weekday: 0, timezone: "UTC", enabled: true,
+    lastRunAt: Date.UTC(2026, 7, 6, 2, 0),
+  };
+  assert.equal(dueRun(s, new Date(Date.UTC(2026, 7, 6, 9, 0))), null); // already handled
+  assert.equal(dueRun(s, new Date(Date.UTC(2026, 7, 7, 9, 0)))?.getTime(), Date.UTC(2026, 7, 7, 2, 0));
+  assert.equal(dueRun({ ...s, enabled: false }, new Date(Date.UTC(2026, 7, 9, 9, 0))), null);
 });
