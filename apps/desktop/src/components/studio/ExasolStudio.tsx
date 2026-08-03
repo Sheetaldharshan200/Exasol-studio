@@ -3156,6 +3156,9 @@ export function ExasolStudio({
                   options={{
                     automaticLayout: true,
                     lightbulb: { enabled: "on" as never },
+                    // Default 10px + the folding zone left a wide gap between
+                    // the line number and the first character.
+                    lineDecorationsWidth: 0,
                     fontFamily: "JetBrains Mono",
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",
