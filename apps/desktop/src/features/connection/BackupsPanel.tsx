@@ -12,9 +12,18 @@ import { ResultsGrid } from "@/components/studio/HistoryDock";
  * not over the SQL websocket, so Studio keeps the plan and the evidence
  * side by side and says so.
  */
-import { nextRun, type BackupSchedule } from "@/lib/backup-schedule";
+import { describeSchedule, nextRun, systemZone, type BackupSchedule } from "@/lib/backup-schedule";
+import { NumberInput } from "@/components/ui/number-input";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const ALL_ZONES: string[] = (() => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return ["UTC", "Europe/Berlin", "Asia/Kolkata", "America/New_York"];
+  }
+})();
 
 const settingsKey = (profileId: string) => `backupSchedules_${profileId}`;
 
@@ -122,15 +131,19 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
           <CalendarClock className="h-4 w-4 text-primary" />
           <span className="text-[13px] font-semibold">Backup schedules</span>
           <button
-            onClick={() => setDraft({ id: `sched-${Date.now()}`, label: "Nightly backup", frequency: "daily", time: "02:00", weekday: 0, enabled: true })}
+            onClick={() =>
+              setDraft({ id: `sched-${Date.now()}`, label: "Nightly backup", frequency: "daily", time: "02:00", weekday: 0, dayOfMonth: 1, timezone: systemZone(), enabled: true })
+            }
             className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground"
           >
             <Plus className="h-3 w-3" /> Add schedule
           </button>
         </div>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-          Exasol executes backups through its administration layer (EXAoperation / c4), not the SQL connection — Studio keeps
-          your plan here and the recorded backup events below, so drift between the two is visible at a glance.
+          Schedules apply to this connection's entire database and fire at the wall-clock time of the timezone you pick
+          (daylight-saving shifts included). Exasol executes backups through its administration layer (EXAoperation / c4),
+          not the SQL connection — Studio keeps your plan here and the recorded backup events below, so drift between the
+          two is visible at a glance.
         </p>
         <div className="mt-2 space-y-1.5">
           {schedules.length === 0 && !draft ? (
@@ -147,12 +160,13 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
                 <span className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all", s.enabled ? "left-3.5" : "left-0.5")} />
               </button>
               <span className={cn("font-medium", !s.enabled && "text-muted-foreground line-through")}>{s.label}</span>
-              <span className="text-muted-foreground">
-                {s.frequency === "daily" ? `daily at ${s.time}` : `${WEEKDAYS[s.weekday]} at ${s.time}`}
-              </span>
+              <span className="text-muted-foreground">{describeSchedule(s)}</span>
               {s.enabled ? (
-                <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-                  next: {nextRun(s, new Date()).toLocaleString([], { hour12: false })}
+                <span
+                  className="ml-auto font-mono text-[11px] text-muted-foreground"
+                  title="Next run, shown in YOUR local time"
+                >
+                  next: {nextRun(s, new Date()).toLocaleString([], { hour12: false })} local
                 </span>
               ) : (
                 <span className="ml-auto" />
@@ -175,7 +189,7 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
                 aria-label="Schedule name"
               />
               <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
-                {(["daily", "weekly"] as const).map((f) => (
+                {(["daily", "weekly", "monthly"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setDraft({ ...draft, frequency: f })}
@@ -198,6 +212,19 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
                   ))}
                 </div>
               ) : null}
+              {draft.frequency === "monthly" ? (
+                <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  day
+                  <NumberInput
+                    value={draft.dayOfMonth ?? 1}
+                    min={1}
+                    max={31}
+                    onCommit={(n) => setDraft({ ...draft, dayOfMonth: n })}
+                    className="h-6 w-12 bg-editor text-[12px]"
+                    aria-label="Day of month"
+                  />
+                </label>
+              ) : null}
               <input
                 value={draft.time}
                 onChange={(e) => setDraft({ ...draft, time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) })}
@@ -205,6 +232,7 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
                 aria-label="Time (24h HH:MM)"
                 placeholder="02:00"
               />
+              <ZonePicker value={draft.timezone ?? systemZone()} onChange={(z) => setDraft({ ...draft, timezone: z })} />
               <button
                 onClick={() => {
                   if (/^\d{1,2}:\d{2}$/.test(draft.time)) {
@@ -249,6 +277,52 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** IANA timezone combobox: type to filter, click to pick. */
+function ZonePicker({ value, onChange }: { value: string; onChange: (zone: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const matches = query
+    ? ALL_ZONES.filter((z) => z.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
+    : [systemZone(), "UTC", ...ALL_ZONES.filter((z) => z !== "UTC" && z !== systemZone())].slice(0, 8);
+  return (
+    <div className="relative">
+      <input
+        value={open ? query : value}
+        onFocus={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={value}
+        aria-label="Timezone"
+        className="h-6 w-44 rounded border border-border bg-editor px-1.5 font-mono text-[11px] outline-none focus:border-primary/50"
+      />
+      {open ? (
+        <div className="absolute left-0 top-7 z-50 max-h-56 w-64 overflow-auto rounded-md border border-border bg-panel shadow-xl [scrollbar-width:thin]">
+          {matches.length === 0 ? <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No matching zone.</div> : null}
+          {matches.map((z) => (
+            <button
+              key={z}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(z);
+                setOpen(false);
+              }}
+              className={cn(
+                "block w-full px-2 py-1.5 text-left font-mono text-[11px] hover:bg-secondary",
+                z === value ? "text-primary" : "text-foreground",
+              )}
+            >
+              {z}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

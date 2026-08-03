@@ -117,6 +117,10 @@ export function ResultsGrid({
   const [editing, setEditing] = useState(false);
   // The cell the user double-tapped — edit mode opens with THAT cell focused.
   const [focusCell, setFocusCell] = useState<{ row: number; col: number } | null>(null);
+  // Rows currently rendered into the DOM (grows via "Show more"); resets per result.
+  const RENDER_STEP = 1000;
+  const [renderCap, setRenderCap] = useState(RENDER_STEP);
+  useEffect(() => setRenderCap(RENDER_STEP), [result]);
   // Column widths captured from the read-only table the moment editing starts,
   // so the editable grid renders with IDENTICAL geometry (no resize jump).
   const roTableRef = useRef<HTMLTableElement | null>(null);
@@ -183,6 +187,9 @@ export function ResultsGrid({
   // display indices — so double-click-to-edit is only safe when no filter is
   // active. Clear the filter to edit.
   const editableNow = canEdit && !filterActive;
+  // Big results render incrementally: the DOM gets the first chunk and grows
+  // on demand — 100k-row fetches must not freeze the window.
+  const visible = filtered.length > renderCap ? filtered.slice(0, renderCap) : filtered;
   return (
     <div className="flex h-full flex-col">
       {hideToolbar ? null : (
@@ -235,7 +242,7 @@ export function ResultsGrid({
                 </td>
               </tr>
             ) : (
-              filtered.map((row, rowIndex) => (
+              visible.map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
                   title={editableNow ? "Double-click a cell to edit it" : undefined}
@@ -263,6 +270,25 @@ export function ResultsGrid({
             )}
           </tbody>
         </table>
+        {filtered.length > visible.length ? (
+          <div className="flex items-center justify-center gap-3 border-b border-border py-2">
+            <span className="font-mono text-[11px] text-muted-foreground">
+              showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} rows
+            </span>
+            <button
+              onClick={() => setRenderCap((c) => c + RENDER_STEP)}
+              className="h-6 rounded-md border border-border px-2.5 text-[11.5px] text-foreground transition-colors hover:bg-secondary"
+            >
+              Show {Math.min(RENDER_STEP, filtered.length - visible.length).toLocaleString()} more
+            </button>
+            <button
+              onClick={() => setRenderCap(filtered.length)}
+              className="h-6 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Show all
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -91,6 +91,9 @@ export function ResultsPanel({
   const busy = Boolean(runMeta && !runMeta.finishedAt);
   // Runs before this release persisted a single Plan object — normalize.
   const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
+  // Memoized: splitStatements is O(buffer) and this component re-renders per
+  // keystroke — a huge script must not re-split on every render.
+  const isSingleSelect = useMemo(() => splitStatements(sql).length === 1 && /^select/i.test(sql.trim()), [sql]);
 
   // Auto-profile: opening the Query Performance tab shows the plan straight away
   // — no button. Fire once per result (guarded by autoProfiledFor so a failed
@@ -126,7 +129,7 @@ export function ResultsPanel({
             {lastResult.kind === "resultSet"
               ? (() => {
                   const page = resultPage ?? 0;
-                  const single = splitStatements(sql).length === 1 && /^select/i.test(sql.trim());
+                  const single = isSingleSelect;
                   const from = page * maxRows + (lastResult.rowCount ? 1 : 0);
                   const to = page * maxRows + lastResult.rowCount;
                   const hasNext = lastResult.truncated;
