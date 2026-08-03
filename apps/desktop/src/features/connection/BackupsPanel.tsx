@@ -181,31 +181,31 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
             </div>
           ))}
           {draft ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-panel px-2.5 py-1.5 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-panel p-2 text-[12px]">
               <input
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                className="h-6 w-36 rounded border border-border bg-editor px-1.5 outline-none focus:border-primary/50"
+                className="h-7 min-w-36 flex-1 rounded-md border border-border bg-editor px-2 outline-none focus:border-primary/50"
                 aria-label="Schedule name"
               />
-              <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+              <div className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-border px-0.5">
                 {(["daily", "weekly", "monthly"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setDraft({ ...draft, frequency: f })}
-                    className={cn("h-5 rounded px-1.5 text-[11px]", draft.frequency === f ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+                    className={cn("h-5.5 rounded px-2 text-[11.5px] transition-colors", draft.frequency === f ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}
                   >
                     {f}
                   </button>
                 ))}
               </div>
               {draft.frequency === "weekly" ? (
-                <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+                <div className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-border px-0.5">
                   {WEEKDAYS.map((d, i) => (
                     <button
                       key={d}
                       onClick={() => setDraft({ ...draft, weekday: i })}
-                      className={cn("h-5 rounded px-1 text-[10.5px]", draft.weekday === i ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+                      className={cn("h-5.5 rounded px-1.5 text-[11px] transition-colors", draft.weekday === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}
                     >
                       {d}
                     </button>
@@ -213,14 +213,14 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
                 </div>
               ) : null}
               {draft.frequency === "monthly" ? (
-                <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
                   day
                   <NumberInput
                     value={draft.dayOfMonth ?? 1}
                     min={1}
                     max={31}
                     onCommit={(n) => setDraft({ ...draft, dayOfMonth: n })}
-                    className="h-6 w-12 bg-editor text-[12px]"
+                    className="h-7 w-12 bg-editor text-[12px]"
                     aria-label="Day of month"
                   />
                 </label>
@@ -228,25 +228,27 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
               <input
                 value={draft.time}
                 onChange={(e) => setDraft({ ...draft, time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) })}
-                className="h-6 w-16 rounded border border-border bg-editor px-1.5 text-center font-mono outline-none focus:border-primary/50"
+                className="h-7 w-16 shrink-0 rounded-md border border-border bg-editor px-2 text-center font-mono outline-none focus:border-primary/50"
                 aria-label="Time (24h HH:MM)"
                 placeholder="02:00"
               />
               <ZonePicker value={draft.timezone ?? systemZone()} onChange={(z) => setDraft({ ...draft, timezone: z })} />
-              <button
-                onClick={() => {
-                  if (/^\d{1,2}:\d{2}$/.test(draft.time)) {
-                    saveSchedules([...schedules, draft]);
-                    setDraft(null);
-                  }
-                }}
-                className="ml-auto flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
-              >
-                <Check className="h-3 w-3" /> Save
-              </button>
-              <button onClick={() => setDraft(null)} className="h-6 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground">
-                Cancel
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    if (/^\d{1,2}:\d{2}$/.test(draft.time)) {
+                      saveSchedules([...schedules, draft]);
+                      setDraft(null);
+                    }
+                  }}
+                  className="flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+                >
+                  <Check className="h-3 w-3" /> Save
+                </button>
+                <button onClick={() => setDraft(null)} className="h-7 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:text-foreground">
+                  Cancel
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -285,9 +287,10 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
 function ZonePicker({ value, onChange }: { value: string; onChange: (zone: string) => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  // The FULL IANA list — the dropdown scrolls; typing narrows it.
   const matches = query
-    ? ALL_ZONES.filter((z) => z.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
-    : [systemZone(), "UTC", ...ALL_ZONES.filter((z) => z !== "UTC" && z !== systemZone())].slice(0, 8);
+    ? ALL_ZONES.filter((z) => z.toLowerCase().includes(query.toLowerCase()))
+    : [systemZone(), "UTC", ...ALL_ZONES.filter((z) => z !== "UTC" && z !== systemZone())];
   return (
     <div className="relative">
       <input
@@ -300,10 +303,10 @@ function ZonePicker({ value, onChange }: { value: string; onChange: (zone: strin
         onChange={(e) => setQuery(e.target.value)}
         placeholder={value}
         aria-label="Timezone"
-        className="h-6 w-44 rounded border border-border bg-editor px-1.5 font-mono text-[11px] outline-none focus:border-primary/50"
+        className="h-7 w-44 rounded-md border border-border bg-editor px-2 font-mono text-[11px] outline-none focus:border-primary/50"
       />
       {open ? (
-        <div className="absolute left-0 top-7 z-50 max-h-56 w-64 overflow-auto rounded-md border border-border bg-panel shadow-xl [scrollbar-width:thin]">
+        <div className="absolute left-0 top-8 z-50 max-h-72 w-72 overflow-auto rounded-md border border-border bg-panel shadow-xl [scrollbar-width:thin]">
           {matches.length === 0 ? <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No matching zone.</div> : null}
           {matches.map((z) => (
             <button
