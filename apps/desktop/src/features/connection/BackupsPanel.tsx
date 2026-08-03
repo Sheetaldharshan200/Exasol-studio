@@ -1,0 +1,263 @@
+import { useCallback, useEffect, useState } from "react";
+import { CalendarClock, Check, DatabaseBackup, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
+import { ResultsGrid } from "@/components/studio/HistoryDock";
+
+/**
+ * Per-connection Backups tab (issue #45): what the database recorded about
+ * backups (EXA_SYSTEM_EVENTS BACKUP_* events — last backup, full history)
+ * plus per-connection backup schedules. Schedules are stored in app settings;
+ * Exasol runs backups through its admin layer (EXAoperation / c4 / confd),
+ * not over the SQL websocket, so Studio keeps the plan and the evidence
+ * side by side and says so.
+ */
+import { nextRun, type BackupSchedule } from "@/lib/backup-schedule";
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const settingsKey = (profileId: string) => `backupSchedules_${profileId}`;
+
+export function BackupsPanel({ profileId, connectionName }: { profileId: string; connectionName: string }) {
+  const [history, setHistory] = useState<StatementResult | null>(null);
+  const [lastBackup, setLastBackup] = useState<{ time: string; type: string } | null>(null);
+  const [dbInfo, setDbInfo] = useState<{ version?: string; nodes?: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [schedules, setSchedules] = useState<BackupSchedule[]>([]);
+  const [draft, setDraft] = useState<BackupSchedule | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await ipc
+        .executeSql(
+          profileId,
+          connectionName,
+          "SELECT MEASURE_TIME, EVENT_TYPE, DBMS_VERSION, NODES, DB_RAM_SIZE, PARAMETERS FROM EXA_STATISTICS.EXA_SYSTEM_EVENTS WHERE EVENT_TYPE LIKE 'BACKUP%' OR EVENT_TYPE LIKE 'RESTORE%' ORDER BY MEASURE_TIME DESC",
+          500,
+          false,
+        )
+        .catch((e) => {
+          setError(errorMessage(e));
+          return null;
+        });
+      const set = res?.results.find((r) => r.kind === "resultSet");
+      if (res?.success && set) {
+        setHistory(set);
+        setError(null);
+        const cols = set.columns.map((c) => c.name.toUpperCase());
+        const t = cols.indexOf("MEASURE_TIME");
+        const e = cols.indexOf("EVENT_TYPE");
+        const done = set.rows.find((r) => String(r[e] ?? "").toUpperCase().includes("BACKUP"));
+        setLastBackup(done ? { time: String(done[t] ?? ""), type: String(done[e] ?? "") } : null);
+      } else if (res && !res.success) {
+        setError(res.results.find((r) => r.error)?.error ?? "Could not read EXA_SYSTEM_EVENTS.");
+      }
+      const meta = await ipc
+        .executeSql(
+          profileId,
+          connectionName,
+          "SELECT PARAM_NAME, PARAM_VALUE FROM SYS.EXA_METADATA WHERE PARAM_NAME IN ('databaseProductVersion', 'nodeCount')",
+          10,
+          false,
+        )
+        .catch(() => null);
+      const metaSet = meta?.results.find((r) => r.kind === "resultSet");
+      if (metaSet) {
+        const rec = Object.fromEntries(metaSet.rows.map((r) => [String(r[0]), String(r[1])]));
+        setDbInfo({ version: rec.databaseProductVersion, nodes: rec.nodeCount });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [profileId, connectionName]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Schedules persist in app settings (per connection).
+  useEffect(() => {
+    ipc
+      .getAppSettings()
+      .then((s) => {
+        const raw = s[settingsKey(profileId)];
+        if (typeof raw === "string") setSchedules(JSON.parse(raw) as BackupSchedule[]);
+      })
+      .catch(() => undefined);
+  }, [profileId]);
+  function saveSchedules(next: BackupSchedule[]) {
+    setSchedules(next);
+    ipc.setAppSettings({ [settingsKey(profileId)]: JSON.stringify(next) }).catch(() => undefined);
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-auto bg-editor p-4 [scrollbar-width:thin]">
+      {/* Overview cards */}
+      <div className="grid shrink-0 grid-cols-3 gap-3">
+        <Card title="Last backup">
+          {lastBackup ? (
+            <>
+              <div className="font-mono text-[13px] text-foreground">{lastBackup.time}</div>
+              <div className="text-[11px] text-muted-foreground">{lastBackup.type}</div>
+            </>
+          ) : (
+            <div className="text-[12px] text-muted-foreground">No backup events recorded.</div>
+          )}
+        </Card>
+        <Card title="Recorded events">
+          <div className="font-mono text-[13px] text-foreground">{history?.rowCount ?? "—"}</div>
+          <div className="text-[11px] text-muted-foreground">backup / restore events</div>
+        </Card>
+        <Card title="Database">
+          <div className="font-mono text-[13px] text-foreground">{dbInfo?.version ?? "—"}</div>
+          <div className="text-[11px] text-muted-foreground">{dbInfo?.nodes ? `${dbInfo.nodes} node(s)` : ""}</div>
+        </Card>
+      </div>
+
+      {/* Schedules */}
+      <div className="mt-4 shrink-0 rounded-lg border border-border bg-panel/60 p-3">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-primary" />
+          <span className="text-[13px] font-semibold">Backup schedules</span>
+          <button
+            onClick={() => setDraft({ id: `sched-${Date.now()}`, label: "Nightly backup", frequency: "daily", time: "02:00", weekday: 0, enabled: true })}
+            className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="h-3 w-3" /> Add schedule
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          Exasol executes backups through its administration layer (EXAoperation / c4), not the SQL connection — Studio keeps
+          your plan here and the recorded backup events below, so drift between the two is visible at a glance.
+        </p>
+        <div className="mt-2 space-y-1.5">
+          {schedules.length === 0 && !draft ? (
+            <p className="text-[12px] text-muted-foreground">No schedules yet.</p>
+          ) : null}
+          {schedules.map((s) => (
+            <div key={s.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-panel px-2.5 py-1.5 text-[12px]">
+              <button
+                role="switch"
+                aria-checked={s.enabled}
+                onClick={() => saveSchedules(schedules.map((x) => (x.id === s.id ? { ...x, enabled: !x.enabled } : x)))}
+                className={cn("relative h-4 w-7 rounded-full transition-colors", s.enabled ? "bg-primary" : "bg-secondary")}
+              >
+                <span className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all", s.enabled ? "left-3.5" : "left-0.5")} />
+              </button>
+              <span className={cn("font-medium", !s.enabled && "text-muted-foreground line-through")}>{s.label}</span>
+              <span className="text-muted-foreground">
+                {s.frequency === "daily" ? `daily at ${s.time}` : `${WEEKDAYS[s.weekday]} at ${s.time}`}
+              </span>
+              {s.enabled ? (
+                <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                  next: {nextRun(s, new Date()).toLocaleString([], { hour12: false })}
+                </span>
+              ) : (
+                <span className="ml-auto" />
+              )}
+              <button
+                aria-label={`Delete ${s.label}`}
+                onClick={() => saveSchedules(schedules.filter((x) => x.id !== s.id))}
+                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+          {draft ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-panel px-2.5 py-1.5 text-[12px]">
+              <input
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                className="h-6 w-36 rounded border border-border bg-editor px-1.5 outline-none focus:border-primary/50"
+                aria-label="Schedule name"
+              />
+              <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+                {(["daily", "weekly"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setDraft({ ...draft, frequency: f })}
+                    className={cn("h-5 rounded px-1.5 text-[11px]", draft.frequency === f ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+              {draft.frequency === "weekly" ? (
+                <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+                  {WEEKDAYS.map((d, i) => (
+                    <button
+                      key={d}
+                      onClick={() => setDraft({ ...draft, weekday: i })}
+                      className={cn("h-5 rounded px-1 text-[10.5px]", draft.weekday === i ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <input
+                value={draft.time}
+                onChange={(e) => setDraft({ ...draft, time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) })}
+                className="h-6 w-16 rounded border border-border bg-editor px-1.5 text-center font-mono outline-none focus:border-primary/50"
+                aria-label="Time (24h HH:MM)"
+                placeholder="02:00"
+              />
+              <button
+                onClick={() => {
+                  if (/^\d{1,2}:\d{2}$/.test(draft.time)) {
+                    saveSchedules([...schedules, draft]);
+                    setDraft(null);
+                  }
+                }}
+                className="ml-auto flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+              >
+                <Check className="h-3 w-3" /> Save
+              </button>
+              <button onClick={() => setDraft(null)} className="h-6 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* History */}
+      <div className="mt-4 flex min-h-[240px] flex-1 flex-col rounded-lg border border-border bg-panel/60">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          <DatabaseBackup className="h-4 w-4 text-primary" />
+          <span className="text-[13px] font-semibold">Backup &amp; restore history</span>
+          <button
+            onClick={() => void load()}
+            title="Refresh"
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          {error ? (
+            <div className="flex h-full items-center justify-center px-6 text-center font-mono text-[11.5px] text-muted-foreground">{error}</div>
+          ) : history && history.rowCount === 0 ? (
+            <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted-foreground">
+              This database has no recorded backup or restore events yet.
+            </div>
+          ) : (
+            <ResultsGrid result={history} error={null} hideToolbar />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-panel/60 px-3 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}

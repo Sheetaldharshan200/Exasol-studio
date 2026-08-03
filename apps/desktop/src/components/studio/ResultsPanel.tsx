@@ -2,13 +2,13 @@
  * The bottom result area of a SQL tab. Extracted from ExasolStudio.tsx (a file
  * we are actively shrinking) so the results experience has one home.
  *
- * The old "Add to dashboard" / "Performance" buttons are now first-class views
- * selected by a horizontal tab strip: Results | Query Performance | Show in
- * Dashboard. Query Performance renders the engine plan inline (bound to this
- * tab's query) instead of spawning a separate tab.
+ * Two views on a horizontal tab strip: Results | Query Performance. Query
+ * Performance renders the engine plan inline (bound to this tab's query)
+ * instead of spawning a separate tab. The old "Show in Dashboard" view moved
+ * into the per-connection Health tab (issue #45).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
 import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
@@ -22,11 +22,10 @@ import type { ResultView } from "./tabs";
 const TABS: { id: ResultView; label: string; icon: typeof Table2 }[] = [
   { id: "results", label: "Results", icon: Table2 },
   { id: "performance", label: "Query Performance", icon: Gauge },
-  { id: "dashboard", label: "Show in Dashboard", icon: BarChart3 },
 ];
 
 export function ResultsPanel({
-  view,
+  view: viewProp,
   onViewChange,
   sql,
   response,
@@ -52,7 +51,6 @@ export function ResultsPanel({
   profiling,
   onProfile,
   onOpenPlanTab,
-  onSendToDashboard,
 }: {
   view: ResultView;
   onViewChange: (v: ResultView) => void;
@@ -87,8 +85,9 @@ export function ResultsPanel({
   profiling: boolean;
   onProfile: () => void;
   onOpenPlanTab: (plan: Plan, title: string) => void;
-  onSendToDashboard: () => void;
 }) {
+  // The dashboard view was removed (issue #45) — tabs persisted on it land on Results.
+  const view: ResultView = viewProp === "dashboard" ? "results" : viewProp;
   const busy = Boolean(runMeta && !runMeta.finishedAt);
   // Runs before this release persisted a single Plan object — normalize.
   const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
@@ -249,13 +248,6 @@ export function ResultsPanel({
               <p className="text-[12.5px]">Run a query to see its execution plan.</p>
             </div>
           )
-        ) : view === "dashboard" ? (
-          <PanelEmpty
-            icon={BarChart3}
-            title="Show in Dashboard"
-            body="Add this query as a panel and open it on its schema's dashboard, where you can chart it and pin it alongside related metrics."
-            action={{ label: "Open in dashboard", onClick: onSendToDashboard }}
-          />
         ) : (response?.results.length ?? 0) > 1 ? (
           mergeResults ? (
             // Merged view — every result set stacked (toggle in the toolbar).
@@ -565,35 +557,5 @@ function Stat({ label, value }: { label: string; value: string }) {
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right text-foreground">{value}</dd>
     </>
-  );
-}
-
-function PanelEmpty({
-  icon: Icon,
-  title,
-  body,
-  action,
-}: {
-  icon: typeof Table2;
-  title: string;
-  body: string;
-  action: { label: string; onClick: () => void; busy?: boolean };
-}) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <Icon className="h-7 w-7 text-muted-foreground/50" />
-      <div className="max-w-md">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{body}</p>
-      </div>
-      <button
-        onClick={action.onClick}
-        disabled={action.busy}
-        className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-      >
-        {action.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-        {action.label}
-      </button>
-    </div>
   );
 }

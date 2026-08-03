@@ -11,7 +11,11 @@ import {
   ChevronRight,
   ChevronsDownUp,
   Database,
+  DatabaseBackup,
+  FolderOpen,
   HardDriveUpload,
+  HeartPulse,
+  ScrollText,
   Info,
   MoreHorizontal,
   PanelLeftClose,
@@ -92,7 +96,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
+  onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
@@ -182,6 +186,19 @@ function ConnectionSection({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("dba")}>
                 <Shield className="h-3.5 w-3.5" /> DBA dashboard
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onOpenView("health")}>
+                <HeartPulse className="h-3.5 w-3.5" /> Health
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("logs")}>
+                <ScrollText className="h-3.5 w-3.5" /> Logs
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("backups")}>
+                <DatabaseBackup className="h-3.5 w-3.5" /> Backups
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenView("bucketfs")}>
+                <FolderOpen className="h-3.5 w-3.5" /> BucketFS
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onNewVs}>
@@ -350,7 +367,7 @@ export function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
-  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") => void;
+  onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVirtualSchema: (profileId: string) => void;
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
