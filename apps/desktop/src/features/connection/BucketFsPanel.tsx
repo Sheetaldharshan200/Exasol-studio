@@ -153,14 +153,15 @@ export function BucketFsPanel({
       className={
         overlay
           ? "absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          : "flex h-full min-h-0 justify-center overflow-auto bg-editor p-4 [scrollbar-width:thin]"
+          : "flex h-full min-h-0 flex-col overflow-auto bg-editor [scrollbar-width:thin]"
       }
       onClick={overlay ? onClose : undefined}
     >
       <div
         className={cn(
-          "rounded-xl border border-border bg-popover",
-          overlay ? "max-h-[85vh] w-[560px] overflow-auto shadow-2xl [scrollbar-width:thin]" : "h-fit w-[640px] max-w-full",
+          overlay
+            ? "max-h-[85vh] w-[560px] overflow-auto rounded-xl border border-border bg-popover shadow-2xl [scrollbar-width:thin]"
+            : "w-full flex-1", // tab: fill the whole tab, no inner box
         )}
         onClick={(e) => e.stopPropagation()}
       >

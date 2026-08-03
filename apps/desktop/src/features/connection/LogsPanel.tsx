@@ -15,10 +15,16 @@ import { ResultsGrid } from "@/components/studio/HistoryDock";
  */
 type Source = "statements" | "sessions" | "events";
 
-const SOURCES: { id: Source; label: string }[] = [
-  { id: "statements", label: "Statements" },
-  { id: "sessions", label: "Sessions (live)" },
-  { id: "events", label: "System events" },
+const SOURCES: { id: Source; label: string; hint: string }[] = [
+  { id: "statements", label: "Statements", hint: "Executed SQL from the statistics views" },
+  { id: "sessions", label: "Sessions", hint: "Live sessions (EXA_ALL_SESSIONS)" },
+  { id: "events", label: "Events", hint: "System events (startup, backups, …)" },
+];
+
+const INTERVALS: { ms: number; label: string }[] = [
+  { ms: 5000, label: "5s" },
+  { ms: 15000, label: "15s" },
+  { ms: 60000, label: "60s" },
 ];
 
 const RANGES: { id: string; label: string; hours: number }[] = [
@@ -44,14 +50,13 @@ const ATTEMPTS: Record<Source, string[]> = {
   ],
 };
 
-const REFRESH_MS = 5000;
-
 export function LogsPanel({ profileId, connectionName }: { profileId: string; connectionName: string }) {
   const [source, setSource] = useState<Source>("statements");
   const [search, setSearch] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [range, setRange] = useState("1h");
   const [live, setLive] = useState(true);
+  const [intervalMs, setIntervalMs] = useState(5000);
   const [result, setResult] = useState<StatementResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,9 +109,9 @@ export function LogsPanel({ profileId, connectionName }: { profileId: string; co
   }, [load]);
   useEffect(() => {
     if (!live) return;
-    const t = window.setInterval(() => void load(false), REFRESH_MS);
+    const t = window.setInterval(() => void load(false), intervalMs);
     return () => window.clearInterval(t);
-  }, [live, load]);
+  }, [live, intervalMs, load]);
 
   // Errors-only: keep rows whose SUCCESS column is false or ERROR_TEXT is set.
   const filtered = (() => {
@@ -127,35 +132,36 @@ export function LogsPanel({ profileId, connectionName }: { profileId: string; co
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
-      {/* Toolbar */}
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
+      {/* Toolbar — one row, never wraps; scrolls horizontally if cramped. */}
+      <div className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {SOURCES.map((s) => (
           <button
             key={s.id}
             onClick={() => setSource(s.id)}
+            title={s.hint}
             className={cn(
-              "flex h-6 items-center rounded-md px-2.5 text-[12px] font-medium transition-colors",
+              "flex h-6 shrink-0 items-center rounded-md px-2.5 text-[12px] font-medium transition-colors",
               source === s.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {s.label}
           </button>
         ))}
-        <div className="mx-1 h-5 w-px bg-border" />
-        <div className="relative">
+        <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+        <div className="relative shrink-0">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search logs…"
-            className="h-6 w-44 rounded-md border border-border bg-panel pl-6 pr-2 text-[12px] outline-none focus:border-primary/50"
+            className="h-6 w-40 rounded-md border border-border bg-panel pl-6 pr-2 text-[12px] outline-none focus:border-primary/50"
           />
         </div>
         {hasErrorFilter ? (
           <button
             onClick={() => setErrorsOnly((v) => !v)}
             className={cn(
-              "flex h-6 items-center gap-1 rounded-md px-2 text-[12px] transition-colors",
+              "flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[12px] transition-colors",
               errorsOnly ? "bg-destructive/15 text-destructive" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -163,11 +169,12 @@ export function LogsPanel({ profileId, connectionName }: { profileId: string; co
           </button>
         ) : null}
         {source !== "sessions" ? (
-          <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+          <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5">
             {RANGES.map((r) => (
               <button
                 key={r.id}
                 onClick={() => setRange(r.id)}
+                title={r.label}
                 className={cn(
                   "h-5 rounded px-1.5 text-[11px] transition-colors",
                   range === r.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
@@ -178,27 +185,47 @@ export function LogsPanel({ profileId, connectionName }: { profileId: string; co
             ))}
           </div>
         ) : null}
-        <div className="ml-auto flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-          {filtered ? `${filtered.rowCount} rows` : ""}
-          {refreshedAt ? ` · ${new Date(refreshedAt).toLocaleTimeString([], { hour12: false })}` : ""}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {filtered ? `${filtered.rowCount} rows` : ""}
+            {refreshedAt ? ` · ${new Date(refreshedAt).toLocaleTimeString([], { hour12: false })}` : ""}
+          </span>
+          <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+            <button
+              onClick={() => setLive((v) => !v)}
+              title={live ? `Pause live refresh (every ${intervalMs / 1000}s)` : "Resume live refresh"}
+              className={cn(
+                "flex h-5 items-center gap-1 rounded px-1.5 text-[11.5px] transition-colors",
+                live ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {live ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />} Live
+            </button>
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv.ms}
+                onClick={() => {
+                  setIntervalMs(iv.ms);
+                  setLive(true);
+                }}
+                title={`Refresh every ${iv.label}`}
+                className={cn(
+                  "h-5 rounded px-1.5 text-[11px] transition-colors",
+                  live && intervalMs === iv.ms ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {iv.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => void load(true)}
+            title="Refresh now (flushes statistics)"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+          </button>
         </div>
-        <button
-          onClick={() => setLive((v) => !v)}
-          title={live ? "Pause live refresh" : "Resume live refresh (5s)"}
-          className={cn(
-            "flex h-6 items-center gap-1 rounded-md px-2 text-[12px] transition-colors",
-            live ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {live ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />} Live
-        </button>
-        <button
-          onClick={() => void load(true)}
-          title="Refresh now (flushes statistics)"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-        </button>
       </div>
 
       {/* Grid */}
