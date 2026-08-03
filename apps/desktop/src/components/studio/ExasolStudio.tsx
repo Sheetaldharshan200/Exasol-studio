@@ -287,6 +287,26 @@ export function ExasolStudio({
   }, [connKey]);
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
+
+  // Focus the editor whenever the ACTIVE TAB becomes a SQL tab (new tab, tab
+  // switch), so a fresh query tab is immediately typeable — the caret blinks
+  // at line 1 instead of waiting for a click. Double rAF: the model swap for
+  // the new tab lands after the render commit.
+  const lastFocusedTabId = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeTab.view !== "sql" || lastFocusedTabId.current === activeTab.id) return;
+    lastFocusedTabId.current = activeTab.id;
+    const raf = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const ed = editorRef.current;
+        if (!ed) return;
+        ed.focus();
+        if ((activeTab.sql ?? "").trim() === "") ed.setPosition({ lineNumber: 1, column: 1 });
+      }),
+    );
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.id, activeTab.view]);
   const activeTabId = activeTab.id;
   const isSpecialTab = activeTab.view !== "sql";
   const visualizerTabs = tabs

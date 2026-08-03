@@ -45,6 +45,15 @@ function ensureBadgeStyles(count: number) {
 export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { setEnabled: (on: boolean) => void } {
   let enabled = true;
   let lastKey = "";
+  let glyphOn: boolean | null = null;
+  // The glyph margin costs ~a line-height of gutter width — reserve it only
+  // while badges are actually shown, so a fresh/single-statement buffer keeps
+  // the caret tight against the line number.
+  const setGlyphMargin = (on: boolean) => {
+    if (glyphOn === on) return;
+    glyphOn = on;
+    editor.updateOptions({ glyphMargin: on });
+  };
   const collection = editor.createDecorationsCollection();
   const update = () => {
     const model = editor.getModel();
@@ -58,6 +67,7 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
     // below apply even when the buffer is a single script.
     const stmts = splitStatements(sql);
     const numbered = stmts.length >= 2 ? stmts : [];
+    setGlyphMargin(numbered.length > 0);
     ensureBadgeStyles(numbered.length);
     const decorations: Decoration[] = numbered.map((s, i) => {
       const pos = model.getPositionAt(badgeAnchor(sql, s));
@@ -154,8 +164,7 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
   return {
     setEnabled(on: boolean) {
       enabled = on;
-      // The glyph margin is only worth its width while badges are shown.
-      editor.updateOptions({ glyphMargin: on });
+      if (!on) setGlyphMargin(false);
       update();
     },
   };
