@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Check, DatabaseBackup, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { errorMessage, ipc, isTauri, type StatementResult } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type BackupRunResult, type StatementResult } from "@/lib/ipc";
 import { ResultsGrid } from "@/components/studio/HistoryDock";
 
 /**
@@ -26,6 +26,9 @@ const ALL_ZONES: string[] = (() => {
 })();
 
 const settingsKey = (profileId: string) => `backupSchedules_${profileId}`;
+const runsKey = (profileId: string) => `backupRuns_${profileId}`;
+
+export type BackupRun = BackupRunResult & { at: number };
 
 export function BackupsPanel({ profileId, connectionName }: { profileId: string; connectionName: string }) {
   const [history, setHistory] = useState<StatementResult | null>(null);
@@ -35,6 +38,51 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
   const [error, setError] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<BackupSchedule[]>([]);
   const [draft, setDraft] = useState<BackupSchedule | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
+  const [progress, setProgress] = useState<{ table: string; done: number; total: number } | null>(null);
+  const [runs, setRuns] = useState<BackupRun[]>([]);
+
+  // Live per-table progress while a backup streams.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<{ table: string; done: number; total: number }>(`backup-progress:${profileId}`, (e) => setProgress(e.payload));
+    })();
+    return () => unlisten?.();
+  }, [profileId]);
+
+  async function backupNow() {
+    if (backingUp) return;
+    setBackingUp(true);
+    setProgress(null);
+    try {
+      const res = await ipc.backupNow(profileId, connectionName);
+      const run: BackupRun = { ...res, at: Date.now() };
+      const next = [run, ...runs].slice(0, 10);
+      setRuns(next);
+      ipc.setAppSettings({ [runsKey(profileId)]: JSON.stringify(next) }).catch(() => undefined);
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: {
+            kind: res.skipped.length ? "warning" : "success",
+            title: `Backup complete — ${connectionName}`,
+            body: `${res.tables} tables, ${res.rows.toLocaleString()} rows in ${(res.elapsedMs / 1000).toFixed(1)}s → ${res.dir}${res.skipped.length ? ` (${res.skipped.length} skipped)` : ""}`,
+          },
+        }),
+      );
+    } catch (e) {
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "warning", title: `Backup failed — ${connectionName}`, body: errorMessage(e) },
+        }),
+      );
+    } finally {
+      setBackingUp(false);
+      setProgress(null);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,11 +139,20 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
   useEffect(() => {
     const read = (s: Record<string, unknown>) => {
       const raw = s[settingsKey(profileId)];
-      if (typeof raw !== "string") return;
-      try {
-        setSchedules(JSON.parse(raw) as BackupSchedule[]);
-      } catch {
-        /* malformed blob — keep current state */
+      if (typeof raw === "string") {
+        try {
+          setSchedules(JSON.parse(raw) as BackupSchedule[]);
+        } catch {
+          /* malformed blob — keep current state */
+        }
+      }
+      const rawRuns = s[runsKey(profileId)];
+      if (typeof rawRuns === "string") {
+        try {
+          setRuns(JSON.parse(rawRuns) as BackupRun[]);
+        } catch {
+          /* malformed blob — keep current state */
+        }
       }
     };
     ipc.getAppSettings().then(read).catch(() => undefined);
@@ -142,21 +199,34 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
           <CalendarClock className="h-4 w-4 text-primary" />
           <span className="text-[13px] font-semibold">Backup schedules</span>
           <button
+            onClick={() => void backupNow()}
+            disabled={backingUp}
+            title="Run a Studio logical backup now: every user table to CSV plus the reconstructed DDL, saved under ~/ExasolStudioBackups"
+            className="ml-auto flex h-6 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+          >
+            {backingUp ? <Loader2 className="h-3 w-3 animate-spin" /> : <DatabaseBackup className="h-3 w-3" />}
+            {backingUp
+              ? progress && progress.total > 0
+                ? `Backing up ${progress.done}/${progress.total}…`
+                : "Backing up…"
+              : "Backup now"}
+          </button>
+          <button
             onClick={() =>
               setDraft({ id: `sched-${Date.now()}`, label: "Nightly backup", frequency: "daily", time: "02:00", weekday: 0, dayOfMonth: 1, timezone: systemZone(), enabled: true })
             }
-            className="ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:text-foreground"
           >
             <Plus className="h-3 w-3" /> Add schedule
           </button>
         </div>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-          Schedules apply to this connection's entire database and fire at the wall-clock time of the timezone you pick
-          (daylight-saving shifts included). Studio checks them every minute while it is running — if the computer is off
-          or asleep at the scheduled time, the missed run is detected on the next launch and announced with a
-          notification, so nothing slips silently. Exasol executes backups through its administration layer
-          (EXAoperation / c4), not the SQL connection — Studio keeps your plan and the recorded backup events below side
-          by side, so drift between the two is visible at a glance.
+          Schedules apply to this connection's entire database and run a Studio logical backup — every user table to CSV
+          plus the reconstructed DDL, saved under ~/ExasolStudioBackups — at the wall-clock time of the timezone you pick
+          (daylight-saving shifts included). Studio checks every minute while it is running; if the computer is off or
+          asleep at the scheduled time, the missed run is detected on the next launch and backed up immediately, with a
+          notification either way. Exasol's native cluster backups remain in its administration layer (EXAoperation / c4)
+          — their recorded events show below.
         </p>
         <div className="mt-2 space-y-1.5">
           {schedules.length === 0 && !draft ? (
@@ -267,6 +337,35 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
           ) : null}
         </div>
       </div>
+
+      {/* Studio logical backups (Backup now / scheduler runs) */}
+      {runs.length > 0 ? (
+        <div className="mt-4 shrink-0 rounded-lg border border-border bg-panel/60 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <DatabaseBackup className="h-4 w-4 text-primary" />
+            <span className="text-[13px] font-semibold">Studio backups</span>
+            <span className="text-[11px] text-muted-foreground">CSV + DDL under ~/ExasolStudioBackups</span>
+          </div>
+          <div className="space-y-1">
+            {runs.map((r) => (
+              <div key={r.at} className="flex items-center gap-2 rounded-md border border-border/60 bg-panel px-2.5 py-1.5 text-[12px]">
+                <span className="font-mono text-muted-foreground">{new Date(r.at).toLocaleString([], { hour12: false })}</span>
+                <span>
+                  {r.tables} tables · {r.rows.toLocaleString()} rows · {(r.elapsedMs / 1000).toFixed(1)}s
+                  {r.skipped.length ? <span className="text-destructive"> · {r.skipped.length} skipped</span> : null}
+                </span>
+                <button
+                  onClick={() => void ipc.revealPath(r.dir).catch(() => undefined)}
+                  title={r.dir}
+                  className="ml-auto h-5 rounded px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  Reveal folder
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* History */}
       <div className="mt-4 flex min-h-[240px] flex-1 flex-col rounded-lg border border-border bg-panel/60">

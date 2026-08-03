@@ -386,6 +386,9 @@ export type HistoryEntry = {
 
 export type AppErrorPayload = { kind: string; message: string };
 
+/** Result of a Studio logical backup (backup_now). */
+export type BackupRunResult = { dir: string; tables: number; rows: number; skipped: string[]; elapsedMs: number };
+
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -607,6 +610,10 @@ export const ipc = {
     call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
+  /** Logical backup (DDL + per-table CSV) of every user schema; progress via
+   *  the `backup-progress:<profileId>` event. */
+  backupNow: (profileId: string, connectionName: string) =>
+    call<BackupRunResult>("backup_now", { profileId, connectionName }),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),
