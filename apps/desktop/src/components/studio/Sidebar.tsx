@@ -11,11 +11,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   Database,
-  DatabaseBackup,
-  FolderOpen,
   HardDriveUpload,
-  HeartPulse,
-  ScrollText,
   Info,
   MoreHorizontal,
   PanelLeftClose,
@@ -188,17 +184,18 @@ function ConnectionSection({
                 <Shield className="h-3.5 w-3.5" /> DBA dashboard
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* Same icons as the tabs they open (TAB_ICON) — never mix marks. */}
               <DropdownMenuItem onClick={() => onOpenView("health")}>
-                <HeartPulse className="h-3.5 w-3.5" /> Health
+                <Icon name="heart" className="h-3.5 w-3.5" /> Health
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("logs")}>
-                <ScrollText className="h-3.5 w-3.5" /> Logs
+                <Icon name="list" className="h-3.5 w-3.5" /> Logs
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("backups")}>
-                <DatabaseBackup className="h-3.5 w-3.5" /> Backups
+                <Icon name="database" className="h-3.5 w-3.5" /> Backups
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onOpenView("bucketfs")}>
-                <FolderOpen className="h-3.5 w-3.5" /> BucketFS
+                <Icon name="folder-open" className="h-3.5 w-3.5" /> BucketFS
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onNewVs}>

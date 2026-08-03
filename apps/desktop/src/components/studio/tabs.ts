@@ -152,7 +152,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   logs: "list",
   bucketfs: "folder-open",
   backups: "database",
-  health: "check-circle",
+  health: "heart",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */
