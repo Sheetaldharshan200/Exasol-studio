@@ -1,31 +1,45 @@
-# Exa agent v2: local runtime + continue.dev-grade chat (Brockley evaluated, not adopted)
+# Exa agent v2: opencode engine (prebuilt, MIT) + Studio-native panel
 
 ## Why
 
-The ask was to replace agent-core with Brockley AI and rebrand it. Due diligence (2026-08-03) says no — but the goals behind the ask are right and land here as first-class work.
+We want a production-grade, maintained, trustworthy agent core instead of growing our hand-rolled loop forever. Survey of complete prebuilt agent products (2026-08-04, facts from the repos):
 
-**Brockley findings** (github.com/brockleyai/brockleyai): Go, Apache-2.0 — license fine. But it is a **server-side control plane** for production agent fleets: Postgres + horizontally scaling workers via Docker Compose, Terraform deploys, a web console. Its "Superagent" is a workflow-graph node, not an embeddable chat agent. Adopting it would (a) bolt a Docker/Postgres server deployment onto a self-contained desktop app — violating Studio's recorded constraint that the agent must not depend on Docker/external apps; (b) bet the core UX on a project that is 4 months old, 17 stars, 2 forks, last pushed 2026-06 — one bus factor; (c) discard exa-agent's genuinely differentiating assets (SQL safety gate `classifySql`, live DB knowledge base, tool repair, Studio-native tools) to then re-patch them into a foreign Go codebase. Category mismatch, not an upgrade.
+| Product | License | Stars | Lang | Shape | Verdict |
+|---|---|---|---|---|---|
+| **opencode** (anomalyco/opencode) | **MIT** | **193k** | TS | client/server + typed SDK + protocol + their own desktop app on those surfaces | **Adopt** |
+| codex (openai/codex) | Apache-2.0 | 104k | Rust | app-server protocol; OpenAI-centric providers | runner-up |
+| gemini-cli (google) | Apache-2.0 | 106k | TS | embeddable core; Gemini-centric | runner-up |
+| OpenHands | MIT | 83k | TS | server + sandboxed runtime; heavier ops | no |
+| cline / Roo Code | Apache-2.0 | 65k / 24k | TS | VS Code-extension-shaped (Roo quiet since 2026-05) | no |
+| goose (Block) | Apache-2.0 | 52k | Rust | whole desktop/CLI product | no |
+| aider | Apache-2.0 | 48k | Python | CLI, quiet since 2026-05 | no |
+| crush | FSL (not OSI) | 27k | Go | license fails the bar | no |
+| Brockley | Apache-2.0 | 17 | Go | server-side control plane, Docker/Postgres | no (evaluated earlier) |
 
-**What we take instead**: Brockley's best loop-engineering ideas (bounded execution, observable event stream, schema-validated structured output) get ported INTO exa-agent; the Local Runtime layer and the continue.dev-quality chat panel get built properly.
+opencode is the only candidate that is simultaneously MIT (rebrandable), enormous and org-backed (24.7k forks, pushed daily), TypeScript (our sidecar skill set), **embeddable by design** (server + SDK are the product's own foundation — their desktop app eats the same dog food), provider-agnostic with local-first support (Ollama / LM Studio / any OpenAI-compatible server → llama.cpp, vLLM, SGLang, TGI), and **MCP-native** — which means Studio's existing exasol-studio MCP gateway plugs our in-database tools straight in.
 
 ## What Changes
 
-- **Local Runtime layer** in agent-core's provider tier: one OpenAI-compatible chat/completions client with runtime adapters — **Ollama** (native API + model list/pull), **LM Studio**, and **generic OpenAI-compatible endpoints** (covers llama.cpp server, vLLM, SGLang, TGI). Runtime discovery (probe default ports), model inventory, health status, and per-chat model pick — all local-first, zero cloud requirement.
-- **Loop hardening (from Brockley)**: five-layer termination (max iterations, max tool calls, per-iteration tool limit, wall-clock timeout, stuck detection → reflection), a typed event stream for every loop step (iteration/tool/eval/completion) consumed by the UI, and JSON-Schema-validated structured outputs.
-- **Chat panel refresh, continue.dev-informed** (Apache-2.0; patterns, not a code drop — their gui is coupled to their IDE protocol): session-first sidepanel with history switcher, per-session model picker, `@` context providers (schema/table/query/file), streaming tool-call cards with collapsible args/results, apply-to-editor actions with diff review (we already have InlineSqlDiff), and interruptible generation.
-- exa-agent name and process model (Node sidecar) stay; no rebrand.
+- **Engine**: agent-core's hand-rolled loop is replaced by an embedded **opencode server** sidecar (pinned version, bundled binary — no Docker, no external installs), spoken to via the official typed SDK (sessions, messages, events, permissions). Rebranded as **Exa** in the UI (MIT permits; upstream attribution kept in licenses).
+- **Our moat re-attaches via MCP**: the exasol-studio MCP gateway exposes the DB tools (query, schema, profiling, knowledge base) to the engine; the `classifySql` safety gate stays enforced inside OUR tool layer, so no model or engine change can bypass SQL review.
+- **Tool/permission scoping**: opencode is coding-agent-shaped (shell/file tools) — Studio's default agent profile disables shell and scopes filesystem, mapping opencode's permission prompts into Studio's review UI.
+- **Local Runtime UX**: runtime/model discovery (Ollama 11434, LM Studio 1234, user-added OpenAI-compatible URLs) surfaced in Studio's model picker, configured into opencode's provider config.
+- **Panel**: Studio-native React panel (assistant-ui MIT primitives, continue.dev interaction grammar) rendering opencode sessions/events — opencode's own UI packages are SolidJS, so UI stays ours by design.
+- Migration is strangler-style: the new engine mounts behind the existing panel entry; the old loop is removed when parity is reached.
 
 ## Capabilities
 
 ### New Capabilities
-- `local-runtime`: discovery, health, and model inventory for Ollama / LM Studio / OpenAI-compatible endpoints; chat + streaming through one client; graceful failover messaging.
-- `agent-loop-guarantees`: bounded execution, typed progress events, schema-validated structured output.
-- `chat-panel-v2`: sessions, context providers, tool-call cards, model picker, interruption — the continue.dev interaction grammar on Studio's design system.
+- `agent-engine`: embedded opencode server lifecycle (spawn, health, version pinning, crash recovery), SDK session/message/event bridge, permission mapping, rebrand rules.
+- `local-runtime`: discovery, health, and model inventory for Ollama / LM Studio / OpenAI-compatible endpoints, feeding the engine's provider config; honest degradation when a model lacks tool calling.
+- `chat-panel-v2`: sessions, @ context providers, tool-call cards, per-session model picker, interruption, apply-through-diff — rendered Studio-native from engine events.
 
 ### Modified Capabilities
-<!-- none: existing agent behavior remains until superseded feature-by-feature -->
+<!-- none: existing behavior remains until superseded feature-by-feature -->
 
 ## Impact
 
-- `packages/agent-core/src` provider layer + loop.ts (already tested pure helpers — extend, don't rewrite); `AssistantPanel.tsx` (1,937 lines — v2 panel is the moment to split it per KISS).
-- No new server/Docker dependencies; everything ships in the sidecar/binary. Brockley remains a candidate for FUTURE server-side scheduled agent fleets (separate change, if ever).
+- `packages/agent-core` shrinks to: engine supervisor + MCP gateway + Studio-specific tools (classifySql stays here); loop.ts retired at parity.
+- `AssistantPanel.tsx` (1,937 lines) replaced by `features/assistant/panel/` on assistant-ui.
+- New pinned dependency: opencode release binary per platform (bundled like other runtimes; update cadence controlled by us).
+- Risks tracked in design: upstream API velocity (pin + SDK versioning), coding-tool surface (permission profile), binary size.

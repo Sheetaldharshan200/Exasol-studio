@@ -1,29 +1,36 @@
-# Design — exa-agent-v2-local-runtime
+# Design — exa-agent-v2 (opencode engine)
 
 ## Context
 
-agent-core is a Node sidecar with a tested loop (`loop.ts`), a flat tool registry with the `classifySql` safety gate, tool repair, and a live DB knowledge base — assets to keep. AssistantPanel.tsx (1,937 lines) is the UI to replace incrementally. Constraint on record: no Docker/external-app dependencies for the agent. Brockley (Go control plane; Docker/Postgres/workers; 17★, single-digit contributors) was evaluated and rejected as the base — its loop-engineering ideas are adopted instead. continue.dev is Apache-2.0; we take its interaction grammar, not its code (its gui is coupled to the continue core message protocol).
+Chosen engine: **opencode** (anomalyco/opencode, MIT, 193k★, pushed daily) — client/server architecture whose own desktop app runs on the same `packages/server` + `packages/sdk` + `packages/protocol` we would embed. Providers ride the AI SDK ecosystem (local: Ollama/LM Studio/OpenAI-compatible; every major cloud). MCP support lets Studio's existing exasol-studio MCP gateway carry our in-database tools unchanged. Constraints intact: no Docker/external installs (we bundle the pinned binary like other runtimes), passwords never to the frontend, KISS file rules. opencode's UI packages are SolidJS — panel stays ours (React/assistant-ui).
+
+Runners-up recorded for posterity: codex (Apache-2.0, Rust, OpenAI-centric), gemini-cli (Apache-2.0, Gemini-centric). Rejected: OpenHands (ops-heavy runtime), cline/Roo (VS Code-shaped), aider (Python, quiet), crush (FSL), goose (whole Rust product), Brockley (server control plane, 17★).
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Local-first models with zero config when Ollama/LM Studio are running; any OpenAI-compatible endpoint addable by URL.
-- A loop that cannot run away and always explains its stop; UI that shows the loop truthfully.
-- A chat panel that matches continue.dev's usability while staying Studio-native, and that finally splits AssistantPanel per KISS.
+- Production-grade engine we do not maintain alone; Studio keeps the SQL-domain moat via its own MCP tool layer.
+- Local-first models with zero config when a runtime is running; any OpenAI-compatible endpoint addable.
+- Studio-native panel with the continue.dev interaction grammar; AssistantPanel finally split per KISS.
+- Controlled upgrades: engine version pinned, updated deliberately, changelog-reviewed.
 
 **Non-Goals:**
-- Rebranding or replacing the sidecar architecture; server-side agent fleets (Brockley's actual domain — separate future change if ever needed); training/finetuning; embedding models management beyond chat models.
+- Forking opencode (we configure + wrap, never patch upstream in v1); server-side agent fleets; shell-enabled coding profile by default; embedding opencode's Solid UI.
 
 ## Decisions
 
-0. **Foundations (survey 2026-08-04, licenses verified from LICENSE files):** the provider/loop layer builds on the **Vercel AI SDK** (`vercel/ai`, Apache-2.0, 26k★) instead of a fully hand-rolled client — it already unifies Ollama / OpenAI-compatible endpoints (llama.cpp, vLLM, SGLang, TGI) and cloud providers with streaming + tool calling; the panel builds on **assistant-ui** (MIT, 11.4k★, shadcn/Tailwind-native embeddable chat primitives with first-class AI SDK integration). Runner-up considered: CopilotKit (MIT, 36k★ — more framework than needed); rejected on license: Mastra (ee/ split), LobeHub, Open WebUI; rejected on fit: LibreChat (server app), goose (Rust product, different strategic step), HF chat-ui (Svelte). continue.dev (Apache-2.0) remains the interaction-pattern reference. Exa's differentiators (classifySql gate, DB knowledge base, tool repair, Studio tools) stay ours on top of these foundations.
-1. **One OpenAI-compatible client, N adapters** — realized via AI SDK providers: Ollama (`/api/tags` discovery, port 11434), LM Studio (`/v1/models`, 1234), generic (user URL + optional key) through `createOpenAICompatible`. Runtime registry persisted in agent settings; probe on panel open with 300ms timeouts, never blocking chat startup.
-2. **Loop hardening lands inside `loop.ts`** as pure, tested helpers: `TerminationPolicy` (the five layers) evaluated between iterations; `LoopEvent` union emitted through the existing event channel to the panel; `validateStructured(schema, text)` with one repair re-prompt. No rewrite — the current state machine stays, guards wrap it.
-3. **Chat panel v2 is a new `features/assistant/panel/` tree** (Composer, SessionList, MessageList, ToolCallCard, ContextChips, ModelPicker) mounted behind the existing AssistantPanel entry; old code is deleted section-by-section as each piece reaches parity. Context providers reuse what Studio already knows: sqlCatalog (schemas/tables/columns), editor selection/statement (splitStatements), result sets, files panel.
-4. **Capability detection, not capability pretense**: a per-model capability probe (tools yes/no via a cheap dry call, cached) drives honest reduced-mode messaging instead of retry storms on non-tool models.
+1. **Engine as supervised sidecar.** agent-core gains `engine/supervisor.ts`: spawn the bundled opencode server on a localhost port with a Studio-owned config dir, health-check, restart with backoff, hard version pin (binary shipped per platform in the existing runtime-bundle pipeline). No user-level opencode install is read — Studio's config dir is isolated.
+2. **SDK bridge, not raw HTTP.** All panel traffic goes through the official typed SDK (sessions, messages, streamed events, permission requests). A thin `engine/bridge.ts` maps SDK events → Studio's LoopEvent-style union so the panel is engine-agnostic if we ever swap again.
+3. **Tools via MCP only.** The engine's shell/file tools are disabled in the default "Exa (DB)" agent profile; capabilities come from the exasol-studio MCP gateway (query/schema/profile/KB) where `classifySql` and the review flow already live. A separate opt-in "developer" profile may enable file tools later.
+4. **Permissions mapped to Studio UX.** opencode permission prompts surface in the panel as the existing two-step Review/Confirm pattern; nothing auto-approves.
+5. **Local Runtime discovery stays ours** (probe 11434/1234/user URLs with shape validation) and writes the engine's provider config; capability probe (tools y/n) drives honest reduced-mode messaging.
+6. **Panel on assistant-ui (MIT)** themed to Studio tokens; @ context providers resolve from sqlCatalog/editor/results and are injected as message parts through the SDK.
+7. **Rebrand rules:** product surface says Exa; About/licenses page credits opencode (MIT) and dependencies; we do not remove upstream copyright headers.
 
 ## Risks / Trade-offs
 
-- Local models vary wildly in tool-calling quality → the safety gate stays server-side (classifySql) and destructive SQL still requires the existing review path regardless of model.
-- Probing ports could hit unrelated services → probes validate response shape (`/api/tags` JSON, `/v1/models` JSON) before listing a runtime.
-- Panel rewrite risk → strangler pattern behind the same entry point; each subcomponent ships only at parity, old path remains until then.
+- **Upstream velocity** (daily pushes, fast majors): mitigated by hard pinning + our own smoke suite against the SDK surface before any bump.
+- **Coding-agent defaults** (shell, repo assumptions): mitigated by profile scoping at config level and permission mapping; verified by tests that the DB profile exposes only MCP tools.
+- **Binary size** (+1 sidecar): acceptable against the runtime bundles we already ship; measured in CI.
+- **SDK/protocol drift**: bridge isolates the app from the SDK; the LoopEvent union is ours.
+- **If opencode's direction diverges**, the bridge + MCP tool layer keep the exit cost bounded (codex/gemini-cli both speak similar shapes; ACP exists as a neutral protocol).
