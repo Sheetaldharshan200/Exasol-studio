@@ -364,6 +364,26 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (!cleaned) return json(res, 500, { error: "The model returned no SQL." });
         return json(res, 200, { database: target.name, sql: cleaned });
       }
+      // POST /v1/gateway/kb {database, question, limit?} → {cards} — the
+      // knowledge base: Studio's per-connection table graph (summaries, columns,
+      // relationships) searched for a question, so the agent grounds answers in
+      // what Studio already learned about the schema instead of re-discovering
+      // it. Read-only; gated by the same exposure toggle as the SQL service.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "kb") {
+        const body = await readBody<{ database?: string; question?: string; limit?: number }>(req);
+        const wanted = (body.database ?? "").trim();
+        const question = (body.question ?? "").trim();
+        if (!wanted || !question) return json(res, 400, { error: "database and question are required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ?? conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        if (!target) return json(res, 404, { error: `No connected database named "${wanted}".` });
+        if ((config.get().gatewayExposure ?? {})[target.id] === false) {
+          return json(res, 403, { error: `"${target.name}" is not exposed on the Studio gateway.` });
+        }
+        const limit = Math.min(20, Math.max(1, body.limit ?? 5));
+        return json(res, 200, { database: target.name, cards: kb.search(target.id, question, limit) });
+      }
       // Dashboards service: Studio's saved dashboards (their panels carry the
       // SQL), exposed on the bus when the service toggle is on.
       if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "dashboards") {

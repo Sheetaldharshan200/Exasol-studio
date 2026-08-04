@@ -131,6 +131,23 @@ server.tool(
 );
 
 server.tool(
+  "search_knowledge",
+  "Knowledge base: search what Exasol Studio already learned about a database — per-table summaries, key columns, and relationships — for a question. Call this BEFORE generate_sql or list_tables to ground answers in the real schema graph instead of rediscovering it. Returns the most relevant table cards.",
+  {
+    database: DB_ARG,
+    question: z.string().describe("What you want to know, in plain language (e.g. \"customer orders and revenue\")."),
+    limit: z.number().int().min(1).max(20).optional().describe("Max table cards to return (default 5)."),
+  },
+  async ({ database, question, limit }) => {
+    try {
+      return text(await studio("/gateway/kb", { method: "POST", body: { database, question, limit } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
   "generate_sql",
   "Text-to-SQL service: turn a natural-language question into ONE read-only Exasol SQL statement, grounded in the database's real schema. The SQL is returned for inspection and is NOT executed — review it, then run it with run_query.",
   { database: DB_ARG, question: z.string().describe("The question to answer, in plain language.") },
