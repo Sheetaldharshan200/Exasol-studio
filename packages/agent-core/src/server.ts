@@ -16,6 +16,7 @@ import type { Attachment } from "./loop.ts";
 import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
+import { EngineService } from "./engine/engine-service.ts";
 
 // Minimal localhost HTTP + SSE server. No framework by design: six routes,
 // token auth, and Server-Sent Events — node:http covers all of it.
@@ -33,6 +34,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
+  // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
+  // the sidecar's env; degrades cleanly to "not installed" when absent.
+  const engine = new EngineService();
 
   const server = createServer(async (req, res) => {
     try {
@@ -51,6 +55,57 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       if (req.method === "GET" && parts[1] === "models") {
         const providers = await registry.list();
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
+      }
+
+      // ── Exa engine (opencode) ───────────────────────────────────────────
+      if (parts[1] === "engine") {
+        // GET /v1/engine/status
+        if (req.method === "GET" && parts[2] === "status") {
+          return json(res, 200, { ...(await engine.status()), provisioned: engine.provisioned });
+        }
+        // GET /v1/engine/sessions | POST to create
+        if (parts[2] === "sessions" && !parts[3]) {
+          if (req.method === "GET") return json(res, 200, { sessions: await engine.listSessions() });
+          if (req.method === "POST") {
+            const id = await engine.createSession();
+            return id ? json(res, 200, { id }) : json(res, 503, { error: "engine not installed" });
+          }
+        }
+        // POST /v1/engine/sessions/:id/(prompt|abort|permission)
+        if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
+          const sid = decodeURIComponent(parts[3]);
+          if (parts[4] === "prompt") {
+            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string } }>(req);
+            const ok = await engine.prompt(sid, b.text ?? "", b.model);
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          }
+          if (parts[4] === "abort") {
+            await engine.abort(sid);
+            return json(res, 200, { ok: true });
+          }
+          if (parts[4] === "permission") {
+            const b = await readBody<{ permissionId?: string; approve?: boolean }>(req);
+            await engine.respondPermission(sid, b.permissionId ?? "", Boolean(b.approve));
+            return json(res, 200, { ok: true });
+          }
+        }
+        // GET /v1/engine/events — SSE stream of StudioAgentEvent
+        if (req.method === "GET" && parts[2] === "events") {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          });
+          const ac = new AbortController();
+          req.on("close", () => ac.abort());
+          try {
+            await engine.subscribe((e) => res.write(`data: ${JSON.stringify(e)}\n\n`), ac.signal);
+          } catch {
+            /* stream ended */
+          }
+          return res.end();
+        }
+        return json(res, 404, { error: "not found" });
       }
 
       // POST /v1/providers/probe {baseURL, apiKey?} — test an OpenAI-compatible

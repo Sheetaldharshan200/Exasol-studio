@@ -32,8 +32,10 @@ export class EngineSupervisor {
   private proc?: ChildProcess;
   private restarts = 0;
   private stopping = false;
+  private opts: SupervisorOptions;
 
-  constructor(private opts: SupervisorOptions) {
+  constructor(opts: SupervisorOptions) {
+    this.opts = opts;
     this.cfg = opts.config ?? DEFAULT_SUPERVISOR;
   }
 
