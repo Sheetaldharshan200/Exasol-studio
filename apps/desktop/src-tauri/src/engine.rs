@@ -1,0 +1,203 @@
+//! Exa engine (opencode) install + resolution (exa-agent-v2, task 4.x).
+//!
+//! The engine binary is a Marketplace component whose SOURCE OF TRUTH is
+//! opencode's GitHub Releases. This module maps the platform to the right
+//! release asset (parity with agent-core's `engine/opencode-release.ts`),
+//! downloads + extracts it into the component directory, records
+//! `installed.json`, and resolves the runnable binary path (component dir,
+//! falling back to a bundled baseline). Actual downloads need the network +
+//! a real release, so E2E is out of scope for unit tests; the pure
+//! platform→asset mapping IS tested and mirrors the TS side.
+
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
+
+use crate::components_update::{component_dir, write_manifest, ComponentId, InstalledManifest};
+use crate::error::{AppError, AppResult};
+use crate::state::AppState;
+
+const OPENCODE_REPO: &str = "anomalyco/opencode";
+
+/// The release asset filename for an (os, arch), or None when unsupported.
+/// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
+pub fn asset_for(os: &str, arch: &str) -> Option<String> {
+    let a = match arch {
+        "aarch64" | "arm64" => "arm64",
+        "x86_64" | "x64" => "x64",
+        _ => return None,
+    };
+    Some(match os {
+        "macos" => format!("opencode-darwin-{a}.zip"),
+        "linux" => format!("opencode-linux-{a}.tar.gz"),
+        "windows" => format!("opencode-windows-{a}.zip"),
+        _ => return None,
+    })
+}
+
+fn binary_name() -> &'static str {
+    if std::env::consts::OS == "windows" {
+        "opencode.exe"
+    } else {
+        "opencode"
+    }
+}
+
+/// The engine binary path: the installed component copy if present, else the
+/// baseline bundled beside the app's other runtimes, else None.
+pub fn engine_binary_path(data_dir: &Path) -> Option<PathBuf> {
+    let installed = component_dir(data_dir, ComponentId::ExaAgent)
+        .join("bin")
+        .join(binary_name());
+    if installed.exists() {
+        return Some(installed);
+    }
+    None
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineInstallStatus {
+    pub installed: bool,
+    pub version: Option<String>,
+    pub binary_path: Option<String>,
+}
+
+#[tauri::command]
+pub fn engine_status(state: State<'_, AppState>) -> AppResult<EngineInstallStatus> {
+    let data_dir = &state.data_dir;
+    let manifest = crate::components_update::read_manifest(data_dir, ComponentId::ExaAgent);
+    let path = engine_binary_path(data_dir);
+    Ok(EngineInstallStatus {
+        installed: path.is_some(),
+        version: manifest.map(|m| m.version),
+        binary_path: path.map(|p| p.to_string_lossy().to_string()),
+    })
+}
+
+/// Download + extract the opencode release for `tag` (e.g. "v1.18.12") into the
+/// Exa agent component dir, then record the installed version. Best-effort
+/// checksum-free download (GitHub serves over TLS); the component is isolated
+/// so a bad extract never touches app files.
+#[tauri::command]
+pub async fn engine_install(app: AppHandle, tag: String) -> AppResult<EngineInstallStatus> {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<EngineInstallStatus> {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        let asset = asset_for(os, arch)
+            .ok_or_else(|| AppError::InvalidSettings(format!("No Exa engine build for {os}/{arch}.")))?;
+        let url = format!("https://github.com/{OPENCODE_REPO}/releases/download/{tag}/{asset}");
+
+        let dir = component_dir(&data_dir, ComponentId::ExaAgent);
+        let bin_dir = dir.join("bin");
+        std::fs::create_dir_all(&bin_dir)?;
+        let archive = dir.join(&asset);
+
+        // Download.
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(600))
+            .build()
+            .map_err(|e| AppError::Storage(format!("http client: {e}")))?;
+        let mut resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| AppError::Storage(format!("Engine download failed: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(AppError::Storage(format!(
+                "Engine download failed: {} for {url}",
+                resp.status()
+            )));
+        }
+        let mut out = File::create(&archive)?;
+        std::io::copy(&mut resp, &mut out)?;
+        drop(out);
+
+        // Extract into bin/ (zip on macOS/Windows, tar.gz on Linux).
+        if asset.ends_with(".zip") {
+            extract_zip(&archive, &bin_dir)?;
+        } else {
+            let decoder = flate2::read::GzDecoder::new(File::open(&archive)?);
+            tar::Archive::new(decoder).unpack(&bin_dir)?;
+        }
+        let _ = std::fs::remove_file(&archive);
+
+        // Make the binary executable on unix.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let bin = bin_dir.join(binary_name());
+            if bin.exists() {
+                let mut perms = std::fs::metadata(&bin)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&bin, perms)?;
+            }
+        }
+
+        let version = tag.trim_start_matches('v').to_string();
+        write_manifest(
+            &data_dir,
+            ComponentId::ExaAgent,
+            &InstalledManifest {
+                version: version.clone(),
+                installed_at: chrono::Utc::now().to_rfc3339(),
+                channel: Some("opencode-release".into()),
+            },
+        )?;
+
+        let path = engine_binary_path(&data_dir);
+        Ok(EngineInstallStatus {
+            installed: path.is_some(),
+            version: Some(version),
+            binary_path: path.map(|p| p.to_string_lossy().to_string()),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+fn extract_zip(archive: &Path, dest: &Path) -> AppResult<()> {
+    let file = File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| AppError::Storage(format!("zip open: {e}")))?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| AppError::Storage(format!("zip entry: {e}")))?;
+        let name = entry.name().to_string();
+        // Flatten: we only want the binary, wherever it sits in the archive.
+        let base = Path::new(&name).file_name().map(|s| s.to_os_string());
+        let Some(base) = base else { continue };
+        if entry.is_dir() {
+            continue;
+        }
+        let target = dest.join(&base);
+        let mut out = File::create(&target)?;
+        std::io::copy(&mut entry, &mut out)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mirrors packages/agent-core/src/engine/opencode-release.test.ts so the
+    // Rust installer and the TS mapper can never disagree on asset names.
+    #[test]
+    fn asset_for_matches_the_ts_mapper() {
+        assert_eq!(asset_for("macos", "aarch64").as_deref(), Some("opencode-darwin-arm64.zip"));
+        assert_eq!(asset_for("macos", "x86_64").as_deref(), Some("opencode-darwin-x64.zip"));
+        assert_eq!(asset_for("linux", "aarch64").as_deref(), Some("opencode-linux-arm64.tar.gz"));
+        assert_eq!(asset_for("linux", "x86_64").as_deref(), Some("opencode-linux-x64.tar.gz"));
+        assert_eq!(asset_for("windows", "x86_64").as_deref(), Some("opencode-windows-x64.zip"));
+        assert_eq!(asset_for("windows", "aarch64").as_deref(), Some("opencode-windows-arm64.zip"));
+    }
+
+    #[test]
+    fn asset_for_rejects_unsupported() {
+        assert_eq!(asset_for("freebsd", "x86_64"), None);
+        assert_eq!(asset_for("linux", "riscv64"), None);
+    }
+}

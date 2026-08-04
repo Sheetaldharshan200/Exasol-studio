@@ -392,6 +392,9 @@ export type BackupRunResult = { dir: string; tables: number; rows: number; skipp
 /** Admin API (ConfD) session state — deliberately password-free. */
 export type AdminApiStatus = { connected: boolean; host?: string | null; port?: number | null; user?: string | null };
 
+/** Exa engine install state (opencode component). */
+export type EngineInstallStatus = { installed: boolean; version?: string | null; binaryPath?: string | null };
+
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -626,6 +629,10 @@ export const ipc = {
   /** Run an allowlisted ConfD job; returns the job's result structure. */
   confdJob: (profileId: string, job: string, params: Record<string, unknown>) =>
     call<unknown>("confd_job", { profileId, job, params }),
+  // ── Exa engine (opencode binary from GitHub Releases) ─────────────────────
+  engineStatus: () => call<EngineInstallStatus>("engine_status"),
+  /** Download + install the engine for `tag` (e.g. "v1.18.12"). */
+  engineInstall: (tag: string) => call<EngineInstallStatus>("engine_install", { tag }),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),

@@ -1,6 +1,7 @@
 mod agent;
 mod backup;
 pub mod confd;
+mod engine;
 mod ai_clients;
 mod terminal;
 mod updates;
@@ -68,6 +69,8 @@ pub fn run() {
             confd::confd_status,
             confd::confd_disconnect,
             confd::confd_job,
+            engine::engine_status,
+            engine::engine_install,
             terminal::term_create,
             terminal::term_write,
             terminal::term_resize,
