@@ -26,6 +26,9 @@ Runners-up recorded for posterity: codex (Apache-2.0, Rust, OpenAI-centric), gem
 5. **Local Runtime discovery stays ours** (probe 11434/1234/user URLs with shape validation) and writes the engine's provider config; capability probe (tools y/n) drives honest reduced-mode messaging.
 6. **Panel on assistant-ui (MIT)** themed to Studio tokens; @ context providers resolve from sqlCatalog/editor/results and are injected as message parts through the SDK.
 7. **Rebrand rules:** product surface says Exa; About/licenses page credits opencode (MIT) and dependencies; we do not remove upstream copyright headers.
+8. **One engine, two front ends.** The sidebar (SDK client → server) and the `exa` CLI (opencode's TUI/CLI rebranded) both point at the SAME Studio config dir + session store + MCP layer + provider registry. The CLI is a thin launcher over the bundled binary with Studio's config path injected — a session is identical data whichever surface created it. No second brain, no divergence.
+9. **Provider ranking is data, not code branches.** A single ordered registry (Local → In-DB → cloud) drives both the picker and the default-selection rule; "In-DB AI" = the always-present MCP DB toolset plus, where the Exasol Text AI / UDF path is installed, in-database inference exposed as a provider. Cloud is never auto-selected.
+10. **Packaging via the existing runtime-bundle pipeline.** Engine server + `exa` CLI binaries are fetched per platform at build time (pinned), placed beside the other bundled runtimes, and referenced by the supervisor and the CLI installer by resolved path — so dmg/exe/AppImage carry everything, install offline, and need no Docker. "Install exa CLI to PATH" symlinks/shims the bundled binary; verified per-OS.
 
 ## Risks / Trade-offs
 

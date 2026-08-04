@@ -21,8 +21,14 @@
 - [ ] 3.3 Streaming MessageList + ToolCallCard (collapsible args/result/duration/error) driven by bridge events; Stop interrupts via SDK abort and preserves partials.
 - [ ] 3.4 Apply-to-editor through InlineSqlDiff for suggested SQL; delete superseded AssistantPanel sections at parity (KISS shrink of the 1,937-line file); retire loop.ts when the old path has no callers.
 
-## 4. Verification, docs, brand
+## 4. exa CLI + packaging
 
-- [ ] 4.1 tsc + vite build + full suites green; E2E: Ollama local model chat with DB tools, LM Studio, one OpenAI-compatible URL (vLLM or llama.cpp), permission flow on a destructive statement, engine crash/restart.
-- [ ] 4.2 Licenses/About surface credits opencode (MIT); rebrand pass (Exa naming) without touching upstream copyright headers.
-- [ ] 4.3 Codex review; findings fixed; llm-wiki: engine pin/upgrade runbook + the survey verdict (opencode vs codex/gemini-cli/goose/aider/cline/crush/Brockley).
+- [ ] 4.1 Bundle the `exa` CLI/TUI binary per platform alongside the server in the runtime-bundle pipeline; both resolved by path (no user-level install read).
+- [ ] 4.2 `exa` launcher injects Studio's isolated config dir so app and CLI share config/sessions/MCP tools/provider registry; test the shared-session invariant (session created in one surface is listed by the other).
+- [ ] 4.3 "Install exa CLI to PATH" action in the app (symlink/shim per OS, with uninstall); verify dmg/exe/AppImage ship both binaries and work offline with a local model.
+
+## 5. Verification, docs, brand
+
+- [ ] 5.1 tsc + vite build + full suites green; E2E: local model chat with DB tools (app + CLI), In-DB AI path where available, one OpenAI-compatible URL, provider-ranking default, destructive-statement gate in both surfaces, engine crash/restart, offline install from a built installer.
+- [ ] 5.2 Licenses/About surface credits opencode (MIT); rebrand pass (Exa / exa naming) without touching upstream copyright headers.
+- [ ] 5.3 Codex review; findings fixed; llm-wiki: engine pin/upgrade runbook, CLI+bundling how-to, and the survey verdict (opencode vs codex/gemini-cli/goose/aider/cline/crush/Brockley).

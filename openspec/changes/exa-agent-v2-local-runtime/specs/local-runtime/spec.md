@@ -22,6 +22,17 @@ All runtimes SHALL be driven through one OpenAI-compatible chat client (Ollama v
 - **WHEN** the user switches a session's model from a cloud model to a local one
 - **THEN** subsequent turns run on the local model and the session records which model produced each answer
 
+### Requirement: Local-first provider hierarchy
+The model picker and defaults SHALL rank providers as (1) Local Runtime, (2) In-DB AI (Exasol-grounded: the MCP DB toolset always, plus in-database inference via the Exasol Text AI / UDF path where installed), (3) cloud providers. A cloud provider SHALL never become the default silently — selecting one is an explicit user choice.
+
+#### Scenario: First run with a local runtime present
+- **WHEN** a local runtime is discovered and no model was previously chosen
+- **THEN** a local model is the default, and In-DB AI is offered above cloud options
+
+#### Scenario: No local, cloud configured
+- **WHEN** no local runtime responds but a cloud key exists
+- **THEN** the picker still lists Local and In-DB AI first with setup hints, and requires an explicit pick to use cloud
+
 ### Requirement: Honest degradation for missing capabilities
 When a local model/runtime lacks a capability the agent needs (e.g., tool calling), Studio SHALL say which capability is missing and continue with a reduced mode rather than fail opaquely.
 

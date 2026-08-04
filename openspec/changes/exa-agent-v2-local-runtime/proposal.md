@@ -25,14 +25,18 @@ opencode is the only candidate that is simultaneously MIT (rebrandable), enormou
 - **Tool/permission scoping**: opencode is coding-agent-shaped (shell/file tools) — Studio's default agent profile disables shell and scopes filesystem, mapping opencode's permission prompts into Studio's review UI.
 - **Local Runtime UX**: runtime/model discovery (Ollama 11434, LM Studio 1234, user-added OpenAI-compatible URLs) surfaced in Studio's model picker, configured into opencode's provider config.
 - **Panel**: Studio-native React panel (assistant-ui MIT primitives, continue.dev interaction grammar) rendering opencode sessions/events — opencode's own UI packages are SolidJS, so UI stays ours by design.
+- **exa CLI**: the same engine shipped as a terminal experience (`exa` command — the engine's TUI/CLI surface rebranded), sharing the app's isolated config, sessions, MCP tools, and provider registry, so a chat started in the terminal is visible in the sidebar and vice versa. Installable from the app ("Install exa CLI to PATH") and included in every installer.
+- **Provider hierarchy — local first**: the model picker and defaults rank (1) **Local Runtime** (Ollama / LM Studio / OpenAI-compatible), (2) **In-DB AI** (Exasol-grounded intelligence: the MCP DB toolset, and in-database inference via the Exasol Text AI / UDF path where installed), (3) cloud providers as explicit options — never the silent default.
+- **Packaging**: engine + CLI binaries bundled per platform inside the existing installers (dmg/exe/AppImage) through the runtime-bundle pipeline — no separate download, no Docker, works offline with local models.
 - Migration is strangler-style: the new engine mounts behind the existing panel entry; the old loop is removed when parity is reached.
 
 ## Capabilities
 
 ### New Capabilities
 - `agent-engine`: embedded opencode server lifecycle (spawn, health, version pinning, crash recovery), SDK session/message/event bridge, permission mapping, rebrand rules.
-- `local-runtime`: discovery, health, and model inventory for Ollama / LM Studio / OpenAI-compatible endpoints, feeding the engine's provider config; honest degradation when a model lacks tool calling.
+- `local-runtime`: discovery, health, and model inventory for Ollama / LM Studio / OpenAI-compatible endpoints, feeding the engine's provider config; provider ranking (Local → In-DB AI → cloud); honest degradation when a model lacks tool calling.
 - `chat-panel-v2`: sessions, @ context providers, tool-call cards, per-session model picker, interruption, apply-through-diff — rendered Studio-native from engine events.
+- `exa-cli`: the terminal surface of the same engine — shared config/sessions/tools with the app, installed to PATH from the app, bundled in every installer.
 
 ### Modified Capabilities
 <!-- none: existing behavior remains until superseded feature-by-feature -->
