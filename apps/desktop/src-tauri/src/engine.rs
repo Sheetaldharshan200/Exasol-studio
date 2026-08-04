@@ -46,16 +46,48 @@ fn binary_name() -> &'static str {
     }
 }
 
-/// The engine binary path: the installed component copy if present, else the
-/// baseline bundled beside the app's other runtimes, else None.
+/// The installed component copy of the engine binary, if present.
 pub fn engine_binary_path(data_dir: &Path) -> Option<PathBuf> {
     let installed = component_dir(data_dir, ComponentId::ExaAgent)
         .join("bin")
         .join(binary_name());
-    if installed.exists() {
-        return Some(installed);
+    installed.exists().then_some(installed)
+}
+
+/// Recursively find the engine binary inside a directory (the bundled archive
+/// layout varies by platform, so we search rather than assume a fixed path).
+fn find_binary(dir: &Path, depth: u8) -> Option<PathBuf> {
+    if depth > 4 {
+        return None;
     }
-    None
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut subdirs = Vec::new();
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            subdirs.push(p);
+        } else if p.file_name().map(|n| n == binary_name()).unwrap_or(false) {
+            return Some(p);
+        }
+    }
+    subdirs.into_iter().find_map(|d| find_binary(&d, depth + 1))
+}
+
+/// The baseline engine bundled beside the app's other runtimes
+/// (resources/runtime/exa-engine), or None in a dev build without it.
+pub fn bundled_engine_path(app: &AppHandle) -> Option<PathBuf> {
+    let base = app
+        .path()
+        .resolve("runtime/exa-engine", tauri::path::BaseDirectory::Resource)
+        .ok()?;
+    find_binary(&base, 0)
+}
+
+/// The engine binary Studio runs: the independently-installed component copy
+/// first, then the bundled baseline — so a fresh install works offline and an
+/// update moves it forward without touching the app.
+pub fn resolve_engine_binary(app: &AppHandle, data_dir: &Path) -> Option<PathBuf> {
+    engine_binary_path(data_dir).or_else(|| bundled_engine_path(app))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,13 +99,14 @@ pub struct EngineInstallStatus {
 }
 
 #[tauri::command]
-pub fn engine_status(state: State<'_, AppState>) -> AppResult<EngineInstallStatus> {
+pub fn engine_status(app: AppHandle, state: State<'_, AppState>) -> AppResult<EngineInstallStatus> {
     let data_dir = &state.data_dir;
     let manifest = crate::components_update::read_manifest(data_dir, ComponentId::ExaAgent);
-    let path = engine_binary_path(data_dir);
+    // Installed component copy OR the bundled baseline both count as usable.
+    let path = resolve_engine_binary(&app, data_dir);
     Ok(EngineInstallStatus {
         installed: path.is_some(),
-        version: manifest.map(|m| m.version),
+        version: manifest.map(|m| m.version).or_else(|| bundled_engine_path(&app).map(|_| "bundled".to_string())),
         binary_path: path.map(|p| p.to_string_lossy().to_string()),
     })
 }
@@ -208,9 +241,9 @@ pub fn engine_cli_status(state: State<'_, AppState>) -> AppResult<CliStatus> {
 /// Install (or refresh) the `exa` CLI shim to PATH, pointing at the installed
 /// engine binary. Requires the engine component to be installed.
 #[tauri::command]
-pub fn engine_install_cli(state: State<'_, AppState>) -> AppResult<CliStatus> {
+pub fn engine_install_cli(app: AppHandle, state: State<'_, AppState>) -> AppResult<CliStatus> {
     let data_dir = &state.data_dir;
-    let bin = engine_binary_path(data_dir)
+    let bin = resolve_engine_binary(&app, data_dir)
         .ok_or_else(|| AppError::InvalidSettings("Install the Exa engine first, then install the CLI.".into()))?;
     let cfg_dir = component_dir(data_dir, ComponentId::ExaAgent).join("config");
     std::fs::create_dir_all(&cfg_dir)?;

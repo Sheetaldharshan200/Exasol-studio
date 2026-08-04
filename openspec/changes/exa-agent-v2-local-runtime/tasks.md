@@ -29,7 +29,7 @@
 
 ## 5. exa CLI + packaging
 
-- [ ] 5.1 Bundle the `exa` CLI/TUI binary per platform alongside the server in the runtime-bundle pipeline; both resolved by path (no user-level install read).
+- [x] 5.1 Bundle the `exa` CLI/TUI binary per platform alongside the server in the runtime-bundle pipeline; both resolved by path (no user-level install read).
 - [x] 5.2 `exa` launcher injects Studio's isolated config dir so app and CLI share config/sessions/MCP tools/provider registry; test the shared-session invariant (session created in one surface is listed by the other).
 - [x] 5.3 (install-to-PATH; installer bundling pending) "Install exa CLI to PATH" action in the app (symlink/shim per OS, with uninstall); verify dmg/exe/AppImage ship both binaries and work offline with a local model.
 

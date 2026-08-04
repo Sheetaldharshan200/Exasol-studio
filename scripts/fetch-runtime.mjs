@@ -26,13 +26,18 @@ const NODE_VERSION = "v24.18.0"; // pinned; bump to move every platform at once
 // One row per Rust target triple. node = nodejs.org dist slug; llama =
 // substring that identifies the llama.cpp release asset for this platform.
 const TARGETS = {
-  "aarch64-apple-darwin": { node: "darwin-arm64", nodeExt: "tar.gz", llama: "-bin-macos-arm64.", llamaExt: "tar.gz" },
-  "x86_64-apple-darwin": { node: "darwin-x64", nodeExt: "tar.gz", llama: "-bin-macos-x64.", llamaExt: "tar.gz" },
-  "x86_64-unknown-linux-gnu": { node: "linux-x64", nodeExt: "tar.gz", llama: "-bin-ubuntu-x64.", llamaExt: "tar.gz" },
-  "aarch64-unknown-linux-gnu": { node: "linux-arm64", nodeExt: "tar.gz", llama: "-bin-ubuntu-arm64.", llamaExt: "tar.gz" },
-  "x86_64-pc-windows-msvc": { node: "win-x64", nodeExt: "zip", llama: "-bin-win-cpu-x64.", llamaExt: "zip" },
-  "aarch64-pc-windows-msvc": { node: "win-arm64", nodeExt: "zip", llama: "-bin-win-cpu-arm64.", llamaExt: "zip" },
+  "aarch64-apple-darwin": { node: "darwin-arm64", nodeExt: "tar.gz", llama: "-bin-macos-arm64.", llamaExt: "tar.gz", exa: "opencode-darwin-arm64.zip" },
+  "x86_64-apple-darwin": { node: "darwin-x64", nodeExt: "tar.gz", llama: "-bin-macos-x64.", llamaExt: "tar.gz", exa: "opencode-darwin-x64.zip" },
+  "x86_64-unknown-linux-gnu": { node: "linux-x64", nodeExt: "tar.gz", llama: "-bin-ubuntu-x64.", llamaExt: "tar.gz", exa: "opencode-linux-x64.tar.gz" },
+  "aarch64-unknown-linux-gnu": { node: "linux-arm64", nodeExt: "tar.gz", llama: "-bin-ubuntu-arm64.", llamaExt: "tar.gz", exa: "opencode-linux-arm64.tar.gz" },
+  "x86_64-pc-windows-msvc": { node: "win-x64", nodeExt: "zip", llama: "-bin-win-cpu-x64.", llamaExt: "zip", exa: "opencode-windows-x64.zip" },
+  "aarch64-pc-windows-msvc": { node: "win-arm64", nodeExt: "zip", llama: "-bin-win-cpu-arm64.", llamaExt: "zip", exa: "opencode-windows-arm64.zip" },
 };
+
+// Pinned Exa engine (opencode) — the SAME source of truth as the Marketplace
+// component (catalog.json exa-agent.latest). Bumping here bundles a newer
+// baseline; the component-update flow can still move users past it at runtime.
+const EXA_ENGINE_TAG = "v1.18.12";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const runtimeDir = join(root, "apps/desktop/src-tauri/resources/runtime");
@@ -100,6 +105,15 @@ async function main() {
   mkdirSync(llamaDir, { recursive: true });
   extract(llamaArchive, llamaDir);
 
+  // ── Exa engine (opencode) — baseline for offline first run ──
+  console.log(`Fetching Exa engine (opencode ${EXA_ENGINE_TAG})…`);
+  const exaArchive = join(tmp, spec.exa);
+  mkdirSync(tmp, { recursive: true });
+  await download(`https://github.com/anomalyco/opencode/releases/download/${EXA_ENGINE_TAG}/${spec.exa}`, exaArchive);
+  const exaDir = join(runtimeDir, "exa-engine");
+  mkdirSync(exaDir, { recursive: true });
+  extract(exaArchive, exaDir);
+
   rmSync(tmp, { recursive: true, force: true });
 
   // Executable bits (extraction can drop them on some runners).
@@ -114,6 +128,15 @@ async function main() {
       }
     }
     await chmodTree(llamaDir).catch(() => {});
+    // The opencode binary lands somewhere under exa-engine/ — chmod any match.
+    async function chmodExa(d) {
+      for (const e of await readdir(d, { withFileTypes: true })) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) await chmodExa(p);
+        else if (e.name === "opencode") await chmod(p, 0o755).catch(() => {});
+      }
+    }
+    await chmodExa(join(runtimeDir, "exa-engine")).catch(() => {});
   }
 
   const nodeOut = await firstDir(join(runtimeDir, "node")).catch(() => "");

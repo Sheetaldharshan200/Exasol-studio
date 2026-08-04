@@ -102,7 +102,7 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     // the component is installed: pass the resolved binary + Studio's isolated
     // config dir. Absent → the engine reports "not installed" and the CLI/panel
     // show the install gate.
-    if let Some(bin) = crate::engine::engine_binary_path(&state.data_dir) {
+    if let Some(bin) = crate::engine::resolve_engine_binary(app, &state.data_dir) {
         let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
         let _ = std::fs::create_dir_all(&cfg_dir);
         cmd.env("EXA_ENGINE_BIN", bin);
