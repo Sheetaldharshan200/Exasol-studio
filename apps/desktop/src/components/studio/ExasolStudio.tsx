@@ -2349,18 +2349,18 @@ export function ExasolStudio({
     }),
     [connection, schema, schemas, activeTab, lastResult, history],
   );
-  const applySqlToEditor = useCallback(
-    (sql: string) => {
-      if (activeTab.view === "sql") {
-        const base = activeTab.sql.trimEnd();
-        patchTab(activeTab.id, { sql: base ? `${base}\n\n${sql}\n` : `${sql}\n` });
-      } else {
-        openSqlTab(sql, "From Exa");
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeTab],
-  );
+  // Plain function (not memoized): it reads the current connKey/tab closures at
+  // call time, so Apply always lands in the active connection's editor — never
+  // a stale bucket. It's only invoked from event handlers, so identity churn is
+  // harmless.
+  const applySqlToEditor = (sql: string) => {
+    if (activeTab.view === "sql") {
+      const base = activeTab.sql.trimEnd();
+      patchTab(activeTab.id, { sql: base ? `${base}\n\n${sql}\n` : `${sql}\n` });
+    } else {
+      openSqlTab(sql, "From Exa");
+    }
+  };
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">

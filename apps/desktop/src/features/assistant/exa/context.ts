@@ -130,7 +130,9 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
       if (!name) return null;
       const tables = tablesInSchema(snap.catalog, name);
       const list = tables.length ? tables.join(", ") : "(no tables cached yet)";
-      return { id: `schema:${name}`, providerId: id, label: `schema ${name}`, body: `Schema ${name} tables: ${list}` };
+      // ID is case-folded so @schema SALES and @schema sales dedupe (lookup is
+      // already case-insensitive); the label keeps what the user picked.
+      return { id: `schema:${name.toUpperCase()}`, providerId: id, label: `schema ${name}`, body: `Schema ${name} tables: ${list}` };
     }
     case "table": {
       const full = (arg ?? "").trim();
@@ -138,7 +140,7 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
       const [schema, table] = splitQualified(full);
       const cols = columnsOf(snap.catalog, schema, table);
       const colList = cols.length ? cols.map((c) => `${c.name} ${c.type}`).join(", ") : "(columns not cached yet)";
-      return { id: `table:${full}`, providerId: id, label: `table ${full}`, body: `Table ${full} columns: ${colList}` };
+      return { id: `table:${full.toUpperCase()}`, providerId: id, label: `table ${full}`, body: `Table ${full} columns: ${colList}` };
     }
   }
 }
@@ -168,6 +170,8 @@ function columnsOf(catalog: SqlCatalog, schema: string, table: string): { name: 
  */
 export function buildPrompt(userText: string, chips: ContextChip[]): string {
   if (chips.length === 0) return userText;
-  const context = chips.map((c) => c.body).join("\n\n");
+  // Neutralize any literal </context> inside SQL/results so a chip body can't
+  // prematurely close the wrapper and corrupt the prompt structure.
+  const context = chips.map((c) => c.body).join("\n\n").replace(/<\/(context)>/gi, "&lt;/$1&gt;");
   return `<context>\n${context}\n</context>\n\n${userText}`;
 }
