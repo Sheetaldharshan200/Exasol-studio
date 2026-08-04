@@ -1,0 +1,30 @@
+## Purpose
+
+Exa runs on the user's own local model runtimes — Ollama, LM Studio, or any OpenAI-compatible server (llama.cpp, vLLM, SGLang, TGI) — discovered automatically, with cloud providers as an option rather than a requirement.
+
+## ADDED Requirements
+
+### Requirement: Runtime discovery and health
+Studio SHALL detect locally running runtimes by probing their default endpoints (Ollama 11434, LM Studio 1234) and any user-added OpenAI-compatible base URLs, and SHALL show each runtime's health and its available models.
+
+#### Scenario: Ollama running
+- **WHEN** Ollama is serving on its default port with models pulled
+- **THEN** the model picker lists those models under "Ollama (local)" without any configuration
+
+#### Scenario: Nothing local
+- **WHEN** no local runtime responds
+- **THEN** the picker says so plainly and offers cloud providers and a "add an OpenAI-compatible endpoint" action — no silent failures
+
+### Requirement: One client, streaming, per-session model
+All runtimes SHALL be driven through one OpenAI-compatible chat client (Ollama via its compatible endpoint), with token streaming, tool/function calling where the runtime supports it, and the model chosen per chat session.
+
+#### Scenario: Mid-session switch
+- **WHEN** the user switches a session's model from a cloud model to a local one
+- **THEN** subsequent turns run on the local model and the session records which model produced each answer
+
+### Requirement: Honest degradation for missing capabilities
+When a local model/runtime lacks a capability the agent needs (e.g., tool calling), Studio SHALL say which capability is missing and continue with a reduced mode rather than fail opaquely.
+
+#### Scenario: No tool support
+- **WHEN** the selected local model cannot do function calling
+- **THEN** the agent states it is running in answer-only mode for that model
