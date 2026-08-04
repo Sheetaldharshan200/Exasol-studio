@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2, Send, Square, Terminal, Wrench } from "lucide-react";
+import { Check, ChevronDown, KeyRound, Loader2, Send, Square, Terminal, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
@@ -20,7 +20,7 @@ const ENGINE_TAG = "v1.18.12";
 type ChatMsg = { role: "user" | "assistant"; text: string };
 type ToolCard = { callId: string; name: string; args: unknown; ok?: boolean; result?: unknown };
 
-export function ExaEnginePanel() {
+export function ExaEnginePanel({ onClose }: { onClose?: () => void } = {}) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -33,6 +33,8 @@ export function ExaEnginePanel() {
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<{ providerID: string; modelID: string; label: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
   const disposer = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -45,22 +47,37 @@ export function ExaEnginePanel() {
   // The AI providers/models available here — the SAME ranked set Studio
   // supports (Local Runtime → In-DB AI → cloud). opencode drives whichever the
   // user picks.
-  useEffect(() => {
-    agent
+  const loadModels = useCallback(() => {
+    return agent
       .models()
       .then(({ providers: ps, defaultModel }) => {
         setProviders(ps);
-        // Default to the first usable ranked model (local-first).
-        const first = ps.find((p) => p.models.length > 0);
-        if (defaultModel) {
-          const [pid, ...rest] = defaultModel.split("/");
-          setModel({ providerID: pid, modelID: rest.join("/"), label: defaultModel });
-        } else if (first) {
-          setModel({ providerID: first.id, modelID: first.models[0].id, label: `${first.name} · ${first.models[0].name}` });
-        }
+        setModel((cur) => {
+          if (cur) return cur; // keep the user's choice
+          if (defaultModel) {
+            const [pid, ...rest] = defaultModel.split("/");
+            return { providerID: pid, modelID: rest.join("/"), label: defaultModel };
+          }
+          const first = ps.find((p) => p.models.length > 0);
+          return first ? { providerID: first.id, modelID: first.models[0].id, label: `${first.name} · ${first.models[0].name}` } : null;
+        });
       })
       .catch(() => undefined);
   }, []);
+  useEffect(() => void loadModels(), [loadModels]);
+
+  async function saveKey(providerId: string) {
+    const key = (keyDraft[providerId] ?? "").trim();
+    if (!key) return;
+    setSavingKey(providerId);
+    try {
+      await agent.setProviderKey(providerId, key);
+      setKeyDraft((d) => ({ ...d, [providerId]: "" }));
+      await loadModels(); // models are disclosed only after the key is set
+    } finally {
+      setSavingKey(null);
+    }
+  }
 
   async function installCli() {
     setCliBusy(true);
@@ -124,15 +141,23 @@ export function ExaEnginePanel() {
     setMessages((m) => [...m, { role: "user", text }]);
     setTools([]);
     setBusy(true);
+    const fail = (msg: string) => {
+      setMessages((m) => [...m, { role: "assistant", text: `⚠︎ ${msg}` }]);
+      setBusy(false);
+      refreshStatus();
+    };
     try {
       let sid = sessionId;
       if (!sid) {
-        sid = (await agent.engine.createSession()).id;
+        const created = await agent.engine.createSession();
+        if (!created?.id) return fail("The Exa engine isn't running yet. Install it (button above) and wait for the header to read “running”.");
+        sid = created.id;
         setSessionId(sid);
       }
-      await agent.engine.prompt(sid, text, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
-    } catch {
-      setBusy(false);
+      const r = await agent.engine.prompt(sid, text, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
+      if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
+    } catch (e) {
+      fail(e instanceof Error ? e.message : "Engine request failed.");
     }
   }
 
@@ -185,58 +210,96 @@ export function ExaEnginePanel() {
         >
           <Terminal className="h-3 w-3" /> {cliBusy ? "…" : cliInstalled ? "exa CLI ✓" : "Install exa CLI"}
         </button>
-        <div className="relative">
-          <button
-            onClick={() => setPickerOpen((o) => !o)}
-            title="Choose the model — Local Runtime, In-DB AI, or a cloud provider"
-            className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            {model ? model.label.length > 28 ? model.label.slice(0, 28) + "…" : model.label : "Pick a model"}
-            <ChevronDown className="h-3 w-3" />
+        <button
+          onClick={() => setPickerOpen((o) => !o)}
+          title="Models & providers"
+          className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          {model ? (model.label.length > 24 ? model.label.slice(0, 24) + "…" : model.label) : "Pick a model"}
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        <span className="font-mono text-[10.5px] text-muted-foreground">{status.state}</span>
+        {onClose ? (
+          <button onClick={onClose} title="Hide Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+            <X className="h-4 w-4" />
           </button>
-          {pickerOpen ? (
-            <div className="absolute right-0 top-7 z-50 max-h-80 w-72 overflow-auto rounded-md border border-border bg-panel shadow-xl [scrollbar-width:thin]">
-              {providers.length === 0 ? (
-                <div className="px-3 py-2 text-[11px] text-muted-foreground">No providers detected. Run Ollama/LM Studio locally, or add a provider in AI Settings.</div>
-              ) : null}
-              {providers.map((p) => (
-                <div key={p.id}>
-                  <div className="sticky top-0 flex items-center gap-1.5 bg-panel px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {p.name}
-                    <span className={cn("rounded-full px-1 text-[8.5px]", p.kind === "local" ? "bg-primary/15 text-primary" : p.id === "in-database" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
-                      {p.id === "in-database" ? "in-db" : p.kind}
-                    </span>
-                    {p.kind === "cloud" && !p.configured ? <span className="text-[9px] text-muted-foreground">needs key</span> : null}
-                  </div>
-                  {p.models.length === 0 ? (
-                    <div className="px-3 py-1 text-[11px] text-muted-foreground/70">{p.installedOnly ? "server not running" : "no models"}</div>
-                  ) : null}
-                  {p.models.map((m) => {
-                    const ref = `${p.id}/${m.id}`;
-                    const active = model?.providerID === p.id && model?.modelID === m.id;
-                    return (
-                      <button
-                        key={ref}
-                        onClick={() => {
-                          setModel({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name}` });
-                          setPickerOpen(false);
-                        }}
-                        className={cn("block w-full truncate px-3 py-1.5 text-left font-mono text-[11.5px] hover:bg-secondary", active ? "text-primary" : "text-foreground")}
-                      >
-                        {m.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <span className="font-mono text-[10.5px] text-muted-foreground">
-          engine {status.state}
-          {installing ? " · installing…" : ""}
-        </span>
+        ) : null}
       </div>
+
+      {/* Providers & models — a proper config surface: providers first; a
+          cloud provider's models are disclosed only once its API key is set
+          (opencode-style). Local runtimes and In-DB show detected models. */}
+      {pickerOpen ? (
+        <div className="max-h-[55%] shrink-0 overflow-auto border-b border-border bg-editor/40 p-2 [scrollbar-width:thin]">
+          {providers.length === 0 ? (
+            <p className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
+              No providers yet. Run Ollama or LM Studio locally, or add a cloud provider key below.
+            </p>
+          ) : null}
+          {providers.map((p) => {
+            const needsKey = p.kind === "cloud" && !p.configured;
+            return (
+              <div key={p.id} className="mb-1.5 rounded-md border border-border bg-panel">
+                <div className="flex items-center gap-2 px-2.5 py-1.5">
+                  <span className="text-[12px] font-medium text-foreground">{p.name}</span>
+                  <span className={cn("rounded-full px-1.5 py-px text-[9px] font-semibold uppercase", p.kind === "local" ? "bg-primary/15 text-primary" : p.id === "in-database" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
+                    {p.id === "in-database" ? "in-db" : p.kind}
+                  </span>
+                  {p.kind === "cloud" ? (
+                    <span className={cn("ml-auto flex items-center gap-1 text-[10.5px]", p.configured ? "text-primary" : "text-muted-foreground")}>
+                      <KeyRound className="h-3 w-3" /> {p.configured ? "connected" : "not configured"}
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-[10.5px] text-muted-foreground">{p.installedOnly ? "not running" : p.running ? "running" : ""}</span>
+                  )}
+                </div>
+                {needsKey ? (
+                  <div className="flex items-center gap-1.5 border-t border-border px-2.5 py-1.5">
+                    <input
+                      type="password"
+                      value={keyDraft[p.id] ?? ""}
+                      onChange={(e) => setKeyDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") void saveKey(p.id); }}
+                      placeholder={`${p.envKey ?? "API key"}`}
+                      className="h-7 flex-1 rounded-md border border-border bg-editor px-2 font-mono text-[11px] outline-none focus:border-primary/50"
+                    />
+                    <button
+                      onClick={() => void saveKey(p.id)}
+                      disabled={!(keyDraft[p.id] ?? "").trim() || savingKey === p.id}
+                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                    >
+                      {savingKey === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
+                    </button>
+                  </div>
+                ) : p.models.length === 0 ? (
+                  <div className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground/70">
+                    {p.installedOnly ? "Start the server to see its models." : "No models available."}
+                  </div>
+                ) : (
+                  <div className="border-t border-border py-0.5">
+                    {p.models.map((m) => {
+                      const active = model?.providerID === p.id && model?.modelID === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setModel({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name}` });
+                            setPickerOpen(false);
+                          }}
+                          className={cn("flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[11.5px] hover:bg-secondary", active ? "text-primary" : "text-foreground")}
+                        >
+                          {active ? <Check className="h-3 w-3 shrink-0" /> : <span className="w-3 shrink-0" />}
+                          <span className="truncate">{m.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-auto p-3 [scrollbar-width:thin]">
         {messages.length === 0 ? (

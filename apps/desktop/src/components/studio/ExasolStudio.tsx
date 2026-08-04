@@ -3251,27 +3251,19 @@ export function ExasolStudio({
           </ResizablePanel>
           <ResizableHandle groupDirection="horizontal" />
 
-          {/* AI assistant — resizable + collapsible */}
+          {/* Exa (opencode) assistant — resizable + collapsible. Same panel as
+              the full "Exa" tab, so both surfaces are one agent. */}
           <ResizablePanel
             panelRef={aiPanelRef}
             collapsible
             collapsedSize="0px"
-            defaultSize="320px"
-            minSize="240px"
-            maxSize="520px"
+            defaultSize="440px"
+            minSize="320px"
+            maxSize="820px"
             onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
             className="min-w-0"
           >
-            <AssistantPanel
-              contextSummary={contextSummary}
-              editorSql={activeTab.sql}
-              pendingPrompt={aiPrompt}
-              connectionId={connection?.profile.id ?? null}
-              connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name }))}
-              onClose={toggleAi}
-              onUiAction={handleUiAction}
-              onOpenAttachment={openChatAttachment}
-            />
+            <ExaEnginePanel onClose={toggleAi} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
