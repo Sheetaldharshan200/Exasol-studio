@@ -12,12 +12,12 @@
 
 - [x] 2.1 `engine/runtime-registry.ts` — Ollama/OpenAI model parsing, shape validation, dedupe, provider ranking (tested); parsing pattern shared with providers.ts's live detection.
 - [x] 2.2 Provider ranking (local→in-DB→cloud) is LIVE in providers.ts (`rankProviders` on the picker output); writing discovered runtimes into the engine's provider config file is task 4.x (needs the running engine).
-- [x] 2.3 (cache logic; live probe pending) Capability probe (tool-calling y/n per model, cached) → honest reduced-mode messaging; test cache/invalidation.
+- [~] 2.3 Capability probe cache: removed as unused (built speculatively; re-add when panel-v2 needs per-model tool detection). Honest reduced-mode messaging still comes from provider capability flags.
 
 ## 3. Chat panel v2 (frontend)
 
 - [ ] 3.1 `features/assistant/panel/` on assistant-ui (MIT) themed to Studio tokens: SessionList (from engine sessions), per-session ModelPicker in the composer; mounted behind the existing panel entry.
-- [x] 3.2 (pure chip logic; UI menu pending) `@` context providers (schema/table/selection/result/file) → message parts via the SDK; provider resolution reuses sqlCatalog + splitStatements; pure serialization helpers tested.
+- [~] 3.2 @ context providers: chip module removed as unused (panel is on Studio components without 0menus yet); re-add with the menu when needed. KB/memory grounding already reaches the engine via search_knowledge/recall_memory MCP tools.
 - [ ] 3.3 Streaming MessageList + ToolCallCard (collapsible args/result/duration/error) driven by bridge events; Stop interrupts via SDK abort and preserves partials.
 - [ ] 3.4 Apply-to-editor through InlineSqlDiff for suggested SQL; delete superseded AssistantPanel sections at parity (KISS shrink of the 1,937-line file); retire loop.ts when the old path has no callers.
 
