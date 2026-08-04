@@ -1454,8 +1454,9 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.version.clone(),
         ComponentId::McpServer => c.python_stack.mcp_server_version.clone(),
         ComponentId::SemanticViews => c.semantic_views.revision.clone(),
-        // Baseline bundled with the app until an engine update lands (task 4.x).
-        ComponentId::ExaAgent => "0.1.0".to_string(),
+        // The pinned opencode release the Marketplace offers (matches
+        // catalog.json exa-agent.latest + fetch-runtime.mjs EXA_ENGINE_TAG).
+        ComponentId::ExaAgent => "v1.18.12".to_string(),
     }
 }
 
@@ -1672,12 +1673,10 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
                 crate::local_runtime::update_personal_engine(&app, JOB_ID)
             }
             ComponentId::ExaAgent => {
-                // The engine ships as a bundled binary; in-place update over
-                // the component payload is task 4.x (exa-agent-v2). Until then
-                // say so plainly rather than pretend to update.
-                Err(AppError::InvalidSettings(
-                    "Exa agent in-place updates are not available yet in this build.".into(),
-                ))
+                // Install/update the opencode engine payload from GitHub
+                // Releases into the component dir — same UI path as exapump.
+                let tag = version.unwrap_or_else(|| verified_version(component));
+                crate::engine::install_engine(&data_dir, &tag).map(|_| ())
             }
         }
     })
