@@ -2,7 +2,7 @@
 
 ## 1. Local Runtime layer (agent-core)
 
-- [ ] 1.1 `providers/openai-compat.ts`: chat + streaming + tool calls against any base URL; pure request/response mappers tested in `openai-compat.test.ts` (message mapping, tool-call chunks, error normalization).
+- [ ] 1.1 Adopt the Vercel AI SDK (Apache-2.0) in agent-core as the provider layer: `streamText`/tools through `createOpenAICompatible` + provider packages; thin pure mappers from our message model tested in `openai-compat.test.ts` (message mapping, tool-call chunks, error normalization).
 - [ ] 1.2 Runtime adapters + registry: Ollama (`/api/tags` inventory, 11434), LM Studio (`/v1/models`, 1234), generic endpoint (URL + optional key); shape-validated probes with 300ms timeout; persisted registry; `runtime-registry.test.ts` (probe shape validation, dedupe, unreachable).
 - [ ] 1.3 Capability probe + cache per model (tools supported?); reduced-mode flag surfaced in responses; test the cache/invalidation logic.
 - [ ] 1.4 Model picker data source: merge cloud providers + discovered runtimes; per-session model persisted on the session.
@@ -15,7 +15,7 @@
 
 ## 3. Chat panel v2 (frontend)
 
-- [ ] 3.1 `features/assistant/panel/` skeleton: SessionList (history, titles, model, relative time), per-session ModelPicker in the composer; mounted behind the existing panel entry.
+- [ ] 3.1 `features/assistant/panel/` built on assistant-ui (MIT) primitives themed to Studio tokens: SessionList (history, titles, model, relative time), per-session ModelPicker in the composer; mounted behind the existing panel entry.
 - [ ] 3.2 `@` context providers: schema/table/selection/result/file → context chips; provider resolution reuses sqlCatalog + splitStatements; pure chip-serialization helpers tested.
 - [ ] 3.3 MessageList with streaming markdown + ToolCallCard (collapsible args/result/duration/error) driven by LoopEvents; Stop interrupts and preserves partials.
 - [ ] 3.4 Apply-to-editor through InlineSqlDiff for suggested SQL; delete the superseded AssistantPanel sections as each piece reaches parity (KISS shrink of the 1,937-line file).
