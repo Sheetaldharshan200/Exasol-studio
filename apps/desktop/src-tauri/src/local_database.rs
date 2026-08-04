@@ -1426,8 +1426,9 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
         ComponentId::SemanticViews => c.semantic_views.repository.clone(),
-        // Exa agent is mirrored from the Studio repo (its own release line).
-        ComponentId::ExaAgent => "Sheetaldharshan200/Exasol-studio".to_string(),
+        // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
+        // (the source of truth), rebranded in-product as Exa.
+        ComponentId::ExaAgent => "anomalyco/opencode".to_string(),
     }
 }
 

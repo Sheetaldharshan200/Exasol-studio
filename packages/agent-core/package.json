@@ -2,7 +2,7 @@
   "name": "@exasol-studio/agent-core",
   "version": "0.1.0",
   "private": true,
-  "description": "Headless agentic AI core for Exasol Studio \u2014 HTTP+SSE server, provider registry, agent loop.",
+  "description": "Headless agentic AI core for Exasol Studio — HTTP+SSE server, provider registry, agent loop.",
   "type": "module",
   "main": "dist/agent-core.cjs",
   "bin": {
@@ -27,6 +27,7 @@
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/sdk": "^1.18.11",
     "hyparquet": "^1.26.2",
     "ws": "^8.21.0",
     "zod": "^3.25.0"

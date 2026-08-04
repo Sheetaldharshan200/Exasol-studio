@@ -6,6 +6,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ConfigStore } from "./config.ts";
 import { log } from "./log.ts";
+import { rankProviders } from "./engine/runtime-registry.ts";
 
 // ---------------------------------------------------------------------------
 // Model catalog: models.dev (fetched + cached) with an embedded fallback so
@@ -344,7 +345,13 @@ export class ProviderRegistry {
       });
     }
 
-    return out;
+    // Local-first provider hierarchy (exa-agent-v2 local-runtime spec):
+    // Local Runtime → In-DB AI → cloud, stable within each tier. Cloud never
+    // sorts above a local runtime, so it is never the silent default.
+    const ranked = rankProviders(
+      out.map((p) => ({ id: p.id, kind: p.id === "in-database" ? ("in-db" as const) : p.kind, info: p })),
+    );
+    return ranked.map((r) => r.info);
   }
 
   /** Context window (tokens) for a model ref; sensible local defaults. */

@@ -63,10 +63,11 @@
       "mirrorTag": "mirror-superset"
     },
     "exa-agent": {
-      "repo": "Sheetaldharshan200/Exasol-studio",
-      "latest": "v0.1.0",
-      "homepage": "https://github.com/Sheetaldharshan200/Exasol-studio",
-      "mirrorTag": "mirror-exa-agent"
+      "repo": "anomalyco/opencode",
+      "latest": "v1.18.12",
+      "homepage": "https://github.com/anomalyco/opencode",
+      "mirrorTag": "mirror-exa-agent",
+      "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
     }
   }
 }
