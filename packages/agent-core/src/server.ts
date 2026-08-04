@@ -384,6 +384,32 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const limit = Math.min(20, Math.max(1, body.limit ?? 5));
         return json(res, 200, { database: target.name, cards: kb.search(target.id, question, limit) });
       }
+      // POST /v1/gateway/memory {database?, query} → {memories} — recall the
+      // durable facts Studio remembers (user prefs + verified project notes),
+      // ranked for the query. POST /v1/gateway/memory/remember {database?,
+      // note} stores one. Both carry a crown-jewel capability onto the engine.
+      if (parts[1] === "gateway" && parts[2] === "memory") {
+        const connFor = (name?: string) => {
+          const w = (name ?? "").trim();
+          if (!w) return null;
+          const c = db.list().find((x) => x.id === w || x.name.toLowerCase() === w.toLowerCase());
+          return c?.id ?? null;
+        };
+        if (req.method === "POST" && !parts[3]) {
+          const b = await readBody<{ database?: string; query?: string }>(req);
+          const q = (b.query ?? "").trim();
+          if (!q) return json(res, 400, { error: "query is required" });
+          return json(res, 200, { memories: await memory.recall(connFor(b.database), q, 8) });
+        }
+        if (req.method === "POST" && parts[3] === "remember") {
+          const b = await readBody<{ database?: string; note?: string; scope?: "user" | "project" }>(req);
+          const note = (b.note ?? "").trim();
+          if (!note) return json(res, 400, { error: "note is required" });
+          memory.remember(b.scope === "user" ? "user" : "project", connFor(b.database), note);
+          return json(res, 200, { ok: true });
+        }
+        return json(res, 404, { error: "not found" });
+      }
       // Dashboards service: Studio's saved dashboards (their panels carry the
       // SQL), exposed on the bus when the service toggle is on.
       if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "dashboards") {

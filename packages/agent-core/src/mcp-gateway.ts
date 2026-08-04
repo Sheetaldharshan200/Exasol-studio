@@ -131,6 +131,36 @@ server.tool(
 );
 
 server.tool(
+  "recall_memory",
+  "Memory: recall durable facts Studio remembers — the user's preferences and verified notes about a database — ranked for your query. Use it to avoid re-asking what is already known.",
+  { database: DB_ARG.optional(), query: z.string().describe("What to recall, in plain language.") },
+  async ({ database, query }) => {
+    try {
+      return text(await studio("/gateway/memory", { method: "POST", body: { database, query } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "remember",
+  "Memory: store ONE durable fact — a user preference (scope 'user') or a verified fact about a database (scope 'project', the default). Keep it short and true; do not store secrets.",
+  {
+    database: DB_ARG.optional(),
+    note: z.string().describe("The fact to remember, one sentence."),
+    scope: z.enum(["user", "project"]).optional().describe("'user' prefs or 'project' DB facts (default)."),
+  },
+  async ({ database, note, scope }) => {
+    try {
+      return text(await studio("/gateway/memory/remember", { method: "POST", body: { database, note, scope } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
   "search_knowledge",
   "Knowledge base: search what Exasol Studio already learned about a database — per-table summaries, key columns, and relationships — for a question. Call this BEFORE generate_sql or list_tables to ground answers in the real schema graph instead of rediscovering it. Returns the most relevant table cards.",
   {
