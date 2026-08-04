@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Send, Square, Terminal, Wrench } from "lucide-react";
+import { ChevronDown, Loader2, Send, Square, Terminal, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { agent, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
+import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 
@@ -30,6 +30,9 @@ export function ExaEnginePanel() {
   const [busy, setBusy] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliBusy, setCliBusy] = useState(false);
+  const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const [model, setModel] = useState<{ providerID: string; modelID: string; label: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const disposer = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +41,26 @@ export function ExaEnginePanel() {
     ipc.engineCliStatus().then((s) => setCliInstalled(s.installed)).catch(() => undefined);
   }, []);
   useEffect(() => refreshStatus(), [refreshStatus]);
+
+  // The AI providers/models available here — the SAME ranked set Studio
+  // supports (Local Runtime → In-DB AI → cloud). opencode drives whichever the
+  // user picks.
+  useEffect(() => {
+    agent
+      .models()
+      .then(({ providers: ps, defaultModel }) => {
+        setProviders(ps);
+        // Default to the first usable ranked model (local-first).
+        const first = ps.find((p) => p.models.length > 0);
+        if (defaultModel) {
+          const [pid, ...rest] = defaultModel.split("/");
+          setModel({ providerID: pid, modelID: rest.join("/"), label: defaultModel });
+        } else if (first) {
+          setModel({ providerID: first.id, modelID: first.models[0].id, label: `${first.name} · ${first.models[0].name}` });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function installCli() {
     setCliBusy(true);
@@ -107,7 +130,7 @@ export function ExaEnginePanel() {
         sid = (await agent.engine.createSession()).id;
         setSessionId(sid);
       }
-      await agent.engine.prompt(sid, text);
+      await agent.engine.prompt(sid, text, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
     } catch {
       setBusy(false);
     }
@@ -162,6 +185,53 @@ export function ExaEnginePanel() {
         >
           <Terminal className="h-3 w-3" /> {cliBusy ? "…" : cliInstalled ? "exa CLI ✓" : "Install exa CLI"}
         </button>
+        <div className="relative">
+          <button
+            onClick={() => setPickerOpen((o) => !o)}
+            title="Choose the model — Local Runtime, In-DB AI, or a cloud provider"
+            className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            {model ? model.label.length > 28 ? model.label.slice(0, 28) + "…" : model.label : "Pick a model"}
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {pickerOpen ? (
+            <div className="absolute right-0 top-7 z-50 max-h-80 w-72 overflow-auto rounded-md border border-border bg-panel shadow-xl [scrollbar-width:thin]">
+              {providers.length === 0 ? (
+                <div className="px-3 py-2 text-[11px] text-muted-foreground">No providers detected. Run Ollama/LM Studio locally, or add a provider in AI Settings.</div>
+              ) : null}
+              {providers.map((p) => (
+                <div key={p.id}>
+                  <div className="sticky top-0 flex items-center gap-1.5 bg-panel px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {p.name}
+                    <span className={cn("rounded-full px-1 text-[8.5px]", p.kind === "local" ? "bg-primary/15 text-primary" : p.id === "in-database" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
+                      {p.id === "in-database" ? "in-db" : p.kind}
+                    </span>
+                    {p.kind === "cloud" && !p.configured ? <span className="text-[9px] text-muted-foreground">needs key</span> : null}
+                  </div>
+                  {p.models.length === 0 ? (
+                    <div className="px-3 py-1 text-[11px] text-muted-foreground/70">{p.installedOnly ? "server not running" : "no models"}</div>
+                  ) : null}
+                  {p.models.map((m) => {
+                    const ref = `${p.id}/${m.id}`;
+                    const active = model?.providerID === p.id && model?.modelID === m.id;
+                    return (
+                      <button
+                        key={ref}
+                        onClick={() => {
+                          setModel({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name}` });
+                          setPickerOpen(false);
+                        }}
+                        className={cn("block w-full truncate px-3 py-1.5 text-left font-mono text-[11.5px] hover:bg-secondary", active ? "text-primary" : "text-foreground")}
+                      >
+                        {m.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <span className="font-mono text-[10.5px] text-muted-foreground">
           engine {status.state}
           {installing ? " · installing…" : ""}

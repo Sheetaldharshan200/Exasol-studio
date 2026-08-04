@@ -43,7 +43,6 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
   { id: "visualizer", label: "Schema visualizer", icon: "visualizer" },
   { id: "bi", label: "Dashboards", icon: "dashboards" },
   { id: "git", label: "Source Control", icon: "git" },
-  { id: "exaEngine", label: "Exa (beta)", icon: "brain-circuit" },
   { id: "favorites", label: "Favorites", icon: "favorites" },
   { id: "guides", label: "Guides & Docs", icon: "guides" },
 ];
@@ -57,22 +56,18 @@ const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "
 export function ActivityRail({
   active,
   sidebarOpen,
-  aiOpen,
   activeView,
   visualizerCount,
   onSelect,
-  onToggleAi,
   onOpenSettings,
 }: {
   active: ActivityId;
   sidebarOpen: boolean;
-  aiOpen: boolean;
   /** The active workspace tab's view (drives full-tab icon highlighting). */
   activeView: string | null;
   /** Number of open Visualizer tabs, shown as a badge. */
   visualizerCount: number;
   onSelect: (id: ActivityId) => void;
-  onToggleAi: () => void;
   onOpenSettings: () => void;
 }) {
   return (
@@ -140,16 +135,16 @@ export function ActivityRail({
           <TooltipTrigger asChild>
             <button
               aria-label="Exa"
-              onClick={onToggleAi}
+              onClick={() => onSelect("exaEngine")}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
-                aiOpen && "text-primary",
+                activeView === "exaEngine" && "text-primary",
               )}
             >
               <AgentMark className="h-[19px] w-[19px]" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">Exa</TooltipContent>
+          <TooltipContent side="right">Exa — AI assistant</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>

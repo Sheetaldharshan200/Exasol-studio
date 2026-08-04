@@ -2347,7 +2347,6 @@ export function ExasolStudio({
         <ActivityRail
           active={activity}
           sidebarOpen={sidebarOpen}
-          aiOpen={aiOpen}
           activeView={activeTab.view}
           visualizerCount={visualizerTabs.length}
           onOpenSettings={() => void openSettingsWindow()}
@@ -2398,7 +2397,6 @@ export function ExasolStudio({
               }
             }
           }}
-          onToggleAi={toggleAi}
         />
 
         <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
