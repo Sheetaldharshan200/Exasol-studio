@@ -1,4 +1,6 @@
 mod agent;
+mod backup;
+pub mod confd;
 mod ai_clients;
 mod terminal;
 mod updates;
@@ -61,6 +63,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            backup::backup_now,
+            confd::confd_connect,
+            confd::confd_status,
+            confd::confd_disconnect,
+            confd::confd_job,
             terminal::term_create,
             terminal::term_write,
             terminal::term_resize,

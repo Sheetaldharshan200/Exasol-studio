@@ -12,9 +12,12 @@ import { NumberInput } from "@/components/ui/number-input";
 export function BucketFsPanel({
   profile,
   onClose,
+  variant = "overlay",
 }: {
   profile: ConnectionProfile;
   onClose: () => void;
+  /** "overlay" = the classic modal; "tab" = full-size inside a workbench tab. */
+  variant?: "overlay" | "tab";
 }) {
   const [port, setPort] = useState(2580);
   const [tls, setTls] = useState(false);
@@ -144,10 +147,22 @@ export function BucketFsPanel({
 
   const canUpload = Boolean(localPath && remotePath && writePassword) && !busy;
 
+  const overlay = variant === "overlay";
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className={
+        overlay
+          ? "absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          : "flex h-full min-h-0 flex-col overflow-auto bg-editor [scrollbar-width:thin]"
+      }
+      onClick={overlay ? onClose : undefined}
+    >
       <div
-        className="max-h-[85vh] w-[560px] overflow-auto rounded-xl border border-border bg-popover shadow-2xl [scrollbar-width:thin]"
+        className={cn(
+          overlay
+            ? "max-h-[85vh] w-[560px] overflow-auto rounded-xl border border-border bg-popover shadow-2xl [scrollbar-width:thin]"
+            : "w-full flex-1", // tab: fill the whole tab, no inner box
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
