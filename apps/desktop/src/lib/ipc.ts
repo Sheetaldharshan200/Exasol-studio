@@ -389,6 +389,9 @@ export type AppErrorPayload = { kind: string; message: string };
 /** Result of a Studio logical backup (backup_now). */
 export type BackupRunResult = { dir: string; tables: number; rows: number; skipped: string[]; elapsedMs: number };
 
+/** Admin API (ConfD) session state — deliberately password-free. */
+export type AdminApiStatus = { connected: boolean; host?: string | null; port?: number | null; user?: string | null };
+
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -614,6 +617,15 @@ export const ipc = {
    *  the `backup-progress:<profileId>` event. */
   backupNow: (profileId: string, connectionName: string) =>
     call<BackupRunResult>("backup_now", { profileId, connectionName }),
+  // ── Admin API (ConfD) — admin-api-parity spec. Credentials go IN only;
+  //    status never carries the password back. ──────────────────────────────
+  confdStatus: (profileId: string) => call<AdminApiStatus>("confd_status", { profileId }),
+  confdConnect: (profileId: string, host: string, port: number, user: string, password: string) =>
+    call<AdminApiStatus>("confd_connect", { profileId, host, port, user, password }),
+  confdDisconnect: (profileId: string) => call<void>("confd_disconnect", { profileId }),
+  /** Run an allowlisted ConfD job; returns the job's result structure. */
+  confdJob: (profileId: string, job: string, params: Record<string, unknown>) =>
+    call<unknown>("confd_job", { profileId, job, params }),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),

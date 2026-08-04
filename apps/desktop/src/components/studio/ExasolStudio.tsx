@@ -3000,9 +3000,9 @@ export function ExasolStudio({
               ) : activeTab.view === "logs" ? (
                 <LogsPanel profileId={connection.profile.id} connectionName={connection.profile.name} />
               ) : activeTab.view === "backups" ? (
-                <BackupsPanel profileId={connection.profile.id} connectionName={connection.profile.name} />
+                <BackupsPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
               ) : activeTab.view === "health" ? (
-                <HealthPanel profileId={connection.profile.id} connectionName={connection.profile.name} />
+                <HealthPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
               ) : activeTab.view === "bucketfs" ? (
                 <BucketFsPanel profile={connection.profile} variant="tab" onClose={() => closeTab(activeTab.id)} />
               ) : (

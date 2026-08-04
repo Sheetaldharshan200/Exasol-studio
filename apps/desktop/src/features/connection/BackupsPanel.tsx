@@ -14,6 +14,7 @@ import { ResultsGrid } from "@/components/studio/HistoryDock";
  */
 import { describeSchedule, nextRun, systemZone, type BackupSchedule } from "@/lib/backup-schedule";
 import { NumberInput } from "@/components/ui/number-input";
+import { NativeBackupsSection } from "./NativeBackupsSection";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -30,7 +31,7 @@ const runsKey = (profileId: string) => `backupRuns_${profileId}`;
 
 export type BackupRun = BackupRunResult & { at: number };
 
-export function BackupsPanel({ profileId, connectionName }: { profileId: string; connectionName: string }) {
+export function BackupsPanel({ profileId, connectionName, dbHost }: { profileId: string; connectionName: string; dbHost?: string }) {
   const [history, setHistory] = useState<StatementResult | null>(null);
   const [lastBackup, setLastBackup] = useState<{ time: string; type: string } | null>(null);
   const [dbInfo, setDbInfo] = useState<{ version?: string; nodes?: string } | null>(null);
@@ -193,11 +194,14 @@ export function BackupsPanel({ profileId, connectionName }: { profileId: string;
         </Card>
       </div>
 
-      {/* Schedules */}
+      {/* Cluster backups (native, via the Admin API) */}
+      <NativeBackupsSection profileId={profileId} connectionName={connectionName} dbHost={dbHost ?? "localhost"} />
+
+      {/* Studio-run logical schedules */}
       <div className="mt-4 shrink-0 rounded-lg border border-border bg-panel/60 p-3">
         <div className="flex items-center gap-2">
           <CalendarClock className="h-4 w-4 text-primary" />
-          <span className="text-[13px] font-semibold">Backup schedules</span>
+          <span className="text-[13px] font-semibold">Studio backups (logical CSV)</span>
           <button
             onClick={() => void backupNow()}
             disabled={backingUp}

@@ -4,6 +4,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { cn } from "@/lib/utils";
 import { ipc, type StatementResult } from "@/lib/ipc";
 import { ResultsGrid } from "@/components/studio/HistoryDock";
+import { DatabasesCard } from "./DatabasesCard";
 
 /**
  * Per-connection Health tab (issue #45): the database's vital signs in one
@@ -40,7 +41,7 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-export function HealthPanel({ profileId, connectionName }: { profileId: string; connectionName: string }) {
+export function HealthPanel({ profileId, connectionName, dbHost }: { profileId: string; connectionName: string; dbHost?: string }) {
   const [section, setSection] = useState<Section>("overview");
   const [range, setRange] = useState("6h");
   const [loading, setLoading] = useState(false);
@@ -185,6 +186,7 @@ export function HealthPanel({ profileId, connectionName }: { profileId: string; 
               <Kpi label="Last startup" value={kpis.lastStartup ?? "—"} mono />
             </div>
             <div className="mt-4 space-y-4">
+              <DatabasesCard profileId={profileId} connectionName={connectionName} dbHost={dbHost ?? "localhost"} />
               {monitorKeys.load || monitorKeys.cpu ? (
                 <ChartCard title="Load / CPU" icon={Activity}>
                   <TrendChart
