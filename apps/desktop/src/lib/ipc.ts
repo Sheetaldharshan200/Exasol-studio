@@ -633,6 +633,10 @@ export const ipc = {
   engineStatus: () => call<EngineInstallStatus>("engine_status"),
   /** Download + install the engine for `tag` (e.g. "v1.18.12"). */
   engineInstall: (tag: string) => call<EngineInstallStatus>("engine_install", { tag }),
+  /** exa CLI shim state / install-to-PATH / uninstall. */
+  engineCliStatus: () => call<{ installed: boolean; path?: string | null }>("engine_cli_status"),
+  engineInstallCli: () => call<{ installed: boolean; path?: string | null }>("engine_install_cli"),
+  engineUninstallCli: () => call<void>("engine_uninstall_cli"),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),

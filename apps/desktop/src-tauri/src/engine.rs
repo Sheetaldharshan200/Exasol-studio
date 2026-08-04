@@ -160,6 +160,86 @@ pub async fn engine_install(app: AppHandle, tag: String) -> AppResult<EngineInst
     .map_err(|e| AppError::Storage(e.to_string()))?
 }
 
+// ── exa CLI (install-to-PATH) ───────────────────────────────────────────────
+
+/// Where the `exa` CLI shim is installed for this OS. Unix: ~/.local/bin/exa
+/// (a directory conventionally on PATH); Windows: %LOCALAPPDATA%\Exasol\bin\
+/// exa.cmd. Pure given the home dir, so it is testable.
+pub fn cli_shim_path(home: &Path) -> PathBuf {
+    if std::env::consts::OS == "windows" {
+        home.join("AppData").join("Local").join("Exasol").join("bin").join("exa.cmd")
+    } else {
+        home.join(".local").join("bin").join("exa")
+    }
+}
+
+/// The shim contents: a tiny launcher that runs the installed engine binary as
+/// the `exa` CLI, pinned to Studio's config dir so app + CLI share sessions.
+pub fn cli_shim_contents(engine_binary: &Path, config_dir: &Path) -> String {
+    let bin = engine_binary.to_string_lossy();
+    let cfg = config_dir.to_string_lossy();
+    if std::env::consts::OS == "windows" {
+        format!(
+            "@echo off\r\nset \"OPENCODE_CONFIG_DIR={cfg}\"\r\nset \"XDG_DATA_HOME={cfg}\"\r\nset \"XDG_CONFIG_HOME={cfg}\"\r\n\"{bin}\" %*\r\n"
+        )
+    } else {
+        format!("#!/bin/sh\nexport OPENCODE_CONFIG_DIR=\"{cfg}\"\nexport XDG_DATA_HOME=\"{cfg}\"\nexport XDG_CONFIG_HOME=\"{cfg}\"\nexec \"{bin}\" \"$@\"\n")
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliStatus {
+    pub installed: bool,
+    pub path: Option<String>,
+}
+
+#[tauri::command]
+pub fn engine_cli_status(state: State<'_, AppState>) -> AppResult<CliStatus> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::Storage("no home directory".into()))?;
+    let _ = &state;
+    let shim = cli_shim_path(&home);
+    Ok(CliStatus {
+        installed: shim.exists(),
+        path: shim.exists().then(|| shim.to_string_lossy().to_string()),
+    })
+}
+
+/// Install (or refresh) the `exa` CLI shim to PATH, pointing at the installed
+/// engine binary. Requires the engine component to be installed.
+#[tauri::command]
+pub fn engine_install_cli(state: State<'_, AppState>) -> AppResult<CliStatus> {
+    let data_dir = &state.data_dir;
+    let bin = engine_binary_path(data_dir)
+        .ok_or_else(|| AppError::InvalidSettings("Install the Exa engine first, then install the CLI.".into()))?;
+    let cfg_dir = component_dir(data_dir, ComponentId::ExaAgent).join("config");
+    std::fs::create_dir_all(&cfg_dir)?;
+    let home = dirs::home_dir().ok_or_else(|| AppError::Storage("no home directory".into()))?;
+    let shim = cli_shim_path(&home);
+    if let Some(parent) = shim.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&shim, cli_shim_contents(&bin, &cfg_dir))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&shim)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&shim, perms)?;
+    }
+    Ok(CliStatus { installed: true, path: Some(shim.to_string_lossy().to_string()) })
+}
+
+#[tauri::command]
+pub fn engine_uninstall_cli() -> AppResult<()> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::Storage("no home directory".into()))?;
+    let shim = cli_shim_path(&home);
+    if shim.exists() {
+        std::fs::remove_file(&shim)?;
+    }
+    Ok(())
+}
+
 fn extract_zip(archive: &Path, dest: &Path) -> AppResult<()> {
     let file = File::open(archive)?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| AppError::Storage(format!("zip open: {e}")))?;
@@ -199,5 +279,29 @@ mod tests {
     fn asset_for_rejects_unsupported() {
         assert_eq!(asset_for("freebsd", "x86_64"), None);
         assert_eq!(asset_for("linux", "riscv64"), None);
+    }
+
+    #[test]
+    fn cli_shim_path_is_on_a_path_dir() {
+        let home = Path::new("/home/u");
+        let p = cli_shim_path(home);
+        if std::env::consts::OS == "windows" {
+            assert!(p.ends_with("exa.cmd"));
+        } else {
+            assert_eq!(p, Path::new("/home/u/.local/bin/exa"));
+        }
+    }
+
+    #[test]
+    fn cli_shim_pins_config_and_execs_the_binary() {
+        let s = cli_shim_contents(Path::new("/opt/exa/opencode"), Path::new("/data/exa/config"));
+        assert!(s.contains("/opt/exa/opencode"));
+        assert!(s.contains("/data/exa/config"));
+        // Config-dir env is set so the CLI shares sessions with the app.
+        assert!(s.contains("OPENCODE_CONFIG_DIR"));
+        if std::env::consts::OS != "windows" {
+            assert!(s.starts_with("#!/bin/sh"));
+            assert!(s.contains("exec "));
+        }
     }
 }

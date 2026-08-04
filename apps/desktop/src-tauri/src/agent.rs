@@ -90,13 +90,26 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     let script = script_path(app)?;
     let data_dir = state.data_dir.join("agent");
 
-    let mut child = Command::new(node)
-        .arg(&script)
+    let mut cmd = Command::new(node);
+    cmd.arg(&script)
         .arg("--data-dir")
         .arg(&data_dir)
         .stdin(Stdio::piped()) // held open; closing it shuts the agent down
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    // Provision the Exa engine (opencode) for the sidecar's EngineService when
+    // the component is installed: pass the resolved binary + Studio's isolated
+    // config dir. Absent → the engine reports "not installed" and the CLI/panel
+    // show the install gate.
+    if let Some(bin) = crate::engine::engine_binary_path(&state.data_dir) {
+        let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
+        let _ = std::fs::create_dir_all(&cfg_dir);
+        cmd.env("EXA_ENGINE_BIN", bin);
+        cmd.env("EXA_ENGINE_CONFIG_DIR", cfg_dir);
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| AppError::Assistant(format!("failed to start agent: {e}")))?;
 

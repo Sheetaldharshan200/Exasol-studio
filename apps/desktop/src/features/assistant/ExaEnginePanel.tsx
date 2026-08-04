@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Send, Square, Wrench } from "lucide-react";
+import { Loader2, Send, Square, Terminal, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
@@ -28,13 +28,26 @@ export function ExaEnginePanel() {
   const [tools, setTools] = useState<ToolCard[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cliInstalled, setCliInstalled] = useState(false);
+  const [cliBusy, setCliBusy] = useState(false);
   const disposer = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
+    ipc.engineCliStatus().then((s) => setCliInstalled(s.installed)).catch(() => undefined);
   }, []);
   useEffect(() => refreshStatus(), [refreshStatus]);
+
+  async function installCli() {
+    setCliBusy(true);
+    try {
+      const s = await ipc.engineInstallCli();
+      setCliInstalled(s.installed);
+    } finally {
+      setCliBusy(false);
+    }
+  }
 
   // Live event stream → messages + tool cards.
   useEffect(() => {
@@ -138,7 +151,18 @@ export function ExaEnginePanel() {
         <span className="rounded-full border border-primary/40 bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
           Beta
         </span>
-        <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">
+        <button
+          onClick={() => void installCli()}
+          disabled={cliBusy}
+          title={cliInstalled ? "exa CLI is on your PATH — click to refresh" : "Install the exa terminal command to your PATH"}
+          className={cn(
+            "ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] transition-colors",
+            cliInstalled ? "text-primary" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Terminal className="h-3 w-3" /> {cliBusy ? "…" : cliInstalled ? "exa CLI ✓" : "Install exa CLI"}
+        </button>
+        <span className="font-mono text-[10.5px] text-muted-foreground">
           engine {status.state}
           {installing ? " · installing…" : ""}
         </span>
