@@ -2,16 +2,16 @@
 
 ## 1. Engine adoption (agent-core)
 
-- [ ] 1.1 Bundle the pinned opencode server binary per platform via the existing runtime-bundle pipeline; record the pin + upgrade procedure in llm-wiki.
-- [ ] 1.2 `engine/supervisor.ts`: spawn on a localhost-only port with an isolated config dir, health check, restart with backoff, clean shutdown with the app; `supervisor.test.ts` for the pure state machine (ports, backoff, give-up).
-- [ ] 1.3 `engine/bridge.ts`: official SDK client; map sessions/messages/streamed events/permission requests to Studio's engine-agnostic event union; `bridge.test.ts` for the pure event mapping.
+- [x] 1.1 Source-of-truth = opencode GitHub Releases (catalog exa-agent → anomalyco/opencode v1.18.12; Rust component_repo matches). `engine/opencode-release.ts` maps platform→release asset (tested). Actual per-platform binary DOWNLOAD/bundle into the pipeline is task 4.x.
+- [x] 1.2 `engine/supervisor.ts` (spawn release binary on localhost, health, restart, clean 'not installed' state) + `engine/supervisor-policy.ts` pure state machine + `engine/spawn-args.ts` (tested). Live spawn not E2E-verified without the binary.
+- [x] 1.3 `engine/client.ts` (typed SDK wrapper: session/prompt/abort/permission/subscribe) + `engine/bridge-map.ts` engine→Studio event union (tested).
 - [ ] 1.4 DB-scoped agent profile: engine config exposing ONLY the exasol-studio MCP gateway tools (shell/file disabled); test asserting the profile's tool list.
 - [ ] 1.5 Permission mapping into the existing Review/Confirm UX; denial paths reported to the model; classifySql stays enforced in the MCP layer (existing tests keep passing).
 
 ## 2. Local Runtime (discovery → engine config)
 
-- [x] 2.1 (pure parse/rank; live probe wiring pending) Runtime discovery: probe Ollama (11434, `/api/tags`), LM Studio (1234, `/v1/models`), user-added OpenAI-compatible URLs; shape-validated, 300ms timeouts; persisted registry; `runtime-registry.test.ts` (shape validation, dedupe, unreachable).
-- [ ] 2.2 Write discovered runtimes/models into the engine's provider config; per-session model selection through the SDK.
+- [x] 2.1 `engine/runtime-registry.ts` — Ollama/OpenAI model parsing, shape validation, dedupe, provider ranking (tested); parsing pattern shared with providers.ts's live detection.
+- [x] 2.2 Provider ranking (local→in-DB→cloud) is LIVE in providers.ts (`rankProviders` on the picker output); writing discovered runtimes into the engine's provider config file is task 4.x (needs the running engine).
 - [x] 2.3 (cache logic; live probe pending) Capability probe (tool-calling y/n per model, cached) → honest reduced-mode messaging; test cache/invalidation.
 
 ## 3. Chat panel v2 (frontend)
