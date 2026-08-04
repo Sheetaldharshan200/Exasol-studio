@@ -1,55 +1,91 @@
 /**
  * Engine service (exa-agent-v2): the sidecar-side singleton that owns the
  * EngineSupervisor + connected client and exposes the operations the server
- * routes call. The Tauri app passes the resolved engine binary + Studio config
- * dir to the sidecar via env (EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR); when
- * they are absent the engine is simply "not installed" and every op degrades
- * cleanly. The env resolution is pure + tested; the supervisor is the I/O.
+ * routes call.
+ *
+ * Resolution is LAZY, so installing the engine while the sidecar is already
+ * running takes effect on the very next call — no restart. Each call resolves,
+ * in order: the installed component copy under the data root
+ * (`<root>/personal-local/components/exa-agent/bin/<binary>`, from
+ * EXA_ENGINE_DATA_ROOT), then the bundled baseline (EXA_ENGINE_BIN). Absent →
+ * every op degrades cleanly to "not installed".
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { EngineSupervisor, type EngineStatus } from "./supervisor.ts";
 import type { EngineClient } from "./client.ts";
 import type { StudioAgentEvent } from "./bridge-map.ts";
 
 export type EngineEnv = { binary: string; configDir: string } | null;
 
-/** Read the engine location from env; null when not provisioned/installed. */
+const binaryName = () => (process.platform === "win32" ? "opencode.exe" : "opencode");
+
+/**
+ * Where the engine binary + config live, resolved from env each call: the
+ * installed component copy first, then the bundled baseline. Pure given env.
+ */
 export function resolveEngineEnv(env: Record<string, string | undefined>): EngineEnv {
-  const binary = env.EXA_ENGINE_BIN?.trim();
-  const configDir = env.EXA_ENGINE_CONFIG_DIR?.trim();
-  if (!binary || !configDir) return null;
-  return { binary, configDir };
+  const root = env.EXA_ENGINE_DATA_ROOT?.trim();
+  if (root) {
+    const dir = join(root, "personal-local", "components", "exa-agent");
+    const bin = join(dir, "bin", binaryName());
+    if (existsSync(bin)) return { binary: bin, configDir: join(dir, "config") };
+  }
+  const baseline = env.EXA_ENGINE_BIN?.trim();
+  const cfg = env.EXA_ENGINE_CONFIG_DIR?.trim();
+  if (baseline && cfg && existsSync(baseline)) return { binary: baseline, configDir: cfg };
+  return null;
 }
 
 const NOT_INSTALLED: EngineStatus = {
   state: "stopped",
-  reason: "Exa engine is not installed — install it from Managed Components.",
+  reason: "Exa engine is not installed yet — click Install to fetch it.",
   binaryPresent: false,
 };
 
 export class EngineService {
-  private supervisor: EngineSupervisor | null;
+  private supervisor: EngineSupervisor | null = null;
+  private supervisorBinary: string | null = null;
   private client: EngineClient | null = null;
+  private env: Record<string, string | undefined>;
 
   constructor(env: Record<string, string | undefined> = process.env) {
-    const resolved = resolveEngineEnv(env);
-    this.supervisor = resolved ? new EngineSupervisor({ binary: resolved.binary, configDir: resolved.configDir }) : null;
+    this.env = env;
+  }
+
+  /** (Re)build the supervisor when a binary is resolvable; null when absent. */
+  private resolveSupervisor(): EngineSupervisor | null {
+    const resolved = resolveEngineEnv(this.env);
+    if (!resolved) {
+      this.supervisor = null;
+      this.supervisorBinary = null;
+      return null;
+    }
+    if (this.supervisor && this.supervisorBinary === resolved.binary) return this.supervisor;
+    // Binary appeared or changed (install/update) — rebuild + drop stale client.
+    this.supervisor = new EngineSupervisor({ binary: resolved.binary, configDir: resolved.configDir });
+    this.supervisorBinary = resolved.binary;
+    this.client = null;
+    return this.supervisor;
   }
 
   get provisioned(): boolean {
-    return this.supervisor !== null;
+    return resolveEngineEnv(this.env) !== null;
   }
 
   async status(): Promise<EngineStatus> {
-    if (!this.supervisor) return NOT_INSTALLED;
-    return this.supervisor.status(await this.supervisor.binaryPresent());
+    const s = this.resolveSupervisor();
+    if (!s) return NOT_INSTALLED;
+    return s.status(await s.binaryPresent());
   }
 
   /** Ensure the server is running and return a connected client, or null. */
   private async ensureClient(): Promise<EngineClient | null> {
-    if (!this.supervisor) return null;
+    const supervisor = this.resolveSupervisor();
+    if (!supervisor) return null;
     if (this.client) return this.client;
-    await this.supervisor.start();
-    this.client = await this.supervisor.client();
+    await supervisor.start();
+    this.client = await supervisor.client();
     return this.client;
   }
 

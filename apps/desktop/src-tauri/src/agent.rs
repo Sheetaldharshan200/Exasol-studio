@@ -98,14 +98,17 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
-    // Provision the Exa engine (opencode) for the sidecar's EngineService when
-    // the component is installed: pass the resolved binary + Studio's isolated
-    // config dir. Absent → the engine reports "not installed" and the CLI/panel
-    // show the install gate.
-    if let Some(bin) = crate::engine::resolve_engine_binary(app, &state.data_dir) {
+    // Provision the Exa engine (opencode) for the sidecar's EngineService.
+    // ALWAYS pass the data ROOT so the service resolves the installed component
+    // copy lazily — installing the engine takes effect without a sidecar
+    // restart. Also pass the bundled baseline so a fresh install works offline
+    // before any component update. Absent both → the panel shows the install
+    // gate.
+    cmd.env("EXA_ENGINE_DATA_ROOT", &state.data_dir);
+    if let Some(baseline) = crate::engine::bundled_engine_path(app) {
         let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
         let _ = std::fs::create_dir_all(&cfg_dir);
-        cmd.env("EXA_ENGINE_BIN", bin);
+        cmd.env("EXA_ENGINE_BIN", baseline);
         cmd.env("EXA_ENGINE_CONFIG_DIR", cfg_dir);
     }
 
