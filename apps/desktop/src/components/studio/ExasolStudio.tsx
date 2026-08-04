@@ -2347,6 +2347,7 @@ export function ExasolStudio({
         <ActivityRail
           active={activity}
           sidebarOpen={sidebarOpen}
+          aiOpen={aiOpen}
           activeView={activeTab.view}
           visualizerCount={visualizerTabs.length}
           onOpenSettings={() => void openSettingsWindow()}
@@ -2374,12 +2375,6 @@ export function ExasolStudio({
               else openSkills();
               return;
             }
-            if (id === "exaEngine") {
-              sidebarPanelRef.current?.collapse();
-              setSidebarOpen(false);
-              openExaEngine();
-              return;
-            }
             if (id === "bi") {
               void openBi();
               return;
@@ -2397,6 +2392,7 @@ export function ExasolStudio({
               }
             }
           }}
+          onToggleAi={toggleAi}
         />
 
         <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
@@ -2914,7 +2910,13 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "exaEngine" ? (
             <div className="min-h-0 flex-1">
-              <ExaEnginePanel />
+              <ExaEnginePanel
+                onCollapse={() => {
+                  closeTab(activeTab.id);
+                  setAiOpen(true);
+                  aiPanelRef.current?.expand();
+                }}
+              />
             </div>
           ) : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
@@ -3263,7 +3265,14 @@ export function ExasolStudio({
             onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
             className="min-w-0"
           >
-            <ExaEnginePanel onClose={toggleAi} />
+            <ExaEnginePanel
+              onClose={toggleAi}
+              onExpand={() => {
+                openExaEngine();
+                setAiOpen(false);
+                aiPanelRef.current?.collapse();
+              }}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>

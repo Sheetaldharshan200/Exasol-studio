@@ -56,18 +56,23 @@ const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "
 export function ActivityRail({
   active,
   sidebarOpen,
+  aiOpen,
   activeView,
   visualizerCount,
   onSelect,
+  onToggleAi,
   onOpenSettings,
 }: {
   active: ActivityId;
   sidebarOpen: boolean;
+  /** Whether the Exa side dock is open (drives the AI logo highlight). */
+  aiOpen: boolean;
   /** The active workspace tab's view (drives full-tab icon highlighting). */
   activeView: string | null;
   /** Number of open Visualizer tabs, shown as a badge. */
   visualizerCount: number;
   onSelect: (id: ActivityId) => void;
+  onToggleAi: () => void;
   onOpenSettings: () => void;
 }) {
   return (
@@ -135,10 +140,10 @@ export function ActivityRail({
           <TooltipTrigger asChild>
             <button
               aria-label="Exa"
-              onClick={() => onSelect("exaEngine")}
+              onClick={onToggleAi}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
-                activeView === "exaEngine" && "text-primary",
+                (aiOpen || activeView === "exaEngine") && "text-primary",
               )}
             >
               <AgentMark className="h-[19px] w-[19px]" />

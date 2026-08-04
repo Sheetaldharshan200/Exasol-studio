@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, KeyRound, Loader2, Send, Square, Terminal, Wrench, X } from "lucide-react";
+import { Check, ChevronDown, KeyRound, Loader2, Maximize2, Minimize2, Send, Square, Terminal, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
@@ -20,7 +20,11 @@ const ENGINE_TAG = "v1.18.12";
 type ChatMsg = { role: "user" | "assistant"; text: string };
 type ToolCard = { callId: string; name: string; args: unknown; ok?: boolean; result?: unknown };
 
-export function ExaEnginePanel({ onClose }: { onClose?: () => void } = {}) {
+export function ExaEnginePanel({
+  onClose,
+  onExpand,
+  onCollapse,
+}: { onClose?: () => void; onExpand?: () => void; onCollapse?: () => void } = {}) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -219,6 +223,16 @@ export function ExaEnginePanel({ onClose }: { onClose?: () => void } = {}) {
           <ChevronDown className="h-3 w-3" />
         </button>
         <span className="font-mono text-[10.5px] text-muted-foreground">{status.state}</span>
+        {onExpand ? (
+          <button onClick={onExpand} title="Expand to full screen" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {onCollapse ? (
+          <button onClick={onCollapse} title="Dock to the side panel" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+            <Minimize2 className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
         {onClose ? (
           <button onClick={onClose} title="Hide Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
             <X className="h-4 w-4" />
