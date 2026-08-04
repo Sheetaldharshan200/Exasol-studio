@@ -28,4 +28,4 @@
 
 - [x] 5.1 tsc + vite production build + full test suite green (node + Rust); manual E2E against Exasol Personal local if 20003 is mapped, else against the connect-failure path.
 - [ ] 5.2 Codex review of the diff; fix findings; record notable ones in llm-wiki (`knowledge/wiki`), including the ConfD endpoint/auth/job cheat-sheet.
-- [ ] 5.3 Update issue #45 with what shipped; note v2 non-goals (nodes/storage, snapshots, ConfD log collection, credential vault persistence).
+- [x] 5.3 Update issue #45 with what shipped; note v2 non-goals (nodes/storage, snapshots, ConfD log collection, credential vault persistence).
