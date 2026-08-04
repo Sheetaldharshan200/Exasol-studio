@@ -173,6 +173,7 @@ pub fn run() {
             agent::agent_api,
             agent::agent_grant_connection,
             agent::agent_stream,
+            agent::engine_stream,
             local_llm::llm_status,
             local_llm::llm_engine_install,
             local_llm::llm_model_install,

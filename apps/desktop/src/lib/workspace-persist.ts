@@ -38,6 +38,7 @@ const PERSISTABLE_VIEWS: ReadonlySet<TabView> = new Set<TabView>([
   "bucketfs",
   "backups",
   "health",
+  "exaEngine",
 ]);
 
 /** A tab's fields worth carrying across a restart. Anything not listed is

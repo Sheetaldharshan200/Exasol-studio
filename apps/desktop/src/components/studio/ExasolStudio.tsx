@@ -27,6 +27,7 @@ import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-t
 import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
+import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
@@ -1633,6 +1634,27 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open the Exa engine (v2) chat as a global tab — not connection-scoped.
+  function openExaEngine() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "exaEngine");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-exa-${Date.now()}-${tabCounter.current}`,
+      title: "Exa (beta)",
+      view: "exaEngine",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
   // Open the New Virtual Schema flow in a separate native window (falls back to
   // an in-app modal in the browser preview).
   async function openVs(profileId: string) {
@@ -2353,6 +2375,12 @@ export function ExasolStudio({
               else openSkills();
               return;
             }
+            if (id === "exaEngine") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+              openExaEngine();
+              return;
+            }
             if (id === "bi") {
               void openBi();
               return;
@@ -2885,6 +2913,10 @@ export function ExasolStudio({
           ) : activeTab.view === "guides" ? (
             <div className="min-h-0 flex-1">
               <Docs />
+            </div>
+          ) : activeTab.view === "exaEngine" ? (
+            <div className="min-h-0 flex-1">
+              <ExaEnginePanel />
             </div>
           ) : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">

@@ -258,7 +258,44 @@ export const agent = {
     await invoke("agent_stream", { sessionId });
     return unlisten;
   },
+
+  // ── Exa engine (opencode) — v2 chat backend over /v1/engine/* ─────────────
+  engine: {
+    status: (): Promise<EngineStatus> => api("/engine/status"),
+    sessions: (): Promise<{ sessions: { id: string; title?: string }[] }> => api("/engine/sessions"),
+    createSession: (): Promise<{ id: string }> => api("/engine/sessions", "POST"),
+    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model }),
+    abort: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/abort`, "POST"),
+    respondPermission: (id: string, permissionId: string, approve: boolean): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/permission`, "POST", { permissionId, approve }),
+    /** Subscribe to the engine's mapped event stream. Returns a disposer. */
+    async stream(onEvent: (e: EngineEvent) => void): Promise<() => void> {
+      const unlisten = await listen<EngineEvent>("engine-event", (ev) => onEvent(ev.payload));
+      await invoke("engine_stream");
+      return unlisten;
+    },
+  },
 };
+
+/** Engine install/run status (from /v1/engine/status). */
+export type EngineStatus = {
+  state: "stopped" | "starting" | "running" | "backoff" | "failed";
+  binaryPresent: boolean;
+  provisioned: boolean;
+  port?: number;
+  reason?: string;
+};
+
+/** Mapped engine event (mirrors agent-core StudioAgentEvent). */
+export type EngineEvent =
+  | { type: "message.delta"; sessionId: string; text: string }
+  | { type: "message.done"; sessionId: string }
+  | { type: "tool.start"; sessionId: string; callId: string; name: string; args: unknown }
+  | { type: "tool.result"; sessionId: string; callId: string; ok: boolean; result: unknown }
+  | { type: "permission.request"; sessionId: string; requestId: string; title: string; detail?: string }
+  | { type: "error"; sessionId: string; message: string }
+  | { type: "session.idle"; sessionId: string };
 
 // ── Built-in local AI engine (managed llama-server, see local_llm.rs) ──
 

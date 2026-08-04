@@ -289,3 +289,54 @@ pub async fn agent_stream(app: AppHandle, session_id: String) -> AppResult<()> {
 
     Ok(())
 }
+
+/// Attach to the Exa engine's SSE event stream (/v1/engine/events) and forward
+/// every mapped event to the webview as `engine-event`. Idempotent (one reader).
+#[tauri::command]
+pub async fn engine_stream(app: AppHandle) -> AppResult<()> {
+    let info = ensure_agent(&app)?;
+    {
+        let sidecar = app.state::<AgentSidecar>();
+        let mut streams = sidecar
+            .streams
+            .lock()
+            .map_err(|_| AppError::Assistant("agent state poisoned".into()))?;
+        // Sentinel key so we never spawn two engine readers.
+        if !streams.insert("__engine__".to_string()) {
+            return Ok(());
+        }
+    }
+    let url = format!("http://127.0.0.1:{}/v1/engine/events?token={}", info.port, info.token);
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let cleanup = |app: &AppHandle| {
+            if let Ok(mut s) = app.state::<AgentSidecar>().streams.lock() {
+                s.remove("__engine__");
+            }
+        };
+        let client = reqwest::Client::new();
+        let res = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => return cleanup(&app2),
+        };
+        let mut buf = String::new();
+        let mut stream = res.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let Ok(bytes) = chunk else { break };
+            buf.push_str(&String::from_utf8_lossy(&bytes));
+            while let Some(pos) = buf.find("\n\n") {
+                let frame = buf[..pos].to_string();
+                buf.drain(..pos + 2);
+                for line in frame.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                            let _ = app2.emit("engine-event", v);
+                        }
+                    }
+                }
+            }
+        }
+        cleanup(&app2);
+    });
+    Ok(())
+}
