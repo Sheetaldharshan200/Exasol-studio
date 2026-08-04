@@ -94,6 +94,11 @@ export function ResultsPanel({
   // Memoized: splitStatements is O(buffer) and this component re-renders per
   // keystroke — a huge script must not re-split on every render.
   const isSingleSelect = useMemo(() => splitStatements(sql).length === 1 && /^select/i.test(sql.trim()), [sql]);
+  // What actually RAN (a selection, the statement at the cursor, …) — the
+  // buffer may have moved on since. Result views must attribute rows to THIS,
+  // and each result to ITS statement (statement i produced result i).
+  const ranSql = runMeta?.sql ?? sql;
+  const ranStmts = useMemo(() => splitStatements(ranSql), [ranSql]);
 
   // Auto-profile: opening the Query Performance tab shows the plan straight away
   // — no button. Fire once per result (guarded by autoProfiledFor so a failed
@@ -257,8 +262,9 @@ export function ResultsPanel({
             <div className="flex flex-col">
               {response!.results.map((r, i) => (
                 <div key={i} className="border-b border-border">
-                  <div className="bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground">
-                    #{i + 1} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                  <div className="truncate bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground" title={ranStmts[i]?.text}>
+                    {i + 1}] {statementVerb(ranStmts[i]?.text) ?? ""} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                    {ranStmts[i] ? <> · {ranStmts[i].text.replace(/\s+/g, " ").slice(0, 80)}</> : null}
                   </div>
                   <div className="h-[280px]">
                     <ResultsGrid result={r} error={r.error} />
@@ -270,7 +276,7 @@ export function ResultsPanel({
             // One tab per statement's result (DBVisualizer-style).
             <MultiResultView
               results={response!.results}
-              sql={sql}
+              sql={ranSql}
               ranAt={runMeta?.finishedAt}
               onOpenSql={onOpenSql}
               onCommitEdits={onCommitEdits}
@@ -282,7 +288,7 @@ export function ResultsPanel({
         ) : lastResult && lastResult.kind === "resultSet" && !lastResult.error ? (
           <ResultsView
             result={lastResult}
-            sql={sql}
+            sql={ranStmts[0]?.text ?? ranSql}
             ranAt={runMeta?.finishedAt}
             editable={editable}
             onOpenSql={onOpenSql}
@@ -354,9 +360,11 @@ function MultiResultView({
     });
     return () => cancelAnimationFrame(raf);
   }, [idx, results]);
-  // Each tab is labeled with its statement's verb (SELECT/INSERT/…) so a
-  // script's tabs say what ran.
-  const verbs = useMemo(() => splitStatements(sql).map((s) => statementVerb(s.text)), [sql]);
+  // The run's statements, index-aligned with `results` (statement i produced
+  // result i): tab labels get the verb, and each tab's inspector shows ITS
+  // OWN statement — not the whole script.
+  const stmts = useMemo(() => splitStatements(sql), [sql]);
+  const verbs = useMemo(() => stmts.map((s) => statementVerb(s.text)), [stmts]);
   function jumpTo(raw: string) {
     setGoTo(raw.replace(/\D/g, ""));
     const n = parseInt(raw, 10);
@@ -387,7 +395,7 @@ function MultiResultView({
         {sel.kind === "resultSet" && !sel.error ? (
           <ResultsView
             result={sel}
-            sql={sql}
+            sql={stmts[Math.min(idx, results.length - 1)]?.text ?? sql}
             ranAt={ranAt}
             editable={null}
             onOpenSql={onOpenSql}
