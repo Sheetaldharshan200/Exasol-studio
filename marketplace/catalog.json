@@ -61,6 +61,12 @@
       "latest": "6.1.0",
       "homepage": "https://github.com/apache/superset",
       "mirrorTag": "mirror-superset"
+    },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/Exasol-studio",
+      "latest": "v0.1.0",
+      "homepage": "https://github.com/Sheetaldharshan200/Exasol-studio",
+      "mirrorTag": "mirror-exa-agent"
     }
   }
 }

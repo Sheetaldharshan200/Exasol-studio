@@ -31,6 +31,9 @@ pub enum ComponentId {
     McpServer,
     /// Semantic Views framework (installed DB-side, versioned by revision).
     SemanticViews,
+    /// Exa agent engine (bundled binary, updated independently as a component;
+    /// the vendored engine payload only — Studio's overlay lives elsewhere).
+    ExaAgent,
 }
 
 impl ComponentId {
@@ -41,6 +44,7 @@ impl ComponentId {
             ComponentId::ExaPump => "exapump",
             ComponentId::McpServer => "mcp-server",
             ComponentId::SemanticViews => "semantic-views",
+            ComponentId::ExaAgent => "exa-agent",
         }
     }
 
@@ -51,6 +55,7 @@ impl ComponentId {
             ComponentId::ExaPump => "ExaPump",
             ComponentId::McpServer => "Exasol MCP Server",
             ComponentId::SemanticViews => "Semantic Views",
+            ComponentId::ExaAgent => "Exa Agent",
         }
     }
 
@@ -66,6 +71,7 @@ impl ComponentId {
             "exapump" => ComponentId::ExaPump,
             "mcp-server" => ComponentId::McpServer,
             "semantic-views" => ComponentId::SemanticViews,
+            "exa-agent" => ComponentId::ExaAgent,
             _ => return None,
         })
     }
@@ -212,5 +218,22 @@ mod tests {
     fn is_newer_handles_nonnumeric_tags_by_inequality() {
         assert!(is_newer("nightly-abc", "nightly-def")); // non-numeric -> newer-by-inequality
         assert!(!is_newer("nightly", "nightly")); // identical -> not newer
+    }
+
+    #[test]
+    fn component_ids_round_trip_through_slug() {
+        for id in [
+            ComponentId::Personal,
+            ComponentId::ExaPump,
+            ComponentId::McpServer,
+            ComponentId::SemanticViews,
+            ComponentId::ExaAgent,
+        ] {
+            assert_eq!(ComponentId::from_slug(id.slug()), Some(id));
+            assert!(!id.display().is_empty());
+        }
+        assert_eq!(ComponentId::from_slug("nope"), None);
+        // The Exa agent is a standalone binary, not a Python venv component.
+        assert!(!ComponentId::ExaAgent.has_own_env());
     }
 }

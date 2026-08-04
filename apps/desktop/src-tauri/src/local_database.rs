@@ -1426,6 +1426,8 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
         ComponentId::SemanticViews => c.semantic_views.repository.clone(),
+        // Exa agent is mirrored from the Studio repo (its own release line).
+        ComponentId::ExaAgent => "Sheetaldharshan200/Exasol-studio".to_string(),
     }
 }
 
@@ -1451,6 +1453,8 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.version.clone(),
         ComponentId::McpServer => c.python_stack.mcp_server_version.clone(),
         ComponentId::SemanticViews => c.semantic_views.revision.clone(),
+        // Baseline bundled with the app until an engine update lands (task 4.x).
+        ComponentId::ExaAgent => "0.1.0".to_string(),
     }
 }
 
@@ -1665,6 +1669,14 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
                 let _guard = MaintenanceGuard::acquire()?;
                 ensure_lifecycle_idle(&app, "stop")?;
                 crate::local_runtime::update_personal_engine(&app, JOB_ID)
+            }
+            ComponentId::ExaAgent => {
+                // The engine ships as a bundled binary; in-place update over
+                // the component payload is task 4.x (exa-agent-v2). Until then
+                // say so plainly rather than pretend to update.
+                Err(AppError::InvalidSettings(
+                    "Exa agent in-place updates are not available yet in this build.".into(),
+                ))
             }
         }
     })

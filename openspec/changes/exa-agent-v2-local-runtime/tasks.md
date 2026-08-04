@@ -23,7 +23,7 @@
 
 ## 4. Marketplace component + independent versioning
 
-- [ ] 4.0 Add `ComponentId::ExaAgent` (own dir + `installed.json`) and a `catalog.json` item (repo, latest, mirrorTag, homepage); engine appears in Managed Components + Updates like other components; `components_update` version-compare tests cover it.
+- [x] 4.0 Add `ComponentId::ExaAgent` (own dir + `installed.json`) and a `catalog.json` item (repo, latest, mirrorTag, homepage); engine appears in Managed Components + Updates like other components; `components_update` version-compare tests cover it.
 - [ ] 4.1 Supervisor resolves the engine binary from the component dir, falling back to the bundled baseline; overlay (MCP wiring, DB profile, provider ranking, rebrand) resolved from a SEPARATE app-owned dir a component update never writes; test that an engine update leaves the overlay dir untouched.
 - [ ] 4.2 Release/mirror wiring: engine gets its own release tag line + mirror job; About surface reports engine version and app version separately.
 
