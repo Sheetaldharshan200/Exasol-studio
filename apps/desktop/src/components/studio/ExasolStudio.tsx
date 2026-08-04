@@ -2334,6 +2334,34 @@ export function ExasolStudio({
     ? `Connected to ${connection.server.databaseName ?? "Exasol"} ${connection.server.version ?? ""} as ${connection.server.currentUser}.${schema ? ` Current schema: ${schema}.` : ""}`
     : "Not connected to a database yet.";
 
+  // Live workbench view Exa's `@`-context reads (schema/SQL/results) and the
+  // action that lands a reply's SQL block back in the editor. Both are handed
+  // to every ExaEnginePanel instance (side dock + full tab).
+  const getExaSnapshot = useCallback(
+    () => ({
+      connectionName: connection ? connection.server.databaseName ?? "Exasol" : undefined,
+      schema,
+      schemas,
+      catalog: sqlCatalogRef.current,
+      editorSql: activeTab.view === "sql" ? activeTab.sql : "",
+      lastResult,
+      history: history.slice(0, 20).map((h) => ({ sql: h.sql })),
+    }),
+    [connection, schema, schemas, activeTab, lastResult, history],
+  );
+  const applySqlToEditor = useCallback(
+    (sql: string) => {
+      if (activeTab.view === "sql") {
+        const base = activeTab.sql.trimEnd();
+        patchTab(activeTab.id, { sql: base ? `${base}\n\n${sql}\n` : `${sql}\n` });
+      } else {
+        openSqlTab(sql, "From Exa");
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeTab],
+  );
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TitleBar
@@ -2911,6 +2939,8 @@ export function ExasolStudio({
           ) : activeTab.view === "exaEngine" ? (
             <div className="min-h-0 flex-1">
               <ExaEnginePanel
+                getSnapshot={getExaSnapshot}
+                onApplySql={applySqlToEditor}
                 onCollapse={() => {
                   closeTab(activeTab.id);
                   setAiOpen(true);
@@ -3266,6 +3296,8 @@ export function ExasolStudio({
             className="min-w-0"
           >
             <ExaEnginePanel
+              getSnapshot={getExaSnapshot}
+              onApplySql={applySqlToEditor}
               onClose={toggleAi}
               onExpand={() => {
                 openExaEngine();

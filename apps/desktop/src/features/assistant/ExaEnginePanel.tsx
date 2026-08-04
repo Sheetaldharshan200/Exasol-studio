@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, KeyRound, Loader2, Maximize2, Minimize2, Send, Square, Terminal, Wrench, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Terminal, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
-import { BrandLoader } from "@/components/brand/BrandLoader";
+import { AgentMark } from "@/components/studio/AgentMark";
+import { emptyCatalog } from "@/lib/sql-completion";
+import { ChatMarkdown } from "./exa/ChatMarkdown";
+import { ChatComposer, type ChatMode, type ContextChip } from "./exa/ChatComposer";
+import { buildPrompt, type ExaSnapshot } from "./exa/context";
+import type { PickedModel } from "./exa/ModelMenu";
 
 /**
  * Exa engine (v2, opencode) chat panel — the continue.dev interaction grammar
  * on Studio's own components, driven entirely by /v1/engine/* + the engine-event
  * stream. When the engine component isn't installed it shows the install gate
  * (the correct first-run state); once running it is a full session chat with
- * live tool-call cards, interruption, and per-turn model selection.
+ * markdown replies, live tool-call cards, `@`-context, interruption, and an
+ * inline model selector in the composer.
  *
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
@@ -20,25 +26,39 @@ const ENGINE_TAG = "v1.18.12";
 type ChatMsg = { role: "user" | "assistant"; text: string };
 type ToolCard = { callId: string; name: string; args: unknown; ok?: boolean; result?: unknown };
 
+const EMPTY_SNAPSHOT: ExaSnapshot = {
+  schemas: [],
+  catalog: emptyCatalog(),
+  editorSql: "",
+  lastResult: null,
+  history: [],
+};
+
 export function ExaEnginePanel({
   onClose,
   onExpand,
   onCollapse,
-}: { onClose?: () => void; onExpand?: () => void; onCollapse?: () => void } = {}) {
+  getSnapshot,
+  onApplySql,
+}: {
+  onClose?: () => void;
+  onExpand?: () => void;
+  onCollapse?: () => void;
+  /** Live view of the workbench (schema/SQL/results) for `@` context. */
+  getSnapshot?: () => ExaSnapshot;
+  /** Apply a SQL code block from a reply into the editor. */
+  onApplySql?: (sql: string) => void;
+} = {}) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [tools, setTools] = useState<ToolCard[]>([]);
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliBusy, setCliBusy] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
-  const [model, setModel] = useState<{ providerID: string; modelID: string; label: string } | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [model, setModel] = useState<PickedModel | null>(null);
   const disposer = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -50,14 +70,14 @@ export function ExaEnginePanel({
 
   // The AI providers/models available here — the SAME ranked set Studio
   // supports (Local Runtime → In-DB AI → cloud). opencode drives whichever the
-  // user picks.
+  // user picks; a cloud provider's models appear only once its key is set.
   const loadModels = useCallback(() => {
     return agent
       .models()
       .then(({ providers: ps, defaultModel }) => {
         setProviders(ps);
         setModel((cur) => {
-          if (cur) return cur; // keep the user's choice
+          if (cur) return cur;
           if (defaultModel) {
             const [pid, ...rest] = defaultModel.split("/");
             return { providerID: pid, modelID: rest.join("/"), label: defaultModel };
@@ -70,18 +90,13 @@ export function ExaEnginePanel({
   }, []);
   useEffect(() => void loadModels(), [loadModels]);
 
-  async function saveKey(providerId: string) {
-    const key = (keyDraft[providerId] ?? "").trim();
-    if (!key) return;
-    setSavingKey(providerId);
-    try {
+  const saveKey = useCallback(
+    async (providerId: string, key: string) => {
       await agent.setProviderKey(providerId, key);
-      setKeyDraft((d) => ({ ...d, [providerId]: "" }));
-      await loadModels(); // models are disclosed only after the key is set
-    } finally {
-      setSavingKey(null);
-    }
-  }
+      await loadModels();
+    },
+    [loadModels],
+  );
 
   async function installCli() {
     setCliBusy(true);
@@ -138,11 +153,11 @@ export function ExaEnginePanel({
     }
   }
 
-  async function send() {
-    const text = draft.trim();
-    if (!text || busy) return;
-    setDraft("");
-    setMessages((m) => [...m, { role: "user", text }]);
+  async function send(text: string, chips: ContextChip[], mode: ChatMode) {
+    if (busy) return;
+    const shown = text;
+    const prompt = buildPrompt(mode === "ask" ? `Answer as a chat assistant without running tools.\n\n${text}` : text, chips);
+    setMessages((m) => [...m, { role: "user", text: shown }]);
     setTools([]);
     setBusy(true);
     const fail = (msg: string) => {
@@ -154,11 +169,11 @@ export function ExaEnginePanel({
       let sid = sessionId;
       if (!sid) {
         const created = await agent.engine.createSession();
-        if (!created?.id) return fail("The Exa engine isn't running yet. Install it (button above) and wait for the header to read “running”.");
+        if (!created?.id) return fail("The Exa engine isn't running yet. Install it and wait for the header to read “running”.");
         sid = created.id;
         setSessionId(sid);
       }
-      const r = await agent.engine.prompt(sid, text, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
+      const r = await agent.engine.prompt(sid, prompt, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
       if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
     } catch (e) {
       fail(e instanceof Error ? e.message : "Engine request failed.");
@@ -170,11 +185,13 @@ export function ExaEnginePanel({
     setBusy(false);
   }
 
+  const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
+
   // ── Install gate (not provisioned / binary absent) ──
   if (!status || (!status.provisioned && !installing) || (status.provisioned && !status.binaryPresent && !installing)) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-panel px-8 text-center">
-        <BrandLoader size={44} />
+        <AgentMark className="h-11 w-11" />
         <div>
           <p className="text-[14px] font-semibold text-foreground">Exa engine isn't installed yet</p>
           <p className="mx-auto mt-1 max-w-md text-[12px] leading-relaxed text-muted-foreground">
@@ -198,7 +215,7 @@ export function ExaEnginePanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-[12px]">
-        <BrandLoader size={16} />
+        <AgentMark className="h-4 w-4" active={busy} />
         <span className="font-semibold text-foreground">Exa</span>
         <span className="rounded-full border border-primary/40 bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
           Beta
@@ -214,122 +231,55 @@ export function ExaEnginePanel({
         >
           <Terminal className="h-3 w-3" /> {cliBusy ? "…" : cliInstalled ? "exa CLI ✓" : "Install exa CLI"}
         </button>
-        <button
-          onClick={() => setPickerOpen((o) => !o)}
-          title="Models & providers"
-          className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          {model ? (model.label.length > 24 ? model.label.slice(0, 24) + "…" : model.label) : "Pick a model"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        <span className="font-mono text-[10.5px] text-muted-foreground">{status.state}</span>
+        <span className={cn("flex items-center gap-1 font-mono text-[10.5px]", status.state === "running" ? "text-primary" : "text-muted-foreground")}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-primary" : "bg-muted-foreground/50")} />
+          {status.state}
+        </span>
         {onExpand ? (
-          <button onClick={onExpand} title="Expand to full screen" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+          <button onClick={onExpand} title="Expand to full screen" className={iconBtn}>
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         ) : null}
         {onCollapse ? (
-          <button onClick={onCollapse} title="Dock to the side panel" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+          <button onClick={onCollapse} title="Dock to the side panel" className={iconBtn}>
             <Minimize2 className="h-3.5 w-3.5" />
           </button>
         ) : null}
         {onClose ? (
-          <button onClick={onClose} title="Hide Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+          <button onClick={onClose} title="Hide Exa" className={iconBtn}>
             <X className="h-4 w-4" />
           </button>
         ) : null}
       </div>
 
-      {/* Providers & models — a proper config surface: providers first; a
-          cloud provider's models are disclosed only once its API key is set
-          (opencode-style). Local runtimes and In-DB show detected models. */}
-      {pickerOpen ? (
-        <div className="max-h-[55%] shrink-0 overflow-auto border-b border-border bg-editor/40 p-2 [scrollbar-width:thin]">
-          {providers.length === 0 ? (
-            <p className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
-              No providers yet. Run Ollama or LM Studio locally, or add a cloud provider key below.
-            </p>
-          ) : null}
-          {providers.map((p) => {
-            const needsKey = p.kind === "cloud" && !p.configured;
-            return (
-              <div key={p.id} className="mb-1.5 rounded-md border border-border bg-panel">
-                <div className="flex items-center gap-2 px-2.5 py-1.5">
-                  <span className="text-[12px] font-medium text-foreground">{p.name}</span>
-                  <span className={cn("rounded-full px-1.5 py-px text-[9px] font-semibold uppercase", p.kind === "local" ? "bg-primary/15 text-primary" : p.id === "in-database" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
-                    {p.id === "in-database" ? "in-db" : p.kind}
-                  </span>
-                  {p.kind === "cloud" ? (
-                    <span className={cn("ml-auto flex items-center gap-1 text-[10.5px]", p.configured ? "text-primary" : "text-muted-foreground")}>
-                      <KeyRound className="h-3 w-3" /> {p.configured ? "connected" : "not configured"}
-                    </span>
-                  ) : (
-                    <span className="ml-auto text-[10.5px] text-muted-foreground">{p.installedOnly ? "not running" : p.running ? "running" : ""}</span>
-                  )}
-                </div>
-                {needsKey ? (
-                  <div className="flex items-center gap-1.5 border-t border-border px-2.5 py-1.5">
-                    <input
-                      type="password"
-                      value={keyDraft[p.id] ?? ""}
-                      onChange={(e) => setKeyDraft((d) => ({ ...d, [p.id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") void saveKey(p.id); }}
-                      placeholder={`${p.envKey ?? "API key"}`}
-                      className="h-7 flex-1 rounded-md border border-border bg-editor px-2 font-mono text-[11px] outline-none focus:border-primary/50"
-                    />
-                    <button
-                      onClick={() => void saveKey(p.id)}
-                      disabled={!(keyDraft[p.id] ?? "").trim() || savingKey === p.id}
-                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                    >
-                      {savingKey === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
-                    </button>
-                  </div>
-                ) : p.models.length === 0 ? (
-                  <div className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground/70">
-                    {p.installedOnly ? "Start the server to see its models." : "No models available."}
-                  </div>
-                ) : (
-                  <div className="border-t border-border py-0.5">
-                    {p.models.map((m) => {
-                      const active = model?.providerID === p.id && model?.modelID === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setModel({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name}` });
-                            setPickerOpen(false);
-                          }}
-                          className={cn("flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[11.5px] hover:bg-secondary", active ? "text-primary" : "text-foreground")}
-                        >
-                          {active ? <Check className="h-3 w-3 shrink-0" /> : <span className="w-3 shrink-0" />}
-                          <span className="truncate">{m.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-auto p-3 [scrollbar-width:thin]">
         {messages.length === 0 ? (
-          <p className="mt-8 text-center text-[12.5px] text-muted-foreground">Ask Exa about your database, grounded in its schema.</p>
-        ) : null}
-        {messages.map((m, i) => (
-          <div key={i} className={cn("max-w-[92%] rounded-lg px-3 py-2 text-[12.5px] leading-relaxed", m.role === "user" ? "ml-auto bg-secondary text-foreground" : "bg-editor text-foreground")}>
-            <div className="whitespace-pre-wrap break-words">{m.text}</div>
-          </div>
-        ))}
-        {tools.map((t) => (
-          <div key={t.callId} className="rounded-md border border-border bg-editor px-2.5 py-1.5 font-mono text-[11px]">
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              {t.ok === undefined ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : <Wrench className={cn("h-3 w-3", t.ok ? "text-primary" : "text-destructive")} />}
-              {t.name}
+          <div className="mt-10 flex flex-col items-center gap-3 text-center">
+            <AgentMark className="h-9 w-9" />
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">Ask Exa about your database</p>
+              <p className="mx-auto mt-1 max-w-xs text-[11.5px] leading-relaxed text-muted-foreground">
+                Grounded in your live schema. Type <span className="font-mono text-primary">@</span> to attach a table,
+                the current query, or your last results as context.
+              </p>
             </div>
+          </div>
+        ) : null}
+        {messages.map((m, i) =>
+          m.role === "user" ? (
+            <div key={i} className="ml-auto max-w-[92%] whitespace-pre-wrap break-words rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-relaxed text-foreground">
+              {m.text}
+            </div>
+          ) : (
+            <div key={i} className="max-w-[97%] rounded-lg bg-editor px-3 py-2">
+              <ChatMarkdown text={m.text} onApplySql={onApplySql} />
+            </div>
+          ),
+        )}
+        {tools.map((t) => (
+          <div key={t.callId} className="flex items-center gap-1.5 rounded-md border border-border bg-editor px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
+            {t.ok === undefined ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : <Wrench className={cn("h-3 w-3", t.ok ? "text-primary" : "text-destructive")} />}
+            {t.name}
           </div>
         ))}
         {busy && tools.length === 0 && messages[messages.length - 1]?.role === "user" ? (
@@ -339,32 +289,16 @@ export function ExaEnginePanel({
         ) : null}
       </div>
 
-      <div className="shrink-0 border-t border-border p-2">
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            rows={2}
-            placeholder="Message Exa…  (Enter to send)"
-            className="min-h-9 flex-1 resize-none rounded-md border border-border bg-editor px-2.5 py-1.5 text-[12.5px] outline-none focus:border-primary/50"
-          />
-          {busy ? (
-            <button onClick={() => void stop()} title="Stop" className="flex h-9 w-9 items-center justify-center rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10">
-              <Square className="h-4 w-4" />
-            </button>
-          ) : (
-            <button onClick={() => void send()} disabled={!draft.trim()} title="Send" className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/85 disabled:opacity-40">
-              <Send className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </div>
+      <ChatComposer
+        providers={providers}
+        model={model}
+        onPickModel={setModel}
+        onSaveKey={saveKey}
+        getSnapshot={getSnapshot ?? (() => EMPTY_SNAPSHOT)}
+        busy={busy}
+        onSend={(text, chips, mode) => void send(text, chips, mode)}
+        onStop={() => void stop()}
+      />
     </div>
   );
 }
