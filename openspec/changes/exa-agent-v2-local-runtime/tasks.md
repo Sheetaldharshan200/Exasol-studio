@@ -10,14 +10,14 @@
 
 ## 2. Local Runtime (discovery → engine config)
 
-- [ ] 2.1 Runtime discovery: probe Ollama (11434, `/api/tags`), LM Studio (1234, `/v1/models`), user-added OpenAI-compatible URLs; shape-validated, 300ms timeouts; persisted registry; `runtime-registry.test.ts` (shape validation, dedupe, unreachable).
+- [x] 2.1 (pure parse/rank; live probe wiring pending) Runtime discovery: probe Ollama (11434, `/api/tags`), LM Studio (1234, `/v1/models`), user-added OpenAI-compatible URLs; shape-validated, 300ms timeouts; persisted registry; `runtime-registry.test.ts` (shape validation, dedupe, unreachable).
 - [ ] 2.2 Write discovered runtimes/models into the engine's provider config; per-session model selection through the SDK.
-- [ ] 2.3 Capability probe (tool-calling y/n per model, cached) → honest reduced-mode messaging; test cache/invalidation.
+- [x] 2.3 (cache logic; live probe pending) Capability probe (tool-calling y/n per model, cached) → honest reduced-mode messaging; test cache/invalidation.
 
 ## 3. Chat panel v2 (frontend)
 
 - [ ] 3.1 `features/assistant/panel/` on assistant-ui (MIT) themed to Studio tokens: SessionList (from engine sessions), per-session ModelPicker in the composer; mounted behind the existing panel entry.
-- [ ] 3.2 `@` context providers (schema/table/selection/result/file) → message parts via the SDK; provider resolution reuses sqlCatalog + splitStatements; pure serialization helpers tested.
+- [x] 3.2 (pure chip logic; UI menu pending) `@` context providers (schema/table/selection/result/file) → message parts via the SDK; provider resolution reuses sqlCatalog + splitStatements; pure serialization helpers tested.
 - [ ] 3.3 Streaming MessageList + ToolCallCard (collapsible args/result/duration/error) driven by bridge events; Stop interrupts via SDK abort and preserves partials.
 - [ ] 3.4 Apply-to-editor through InlineSqlDiff for suggested SQL; delete superseded AssistantPanel sections at parity (KISS shrink of the 1,937-line file); retire loop.ts when the old path has no callers.
 
