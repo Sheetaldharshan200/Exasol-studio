@@ -37,6 +37,7 @@ opencode is the only candidate that is simultaneously MIT (rebrandable), enormou
 - `local-runtime`: discovery, health, and model inventory for Ollama / LM Studio / OpenAI-compatible endpoints, feeding the engine's provider config; provider ranking (Local → In-DB AI → cloud); honest degradation when a model lacks tool calling.
 - `chat-panel-v2`: sessions, @ context providers, tool-call cards, per-session model picker, interruption, apply-through-diff — rendered Studio-native from engine events.
 - `exa-cli`: the terminal surface of the same engine — shared config/sessions/tools with the app, installed to PATH from the app, bundled in every installer.
+- `exa-agent-component`: the engine as a versioned Marketplace component — its own catalog item, `installed.json`, and release line; engine bumps ship as independent component updates through the Updates tab, with the vendored binary and Studio's overlay kept in separate layers so updates never clash with our edits.
 
 ### Modified Capabilities
 <!-- none: existing behavior remains until superseded feature-by-feature -->
