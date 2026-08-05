@@ -105,7 +105,7 @@ export function ExaModelSelector({
       if (r.authorization.method === "auto") {
         // The engine polls the flow inline; this resolves when auth completes.
         const done = await agent.engine.oauthCallback(providerId, idx);
-        finishOauth(done.ok);
+        finishOauth(providerId, done.ok);
       }
       // method "code": wait for the user to paste the code (submitOauthCode).
     } catch {
@@ -118,19 +118,22 @@ export function ExaModelSelector({
     setOauthState("waiting");
     try {
       const done = await agent.engine.oauthCallback(providerId, idx, codeDraft.trim());
-      finishOauth(done.ok);
+      finishOauth(providerId, done.ok);
     } catch {
       setOauthState("failed");
     }
   }
 
-  function finishOauth(ok: boolean) {
+  function finishOauth(providerId: string, ok: boolean) {
     if (!ok) {
       setOauthState("failed");
       return;
     }
     resetConnectFlow();
     setConnecting(null);
+    // The Exa-side confirmation (the engine's own browser page is transient
+    // and carries its own branding we can't change without forking it).
+    setKeyVerdict((d) => ({ ...d, [providerId]: "ok" }));
     void onConnected?.();
   }
 
@@ -314,6 +317,11 @@ export function ExaModelSelector({
           </div>
         ) : (
           <>
+            {keyVerdict[c.id] === "ok" ? (
+              <p className="flex items-center gap-1 px-2 pt-0.5 pb-1 text-[11px] text-foreground/80">
+                <Check className="h-3 w-3" /> {c.name} is connected to Exa — models unlocked.
+              </p>
+            ) : null}
             <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Select auth method</p>
             {methods.map((m, i) => (
               <button
