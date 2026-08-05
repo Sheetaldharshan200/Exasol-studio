@@ -323,22 +323,29 @@ export function ExaModelSelector({
               </p>
             ) : null}
             <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Select auth method</p>
-            {methods.map((m, i) => (
-              <button
-                key={`${m.label}-${i}`}
-                type="button"
-                onClick={() => {
-                  resetConnectFlow();
-                  setConnecting(c);
-                  setMethodIdx(i);
-                  if (m.type === "oauth" && !(m.prompts ?? []).length) void startOauth(c.id, i, {});
-                }}
-                className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]"
-              >
-                {m.type === "oauth" ? <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /> : <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                <span className="min-w-0 flex-1 truncate">{m.label}</span>
-              </button>
-            ))}
+            {methods
+              // Device/headless sign-ins complete on the provider's own site —
+              // no engine-branded browser page — so surface them first. The
+              // engine's method INDEX must be preserved for authorize calls.
+              .map((m, i) => ({ m, i, device: /headless|device/i.test(m.label) }))
+              .sort((a, b) => Number(b.device) - Number(a.device))
+              .map(({ m, i, device }) => (
+                <button
+                  key={`${m.label}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    resetConnectFlow();
+                    setConnecting(c);
+                    setMethodIdx(i);
+                    if (m.type === "oauth" && !(m.prompts ?? []).length) void startOauth(c.id, i, {});
+                  }}
+                  className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]"
+                >
+                  {m.type === "oauth" ? <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /> : <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                  <span className="min-w-0 flex-1 truncate">{m.label}</span>
+                  {device ? <span className="shrink-0 text-[9.5px] text-muted-foreground">recommended</span> : null}
+                </button>
+              ))}
           </>
         )}
       </div>

@@ -169,16 +169,19 @@ export function ExaEnginePanel({
         // already cover appears as an extra, already-configured section.
         try {
           const eng = await agent.engine.providers();
-          const known = new Set(ps.map((p) => p.id));
           for (const ep of eng.providers) {
-            if (known.has(ep.id) || ep.models.length === 0) continue;
-            ps = [...ps, {
-              id: ep.id,
-              name: `${ep.name} (engine)`,
-              kind: "cloud",
-              configured: true,
-              models: ep.models.map((m) => ({ id: m.id, name: m.name, context: m.context })),
-            }];
+            if (ep.models.length === 0) continue;
+            const models = ep.models.map((m) => ({ id: m.id, name: m.name, context: m.context }));
+            const idx = ps.findIndex((p) => p.id === ep.id);
+            if (idx === -1) {
+              ps = [...ps, { id: ep.id, name: ep.name, kind: "cloud", configured: true, models }];
+            } else if (ps[idx].kind === "cloud") {
+              // The ENGINE is authoritative for cloud providers: an OAuth or
+              // key connect lives in the engine, so a provider Studio's own
+              // list still thinks is unconfigured must flip to connected here
+              // (this is what unlocks OpenAI/Copilot models after sign-in).
+              ps = ps.map((p, i) => (i === idx ? { ...p, configured: true, models } : p));
+            }
           }
         } catch {
           /* engine absent/stopped — Studio's own list is enough */
