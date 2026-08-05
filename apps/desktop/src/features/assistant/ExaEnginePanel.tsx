@@ -170,12 +170,18 @@ export function ExaEnginePanel({
             return [...m, { role: "assistant", parts: [part] }];
           });
         } else if (e.type === "tool.result") {
-          setMessages((m) =>
-            m.map((msg) => ({
-              ...msg,
-              parts: msg.parts.map((p) => (p.type === "tool" && p.callId === e.callId ? { ...p, ok: e.ok } : p)),
-            })),
-          );
+          // Touch ONLY the message holding this call — untouched references
+          // keep assistant-ui's converted-message cache warm.
+          setMessages((m) => {
+            const mi = m.findIndex((msg) => msg.parts.some((p) => p.type === "tool" && p.callId === e.callId));
+            if (mi === -1) return m;
+            const next = [...m];
+            next[mi] = {
+              ...next[mi],
+              parts: next[mi].parts.map((p) => (p.type === "tool" && p.callId === e.callId ? { ...p, ok: e.ok } : p)),
+            };
+            return next;
+          });
         } else if (e.type === "session.idle" || e.type === "message.done") {
           setBusy(false);
         } else if (e.type === "error") {

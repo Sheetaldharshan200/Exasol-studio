@@ -206,7 +206,7 @@ export function ChatComposer({
   const ModeIcon = modeInfo.icon;
 
   return (
-    <div className="shrink-0 px-2 pb-2">
+    <div className="mx-auto w-full max-w-[44rem] shrink-0 px-3 pb-3">
       {/* Context chips — continue.dev's context peek. */}
       {chips.length > 0 ? (
         <div className="mb-1.5 flex flex-wrap gap-1">
@@ -222,7 +222,7 @@ export function ChatComposer({
         </div>
       ) : null}
 
-      <div className={cn("relative rounded-xl border bg-editor transition-colors", focused ? "border-primary/60 ring-1 ring-primary/30" : "border-border")}>
+      <div className={cn("relative rounded-2xl border bg-editor shadow-sm transition-all", focused ? "border-primary/60 shadow-md ring-1 ring-primary/25" : "border-border")}>
         {/* @ provider / argument / slash-command menu, anchored above the input. */}
         {menuOpen ? (
           <div className="absolute bottom-full left-0 z-50 mb-1.5 max-h-[300px] w-[320px] overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
