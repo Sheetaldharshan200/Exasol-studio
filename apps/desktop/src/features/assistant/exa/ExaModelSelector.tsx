@@ -75,6 +75,14 @@ export function ExaModelSelector({
 
   /** Open a URL in the system browser (Tauri webviews ignore target=_blank). */
   async function openExternal(url: string) {
+    // Rust-side first: never blocked by webview capability scopes.
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_external", { url });
+      return;
+    } catch {
+      /* web build or command missing — try the plugin, then window.open */
+    }
     try {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(url);
