@@ -6,7 +6,7 @@ import { agent, type AgentProviderInfo, type EngineEvent, type EngineSessionInfo
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { expandCommand, parseSlash, transcriptMarkdown, type LocalCommandId } from "./exa/commands";
+import { expandCommand, parseSlash, transcriptMarkdown, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -62,6 +62,8 @@ export function ExaEnginePanel({
   // reads/writes it through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
   const [chips, setChips] = useState<ContextChip[]>([]);
+  // A picked slash command shown as a chip; the input text is its argument.
+  const [pendingCommand, setPendingCommand] = useState<SlashCommand | null>(null);
   // Persisted engine sessions (auto-titled) for the sidebar.
   const [sessions, setSessions] = useState<EngineSessionInfo[]>([]);
   const disposer = useRef<(() => void) | null>(null);
@@ -232,11 +234,11 @@ export function ExaEnginePanel({
     agent: "",
   };
 
-  async function send({ shown, engine, chips, mode }: { shown: string; engine: string; chips: ContextChip[]; mode: ChatMode }) {
+  async function send({ shown, engine, chips, mode, quote }: { shown: string; engine: string; chips: ContextChip[]; mode: ChatMode; quote?: string }) {
     if (busy) return;
     const directive = MODE_DIRECTIVE[mode];
     const prompt = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, chips);
-    setMessages((m) => [...m, { role: "user", parts: [{ type: "text", text: shown }] }]);
+    setMessages((m) => [...m, { role: "user", parts: [{ type: "text", text: shown }], ...(quote ? { quote } : {}) }]);
     setBusy(true);
     const fail = (msg: string) => {
       setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${msg}` }] }]);
@@ -337,23 +339,33 @@ export function ExaEnginePanel({
   }
 
   /** Every submit path (registry composer, suggestions, edits) lands here. */
-  function sendText(text: string) {
-    const slash = parseSlash(text);
+  function sendText(text: string, quote?: string) {
+    // A command chip takes the typed text as its argument; typed "/cmd arg"
+    // still works too (suggestion pills, muscle memory).
+    const slash = pendingCommand
+      ? { command: pendingCommand, arg: text.trim() }
+      : parseSlash(text);
     if (slash?.command.kind === "local") {
+      setPendingCommand(null);
       runLocal(slash.command.id as LocalCommandId);
       return;
     }
+    let shown = text;
     let engine = text;
     let allChips = chips; // manual @-context chips from the composer
     if (slash) {
       const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
       const e = expandCommand(slash.command.id, slash.arg, snap);
       engine = e.text;
+      shown = pendingCommand ? `/${slash.command.title}${slash.arg ? ` ${slash.arg}` : ""}` : text;
       const auto = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
       allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
     }
+    // A quoted excerpt travels with the prompt so the model knows the referent.
+    if (quote) engine = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${engine}`;
     setChips([]);
-    void send({ shown: text, engine, chips: allChips, mode });
+    setPendingCommand(null);
+    void send({ shown, engine, chips: allChips, mode, quote });
   }
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -448,6 +460,9 @@ export function ExaEnginePanel({
             if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
           },
           removeChip: (id) => setChips((cs) => cs.filter((x) => x.id !== id)),
+          pendingCommand,
+          setPendingCommand,
+          runLocal,
           loadCatalog: () => agent.engine.catalog().then((r) => r.providers),
         }}
       />

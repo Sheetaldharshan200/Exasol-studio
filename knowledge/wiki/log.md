@@ -59,3 +59,10 @@ Codex findings fixed: (1) tool.result cloned every message/part -> now touches o
 Gotcha: MessagePrimitive.Error takes no className in 0.15.4. Gotcha: assistant-ui's global SpeechRecognition augmentations collide with local declare-global blocks (fixed in ai-elements/prompt-input.tsx by casting at construction).
 Styling grammar: centered max-w-[44rem] column, avatar chip + hover ActionBar (Copy works via ActionBarPrimitive.Copy data-copied), BranchPicker hidden when single branch, suggestion cards on empty state.
 
+
+## [2026-08-05] feature | Exa: engine-as-source-of-truth for providers — auth.json keys, models.dev catalog, session commands (5d0ae5c)
+API keys saved in the Exa UI now write into opencode's own auth.json (engine/auth-store.ts; XDG_DATA_HOME pinned at spawn so path = <configDir>/opencode/auth.json, 0600) and restart the engine — previously keys only configured the sidecar and opencode never saw them.
+Full provider catalog (200+) comes from models.opencode.ai/api.json — the SAME source opencode uses — via engine/catalog-map.ts (pure, popular pinned: opencode/openai/github-copilot/anthropic/google), 10-min cache, GET /v1/engine/catalog; UI 'Connect a provider…' browser in the model menu.
+opencode TUI command parity where GUI-applicable: /new /compact (session.summarize via POST /v1/engine/sessions/:id/compact) /export; TUI-only (themes/editor/exit) skipped deliberately.
+Model selector UX fixes: key-input row min-w-0 so Save fits the submenu; search filters IN PLACE above the provider list (no separate view).
+

@@ -38,7 +38,7 @@ import {
   type ContextProvider,
   type ExaSnapshot,
 } from "./context";
-import { filterCommands, type SlashCommand } from "./commands";
+import { filterCommands, type LocalCommandId, type SlashCommand } from "./commands";
 
 /**
  * The Exa thread — the official assistant-ui thread UI (registry components in
@@ -52,7 +52,12 @@ import { filterCommands, type SlashCommand } from "./commands";
 export type ExaPart =
   | { type: "text"; text: string }
   | { type: "tool"; callId: string; name: string; ok?: boolean };
-export type ExaMessage = { role: "user" | "assistant"; parts: ExaPart[] };
+export type ExaMessage = {
+  role: "user" | "assistant";
+  parts: ExaPart[];
+  /** Text the user quoted from an earlier reply (rendered as a QuoteBlock). */
+  quote?: string;
+};
 
 /** Chat = no tools · Plan = read-only tools · Agent = all tools. */
 export type ChatMode = "chat" | "plan" | "agent";
@@ -79,6 +84,9 @@ function toThreadMessage(m: ExaMessage): ThreadMessageLike {
         ? ({ type: "text", text: p.text } as const)
         : ({ type: "tool-call", toolName: p.name, toolCallId: p.callId, result: p.ok === undefined ? undefined : { ok: p.ok } } as const),
     ),
+    // MessagePrimitive.Quote reads metadata.custom.quote — the same place the
+    // composer's own send path stores it.
+    ...(m.quote ? { metadata: { custom: { quote: { text: m.quote, messageId: "" } } } } : {}),
   };
 }
 
@@ -146,6 +154,11 @@ export type ExaComposerApi = {
   chips: ContextChip[];
   addChip: (c: ContextChip | null) => void;
   removeChip: (id: string) => void;
+  /** A picked slash command, shown as a chip; the input text becomes its argument. */
+  pendingCommand: SlashCommand | null;
+  setPendingCommand: (c: SlashCommand | null) => void;
+  /** Run a local command (/new, /export, /compact) immediately. */
+  runLocal: (id: LocalCommandId) => void;
   /** The FULL models.dev catalog (every provider opencode supports). */
   loadCatalog: () => Promise<EngineCatalogProvider[]>;
 };
@@ -304,9 +317,17 @@ export function ExaComposerControls() {
 /** Context chips row shown above the registry composer's input. */
 export function ExaComposerChips() {
   const api = useExaComposer();
-  if (!api || api.chips.length === 0) return null;
+  if (!api || (api.chips.length === 0 && !api.pendingCommand)) return null;
   return (
     <div className="flex flex-wrap gap-1 px-2 pt-1.5">
+      {api.pendingCommand ? (
+        <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-[12px] leading-none font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+          /{api.pendingCommand.title}
+          <button type="button" onClick={() => api.setPendingCommand(null)} className="rounded opacity-70 hover:opacity-100" aria-label="Remove command">
+            <X className="size-3" />
+          </button>
+        </span>
+      ) : null}
       {api.chips.map((c) => (
         <span
           key={c.id}
@@ -369,7 +390,14 @@ export function ExaComposerMenus() {
     stripAt();
   }
   function pickCommand(c: SlashCommand) {
-    setText(`/${c.title} `);
+    // Local commands run immediately; prompt commands become a chip and the
+    // input text becomes their argument (the example's directive-chip flow).
+    setText("");
+    if (c.kind === "local") {
+      api!.runLocal(c.id as LocalCommandId);
+      return;
+    }
+    api!.setPendingCommand(c);
   }
 
   const argOptions = (() => {
@@ -417,12 +445,35 @@ export function ExaComposerMenus() {
         </>
       ) : providerMenu.length > 0 ? (
         <div className="py-1">
-          {providerMenu.map((p) => (
-            <button key={p.id} type="button" onClick={() => pickProvider(p)} className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary">
-              <span className="text-[12px] font-medium text-foreground">{p.title}</span>
-              <span className="block max-w-full truncate text-[10.5px] text-muted-foreground">{p.description}</span>
-            </button>
-          ))}
+          {providerMenu.map((p) => {
+            // Grey out providers whose data isn't attachable right now, so a
+            // pick never fails silently.
+            const snap = api!.getSnapshot();
+            const available =
+              p.needsArg !== null ||
+              (p.id === "query"
+                ? snap.editorSql.trim().length > 0
+                : p.id === "results"
+                  ? snap.lastResult !== null
+                  : p.id === "history"
+                    ? snap.history.length > 0
+                    : true);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                disabled={!available}
+                onClick={() => pickProvider(p)}
+                className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+              >
+                <span className="text-[12px] font-medium text-foreground">
+                  {p.title}
+                  {!available ? <span className="ml-1.5 font-normal text-muted-foreground">nothing to attach</span> : null}
+                </span>
+                <span className="block max-w-full truncate text-[10.5px] text-muted-foreground">{p.description}</span>
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="py-1">
@@ -460,7 +511,7 @@ export function ExaThread({
   messages: ExaMessage[];
   busy: boolean;
   /** Send plain text (registry composer submit, suggestions, edits). */
-  onSendText: (text: string) => void;
+  onSendText: (text: string, quote?: string) => void;
   onCancel: () => void;
   /** Apply a reply's SQL block into the workbench editor. */
   onApplySql?: (sql: string) => void;
@@ -493,7 +544,10 @@ export function ExaThread({
     convertMessage: toThreadMessage,
     onNew: async (m: AppendMessage) => {
       const text = m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("");
-      if (text.trim()) sendRef.current(text);
+      // The composer's quote (SelectionToolbar → setQuote) rides on
+      // metadata.custom.quote — same place MessagePrimitive.Quote reads it.
+      const quote = (m.metadata?.custom as { quote?: { text?: string } } | undefined)?.quote?.text;
+      if (text.trim() || quote) sendRef.current(text, quote);
     },
     onCancel: async () => onCancel(),
   });
