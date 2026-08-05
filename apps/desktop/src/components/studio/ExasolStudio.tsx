@@ -28,6 +28,7 @@ import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
+import { AgentMark } from "@/components/studio/AgentMark";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
@@ -1195,7 +1196,11 @@ export function ExasolStudio({
             "opacity-70 before:absolute before:inset-y-1 before:-left-px before:z-10 before:w-0.5 before:rounded-full before:bg-primary",
         )}
       >
-        <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        {tab.view === "exaEngine" ? (
+          <AgentMark className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        )}
         {isEditing ? (
           <input
             autoFocus
@@ -1662,7 +1667,7 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-exa-${Date.now()}-${tabCounter.current}`,
-      title: "Exa (beta)",
+      title: "Exa",
       view: "exaEngine",
       sql: "",
       response: null,
@@ -2840,10 +2845,14 @@ export function ExasolStudio({
               </>
             ) : (
               <span className="flex items-center gap-1.5 px-1 text-[12px] font-medium text-foreground">
-                {(() => {
-                  const TabIcon = TAB_ICON[activeTab.view];
-                  return <Icon name={TabIcon} className="h-3.5 w-3.5 text-primary" />;
-                })()}
+                {activeTab.view === "exaEngine" ? (
+                  <AgentMark className="h-3.5 w-3.5" />
+                ) : (
+                  (() => {
+                    const TabIcon = TAB_ICON[activeTab.view];
+                    return <Icon name={TabIcon} className="h-3.5 w-3.5 text-primary" />;
+                  })()
+                )}
                 {activeTab.title}
               </span>
             )}

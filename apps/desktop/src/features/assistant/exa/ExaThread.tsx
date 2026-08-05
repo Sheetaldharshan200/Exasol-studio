@@ -14,7 +14,6 @@ import {
   History as HistoryIcon,
   MessageSquare,
   NotebookPen,
-  PanelLeft as PanelLeftIcon,
   Pencil as PencilIcon,
   Plus as PlusIcon,
   Search,
@@ -605,7 +604,6 @@ export function ExaThread({
   // Inline rename state for the sidebar rows (pencil → input, Enter/Esc).
   const [editingId, setEditingId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
-  const title = sessions.find((s) => s.id === activeSessionId)?.title ?? "New Chat";
   const groups = groupSessions(sessions, Date.now());
 
   const commitRename = () => {
@@ -767,41 +765,31 @@ export function ExaThread({
               </>
             ) : null}
 
-            {/* ── Main column: header + thread ── */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <header className="flex h-12 shrink-0 items-center gap-2 px-3">
-                {/* Wide containers get the sidebar toggle; the narrow dock
-                    gets a History button (the list opens as an overlay). */}
-                <button
-                  type="button"
-                  title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                  onClick={() => setSidebarOpen((o) => !o)}
-                  className="hover:bg-muted hidden size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground @3xl:flex"
-                >
-                  <PanelLeftIcon className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  title="Chat history"
-                  onClick={() => setSidebarOpen((o) => !o)}
-                  className="hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground @3xl:hidden"
-                >
-                  <HistoryIcon className="size-4" />
-                </button>
-                <span className="min-w-0 truncate text-sm font-medium">{title}</span>
-                <div className="ml-auto flex items-center gap-1">
+            {/* ── Main column: headerless — a floating cluster carries the
+                controls; the workbench tab already names the surface. ── */}
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="pointer-events-none absolute right-2 top-1.5 z-10">
+                <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-border/40 bg-background/70 px-1 py-0.5 backdrop-blur-sm">
+                  <button
+                    type="button"
+                    title={sidebarOpen ? "Hide history" : "Chat history"}
+                    onClick={() => setSidebarOpen((o) => !o)}
+                    className="hover:bg-muted flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    <HistoryIcon className="size-4" />
+                  </button>
                   <button
                     type="button"
                     title="Export conversation as Markdown"
                     onClick={onShare}
                     disabled={messages.length === 0}
-                    className="hover:bg-muted flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    className="hover:bg-muted flex size-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground disabled:opacity-40"
                   >
                     <ShareIcon className="size-4" />
                   </button>
                   {headerActions}
                 </div>
-              </header>
+              </div>
               <div className="min-h-0 flex-1">
                 <Thread components={{ Welcome: ExaWelcome }} />
               </div>
