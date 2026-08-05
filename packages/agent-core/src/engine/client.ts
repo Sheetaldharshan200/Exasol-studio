@@ -8,15 +8,29 @@
  */
 import { mapEngineEvent, type RawEngineEvent, type StudioAgentEvent } from "./bridge-map.ts";
 
+/** One provider from the engine's own catalog (GET /config/providers). */
+export type EngineProvider = {
+  id: string;
+  name: string;
+  /** How it was configured: "env" | "config" | "custom" | "api". */
+  source?: string;
+  models: { id: string; name: string; context?: number }[];
+};
+
 export type EngineClient = {
   createSession(): Promise<string>;
   listSessions(): Promise<{ id: string; title?: string }[]>;
-  prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }): Promise<void>;
+  prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
   respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void>;
+  /** The engine's configured providers + models (its source of truth). */
+  providers(): Promise<{ providers: EngineProvider[]; defaults: Record<string, string> }>;
   /** Subscribe to the server's event stream, mapped to Studio events. */
   subscribe(onEvent: (e: StudioAgentEvent) => void, signal?: AbortSignal): Promise<void>;
 };
+
+type RawModel = { name?: string; limit?: { context?: number } };
+type RawProvider = { id: string; name?: string; source?: string; models?: Record<string, RawModel> };
 
 type RawClient = {
   session: {
@@ -25,6 +39,7 @@ type RawClient = {
     prompt(o: unknown): Promise<unknown>;
     abort(o: unknown): Promise<unknown>;
   };
+  config: { providers(): Promise<{ data?: { providers?: RawProvider[]; default?: Record<string, string> } }> };
   event: { subscribe(): Promise<{ stream: AsyncIterable<RawEngineEvent> }> };
   postSessionIdPermissionsPermissionId(o: unknown): Promise<unknown>;
 };
@@ -47,11 +62,21 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
       const r = await c.session.list();
       return (r?.data ?? []).map((s) => ({ id: s.id, title: s.title }));
     },
-    async prompt(sessionId, text, model) {
+    async prompt(sessionId, text, model, agentName) {
       await c.session.prompt({
         path: { id: sessionId },
-        body: { parts: [{ type: "text", text }], ...(model ? { model } : {}) },
+        body: { parts: [{ type: "text", text }], ...(model ? { model } : {}), ...(agentName ? { agent: agentName } : {}) },
       });
+    },
+    async providers() {
+      const r = await c.config.providers();
+      const providers = (r?.data?.providers ?? []).map((p) => ({
+        id: p.id,
+        name: p.name ?? p.id,
+        source: p.source,
+        models: Object.entries(p.models ?? {}).map(([id, m]) => ({ id, name: m?.name ?? id, context: m?.limit?.context })),
+      }));
+      return { providers, defaults: r?.data?.default ?? {} };
     },
     async abort(sessionId) {
       await c.session.abort({ path: { id: sessionId } });

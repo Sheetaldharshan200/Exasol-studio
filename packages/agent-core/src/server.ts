@@ -63,6 +63,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "GET" && parts[2] === "status") {
           return json(res, 200, { ...(await engine.status()), provisioned: engine.provisioned });
         }
+        // GET /v1/engine/providers — the engine's own provider/model catalog
+        if (req.method === "GET" && parts[2] === "providers") {
+          return json(res, 200, await engine.providers());
+        }
         // GET /v1/engine/sessions | POST to create
         if (parts[2] === "sessions" && !parts[3]) {
           if (req.method === "GET") return json(res, 200, { sessions: await engine.listSessions() });
@@ -75,8 +79,8 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
           const sid = decodeURIComponent(parts[3]);
           if (parts[4] === "prompt") {
-            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string } }>(req);
-            const ok = await engine.prompt(sid, b.text ?? "", b.model);
+            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string }; agent?: string }>(req);
+            const ok = await engine.prompt(sid, b.text ?? "", b.model, b.agent);
             return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
           }
           if (parts[4] === "abort") {

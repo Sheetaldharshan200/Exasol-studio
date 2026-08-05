@@ -99,11 +99,17 @@ export class EngineService {
     return c ? c.createSession() : null;
   }
 
-  async prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }): Promise<boolean> {
+  async prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<boolean> {
     const c = await this.ensureClient();
     if (!c) return false;
-    await c.prompt(sessionId, text, model);
+    await c.prompt(sessionId, text, model, agentName);
     return true;
+  }
+
+  /** The engine's own provider/model catalog; empty when not installed. */
+  async providers(): Promise<{ providers: import("./client.ts").EngineProvider[]; defaults: Record<string, string> }> {
+    const c = await this.ensureClient();
+    return c ? c.providers() : { providers: [], defaults: {} };
   }
 
   async abort(sessionId: string): Promise<void> {

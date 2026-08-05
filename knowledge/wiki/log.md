@@ -43,3 +43,12 @@ relaunch() -> plugin:process|restart -> needs process:allow-restart (not allow-r
 Local setup loader trimmed to Personal-local/ExaPump/MCP; verified-download got retry+backoff (retryable_status).
 graphify re-indexed: 9968 nodes / 20583 edges.
 
+
+## [2026-08-04] review | Exa continue.dev-style panel — Codex findings fixed (chip dedup, prompt-injection, stale-tab Apply)
+Rebuilt features/assistant/ExaEnginePanel.tsx into continue.dev grammar: exa/ChatComposer (mode pill + inline ModelMenu + @-context + send), exa/context.ts (pure @-providers: query/results/table/schema/connection/history, 22 node:test cases), exa/ChatMarkdown (shiki/streamdown + Apply-to-editor on SQL blocks).
+Codex review of 48eba47 raised 3 valid findings, all fixed in 494b48a:
+1. context.ts chip id preserved identifier casing while table/schema lookup is case-insensitive -> SALES.ORDERS vs sales.orders bypassed addChip dedup. Fix: case-fold id (.toUpperCase()), keep human label.
+2. buildPrompt interpolated editor SQL / result data unescaped -> a literal </context> inside a chip body prematurely closed the wrapper. Fix: replace /<\/(context)>/gi with entity form before wrapping.
+3. ExasolStudio applySqlToEditor was useCallback([activeTab]) but patchTab/openSqlTab close over connKey -> with the shared WELCOME_TAB across empty buckets, Apply could target a stale connection's tabs. Fix: make it a plain (non-memoized) function so connKey is read at call time.
+DB context reaches the panel via getExaSnapshot() (schema/schemas/sqlCatalogRef/editorSql/lastResult/history) passed to both mount sites (side dock + full tab).
+

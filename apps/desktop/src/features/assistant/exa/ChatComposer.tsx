@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AtSign, Bot, MessageSquare, Search, Send, Square, X } from "lucide-react";
+import { AtSign, Bot, MessageSquare, NotebookPen, Search, Send, SlashSquare, Square, X } from "lucide-react";
 import type { AgentProviderInfo } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
 import { ModelMenu, type PickedModel } from "./ModelMenu";
 import {
-  CONTEXT_PROVIDERS,
   filterProviders,
   resolveContext,
   schemaArguments,
@@ -14,16 +13,29 @@ import {
   type ContextProviderId,
   type ExaSnapshot,
 } from "./context";
+import { expandCommand, filterCommands, parseSlash, type SlashCommand, type SlashCommandId } from "./commands";
 
-export type ChatMode = "agent" | "ask";
+/** Chat = no tools · Plan = read-only tools · Agent = all tools (continue.dev's modes). */
+export type ChatMode = "chat" | "plan" | "agent";
+
+const MODES: { id: ChatMode; label: string; icon: typeof Bot; hint: string }[] = [
+  { id: "agent", label: "Agent", icon: Bot, hint: "Agent — Exa can use all tools" },
+  { id: "plan", label: "Plan", icon: NotebookPen, hint: "Plan — read-only tools, propose before changing" },
+  { id: "chat", label: "Chat", icon: MessageSquare, hint: "Chat — conversation only, no tools" },
+];
+
+/** What a submit hands the panel: display text, engine prompt text, context. */
+export type ComposerSubmission = { shown: string; engine: string; chips: ContextChip[]; mode: ChatMode };
 
 /**
  * The Exa composer — continue.dev's input grammar on Studio components: a
  * rounded, focus-ringed surface with context chips on top, the textarea, and a
- * bottom toolbar (mode pill · inline model selector · @ context · send). Typing
- * `@` opens the context-provider menu; providers that need a schema/table open
- * a second searchable list. Resolved context becomes a chip and is injected
- * into the prompt by the caller via `buildPrompt`.
+ * bottom toolbar (mode pill · inline model selector · @ context · send).
+ *
+ * `@` opens the context-provider menu (schema/table pickers included); `/` at
+ * the start opens the slash-command menu. Prompt-kind commands expand into an
+ * engine prompt with auto-attached context; local commands (/clear, /share)
+ * bubble up via `onLocalCommand`.
  */
 export function ChatComposer({
   providers,
@@ -34,6 +46,7 @@ export function ChatComposer({
   busy,
   onSend,
   onStop,
+  onLocalCommand,
 }: {
   providers: AgentProviderInfo[];
   model: PickedModel | null;
@@ -41,8 +54,9 @@ export function ChatComposer({
   onSaveKey: (providerId: string, key: string) => Promise<void>;
   getSnapshot: () => ExaSnapshot;
   busy: boolean;
-  onSend: (text: string, chips: ContextChip[], mode: ChatMode) => void;
+  onSend: (s: ComposerSubmission) => void;
   onStop: () => void;
+  onLocalCommand: (id: Extract<SlashCommandId, "clear" | "share">) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [chips, setChips] = useState<ContextChip[]>([]);
@@ -54,17 +68,31 @@ export function ChatComposer({
   const [hover, setHover] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // A trailing `@token` in the draft opens the provider menu, filtered live.
-  const trigger = useMemo(() => {
+  // A trailing `@token` opens the provider menu; a leading `/token` (no space
+  // yet) opens the command menu. They are mutually exclusive by construction.
+  const atTrigger = useMemo(() => {
     const m = /(?:^|\s)@([\w]*)$/.exec(draft);
     return m ? { query: m[1] } : null;
   }, [draft]);
-  const providerMenu = trigger && !argFor ? filterProviders(trigger.query) : [];
-  const menuOpen = (!!trigger && !argFor && providerMenu.length > 0) || !!argFor;
+  const slashTrigger = useMemo(() => {
+    const m = /^\/([\w-]*)$/.exec(draft);
+    return m ? { query: m[1] } : null;
+  }, [draft]);
 
-  useEffect(() => setHover(0), [trigger?.query, argFor]);
+  const providerMenu = atTrigger && !argFor ? filterProviders(atTrigger.query) : [];
+  const commandMenu = slashTrigger ? filterCommands(slashTrigger.query) : [];
+  const listMenu: { kind: "provider" | "command"; length: number } | null = argFor
+    ? null
+    : providerMenu.length > 0
+      ? { kind: "provider", length: providerMenu.length }
+      : commandMenu.length > 0
+        ? { kind: "command", length: commandMenu.length }
+        : null;
+  const menuOpen = !!listMenu || !!argFor;
 
-  function stripTrigger() {
+  useEffect(() => setHover(0), [atTrigger?.query, slashTrigger?.query, argFor]);
+
+  function stripAtTrigger() {
     setDraft((d) => d.replace(/(?:^|\s)@[\w]*$/, (m) => (m.startsWith("@") ? "" : m[0])));
   }
 
@@ -79,14 +107,26 @@ export function ChatComposer({
       return;
     }
     addChip(resolveContext(p.id, null, getSnapshot()));
-    stripTrigger();
+    stripAtTrigger();
     taRef.current?.focus();
   }
 
   function pickArg(value: string) {
     if (argFor) addChip(resolveContext(argFor.id, value, getSnapshot()));
     setArgFor(null);
-    stripTrigger();
+    stripAtTrigger();
+    taRef.current?.focus();
+  }
+
+  function pickCommand(c: SlashCommand) {
+    // Insert `/name ` so the user can type the argument, then Enter submits.
+    // Local no-arg commands run immediately — nothing to type.
+    if (c.kind === "local") {
+      setDraft("");
+      onLocalCommand(c.id as "clear" | "share");
+      return;
+    }
+    setDraft(`/${c.title} `);
     taRef.current?.focus();
   }
 
@@ -101,18 +141,46 @@ export function ChatComposer({
   function submit() {
     const text = draft.trim();
     if (!text || busy) return;
-    onSend(text, chips, mode);
+    const slash = parseSlash(text);
+    if (slash?.command.kind === "local") {
+      setDraft("");
+      onLocalCommand(slash.command.id as "clear" | "share");
+      return;
+    }
+    let engine = text;
+    let allChips = chips;
+    if (slash) {
+      // Expand the command and auto-attach its context (skipping providers
+      // whose data isn't available), deduped against manual chips.
+      const snap = getSnapshot();
+      const e = expandCommand(slash.command.id, slash.arg, snap);
+      engine = e.text;
+      const auto = e.providerIds
+        .map((id: ContextProviderId) => resolveContext(id, null, snap))
+        .filter((c): c is ContextChip => c !== null);
+      allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
+    }
+    onSend({ shown: text, engine, chips: allChips, mode });
     setDraft("");
     setChips([]);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (menuOpen && !argFor) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setHover((h) => (h + 1) % providerMenu.length); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setHover((h) => (h - 1 + providerMenu.length) % providerMenu.length); return; }
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickProvider(providerMenu[hover]); return; }
-      if (e.key === "Escape") { e.preventDefault(); stripTrigger(); return; }
+    if (listMenu) {
+      const pick = () => (listMenu.kind === "provider" ? pickProvider(providerMenu[hover]) : pickCommand(commandMenu[hover]));
+      if (e.key === "ArrowDown") { e.preventDefault(); setHover((h) => (h + 1) % listMenu.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setHover((h) => (h - 1 + listMenu.length) % listMenu.length); return; }
+      if (e.key === "Tab") { e.preventDefault(); pick(); return; }
+      if (e.key === "Enter") {
+        // Enter on a command with an argument hint picks it (to type the arg);
+        // Enter on a provider attaches it. Plain `/explain` + Enter submits.
+        e.preventDefault();
+        pick();
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); if (listMenu.kind === "provider") stripAtTrigger(); else setDraft(""); return; }
     }
+    if (e.key === "Escape" && argFor) { e.preventDefault(); setArgFor(null); return; }
     if (e.key === "Enter" && !e.shiftKey && !menuOpen) {
       e.preventDefault();
       submit();
@@ -123,6 +191,9 @@ export function ChatComposer({
     setDraft((d) => (d.endsWith("@") ? d : d + (d && !d.endsWith(" ") ? " @" : "@")));
     taRef.current?.focus();
   }
+
+  const modeInfo = MODES.find((m) => m.id === mode)!;
+  const ModeIcon = modeInfo.icon;
 
   return (
     <div className="shrink-0 px-2 pb-2">
@@ -142,7 +213,7 @@ export function ChatComposer({
       ) : null}
 
       <div className={cn("relative rounded-xl border bg-editor transition-colors", focused ? "border-primary/60 ring-1 ring-primary/30" : "border-border")}>
-        {/* @ provider menu / argument submenu, anchored above the input. */}
+        {/* @ provider / argument / slash-command menu, anchored above the input. */}
         {menuOpen ? (
           <div className="absolute bottom-full left-0 z-50 mb-1.5 max-h-[300px] w-[320px] overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
             {argFor ? (
@@ -168,7 +239,7 @@ export function ChatComposer({
                   )}
                 </div>
               </>
-            ) : (
+            ) : listMenu?.kind === "provider" ? (
               <div className="py-1">
                 {providerMenu.map((p, i) => (
                   <button
@@ -186,6 +257,27 @@ export function ChatComposer({
                   </button>
                 ))}
               </div>
+            ) : (
+              <div className="py-1">
+                {commandMenu.map((c, i) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseEnter={() => setHover(i)}
+                    onClick={() => pickCommand(c)}
+                    className={cn("flex w-full items-start gap-2 px-3 py-1.5 text-left", i === hover ? "bg-secondary" : "")}
+                  >
+                    <SlashSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12px] font-medium text-foreground">
+                        /{c.title}
+                        {c.hint ? <span className="ml-1.5 font-normal text-muted-foreground">{c.hint}</span> : null}
+                      </span>
+                      <span className="block truncate text-[10.5px] text-muted-foreground">{c.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         ) : null}
@@ -198,7 +290,7 @@ export function ChatComposer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           rows={2}
-          placeholder="Ask Exa about your database…  (@ for context, Enter to send)"
+          placeholder="Ask Exa about your database…  (@ context, / commands, Enter to send)"
           className="max-h-40 min-h-[44px] w-full resize-none bg-transparent px-3 pt-2.5 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground"
         />
 
@@ -206,12 +298,12 @@ export function ChatComposer({
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
           <button
             type="button"
-            onClick={() => setMode((m) => (m === "agent" ? "ask" : "agent"))}
-            title={mode === "agent" ? "Agent — Exa can use tools" : "Ask — chat only, no tools"}
+            onClick={() => setMode((m) => MODES[(MODES.findIndex((x) => x.id === m) + 1) % MODES.length].id)}
+            title={`${modeInfo.hint} — click to switch`}
             className="flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
-            {mode === "agent" ? <Bot className="h-3.5 w-3.5 text-primary" /> : <MessageSquare className="h-3.5 w-3.5" />}
-            {mode === "agent" ? "Agent" : "Ask"}
+            <ModeIcon className={cn("h-3.5 w-3.5", mode === "agent" ? "text-primary" : "")} />
+            {modeInfo.label}
           </button>
           <span className="text-border">|</span>
           <ModelMenu providers={providers} model={model} onPick={onPickModel} onSaveKey={onSaveKey} />
@@ -235,6 +327,4 @@ export function ChatComposer({
   );
 }
 
-// Re-export so the panel can list provider ids for its empty-state hints.
-export { CONTEXT_PROVIDERS };
 export type { ContextChip, ContextProviderId };

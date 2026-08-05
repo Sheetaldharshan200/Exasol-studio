@@ -264,8 +264,10 @@ export const agent = {
     status: (): Promise<EngineStatus> => api("/engine/status"),
     sessions: (): Promise<{ sessions: { id: string; title?: string }[] }> => api("/engine/sessions"),
     createSession: (): Promise<{ id: string }> => api("/engine/sessions", "POST"),
-    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }): Promise<{ ok: boolean }> =>
-      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model }),
+    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName }),
+    /** The engine's own provider/model catalog (GET /config/providers). */
+    providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
     abort: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/abort`, "POST"),
     respondPermission: (id: string, permissionId: string, approve: boolean): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/permission`, "POST", { permissionId, approve }),
@@ -276,6 +278,15 @@ export const agent = {
       return unlisten;
     },
   },
+};
+
+/** One provider from the engine's own catalog (/v1/engine/providers). */
+export type EngineProviderInfo = {
+  id: string;
+  name: string;
+  /** How it was configured: "env" | "config" | "custom" | "api". */
+  source?: string;
+  models: { id: string; name: string; context?: number }[];
 };
 
 /** Engine install/run status (from /v1/engine/status). */

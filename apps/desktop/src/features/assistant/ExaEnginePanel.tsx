@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, Terminal, Wrench, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Plus, Terminal, Wrench, X } from "lucide-react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { ChatMarkdown } from "./exa/ChatMarkdown";
-import { ChatComposer, type ChatMode, type ContextChip } from "./exa/ChatComposer";
+import { ChatComposer, type ChatMode, type ComposerSubmission } from "./exa/ChatComposer";
+import { transcriptMarkdown } from "./exa/commands";
 import { buildPrompt, type ExaSnapshot } from "./exa/context";
 import type { PickedModel } from "./exa/ModelMenu";
 
@@ -74,7 +76,26 @@ export function ExaEnginePanel({
   const loadModels = useCallback(() => {
     return agent
       .models()
-      .then(({ providers: ps, defaultModel }) => {
+      .then(async ({ providers: ps, defaultModel }) => {
+        // Merge in the ENGINE's own provider catalog (GET /config/providers):
+        // anything opencode has configured that Studio's ranked list doesn't
+        // already cover appears as an extra, already-configured section.
+        try {
+          const eng = await agent.engine.providers();
+          const known = new Set(ps.map((p) => p.id));
+          for (const ep of eng.providers) {
+            if (known.has(ep.id) || ep.models.length === 0) continue;
+            ps = [...ps, {
+              id: ep.id,
+              name: `${ep.name} (engine)`,
+              kind: "cloud",
+              configured: true,
+              models: ep.models.map((m) => ({ id: m.id, name: m.name, context: m.context })),
+            }];
+          }
+        } catch {
+          /* engine absent/stopped — Studio's own list is enough */
+        }
         setProviders(ps);
         setModel((cur) => {
           if (cur) return cur;
@@ -153,10 +174,22 @@ export function ExaEnginePanel({
     }
   }
 
-  async function send(text: string, chips: ContextChip[], mode: ChatMode) {
+  // Modes — continue.dev's Chat/Plan/Agent mapped to the engine's NATIVE
+  // agents: Agent → opencode "build" (all tools), Plan → opencode "plan"
+  // (mutations gated behind ask). Chat has no tool-less built-in agent, so it
+  // rides "plan" plus a no-tools directive — worst case a tool call still
+  // needs explicit approval.
+  const MODE_TO_AGENT: Record<ChatMode, string> = { agent: "build", plan: "plan", chat: "plan" };
+  const MODE_DIRECTIVE: Record<ChatMode, string> = {
+    chat: "Answer as a chat assistant. Do not run tools.",
+    plan: "Only inspect (SELECT queries, schema reads). Never modify data or schema. Propose a plan and the exact SQL for the user to approve.",
+    agent: "",
+  };
+
+  async function send({ shown, engine, chips, mode }: ComposerSubmission) {
     if (busy) return;
-    const shown = text;
-    const prompt = buildPrompt(mode === "ask" ? `Answer as a chat assistant without running tools.\n\n${text}` : text, chips);
+    const directive = MODE_DIRECTIVE[mode];
+    const prompt = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, chips);
     setMessages((m) => [...m, { role: "user", text: shown }]);
     setTools([]);
     setBusy(true);
@@ -173,7 +206,7 @@ export function ExaEnginePanel({
         sid = created.id;
         setSessionId(sid);
       }
-      const r = await agent.engine.prompt(sid, prompt, model ? { providerID: model.providerID, modelID: model.modelID } : undefined);
+      const r = await agent.engine.prompt(sid, prompt, model ? { providerID: model.providerID, modelID: model.modelID } : undefined, MODE_TO_AGENT[mode]);
       if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
     } catch (e) {
       fail(e instanceof Error ? e.message : "Engine request failed.");
@@ -183,6 +216,25 @@ export function ExaEnginePanel({
   async function stop() {
     if (sessionId) await agent.engine.abort(sessionId).catch(() => undefined);
     setBusy(false);
+  }
+
+  /** /clear and the header + button: drop the session, start fresh. */
+  function newChat() {
+    if (busy) void stop();
+    setSessionId(null);
+    setMessages([]);
+    setTools([]);
+  }
+
+  /** /share: export the conversation as a Markdown file. */
+  async function shareChat() {
+    if (messages.length === 0) return;
+    try {
+      const path = await saveDialog({ defaultPath: "exa-conversation.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
+      if (path) await ipc.writeTextFile(path, transcriptMarkdown(messages));
+    } catch {
+      /* user cancelled */
+    }
   }
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -235,6 +287,9 @@ export function ExaEnginePanel({
           <span className={cn("h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-primary" : "bg-muted-foreground/50")} />
           {status.state}
         </span>
+        <button onClick={newChat} title="New chat (/clear)" className={iconBtn}>
+          <Plus className="h-3.5 w-3.5" />
+        </button>
         {onExpand ? (
           <button onClick={onExpand} title="Expand to full screen" className={iconBtn}>
             <Maximize2 className="h-3.5 w-3.5" />
@@ -296,8 +351,9 @@ export function ExaEnginePanel({
         onSaveKey={saveKey}
         getSnapshot={getSnapshot ?? (() => EMPTY_SNAPSHOT)}
         busy={busy}
-        onSend={(text, chips, mode) => void send(text, chips, mode)}
+        onSend={(s) => void send(s)}
         onStop={() => void stop()}
+        onLocalCommand={(id) => (id === "clear" ? newChat() : void shareChat())}
       />
     </div>
   );
