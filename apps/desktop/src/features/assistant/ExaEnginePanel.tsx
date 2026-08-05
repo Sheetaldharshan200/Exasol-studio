@@ -6,10 +6,9 @@ import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } fr
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { ChatComposer, type ChatMode, type ComposerSubmission } from "./exa/ChatComposer";
 import { expandCommand, parseSlash, transcriptMarkdown } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
-import { ExaThread, messageText, type ExaMessage } from "./exa/ExaThread";
+import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ModelMenu";
 
 /**
@@ -59,6 +58,10 @@ export function ExaEnginePanel({
   const [cliBusy, setCliBusy] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<PickedModel | null>(null);
+  // Composer state now lives here — the registry composer inside ExaThread
+  // reads/writes it through the ExaComposerContext api object below.
+  const [mode, setMode] = useState<ChatMode>("agent");
+  const [chips, setChips] = useState<ContextChip[]>([]);
   const disposer = useRef<(() => void) | null>(null);
   // The live session id, readable from the long-lived stream callback (state
   // there would be a stale closure). Kept in sync with setSessionId below.
@@ -219,7 +222,7 @@ export function ExaEnginePanel({
     agent: "",
   };
 
-  async function send({ shown, engine, chips, mode }: ComposerSubmission) {
+  async function send({ shown, engine, chips, mode }: { shown: string; engine: string; chips: ContextChip[]; mode: ChatMode }) {
     if (busy) return;
     const directive = MODE_DIRECTIVE[mode];
     const prompt = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, chips);
@@ -277,7 +280,7 @@ export function ExaEnginePanel({
     }
   }
 
-  /** Suggestion pills & edited messages re-enter the composer's grammar. */
+  /** Every submit path (registry composer, suggestions, edits) lands here. */
   function sendText(text: string) {
     const slash = parseSlash(text);
     if (slash?.command.kind === "local") {
@@ -286,14 +289,16 @@ export function ExaEnginePanel({
       return;
     }
     let engine = text;
-    let chips: ContextChip[] = [];
+    let allChips = chips; // manual @-context chips from the composer
     if (slash) {
       const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
       const e = expandCommand(slash.command.id, slash.arg, snap);
       engine = e.text;
-      chips = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
+      const auto = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
+      allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
     }
-    void send({ shown: text, engine, chips, mode: "agent" });
+    setChips([]);
+    void send({ shown: text, engine, chips: allChips, mode });
   }
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -366,18 +371,26 @@ export function ExaEnginePanel({
         ) : null}
       </div>
 
-      <ExaThread messages={messages} busy={busy} onApplySql={onApplySql} onSendText={sendText} onCancel={() => void stop()} />
-
-      <ChatComposer
-        providers={providers}
-        model={model}
-        onPickModel={setModel}
-        onSaveKey={saveKey}
-        getSnapshot={getSnapshot ?? (() => EMPTY_SNAPSHOT)}
+      <ExaThread
+        messages={messages}
         busy={busy}
-        onSend={(s) => void send(s)}
-        onStop={() => void stop()}
-        onLocalCommand={(id) => (id === "clear" ? newChat() : void shareChat())}
+        onSendText={sendText}
+        onCancel={() => void stop()}
+        onApplySql={onApplySql}
+        composerApi={{
+          providers,
+          model,
+          onPickModel: setModel,
+          onSaveKey: saveKey,
+          getSnapshot: getSnapshot ?? (() => EMPTY_SNAPSHOT),
+          mode,
+          setMode,
+          chips,
+          addChip: (c) => {
+            if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
+          },
+          removeChip: (id) => setChips((cs) => cs.filter((x) => x.id !== id)),
+        }}
       />
     </div>
   );

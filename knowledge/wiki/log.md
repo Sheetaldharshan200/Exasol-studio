@@ -52,3 +52,10 @@ Codex review of 48eba47 raised 3 valid findings, all fixed in 494b48a:
 3. ExasolStudio applySqlToEditor was useCallback([activeTab]) but patchTab/openSqlTab close over connKey -> with the shared WELCOME_TAB across empty buckets, Apply could target a stale connection's tabs. Fix: make it a plain (non-memoized) function so connKey is read at call time.
 DB context reaches the panel via getExaSnapshot() (schema/schemas/sqlCatalogRef/editorSql/lastResult/history) passed to both mount sites (side dock + full tab).
 
+
+## [2026-08-05] review | Exa assistant-ui thread — Codex findings fixed + demo-grade restyle (8482e21)
+Adopted @assistant-ui/react 0.15.4 external-store runtime for the Exa thread (exa/ExaThread.tsx); parts-based message model in ExaEnginePanel.
+Codex findings fixed: (1) tool.result cloned every message/part -> now touches only the owning message so assistant-ui's converted-message cache stays warm; (2) partComponents keyed on onApplySql identity remounted all assistant messages -> component types created once, handlers behind refs; (3) messageText dropped tool parts and joined text without separator -> tool parts serialize as '> tool: name' lines.
+Gotcha: MessagePrimitive.Error takes no className in 0.15.4. Gotcha: assistant-ui's global SpeechRecognition augmentations collide with local declare-global blocks (fixed in ai-elements/prompt-input.tsx by casting at construction).
+Styling grammar: centered max-w-[44rem] column, avatar chip + hover ActionBar (Copy works via ActionBarPrimitive.Copy data-copied), BranchPicker hidden when single branch, suggestion cards on empty state.
+

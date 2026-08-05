@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* Shimmer utility used by the assistant-ui thread components (reasoning/tool). */
+@import "tw-shimmer";
 @import "@fontsource-variable/figtree";
 @import "@fontsource-variable/inter";
 @import "@fontsource/jetbrains-mono/400.css";
