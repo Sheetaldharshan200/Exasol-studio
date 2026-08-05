@@ -71,6 +71,8 @@ export type EngineClient = {
   setAuthKey(providerId: string, key: string): Promise<void>;
   /** Provider ids the engine considers connected (GET /provider). */
   connectedProviders(): Promise<string[]>;
+  /** Remove a provider's credential (DELETE /auth/:id). */
+  removeAuth(providerId: string): Promise<void>;
   /** Reset instance state so new credentials take effect (no restart). */
   dispose(): Promise<void>;
   /** MCP servers: status map, add one, and connect/disconnect by name. */
@@ -167,6 +169,9 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     async connectedProviders() {
       const r = await http<{ connected?: string[] }>("/provider");
       return r?.connected ?? [];
+    },
+    async removeAuth(providerId) {
+      await http(`/auth/${encodeURIComponent(providerId)}`, { method: "DELETE" });
     },
     async dispose() {
       await http("/instance/dispose", { method: "POST" });

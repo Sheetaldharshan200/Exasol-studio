@@ -82,6 +82,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           const ok = await engine.setProviderAuth(b.providerId, b.key);
           return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
         }
+        // DELETE /v1/engine/auth/:providerId — disconnect a provider
+        if (req.method === "DELETE" && parts[2] === "auth" && parts[3]) {
+          try {
+            const ok = await engine.removeProviderAuth(decodeURIComponent(parts[3]));
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "disconnect failed" });
+          }
+        }
         // GET /v1/engine/auth-methods — per-provider connect-flow spec
         if (req.method === "GET" && parts[2] === "auth-methods") {
           return json(res, 200, { methods: await engine.authMethods() });

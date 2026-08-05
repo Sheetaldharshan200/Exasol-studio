@@ -184,6 +184,15 @@ export class EngineService {
     return true;
   }
 
+  /** Remove a provider's credential and hot-reload; false when absent. */
+  async removeProviderAuth(providerId: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.removeAuth(providerId);
+    await c.dispose().catch(() => undefined);
+    return true;
+  }
+
   /** Provider ids the engine considers connected; empty when absent. */
   async connectedProviders(): Promise<string[]> {
     const c = await this.ensureClient();

@@ -275,6 +275,8 @@ export const agent = {
     catalog: (): Promise<{ providers: EngineCatalogProvider[] }> => api("/engine/catalog"),
     /** Save a provider API key into the engine's own auth store. */
     setAuth: (providerId: string, key: string): Promise<{ ok: boolean }> => api("/engine/auth", "POST", { providerId, key }),
+    /** Remove a provider's credential from the engine (disconnect). */
+    removeAuth: (providerId: string): Promise<{ ok: boolean }> => api(`/engine/auth/${encodeURIComponent(providerId)}`, "DELETE"),
     /** Per-provider auth methods — opencode's connect-flow spec. */
     authMethods: (): Promise<{ methods: Record<string, EngineAuthMethod[]> }> => api("/engine/auth-methods"),
     /** Provider ids with working credentials (verifies a saved key took). */

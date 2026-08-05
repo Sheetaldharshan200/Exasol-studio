@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, Unplug, X } from "lucide-react";
 import { agent, type AgentProviderInfo, type EngineAuthMethod, type EngineCatalogProvider, type EngineOAuthAuthorization } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
@@ -56,6 +56,9 @@ export function ExaModelSelector({
   const [catalog, setCatalog] = useState<EngineCatalogProvider[] | "loading" | "error" | null>(null);
   /** A catalog provider being connected (method picker → prompts → auth). */
   const [connecting, setConnecting] = useState<EngineCatalogProvider | null>(null);
+  /** A connected provider being RE-configured via the gear entry. */
+  const [reconfiguring, setReconfiguring] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   // The engine's per-provider auth methods (GET /provider/auth). Providers
   // without an entry get the TUI's synthesized default: a single API-key method.
   const [authMethods, setAuthMethods] = useState<Record<string, EngineAuthMethod[]> | null>(null);
@@ -131,6 +134,7 @@ export function ExaModelSelector({
     }
     resetConnectFlow();
     setConnecting(null);
+    setReconfiguring(null); // a gear-initiated reconnect lands back on models
     // The Exa-side confirmation (the engine's own browser page is transient
     // and carries its own branding we can't change without forking it).
     setKeyVerdict((d) => ({ ...d, [providerId]: "ok" }));
@@ -138,6 +142,22 @@ export function ExaModelSelector({
   }
 
   const needsKey = (p: AgentProviderInfo) => p.kind === "cloud" && p.id !== "in-database" && !p.configured;
+
+  /** Remove the provider's credential from the engine and refresh. */
+  async function disconnectProvider(providerId: string) {
+    setDisconnecting(providerId);
+    try {
+      await agent.engine.removeAuth(providerId).catch(() => undefined);
+      setKeyVerdict((d) => {
+        const next = { ...d };
+        delete next[providerId];
+        return next;
+      });
+      await onConnected?.();
+    } finally {
+      setDisconnecting(null);
+    }
+  }
 
   function fetchCatalog() {
     if (authMethods === null) {
@@ -171,7 +191,10 @@ export function ExaModelSelector({
       const conn = await agent.engine.connected().catch(() => ({ connected: [] as string[] }));
       const ok = conn.connected.includes(providerId);
       setKeyVerdict((d) => ({ ...d, [providerId]: ok ? "ok" : "fail" }));
-      if (ok) setKeyDraft((d) => ({ ...d, [providerId]: "" }));
+      if (ok) {
+        setKeyDraft((d) => ({ ...d, [providerId]: "" }));
+        setReconfiguring((r) => (r === providerId ? null : r));
+      }
     } finally {
       setSavingKey(null);
     }
@@ -362,6 +385,7 @@ export function ExaModelSelector({
           setSearchOpen(false);
           setQuery("");
           setConnecting(null);
+          setReconfiguring(null);
           resetConnectFlow();
         }
       }}
@@ -482,17 +506,49 @@ export function ExaModelSelector({
                           <p className="px-2 py-2 text-[11px] text-muted-foreground">
                             {p.installedOnly ? "Start the server to see its models." : "No models available."}
                           </p>
+                        ) : reconfiguring === p.id ? (
+                          // Gear flow: rerun the full connect flow (new key or
+                          // a different account/sign-in) for this provider.
+                          connectFlow({ id: p.id, name: p.name, env: p.envKey ? [p.envKey] : [], modelCount: 0, popular: false })
                         ) : (
-                          p.models.map((m) => {
-                            const active = model?.providerID === p.id && model?.modelID === m.id;
-                            return (
-                              <DropdownMenuItem key={m.id} onSelect={() => pick(p, m)} className="gap-2">
-                                {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
-                                <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
-                                <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} />
-                              </DropdownMenuItem>
-                            );
-                          })
+                          <>
+                            {p.models.map((m) => {
+                              const active = model?.providerID === p.id && model?.modelID === m.id;
+                              return (
+                                <DropdownMenuItem key={m.id} onSelect={() => pick(p, m)} className="gap-2">
+                                  {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
+                                  <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
+                                  <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} />
+                                </DropdownMenuItem>
+                              );
+                            })}
+                            {p.kind === "cloud" && p.id !== "in-database" ? (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault(); // keep the pane open
+                                    resetConnectFlow();
+                                    setReconfiguring(p.id);
+                                  }}
+                                  className="gap-2 text-muted-foreground"
+                                >
+                                  <Settings2 className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="text-[12px]">Reconfigure — change key or account</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void disconnectProvider(p.id);
+                                  }}
+                                  className="gap-2 text-muted-foreground"
+                                >
+                                  {disconnecting === p.id ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Unplug className="h-3.5 w-3.5 shrink-0" />}
+                                  <span className="text-[12px]">Disconnect</span>
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
+                          </>
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
