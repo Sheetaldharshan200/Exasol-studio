@@ -9,7 +9,7 @@ import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, transcriptMarkdown } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
-import type { PickedModel } from "./exa/ModelMenu";
+import type { PickedModel } from "./exa/ExaModelSelector";
 
 /**
  * Exa engine (v2, opencode) chat panel — the continue.dev interaction grammar

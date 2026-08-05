@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
 import type { AgentProviderInfo } from "@/lib/agent-client";
-import { ModelMenu, type PickedModel } from "./ModelMenu";
+import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
   filterProviders,
   resolveContext,
@@ -156,7 +156,7 @@ function ExaWelcome() {
   return (
     <div className="mx-auto mb-6 flex w-full max-w-(--thread-max-width) flex-col items-center px-4 text-center">
       <AgentMark className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both mb-4 h-10 w-10 duration-200" />
-      <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
+      <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-xl font-semibold duration-200 @md:text-2xl">
         How can I help you today?
       </h1>
       <p className="fade-in slide-in-from-bottom-2 animate-in fill-mode-both mt-1.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground duration-300">
@@ -238,10 +238,10 @@ export function ExaComposerControls() {
         title={`${modeInfo.hint} — click to switch`}
         className="flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
       >
-        <ModeIcon className={cn("h-3.5 w-3.5", api.mode === "agent" ? "text-primary" : "")} />
-        {modeInfo.label}
+        <ModeIcon className="h-3.5 w-3.5" />
+        <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
-      <ModelMenu providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
+      <ExaModelSelector providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
       <button
         type="button"
         title="Add context (@)"

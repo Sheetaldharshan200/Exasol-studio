@@ -2,6 +2,14 @@
 @import "tw-animate-css";
 /* Shimmer utility used by the assistant-ui thread components (reasoning/tool). */
 @import "tw-shimmer";
+
+/* Horizontal chip rows in the Exa thread scroll without a visible scrollbar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
 @import "@fontsource-variable/figtree";
 @import "@fontsource-variable/inter";
 @import "@fontsource/jetbrains-mono/400.css";
