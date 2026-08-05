@@ -9,6 +9,23 @@
 import { mapEngineEvent, type RawEngineEvent, type StudioAgentEvent } from "./bridge-map.ts";
 import { mapReplayMessages, type ReplayMessage } from "./replay-map.ts";
 
+/** One input the user answers before an auth flow (verified v1.18.12 shape). */
+export type AuthPrompt = {
+  type: "text" | "select";
+  key: string;
+  message: string;
+  placeholder?: string;
+  options?: { label: string; value: string; hint?: string }[];
+  /** Conditional visibility, e.g. Enterprise URL only when deploymentType=enterprise. */
+  when?: { key: string; op: "eq" | "neq"; value: string };
+};
+
+/** One auth method a provider supports (e.g. "ChatGPT Pro/Plus (browser)"). */
+export type AuthMethod = { type: "oauth" | "api"; label: string; prompts?: AuthPrompt[] };
+
+/** What POST /provider/:id/oauth/authorize returns. */
+export type OAuthAuthorization = { url: string; method: "auto" | "code"; instructions: string };
+
 /** One provider from the engine's own catalog (GET /config/providers). */
 export type EngineProvider = {
   id: string;
@@ -29,6 +46,9 @@ export type EngineClient = {
   abort(sessionId: string): Promise<void>;
   /** Engine-side session compaction (summarize to reclaim context). */
   summarize(sessionId: string): Promise<void>;
+  /** Undo the last message (session.revert) / redo it (session.unrevert). */
+  revert(sessionId: string): Promise<void>;
+  unrevert(sessionId: string): Promise<void>;
   /** Permanently delete a stored session. */
   deleteSession(sessionId: string): Promise<void>;
   /** Rename a stored session (overrides the auto-generated title). */
@@ -36,6 +56,16 @@ export type EngineClient = {
   respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void>;
   /** The engine's configured providers + models (its source of truth). */
   providers(): Promise<{ providers: EngineProvider[]; defaults: Record<string, string> }>;
+  /** Per-provider auth methods (GET /provider/auth) — the connect flow spec. */
+  authMethods(): Promise<Record<string, AuthMethod[]>>;
+  /** Start an OAuth flow; null for non-oauth methods. `method` is the index. */
+  oauthAuthorize(providerId: string, method: number, inputs?: Record<string, string>): Promise<OAuthAuthorization | null>;
+  /** Complete an OAuth flow — BLOCKS until the server finishes polling. */
+  oauthCallback(providerId: string, method: number, code?: string): Promise<boolean>;
+  /** Save an API key via the engine's own route (PUT /auth/:id). */
+  setAuthKey(providerId: string, key: string): Promise<void>;
+  /** Reset instance state so new credentials take effect (no restart). */
+  dispose(): Promise<void>;
   /** Subscribe to the server's event stream, mapped to Studio events. */
   subscribe(onEvent: (e: StudioAgentEvent) => void, signal?: AbortSignal): Promise<void>;
 };
@@ -66,6 +96,22 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
   };
   const c = sdk.createOpencodeClient({ baseUrl });
 
+  // The auth/provider routes are newer than our narrow SDK typing — call them
+  // directly. Shapes verified against the v1.18.12 source.
+  const http = async <T>(path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<T> => {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: init?.method ?? "GET",
+      headers: { "content-type": "application/json" },
+      body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+      // OAuth callback blocks while the server polls the device flow — allow
+      // several minutes; everything else fails fast.
+      signal: AbortSignal.timeout(init?.timeoutMs ?? 30_000),
+    });
+    if (!res.ok) throw new Error(`engine ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const text = await res.text();
+    return (text ? JSON.parse(text) : null) as T;
+  };
+
   return {
     async createSession() {
       const r = await c.session.create({});
@@ -87,6 +133,29 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
         body: { parts: [{ type: "text", text }], ...(model ? { model } : {}), ...(agentName ? { agent: agentName } : {}) },
       });
     },
+    async authMethods() {
+      return http<Record<string, AuthMethod[]>>("/provider/auth");
+    },
+    async oauthAuthorize(providerId, method, inputs) {
+      return http<OAuthAuthorization | null>(`/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
+        method: "POST",
+        body: { method, ...(inputs && Object.keys(inputs).length ? { inputs } : {}) },
+      });
+    },
+    async oauthCallback(providerId, method, code) {
+      const r = await http<boolean>(`/provider/${encodeURIComponent(providerId)}/oauth/callback`, {
+        method: "POST",
+        body: { method, ...(code ? { code } : {}) },
+        timeoutMs: 5 * 60_000, // the server polls the device flow inline
+      });
+      return r === true;
+    },
+    async setAuthKey(providerId, key) {
+      await http(`/auth/${encodeURIComponent(providerId)}`, { method: "PUT", body: { type: "api", key } });
+    },
+    async dispose() {
+      await http("/instance/dispose", { method: "POST" });
+    },
     async providers() {
       const r = await c.config.providers();
       const providers = (r?.data?.providers ?? []).map((p) => ({
@@ -102,6 +171,12 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     },
     async summarize(sessionId) {
       await c.session.summarize({ path: { id: sessionId }, body: {} });
+    },
+    async revert(sessionId) {
+      await http(`/session/${encodeURIComponent(sessionId)}/revert`, { method: "POST", body: {} });
+    },
+    async unrevert(sessionId) {
+      await http(`/session/${encodeURIComponent(sessionId)}/unrevert`, { method: "POST", body: {} });
     },
     async deleteSession(sessionId) {
       await c.session.delete({ path: { id: sessionId } });

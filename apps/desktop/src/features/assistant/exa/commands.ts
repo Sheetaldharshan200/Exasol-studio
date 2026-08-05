@@ -19,11 +19,20 @@ export type SlashCommandId =
   | "clear"
   | "new"
   | "compact"
+  | "summarize"
   | "export"
-  | "share";
+  | "share"
+  | "connect"
+  | "models"
+  | "sessions"
+  | "resume"
+  | "details"
+  | "undo"
+  | "redo"
+  | "help";
 
 /** The local (non-prompt) command ids the panel handles directly. */
-export type LocalCommandId = Extract<SlashCommandId, "clear" | "new" | "compact" | "export" | "share">;
+export type LocalCommandId = Exclude<SlashCommandId, "generate" | "explain" | "optimize" | "fix" | "review">;
 
 export type SlashCommand = {
   id: SlashCommandId;
@@ -43,9 +52,18 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "review", title: "review", description: "Review the SQL for correctness, performance & safety", kind: "prompt" },
   { id: "new", title: "new", description: "Start a new session", kind: "local" },
   { id: "clear", title: "clear", description: "Start a new session", kind: "local" },
+  { id: "sessions", title: "sessions", description: "List and switch between sessions", kind: "local" },
+  { id: "resume", title: "resume", description: "List and switch between sessions", kind: "local" },
+  { id: "connect", title: "connect", description: "Add an AI provider (API key or sign-in)", kind: "local" },
+  { id: "models", title: "models", description: "List available models", kind: "local" },
   { id: "compact", title: "compact", description: "Summarize this session to reclaim context", kind: "local" },
+  { id: "summarize", title: "summarize", description: "Summarize this session to reclaim context", kind: "local" },
+  { id: "details", title: "details", description: "Toggle tool execution details", kind: "local" },
+  { id: "undo", title: "undo", description: "Undo the last message in the conversation", kind: "local" },
+  { id: "redo", title: "redo", description: "Redo a previously undone message", kind: "local" },
   { id: "export", title: "export", description: "Export this conversation as Markdown", kind: "local" },
   { id: "share", title: "share", description: "Export this conversation as Markdown", kind: "local" },
+  { id: "help", title: "help", description: "Show all available commands", kind: "local" },
 ];
 
 /** Filter the command list by the text typed after `/` (case-insensitive). */
@@ -104,11 +122,7 @@ export function expandCommand(id: SlashCommandId, arg: string, snap: ExaSnapshot
         providerIds: hasSql ? ["query", "schema"] : ["schema"],
       };
     // Local commands never reach expandCommand; return the arg defensively.
-    case "clear":
-    case "new":
-    case "compact":
-    case "export":
-    case "share":
+    default:
       return { text: arg, providerIds: [] };
   }
 }

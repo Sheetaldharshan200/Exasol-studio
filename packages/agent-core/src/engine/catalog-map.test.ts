@@ -12,11 +12,12 @@ describe("mapCatalog", () => {
       zebra: { name: "Zebra AI", models: { a: {} } },
       anthropic: { name: "Anthropic", env: ["ANTHROPIC_API_KEY"], models: { a: {}, b: {} } },
       alpha: { name: "Alpha", models: {} },
-      opencode: { name: "OpenCode Zen", models: { x: {} } },
+      ollama: { name: "Ollama", models: { x: {} } },
+      groq: { name: "Groq", models: { x: {} } },
     });
-    assert.deepEqual(out.map((p) => p.id), ["opencode", "anthropic", "alpha", "zebra"]);
+    assert.deepEqual(out.map((p) => p.id), ["ollama", "anthropic", "groq", "alpha", "zebra"]);
     assert.equal(out[0].popular, true);
-    assert.equal(out[2].popular, false);
+    assert.equal(out[3].popular, false);
   });
 
   test("carries env vars and model counts; tolerates junk entries", () => {

@@ -82,6 +82,30 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           const ok = await engine.setProviderAuth(b.providerId, b.key);
           return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
         }
+        // GET /v1/engine/auth-methods — per-provider connect-flow spec
+        if (req.method === "GET" && parts[2] === "auth-methods") {
+          return json(res, 200, { methods: await engine.authMethods() });
+        }
+        // POST /v1/engine/oauth/(authorize|callback)
+        if (req.method === "POST" && parts[2] === "oauth" && parts[3] === "authorize") {
+          const b = await readBody<{ providerId?: string; method?: number; inputs?: Record<string, string> }>(req);
+          if (!b.providerId || typeof b.method !== "number") return json(res, 400, { error: "providerId and method required" });
+          try {
+            return json(res, 200, { authorization: await engine.oauthAuthorize(b.providerId, b.method, b.inputs) });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "authorize failed" });
+          }
+        }
+        if (req.method === "POST" && parts[2] === "oauth" && parts[3] === "callback") {
+          const b = await readBody<{ providerId?: string; method?: number; code?: string }>(req);
+          if (!b.providerId || typeof b.method !== "number") return json(res, 400, { error: "providerId and method required" });
+          try {
+            const ok = await engine.oauthCallback(b.providerId, b.method, b.code);
+            return json(res, ok ? 200 : 502, ok ? { ok: true } : { error: "authorization was not completed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "callback failed" });
+          }
+        }
         // GET /v1/engine/sessions | POST to create
         if (parts[2] === "sessions" && !parts[3]) {
           if (req.method === "GET") return json(res, 200, { sessions: await engine.listSessions() });
@@ -121,6 +145,14 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           if (parts[4] === "compact") {
             const ok = await engine.compact(sid);
             return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          }
+          if (parts[4] === "undo" || parts[4] === "redo") {
+            try {
+              const ok = parts[4] === "undo" ? await engine.undo(sid) : await engine.redo(sid);
+              return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+            } catch (e) {
+              return json(res, 502, { error: e instanceof Error ? e.message : `${parts[4]} failed` });
+            }
           }
           if (parts[4] === "permission") {
             const b = await readBody<{ permissionId?: string; approve?: boolean }>(req);

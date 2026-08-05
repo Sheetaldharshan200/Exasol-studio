@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ArrowLeft, Check, ChevronDown, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
-import type { AgentProviderInfo, EngineCatalogProvider } from "@/lib/agent-client";
+import { ArrowLeft, Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
+import { agent, type AgentProviderInfo, type EngineAuthMethod, type EngineCatalogProvider, type EngineOAuthAuthorization } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
   DropdownMenu,
@@ -91,6 +91,7 @@ export function ExaModelSelector({
   model,
   onPick,
   onSaveKey,
+  onConnected,
   loadCatalog,
   open,
   onOpenChange,
@@ -99,6 +100,8 @@ export function ExaModelSelector({
   model: PickedModel | null;
   onPick: (m: PickedModel) => void;
   onSaveKey: (providerId: string, key: string) => Promise<void>;
+  /** Called after an OAuth connect succeeds (refresh providers/models). */
+  onConnected?: () => Promise<void> | void;
   /** The FULL models.dev catalog for the merged provider list. */
   loadCatalog?: () => Promise<EngineCatalogProvider[]>;
   /** Controlled open state, so other UI (the model pill) can open this menu. */
@@ -111,12 +114,76 @@ export function ExaModelSelector({
   const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<EngineCatalogProvider[] | "loading" | "error" | null>(null);
-  /** A catalog provider awaiting its API key (inline connect). */
+  /** A catalog provider being connected (method picker → prompts → auth). */
   const [connecting, setConnecting] = useState<EngineCatalogProvider | null>(null);
+  // The engine's per-provider auth methods (GET /provider/auth). Providers
+  // without an entry get the TUI's synthesized default: a single API-key method.
+  const [authMethods, setAuthMethods] = useState<Record<string, EngineAuthMethod[]> | null>(null);
+  const [methodIdx, setMethodIdx] = useState<number | null>(null);
+  const [promptInputs, setPromptInputs] = useState<Record<string, string>>({});
+  const [oauth, setOauth] = useState<EngineOAuthAuthorization | null>(null);
+  const [oauthState, setOauthState] = useState<"idle" | "waiting" | "failed">("idle");
+  const [codeDraft, setCodeDraft] = useState("");
+
+  const resetConnectFlow = () => {
+    setMethodIdx(null);
+    setPromptInputs({});
+    setOauth(null);
+    setOauthState("idle");
+    setCodeDraft("");
+  };
+
+  /** Kick off an OAuth method: authorize, then (for auto flows) await the callback. */
+  async function startOauth(providerId: string, idx: number, inputs: Record<string, string>) {
+    setOauthState("waiting");
+    try {
+      const r = await agent.engine.oauthAuthorize(providerId, idx, inputs);
+      if (!r.authorization) {
+        setOauthState("failed");
+        return;
+      }
+      setOauth(r.authorization);
+      if (r.authorization.method === "auto") {
+        // The engine polls the flow inline; this resolves when auth completes.
+        const done = await agent.engine.oauthCallback(providerId, idx);
+        finishOauth(done.ok);
+      }
+      // method "code": wait for the user to paste the code (submitOauthCode).
+    } catch {
+      setOauthState("failed");
+    }
+  }
+
+  async function submitOauthCode(providerId: string, idx: number) {
+    if (!codeDraft.trim()) return;
+    setOauthState("waiting");
+    try {
+      const done = await agent.engine.oauthCallback(providerId, idx, codeDraft.trim());
+      finishOauth(done.ok);
+    } catch {
+      setOauthState("failed");
+    }
+  }
+
+  function finishOauth(ok: boolean) {
+    if (!ok) {
+      setOauthState("failed");
+      return;
+    }
+    resetConnectFlow();
+    setConnecting(null);
+    void onConnected?.();
+  }
 
   const needsKey = (p: AgentProviderInfo) => p.kind === "cloud" && p.id !== "in-database" && !p.configured;
 
   function fetchCatalog() {
+    if (authMethods === null) {
+      agent.engine
+        .authMethods()
+        .then((r) => setAuthMethods(r.methods))
+        .catch(() => setAuthMethods({}));
+    }
     if (!loadCatalog || (catalog !== null && catalog !== "error")) return;
     setCatalog("loading");
     loadCatalog()
@@ -172,6 +239,7 @@ export function ExaModelSelector({
           setSearchOpen(false);
           setQuery("");
           setConnecting(null);
+          resetConnectFlow();
         }
       }}
     >
@@ -193,7 +261,7 @@ export function ExaModelSelector({
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {connecting ? (
-              <button type="button" onClick={() => setConnecting(null)} className="hover:text-foreground flex items-center gap-1" aria-label="Back to providers">
+              <button type="button" onClick={() => { setConnecting(null); resetConnectFlow(); }} className="hover:text-foreground flex items-center gap-1" aria-label="Back to providers">
                 <ArrowLeft className="h-3 w-3" /> Connect {connecting.name}
               </button>
             ) : view === "settings" ? (
@@ -233,12 +301,131 @@ export function ExaModelSelector({
         <DropdownMenuSeparator />
 
         {connecting ? (
-          <div className="py-1">
-            <p className="px-2 pt-1 text-[11px] text-muted-foreground">
-              Set the {connecting.env[0] ?? "API"} key to connect {connecting.name}.
-            </p>
-            {keyInput(connecting.id, connecting.env[0])}
-          </div>
+          (() => {
+            // The engine's connect-flow spec; providers without an auth plugin
+            // get the same synthesized default the opencode TUI uses.
+            const methods: EngineAuthMethod[] = authMethods?.[connecting.id] ?? [{ type: "api", label: "API key" }];
+            const chosen = methodIdx !== null ? methods[methodIdx] : methods.length === 1 ? methods[0] : null;
+            const chosenIdx = methodIdx ?? (methods.length === 1 ? 0 : null);
+            // Prompts visible under the current answers (when-conditions).
+            const prompts = (chosen?.prompts ?? []).filter((pr) =>
+              !pr.when ? true : pr.when.op === "eq" ? promptInputs[pr.when.key] === pr.when.value : promptInputs[pr.when.key] !== pr.when.value,
+            );
+            const promptsAnswered = prompts.every((pr) => (promptInputs[pr.key] ?? "").trim() !== "");
+            return (
+              <div className="max-h-80 overflow-y-auto py-1 [scrollbar-width:thin]">
+                {oauth ? (
+                  <div className="px-2 py-1">
+                    <a
+                      href={oauth.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 break-all text-[12px] text-foreground underline underline-offset-2 hover:opacity-80"
+                    >
+                      <ExternalLink className="h-3 w-3 shrink-0" /> {oauth.url}
+                    </a>
+                    {oauth.instructions ? <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{oauth.instructions}</p> : null}
+                    {oauth.method === "code" && oauthState !== "waiting" ? (
+                      <div className="mt-1.5 flex items-center gap-1.5" onKeyDown={(e) => e.stopPropagation()}>
+                        <input
+                          autoFocus
+                          value={codeDraft}
+                          onChange={(e) => setCodeDraft(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && chosenIdx !== null && void submitOauthCode(connecting.id, chosenIdx)}
+                          placeholder="Paste the code…"
+                          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => chosenIdx !== null && void submitOauthCode(connecting.id, chosenIdx)}
+                          disabled={!codeDraft.trim()}
+                          className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2 text-[11px] font-medium text-background disabled:opacity-50"
+                        >
+                          <Check className="h-3 w-3" /> Submit
+                        </button>
+                      </div>
+                    ) : null}
+                    {oauthState === "waiting" ? (
+                      <p className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Waiting for authorization…
+                      </p>
+                    ) : oauthState === "failed" ? (
+                      <p className="mt-2 text-[11px] text-destructive">Authorization failed — go back and retry.</p>
+                    ) : null}
+                  </div>
+                ) : chosen && chosen.type === "api" ? (
+                  <>
+                    <p className="px-2 pt-0.5 text-[11px] text-muted-foreground">
+                      Set the {connecting.env[0] ?? "API"} key to connect {connecting.name}.
+                    </p>
+                    {keyInput(connecting.id, connecting.env[0])}
+                  </>
+                ) : chosen ? (
+                  <div className="px-2 py-0.5">
+                    {prompts.map((pr) =>
+                      pr.type === "select" ? (
+                        <div key={pr.key} className="mb-1.5">
+                          <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
+                          {(pr.options ?? []).map((o) => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              onClick={() => setPromptInputs((d) => ({ ...d, [pr.key]: o.value }))}
+                              className={cn(
+                                "hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]",
+                                promptInputs[pr.key] === o.value && "bg-muted",
+                              )}
+                            >
+                              {promptInputs[pr.key] === o.value ? <Check className="h-3 w-3 shrink-0" /> : <span className="w-3 shrink-0" />}
+                              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                              {o.hint ? <span className="shrink-0 text-[10px] text-muted-foreground">{o.hint}</span> : null}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div key={pr.key} className="mb-1.5" onKeyDown={(e) => e.stopPropagation()}>
+                          <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
+                          <input
+                            value={promptInputs[pr.key] ?? ""}
+                            onChange={(e) => setPromptInputs((d) => ({ ...d, [pr.key]: e.target.value }))}
+                            placeholder={pr.placeholder}
+                            className="h-7 w-full rounded-md border border-border bg-background px-2 text-[11.5px] outline-none focus:border-ring"
+                          />
+                        </div>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      disabled={!promptsAnswered || oauthState === "waiting"}
+                      onClick={() => chosenIdx !== null && void startOauth(connecting.id, chosenIdx, promptInputs)}
+                      className="mt-0.5 flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-foreground text-[11.5px] font-medium text-background disabled:opacity-50"
+                    >
+                      {oauthState === "waiting" ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />} Sign in
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Select auth method</p>
+                    {methods.map((m, i) => (
+                      <button
+                        key={`${m.label}-${i}`}
+                        type="button"
+                        onClick={() => {
+                          setMethodIdx(i);
+                          // OAuth methods without prompts start immediately.
+                          if (m.type === "oauth" && !(m.prompts ?? []).length) void startOauth(connecting.id, i, {});
+                        }}
+                        className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]"
+                      >
+                        {m.type === "oauth" ? <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /> : <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                        <span className="min-w-0 flex-1 truncate">{m.label}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()
         ) : view === "settings" ? (
           <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
             {providers.filter((p) => p.kind === "cloud" && p.id !== "in-database").map((p) => (
@@ -285,7 +472,7 @@ export function ExaModelSelector({
               const popular = catFiltered.filter((c) => c.popular);
               const rest = catFiltered.filter((c) => !c.popular);
               const catalogRow = (c: EngineCatalogProvider, withLogo: boolean) => (
-                <DropdownMenuItem key={c.id} onSelect={(e) => { e.preventDefault(); setConnecting(c); }} className="gap-2">
+                <DropdownMenuItem key={c.id} onSelect={(e) => { e.preventDefault(); resetConnectFlow(); setConnecting(c); }} className="gap-2">
                   {withLogo ? <ProviderMark providerId={c.id} className="h-3.5 w-3.5 shrink-0" /> : null}
                   <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{c.modelCount || ""}</span>

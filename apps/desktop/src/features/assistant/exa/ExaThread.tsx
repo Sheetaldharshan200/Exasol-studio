@@ -165,6 +165,8 @@ export type ExaComposerApi = {
   runLocal: (id: LocalCommandId) => void;
   /** The FULL models.dev catalog (every provider opencode supports). */
   loadCatalog: () => Promise<EngineCatalogProvider[]>;
+  /** Refresh providers/models after a successful OAuth connect. */
+  onConnected: () => Promise<void> | void;
 };
 
 const ExaComposerContext = createContext<ExaComposerApi | null>(null);
@@ -269,8 +271,14 @@ export function ExaThreadSuggestions() {
 export function ExaComposerControls() {
   const api = useExaComposer();
   const aui = useAui();
-  // The model pill's "All providers…" entry opens the provider menu directly.
+  // The model pill's "All providers…" entry opens the provider menu directly;
+  // /connect and /models open it from the composer.
   const [providersOpen, setProvidersOpen] = useState(false);
+  useEffect(() => {
+    const openProviders = () => setProvidersOpen(true);
+    window.addEventListener("exa:open-providers", openProviders);
+    return () => window.removeEventListener("exa:open-providers", openProviders);
+  }, []);
   if (!api) return null;
   const modeInfo = MODES.find((m) => m.id === api.mode)!;
   const ModeIcon = modeInfo.icon;
@@ -294,6 +302,7 @@ export function ExaComposerControls() {
         model={api.model}
         onPick={api.onPickModel}
         onSaveKey={api.onSaveKey}
+        onConnected={api.onConnected}
         loadCatalog={api.loadCatalog}
         open={providersOpen}
         onOpenChange={setProvidersOpen}
@@ -360,6 +369,8 @@ export function ExaComposerMenus() {
   const text = useAuiState((s) => s.composer.text);
   const [argFor, setArgFor] = useState<ContextProvider | null>(null);
   const [argQuery, setArgQuery] = useState("");
+  // Keyboard selection: the first row is auto-active, ↑/↓ move, Enter picks.
+  const [hover, setHover] = useState(0);
 
   const atTrigger = useMemo(() => {
     const m = /(?:^|\s)@([\w]*)$/.exec(text ?? "");
@@ -374,6 +385,46 @@ export function ExaComposerMenus() {
   const providerMenu = atTrigger && !argFor ? filterProviders(atTrigger.query) : [];
   const commandMenu = slashTrigger && !argFor ? filterCommands(slashTrigger.query) : [];
   const open = !!argFor || providerMenu.length > 0 || commandMenu.length > 0;
+  const listKind: "provider" | "command" | null =
+    !argFor && providerMenu.length > 0 ? "provider" : !argFor && commandMenu.length > 0 ? "command" : null;
+
+  // Keyboard grammar for the list menus, captured BEFORE the composer's own
+  // Enter-submits handler: first row auto-active, ↑/↓ move, Enter/Tab pick,
+  // Esc dismisses the trigger. Refs keep the capture listener current.
+  const kbRef = useRef({ len: 0, hover: 0, pick: (_i: number) => {}, esc: () => {} });
+  kbRef.current.len = listKind === "provider" ? providerMenu.length : commandMenu.length;
+  kbRef.current.hover = hover;
+  kbRef.current.pick = (i: number) => {
+    if (listKind === "provider") {
+      const p = providerMenu[i] ?? providerMenu[0];
+      if (p) pickProvider(p);
+    } else if (listKind === "command") {
+      const c = commandMenu[i] ?? commandMenu[0];
+      if (c) pickCommand(c);
+    }
+  };
+  kbRef.current.esc = () => {
+    if (listKind === "provider") stripAt();
+    else setText("");
+  };
+  useEffect(() => setHover(0), [atTrigger?.query, slashTrigger?.query, argFor]);
+  useEffect(() => {
+    if (!listKind) return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = kbRef.current;
+      if (k.len === 0) return;
+      if (e.key === "ArrowDown") setHover((h) => (h + 1) % k.len);
+      else if (e.key === "ArrowUp") setHover((h) => (h - 1 + k.len) % k.len);
+      else if (e.key === "Enter" || e.key === "Tab") k.pick(k.hover);
+      else if (e.key === "Escape") k.esc();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [listKind]);
+
   if (!open) return null;
 
   const setText = (v: string) => aui.composer().setText(v);
@@ -448,8 +499,8 @@ export function ExaComposerMenus() {
           </div>
         </>
       ) : providerMenu.length > 0 ? (
-        <div className="py-1">
-          {providerMenu.map((p) => {
+        <div className="max-h-[260px] overflow-y-auto py-1 [scrollbar-width:thin]">
+          {providerMenu.map((p, i) => {
             // Grey out providers whose data isn't attachable right now, so a
             // pick never fails silently.
             const snap = api!.getSnapshot();
@@ -467,8 +518,12 @@ export function ExaComposerMenus() {
                 key={p.id}
                 type="button"
                 disabled={!available}
+                onMouseEnter={() => setHover(i)}
                 onClick={() => pickProvider(p)}
-                className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+                className={cn(
+                  "flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent",
+                  i === hover && "bg-secondary",
+                )}
               >
                 <span className="text-[12px] font-medium text-foreground">
                   {p.title}
@@ -480,9 +535,15 @@ export function ExaComposerMenus() {
           })}
         </div>
       ) : (
-        <div className="py-1">
-          {commandMenu.map((c) => (
-            <button key={c.id} type="button" onClick={() => pickCommand(c)} className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary">
+        <div className="max-h-[260px] overflow-y-auto py-1 [scrollbar-width:thin]">
+          {commandMenu.map((c, i) => (
+            <button
+              key={c.id}
+              type="button"
+              onMouseEnter={() => setHover(i)}
+              onClick={() => pickCommand(c)}
+              className={cn("flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary", i === hover && "bg-secondary")}
+            >
               <span className="text-[12px] font-medium text-foreground">
                 {c.title}
                 {c.hint ? <span className="ml-1.5 font-normal text-muted-foreground">{c.hint}</span> : null}
@@ -499,6 +560,7 @@ export function ExaComposerMenus() {
 export function ExaThread({
   messages,
   busy,
+  hideTools = false,
   onSendText,
   onCancel,
   onApplySql,
@@ -517,6 +579,8 @@ export function ExaThread({
 }: {
   messages: ExaMessage[];
   busy: boolean;
+  /** /details — hide tool-execution chips in the thread. */
+  hideTools?: boolean;
   /** Send plain text (registry composer submit, suggestions, edits). */
   onSendText: (text: string, quote?: string) => void;
   onCancel: () => void;
@@ -550,16 +614,33 @@ export function ExaThread({
     if (editingId && titleDraft.trim()) onRenameSession(editingId, titleDraft);
     setEditingId(null);
   };
+
+  // /sessions opens the thread list from anywhere in the panel.
+  useEffect(() => {
+    const openSessions = () => setSidebarOpen(true);
+    window.addEventListener("exa:open-sessions", openSessions);
+    return () => window.removeEventListener("exa:open-sessions", openSessions);
+  }, []);
   // Latest handler behind a stable ref so the adapter never goes stale.
   const sendRef = useRef(onSendText);
   useEffect(() => {
     sendRef.current = onSendText;
   });
 
+  // /details toggles tool chips: with hideTools the converter drops tool
+  // parts (identity change makes assistant-ui reconvert the transcript).
+  const convertMessage = useMemo(
+    () =>
+      hideTools
+        ? (m: ExaMessage) => toThreadMessage({ ...m, parts: m.parts.filter((p) => p.type !== "tool") })
+        : toThreadMessage,
+    [hideTools],
+  );
+
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning: busy,
-    convertMessage: toThreadMessage,
+    convertMessage,
     onNew: async (m: AppendMessage) => {
       const text = m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("");
       // The composer's quote (SelectionToolbar → setQuote) rides on

@@ -141,16 +141,51 @@ export class EngineService {
   }
 
   /**
-   * Save a provider API key into the ENGINE's own auth.json (the single
-   * source of truth for cloud providers), then restart the server so it
-   * picks the credential up. False when the engine isn't installed.
+   * Save a provider API key. Preferred path: the ENGINE's own PUT /auth/:id
+   * route followed by /instance/dispose (hot reload, exactly what the TUI
+   * does). Fallback when the server can't start: write auth.json directly.
+   * False when the engine isn't installed at all.
    */
   async setProviderAuth(providerId: string, apiKey: string): Promise<boolean> {
     const resolved = resolveEngineEnv(this.env);
     if (!resolved) return false;
+    const c = await this.ensureClient().catch(() => null);
+    if (c) {
+      try {
+        await c.setAuthKey(providerId, apiKey);
+        await c.dispose().catch(() => undefined);
+        return true;
+      } catch {
+        /* fall through to the file path */
+      }
+    }
     upsertProviderAuth(resolved.configDir, providerId, apiKey);
     await this.stop(); // next call restarts with the new credentials
     return true;
+  }
+
+  /** Per-provider auth methods (the connect-flow spec); empty when absent. */
+  async authMethods() {
+    const c = await this.ensureClient();
+    return c ? c.authMethods() : {};
+  }
+
+  /** Start an OAuth flow. Null when not installed or for non-oauth methods. */
+  async oauthAuthorize(providerId: string, method: number, inputs?: Record<string, string>) {
+    const c = await this.ensureClient();
+    return c ? c.oauthAuthorize(providerId, method, inputs) : null;
+  }
+
+  /**
+   * Complete an OAuth flow (blocks while the engine polls), then hot-reload
+   * providers so the new credential is usable immediately.
+   */
+  async oauthCallback(providerId: string, method: number, code?: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    const ok = await c.oauthCallback(providerId, method, code);
+    if (ok) await c.dispose().catch(() => undefined);
+    return ok;
   }
 
   /** Compact (summarize) a session engine-side to reclaim context. */
@@ -158,6 +193,21 @@ export class EngineService {
     const c = await this.ensureClient();
     if (!c) return false;
     await c.summarize(sessionId);
+    return true;
+  }
+
+  /** Undo (revert) / redo (unrevert) the last message; false when absent. */
+  async undo(sessionId: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.revert(sessionId);
+    return true;
+  }
+
+  async redo(sessionId: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.unrevert(sessionId);
     return true;
   }
 

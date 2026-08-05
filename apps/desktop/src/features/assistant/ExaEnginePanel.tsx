@@ -6,7 +6,7 @@ import { agent, type AgentProviderInfo, type EngineEvent, type EngineSessionInfo
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { expandCommand, parseSlash, transcriptMarkdown, type LocalCommandId, type SlashCommand } from "./exa/commands";
+import { expandCommand, parseSlash, transcriptMarkdown, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -64,6 +64,8 @@ export function ExaEnginePanel({
   const [chips, setChips] = useState<ContextChip[]>([]);
   // A picked slash command shown as a chip; the input text is its argument.
   const [pendingCommand, setPendingCommand] = useState<SlashCommand | null>(null);
+  // /details — hide tool-execution chips in the thread.
+  const [hideTools, setHideTools] = useState(false);
   // Persisted engine sessions (auto-titled) for the sidebar.
   const [sessions, setSessions] = useState<EngineSessionInfo[]>([]);
   // Archived = hidden locally (the engine has no archive concept); persisted
@@ -417,11 +419,34 @@ export function ExaEnginePanel({
     window.setTimeout(loadSessionsRef.current, 1500);
   }
 
+  /** Append a local notice into the thread (help text, undo/redo results). */
+  function notice(text: string) {
+    setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text }] }]);
+  }
+
+  /** /undo and /redo — the engine reverts/restores the last message. */
+  async function undoRedo(kind: "undo" | "redo") {
+    if (!sessionId) return;
+    const r = await (kind === "undo" ? agent.engine.undo(sessionId) : agent.engine.redo(sessionId)).catch(() => ({ ok: false }));
+    if (r.ok) await adoptSession(sessionId); // re-sync from the engine's store
+    else notice(`⚠︎ ${kind === "undo" ? "Undo" : "Redo"} isn't available here.`);
+  }
+
   /** Local slash commands (also reachable from the header/sidebar). */
   function runLocal(id: LocalCommandId) {
     if (id === "clear" || id === "new") newChat();
-    else if (id === "compact") void compactChat();
-    else void shareChat();
+    else if (id === "compact" || id === "summarize") void compactChat();
+    else if (id === "export" || id === "share") void shareChat();
+    else if (id === "connect" || id === "models") window.dispatchEvent(new CustomEvent("exa:open-providers"));
+    else if (id === "sessions" || id === "resume") window.dispatchEvent(new CustomEvent("exa:open-sessions"));
+    else if (id === "details") setHideTools((h) => !h);
+    else if (id === "undo" || id === "redo") void undoRedo(id);
+    else if (id === "help")
+      notice(
+        "**Commands**\n\n" +
+          SLASH_COMMANDS.map((c) => `- \`/${c.title}\`${c.hint ? ` _${c.hint}_` : ""} — ${c.description}`).join("\n") +
+          "\n\nType `@` to attach database context (query, results, tables, schema).",
+      );
   }
 
   /** Every submit path (registry composer, suggestions, edits) lands here. */
@@ -522,6 +547,7 @@ export function ExaEnginePanel({
       <ExaThread
         messages={messages}
         busy={busy}
+        hideTools={hideTools}
         onSendText={sendText}
         onCancel={() => void stop()}
         onApplySql={onApplySql}
@@ -553,6 +579,10 @@ export function ExaEnginePanel({
           setPendingCommand,
           runLocal,
           loadCatalog: () => agent.engine.catalog().then((r) => r.providers),
+          onConnected: () => {
+            refreshStatus();
+            return loadModels();
+          },
         }}
       />
     </div>

@@ -14,8 +14,8 @@ export type CatalogProvider = {
   popular: boolean;
 };
 
-/** Pinned first, in this order (mirrors opencode's connect screen). */
-const POPULAR = ["opencode", "openai", "github-copilot", "anthropic", "google"];
+/** Pinned first, in this order (the providers our users actually reach for). */
+const POPULAR = ["ollama", "anthropic", "github-copilot", "openai", "openrouter", "groq"];
 
 type RawCatalog = Record<string, { name?: string; env?: string[]; models?: Record<string, unknown> } | undefined>;
 

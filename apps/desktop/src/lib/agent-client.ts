@@ -275,8 +275,19 @@ export const agent = {
     catalog: (): Promise<{ providers: EngineCatalogProvider[] }> => api("/engine/catalog"),
     /** Save a provider API key into the engine's own auth store. */
     setAuth: (providerId: string, key: string): Promise<{ ok: boolean }> => api("/engine/auth", "POST", { providerId, key }),
+    /** Per-provider auth methods — opencode's connect-flow spec. */
+    authMethods: (): Promise<{ methods: Record<string, EngineAuthMethod[]> }> => api("/engine/auth-methods"),
+    /** Start an OAuth flow; authorization is null for non-oauth methods. */
+    oauthAuthorize: (providerId: string, method: number, inputs?: Record<string, string>): Promise<{ authorization: EngineOAuthAuthorization | null }> =>
+      api("/engine/oauth/authorize", "POST", { providerId, method, inputs }),
+    /** Complete an OAuth flow — resolves when the engine finishes polling. */
+    oauthCallback: (providerId: string, method: number, code?: string): Promise<{ ok: boolean }> =>
+      api("/engine/oauth/callback", "POST", { providerId, method, code }),
     /** Engine-side session compaction (/compact). */
     compact: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/compact`, "POST"),
+    /** Undo (revert) / redo (unrevert) the last message in a session. */
+    undo: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/undo`, "POST"),
+    redo: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/redo`, "POST"),
     /** Permanently delete a stored session. */
     deleteSession: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}`, "DELETE"),
     /** Rename a stored session (overrides the auto-generated title). */
@@ -302,6 +313,22 @@ export type EngineReplayMessage = {
   role: "user" | "assistant";
   parts: ({ type: "text"; text: string } | { type: "tool"; callId: string; name: string; ok?: boolean })[];
 };
+
+/** One input collected before an auth flow (select or text, may be conditional). */
+export type EngineAuthPrompt = {
+  type: "text" | "select";
+  key: string;
+  message: string;
+  placeholder?: string;
+  options?: { label: string; value: string; hint?: string }[];
+  when?: { key: string; op: "eq" | "neq"; value: string };
+};
+
+/** One auth method a provider supports (e.g. "ChatGPT Pro/Plus (browser)"). */
+export type EngineAuthMethod = { type: "oauth" | "api"; label: string; prompts?: EngineAuthPrompt[] };
+
+/** An in-flight OAuth authorization (open `url`, follow `instructions`). */
+export type EngineOAuthAuthorization = { url: string; method: "auto" | "code"; instructions: string };
 
 /** One provider from the FULL models.dev catalog (/v1/engine/catalog). */
 export type EngineCatalogProvider = {
