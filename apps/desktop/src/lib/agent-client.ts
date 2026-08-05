@@ -267,8 +267,8 @@ export const agent = {
     /** A session's stored messages (part-based), for loading past chats. */
     messages: (id: string): Promise<{ messages: EngineReplayMessage[] }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/messages`),
-    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<{ ok: boolean }> =>
-      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName }),
+    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string, system?: string): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName, system }),
     /** The engine's CONFIGURED providers/models (GET /config/providers). */
     providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
     /** The FULL models.dev provider catalog (what opencode itself supports). */

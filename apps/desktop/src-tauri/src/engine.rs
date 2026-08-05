@@ -159,19 +159,60 @@ pub fn ensure_default_mcp(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
             changed = true;
         }
     }
+    // GUI apps get a bare PATH, so a plain "npx" command fails inside the
+    // engine — resolve an absolute npx (system paths + node's siblings).
+    let npx = crate::market::resolve_bin("npx").map(|p| p.to_string_lossy().to_string());
     if !mcp.contains_key("filesystem") {
-        if let Some(home) = dirs::home_dir() {
+        if let (Some(home), Some(npx)) = (dirs::home_dir(), npx.as_ref()) {
             mcp.insert(
                 "filesystem".into(),
                 serde_json::json!({
                     "type": "local",
-                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", home.to_string_lossy()],
+                    "command": [npx, "-y", "@modelcontextprotocol/server-filesystem", home.to_string_lossy()],
                     "enabled": true
                 }),
             );
             changed = true;
         }
+    } else if let (Some(npx), Some(entry)) = (npx.as_ref(), mcp.get_mut("filesystem")) {
+        // Migrate an earlier seed that used a bare "npx" (broken under the
+        // GUI PATH) to the resolved absolute path. Only OUR seeded shape is
+        // touched — a user-customized command stays untouched.
+        if let Some(cmd) = entry.get_mut("command").and_then(|c| c.as_array_mut()) {
+            if cmd.first().and_then(|v| v.as_str()) == Some("npx") {
+                cmd[0] = serde_json::Value::String(npx.clone());
+                changed = true;
+            }
+        }
     }
+    // Seed the "exa" agent: the guardrail persona (data work only) with the
+    // engine's coding/filesystem tools DISABLED — the agent works through the
+    // MCP servers (exasol-studio databases, filesystem server) instead of
+    // globbing the process working directory like a coding assistant.
+    let agents = root
+        .as_object_mut()
+        .expect("root is an object")
+        .entry("agent")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(agents) = agents.as_object_mut() {
+        if !agents.contains_key("exa") {
+            agents.insert(
+                "exa".into(),
+                serde_json::json!({
+                    "description": "Exa — the Exasol Studio data agent (databases, SQL, insights, dashboards)",
+                    "mode": "primary",
+                    "prompt": "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.",
+                    "tools": {
+                        "bash": false, "edit": false, "write": false, "patch": false,
+                        "read": false, "grep": false, "glob": false, "list": false,
+                        "todowrite": false, "todoread": false, "task": false
+                    }
+                }),
+            );
+            changed = true;
+        }
+    }
+
     if changed {
         let raw = serde_json::to_string_pretty(&root).map_err(|e| AppError::Storage(e.to_string()))?;
         std::fs::write(&cfg_path, raw).map_err(|e| AppError::Storage(format!("engine config write: {e}")))?;

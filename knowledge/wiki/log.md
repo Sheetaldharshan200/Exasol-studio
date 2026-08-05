@@ -66,3 +66,10 @@ Full provider catalog (200+) comes from models.opencode.ai/api.json — the SAME
 opencode TUI command parity where GUI-applicable: /new /compact (session.summarize via POST /v1/engine/sessions/:id/compact) /export; TUI-only (themes/editor/exit) skipped deliberately.
 Model selector UX fixes: key-input row min-w-0 so Save fits the submenu; search filters IN PLACE above the provider list (no separate view).
 
+
+## [2026-08-06] feature | Exa engine fork — Sheetaldharshan200/exa with CI releases; Studio switched to v1.18.12-exa.1 (ab95994)
+Fork model: exa-main = upstream anomalyco/opencode tag + MINIMAL patch series (currently 1 patch: oauth callback page brands as Exa). MIT license/attribution preserved; EXA.md in the fork documents patch policy + rebase runbook (fetch upstream tag -> cherry-pick patches -> tag vX.Y.Z-exa.N).
+CI: single ubuntu runner; the upstream build script cross-compiles ALL targets via bun and self-uploads assets when OPENCODE_RELEASE=1 + OPENCODE_VERSION + GH_REPO are set. Asset names unchanged (opencode-<os>-<arch>.zip/tar.gz) so Studio's installer needed only repo+tag switched (engine.rs OPENCODE_REPO, local_database.rs, marketplace/catalog.json, fetch-runtime.mjs, ENGINE_TAG).
+v1.18.12-exa.1 built green first run; binary verified: --version = 1.18.12-exa.1, patched strings present, upstream strings absent.
+Also this session: live-streaming root fix (engine emits message.part.updated SNAPSHOTS at properties.part.text; bridge now maps message.upsert/part.snapshot and the panel upserts by messageId/partId with a role registry), headerless panel with floating control cluster, Exa logo+name on the workbench tab.
+

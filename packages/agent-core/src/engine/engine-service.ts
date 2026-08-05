@@ -107,10 +107,10 @@ export class EngineService {
     return c ? c.createSession() : null;
   }
 
-  async prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<boolean> {
+  async prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string, system?: string): Promise<boolean> {
     const c = await this.ensureClient();
     if (!c) return false;
-    await c.prompt(sessionId, text, model, agentName);
+    await c.prompt(sessionId, text, model, agentName, system);
     return true;
   }
 
@@ -162,6 +162,54 @@ export class EngineService {
     upsertProviderAuth(resolved.configDir, providerId, apiKey);
     await this.stop(); // next call restarts with the new credentials
     return true;
+  }
+
+  // Serialized form of the last provider block we wrote — avoids a
+  // write+dispose loop when nothing changed between /models refreshes.
+  private lastProviderSync = "";
+
+  /**
+   * Declare Studio's LOCAL runtimes (Built-in AI, Ollama, LM Studio, …) to
+   * the ENGINE as OpenAI-compatible providers in its opencode.json, keyed by
+   * the SAME ids the panel sends with prompts — without this, prompting a
+   * local model fails with "engine error" because opencode has never heard
+   * of the provider. Merge-only for our known local ids; user entries and
+   * everything else in the config stay untouched.
+   */
+  async syncLocalProviders(
+    servers: { id: string; name: string; baseURL: string; models: { id: string; name?: string }[] }[],
+  ): Promise<void> {
+    const resolved = resolveEngineEnv(this.env);
+    if (!resolved || servers.length === 0) return;
+    const entries: Record<string, unknown> = {};
+    for (const s of servers) {
+      entries[s.id] = {
+        npm: "@ai-sdk/openai-compatible",
+        name: s.name,
+        options: { baseURL: s.baseURL },
+        models: Object.fromEntries(s.models.map((m) => [m.id, { name: m.name ?? m.id }])),
+      };
+    }
+    const serialized = JSON.stringify(entries);
+    if (serialized === this.lastProviderSync) return;
+    const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const cfgPath = join(resolved.configDir, "opencode", "opencode.json");
+    let root: Record<string, unknown> = {};
+    try {
+      root = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+    } catch {
+      /* first write */
+    }
+    if (typeof root !== "object" || root === null) root = {};
+    const provider = (root.provider = (root.provider as Record<string, unknown>) ?? {});
+    if (typeof provider !== "object") return; // user made it non-object — leave alone
+    for (const [id, entry] of Object.entries(entries)) (provider as Record<string, unknown>)[id] = entry;
+    mkdirSync(join(resolved.configDir, "opencode"), { recursive: true });
+    writeFileSync(cfgPath, JSON.stringify(root, null, 2));
+    this.lastProviderSync = serialized;
+    // Hot-reload so the providers are usable immediately.
+    const c = await this.ensureClient().catch(() => null);
+    await c?.dispose().catch(() => undefined);
   }
 
   /** MCP servers: status map / add / connect-disconnect (engine-side). */

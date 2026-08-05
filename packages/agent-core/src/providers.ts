@@ -93,7 +93,12 @@ const LOCAL_SERVERS: LocalServer[] = [
   { id: "ollama", name: "Ollama (local)", baseURL: "http://127.0.0.1:11434/v1" },
   { id: "lmstudio", name: "LM Studio (local)", baseURL: "http://127.0.0.1:1234/v1" },
   { id: "llamacpp", name: "llama.cpp (local)", baseURL: "http://127.0.0.1:8080/v1" },
-];
+]
+
+/** The OpenAI-compatible baseURL for a known local runtime id, if any. */
+export function localBaseURL(id: string): string | undefined {
+  return LOCAL_SERVERS.find((x) => x.id === id)?.baseURL;
+};
 
 export class ProviderRegistry {
   private catalog: Record<string, ModelInfo[]> = EMBEDDED_CATALOG;

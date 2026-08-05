@@ -47,7 +47,7 @@ export type EngineClient = {
   listSessions(): Promise<EngineSessionInfo[]>;
   /** A session's stored messages, mapped to Studio's part-based shape. */
   listMessages(sessionId: string): Promise<ReplayMessage[]>;
-  prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<void>;
+  prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string, system?: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
   /** Engine-side session compaction (summarize to reclaim context). */
   summarize(sessionId: string): Promise<void>;
@@ -140,10 +140,15 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
       const r = await c.session.messages({ path: { id: sessionId } });
       return mapReplayMessages((r?.data ?? []) as Parameters<typeof mapReplayMessages>[0]);
     },
-    async prompt(sessionId, text, model, agentName) {
+    async prompt(sessionId, text, model, agentName, system) {
       await c.session.prompt({
         path: { id: sessionId },
-        body: { parts: [{ type: "text", text }], ...(model ? { model } : {}), ...(agentName ? { agent: agentName } : {}) },
+        body: {
+          parts: [{ type: "text", text }],
+          ...(model ? { model } : {}),
+          ...(agentName ? { agent: agentName } : {}),
+          ...(system ? { system } : {}),
+        },
       });
     },
     async authMethods() {

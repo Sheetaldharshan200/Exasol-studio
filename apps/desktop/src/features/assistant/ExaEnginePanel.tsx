@@ -24,6 +24,20 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  */
 const ENGINE_TAG = "v1.18.12-exa.1";
 
+/**
+ * Exa's scope guardrail, sent as the system prompt on every turn. Exa is a
+ * data agent inside Exasol Studio — not a general-purpose assistant.
+ */
+const EXA_SYSTEM = [
+  "You are Exa, the AI data analyst built into Exasol Studio, a desktop client for Exasol databases.",
+  "Your scope: the user's connected databases (Exasol first), SQL, data engineering, data quality, analysis, insights, reporting and dashboards.",
+  "Ground every answer in the live schema, the attached context blocks, and the available tools (the exasol-studio MCP server exposes the user's connected databases read-only; the filesystem server exposes local data files).",
+  "SQL safety: prefer read-only SELECT/WITH/DESCRIBE. Never run destructive or mutating statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly asked for that exact change in this conversation — and state clearly what will be modified before doing it.",
+  "Exasol dialect notes: identifiers fold to uppercase unless quoted; use LIMIT n (not FETCH FIRST/TOP).",
+  "If a request is unrelated to data work (general coding projects, essays, life advice, other apps), decline briefly and steer back to the user's data — one sentence, no lecture.",
+  "Audience: students, analysts, data scientists, BI and finance people, engineers. Be concise, practical, and show runnable SQL in fenced sql blocks.",
+].join("\n");
+
 // Messages are ordered parts (text + tool calls inline) — see ExaThread.
 
 const EMPTY_SNAPSHOT: ExaSnapshot = {
@@ -366,7 +380,9 @@ export function ExaEnginePanel({
   // (mutations gated behind ask). Chat has no tool-less built-in agent, so it
   // rides "plan" plus a no-tools directive — worst case a tool call still
   // needs explicit approval.
-  const MODE_TO_AGENT: Record<ChatMode, string> = { agent: "build", plan: "plan", chat: "plan" };
+  // All modes ride the seeded "exa" agent (guardrail prompt, coding tools
+  // denied engine-side); the directives below differentiate the behavior.
+  const MODE_TO_AGENT: Record<ChatMode, string> = { agent: "exa", plan: "exa", chat: "exa" };
   const MODE_DIRECTIVE: Record<ChatMode, string> = {
     chat: "Answer as a chat assistant. Do not run tools.",
     plan: "Only inspect (SELECT queries, schema reads). Never modify data or schema. Propose a plan and the exact SQL for the user to approve.",
@@ -402,7 +418,13 @@ export function ExaEnginePanel({
         sid = created.id;
         setSession(sid);
       }
-      const r = await agent.engine.prompt(sid, prompt, model ? { providerID: model.providerID, modelID: model.modelID } : undefined, MODE_TO_AGENT[mode]);
+      const r = await agent.engine.prompt(
+        sid,
+        prompt,
+        model ? { providerID: model.providerID, modelID: model.modelID } : undefined,
+        MODE_TO_AGENT[mode],
+        EXA_SYSTEM,
+      );
       if (gen !== turnGen.current) return; // cleared mid-turn — UI already reset
       if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
     } catch (e) {

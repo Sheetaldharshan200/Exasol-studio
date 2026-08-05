@@ -17,6 +17,7 @@ import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 import { EngineService } from "./engine/engine-service.ts";
+import { localBaseURL } from "./providers.ts";
 
 // Minimal localhost HTTP + SSE server. No framework by design: six routes,
 // token auth, and Server-Sent Events — node:http covers all of it.
@@ -54,6 +55,13 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // GET /v1/models
       if (req.method === "GET" && parts[1] === "models") {
         const providers = await registry.list();
+        // Declare the RUNNING local runtimes to the engine so prompts with
+        // these provider ids resolve (fire-and-forget; merge-only config).
+        const locals = providers
+          .filter((p) => p.kind === "local" && p.running && p.models.length > 0)
+          .map((p) => ({ id: p.id, name: p.name, baseURL: localBaseURL(p.id), models: p.models }))
+          .filter((p): p is typeof p & { baseURL: string } => typeof p.baseURL === "string");
+        if (locals.length > 0) void engine.syncLocalProviders(locals).catch(() => undefined);
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
       }
 
@@ -169,8 +177,8 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
           const sid = decodeURIComponent(parts[3]);
           if (parts[4] === "prompt") {
-            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string }; agent?: string }>(req);
-            const ok = await engine.prompt(sid, b.text ?? "", b.model, b.agent);
+            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string }; agent?: string; system?: string }>(req);
+            const ok = await engine.prompt(sid, b.text ?? "", b.model, b.agent, b.system);
             return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
           }
           if (parts[4] === "abort") {
