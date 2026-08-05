@@ -58,6 +58,26 @@ export function ExaEnginePanel({
   const [cliBusy, setCliBusy] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<PickedModel | null>(null);
+  // Model choice is shared across both surfaces (dock + full tab): persisted
+  // and broadcast, so picking a model in one immediately applies to the other.
+  const pickModel = (m: PickedModel | null) => {
+    setModel(m);
+    try {
+      if (m) localStorage.setItem("exa.model", JSON.stringify(m));
+      else localStorage.removeItem("exa.model");
+    } catch {
+      /* private mode */
+    }
+    window.dispatchEvent(new CustomEvent("exa:model", { detail: { model: m, src: instanceId.current } }));
+  };
+  useEffect(() => {
+    const onModel = (e: Event) => {
+      const d = (e as CustomEvent<{ model: PickedModel | null; src: string }>).detail;
+      if (d.src !== instanceId.current) setModel(d.model);
+    };
+    window.addEventListener("exa:model", onModel);
+    return () => window.removeEventListener("exa:model", onModel);
+  }, []);
   // Composer state now lives here — the registry composer inside ExaThread
   // reads/writes it through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
@@ -167,6 +187,13 @@ export function ExaEnginePanel({
         setProviders(ps);
         setModel((cur) => {
           if (cur) return cur;
+          // A previously picked model (either surface) wins over the default.
+          try {
+            const saved = localStorage.getItem("exa.model");
+            if (saved) return JSON.parse(saved) as PickedModel;
+          } catch {
+            /* fall through to defaults */
+          }
           if (defaultModel) {
             const [pid, ...rest] = defaultModel.split("/");
             return { providerID: pid, modelID: rest.join("/"), label: defaultModel };
@@ -569,7 +596,7 @@ export function ExaEnginePanel({
         composerApi={{
           providers,
           model,
-          onPickModel: setModel,
+          onPickModel: pickModel,
           onSaveKey: saveKey,
           getSnapshot: getSnapshot ?? (() => EMPTY_SNAPSHOT),
           mode,

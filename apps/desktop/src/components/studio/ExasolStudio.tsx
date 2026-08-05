@@ -336,14 +336,31 @@ export function ExasolStudio({
     [connKey],
   );
 
+  // One Exa surface at a time: opening the dock closes an active Exa tab
+  // (via this ref, current each render), and activating the Exa tab closes
+  // the dock (effect below) — the two must never show together.
+  const closeActiveExaTabRef = useRef<() => void>(() => {});
   const toggleAi = useCallback(() => {
     setAiOpen((o) => {
       const next = !o;
-      if (next) aiPanelRef.current?.expand();
-      else aiPanelRef.current?.collapse();
+      if (next) {
+        closeActiveExaTabRef.current();
+        aiPanelRef.current?.expand();
+      } else aiPanelRef.current?.collapse();
       return next;
     });
   }, []);
+
+  closeActiveExaTabRef.current = () => {
+    if (activeTab.view === "exaEngine") closeTab(activeTab.id);
+  };
+  // The Exa tab becoming active closes the dock (the reverse direction).
+  useEffect(() => {
+    if (activeTab.view === "exaEngine") {
+      setAiOpen(false);
+      aiPanelRef.current?.collapse();
+    }
+  }, [activeTab.view]);
 
   const loadHistory = useCallback(() => {
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
