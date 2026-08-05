@@ -2,6 +2,61 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mapEngineEvent } from "./bridge-map.ts";
 
+describe("mapEngineEvent (v1.18 verified shapes)", () => {
+  test("message.updated maps to message.upsert with role", () => {
+    const e = mapEngineEvent(
+      { type: "message.updated", properties: { info: { id: "msg_1", sessionID: "ses_1", role: "assistant" } } },
+      "",
+    );
+    assert.deepEqual(e, { type: "message.upsert", sessionId: "ses_1", messageId: "msg_1", role: "assistant" });
+  });
+
+  test("message.part.updated text part maps to a text snapshot", () => {
+    const e = mapEngineEvent(
+      {
+        type: "message.part.updated",
+        properties: { sessionID: "ses_1", part: { id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "Hello wor" } },
+      },
+      "",
+    );
+    assert.deepEqual(e, {
+      type: "part.snapshot",
+      sessionId: "ses_1",
+      messageId: "msg_1",
+      partId: "prt_1",
+      part: { kind: "text", text: "Hello wor" },
+    });
+  });
+
+  test("message.part.updated tool part carries call id, name and status", () => {
+    const e = mapEngineEvent(
+      {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "ses_1",
+          part: { id: "prt_2", messageID: "msg_1", type: "tool", callID: "call_9", tool: "run_sql", state: { status: "completed" } },
+        },
+      },
+      "",
+    );
+    assert.deepEqual(e, {
+      type: "part.snapshot",
+      sessionId: "ses_1",
+      messageId: "msg_1",
+      partId: "prt_2",
+      part: { kind: "tool", callId: "call_9", name: "run_sql", status: "completed" },
+    });
+  });
+
+  test("non-chat part types (step markers) are ignored", () => {
+    const e = mapEngineEvent(
+      { type: "message.part.updated", properties: { sessionID: "ses_1", part: { id: "p", messageID: "m", type: "step-start" } } },
+      "",
+    );
+    assert.equal(e, null);
+  });
+});
+
 describe("mapEngineEvent", () => {
   test("streaming message deltas across field-name variants", () => {
     assert.deepEqual(mapEngineEvent({ type: "message.delta", text: "hi", sessionId: "s1" }, "s0"), {

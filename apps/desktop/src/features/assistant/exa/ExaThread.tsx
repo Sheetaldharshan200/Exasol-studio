@@ -55,11 +55,13 @@ import { ExaMcpPanel } from "./ExaMcpPanel";
 
 /** The panel's message model: ordered parts, so tool calls sit inline. */
 export type ExaPart =
-  | { type: "text"; text: string }
+  | { type: "text"; text: string; partId?: string }
   | { type: "tool"; callId: string; name: string; ok?: boolean };
 export type ExaMessage = {
   role: "user" | "assistant";
   parts: ExaPart[];
+  /** The engine's message id — live part snapshots upsert by this. */
+  engineId?: string;
   /** Text the user quoted from an earlier reply (rendered as a QuoteBlock). */
   quote?: string;
 };

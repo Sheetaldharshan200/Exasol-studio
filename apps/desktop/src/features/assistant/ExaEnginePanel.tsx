@@ -8,7 +8,7 @@ import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, transcriptMarkdown, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
-import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
+import { ExaThread, messageText, type ChatMode, type ExaMessage, type ExaPart } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ExaModelSelector";
 
 /**
@@ -149,6 +149,8 @@ export function ExaEnginePanel({
   const loadSeq = useRef(0);
   // The session-list refresher, reachable from the long-lived stream callback.
   const loadSessionsRef = useRef<() => void>(() => {});
+  // Engine message id → role, so part snapshots know whose part is streaming.
+  const rolesRef = useRef<Record<string, "user" | "assistant">>({});
 
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
@@ -241,7 +243,66 @@ export function ExaEnginePanel({
         // session switch, a discarded turn can still emit). Events without a
         // session id can't be attributed, so they pass through.
         if (e.sessionId && e.sessionId !== sessionRef.current) return;
-        if (e.type === "message.delta") {
+        if (e.type === "message.upsert") {
+          // Track the role per engine message; stamp our optimistic user
+          // bubble with its engine id so its echo doesn't duplicate it.
+          rolesRef.current[e.messageId] = e.role;
+          if (e.role === "user") {
+            setMessages((m) => {
+              if (m.some((x) => x.engineId === e.messageId)) return m;
+              for (let i = m.length - 1; i >= 0; i--) {
+                if (m[i].role === "user" && !m[i].engineId) {
+                  const n = [...m];
+                  n[i] = { ...n[i], engineId: e.messageId };
+                  return n;
+                }
+              }
+              return m;
+            });
+          }
+        } else if (e.type === "part.snapshot") {
+          // v1.18 streams SNAPSHOTS (full part state) — upsert by ids.
+          const role = rolesRef.current[e.messageId] ?? "assistant";
+          setMessages((m) => {
+            let idx = m.findIndex((x) => x.engineId === e.messageId);
+            if (idx === -1 && role === "user") {
+              // The engine's echo of a prompt we already render — stamp only
+              // (our shown text intentionally differs from the engine prompt).
+              for (let i = m.length - 1; i >= 0; i--) {
+                if (m[i].role === "user" && !m[i].engineId) {
+                  const n = [...m];
+                  n[i] = { ...n[i], engineId: e.messageId };
+                  return n;
+                }
+              }
+              return m;
+            }
+            if (role === "user") return m; // never rewrite user bubbles
+            const toolOk = (status: string) => (status === "completed" ? true : status === "error" ? false : undefined);
+            if (idx === -1) {
+              const part: ExaPart =
+                e.part.kind === "text"
+                  ? { type: "text", text: e.part.text, partId: e.partId }
+                  : { type: "tool", callId: e.part.callId, name: e.part.name, ok: toolOk(e.part.status) };
+              return [...m, { role: "assistant", engineId: e.messageId, parts: [part] }];
+            }
+            const msg = m[idx];
+            const parts = [...msg.parts];
+            if (e.part.kind === "text") {
+              const pi = parts.findIndex((p) => p.type === "text" && p.partId === e.partId);
+              if (pi >= 0) parts[pi] = { ...parts[pi], type: "text", text: e.part.text, partId: e.partId };
+              else parts.push({ type: "text", text: e.part.text, partId: e.partId });
+            } else {
+              const tool = e.part;
+              const pi = parts.findIndex((p) => p.type === "tool" && p.callId === tool.callId);
+              if (pi >= 0) parts[pi] = { ...(parts[pi] as Extract<ExaPart, { type: "tool" }>), ok: toolOk(tool.status) };
+              else parts.push({ type: "tool", callId: tool.callId, name: tool.name, ok: toolOk(tool.status) });
+            }
+            const n = [...m];
+            n[idx] = { ...msg, parts };
+            return n;
+          });
+        } else if (e.type === "message.delta") {
           setMessages((m) => {
             const last = m[m.length - 1];
             if (last?.role === "assistant") {

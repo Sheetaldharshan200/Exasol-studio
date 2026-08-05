@@ -10,6 +10,17 @@
  */
 
 export type StudioAgentEvent =
+  // v1.18 shapes (verified): the engine streams SNAPSHOTS of message parts,
+  // not deltas — the UI upserts by (messageId, partId/callId).
+  | { type: "message.upsert"; sessionId: string; messageId: string; role: "user" | "assistant" }
+  | {
+      type: "part.snapshot";
+      sessionId: string;
+      messageId: string;
+      partId: string;
+      part: { kind: "text"; text: string } | { kind: "tool"; callId: string; name: string; status: string };
+    }
+  // Legacy/fallback shapes kept for other engine versions.
   | { type: "message.delta"; sessionId: string; text: string }
   | { type: "message.done"; sessionId: string }
   | { type: "tool.start"; sessionId: string; callId: string; name: string; args: unknown }
@@ -34,8 +45,46 @@ const pick = (o: Record<string, unknown>, keys: string[]): unknown => {
  */
 export function mapEngineEvent(raw: RawEngineEvent, sessionId: string): StudioAgentEvent | null {
   const t = str(raw.type).toLowerCase();
-  const sid = str(pick(raw as Record<string, unknown>, ["sessionId", "session_id", "session"]), sessionId);
+  const props = (raw.properties ?? {}) as Record<string, unknown>;
+  const sid = str(props.sessionID) || str(pick(raw as Record<string, unknown>, ["sessionId", "session_id", "session"]), sessionId);
 
+  // ── Exact v1.18 shapes first (verified against the engine's OpenAPI). ──
+  // message.updated: { properties: { info: { id, sessionID, role, ... } } }
+  if (t === "message.updated") {
+    const info = (props.info ?? {}) as Record<string, unknown>;
+    const messageId = str(info.id);
+    if (!messageId) return null;
+    return {
+      type: "message.upsert",
+      sessionId: str(info.sessionID) || sid,
+      messageId,
+      role: info.role === "user" ? "user" : "assistant",
+    };
+  }
+  // message.part.updated: { properties: { sessionID, part: Part } } — the
+  // part carries the FULL text so far (a snapshot, not a delta).
+  if (t === "message.part.updated") {
+    const part = (props.part ?? {}) as Record<string, unknown>;
+    const messageId = str(part.messageID);
+    const partId = str(part.id);
+    const psid = str(part.sessionID) || sid;
+    if (part.type === "text") {
+      return { type: "part.snapshot", sessionId: psid, messageId, partId, part: { kind: "text", text: str(part.text) } };
+    }
+    if (part.type === "tool") {
+      const state = (part.state ?? {}) as Record<string, unknown>;
+      return {
+        type: "part.snapshot",
+        sessionId: psid,
+        messageId,
+        partId,
+        part: { kind: "tool", callId: str(part.callID) || partId, name: str(part.tool, "tool"), status: str(state.status) },
+      };
+    }
+    return null; // step markers / snapshots / reasoning — not rendered yet
+  }
+
+  // ── Fuzzy fallbacks for other engine versions. ──
   // Streaming assistant text.
   if (t.includes("message") && (t.includes("delta") || t.includes("part") || t.includes("chunk"))) {
     const text = str(pick(raw as Record<string, unknown>, ["text", "delta", "content"]));

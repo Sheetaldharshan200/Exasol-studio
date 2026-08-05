@@ -382,6 +382,14 @@ export type EngineStatus = {
 
 /** Mapped engine event (mirrors agent-core StudioAgentEvent). */
 export type EngineEvent =
+  | { type: "message.upsert"; sessionId: string; messageId: string; role: "user" | "assistant" }
+  | {
+      type: "part.snapshot";
+      sessionId: string;
+      messageId: string;
+      partId: string;
+      part: { kind: "text"; text: string } | { kind: "tool"; callId: string; name: string; status: string };
+    }
   | { type: "message.delta"; sessionId: string; text: string }
   | { type: "message.done"; sessionId: string }
   | { type: "tool.start"; sessionId: string; callId: string; name: string; args: unknown }
