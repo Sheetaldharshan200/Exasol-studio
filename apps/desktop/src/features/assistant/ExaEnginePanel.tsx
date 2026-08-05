@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, Plus, Terminal, Wrench, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Plus, Terminal, X } from "lucide-react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { ChatMarkdown } from "./exa/ChatMarkdown";
 import { ChatComposer, type ChatMode, type ComposerSubmission } from "./exa/ChatComposer";
-import { transcriptMarkdown } from "./exa/commands";
-import { buildPrompt, type ExaSnapshot } from "./exa/context";
+import { expandCommand, parseSlash, transcriptMarkdown } from "./exa/commands";
+import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
+import { ExaThread, messageText, type ExaMessage } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ModelMenu";
 
 /**
@@ -25,8 +25,7 @@ import type { PickedModel } from "./exa/ModelMenu";
  */
 const ENGINE_TAG = "v1.18.12";
 
-type ChatMsg = { role: "user" | "assistant"; text: string };
-type ToolCard = { callId: string; name: string; args: unknown; ok?: boolean; result?: unknown };
+// Messages are ordered parts (text + tool calls inline) — see ExaThread.
 
 const EMPTY_SNAPSHOT: ExaSnapshot = {
   schemas: [],
@@ -54,15 +53,13 @@ export function ExaEnginePanel({
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [tools, setTools] = useState<ToolCard[]>([]);
+  const [messages, setMessages] = useState<ExaMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliBusy, setCliBusy] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<PickedModel | null>(null);
   const disposer = useRef<(() => void) | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   // The live session id, readable from the long-lived stream callback (state
   // there would be a stale closure). Kept in sync with setSessionId below.
   const sessionRef = useRef<string | null>(null);
@@ -156,17 +153,33 @@ export function ExaEnginePanel({
         if (e.type === "message.delta") {
           setMessages((m) => {
             const last = m[m.length - 1];
-            if (last?.role === "assistant") return [...m.slice(0, -1), { ...last, text: last.text + e.text }];
-            return [...m, { role: "assistant", text: e.text }];
+            if (last?.role === "assistant") {
+              const parts = [...last.parts];
+              const tail = parts[parts.length - 1];
+              if (tail?.type === "text") parts[parts.length - 1] = { ...tail, text: tail.text + e.text };
+              else parts.push({ type: "text", text: e.text });
+              return [...m.slice(0, -1), { ...last, parts }];
+            }
+            return [...m, { role: "assistant", parts: [{ type: "text", text: e.text }] }];
           });
         } else if (e.type === "tool.start") {
-          setTools((t) => [...t, { callId: e.callId, name: e.name, args: e.args }]);
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            const part = { type: "tool" as const, callId: e.callId, name: e.name };
+            if (last?.role === "assistant") return [...m.slice(0, -1), { ...last, parts: [...last.parts, part] }];
+            return [...m, { role: "assistant", parts: [part] }];
+          });
         } else if (e.type === "tool.result") {
-          setTools((t) => t.map((c) => (c.callId === e.callId ? { ...c, ok: e.ok, result: e.result } : c)));
+          setMessages((m) =>
+            m.map((msg) => ({
+              ...msg,
+              parts: msg.parts.map((p) => (p.type === "tool" && p.callId === e.callId ? { ...p, ok: e.ok } : p)),
+            })),
+          );
         } else if (e.type === "session.idle" || e.type === "message.done") {
           setBusy(false);
         } else if (e.type === "error") {
-          setMessages((m) => [...m, { role: "assistant", text: `⚠︎ ${e.message}` }]);
+          setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${e.message}` }] }]);
           setBusy(false);
         }
       })
@@ -177,10 +190,6 @@ export function ExaEnginePanel({
       disposer.current?.();
     };
   }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, tools]);
 
   async function install() {
     setInstalling(true);
@@ -208,11 +217,10 @@ export function ExaEnginePanel({
     if (busy) return;
     const directive = MODE_DIRECTIVE[mode];
     const prompt = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, chips);
-    setMessages((m) => [...m, { role: "user", text: shown }]);
-    setTools([]);
+    setMessages((m) => [...m, { role: "user", parts: [{ type: "text", text: shown }] }]);
     setBusy(true);
     const fail = (msg: string) => {
-      setMessages((m) => [...m, { role: "assistant", text: `⚠︎ ${msg}` }]);
+      setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${msg}` }] }]);
       setBusy(false);
       refreshStatus();
     };
@@ -250,7 +258,6 @@ export function ExaEnginePanel({
     if (busy) void stop();
     setSession(null);
     setMessages([]);
-    setTools([]);
   }
 
   /** /share: export the conversation as a Markdown file. */
@@ -258,10 +265,29 @@ export function ExaEnginePanel({
     if (messages.length === 0) return;
     try {
       const path = await saveDialog({ defaultPath: "exa-conversation.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
-      if (path) await ipc.writeTextFile(path, transcriptMarkdown(messages));
+      if (path) await ipc.writeTextFile(path, transcriptMarkdown(messages.map((m) => ({ role: m.role, text: messageText(m) }))));
     } catch {
       /* user cancelled */
     }
+  }
+
+  /** Suggestion pills & edited messages re-enter the composer's grammar. */
+  function sendText(text: string) {
+    const slash = parseSlash(text);
+    if (slash?.command.kind === "local") {
+      if (slash.command.id === "clear") newChat();
+      else void shareChat();
+      return;
+    }
+    let engine = text;
+    let chips: ContextChip[] = [];
+    if (slash) {
+      const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
+      const e = expandCommand(slash.command.id, slash.arg, snap);
+      engine = e.text;
+      chips = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
+    }
+    void send({ shown: text, engine, chips, mode: "agent" });
   }
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -334,42 +360,7 @@ export function ExaEnginePanel({
         ) : null}
       </div>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-auto p-3 [scrollbar-width:thin]">
-        {messages.length === 0 ? (
-          <div className="mt-10 flex flex-col items-center gap-3 text-center">
-            <AgentMark className="h-9 w-9" />
-            <div>
-              <p className="text-[13px] font-semibold text-foreground">Ask Exa about your database</p>
-              <p className="mx-auto mt-1 max-w-xs text-[11.5px] leading-relaxed text-muted-foreground">
-                Grounded in your live schema. Type <span className="font-mono text-primary">@</span> to attach a table,
-                the current query, or your last results as context.
-              </p>
-            </div>
-          </div>
-        ) : null}
-        {messages.map((m, i) =>
-          m.role === "user" ? (
-            <div key={i} className="ml-auto max-w-[92%] whitespace-pre-wrap break-words rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-relaxed text-foreground">
-              {m.text}
-            </div>
-          ) : (
-            <div key={i} className="max-w-[97%] rounded-lg bg-editor px-3 py-2">
-              <ChatMarkdown text={m.text} onApplySql={onApplySql} />
-            </div>
-          ),
-        )}
-        {tools.map((t) => (
-          <div key={t.callId} className="flex items-center gap-1.5 rounded-md border border-border bg-editor px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
-            {t.ok === undefined ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : <Wrench className={cn("h-3 w-3", t.ok ? "text-primary" : "text-destructive")} />}
-            {t.name}
-          </div>
-        ))}
-        {busy && tools.length === 0 && messages[messages.length - 1]?.role === "user" ? (
-          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> thinking…
-          </div>
-        ) : null}
-      </div>
+      <ExaThread messages={messages} busy={busy} onApplySql={onApplySql} onSendText={sendText} onCancel={() => void stop()} />
 
       <ChatComposer
         providers={providers}

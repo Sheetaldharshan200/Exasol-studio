@@ -1097,16 +1097,9 @@ interface SpeechRecognitionErrorEvent extends Event {
   error: string;
 }
 
-declare global {
-  interface Window {
-    SpeechRecognition: {
-      new (): SpeechRecognition;
-    };
-    webkitSpeechRecognition: {
-      new (): SpeechRecognition;
-    };
-  }
-}
+// Window.SpeechRecognition/webkitSpeechRecognition globals are declared by
+// @assistant-ui/react's augmentations; we cast to the richer local interface
+// (with the on* handlers) at the construction site below.
 
 export type PromptInputSpeechButtonProps = ComponentProps<
   typeof PromptInputButton
@@ -1132,9 +1125,11 @@ export const PromptInputSpeechButton = ({
       typeof window !== "undefined" &&
       ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)
     ) {
-      const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
-      const speechRecognition = new SpeechRecognition();
+      const Ctor = (window.SpeechRecognition || window.webkitSpeechRecognition) as
+        | { new (): SpeechRecognition }
+        | undefined;
+      if (!Ctor) return;
+      const speechRecognition = new Ctor();
 
       speechRecognition.continuous = true;
       speechRecognition.interimResults = true;
