@@ -100,7 +100,10 @@ export function ExaModelSelector({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [view, setView] = useState<"providers" | "search" | "settings">("providers");
+  const [view, setView] = useState<"providers" | "settings">("providers");
+  // Search lives INSIDE the providers view: the input appears above the list
+  // and a non-empty query swaps the rows for flat matches — no separate tab.
+  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -144,7 +147,7 @@ export function ExaModelSelector({
         onChange={(e) => setKeyDraft((d) => ({ ...d, [p.id]: e.target.value }))}
         onKeyDown={(e) => e.key === "Enter" && void saveKey(p.id)}
         placeholder={p.envKey ?? "API key"}
-        className="h-7 w-44 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
+        className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
       />
       <button
         type="button"
@@ -175,6 +178,7 @@ export function ExaModelSelector({
         onOpenChange?.(o);
         if (!o) {
           setView("providers");
+          setSearchOpen(false);
           setQuery("");
         }
       }}
@@ -202,8 +206,12 @@ export function ExaModelSelector({
             <button
               type="button"
               title="Search models"
-              onClick={() => setView((v) => (v === "search" ? "providers" : "search"))}
-              className={cn("hover:bg-muted flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground", view === "search" && "bg-muted text-foreground")}
+              onClick={() => {
+                setView("providers");
+                setSearchOpen((o) => !o);
+                if (searchOpen) setQuery("");
+              }}
+              className={cn("hover:bg-muted flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground", searchOpen && "bg-muted text-foreground")}
             >
               <Search className="h-3.5 w-3.5" />
             </button>
@@ -219,44 +227,7 @@ export function ExaModelSelector({
         </div>
         <DropdownMenuSeparator />
 
-        {view === "search" ? (
-          <>
-            <div className="relative px-1 py-1" onKeyDown={(e) => e.stopPropagation()}>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search models…"
-                className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-7 text-[12px] outline-none focus:border-ring"
-              />
-              {query ? (
-                <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
-                  <X className="h-3 w-3" />
-                </button>
-              ) : null}
-            </div>
-            <div className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
-              {query.trim() === "" ? (
-                <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">Type to search across all providers.</p>
-              ) : searchResults.length === 0 ? (
-                <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">No models match “{query}”.</p>
-              ) : (
-                searchResults.map(({ p, m }) => {
-                  const active = model?.providerID === p.id && model?.modelID === m.id;
-                  return (
-                    <DropdownMenuItem key={`${p.id}/${m.id}`} onSelect={() => pick(p, m)} className="gap-2">
-                      <ProviderMark providerId={p.id} className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{p.name}</span>
-                      {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-            </div>
-          </>
-        ) : view === "settings" ? (
+        {view === "settings" ? (
           <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
             {providers.filter((p) => p.kind === "cloud" && p.id !== "in-database").map((p) => (
               <div key={p.id} className="mb-0.5">
@@ -273,7 +244,41 @@ export function ExaModelSelector({
           </div>
         ) : (
           <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
-            {providers.length === 0 ? (
+            {searchOpen ? (
+              <div className="relative px-1 pb-1" onKeyDown={(e) => e.stopPropagation()}>
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search models…"
+                  className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-7 text-[12px] outline-none focus:border-ring"
+                />
+                {query ? (
+                  <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {searchOpen && query.trim() !== "" ? (
+              // A live query swaps the provider rows for flat matches, in place.
+              searchResults.length === 0 ? (
+                <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">No models match “{query}”.</p>
+              ) : (
+                searchResults.map(({ p, m }) => {
+                  const active = model?.providerID === p.id && model?.modelID === m.id;
+                  return (
+                    <DropdownMenuItem key={`${p.id}/${m.id}`} onSelect={() => pick(p, m)} className="gap-2">
+                      <ProviderMark providerId={p.id} className="h-3.5 w-3.5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{p.name}</span>
+                      {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                    </DropdownMenuItem>
+                  );
+                })
+              )
+            ) : providers.length === 0 ? (
               <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">
                 No providers yet — run Ollama or LM Studio, or add an API key via the settings icon.
               </p>
