@@ -271,7 +271,7 @@ export function ExaComposerControls() {
   const modeInfo = MODES.find((m) => m.id === api.mode)!;
   const ModeIcon = modeInfo.icon;
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1">
       {/* `+` adds @-context — our equivalent of the example's attach button. */}
       <button
         type="button"

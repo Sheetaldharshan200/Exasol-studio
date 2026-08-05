@@ -253,11 +253,14 @@ const Composer: FC = () => {
 
 const ComposerAction: FC = () => {
   return (
-    <div className="aui-composer-action-wrapper relative flex items-center justify-between">
+    <div className="aui-composer-action-wrapper relative flex items-center justify-between gap-1">
       {/* Studio: mode pill · model menu · @ button (replaces the attachment
-          button — no attachment adapter is configured yet). */}
-      <ExaComposerControls />
-      <div className="flex items-center gap-1.5">
+          button — no attachment adapter is configured yet). The left group
+          shrinks (min-w-0) so send/cancel never leave the panel. */}
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <ExaComposerControls />
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
             <ComposerPrimitive.Dictate asChild>
