@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
-import type { AgentProviderInfo } from "@/lib/agent-client";
+import { ArrowLeft, Check, ChevronDown, KeyRound, Loader2, PlugZap, Search, Settings2, X } from "lucide-react";
+import type { AgentProviderInfo, EngineCatalogProvider } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
   DropdownMenu,
@@ -89,6 +89,7 @@ export function ExaModelSelector({
   model,
   onPick,
   onSaveKey,
+  loadCatalog,
   open,
   onOpenChange,
 }: {
@@ -96,11 +97,15 @@ export function ExaModelSelector({
   model: PickedModel | null;
   onPick: (m: PickedModel) => void;
   onSaveKey: (providerId: string, key: string) => Promise<void>;
+  /** The FULL models.dev catalog for the "Connect a provider" view. */
+  loadCatalog?: () => Promise<EngineCatalogProvider[]>;
   /** Controlled open state, so other UI (the model pill) can open this menu. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [view, setView] = useState<"providers" | "settings">("providers");
+  const [view, setView] = useState<"providers" | "settings" | "catalog">("providers");
+  const [catalog, setCatalog] = useState<EngineCatalogProvider[] | "loading" | "error" | null>(null);
+  const [connecting, setConnecting] = useState<EngineCatalogProvider | null>(null);
   // Search lives INSIDE the providers view: the input appears above the list
   // and a non-empty query swaps the rows for flat matches — no separate tab.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -117,6 +122,15 @@ export function ExaModelSelector({
     try {
       await onSaveKey(providerId, key);
       setKeyDraft((d) => ({ ...d, [providerId]: "" }));
+      // After connecting from the catalog, land back on the providers list —
+      // the newly configured provider (and its models) shows up there.
+      setConnecting((c) => {
+        if (c?.id === providerId) {
+          setView("providers");
+          return null;
+        }
+        return c;
+      });
     } finally {
       setSavingKey(null);
     }
@@ -180,6 +194,7 @@ export function ExaModelSelector({
           setView("providers");
           setSearchOpen(false);
           setQuery("");
+          setConnecting(null);
         }
       }}
     >
@@ -199,8 +214,16 @@ export function ExaModelSelector({
       <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5">
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {view === "settings" ? "API keys" : "Models"}
+          <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {view === "catalog" ? (
+              <button type="button" onClick={() => { setView("providers"); setConnecting(null); }} className="hover:text-foreground flex items-center gap-1" aria-label="Back to models">
+                <ArrowLeft className="h-3 w-3" /> Connect a provider
+              </button>
+            ) : view === "settings" ? (
+              "API keys"
+            ) : (
+              "Models"
+            )}
           </span>
           <div className="flex items-center gap-0.5">
             <button
@@ -227,7 +250,65 @@ export function ExaModelSelector({
         </div>
         <DropdownMenuSeparator />
 
-        {view === "settings" ? (
+        {view === "catalog" ? (
+          <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
+            {connecting ? (
+              <>
+                <p className="px-2 pt-1.5 text-[11px] text-muted-foreground">
+                  Set the {connecting.env[0] ?? "API"} key to connect {connecting.name}.
+                </p>
+                {keyInput({ id: connecting.id, name: connecting.name, kind: "cloud", configured: false, envKey: connecting.env[0], models: [] })}
+              </>
+            ) : (
+              <>
+                <div className="relative px-1 pb-1" onKeyDown={(e) => e.stopPropagation()}>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search 200+ providers…"
+                    className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2.5 text-[12px] outline-none focus:border-ring"
+                  />
+                </div>
+                {catalog === "loading" || catalog === null ? (
+                  <p className="flex items-center justify-center gap-2 px-3 py-3 text-[11px] text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Loading the provider catalog…
+                  </p>
+                ) : catalog === "error" ? (
+                  <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">Couldn't load the catalog — are you offline?</p>
+                ) : (
+                  (() => {
+                    const q = query.trim().toLowerCase();
+                    const list = q ? catalog.filter((c) => c.name.toLowerCase().includes(q) || c.id.includes(q)) : catalog;
+                    const popular = list.filter((c) => c.popular);
+                    const rest = list.filter((c) => !c.popular);
+                    const row = (c: EngineCatalogProvider) => (
+                      <DropdownMenuItem key={c.id} onSelect={(e) => { e.preventDefault(); setConnecting(c); }} className="gap-2">
+                        <ProviderMark providerId={c.id} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{c.modelCount || ""}</span>
+                      </DropdownMenuItem>
+                    );
+                    return (
+                      <>
+                        {popular.length > 0 ? (
+                          <p className="px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Popular</p>
+                        ) : null}
+                        {popular.map(row)}
+                        {rest.length > 0 && popular.length > 0 ? (
+                          <p className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">All providers</p>
+                        ) : null}
+                        {rest.slice(0, 200).map(row)}
+                        {list.length === 0 ? <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">No providers match “{query}”.</p> : null}
+                      </>
+                    );
+                  })()
+                )}
+              </>
+            )}
+          </div>
+        ) : view === "settings" ? (
           <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
             {providers.filter((p) => p.kind === "cloud" && p.id !== "in-database").map((p) => (
               <div key={p.id} className="mb-0.5">
@@ -319,6 +400,28 @@ export function ExaModelSelector({
                 </DropdownMenuSub>
               ))
             )}
+            {loadCatalog ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault(); // keep the menu open while browsing
+                    setView("catalog");
+                    setQuery("");
+                    if (catalog === null || catalog === "error") {
+                      setCatalog("loading");
+                      loadCatalog()
+                        .then(setCatalog)
+                        .catch(() => setCatalog("error"));
+                    }
+                  }}
+                  className="gap-2 text-muted-foreground"
+                >
+                  <PlugZap className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-[12px]">Connect a provider…</span>
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </div>
         )}
       </DropdownMenuContent>

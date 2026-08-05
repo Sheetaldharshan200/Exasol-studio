@@ -6,7 +6,7 @@ import { agent, type AgentProviderInfo, type EngineEvent, type EngineSessionInfo
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { expandCommand, parseSlash, transcriptMarkdown } from "./exa/commands";
+import { expandCommand, parseSlash, transcriptMarkdown, type LocalCommandId } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, messageText, type ChatMode, type ExaMessage } from "./exa/ExaThread";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -131,7 +131,11 @@ export function ExaEnginePanel({
 
   const saveKey = useCallback(
     async (providerId: string, key: string) => {
-      await agent.setProviderKey(providerId, key);
+      // The ENGINE's auth store is the source of truth (opencode drives the
+      // provider); the sidecar copy keeps Studio's own surfaces coherent for
+      // the providers it knows — its failure must not block the engine save.
+      await agent.engine.setAuth(providerId, key).catch(() => undefined);
+      await agent.setProviderKey(providerId, key).catch(() => undefined);
       await loadModels();
     },
     [loadModels],
@@ -314,12 +318,29 @@ export function ExaEnginePanel({
     }
   }
 
+  /** /compact: engine-side summarization to reclaim the session's context. */
+  async function compactChat() {
+    if (!sessionId) return;
+    const r = await agent.engine.compact(sessionId).catch(() => ({ ok: false }));
+    setMessages((m) => [
+      ...m,
+      { role: "assistant", parts: [{ type: "text", text: r.ok ? "_Session compacted — older turns were summarized to free context._" : "⚠︎ Compaction failed — is the engine running?" }] },
+    ]);
+    window.setTimeout(loadSessionsRef.current, 1500);
+  }
+
+  /** Local slash commands (also reachable from the header/sidebar). */
+  function runLocal(id: LocalCommandId) {
+    if (id === "clear" || id === "new") newChat();
+    else if (id === "compact") void compactChat();
+    else void shareChat();
+  }
+
   /** Every submit path (registry composer, suggestions, edits) lands here. */
   function sendText(text: string) {
     const slash = parseSlash(text);
     if (slash?.command.kind === "local") {
-      if (slash.command.id === "clear") newChat();
-      else void shareChat();
+      runLocal(slash.command.id as LocalCommandId);
       return;
     }
     let engine = text;
@@ -427,6 +448,7 @@ export function ExaEnginePanel({
             if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
           },
           removeChip: (id) => setChips((cs) => cs.filter((x) => x.id !== id)),
+          loadCatalog: () => agent.engine.catalog().then((r) => r.providers),
         }}
       />
     </div>

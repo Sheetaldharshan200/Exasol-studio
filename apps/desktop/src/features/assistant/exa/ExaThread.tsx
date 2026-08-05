@@ -23,7 +23,7 @@ import {
   Zap as ZapIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { EngineSessionInfo } from "@/lib/agent-client";
+import type { EngineCatalogProvider, EngineSessionInfo } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
@@ -146,6 +146,8 @@ export type ExaComposerApi = {
   chips: ContextChip[];
   addChip: (c: ContextChip | null) => void;
   removeChip: (id: string) => void;
+  /** The FULL models.dev catalog (every provider opencode supports). */
+  loadCatalog: () => Promise<EngineCatalogProvider[]>;
 };
 
 const ExaComposerContext = createContext<ExaComposerApi | null>(null);
@@ -275,6 +277,7 @@ export function ExaComposerControls() {
         model={api.model}
         onPick={api.onPickModel}
         onSaveKey={api.onSaveKey}
+        loadCatalog={api.loadCatalog}
         open={providersOpen}
         onOpenChange={setProvidersOpen}
       />

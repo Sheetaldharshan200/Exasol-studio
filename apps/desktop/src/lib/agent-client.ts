@@ -269,8 +269,14 @@ export const agent = {
       api(`/engine/sessions/${encodeURIComponent(id)}/messages`),
     prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName }),
-    /** The engine's own provider/model catalog (GET /config/providers). */
+    /** The engine's CONFIGURED providers/models (GET /config/providers). */
     providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
+    /** The FULL models.dev provider catalog (what opencode itself supports). */
+    catalog: (): Promise<{ providers: EngineCatalogProvider[] }> => api("/engine/catalog"),
+    /** Save a provider API key into the engine's own auth store. */
+    setAuth: (providerId: string, key: string): Promise<{ ok: boolean }> => api("/engine/auth", "POST", { providerId, key }),
+    /** Engine-side session compaction (/compact). */
+    compact: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/compact`, "POST"),
     abort: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/abort`, "POST"),
     respondPermission: (id: string, permissionId: string, approve: boolean): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/permission`, "POST", { permissionId, approve }),
@@ -290,6 +296,15 @@ export type EngineSessionInfo = { id: string; title?: string; updated?: number }
 export type EngineReplayMessage = {
   role: "user" | "assistant";
   parts: ({ type: "text"; text: string } | { type: "tool"; callId: string; name: string; ok?: boolean })[];
+};
+
+/** One provider from the FULL models.dev catalog (/v1/engine/catalog). */
+export type EngineCatalogProvider = {
+  id: string;
+  name: string;
+  env: string[];
+  modelCount: number;
+  popular: boolean;
 };
 
 /** One provider from the engine's own catalog (/v1/engine/providers). */

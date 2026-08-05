@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { EngineSupervisor, type EngineStatus } from "./supervisor.ts";
 import type { EngineClient } from "./client.ts";
 import type { StudioAgentEvent } from "./bridge-map.ts";
+import { upsertProviderAuth } from "./auth-store.ts";
+import { mapCatalog, type CatalogProvider } from "./catalog-map.ts";
 
 export type EngineEnv = { binary: string; configDir: string } | null;
 
@@ -136,5 +138,41 @@ export class EngineService {
   async stop(): Promise<void> {
     await this.supervisor?.stop();
     this.client = null;
+  }
+
+  /**
+   * Save a provider API key into the ENGINE's own auth.json (the single
+   * source of truth for cloud providers), then restart the server so it
+   * picks the credential up. False when the engine isn't installed.
+   */
+  async setProviderAuth(providerId: string, apiKey: string): Promise<boolean> {
+    const resolved = resolveEngineEnv(this.env);
+    if (!resolved) return false;
+    upsertProviderAuth(resolved.configDir, providerId, apiKey);
+    await this.stop(); // next call restarts with the new credentials
+    return true;
+  }
+
+  /** Compact (summarize) a session engine-side to reclaim context. */
+  async compact(sessionId: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.summarize(sessionId);
+    return true;
+  }
+
+  // The full models.dev catalog (the same source opencode uses), cached so
+  // opening the connect UI repeatedly doesn't hammer the network.
+  private catalogCache: { at: number; providers: CatalogProvider[] } | null = null;
+
+  async catalog(): Promise<CatalogProvider[]> {
+    const TTL = 10 * 60_000;
+    if (this.catalogCache && Date.now() - this.catalogCache.at < TTL) return this.catalogCache.providers;
+    const url = this.env.OPENCODE_MODELS_URL?.trim() || "https://models.opencode.ai/api.json";
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`catalog fetch failed: ${res.status}`);
+    const providers = mapCatalog((await res.json()) as Parameters<typeof mapCatalog>[0]);
+    this.catalogCache = { at: Date.now(), providers };
+    return providers;
   }
 }

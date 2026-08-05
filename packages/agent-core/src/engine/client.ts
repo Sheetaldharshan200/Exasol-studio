@@ -27,6 +27,8 @@ export type EngineClient = {
   listMessages(sessionId: string): Promise<ReplayMessage[]>;
   prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
+  /** Engine-side session compaction (summarize to reclaim context). */
+  summarize(sessionId: string): Promise<void>;
   respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void>;
   /** The engine's configured providers + models (its source of truth). */
   providers(): Promise<{ providers: EngineProvider[]; defaults: Record<string, string> }>;
@@ -44,6 +46,7 @@ type RawClient = {
     messages(o: unknown): Promise<{ data?: unknown[] }>;
     prompt(o: unknown): Promise<unknown>;
     abort(o: unknown): Promise<unknown>;
+    summarize(o: unknown): Promise<unknown>;
   };
   config: { providers(): Promise<{ data?: { providers?: RawProvider[]; default?: Record<string, string> } }> };
   event: { subscribe(): Promise<{ stream: AsyncIterable<RawEngineEvent> }> };
@@ -90,6 +93,9 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     },
     async abort(sessionId) {
       await c.session.abort({ path: { id: sessionId } });
+    },
+    async summarize(sessionId) {
+      await c.session.summarize({ path: { id: sessionId }, body: {} });
     },
     async respondPermission(sessionId, permissionId, approve) {
       await c.postSessionIdPermissionsPermissionId({

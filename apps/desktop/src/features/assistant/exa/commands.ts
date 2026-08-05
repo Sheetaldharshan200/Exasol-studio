@@ -17,7 +17,13 @@ export type SlashCommandId =
   | "fix"
   | "review"
   | "clear"
+  | "new"
+  | "compact"
+  | "export"
   | "share";
+
+/** The local (non-prompt) command ids the panel handles directly. */
+export type LocalCommandId = Extract<SlashCommandId, "clear" | "new" | "compact" | "export" | "share">;
 
 export type SlashCommand = {
   id: SlashCommandId;
@@ -35,7 +41,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "optimize", title: "optimize", description: "Optimize the current query for Exasol", kind: "prompt" },
   { id: "fix", title: "fix", description: "Fix the current query using the last error", hint: "what went wrong", kind: "prompt" },
   { id: "review", title: "review", description: "Review the SQL for correctness, performance & safety", kind: "prompt" },
+  { id: "new", title: "new", description: "Start a new session", kind: "local" },
   { id: "clear", title: "clear", description: "Start a new session", kind: "local" },
+  { id: "compact", title: "compact", description: "Summarize this session to reclaim context", kind: "local" },
+  { id: "export", title: "export", description: "Export this conversation as Markdown", kind: "local" },
   { id: "share", title: "share", description: "Export this conversation as Markdown", kind: "local" },
 ];
 
@@ -96,6 +105,9 @@ export function expandCommand(id: SlashCommandId, arg: string, snap: ExaSnapshot
       };
     // Local commands never reach expandCommand; return the arg defensively.
     case "clear":
+    case "new":
+    case "compact":
+    case "export":
     case "share":
       return { text: arg, providerIds: [] };
   }

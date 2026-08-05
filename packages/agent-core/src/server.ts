@@ -63,9 +63,24 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "GET" && parts[2] === "status") {
           return json(res, 200, { ...(await engine.status()), provisioned: engine.provisioned });
         }
-        // GET /v1/engine/providers — the engine's own provider/model catalog
+        // GET /v1/engine/providers — the engine's CONFIGURED providers/models
         if (req.method === "GET" && parts[2] === "providers") {
           return json(res, 200, await engine.providers());
+        }
+        // GET /v1/engine/catalog — the FULL models.dev provider catalog
+        if (req.method === "GET" && parts[2] === "catalog") {
+          try {
+            return json(res, 200, { providers: await engine.catalog() });
+          } catch {
+            return json(res, 502, { error: "catalog unavailable (offline?)" });
+          }
+        }
+        // POST /v1/engine/auth — save a provider API key into the engine
+        if (req.method === "POST" && parts[2] === "auth") {
+          const b = await readBody<{ providerId?: string; key?: string }>(req);
+          if (!b.providerId || !b.key) return json(res, 400, { error: "providerId and key required" });
+          const ok = await engine.setProviderAuth(b.providerId, b.key);
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
         }
         // GET /v1/engine/sessions | POST to create
         if (parts[2] === "sessions" && !parts[3]) {
@@ -90,6 +105,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           if (parts[4] === "abort") {
             await engine.abort(sid);
             return json(res, 200, { ok: true });
+          }
+          if (parts[4] === "compact") {
+            const ok = await engine.compact(sid);
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
           }
           if (parts[4] === "permission") {
             const b = await readBody<{ permissionId?: string; approve?: boolean }>(req);
