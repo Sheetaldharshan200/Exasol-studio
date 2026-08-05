@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
 import { agent, type AgentProviderInfo, type EngineAuthMethod, type EngineCatalogProvider, type EngineOAuthAuthorization } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
@@ -15,67 +15,6 @@ import {
 import { cn } from "@/lib/utils";
 
 export type PickedModel = { providerID: string; modelID: string; label: string };
-
-/**
- * Quick model switch — a second, flat dropdown listing ONLY the selected
- * provider's models, so changing models doesn't require re-walking the
- * provider submenu. Renders nothing until a provider is picked.
- */
-export function ExaModelQuickSwitch({
-  providers,
-  model,
-  onPick,
-  onOpenProviders,
-}: {
-  providers: AgentProviderInfo[];
-  model: PickedModel | null;
-  onPick: (m: PickedModel) => void;
-  /** Jump from here into the full provider menu ("All providers…"). */
-  onOpenProviders?: () => void;
-}) {
-  const provider = model ? providers.find((p) => p.id === model.providerID) : undefined;
-  if (!provider || provider.models.length === 0) return null;
-  const current = provider.models.find((m) => m.id === model!.modelID);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          title={`${provider.name} models`}
-          className="hover:bg-muted focus-visible:bg-muted flex h-7 min-w-0 max-w-[120px] items-center gap-1 rounded-full px-2 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[200px]"
-        >
-          <span className="truncate">{current?.name ?? model!.modelID}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="max-h-72 w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]">
-        {provider.models.map((m) => {
-          const active = model?.modelID === m.id;
-          return (
-            <DropdownMenuItem
-              key={m.id}
-              onSelect={() => onPick({ providerID: provider.id, modelID: m.id, label: `${provider.name} · ${m.name || m.id}` })}
-              className="gap-2"
-            >
-              {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
-              <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
-              <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} />
-            </DropdownMenuItem>
-          );
-        })}
-        {onOpenProviders ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onOpenProviders} className="gap-2 text-muted-foreground">
-              <span className="w-3.5 shrink-0" />
-              <span className="text-[12px]">All providers…</span>
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 /**
  * The composer's model selector, in the assistant-ui model-selector design
@@ -113,6 +52,8 @@ export function ExaModelSelector({
   const [query, setQuery] = useState("");
   const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  /** Result of the check-then-save per provider: verified or rejected. */
+  const [keyVerdict, setKeyVerdict] = useState<Record<string, "ok" | "fail">>({});
   const [catalog, setCatalog] = useState<EngineCatalogProvider[] | "loading" | "error" | null>(null);
   /** A catalog provider being connected (method picker → prompts → auth). */
   const [connecting, setConnecting] = useState<EngineCatalogProvider | null>(null);
@@ -195,10 +136,19 @@ export function ExaModelSelector({
     const key = (keyDraft[providerId] ?? "").trim();
     if (!key) return;
     setSavingKey(providerId);
+    setKeyVerdict((d) => {
+      const next = { ...d };
+      delete next[providerId];
+      return next;
+    });
     try {
+      // Check THEN save: the key is written to the engine, providers reload,
+      // and we confirm the engine now reports the provider as connected.
       await onSaveKey(providerId, key);
-      setKeyDraft((d) => ({ ...d, [providerId]: "" }));
-      setConnecting((c) => (c?.id === providerId ? null : c));
+      const conn = await agent.engine.connected().catch(() => ({ connected: [] as string[] }));
+      const ok = conn.connected.includes(providerId);
+      setKeyVerdict((d) => ({ ...d, [providerId]: ok ? "ok" : "fail" }));
+      if (ok) setKeyDraft((d) => ({ ...d, [providerId]: "" }));
     } finally {
       setSavingKey(null);
     }
@@ -208,25 +158,160 @@ export function ExaModelSelector({
     onPick({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name || m.id}` });
 
   const keyInput = (providerId: string, envKey?: string) => (
-    <div className="flex items-center gap-1.5 px-2 py-1.5" onKeyDown={(e) => e.stopPropagation()}>
-      <input
-        type="password"
-        value={keyDraft[providerId] ?? ""}
-        onChange={(e) => setKeyDraft((d) => ({ ...d, [providerId]: e.target.value }))}
-        onKeyDown={(e) => e.key === "Enter" && void saveKey(providerId)}
-        placeholder={envKey ?? "API key"}
-        className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
-      />
-      <button
-        type="button"
-        onClick={() => void saveKey(providerId)}
-        disabled={!(keyDraft[providerId] ?? "").trim() || savingKey === providerId}
-        className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2 text-[11px] font-medium text-background disabled:opacity-50"
-      >
-        {savingKey === providerId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
-      </button>
+    <div className="px-2 py-1.5" onKeyDown={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="password"
+          value={keyDraft[providerId] ?? ""}
+          onChange={(e) => setKeyDraft((d) => ({ ...d, [providerId]: e.target.value }))}
+          onKeyDown={(e) => e.key === "Enter" && void saveKey(providerId)}
+          placeholder={envKey ?? "API key"}
+          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
+        />
+        <button
+          type="button"
+          onClick={() => void saveKey(providerId)}
+          disabled={!(keyDraft[providerId] ?? "").trim() || savingKey === providerId}
+          className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2 text-[11px] font-medium text-background disabled:opacity-50"
+        >
+          {savingKey === providerId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+          {savingKey === providerId ? "Checking…" : "Check & save"}
+        </button>
+      </div>
+      {keyVerdict[providerId] === "ok" ? (
+        <p className="mt-1 flex items-center gap-1 text-[11px] text-foreground/80">
+          <Check className="h-3 w-3" /> Connected — models unlocked.
+        </p>
+      ) : keyVerdict[providerId] === "fail" ? (
+        <p className="mt-1 text-[11px] text-destructive">The engine couldn't connect with this key — check it and retry.</p>
+      ) : null}
     </div>
   );
+
+  /**
+   * The connect flow for one catalog provider, rendered inside its `>`
+   * submenu: auth-method list → prompts → OAuth link/code or key input.
+   * Flow state (method, prompts, oauth) applies only to the provider the
+   * user is actively connecting (`connecting`).
+   */
+  const connectFlow = (c: EngineCatalogProvider) => {
+    const mine = connecting?.id === c.id;
+    const methods: EngineAuthMethod[] = authMethods?.[c.id] ?? [{ type: "api", label: "API key" }];
+    const chosen = mine && methodIdx !== null ? methods[methodIdx] : methods.length === 1 ? methods[0] : null;
+    const chosenIdx = mine && methodIdx !== null ? methodIdx : methods.length === 1 ? 0 : null;
+    const flowOauth = mine ? oauth : null;
+    const flowState = mine ? oauthState : "idle";
+    const prompts = (chosen?.prompts ?? []).filter((pr) =>
+      !pr.when ? true : pr.when.op === "eq" ? promptInputs[pr.when.key] === pr.when.value : promptInputs[pr.when.key] !== pr.when.value,
+    );
+    const promptsAnswered = prompts.every((pr) => (promptInputs[pr.key] ?? "").trim() !== "");
+    return (
+      <div className="py-1">
+        {flowOauth ? (
+          <div className="px-2 py-1">
+            <a href={flowOauth.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 break-all text-[12px] text-foreground underline underline-offset-2 hover:opacity-80">
+              <ExternalLink className="h-3 w-3 shrink-0" /> {flowOauth.url}
+            </a>
+            {flowOauth.instructions ? <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{flowOauth.instructions}</p> : null}
+            {flowOauth.method === "code" && flowState !== "waiting" ? (
+              <div className="mt-1.5 flex items-center gap-1.5" onKeyDown={(e) => e.stopPropagation()}>
+                <input
+                  autoFocus
+                  value={codeDraft}
+                  onChange={(e) => setCodeDraft(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && chosenIdx !== null && void submitOauthCode(c.id, chosenIdx)}
+                  placeholder="Paste the code…"
+                  className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
+                />
+                <button
+                  type="button"
+                  onClick={() => chosenIdx !== null && void submitOauthCode(c.id, chosenIdx)}
+                  disabled={!codeDraft.trim()}
+                  className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2 text-[11px] font-medium text-background disabled:opacity-50"
+                >
+                  <Check className="h-3 w-3" /> Submit
+                </button>
+              </div>
+            ) : null}
+            {flowState === "waiting" ? (
+              <p className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Waiting for authorization…
+              </p>
+            ) : flowState === "failed" ? (
+              <p className="mt-2 text-[11px] text-destructive">Authorization failed — retry.</p>
+            ) : null}
+          </div>
+        ) : chosen && chosen.type === "api" ? (
+          <>
+            <p className="px-2 pt-0.5 text-[11px] text-muted-foreground">
+              Set the {c.env[0] ?? "API"} key to connect {c.name}.
+            </p>
+            {keyInput(c.id, c.env[0])}
+          </>
+        ) : chosen ? (
+          <div className="px-2 py-0.5">
+            {prompts.map((pr) =>
+              pr.type === "select" ? (
+                <div key={pr.key} className="mb-1.5">
+                  <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
+                  {(pr.options ?? []).map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => setPromptInputs((d) => ({ ...d, [pr.key]: o.value }))}
+                      className={cn("hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]", promptInputs[pr.key] === o.value && "bg-muted")}
+                    >
+                      {promptInputs[pr.key] === o.value ? <Check className="h-3 w-3 shrink-0" /> : <span className="w-3 shrink-0" />}
+                      <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                      {o.hint ? <span className="shrink-0 text-[10px] text-muted-foreground">{o.hint}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div key={pr.key} className="mb-1.5" onKeyDown={(e) => e.stopPropagation()}>
+                  <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
+                  <input
+                    value={promptInputs[pr.key] ?? ""}
+                    onChange={(e) => setPromptInputs((d) => ({ ...d, [pr.key]: e.target.value }))}
+                    placeholder={pr.placeholder}
+                    className="h-7 w-full rounded-md border border-border bg-background px-2 text-[11.5px] outline-none focus:border-ring"
+                  />
+                </div>
+              ),
+            )}
+            <button
+              type="button"
+              disabled={!promptsAnswered || flowState === "waiting"}
+              onClick={() => chosenIdx !== null && void startOauth(c.id, chosenIdx, promptInputs)}
+              className="mt-0.5 flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-foreground text-[11.5px] font-medium text-background disabled:opacity-50"
+            >
+              {flowState === "waiting" ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />} Sign in
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Select auth method</p>
+            {methods.map((m, i) => (
+              <button
+                key={`${m.label}-${i}`}
+                type="button"
+                onClick={() => {
+                  resetConnectFlow();
+                  setConnecting(c);
+                  setMethodIdx(i);
+                  if (m.type === "oauth" && !(m.prompts ?? []).length) void startOauth(c.id, i, {});
+                }}
+                className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]"
+              >
+                {m.type === "oauth" ? <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /> : <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                <span className="min-w-0 flex-1 truncate">{m.label}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <DropdownMenu
@@ -247,11 +332,13 @@ export function ExaModelSelector({
         <button
           type="button"
           title="Provider & models"
-          className="hover:bg-muted focus-visible:bg-muted flex h-7 min-w-0 max-w-[110px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[180px]"
+          className="hover:bg-muted focus-visible:bg-muted flex h-7 min-w-0 max-w-[170px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[260px]"
         >
           {model ? <ProviderMark providerId={model.providerID} className="h-3.5 w-3.5 shrink-0" /> : null}
           <span className="truncate">
-            {model ? providers.find((p) => p.id === model.providerID)?.name ?? model.providerID : "Select model"}
+            {model
+              ? providers.find((p) => p.id === model.providerID)?.models.find((m) => m.id === model.modelID)?.name ?? model.modelID
+              : "Select model"}
           </span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
@@ -260,15 +347,7 @@ export function ExaModelSelector({
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {connecting ? (
-              <button type="button" onClick={() => { setConnecting(null); resetConnectFlow(); }} className="hover:text-foreground flex items-center gap-1" aria-label="Back to providers">
-                <ArrowLeft className="h-3 w-3" /> Connect {connecting.name}
-              </button>
-            ) : view === "settings" ? (
-              "API keys"
-            ) : (
-              "AI providers"
-            )}
+            {view === "settings" ? "API keys" : "AI providers"}
           </span>
           <div className="flex items-center gap-0.5">
             <button
@@ -300,133 +379,7 @@ export function ExaModelSelector({
         </div>
         <DropdownMenuSeparator />
 
-        {connecting ? (
-          (() => {
-            // The engine's connect-flow spec; providers without an auth plugin
-            // get the same synthesized default the opencode TUI uses.
-            const methods: EngineAuthMethod[] = authMethods?.[connecting.id] ?? [{ type: "api", label: "API key" }];
-            const chosen = methodIdx !== null ? methods[methodIdx] : methods.length === 1 ? methods[0] : null;
-            const chosenIdx = methodIdx ?? (methods.length === 1 ? 0 : null);
-            // Prompts visible under the current answers (when-conditions).
-            const prompts = (chosen?.prompts ?? []).filter((pr) =>
-              !pr.when ? true : pr.when.op === "eq" ? promptInputs[pr.when.key] === pr.when.value : promptInputs[pr.when.key] !== pr.when.value,
-            );
-            const promptsAnswered = prompts.every((pr) => (promptInputs[pr.key] ?? "").trim() !== "");
-            return (
-              <div className="max-h-80 overflow-y-auto py-1 [scrollbar-width:thin]">
-                {oauth ? (
-                  <div className="px-2 py-1">
-                    <a
-                      href={oauth.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1.5 break-all text-[12px] text-foreground underline underline-offset-2 hover:opacity-80"
-                    >
-                      <ExternalLink className="h-3 w-3 shrink-0" /> {oauth.url}
-                    </a>
-                    {oauth.instructions ? <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{oauth.instructions}</p> : null}
-                    {oauth.method === "code" && oauthState !== "waiting" ? (
-                      <div className="mt-1.5 flex items-center gap-1.5" onKeyDown={(e) => e.stopPropagation()}>
-                        <input
-                          autoFocus
-                          value={codeDraft}
-                          onChange={(e) => setCodeDraft(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && chosenIdx !== null && void submitOauthCode(connecting.id, chosenIdx)}
-                          placeholder="Paste the code…"
-                          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => chosenIdx !== null && void submitOauthCode(connecting.id, chosenIdx)}
-                          disabled={!codeDraft.trim()}
-                          className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2 text-[11px] font-medium text-background disabled:opacity-50"
-                        >
-                          <Check className="h-3 w-3" /> Submit
-                        </button>
-                      </div>
-                    ) : null}
-                    {oauthState === "waiting" ? (
-                      <p className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Waiting for authorization…
-                      </p>
-                    ) : oauthState === "failed" ? (
-                      <p className="mt-2 text-[11px] text-destructive">Authorization failed — go back and retry.</p>
-                    ) : null}
-                  </div>
-                ) : chosen && chosen.type === "api" ? (
-                  <>
-                    <p className="px-2 pt-0.5 text-[11px] text-muted-foreground">
-                      Set the {connecting.env[0] ?? "API"} key to connect {connecting.name}.
-                    </p>
-                    {keyInput(connecting.id, connecting.env[0])}
-                  </>
-                ) : chosen ? (
-                  <div className="px-2 py-0.5">
-                    {prompts.map((pr) =>
-                      pr.type === "select" ? (
-                        <div key={pr.key} className="mb-1.5">
-                          <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
-                          {(pr.options ?? []).map((o) => (
-                            <button
-                              key={o.value}
-                              type="button"
-                              onClick={() => setPromptInputs((d) => ({ ...d, [pr.key]: o.value }))}
-                              className={cn(
-                                "hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]",
-                                promptInputs[pr.key] === o.value && "bg-muted",
-                              )}
-                            >
-                              {promptInputs[pr.key] === o.value ? <Check className="h-3 w-3 shrink-0" /> : <span className="w-3 shrink-0" />}
-                              <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                              {o.hint ? <span className="shrink-0 text-[10px] text-muted-foreground">{o.hint}</span> : null}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div key={pr.key} className="mb-1.5" onKeyDown={(e) => e.stopPropagation()}>
-                          <p className="pb-1 text-[11px] text-muted-foreground">{pr.message}</p>
-                          <input
-                            value={promptInputs[pr.key] ?? ""}
-                            onChange={(e) => setPromptInputs((d) => ({ ...d, [pr.key]: e.target.value }))}
-                            placeholder={pr.placeholder}
-                            className="h-7 w-full rounded-md border border-border bg-background px-2 text-[11.5px] outline-none focus:border-ring"
-                          />
-                        </div>
-                      ),
-                    )}
-                    <button
-                      type="button"
-                      disabled={!promptsAnswered || oauthState === "waiting"}
-                      onClick={() => chosenIdx !== null && void startOauth(connecting.id, chosenIdx, promptInputs)}
-                      className="mt-0.5 flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-foreground text-[11.5px] font-medium text-background disabled:opacity-50"
-                    >
-                      {oauthState === "waiting" ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />} Sign in
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Select auth method</p>
-                    {methods.map((m, i) => (
-                      <button
-                        key={`${m.label}-${i}`}
-                        type="button"
-                        onClick={() => {
-                          setMethodIdx(i);
-                          // OAuth methods without prompts start immediately.
-                          if (m.type === "oauth" && !(m.prompts ?? []).length) void startOauth(connecting.id, i, {});
-                        }}
-                        className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]"
-                      >
-                        {m.type === "oauth" ? <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /> : <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                        <span className="min-w-0 flex-1 truncate">{m.label}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            );
-          })()
-        ) : view === "settings" ? (
+        {view === "settings" ? (
           <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
             {providers.filter((p) => p.kind === "cloud" && p.id !== "in-database").map((p) => (
               <div key={p.id} className="mb-0.5">
@@ -471,12 +424,23 @@ export function ExaModelSelector({
               const catFiltered = q ? cat.filter((c) => c.name.toLowerCase().includes(q) || c.id.includes(q)) : cat;
               const popular = catFiltered.filter((c) => c.popular);
               const rest = catFiltered.filter((c) => !c.popular);
+              // Every catalog provider is a `>` submenu whose side pane holds
+              // the connect flow (auth methods / key entry, check-then-save).
               const catalogRow = (c: EngineCatalogProvider, withLogo: boolean) => (
-                <DropdownMenuItem key={c.id} onSelect={(e) => { e.preventDefault(); resetConnectFlow(); setConnecting(c); }} className="gap-2">
-                  {withLogo ? <ProviderMark providerId={c.id} className="h-3.5 w-3.5 shrink-0" /> : null}
-                  <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{c.modelCount || ""}</span>
-                </DropdownMenuItem>
+                <DropdownMenuSub key={c.id}>
+                  <DropdownMenuSubTrigger className="gap-2">
+                    {withLogo ? <ProviderMark providerId={c.id} className="h-3.5 w-3.5 shrink-0" /> : null}
+                    <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
+                    <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent
+                    className="max-h-80 w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
+                    sideOffset={6}
+                    collisionPadding={12}
+                  >
+                    {connectFlow(c)}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               );
               return (
                 <>

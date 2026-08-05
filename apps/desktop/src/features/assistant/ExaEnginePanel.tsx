@@ -294,6 +294,9 @@ export function ExaEnginePanel({
       refreshStatus();
     };
     const gen = turnGen.current;
+    // If the event bridge died (e.g. it was started before the engine was
+    // installed), revive it so this turn's reply actually streams in.
+    void agent.engine.ensureStream();
     try {
       let sid = sessionId;
       if (!sid) {
@@ -438,6 +441,7 @@ export function ExaEnginePanel({
     else if (id === "compact" || id === "summarize") void compactChat();
     else if (id === "export" || id === "share") void shareChat();
     else if (id === "connect" || id === "models") window.dispatchEvent(new CustomEvent("exa:open-providers"));
+    else if (id === "mcp") window.dispatchEvent(new CustomEvent("exa:open-mcp"));
     else if (id === "sessions" || id === "resume") window.dispatchEvent(new CustomEvent("exa:open-sessions"));
     else if (id === "details") setHideTools((h) => !h);
     else if (id === "undo" || id === "redo") void undoRedo(id);

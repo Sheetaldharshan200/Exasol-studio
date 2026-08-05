@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
 import type { AgentProviderInfo } from "@/lib/agent-client";
-import { ExaModelQuickSwitch, ExaModelSelector, type PickedModel } from "./ExaModelSelector";
+import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
   filterProviders,
   resolveContext,
@@ -43,6 +43,7 @@ import {
   type ExaSnapshot,
 } from "./context";
 import { filterCommands, type LocalCommandId, type SlashCommand } from "./commands";
+import { ExaMcpPanel } from "./ExaMcpPanel";
 
 /**
  * The Exa thread — the official assistant-ui thread UI (registry components in
@@ -306,13 +307,6 @@ export function ExaComposerControls() {
         loadCatalog={api.loadCatalog}
         open={providersOpen}
         onOpenChange={setProvidersOpen}
-      />
-      {/* Fast model switching within the selected provider. */}
-      <ExaModelQuickSwitch
-        providers={api.providers}
-        model={api.model}
-        onPick={api.onPickModel}
-        onOpenProviders={() => setProvidersOpen(true)}
       />
       <button
         type="button"
@@ -615,11 +609,17 @@ export function ExaThread({
     setEditingId(null);
   };
 
-  // /sessions opens the thread list from anywhere in the panel.
+  // /sessions opens the thread list; /mcp opens server configuration.
+  const [mcpOpen, setMcpOpen] = useState(false);
   useEffect(() => {
     const openSessions = () => setSidebarOpen(true);
+    const openMcp = () => setMcpOpen(true);
     window.addEventListener("exa:open-sessions", openSessions);
-    return () => window.removeEventListener("exa:open-sessions", openSessions);
+    window.addEventListener("exa:open-mcp", openMcp);
+    return () => {
+      window.removeEventListener("exa:open-sessions", openSessions);
+      window.removeEventListener("exa:open-mcp", openMcp);
+    };
   }, []);
   // Latest handler behind a stable ref so the adapter never goes stale.
   const sendRef = useRef(onSendText);
@@ -802,6 +802,9 @@ export function ExaThread({
                 <Thread components={{ Welcome: ExaWelcome }} />
               </div>
             </div>
+
+            {/* /mcp — engine-side MCP server configuration overlay. */}
+            <ExaMcpPanel open={mcpOpen} onClose={() => setMcpOpen(false)} />
           </div>
         </ExaApplySqlContext.Provider>
       </ExaComposerContext.Provider>

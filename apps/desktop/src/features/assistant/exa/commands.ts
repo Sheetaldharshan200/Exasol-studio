@@ -23,6 +23,7 @@ export type SlashCommandId =
   | "export"
   | "share"
   | "connect"
+  | "mcp"
   | "models"
   | "sessions"
   | "resume"
@@ -55,6 +56,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "sessions", title: "sessions", description: "List and switch between sessions", kind: "local" },
   { id: "resume", title: "resume", description: "List and switch between sessions", kind: "local" },
   { id: "connect", title: "connect", description: "Add an AI provider (API key or sign-in)", kind: "local" },
+  { id: "mcp", title: "mcp", description: "Configure MCP servers (tools for the agent)", kind: "local" },
   { id: "models", title: "models", description: "List available models", kind: "local" },
   { id: "compact", title: "compact", description: "Summarize this session to reclaim context", kind: "local" },
   { id: "summarize", title: "summarize", description: "Summarize this session to reclaim context", kind: "local" },

@@ -26,6 +26,11 @@ export type AuthMethod = { type: "oauth" | "api"; label: string; prompts?: AuthP
 /** What POST /provider/:id/oauth/authorize returns. */
 export type OAuthAuthorization = { url: string; method: "auto" | "code"; instructions: string };
 
+/** An MCP server definition (verified against the engine's OpenAPI spec). */
+export type McpConfig =
+  | { type: "local"; command: string[]; cwd?: string; environment?: Record<string, string>; enabled?: boolean }
+  | { type: "remote"; url: string; headers?: Record<string, string>; enabled?: boolean };
+
 /** One provider from the engine's own catalog (GET /config/providers). */
 export type EngineProvider = {
   id: string;
@@ -64,8 +69,14 @@ export type EngineClient = {
   oauthCallback(providerId: string, method: number, code?: string): Promise<boolean>;
   /** Save an API key via the engine's own route (PUT /auth/:id). */
   setAuthKey(providerId: string, key: string): Promise<void>;
+  /** Provider ids the engine considers connected (GET /provider). */
+  connectedProviders(): Promise<string[]>;
   /** Reset instance state so new credentials take effect (no restart). */
   dispose(): Promise<void>;
+  /** MCP servers: status map, add one, and connect/disconnect by name. */
+  mcpList(): Promise<Record<string, { status: string }>>;
+  mcpAdd(name: string, config: McpConfig): Promise<void>;
+  mcpToggle(name: string, connect: boolean): Promise<void>;
   /** Subscribe to the server's event stream, mapped to Studio events. */
   subscribe(onEvent: (e: StudioAgentEvent) => void, signal?: AbortSignal): Promise<void>;
 };
@@ -153,8 +164,21 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     async setAuthKey(providerId, key) {
       await http(`/auth/${encodeURIComponent(providerId)}`, { method: "PUT", body: { type: "api", key } });
     },
+    async connectedProviders() {
+      const r = await http<{ connected?: string[] }>("/provider");
+      return r?.connected ?? [];
+    },
     async dispose() {
       await http("/instance/dispose", { method: "POST" });
+    },
+    async mcpList() {
+      return http<Record<string, { status: string }>>("/mcp");
+    },
+    async mcpAdd(name, config) {
+      await http("/mcp", { method: "POST", body: { name, config } });
+    },
+    async mcpToggle(name, connect) {
+      await http(`/mcp/${encodeURIComponent(name)}/${connect ? "connect" : "disconnect"}`, { method: "POST", body: {} });
     },
     async providers() {
       const r = await c.config.providers();

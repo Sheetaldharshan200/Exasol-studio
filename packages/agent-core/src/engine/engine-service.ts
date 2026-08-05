@@ -164,6 +164,32 @@ export class EngineService {
     return true;
   }
 
+  /** MCP servers: status map / add / connect-disconnect (engine-side). */
+  async mcpList() {
+    const c = await this.ensureClient();
+    return c ? c.mcpList() : {};
+  }
+
+  async mcpAdd(name: string, config: import("./client.ts").McpConfig): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.mcpAdd(name, config);
+    return true;
+  }
+
+  async mcpToggle(name: string, connect: boolean): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.mcpToggle(name, connect);
+    return true;
+  }
+
+  /** Provider ids the engine considers connected; empty when absent. */
+  async connectedProviders(): Promise<string[]> {
+    const c = await this.ensureClient();
+    return c ? c.connectedProviders() : [];
+  }
+
   /** Per-provider auth methods (the connect-flow spec); empty when absent. */
   async authMethods() {
     const c = await this.ensureClient();

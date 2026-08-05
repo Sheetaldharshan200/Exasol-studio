@@ -86,6 +86,32 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "GET" && parts[2] === "auth-methods") {
           return json(res, 200, { methods: await engine.authMethods() });
         }
+        // GET /v1/engine/connected — provider ids with working credentials
+        if (req.method === "GET" && parts[2] === "connected") {
+          return json(res, 200, { connected: await engine.connectedProviders() });
+        }
+        // /v1/engine/mcp — server status map | add | connect/disconnect
+        if (parts[2] === "mcp" && !parts[3]) {
+          if (req.method === "GET") return json(res, 200, { servers: await engine.mcpList() });
+          if (req.method === "POST") {
+            const b = await readBody<{ name?: string; config?: import("./engine/client.ts").McpConfig }>(req);
+            if (!b.name?.trim() || !b.config) return json(res, 400, { error: "name and config required" });
+            try {
+              const ok = await engine.mcpAdd(b.name.trim(), b.config);
+              return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+            } catch (e) {
+              return json(res, 502, { error: e instanceof Error ? e.message : "mcp add failed" });
+            }
+          }
+        }
+        if (req.method === "POST" && parts[2] === "mcp" && parts[3] && (parts[4] === "connect" || parts[4] === "disconnect")) {
+          try {
+            const ok = await engine.mcpToggle(decodeURIComponent(parts[3]), parts[4] === "connect");
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "mcp toggle failed" });
+          }
+        }
         // POST /v1/engine/oauth/(authorize|callback)
         if (req.method === "POST" && parts[2] === "oauth" && parts[3] === "authorize") {
           const b = await readBody<{ providerId?: string; method?: number; inputs?: Record<string, string> }>(req);
@@ -169,10 +195,19 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           });
           const ac = new AbortController();
           req.on("close", () => ac.abort());
-          try {
-            await engine.subscribe((e) => res.write(`data: ${JSON.stringify(e)}\n\n`), ac.signal);
-          } catch {
-            /* stream ended */
+          // The engine may not be installed/running when the app subscribes
+          // (the panel mounts before first install). NEVER end the stream —
+          // retry with a heartbeat until the client disconnects, so replies
+          // always flow once the engine comes up.
+          while (!ac.signal.aborted) {
+            try {
+              await engine.subscribe((e) => res.write(`data: ${JSON.stringify(e)}\n\n`), ac.signal);
+            } catch {
+              /* engine connection dropped — retry below */
+            }
+            if (ac.signal.aborted) break;
+            res.write(": engine-idle\n\n"); // SSE comment heartbeat
+            await new Promise((r) => setTimeout(r, 2000));
           }
           return res.end();
         }
