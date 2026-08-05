@@ -123,7 +123,9 @@ export function ExaModelSelector({
       agent.engine
         .authMethods()
         .then((r) => setAuthMethods(r.methods))
-        .catch(() => setAuthMethods({}));
+        // Leave null on failure so the next menu open retries — otherwise a
+        // pre-engine fetch would permanently hide the real auth methods.
+        .catch(() => setAuthMethods(null));
     }
     if (!loadCatalog || (catalog !== null && catalog !== "error")) return;
     setCatalog("loading");
@@ -463,12 +465,10 @@ export function ExaModelSelector({
                         collisionPadding={12}
                       >
                         {needsKey(p) ? (
-                          <>
-                            <p className="px-2 pt-1.5 text-[11px] text-muted-foreground">
-                              Set the {p.envKey ?? "API"} key to unlock {p.name}'s models.
-                            </p>
-                            {keyInput(p.id, p.envKey)}
-                          </>
+                          // Unconnected cloud providers get the SAME engine-
+                          // driven connect flow as catalog rows (e.g. OpenAI's
+                          // ChatGPT Pro/Plus sign-ins, not just a key box).
+                          connectFlow({ id: p.id, name: p.name, env: p.envKey ? [p.envKey] : [], modelCount: 0, popular: false })
                         ) : p.models.length === 0 ? (
                           <p className="px-2 py-2 text-[11px] text-muted-foreground">
                             {p.installedOnly ? "Start the server to see its models." : "No models available."}

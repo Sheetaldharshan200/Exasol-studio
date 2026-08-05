@@ -512,6 +512,8 @@ export function ExaComposerMenus() {
                 key={p.id}
                 type="button"
                 disabled={!available}
+                // Keep the keyboard-active row visible while ↑/↓ navigating.
+                ref={i === hover ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
                 onMouseEnter={() => setHover(i)}
                 onClick={() => pickProvider(p)}
                 className={cn(
@@ -534,6 +536,8 @@ export function ExaComposerMenus() {
             <button
               key={c.id}
               type="button"
+              // Keep the keyboard-active row visible while ↑/↓ navigating.
+              ref={i === hover ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
               onMouseEnter={() => setHover(i)}
               onClick={() => pickCommand(c)}
               className={cn("flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary", i === hover && "bg-secondary")}
