@@ -115,7 +115,7 @@ export function ExaModelSelector({
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="w-72 rounded-xl p-1.5">
+      <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5">
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -214,7 +214,11 @@ export function ExaModelSelector({
                       </span>
                     )}
                   </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="max-h-72 w-64 overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]" sideOffset={6}>
+                  <DropdownMenuSubContent
+                    className="max-h-72 w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
+                    sideOffset={6}
+                    collisionPadding={12}
+                  >
                     {needsKey(p) ? (
                       <>
                         <p className="px-2 pt-1.5 text-[11px] text-muted-foreground">

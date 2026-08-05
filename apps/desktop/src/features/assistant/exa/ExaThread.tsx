@@ -360,7 +360,7 @@ export function ExaComposerMenus() {
   })();
 
   return (
-    <div className="absolute bottom-full left-0 z-50 mb-1.5 max-h-[300px] w-[320px] overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+    <div className="absolute bottom-full left-0 z-50 mb-1.5 max-h-[300px] w-80 max-w-full overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
       {argFor ? (
         <>
           <div className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
