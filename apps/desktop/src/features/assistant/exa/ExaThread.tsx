@@ -13,13 +13,18 @@ import {
   Database as DatabaseIcon,
   MessageSquare,
   NotebookPen,
+  PanelLeft as PanelLeftIcon,
+  Plus as PlusIcon,
   Search,
   ShieldCheck as ShieldCheckIcon,
   Sparkles as SparklesIcon,
+  Upload as ShareIcon,
   Wrench as WrenchIcon,
   X,
   Zap as ZapIcon,
 } from "lucide-react";
+import type { ReactNode } from "react";
+import type { EngineSessionInfo } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
@@ -151,6 +156,25 @@ export const useExaComposer = () => useContext(ExaComposerContext);
 const ExaApplySqlContext = createContext<((sql: string) => void) | null>(null);
 export const useExaApplySql = () => useContext(ExaApplySqlContext);
 
+/** Bucket sessions by recency for the sidebar's date-group headers. */
+export function groupSessions(sessions: EngineSessionInfo[], now: number): { label: string; items: EngineSessionInfo[] }[] {
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const today = dayStart.getTime();
+  const yesterday = today - 86_400_000;
+  const week = today - 6 * 86_400_000;
+  const buckets: Record<string, EngineSessionInfo[]> = { Today: [], Yesterday: [], "Previous 7 days": [], Earlier: [] };
+  const sorted = [...sessions].sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0));
+  for (const s of sorted) {
+    const t = s.updated ?? 0;
+    const label = t >= today ? "Today" : t >= yesterday ? "Yesterday" : t >= week ? "Previous 7 days" : "Earlier";
+    buckets[label].push(s);
+  }
+  return Object.entries(buckets)
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, items }));
+}
+
 /** Exa-branded welcome — plain logo (no bordered tile), example typography. */
 function ExaWelcome() {
   return (
@@ -232,16 +256,7 @@ export function ExaComposerControls() {
   const ModeIcon = modeInfo.icon;
   return (
     <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() => api.setMode(MODES[(MODES.findIndex((x) => x.id === api.mode) + 1) % MODES.length].id)}
-        title={`${modeInfo.hint} — click to switch`}
-        className="flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-      >
-        <ModeIcon className="h-3.5 w-3.5" />
-        <span className="hidden @md:inline">{modeInfo.label}</span>
-      </button>
-      <ExaModelSelector providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
+      {/* `+` adds @-context — our equivalent of the example's attach button. */}
       <button
         type="button"
         title="Add context (@)"
@@ -250,9 +265,19 @@ export function ExaComposerControls() {
           const next = text.endsWith("@") ? text : text + (text && !text.endsWith(" ") ? " @" : "@");
           aui.composer().setText(next);
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="hover:bg-muted flex size-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:text-foreground"
       >
-        <AtSign className="h-3.5 w-3.5" />
+        <PlusIcon className="size-4" />
+      </button>
+      <ExaModelSelector providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
+      <button
+        type="button"
+        onClick={() => api.setMode(MODES[(MODES.findIndex((x) => x.id === api.mode) + 1) % MODES.length].id)}
+        title={`${modeInfo.hint} — click to switch`}
+        className="hover:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ModeIcon className="h-3.5 w-3.5" />
+        <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
     </div>
   );
@@ -408,6 +433,14 @@ export function ExaThread({
   onCancel,
   onApplySql,
   composerApi,
+  sessions,
+  activeSessionId,
+  onNewThread,
+  onSelectSession,
+  onShare,
+  headerActions,
+  sidebarFooter,
+  defaultSidebarOpen = false,
 }: {
   messages: ExaMessage[];
   busy: boolean;
@@ -417,7 +450,22 @@ export function ExaThread({
   /** Apply a reply's SQL block into the workbench editor. */
   onApplySql?: (sql: string) => void;
   composerApi: ExaComposerApi;
+  /** Persisted engine sessions for the sidebar (auto-titled). */
+  sessions: EngineSessionInfo[];
+  activeSessionId: string | null;
+  onNewThread: () => void;
+  onSelectSession: (id: string) => void;
+  onShare: () => void;
+  /** Surface controls (status dot, expand/collapse/close) for the header. */
+  headerActions?: ReactNode;
+  /** Extra content pinned to the sidebar bottom (CLI install, etc.). */
+  sidebarFooter?: ReactNode;
+  /** Full tab starts with the sidebar open; the narrow dock starts closed. */
+  defaultSidebarOpen?: boolean;
 }) {
+  const [sidebarOpen, setSidebarOpen] = useState(defaultSidebarOpen);
+  const title = sessions.find((s) => s.id === activeSessionId)?.title ?? "New Chat";
+  const groups = groupSessions(sessions, Date.now());
   // Latest handler behind a stable ref so the adapter never goes stale.
   const sendRef = useRef(onSendText);
   useEffect(() => {
@@ -444,13 +492,88 @@ export function ExaThread({
               send button, links and chips render neutral while the rest of
               Studio keeps its brand color. */}
           <div
-            className="min-h-0 flex-1"
+            className="@container relative flex min-h-0 flex-1 bg-background"
             style={{
               ["--primary" as string]: "var(--foreground)",
               ["--primary-foreground" as string]: "var(--background)",
             }}
           >
-            <Thread components={{ Welcome: ExaWelcome }} />
+            {/* ── Sidebar: brand, New Thread, date-grouped sessions ── */}
+            {sidebarOpen ? (
+              <>
+                {/* Narrow containers overlay the sidebar; wide ones dock it. */}
+                <div className="absolute inset-0 z-20 bg-black/30 @3xl:hidden" onClick={() => setSidebarOpen(false)} aria-hidden />
+                <aside className="absolute inset-y-0 left-0 z-30 flex w-60 shrink-0 flex-col bg-muted/50 backdrop-blur-sm @3xl:static @3xl:z-auto @3xl:bg-muted/30 @3xl:backdrop-blur-none">
+                  <div className="flex h-12 shrink-0 items-center gap-2 px-4 text-sm font-medium">
+                    <AgentMark className="size-5 shrink-0" />
+                    <span className="text-foreground/90 truncate">Exa</span>
+                    <span className="rounded-full border border-border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Beta
+                    </span>
+                  </div>
+                  <div className="px-2 pb-1">
+                    <button
+                      type="button"
+                      onClick={onNewThread}
+                      className="bg-muted hover:bg-muted/80 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition-colors"
+                    >
+                      <PlusIcon className="size-4" /> New Thread
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
+                    {groups.map((g) => (
+                      <div key={g.label}>
+                        <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground">{g.label}</p>
+                        {g.items.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => onSelectSession(s.id)}
+                            className={cn(
+                              "hover:bg-muted flex w-full items-center rounded-md px-3 py-1.5 text-left text-sm text-foreground/90 transition-colors",
+                              s.id === activeSessionId && "bg-muted",
+                            )}
+                          >
+                            <span className="truncate">{s.title?.trim() || "Untitled chat"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  {sidebarFooter ? <div className="shrink-0 px-3 pb-3">{sidebarFooter}</div> : null}
+                </aside>
+              </>
+            ) : null}
+
+            {/* ── Main column: header + thread ── */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <header className="flex h-12 shrink-0 items-center gap-2 px-3">
+                <button
+                  type="button"
+                  title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                  onClick={() => setSidebarOpen((o) => !o)}
+                  className="hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  <PanelLeftIcon className="size-4" />
+                </button>
+                <span className="min-w-0 truncate text-sm font-medium">{title}</span>
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    type="button"
+                    title="Export conversation as Markdown"
+                    onClick={onShare}
+                    disabled={messages.length === 0}
+                    className="hover:bg-muted flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  >
+                    <ShareIcon className="size-4" />
+                  </button>
+                  {headerActions}
+                </div>
+              </header>
+              <div className="min-h-0 flex-1">
+                <Thread components={{ Welcome: ExaWelcome }} />
+              </div>
+            </div>
           </div>
         </ExaApplySqlContext.Provider>
       </ExaComposerContext.Provider>

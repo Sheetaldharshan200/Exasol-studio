@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, Plus, Terminal, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
-import { agent, type AgentProviderInfo, type EngineEvent, type EngineStatus } from "@/lib/agent-client";
+import { agent, type AgentProviderInfo, type EngineEvent, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
@@ -62,6 +62,8 @@ export function ExaEnginePanel({
   // reads/writes it through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
   const [chips, setChips] = useState<ContextChip[]>([]);
+  // Persisted engine sessions (auto-titled) for the sidebar.
+  const [sessions, setSessions] = useState<EngineSessionInfo[]>([]);
   const disposer = useRef<(() => void) | null>(null);
   // The live session id, readable from the long-lived stream callback (state
   // there would be a stale closure). Kept in sync with setSessionId below.
@@ -75,6 +77,8 @@ export function ExaEnginePanel({
   // Guards loadModels against out-of-order responses (slow first load
   // overwriting a post-key-save refresh).
   const loadSeq = useRef(0);
+  // The session-list refresher, reachable from the long-lived stream callback.
+  const loadSessionsRef = useRef<() => void>(() => {});
 
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
@@ -187,6 +191,8 @@ export function ExaEnginePanel({
           });
         } else if (e.type === "session.idle" || e.type === "message.done") {
           setBusy(false);
+          // Titles are generated engine-side after the turn — give it a beat.
+          window.setTimeout(loadSessionsRef.current, 1500);
         } else if (e.type === "error") {
           setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${e.message}` }] }]);
           setBusy(false);
@@ -261,6 +267,34 @@ export function ExaEnginePanel({
     setBusy(false);
   }
 
+  /** Refresh the sidebar's session list (titles are engine-generated). */
+  const loadSessions = useCallback(() => {
+    agent.engine
+      .sessions()
+      .then((r) => setSessions(r.sessions))
+      .catch(() => undefined);
+  }, []);
+  loadSessionsRef.current = loadSessions;
+  useEffect(() => {
+    if (status?.provisioned && status.binaryPresent) loadSessions();
+  }, [status?.provisioned, status?.binaryPresent, loadSessions]);
+
+  /** Open a past session: load its stored messages and make it live. */
+  async function selectSession(id: string) {
+    if (id === sessionId) return;
+    turnGen.current += 1; // abandon any in-flight turn
+    if (busy) void stop();
+    setSession(id);
+    setChips([]);
+    try {
+      const r = await agent.engine.messages(id);
+      // Only apply if the user hasn't switched again meanwhile.
+      if (sessionRef.current === id) setMessages(r.messages);
+    } catch {
+      if (sessionRef.current === id) setMessages([]);
+    }
+  }
+
   /** /clear and the header + button: drop the session, start fresh. */
   function newChat() {
     turnGen.current += 1; // any in-flight send() abandons itself
@@ -328,55 +362,58 @@ export function ExaEnginePanel({
     );
   }
 
+  // Surface controls live in the thread header (right of the share button).
+  const headerActions = (
+    <>
+      <span
+        title={`Engine ${status.state}`}
+        className={cn("mx-1 h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-foreground/70" : "bg-muted-foreground/40")}
+      />
+      {onExpand ? (
+        <button onClick={onExpand} title="Expand to full screen" className={iconBtn}>
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+      {onCollapse ? (
+        <button onClick={onCollapse} title="Dock to the side panel" className={iconBtn}>
+          <Minimize2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+      {onClose ? (
+        <button onClick={onClose} title="Hide Exa" className={iconBtn}>
+          <X className="h-4 w-4" />
+        </button>
+      ) : null}
+    </>
+  );
+
+  const sidebarFooter = (
+    <button
+      onClick={() => void installCli()}
+      disabled={cliBusy}
+      title={cliInstalled ? "exa CLI is on your PATH — click to refresh" : "Install the exa terminal command to your PATH"}
+      className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Terminal className="h-3.5 w-3.5" /> {cliBusy ? "…" : cliInstalled ? "exa CLI installed" : "Install exa CLI"}
+    </button>
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-[12px]">
-        <AgentMark className="h-4 w-4" active={busy} />
-        <span className="font-semibold text-foreground">Exa</span>
-        <span className="rounded-full border border-primary/40 bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
-          Beta
-        </span>
-        <button
-          onClick={() => void installCli()}
-          disabled={cliBusy}
-          title={cliInstalled ? "exa CLI is on your PATH — click to refresh" : "Install the exa terminal command to your PATH"}
-          className={cn(
-            "ml-auto flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] transition-colors",
-            cliInstalled ? "text-primary" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          <Terminal className="h-3 w-3" /> {cliBusy ? "…" : cliInstalled ? "exa CLI ✓" : "Install exa CLI"}
-        </button>
-        <span className={cn("flex items-center gap-1 font-mono text-[10.5px]", status.state === "running" ? "text-primary" : "text-muted-foreground")}>
-          <span className={cn("h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-primary" : "bg-muted-foreground/50")} />
-          {status.state}
-        </span>
-        <button onClick={newChat} title="New chat (/clear)" className={iconBtn}>
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-        {onExpand ? (
-          <button onClick={onExpand} title="Expand to full screen" className={iconBtn}>
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-        {onCollapse ? (
-          <button onClick={onCollapse} title="Dock to the side panel" className={iconBtn}>
-            <Minimize2 className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-        {onClose ? (
-          <button onClick={onClose} title="Hide Exa" className={iconBtn}>
-            <X className="h-4 w-4" />
-          </button>
-        ) : null}
-      </div>
-
       <ExaThread
         messages={messages}
         busy={busy}
         onSendText={sendText}
         onCancel={() => void stop()}
         onApplySql={onApplySql}
+        sessions={sessions}
+        activeSessionId={sessionId}
+        onNewThread={newChat}
+        onSelectSession={(id) => void selectSession(id)}
+        onShare={() => void shareChat()}
+        headerActions={headerActions}
+        sidebarFooter={sidebarFooter}
+        defaultSidebarOpen={Boolean(onCollapse)}
         composerApi={{
           providers,
           model,

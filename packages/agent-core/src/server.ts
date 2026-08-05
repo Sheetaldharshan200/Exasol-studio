@@ -75,6 +75,10 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
             return id ? json(res, 200, { id }) : json(res, 503, { error: "engine not installed" });
           }
         }
+        // GET /v1/engine/sessions/:id/messages — stored history (replay)
+        if (req.method === "GET" && parts[2] === "sessions" && parts[3] && parts[4] === "messages") {
+          return json(res, 200, { messages: await engine.listMessages(decodeURIComponent(parts[3])) });
+        }
         // POST /v1/engine/sessions/:id/(prompt|abort|permission)
         if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
           const sid = decodeURIComponent(parts[3]);

@@ -7,6 +7,7 @@
  * is a Marketplace component that may be absent until downloaded.
  */
 import { mapEngineEvent, type RawEngineEvent, type StudioAgentEvent } from "./bridge-map.ts";
+import { mapReplayMessages, type ReplayMessage } from "./replay-map.ts";
 
 /** One provider from the engine's own catalog (GET /config/providers). */
 export type EngineProvider = {
@@ -17,9 +18,13 @@ export type EngineProvider = {
   models: { id: string; name: string; context?: number }[];
 };
 
+export type EngineSessionInfo = { id: string; title?: string; updated?: number };
+
 export type EngineClient = {
   createSession(): Promise<string>;
-  listSessions(): Promise<{ id: string; title?: string }[]>;
+  listSessions(): Promise<EngineSessionInfo[]>;
+  /** A session's stored messages, mapped to Studio's part-based shape. */
+  listMessages(sessionId: string): Promise<ReplayMessage[]>;
   prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
   respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void>;
@@ -34,8 +39,9 @@ type RawProvider = { id: string; name?: string; source?: string; models?: Record
 
 type RawClient = {
   session: {
-    list(): Promise<{ data?: { id: string; title?: string }[] }>;
+    list(): Promise<{ data?: { id: string; title?: string; time?: { updated?: number } }[] }>;
     create(o?: unknown): Promise<{ data?: { id: string } }>;
+    messages(o: unknown): Promise<{ data?: unknown[] }>;
     prompt(o: unknown): Promise<unknown>;
     abort(o: unknown): Promise<unknown>;
   };
@@ -60,7 +66,11 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     },
     async listSessions() {
       const r = await c.session.list();
-      return (r?.data ?? []).map((s) => ({ id: s.id, title: s.title }));
+      return (r?.data ?? []).map((s) => ({ id: s.id, title: s.title, updated: s.time?.updated }));
+    },
+    async listMessages(sessionId) {
+      const r = await c.session.messages({ path: { id: sessionId } });
+      return mapReplayMessages((r?.data ?? []) as Parameters<typeof mapReplayMessages>[0]);
     },
     async prompt(sessionId, text, model, agentName) {
       await c.session.prompt({

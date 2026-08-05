@@ -262,8 +262,11 @@ export const agent = {
   // ── Exa engine (opencode) — v2 chat backend over /v1/engine/* ─────────────
   engine: {
     status: (): Promise<EngineStatus> => api("/engine/status"),
-    sessions: (): Promise<{ sessions: { id: string; title?: string }[] }> => api("/engine/sessions"),
+    sessions: (): Promise<{ sessions: EngineSessionInfo[] }> => api("/engine/sessions"),
     createSession: (): Promise<{ id: string }> => api("/engine/sessions", "POST"),
+    /** A session's stored messages (part-based), for loading past chats. */
+    messages: (id: string): Promise<{ messages: EngineReplayMessage[] }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/messages`),
     prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName }),
     /** The engine's own provider/model catalog (GET /config/providers). */
@@ -278,6 +281,15 @@ export const agent = {
       return unlisten;
     },
   },
+};
+
+/** One persisted engine session (auto-titled by the engine). */
+export type EngineSessionInfo = { id: string; title?: string; updated?: number };
+
+/** One stored message from a session's replay endpoint. */
+export type EngineReplayMessage = {
+  role: "user" | "assistant";
+  parts: ({ type: "text"; text: string } | { type: "tool"; callId: string; name: string; ok?: boolean })[];
 };
 
 /** One provider from the engine's own catalog (/v1/engine/providers). */

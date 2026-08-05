@@ -94,6 +94,12 @@ export class EngineService {
     return c ? c.listSessions() : [];
   }
 
+  /** A session's stored messages (part-based); empty when not installed. */
+  async listMessages(sessionId: string) {
+    const c = await this.ensureClient();
+    return c ? c.listMessages(sessionId) : [];
+  }
+
   async createSession(): Promise<string | null> {
     const c = await this.ensureClient();
     return c ? c.createSession() : null;
