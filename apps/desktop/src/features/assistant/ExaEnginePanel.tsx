@@ -66,14 +66,60 @@ export function ExaEnginePanel({
   const [pendingCommand, setPendingCommand] = useState<SlashCommand | null>(null);
   // Persisted engine sessions (auto-titled) for the sidebar.
   const [sessions, setSessions] = useState<EngineSessionInfo[]>([]);
+  // Archived = hidden locally (the engine has no archive concept); persisted
+  // per machine so archived chats stay out of the sidebar across restarts.
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("exa.archivedSessions") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
   const disposer = useRef<(() => void) | null>(null);
   // The live session id, readable from the long-lived stream callback (state
   // there would be a stale closure). Kept in sync with setSessionId below.
   const sessionRef = useRef<string | null>(null);
+  // The side dock and the full tab are separate instances of this panel; they
+  // converge on ONE session: a change here is persisted + broadcast, and the
+  // other instance adopts it (hydrating from the engine's stored history).
+  const instanceId = useRef(`exa-${Math.random().toString(36).slice(2)}`);
   const setSession = (id: string | null) => {
+    if (sessionRef.current === id) return;
     sessionRef.current = id;
     setSessionId(id);
+    try {
+      if (id) localStorage.setItem("exa.activeSession", id);
+      else localStorage.removeItem("exa.activeSession");
+    } catch {
+      /* private mode */
+    }
+    window.dispatchEvent(new CustomEvent("exa:session", { detail: { id, src: instanceId.current } }));
   };
+  /** Follow a session another surface switched to (or a restart restored). */
+  const adoptSession = useCallback(async (id: string | null) => {
+    sessionRef.current = id;
+    setSessionId(id);
+    setBusy(false);
+    if (!id) {
+      setMessages([]);
+      return;
+    }
+    try {
+      const r = await agent.engine.messages(id);
+      if (sessionRef.current === id) setMessages(r.messages);
+    } catch {
+      /* engine offline — the next live event will still land (same id) */
+    }
+  }, []);
+  useEffect(() => {
+    const onSession = (e: Event) => {
+      const d = (e as CustomEvent<{ id: string | null; src: string }>).detail;
+      if (d.src === instanceId.current || d.id === sessionRef.current) return;
+      void adoptSession(d.id);
+    };
+    window.addEventListener("exa:session", onSession);
+    return () => window.removeEventListener("exa:session", onSession);
+  }, [adoptSession]);
   // Bumped by newChat(); a send() whose token is stale abandons its turn.
   const turnGen = useRef(0);
   // Guards loadModels against out-of-order responses (slow first load
@@ -282,8 +328,48 @@ export function ExaEnginePanel({
   }, []);
   loadSessionsRef.current = loadSessions;
   useEffect(() => {
-    if (status?.provisioned && status.binaryPresent) loadSessions();
-  }, [status?.provisioned, status?.binaryPresent, loadSessions]);
+    if (!status?.provisioned || !status.binaryPresent) return;
+    loadSessions();
+    // Restore the last active session (both surfaces converge on it).
+    if (!sessionRef.current) {
+      try {
+        const saved = localStorage.getItem("exa.activeSession");
+        if (saved) void adoptSession(saved);
+      } catch {
+        /* private mode */
+      }
+    }
+  }, [status?.provisioned, status?.binaryPresent, loadSessions, adoptSession]);
+
+  /** Permanently delete a session engine-side. */
+  async function deleteSession(id: string) {
+    await agent.engine.deleteSession(id).catch(() => undefined);
+    setSessions((ss) => ss.filter((s) => s.id !== id));
+    if (sessionRef.current === id) newChat();
+  }
+
+  /** Rename a session engine-side (overrides the auto-generated title). */
+  async function renameSession(id: string, title: string) {
+    const t = title.trim();
+    if (!t) return;
+    await agent.engine.renameSession(id, t).catch(() => undefined);
+    setSessions((ss) => ss.map((s) => (s.id === id ? { ...s, title: t } : s)));
+  }
+
+  /** Archive = hide locally (persisted); the engine keeps the session. */
+  function archiveSession(id: string) {
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem("exa.archivedSessions", JSON.stringify([...next]));
+      } catch {
+        /* private mode — archive lasts for this run only */
+      }
+      return next;
+    });
+    if (sessionRef.current === id) newChat();
+  }
 
   /** Open a past session: load its stored messages and make it live. */
   async function selectSession(id: string) {
@@ -439,10 +525,13 @@ export function ExaEnginePanel({
         onSendText={sendText}
         onCancel={() => void stop()}
         onApplySql={onApplySql}
-        sessions={sessions}
+        sessions={sessions.filter((s) => !archivedIds.has(s.id))}
         activeSessionId={sessionId}
         onNewThread={newChat}
         onSelectSession={(id) => void selectSession(id)}
+        onRenameSession={(id, title) => void renameSession(id, title)}
+        onDeleteSession={(id) => void deleteSession(id)}
+        onArchiveSession={archiveSession}
         onShare={() => void shareChat()}
         headerActions={headerActions}
         sidebarFooter={sidebarFooter}

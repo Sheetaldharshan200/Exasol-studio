@@ -8,15 +8,19 @@ import {
   type AppendMessage,
 } from "@assistant-ui/react";
 import {
+  Archive as ArchiveIcon,
   Bot,
   Database as DatabaseIcon,
+  History as HistoryIcon,
   MessageSquare,
   NotebookPen,
   PanelLeft as PanelLeftIcon,
+  Pencil as PencilIcon,
   Plus as PlusIcon,
   Search,
   ShieldCheck as ShieldCheckIcon,
   Sparkles as SparklesIcon,
+  Trash2 as Trash2Icon,
   Upload as ShareIcon,
   Wrench as WrenchIcon,
   X,
@@ -503,6 +507,9 @@ export function ExaThread({
   activeSessionId,
   onNewThread,
   onSelectSession,
+  onRenameSession,
+  onDeleteSession,
+  onArchiveSession,
   onShare,
   headerActions,
   sidebarFooter,
@@ -521,6 +528,9 @@ export function ExaThread({
   activeSessionId: string | null;
   onNewThread: () => void;
   onSelectSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
+  onDeleteSession: (id: string) => void;
+  onArchiveSession: (id: string) => void;
   onShare: () => void;
   /** Surface controls (status dot, expand/collapse/close) for the header. */
   headerActions?: ReactNode;
@@ -530,8 +540,16 @@ export function ExaThread({
   defaultSidebarOpen?: boolean;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(defaultSidebarOpen);
+  // Inline rename state for the sidebar rows (pencil → input, Enter/Esc).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
   const title = sessions.find((s) => s.id === activeSessionId)?.title ?? "New Chat";
   const groups = groupSessions(sessions, Date.now());
+
+  const commitRename = () => {
+    if (editingId && titleDraft.trim()) onRenameSession(editingId, titleDraft);
+    setEditingId(null);
+  };
   // Latest handler behind a stable ref so the adapter never goes stale.
   const sendRef = useRef(onSendText);
   useEffect(() => {
@@ -593,19 +611,69 @@ export function ExaThread({
                     {groups.map((g) => (
                       <div key={g.label}>
                         <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground">{g.label}</p>
-                        {g.items.map((s) => (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => onSelectSession(s.id)}
-                            className={cn(
-                              "hover:bg-muted flex w-full items-center rounded-md px-3 py-1.5 text-left text-sm text-foreground/90 transition-colors",
-                              s.id === activeSessionId && "bg-muted",
-                            )}
-                          >
-                            <span className="truncate">{s.title?.trim() || "Untitled chat"}</span>
-                          </button>
-                        ))}
+                        {g.items.map((s) =>
+                          editingId === s.id ? (
+                            <input
+                              key={s.id}
+                              autoFocus
+                              data-bare
+                              value={titleDraft}
+                              onChange={(e) => setTitleDraft(e.target.value)}
+                              onBlur={commitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRename();
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                              className="bg-muted w-full rounded-md border border-border px-3 py-1.5 text-sm text-foreground outline-none"
+                            />
+                          ) : (
+                            <div
+                              key={s.id}
+                              className={cn(
+                                "group/session hover:bg-muted flex w-full items-center rounded-md transition-colors",
+                                s.id === activeSessionId && "bg-muted",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => onSelectSession(s.id)}
+                                className="min-w-0 flex-1 px-3 py-1.5 text-left text-sm text-foreground/90"
+                              >
+                                <span className="block truncate">{s.title?.trim() || "Untitled chat"}</span>
+                              </button>
+                              {/* Hover actions: rename / archive / delete. */}
+                              <div className="mr-1 hidden shrink-0 items-center gap-0.5 group-hover/session:flex">
+                                <button
+                                  type="button"
+                                  title="Rename"
+                                  onClick={() => {
+                                    setEditingId(s.id);
+                                    setTitleDraft(s.title ?? "");
+                                  }}
+                                  className="hover:bg-background/60 flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                                >
+                                  <PencilIcon className="size-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Archive (hide from this list)"
+                                  onClick={() => onArchiveSession(s.id)}
+                                  className="hover:bg-background/60 flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                                >
+                                  <ArchiveIcon className="size-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Delete permanently"
+                                  onClick={() => onDeleteSession(s.id)}
+                                  className="hover:bg-background/60 flex size-6 items-center justify-center rounded text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2Icon className="size-3" />
+                                </button>
+                              </div>
+                            </div>
+                          ),
+                        )}
                       </div>
                     ))}
                   </div>
@@ -617,13 +685,23 @@ export function ExaThread({
             {/* ── Main column: header + thread ── */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <header className="flex h-12 shrink-0 items-center gap-2 px-3">
+                {/* Wide containers get the sidebar toggle; the narrow dock
+                    gets a History button (the list opens as an overlay). */}
                 <button
                   type="button"
                   title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                   onClick={() => setSidebarOpen((o) => !o)}
-                  className="hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                  className="hover:bg-muted hidden size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground @3xl:flex"
                 >
                   <PanelLeftIcon className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  title="Chat history"
+                  onClick={() => setSidebarOpen((o) => !o)}
+                  className="hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground @3xl:hidden"
+                >
+                  <HistoryIcon className="size-4" />
                 </button>
                 <span className="min-w-0 truncate text-sm font-medium">{title}</span>
                 <div className="ml-auto flex items-center gap-1">

@@ -94,6 +94,18 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "GET" && parts[2] === "sessions" && parts[3] && parts[4] === "messages") {
           return json(res, 200, { messages: await engine.listMessages(decodeURIComponent(parts[3])) });
         }
+        // DELETE /v1/engine/sessions/:id — permanently remove a session
+        if (req.method === "DELETE" && parts[2] === "sessions" && parts[3] && !parts[4]) {
+          const ok = await engine.deleteSession(decodeURIComponent(parts[3]));
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+        }
+        // POST /v1/engine/sessions/:id/rename {title}
+        if (req.method === "POST" && parts[2] === "sessions" && parts[3] && parts[4] === "rename") {
+          const b = await readBody<{ title?: string }>(req);
+          if (!b.title?.trim()) return json(res, 400, { error: "title required" });
+          const ok = await engine.renameSession(decodeURIComponent(parts[3]), b.title.trim());
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+        }
         // POST /v1/engine/sessions/:id/(prompt|abort|permission)
         if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
           const sid = decodeURIComponent(parts[3]);

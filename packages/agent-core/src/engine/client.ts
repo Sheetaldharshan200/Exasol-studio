@@ -29,6 +29,10 @@ export type EngineClient = {
   abort(sessionId: string): Promise<void>;
   /** Engine-side session compaction (summarize to reclaim context). */
   summarize(sessionId: string): Promise<void>;
+  /** Permanently delete a stored session. */
+  deleteSession(sessionId: string): Promise<void>;
+  /** Rename a stored session (overrides the auto-generated title). */
+  renameSession(sessionId: string, title: string): Promise<void>;
   respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void>;
   /** The engine's configured providers + models (its source of truth). */
   providers(): Promise<{ providers: EngineProvider[]; defaults: Record<string, string> }>;
@@ -47,6 +51,8 @@ type RawClient = {
     prompt(o: unknown): Promise<unknown>;
     abort(o: unknown): Promise<unknown>;
     summarize(o: unknown): Promise<unknown>;
+    delete(o: unknown): Promise<unknown>;
+    update(o: unknown): Promise<unknown>;
   };
   config: { providers(): Promise<{ data?: { providers?: RawProvider[]; default?: Record<string, string> } }> };
   event: { subscribe(): Promise<{ stream: AsyncIterable<RawEngineEvent> }> };
@@ -96,6 +102,12 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     },
     async summarize(sessionId) {
       await c.session.summarize({ path: { id: sessionId }, body: {} });
+    },
+    async deleteSession(sessionId) {
+      await c.session.delete({ path: { id: sessionId } });
+    },
+    async renameSession(sessionId, title) {
+      await c.session.update({ path: { id: sessionId }, body: { title } });
     },
     async respondPermission(sessionId, permissionId, approve) {
       await c.postSessionIdPermissionsPermissionId({

@@ -161,6 +161,22 @@ export class EngineService {
     return true;
   }
 
+  /** Permanently delete a stored session; false when not installed. */
+  async deleteSession(sessionId: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.deleteSession(sessionId);
+    return true;
+  }
+
+  /** Rename a stored session; false when not installed. */
+  async renameSession(sessionId: string, title: string): Promise<boolean> {
+    const c = await this.ensureClient();
+    if (!c) return false;
+    await c.renameSession(sessionId, title);
+    return true;
+  }
+
   // The full models.dev catalog (the same source opencode uses), cached so
   // opening the connect UI repeatedly doesn't hammer the network.
   private catalogCache: { at: number; providers: CatalogProvider[] } | null = null;

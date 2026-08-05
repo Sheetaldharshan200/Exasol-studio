@@ -277,6 +277,11 @@ export const agent = {
     setAuth: (providerId: string, key: string): Promise<{ ok: boolean }> => api("/engine/auth", "POST", { providerId, key }),
     /** Engine-side session compaction (/compact). */
     compact: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/compact`, "POST"),
+    /** Permanently delete a stored session. */
+    deleteSession: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}`, "DELETE"),
+    /** Rename a stored session (overrides the auto-generated title). */
+    renameSession: (id: string, title: string): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/rename`, "POST", { title }),
     abort: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/abort`, "POST"),
     respondPermission: (id: string, permissionId: string, approve: boolean): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/permission`, "POST", { permissionId, approve }),
