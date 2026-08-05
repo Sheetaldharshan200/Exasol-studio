@@ -1428,7 +1428,7 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::SemanticViews => c.semantic_views.repository.clone(),
         // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
         // (the source of truth), rebranded in-product as Exa.
-        ComponentId::ExaAgent => "anomalyco/opencode".to_string(),
+        ComponentId::ExaAgent => "Sheetaldharshan200/exa".to_string(),
     }
 }
 
@@ -1456,7 +1456,7 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::SemanticViews => c.semantic_views.revision.clone(),
         // The pinned opencode release the Marketplace offers (matches
         // catalog.json exa-agent.latest + fetch-runtime.mjs EXA_ENGINE_TAG).
-        ComponentId::ExaAgent => "v1.18.12".to_string(),
+        ComponentId::ExaAgent => "v1.18.12-exa.1".to_string(),
     }
 }
 

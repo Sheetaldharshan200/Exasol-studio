@@ -20,7 +20,7 @@ use crate::components_update::{component_dir, write_manifest, ComponentId, Insta
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-const OPENCODE_REPO: &str = "anomalyco/opencode";
+const OPENCODE_REPO: &str = "Sheetaldharshan200/exa";
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.

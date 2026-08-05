@@ -22,7 +22,7 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
-const ENGINE_TAG = "v1.18.12";
+const ENGINE_TAG = "v1.18.12-exa.1";
 
 // Messages are ordered parts (text + tool calls inline) — see ExaThread.
 
