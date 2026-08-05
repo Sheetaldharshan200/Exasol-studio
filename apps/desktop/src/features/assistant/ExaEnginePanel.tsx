@@ -63,6 +63,18 @@ export function ExaEnginePanel({
   const [model, setModel] = useState<PickedModel | null>(null);
   const disposer = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The live session id, readable from the long-lived stream callback (state
+  // there would be a stale closure). Kept in sync with setSessionId below.
+  const sessionRef = useRef<string | null>(null);
+  const setSession = (id: string | null) => {
+    sessionRef.current = id;
+    setSessionId(id);
+  };
+  // Bumped by newChat(); a send() whose token is stale abandons its turn.
+  const turnGen = useRef(0);
+  // Guards loadModels against out-of-order responses (slow first load
+  // overwriting a post-key-save refresh).
+  const loadSeq = useRef(0);
 
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
@@ -74,6 +86,7 @@ export function ExaEnginePanel({
   // supports (Local Runtime → In-DB AI → cloud). opencode drives whichever the
   // user picks; a cloud provider's models appear only once its key is set.
   const loadModels = useCallback(() => {
+    const seq = ++loadSeq.current;
     return agent
       .models()
       .then(async ({ providers: ps, defaultModel }) => {
@@ -96,6 +109,7 @@ export function ExaEnginePanel({
         } catch {
           /* engine absent/stopped — Studio's own list is enough */
         }
+        if (seq !== loadSeq.current) return; // a newer refresh already applied
         setProviders(ps);
         setModel((cur) => {
           if (cur) return cur;
@@ -135,6 +149,10 @@ export function ExaEnginePanel({
     agent.engine
       .stream((e: EngineEvent) => {
         if (!alive) return;
+        // Drop events from a session that is no longer ours (after /clear or a
+        // session switch, a discarded turn can still emit). Events without a
+        // session id can't be attributed, so they pass through.
+        if (e.sessionId && e.sessionId !== sessionRef.current) return;
         if (e.type === "message.delta") {
           setMessages((m) => {
             const last = m[m.length - 1];
@@ -198,18 +216,26 @@ export function ExaEnginePanel({
       setBusy(false);
       refreshStatus();
     };
+    const gen = turnGen.current;
     try {
       let sid = sessionId;
       if (!sid) {
         const created = await agent.engine.createSession();
+        if (gen !== turnGen.current) {
+          // The user hit /clear while the session was being created — abandon
+          // this turn and don't resurrect the discarded session.
+          if (created?.id) agent.engine.abort(created.id).catch(() => undefined);
+          return;
+        }
         if (!created?.id) return fail("The Exa engine isn't running yet. Install it and wait for the header to read “running”.");
         sid = created.id;
-        setSessionId(sid);
+        setSession(sid);
       }
       const r = await agent.engine.prompt(sid, prompt, model ? { providerID: model.providerID, modelID: model.modelID } : undefined, MODE_TO_AGENT[mode]);
+      if (gen !== turnGen.current) return; // cleared mid-turn — UI already reset
       if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
     } catch (e) {
-      fail(e instanceof Error ? e.message : "Engine request failed.");
+      if (gen === turnGen.current) fail(e instanceof Error ? e.message : "Engine request failed.");
     }
   }
 
@@ -220,8 +246,9 @@ export function ExaEnginePanel({
 
   /** /clear and the header + button: drop the session, start fresh. */
   function newChat() {
+    turnGen.current += 1; // any in-flight send() abandons itself
     if (busy) void stop();
-    setSessionId(null);
+    setSession(null);
     setMessages([]);
     setTools([]);
   }

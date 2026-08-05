@@ -167,7 +167,17 @@ export function ChatComposer({
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (listMenu) {
-      const pick = () => (listMenu.kind === "provider" ? pickProvider(providerMenu[hover]) : pickCommand(commandMenu[hover]));
+      // hover is reset by an effect (post-render), so clamp at pick time — the
+      // filtered list may have shrunk since the last keystroke.
+      const pick = () => {
+        if (listMenu.kind === "provider") {
+          const item = providerMenu[hover] ?? providerMenu[0];
+          if (item) pickProvider(item);
+        } else {
+          const item = commandMenu[hover] ?? commandMenu[0];
+          if (item) pickCommand(item);
+        }
+      };
       if (e.key === "ArrowDown") { e.preventDefault(); setHover((h) => (h + 1) % listMenu.length); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setHover((h) => (h - 1 + listMenu.length) % listMenu.length); return; }
       if (e.key === "Tab") { e.preventDefault(); pick(); return; }
@@ -225,7 +235,19 @@ export function ChatComposer({
                 </div>
                 <div className="relative border-b border-border">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input autoFocus value={argQuery} onChange={(e) => setArgQuery(e.target.value)} placeholder={`Search ${argFor.needsArg}s…`} className="h-8 w-full bg-transparent pl-8 pr-2.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={argQuery}
+                    onChange={(e) => setArgQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      // The submenu's search input owns focus — give it its own
+                      // keyboard grammar: Enter picks the top match, Esc backs out.
+                      if (e.key === "Enter" && argOptions[0]) { e.preventDefault(); pickArg(argOptions[0]); }
+                      if (e.key === "Escape") { e.preventDefault(); setArgFor(null); taRef.current?.focus(); }
+                    }}
+                    placeholder={`Search ${argFor.needsArg}s…`}
+                    className="h-8 w-full bg-transparent pl-8 pr-2.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
+                  />
                 </div>
                 <div className="max-h-[200px] overflow-y-auto py-1 [scrollbar-width:thin]">
                   {argOptions.length === 0 ? (
