@@ -7,7 +7,19 @@ import {
   type ThreadMessageLike,
   type AppendMessage,
 } from "@assistant-ui/react";
-import { AtSign, Bot, MessageSquare, NotebookPen, Search, X } from "lucide-react";
+import {
+  AtSign,
+  Bot,
+  Database as DatabaseIcon,
+  MessageSquare,
+  NotebookPen,
+  Search,
+  ShieldCheck as ShieldCheckIcon,
+  Sparkles as SparklesIcon,
+  Wrench as WrenchIcon,
+  X,
+  Zap as ZapIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
@@ -66,11 +78,56 @@ function toThreadMessage(m: ExaMessage): ThreadMessageLike {
   };
 }
 
-const SUGGESTIONS = [
-  { prompt: "Give me an overview of the schemas and tables in this database." },
-  { prompt: "/generate top customers by revenue" },
-  { prompt: "/optimize" },
-  { prompt: "/fix" },
+/** Grouped starter suggestions (category chip → expandable options). */
+type SuggestionGroup = {
+  label: string;
+  icon: typeof Bot;
+  options: { label: string; prompt: string }[];
+};
+
+const SUGGESTION_GROUPS: SuggestionGroup[] = [
+  {
+    label: "Explore",
+    icon: DatabaseIcon,
+    options: [
+      { label: "overview of my schemas", prompt: "Give me an overview of the schemas and tables in this database." },
+      { label: "largest tables", prompt: "Which tables have the most rows, and how large are they?" },
+      { label: "describe a table", prompt: "Describe the columns and types of the most important table in my current schema." },
+    ],
+  },
+  {
+    label: "Generate",
+    icon: SparklesIcon,
+    options: [
+      { label: "top customers by revenue", prompt: "/generate top customers by revenue" },
+      { label: "monthly sales trend", prompt: "/generate monthly sales trend for the last year" },
+      { label: "duplicate detection", prompt: "/generate find duplicate rows in a table" },
+    ],
+  },
+  {
+    label: "Optimize",
+    icon: ZapIcon,
+    options: [
+      { label: "current query", prompt: "/optimize" },
+      { label: "find slow queries", prompt: "Which of my recent queries were slowest, and why?" },
+    ],
+  },
+  {
+    label: "Fix",
+    icon: WrenchIcon,
+    options: [
+      { label: "the failing query", prompt: "/fix" },
+      { label: "explain the last error", prompt: "Explain the error my last query produced and how to resolve it." },
+    ],
+  },
+  {
+    label: "Review",
+    icon: ShieldCheckIcon,
+    options: [
+      { label: "current SQL", prompt: "/review" },
+      { label: "destructive statements", prompt: "/review focus on destructive statements and missing WHERE clauses" },
+    ],
+  },
 ];
 
 // ── Composer controls context (consumed inside the registry thread.tsx) ──
@@ -94,20 +151,71 @@ export const useExaComposer = () => useContext(ExaComposerContext);
 const ExaApplySqlContext = createContext<((sql: string) => void) | null>(null);
 export const useExaApplySql = () => useContext(ExaApplySqlContext);
 
-/** Exasol-branded welcome (overrides the registry ThreadWelcome). */
+/** Exa-branded welcome — plain logo (no bordered tile), example typography. */
 function ExaWelcome() {
   return (
-    <div className="mb-6 flex flex-col items-center px-4 text-center">
-      <div className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/5 duration-200">
-        <AgentMark className="h-8 w-8" />
-      </div>
+    <div className="mx-auto mb-6 flex w-full max-w-(--thread-max-width) flex-col items-center px-4 text-center">
+      <AgentMark className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both mb-4 h-10 w-10 duration-200" />
       <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
-        Ask Exa about your database
+        How can I help you today?
       </h1>
-      <p className="fade-in slide-in-from-bottom-2 animate-in fill-mode-both mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-muted-foreground duration-300">
-        Grounded in your live schema. <span className="font-mono text-primary">@</span> attaches context,{" "}
-        <span className="font-mono text-primary">/</span> runs commands.
+      <p className="fade-in slide-in-from-bottom-2 animate-in fill-mode-both mt-1.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground duration-300">
+        Grounded in your live schema. <span className="font-mono">@</span> attaches context,{" "}
+        <span className="font-mono">/</span> runs commands.
       </p>
+    </div>
+  );
+}
+
+const suggestionChipClass =
+  "text-foreground hover:bg-muted border-border/60 flex h-auto items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors [&_svg]:size-4";
+
+/** Grouped starter chips below the composer (category → expandable options). */
+export function ExaThreadSuggestions() {
+  const aui = useAui();
+  const api = useExaComposer();
+  const [expandedLabel, setExpandedLabel] = useState<string | null>(null);
+  const expandedGroup = SUGGESTION_GROUPS.find((g) => g.label === expandedLabel);
+
+  const sendPrompt = (prompt: string) => {
+    // Commands with an open argument (trailing space) go to the input to
+    // finish typing; complete prompts send through the normal flow.
+    if (prompt.endsWith(" ")) {
+      aui.composer().setText(prompt);
+      return;
+    }
+    void aui.thread().append({ role: "user", content: [{ type: "text", text: prompt }] });
+  };
+  if (!api) return null;
+
+  return (
+    <div className="flex w-full flex-col gap-2 px-4">
+      <div className="scrollbar-none w-full overflow-x-auto">
+        <div className="mx-auto flex w-max items-center gap-2">
+          {SUGGESTION_GROUPS.map((group) => (
+            <button
+              key={group.label}
+              type="button"
+              className={cn(suggestionChipClass, group.label === expandedLabel && "bg-muted")}
+              onClick={() => setExpandedLabel(group.label === expandedLabel ? null : group.label)}
+            >
+              <group.icon className="size-4" />
+              {group.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {expandedGroup && (
+        <div key={expandedGroup.label} className="fade-in slide-in-from-top-1 animate-in scrollbar-none w-full overflow-x-auto duration-200">
+          <div className="mx-auto flex w-max items-center gap-2">
+            {expandedGroup.options.map((option) => (
+              <button key={option.label} type="button" className={suggestionChipClass} onClick={() => sendPrompt(option.prompt)}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -320,7 +428,6 @@ export function ExaThread({
     messages,
     isRunning: busy,
     convertMessage: toThreadMessage,
-    suggestions: SUGGESTIONS,
     onNew: async (m: AppendMessage) => {
       const text = m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("");
       if (text.trim()) sendRef.current(text);
@@ -332,7 +439,17 @@ export function ExaThread({
     <AssistantRuntimeProvider runtime={runtime}>
       <ExaComposerContext.Provider value={composerApi}>
         <ExaApplySqlContext.Provider value={onApplySql ?? null}>
-          <div className="min-h-0 flex-1">
+          {/* Neutral accent inside the thread: the example's design is
+              monochrome (no green) — scope primary to foreground here so the
+              send button, links and chips render neutral while the rest of
+              Studio keeps its brand color. */}
+          <div
+            className="min-h-0 flex-1"
+            style={{
+              ["--primary" as string]: "var(--foreground)",
+              ["--primary-foreground" as string]: "var(--background)",
+            }}
+          >
             <Thread components={{ Welcome: ExaWelcome }} />
           </div>
         </ExaApplySqlContext.Provider>

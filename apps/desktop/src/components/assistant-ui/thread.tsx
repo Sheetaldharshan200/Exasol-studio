@@ -21,10 +21,13 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
+import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
   ExaComposerChips,
   ExaComposerControls,
   ExaComposerMenus,
+  ExaThreadSuggestions,
 } from "@/features/assistant/exa/ExaThread";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -38,7 +41,6 @@ import {
   ErrorPrimitive,
   groupPartByType,
   MessagePrimitive,
-  SuggestionPrimitive,
   ThreadPrimitive,
   type ToolCallMessagePartComponent,
   useAuiState,
@@ -159,8 +161,13 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
             <Composer />
-            <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
-              <ThreadSuggestions />
+            <AuiIf condition={isNewChatView}>
+              <div className="aui-thread-welcome-suggestions-shell min-h-19">
+                <AuiIf condition={(s) => s.composer.isEmpty}>
+                  {/* Studio: grouped DB suggestions (category → options). */}
+                  <ExaThreadSuggestions />
+                </AuiIf>
+              </div>
             </AuiIf>
           </ThreadPrimitive.ViewportFooter>
         </div>
@@ -200,32 +207,6 @@ const ThreadWelcome: FC = () => {
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
         How can I help you today?
       </h1>
-    </div>
-  );
-};
-
-const ThreadSuggestions: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestions flex w-full flex-wrap items-center justify-center gap-2 px-4">
-      <ThreadPrimitive.Suggestions>
-        {() => <ThreadSuggestionItem />}
-      </ThreadPrimitive.Suggestions>
-    </div>
-  );
-};
-
-const ThreadSuggestionItem: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200">
-      <SuggestionPrimitive.Trigger send asChild>
-        <Button
-          variant="ghost"
-          className="aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors"
-        >
-          <SuggestionPrimitive.Title className="aui-thread-welcome-suggestion-text-1" />
-          <SuggestionPrimitive.Description className="aui-thread-welcome-suggestion-text-2 empty:hidden" />
-        </Button>
-      </SuggestionPrimitive.Trigger>
     </div>
   );
 };
@@ -330,6 +311,31 @@ const ComposerAction: FC = () => {
   );
 };
 
+/** Empty running reply → dot-matrix "Connecting"; streaming → pulsing dot. */
+const AssistantWorkingIndicator: FC = () => {
+  const isEmpty = useAuiState((s) => s.message.content.length === 0);
+  if (isEmpty) {
+    return (
+      <span
+        data-slot="aui_assistant-message-indicator"
+        className="text-muted-foreground inline-flex items-center gap-2 align-middle"
+      >
+        <DotMatrix state="connecting" aria-hidden />
+        <span className="text-sm">Connecting</span>
+      </span>
+    );
+  }
+  return (
+    <span
+      data-slot="aui_assistant-message-indicator"
+      className="animate-pulse font-sans"
+      aria-label="Assistant is working"
+    >
+      {"●"}
+    </span>
+  );
+};
+
 const MessageError: FC = () => {
   return (
     <MessagePrimitive.Error>
@@ -410,15 +416,7 @@ const AssistantMessage: FC = () => {
               case "data":
                 return part.dataRendererUI;
               case "indicator":
-                return (
-                  <span
-                    data-slot="aui_assistant-message-indicator"
-                    className="animate-pulse font-sans"
-                    aria-label="Assistant is working"
-                  >
-                    {"●"}
-                  </span>
-                );
+                return <AssistantWorkingIndicator />;
               default:
                 return null;
             }
@@ -483,6 +481,7 @@ const AssistantActionBar: FC = () => {
           </ActionBarPrimitive.ExportMarkdown>
         </ActionBarMorePrimitive.Content>
       </ActionBarMorePrimitive.Root>
+      <MessageTiming />
     </ActionBarPrimitive.Root>
   );
 };
