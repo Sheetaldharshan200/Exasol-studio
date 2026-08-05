@@ -23,7 +23,8 @@ export type ExaSnapshot = {
   history: { sql: string }[];
 };
 
-export type ContextProviderId = "query" | "results" | "table" | "schema" | "connection" | "history";
+/** "file" chips come from the composer's + (attach) button, not the @ menu. */
+export type ContextProviderId = "query" | "results" | "table" | "schema" | "connection" | "history" | "file";
 
 export type ContextProvider = {
   id: ContextProviderId;
@@ -95,6 +96,10 @@ function resultToMarkdown(result: StatementResult, maxRows = 20): string {
  */
 export function resolveContext(id: ContextProviderId, arg: string | null, snap: ExaSnapshot): ContextChip | null {
   switch (id) {
+    case "file":
+      // File chips are built directly from the attach button (the picker owns
+      // reading the content); nothing to resolve from the workbench snapshot.
+      return null;
     case "query": {
       const sql = snap.editorSql.trim();
       if (!sql) return null;

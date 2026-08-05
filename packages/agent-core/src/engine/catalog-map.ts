@@ -15,7 +15,7 @@ export type CatalogProvider = {
 };
 
 /** Pinned first, in this order (the providers our users actually reach for). */
-const POPULAR = ["ollama", "lmstudio", "openai", "google", "openrouter", "anthropic", "opencode", "groq"];
+const POPULAR = ["ollama", "lmstudio", "openai", "google", "openrouter", "anthropic", "opencode", "groq", "github-copilot"];
 
 type RawCatalog = Record<string, { name?: string; env?: string[]; models?: Record<string, unknown> } | undefined>;
 

@@ -104,11 +104,79 @@ pub fn engine_status(app: AppHandle, state: State<'_, AppState>) -> AppResult<En
     let manifest = crate::components_update::read_manifest(data_dir, ComponentId::ExaAgent);
     // Installed component copy OR the bundled baseline both count as usable.
     let path = resolve_engine_binary(&app, data_dir);
+    // Best-effort: make sure the engine's default MCP servers are seeded (the
+    // Studio gateway + a filesystem server) — idempotent, never blocks status.
+    let _ = ensure_default_mcp(&app, data_dir);
     Ok(EngineInstallStatus {
         installed: path.is_some(),
         version: manifest.map(|m| m.version).or_else(|| bundled_engine_path(&app).map(|_| "bundled".to_string())),
         binary_path: path.map(|p| p.to_string_lossy().to_string()),
     })
+}
+
+/// Seed the engine's `opencode.json` with Studio's default MCP servers —
+/// the `exasol-studio` gateway (every DB connected in Studio, read-only) and
+/// a `filesystem` server for local data files — without touching entries the
+/// user added or edited. The engine reads its config from
+/// `<component>/config/opencode/opencode.json` (verified via GET /path).
+pub fn ensure_default_mcp(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
+    let cfg_dir = data_dir
+        .join("personal-local")
+        .join("components")
+        .join("exa-agent")
+        .join("config")
+        .join("opencode");
+    std::fs::create_dir_all(&cfg_dir).map_err(|e| AppError::Storage(format!("engine config dir: {e}")))?;
+    let cfg_path = cfg_dir.join("opencode.json");
+    let mut root: serde_json::Value = std::fs::read_to_string(&cfg_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+    let mcp = root
+        .as_object_mut()
+        .expect("root coerced to object above")
+        .entry("mcp")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(mcp) = mcp.as_object_mut() else {
+        return Ok(()); // user made "mcp" a non-object — leave their config alone
+    };
+    let mut changed = false;
+    if !mcp.contains_key("exasol-studio") {
+        // Same launch spec the external AI clients get: node + the bundled
+        // stdio gateway, pointed at this app's agent dir.
+        if let Ok(launch) = crate::ai_clients::mcp_launch(app) {
+            let mut command = vec![launch.command];
+            command.extend(launch.args);
+            let environment: serde_json::Map<String, serde_json::Value> =
+                launch.env.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect();
+            mcp.insert(
+                "exasol-studio".into(),
+                serde_json::json!({ "type": "local", "command": command, "environment": environment, "enabled": true }),
+            );
+            changed = true;
+        }
+    }
+    if !mcp.contains_key("filesystem") {
+        if let Some(home) = dirs::home_dir() {
+            mcp.insert(
+                "filesystem".into(),
+                serde_json::json!({
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", home.to_string_lossy()],
+                    "enabled": true
+                }),
+            );
+            changed = true;
+        }
+    }
+    if changed {
+        let raw = serde_json::to_string_pretty(&root).map_err(|e| AppError::Storage(e.to_string()))?;
+        std::fs::write(&cfg_path, raw).map_err(|e| AppError::Storage(format!("engine config write: {e}")))?;
+    }
+    Ok(())
 }
 
 /// Download + extract the opencode release for `tag` into the Exa agent

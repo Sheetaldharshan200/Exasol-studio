@@ -166,6 +166,8 @@ export type ExaComposerApi = {
   runLocal: (id: LocalCommandId) => void;
   /** The FULL models.dev catalog (every provider opencode supports). */
   loadCatalog: () => Promise<EngineCatalogProvider[]>;
+  /** The composer's + button: attach a file's content as a context chip. */
+  attachFile: () => void;
   /** Refresh providers/models after a successful OAuth connect. */
   onConnected: () => Promise<void> | void;
 };
@@ -285,15 +287,11 @@ export function ExaComposerControls() {
   const ModeIcon = modeInfo.icon;
   return (
     <div className="flex min-w-0 items-center gap-1">
-      {/* `+` adds @-context — our equivalent of the example's attach button. */}
+      {/* `+` attaches a FILE as context (typing @ still opens the DB menu). */}
       <button
         type="button"
-        title="Add context (@)"
-        onClick={() => {
-          const text = aui.composer().getState?.()?.text ?? "";
-          const next = text.endsWith("@") ? text : text + (text && !text.endsWith(" ") ? " @" : "@");
-          aui.composer().setText(next);
-        }}
+        title="Attach a file (CSV, SQL, …)"
+        onClick={() => api.attachFile()}
         className="hover:bg-muted focus-visible:bg-muted flex size-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground outline-none transition-colors hover:text-foreground"
       >
         <PlusIcon className="size-4" />

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, X } from "lucide-react";
 import { agent, type AgentProviderInfo, type EngineAuthMethod, type EngineCatalogProvider, type EngineOAuthAuthorization } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
@@ -47,7 +47,6 @@ export function ExaModelSelector({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [view, setView] = useState<"providers" | "settings">("providers");
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [keyDraft, setKeyDraft] = useState<Record<string, string>>({});
@@ -74,6 +73,16 @@ export function ExaModelSelector({
     setCodeDraft("");
   };
 
+  /** Open a URL in the system browser (Tauri webviews ignore target=_blank). */
+  async function openExternal(url: string) {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } catch {
+      window.open(url, "_blank", "noreferrer");
+    }
+  }
+
   /** Kick off an OAuth method: authorize, then (for auto flows) await the callback. */
   async function startOauth(providerId: string, idx: number, inputs: Record<string, string>) {
     setOauthState("waiting");
@@ -84,6 +93,7 @@ export function ExaModelSelector({
         return;
       }
       setOauth(r.authorization);
+      void openExternal(r.authorization.url); // straight into the browser
       if (r.authorization.method === "auto") {
         // The engine polls the flow inline; this resolves when auth completes.
         const done = await agent.engine.oauthCallback(providerId, idx);
@@ -211,9 +221,13 @@ export function ExaModelSelector({
       <div className="py-1">
         {flowOauth ? (
           <div className="px-2 py-1">
-            <a href={flowOauth.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 break-all text-[12px] text-foreground underline underline-offset-2 hover:opacity-80">
+            <button
+              type="button"
+              onClick={() => void openExternal(flowOauth.url)}
+              className="flex items-center gap-1.5 break-all text-left text-[12px] text-foreground underline underline-offset-2 hover:opacity-80"
+            >
               <ExternalLink className="h-3 w-3 shrink-0" /> {flowOauth.url}
-            </a>
+            </button>
             {flowOauth.instructions ? <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{flowOauth.instructions}</p> : null}
             {flowOauth.method === "code" && flowState !== "waiting" ? (
               <div className="mt-1.5 flex items-center gap-1.5" onKeyDown={(e) => e.stopPropagation()}>
@@ -322,7 +336,6 @@ export function ExaModelSelector({
         onOpenChange?.(o);
         if (o) fetchCatalog();
         else {
-          setView("providers");
           setSearchOpen(false);
           setQuery("");
           setConnecting(null);
@@ -349,14 +362,13 @@ export function ExaModelSelector({
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {view === "settings" ? "API keys" : "AI providers"}
+            AI providers
           </span>
           <div className="flex items-center gap-0.5">
             <button
               type="button"
               title="Search providers"
               onClick={() => {
-                setView("providers");
                 setConnecting(null);
                 setSearchOpen((o) => !o);
                 if (searchOpen) setQuery("");
@@ -366,37 +378,11 @@ export function ExaModelSelector({
             >
               <Search className="h-3.5 w-3.5" />
             </button>
-            <button
-              type="button"
-              title="Provider settings & API keys"
-              onClick={() => {
-                setConnecting(null);
-                setView((v) => (v === "settings" ? "providers" : "settings"));
-              }}
-              className={cn("hover:bg-muted flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground", view === "settings" && "bg-muted text-foreground")}
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-            </button>
           </div>
         </div>
         <DropdownMenuSeparator />
 
-        {view === "settings" ? (
-          <div className="max-h-72 overflow-y-auto py-0.5 [scrollbar-width:thin]">
-            {providers.filter((p) => p.kind === "cloud" && p.id !== "in-database").map((p) => (
-              <div key={p.id} className="mb-0.5">
-                <div className="flex items-center gap-2 px-2 pt-1.5">
-                  <ProviderMark providerId={p.id} className="h-3.5 w-3.5" />
-                  <span className="text-[12px] font-medium">{p.name}</span>
-                  <span className={cn("ml-auto flex items-center gap-1 text-[10px]", p.configured ? "text-foreground/70" : "text-muted-foreground")}>
-                    <KeyRound className="h-2.5 w-2.5" /> {p.configured ? "connected" : "not set"}
-                  </span>
-                </div>
-                {keyInput(p.id, p.envKey)}
-              </div>
-            ))}
-          </div>
-        ) : (
+        {(
           <div className="max-h-80 overflow-y-auto py-0.5 [scrollbar-width:thin]">
             {searchOpen ? (
               <div className="relative px-1 pb-1" onKeyDown={(e) => e.stopPropagation()}>
@@ -488,9 +474,6 @@ export function ExaModelSelector({
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                   ))}
-                  {popular.length > 0 ? (
-                    <p className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Popular</p>
-                  ) : null}
                   {popular.map((c) => catalogRow(c, true))}
                   {rest.length > 0 ? (
                     <p className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">All providers</p>

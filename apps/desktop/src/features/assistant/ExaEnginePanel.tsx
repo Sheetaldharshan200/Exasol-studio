@@ -480,6 +480,34 @@ export function ExaEnginePanel({
       );
   }
 
+  /** The composer's + button: attach a file's content as a context chip. */
+  async function attachFile() {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        multiple: false,
+        filters: [{ name: "Text & data", extensions: ["sql", "csv", "txt", "json", "md", "tsv", "yaml", "yml", "log"] }],
+      });
+      if (typeof picked !== "string") return;
+      const name = picked.split("/").pop() ?? "file";
+      let text = await ipc.fsReadText(picked);
+      const CAP = 48_000;
+      const truncated = text.length > CAP;
+      if (truncated) text = text.slice(0, CAP);
+      setChips((cs) => {
+        const chip: ContextChip = {
+          id: `file:${picked}`,
+          providerId: "file",
+          label: name,
+          body: `File ${name}${truncated ? " (truncated)" : ""}:\n\`\`\`\n${text}\n\`\`\``,
+        };
+        return cs.some((c) => c.id === chip.id) ? cs : [...cs, chip];
+      });
+    } catch {
+      /* cancelled or unreadable */
+    }
+  }
+
   /** Every submit path (registry composer, suggestions, edits) lands here. */
   function sendText(text: string, quote?: string) {
     // A command chip takes the typed text as its argument; typed "/cmd arg"
@@ -610,6 +638,7 @@ export function ExaEnginePanel({
           setPendingCommand,
           runLocal,
           loadCatalog: () => agent.engine.catalog().then((r) => r.providers),
+          attachFile: () => void attachFile(),
           onConnected: () => {
             refreshStatus();
             return loadModels();

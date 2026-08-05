@@ -111,10 +111,10 @@ fn home() -> AppResult<PathBuf> {
 /// The gateway launch spec: Node + the bundled stdio bridge. Holds NO
 /// credentials — the bridge discovers the running sidecar via gateway.json
 /// and every database it exposes lives only in the sidecar's memory.
-struct McpLaunch {
-    command: String,
-    args: Vec<String>,
-    env: Vec<(String, String)>,
+pub(crate) struct McpLaunch {
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
 }
 
 /// Locate the bundled mcp-gateway.cjs: release resource first, then the
@@ -134,7 +134,7 @@ fn gateway_script(app: &AppHandle) -> AppResult<PathBuf> {
     ))
 }
 
-fn mcp_launch(app: &AppHandle) -> AppResult<McpLaunch> {
+pub(crate) fn mcp_launch(app: &AppHandle) -> AppResult<McpLaunch> {
     let node = crate::agent::node_binary(app).ok_or_else(|| {
         AppError::Storage("Node.js is required for the Studio MCP gateway but was not found.".into())
     })?;
