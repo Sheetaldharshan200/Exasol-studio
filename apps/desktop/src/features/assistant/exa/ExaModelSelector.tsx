@@ -17,6 +17,55 @@ import { cn } from "@/lib/utils";
 export type PickedModel = { providerID: string; modelID: string; label: string };
 
 /**
+ * Quick model switch — a second, flat dropdown listing ONLY the selected
+ * provider's models, so changing models doesn't require re-walking the
+ * provider submenu. Renders nothing until a provider is picked.
+ */
+export function ExaModelQuickSwitch({
+  providers,
+  model,
+  onPick,
+}: {
+  providers: AgentProviderInfo[];
+  model: PickedModel | null;
+  onPick: (m: PickedModel) => void;
+}) {
+  const provider = model ? providers.find((p) => p.id === model.providerID) : undefined;
+  if (!provider || provider.models.length === 0) return null;
+  const current = provider.models.find((m) => m.id === model!.modelID);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={`${provider.name} models`}
+          className="hover:bg-muted flex h-7 max-w-[140px] items-center gap-1 rounded-full px-2 text-[12px] text-foreground/80 transition-colors @md:max-w-[200px]"
+        >
+          <span className="truncate">{current?.name ?? model!.modelID}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="max-h-72 w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]">
+        {provider.models.map((m) => {
+          const active = model?.modelID === m.id;
+          return (
+            <DropdownMenuItem
+              key={m.id}
+              onSelect={() => onPick({ providerID: provider.id, modelID: m.id, label: `${provider.name} · ${m.name || m.id}` })}
+              className="gap-2"
+            >
+              {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
+              <span className="min-w-0 flex-1 truncate text-[12px]">{m.name || m.id}</span>
+              <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} />
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
  * The composer's model selector, in the assistant-ui model-selector design
  * language: a ghost rounded-full trigger opening a menu that lists PROVIDERS —
  * each row a `>` submenu with that provider's models. Top-right: search
@@ -107,11 +156,13 @@ export function ExaModelSelector({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title="Select model"
-          className="hover:bg-muted flex h-7 max-w-[150px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 transition-colors @md:max-w-[230px]"
+          title="Provider & models"
+          className="hover:bg-muted flex h-7 max-w-[130px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 transition-colors @md:max-w-[180px]"
         >
           {model ? <ProviderMark providerId={model.providerID} className="h-3.5 w-3.5 shrink-0" /> : null}
-          <span className="truncate">{model ? model.label : "Select model"}</span>
+          <span className="truncate">
+            {model ? providers.find((p) => p.id === model.providerID)?.name ?? model.providerID : "Select model"}
+          </span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenuTrigger>

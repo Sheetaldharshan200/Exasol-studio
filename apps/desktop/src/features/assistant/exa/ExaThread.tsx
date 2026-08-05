@@ -8,7 +8,6 @@ import {
   type AppendMessage,
 } from "@assistant-ui/react";
 import {
-  AtSign,
   Bot,
   Database as DatabaseIcon,
   MessageSquare,
@@ -29,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
 import type { AgentProviderInfo } from "@/lib/agent-client";
-import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
+import { ExaModelQuickSwitch, ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
   filterProviders,
   resolveContext,
@@ -270,6 +269,8 @@ export function ExaComposerControls() {
         <PlusIcon className="size-4" />
       </button>
       <ExaModelSelector providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
+      {/* Fast model switching within the selected provider. */}
+      <ExaModelQuickSwitch providers={api.providers} model={api.model} onPick={api.onPickModel} />
       <button
         type="button"
         onClick={() => api.setMode(MODES[(MODES.findIndex((x) => x.id === api.mode) + 1) % MODES.length].id)}
@@ -288,13 +289,16 @@ export function ExaComposerChips() {
   const api = useExaComposer();
   if (!api || api.chips.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1 px-3 pt-2">
+    <div className="flex flex-wrap gap-1 px-2 pt-1.5">
       {api.chips.map((c) => (
-        <span key={c.id} className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 py-0.5 pl-1.5 pr-1 text-[10.5px] text-primary">
-          <AtSign className="h-2.5 w-2.5" />
+        <span
+          key={c.id}
+          className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-[12px] leading-none font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+        >
+          <WrenchIcon className="size-3" />
           {c.label}
-          <button type="button" onClick={() => api.removeChip(c.id)} className="rounded hover:bg-primary/20" aria-label={`Remove ${c.label}`}>
-            <X className="h-2.5 w-2.5" />
+          <button type="button" onClick={() => api.removeChip(c.id)} className="rounded opacity-70 hover:opacity-100" aria-label={`Remove ${c.label}`}>
+            <X className="size-3" />
           </button>
         </span>
       ))}
@@ -397,27 +401,21 @@ export function ExaComposerMenus() {
       ) : providerMenu.length > 0 ? (
         <div className="py-1">
           {providerMenu.map((p) => (
-            <button key={p.id} type="button" onClick={() => pickProvider(p)} className="flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-secondary">
-              <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-foreground">@{p.title}</span>
-                <span className="block truncate text-[10.5px] text-muted-foreground">{p.description}</span>
-              </span>
+            <button key={p.id} type="button" onClick={() => pickProvider(p)} className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary">
+              <span className="text-[12px] font-medium text-foreground">{p.title}</span>
+              <span className="block max-w-full truncate text-[10.5px] text-muted-foreground">{p.description}</span>
             </button>
           ))}
         </div>
       ) : (
         <div className="py-1">
           {commandMenu.map((c) => (
-            <button key={c.id} type="button" onClick={() => pickCommand(c)} className="flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-secondary">
-              <span className="mt-0.5 font-mono text-[12px] text-primary">/</span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium text-foreground">
-                  /{c.title}
-                  {c.hint ? <span className="ml-1.5 font-normal text-muted-foreground">{c.hint}</span> : null}
-                </span>
-                <span className="block truncate text-[10.5px] text-muted-foreground">{c.description}</span>
+            <button key={c.id} type="button" onClick={() => pickCommand(c)} className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-secondary">
+              <span className="text-[12px] font-medium text-foreground">
+                {c.title}
+                {c.hint ? <span className="ml-1.5 font-normal text-muted-foreground">{c.hint}</span> : null}
               </span>
+              <span className="block max-w-full truncate text-[10.5px] text-muted-foreground">{c.description}</span>
             </button>
           ))}
         </div>
