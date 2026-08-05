@@ -250,6 +250,8 @@ export function ExaThreadSuggestions() {
 export function ExaComposerControls() {
   const api = useExaComposer();
   const aui = useAui();
+  // The model pill's "All providers…" entry opens the provider menu directly.
+  const [providersOpen, setProvidersOpen] = useState(false);
   if (!api) return null;
   const modeInfo = MODES.find((m) => m.id === api.mode)!;
   const ModeIcon = modeInfo.icon;
@@ -264,18 +266,30 @@ export function ExaComposerControls() {
           const next = text.endsWith("@") ? text : text + (text && !text.endsWith(" ") ? " @" : "@");
           aui.composer().setText(next);
         }}
-        className="hover:bg-muted flex size-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:text-foreground"
+        className="hover:bg-muted focus-visible:bg-muted flex size-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground outline-none transition-colors hover:text-foreground"
       >
         <PlusIcon className="size-4" />
       </button>
-      <ExaModelSelector providers={api.providers} model={api.model} onPick={api.onPickModel} onSaveKey={api.onSaveKey} />
+      <ExaModelSelector
+        providers={api.providers}
+        model={api.model}
+        onPick={api.onPickModel}
+        onSaveKey={api.onSaveKey}
+        open={providersOpen}
+        onOpenChange={setProvidersOpen}
+      />
       {/* Fast model switching within the selected provider. */}
-      <ExaModelQuickSwitch providers={api.providers} model={api.model} onPick={api.onPickModel} />
+      <ExaModelQuickSwitch
+        providers={api.providers}
+        model={api.model}
+        onPick={api.onPickModel}
+        onOpenProviders={() => setProvidersOpen(true)}
+      />
       <button
         type="button"
         onClick={() => api.setMode(MODES[(MODES.findIndex((x) => x.id === api.mode) + 1) % MODES.length].id)}
         title={`${modeInfo.hint} — click to switch`}
-        className="hover:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+        className="hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground outline-none transition-colors hover:text-foreground"
       >
         <ModeIcon className="h-3.5 w-3.5" />
         <span className="hidden @md:inline">{modeInfo.label}</span>

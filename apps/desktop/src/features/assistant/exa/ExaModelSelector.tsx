@@ -25,10 +25,13 @@ export function ExaModelQuickSwitch({
   providers,
   model,
   onPick,
+  onOpenProviders,
 }: {
   providers: AgentProviderInfo[];
   model: PickedModel | null;
   onPick: (m: PickedModel) => void;
+  /** Jump from here into the full provider menu ("All providers…"). */
+  onOpenProviders?: () => void;
 }) {
   const provider = model ? providers.find((p) => p.id === model.providerID) : undefined;
   if (!provider || provider.models.length === 0) return null;
@@ -39,7 +42,7 @@ export function ExaModelQuickSwitch({
         <button
           type="button"
           title={`${provider.name} models`}
-          className="hover:bg-muted flex h-7 max-w-[140px] items-center gap-1 rounded-full px-2 text-[12px] text-foreground/80 transition-colors @md:max-w-[200px]"
+          className="hover:bg-muted focus-visible:bg-muted flex h-7 max-w-[140px] items-center gap-1 rounded-full px-2 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[200px]"
         >
           <span className="truncate">{current?.name ?? model!.modelID}</span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
@@ -60,6 +63,15 @@ export function ExaModelQuickSwitch({
             </DropdownMenuItem>
           );
         })}
+        {onOpenProviders ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onOpenProviders} className="gap-2 text-muted-foreground">
+              <span className="w-3.5 shrink-0" />
+              <span className="text-[12px]">All providers…</span>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -77,11 +89,16 @@ export function ExaModelSelector({
   model,
   onPick,
   onSaveKey,
+  open,
+  onOpenChange,
 }: {
   providers: AgentProviderInfo[];
   model: PickedModel | null;
   onPick: (m: PickedModel) => void;
   onSaveKey: (providerId: string, key: string) => Promise<void>;
+  /** Controlled open state, so other UI (the model pill) can open this menu. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [view, setView] = useState<"providers" | "search" | "settings">("providers");
   const [query, setQuery] = useState("");
@@ -152,12 +169,21 @@ export function ExaModelSelector({
   };
 
   return (
-    <DropdownMenu onOpenChange={(open) => { if (!open) { setView("providers"); setQuery(""); } }}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange?.(o);
+        if (!o) {
+          setView("providers");
+          setQuery("");
+        }
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           title="Provider & models"
-          className="hover:bg-muted flex h-7 max-w-[130px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 transition-colors @md:max-w-[180px]"
+          className="hover:bg-muted focus-visible:bg-muted flex h-7 max-w-[130px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[180px]"
         >
           {model ? <ProviderMark providerId={model.providerID} className="h-3.5 w-3.5 shrink-0" /> : null}
           <span className="truncate">
