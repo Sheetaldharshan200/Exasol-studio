@@ -8,6 +8,20 @@ import { cn } from "@/lib/utils";
  * servers (GET/POST /mcp, connect/disconnect), so anything added here becomes
  * tools the agent can call. Rendered as an overlay inside the Exa thread.
  */
+
+/**
+ * One-click starting points for new users — the official/reference MCP
+ * servers for the tools data & BI people actually use. "Use" prefills the
+ * add form so the target (path, connection string) can be adjusted first.
+ */
+const SUGGESTED: { name: string; kind: "remote" | "local"; target: string; detail: string }[] = [
+  { name: "github", kind: "remote", target: "https://api.githubcopilot.com/mcp/", detail: "Repos, issues, PRs (GitHub's official server)" },
+  { name: "atlassian", kind: "remote", target: "https://mcp.atlassian.com/v1/sse", detail: "Jira & Confluence (Atlassian's official server)" },
+  { name: "notion", kind: "remote", target: "https://mcp.notion.com/mcp", detail: "Notion pages & databases" },
+  { name: "postgres", kind: "local", target: "npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost:5432/db", detail: "Query Postgres — edit the connection string" },
+  { name: "filesystem", kind: "local", target: "npx -y @modelcontextprotocol/server-filesystem /path/to/data", detail: "Local files (CSV exports, reports) — edit the path" },
+  { name: "slack", kind: "local", target: "npx -y @modelcontextprotocol/server-slack", detail: "Slack messages (needs SLACK_BOT_TOKEN in env)" },
+];
 export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [servers, setServers] = useState<Record<string, { status: string }> | "loading" | "error">("loading");
   const [busyName, setBusyName] = useState<string | null>(null);
@@ -89,7 +103,7 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
           ) : servers === "error" ? (
             <p className="py-4 text-center text-[12px] text-muted-foreground">The engine isn't running — install/start it first.</p>
           ) : Object.keys(servers).length === 0 ? (
-            <p className="py-4 text-center text-[12px] text-muted-foreground">No MCP servers yet — add one below.</p>
+            <p className="py-2 text-center text-[12px] text-muted-foreground">No MCP servers yet — pick a suggestion or add one below.</p>
           ) : (
             Object.entries(servers).map(([n, s]) => {
               const connected = s.status === "connected";
@@ -110,6 +124,33 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
               );
             })
           )}
+        </div>
+
+        {/* Suggested starting points — "Use" prefills the form below. */}
+        <div className="shrink-0 border-t border-border px-2 pt-1.5">
+          <p className="px-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Suggested</p>
+          <div className="max-h-32 overflow-y-auto pb-1 [scrollbar-width:thin]">
+            {SUGGESTED.filter((s) => servers === "loading" || servers === "error" || !(s.name in servers)).map((s) => (
+              <div key={s.name} className="hover:bg-muted/60 flex items-center gap-2 rounded-md px-1.5 py-1">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12px] text-foreground">{s.name}</span>
+                  <span className="block truncate text-[10px] text-muted-foreground">{s.detail}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setName(s.name);
+                    setKind(s.kind);
+                    setTarget(s.target);
+                    setAddError(null);
+                  }}
+                  className="hover:bg-muted flex h-6 shrink-0 items-center rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  Use
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Add a server: remote URL or local command. */}
