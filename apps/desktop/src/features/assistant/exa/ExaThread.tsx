@@ -1,14 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AssistantRuntimeProvider,
-  useAui,
-  useAuiState,
-  useExternalStoreRuntime,
-  type ThreadMessageLike,
-  type AppendMessage,
-} from "@assistant-ui/react";
+import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
+import { useOpenCodeRuntime } from "@assistant-ui/react-opencode";
+import type { createOpencodeClient } from "@assistant-ui/react-opencode";
+
+type OpencodeClient = ReturnType<typeof createOpencodeClient>;
 import {
   Archive as ArchiveIcon,
+  ArrowUp as SendArrowIcon,
   Bot,
   Database as DatabaseIcon,
   History as HistoryIcon,
@@ -46,24 +44,11 @@ import { ExaMcpPanel } from "./ExaMcpPanel";
 
 /**
  * The Exa thread — the official assistant-ui thread UI (registry components in
- * components/assistant-ui/) over our opencode engine via the external-store
- * runtime. This file is the bridge: message conversion, the Exasol-branded
- * welcome, and Studio's composer controls (mode pill, model menu, @ context,
- * / commands) injected into the registry composer through ExaComposerContext.
+ * components/assistant-ui/) over our opencode engine via the official
+ * @assistant-ui/react-opencode runtime. This file adds the Exasol-branded
+ * welcome, the sessions sidebar, and Studio's composer controls (mode pill,
+ * model menu, @ context, / commands) via ExaComposerContext.
  */
-
-/** The panel's message model: ordered parts, so tool calls sit inline. */
-export type ExaPart =
-  | { type: "text"; text: string; partId?: string }
-  | { type: "tool"; callId: string; name: string; ok?: boolean };
-export type ExaMessage = {
-  role: "user" | "assistant";
-  parts: ExaPart[];
-  /** The engine's message id — live part snapshots upsert by this. */
-  engineId?: string;
-  /** Text the user quoted from an earlier reply (rendered as a QuoteBlock). */
-  quote?: string;
-};
 
 /** Chat = no tools · Plan = read-only tools · Agent = all tools. */
 export type ChatMode = "chat" | "plan" | "agent";
@@ -73,28 +58,6 @@ const MODES: { id: ChatMode; label: string; icon: typeof Bot; hint: string }[] =
   { id: "plan", label: "Plan", icon: NotebookPen, hint: "Plan — read-only tools, propose before changing" },
   { id: "chat", label: "Chat", icon: MessageSquare, hint: "Chat — conversation only, no tools" },
 ];
-
-/** Plain text of a message (for /share and copy) — tool calls become lines. */
-export function messageText(m: ExaMessage): string {
-  return m.parts
-    .map((p) => (p.type === "text" ? p.text : `\n> tool: ${p.name}${p.ok === false ? " (failed)" : ""}\n`))
-    .join("")
-    .trim();
-}
-
-function toThreadMessage(m: ExaMessage): ThreadMessageLike {
-  return {
-    role: m.role,
-    content: m.parts.map((p) =>
-      p.type === "text"
-        ? ({ type: "text", text: p.text } as const)
-        : ({ type: "tool-call", toolName: p.name, toolCallId: p.callId, result: p.ok === undefined ? undefined : { ok: p.ok } } as const),
-    ),
-    // MessagePrimitive.Quote reads metadata.custom.quote — the same place the
-    // composer's own send path stores it.
-    ...(m.quote ? { metadata: { custom: { quote: { text: m.quote, messageId: "" } } } } : {}),
-  };
-}
 
 /** Grouped starter suggestions (category chip → expandable options). */
 type SuggestionGroup = {
@@ -171,6 +134,12 @@ export type ExaComposerApi = {
   attachFile: () => void;
   /** Refresh providers/models after a successful OAuth connect. */
   onConnected: () => Promise<void> | void;
+  /**
+   * The panel's send pipeline: slash-command expansion, @-context chips,
+   * mode directives, quote injection. Returns the final engine text, or
+   * null when the input was a local command it handled itself.
+   */
+  expandForSend: (text: string, quote?: string) => string | null;
 };
 
 const ExaComposerContext = createContext<ExaComposerApi | null>(null);
@@ -179,6 +148,41 @@ export const useExaComposer = () => useContext(ExaComposerContext);
 /** Apply-a-SQL-block-to-the-editor handler, consumed by the markdown code header. */
 const ExaApplySqlContext = createContext<((sql: string) => void) | null>(null);
 export const useExaApplySql = () => useContext(ExaApplySqlContext);
+
+/**
+ * /share and the floating share button: export the CURRENT runtime thread as
+ * Markdown (the runtime owns messages now — no panel copy exists).
+ */
+function ExaShareListener() {
+  const aui = useAui();
+  useEffect(() => {
+    const onShare = () => {
+      const msgs = aui.thread().getState?.()?.messages ?? [];
+      const lines: string[] = ["# Exa conversation", ""];
+      for (const m of msgs as unknown as { role: string; content: readonly { type: string; text?: string; toolName?: string }[] }[]) {
+        if (m.role !== "user" && m.role !== "assistant") continue;
+        lines.push(m.role === "user" ? "## You" : "## Exa", "");
+        for (const part of m.content) {
+          if (part.type === "text" && part.text) lines.push(part.text, "");
+          else if (part.type === "tool-call") lines.push(`> tool: ${part.toolName ?? "tool"}`, "");
+        }
+      }
+      void (async () => {
+        try {
+          const { save } = await import("@tauri-apps/plugin-dialog");
+          const { ipc } = await import("@/lib/ipc");
+          const path = await save({ defaultPath: "exa-conversation.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
+          if (path) await ipc.writeTextFile(path, lines.join("\n"));
+        } catch {
+          /* cancelled */
+        }
+      })();
+    };
+    window.addEventListener("exa:share", onShare);
+    return () => window.removeEventListener("exa:share", onShare);
+  }, [aui]);
+  return null;
+}
 
 /** Bucket sessions by recency for the sidebar's date-group headers. */
 export function groupSessions(sessions: EngineSessionInfo[], now: number): { label: string; items: EngineSessionInfo[] }[] {
@@ -227,12 +231,14 @@ export function ExaThreadSuggestions() {
 
   const sendPrompt = (prompt: string) => {
     // Commands with an open argument (trailing space) go to the input to
-    // finish typing; complete prompts send through the normal flow.
+    // finish typing; complete prompts run the panel's expand pipeline first.
     if (prompt.endsWith(" ")) {
       aui.composer().setText(prompt);
       return;
     }
-    void aui.thread().append({ role: "user", content: [{ type: "text", text: prompt }] });
+    const expanded = api?.expandForSend(prompt);
+    if (expanded === null || expanded === undefined || !expanded.trim()) return;
+    void aui.thread().append(expanded);
   };
   if (!api) return null;
 
@@ -320,6 +326,58 @@ export function ExaComposerControls() {
   );
 }
 
+/**
+ * The composer's submit path: expand (slash commands, chips, directives)
+ * via the panel pipeline, then append through the official runtime. Replaces
+ * ComposerPrimitive.Send so the ENGINE receives the expanded prompt while
+ * the composer stays a plain text box. Also captures Enter on the input.
+ */
+export function ExaSendButton() {
+  const api = useExaComposer();
+  const aui = useAui();
+  const text = useAuiState((s) => s.composer.text);
+  const quote = useAuiState((s) => s.composer.quote);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const submitRef = useRef(() => {});
+  submitRef.current = () => {
+    const raw = (text ?? "").trim();
+    if (!api || isRunning) return;
+    // The quote lives in composer state (set by the selection toolbar); our
+    // custom send path bypasses composer.send(), so carry it explicitly.
+    const expanded = api.expandForSend(raw, quote?.text);
+    aui.composer().setText("");
+    aui.composer().setQuote(undefined);
+    if (expanded === null || !expanded.trim()) return; // local command / empty
+    void aui.thread().append(expanded);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      if (document.body.dataset.exaMenuOpen) return; // menus own Enter
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.('[data-slot="aui_composer-shell"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      submitRef.current();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, []);
+  if (!api) return null;
+  return (
+    <button
+      type="button"
+      title="Send message"
+      aria-label="Send message"
+      disabled={isRunning || !(text ?? "").trim()}
+      onClick={() => submitRef.current()}
+      className="bg-primary text-primary-foreground hover:bg-primary/85 flex size-7 items-center justify-center rounded-full outline-none disabled:opacity-40"
+    >
+      <SendArrowIcon className="size-4.5" />
+    </button>
+  );
+}
+
 /** Context chips row shown above the registry composer's input. */
 export function ExaComposerChips() {
   const api = useExaComposer();
@@ -378,6 +436,13 @@ export function ExaComposerMenus() {
   const providerMenu = atTrigger && !argFor ? filterProviders(atTrigger.query) : [];
   const commandMenu = slashTrigger && !argFor ? filterCommands(slashTrigger.query) : [];
   const open = !!argFor || providerMenu.length > 0 || commandMenu.length > 0;
+  useEffect(() => {
+    if (open) document.body.dataset.exaMenuOpen = "1";
+    else delete document.body.dataset.exaMenuOpen;
+    return () => {
+      delete document.body.dataset.exaMenuOpen;
+    };
+  }, [open]);
   const listKind: "provider" | "command" | null =
     !argFor && providerMenu.length > 0 ? "provider" : !argFor && commandMenu.length > 0 ? "command" : null;
 
@@ -555,11 +620,10 @@ export function ExaComposerMenus() {
 }
 
 export function ExaThread({
-  messages,
-  busy,
+  client,
+  initialSessionId,
+  onSessionChange,
   hideTools = false,
-  onSendText,
-  onCancel,
   onApplySql,
   composerApi,
   sessions,
@@ -569,18 +633,18 @@ export function ExaThread({
   onRenameSession,
   onDeleteSession,
   onArchiveSession,
-  onShare,
   headerActions,
   sidebarFooter,
   defaultSidebarOpen = false,
 }: {
-  messages: ExaMessage[];
-  busy: boolean;
+  /** The engine SDK client (tauri-plugin-http transport) — see engine-client. */
+  client: OpencodeClient;
+  /** Session restored on mount (the runtime owns sessions from here on). */
+  initialSessionId?: string;
+  /** The runtime's live session id (persist + drive undo/compact from it). */
+  onSessionChange?: (id: string | undefined) => void;
   /** /details — hide tool-execution chips in the thread. */
   hideTools?: boolean;
-  /** Send plain text (registry composer submit, suggestions, edits). */
-  onSendText: (text: string, quote?: string) => void;
-  onCancel: () => void;
   /** Apply a reply's SQL block into the workbench editor. */
   onApplySql?: (sql: string) => void;
   composerApi: ExaComposerApi;
@@ -592,7 +656,6 @@ export function ExaThread({
   onRenameSession: (id: string, title: string) => void;
   onDeleteSession: (id: string) => void;
   onArchiveSession: (id: string) => void;
-  onShare: () => void;
   /** Surface controls (status dot, expand/collapse/close) for the header. */
   headerActions?: ReactNode;
   /** Extra content pinned to the sidebar bottom (CLI install, etc.). */
@@ -623,46 +686,39 @@ export function ExaThread({
       window.removeEventListener("exa:open-mcp", openMcp);
     };
   }, []);
-  // Latest handler behind a stable ref so the adapter never goes stale.
-  const sendRef = useRef(onSendText);
+
+  // The OFFICIAL assistant-ui opencode runtime: sessions, streaming part
+  // projection, tool calls, permissions and reconnect are all handled by it —
+  // this replaced our hand-rolled external-store bridge (event mapping,
+  // replay hydration, upserts, cross-surface sync).
+  const runtime = useOpenCodeRuntime({
+    client,
+    initialSessionId,
+    defaultAgent: "exa",
+    defaultModel: composerApi.model ? { providerID: composerApi.model.providerID, modelID: composerApi.model.modelID } : undefined,
+    onThreadIdChange: (id) => onSessionChange?.(id),
+    onError: (err) => console.error("[exa] engine runtime error", err),
+  });
+
+  // "New chat" (panel button, /new command) starts a fresh runtime thread.
   useEffect(() => {
-    sendRef.current = onSendText;
-  });
-
-  // /details toggles tool chips: with hideTools the converter drops tool
-  // parts (identity change makes assistant-ui reconvert the transcript).
-  const convertMessage = useMemo(
-    () =>
-      hideTools
-        ? (m: ExaMessage) => toThreadMessage({ ...m, parts: m.parts.filter((p) => p.type !== "tool") })
-        : toThreadMessage,
-    [hideTools],
-  );
-
-  const runtime = useExternalStoreRuntime({
-    messages,
-    isRunning: busy,
-    convertMessage,
-    onNew: async (m: AppendMessage) => {
-      const text = m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("");
-      // The composer's quote (SelectionToolbar → setQuote) rides on
-      // metadata.custom.quote — same place MessagePrimitive.Quote reads it.
-      const quote = (m.metadata?.custom as { quote?: { text?: string } } | undefined)?.quote?.text;
-      if (text.trim() || quote) sendRef.current(text, quote);
-    },
-    onCancel: async () => onCancel(),
-  });
+    const newThread = () => void runtime.threads.switchToNewThread();
+    window.addEventListener("exa:new-thread", newThread);
+    return () => window.removeEventListener("exa:new-thread", newThread);
+  }, [runtime]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ExaComposerContext.Provider value={composerApi}>
         <ExaApplySqlContext.Provider value={onApplySql ?? null}>
+          <ExaShareListener />
           {/* Neutral accent inside the thread: the example's design is
               monochrome (no green) — scope primary to foreground here so the
               send button, links and chips render neutral while the rest of
               Studio keeps its brand color. */}
           <div
             className="@container relative flex min-h-0 flex-1 bg-background"
+            data-hide-tools={hideTools || undefined}
             style={{
               ["--primary" as string]: "var(--foreground)",
               ["--primary-foreground" as string]: "var(--background)",
@@ -719,7 +775,17 @@ export function ExaThread({
                             >
                               <button
                                 type="button"
-                                onClick={() => onSelectSession(s.id)}
+                                onClick={() => {
+                                  // The engine session id doubles as the remote
+                                  // thread id — the runtime fetches it on demand.
+                                  // Persist/highlight only once the switch took,
+                                  // so state never points at a session the
+                                  // runtime failed to open.
+                                  runtime.threads
+                                    .switchToThread(s.id)
+                                    .then(() => onSelectSession(s.id))
+                                    .catch((err) => console.error("[exa] session switch failed", err));
+                                }}
                                 className="min-w-0 flex-1 px-3 py-1.5 text-left text-sm text-foreground/90"
                               >
                                 <span className="block truncate">{s.title?.trim() || "Untitled chat"}</span>
@@ -781,9 +847,8 @@ export function ExaThread({
                   <button
                     type="button"
                     title="Export conversation as Markdown"
-                    onClick={onShare}
-                    disabled={messages.length === 0}
-                    className="hover:bg-muted flex size-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    onClick={() => window.dispatchEvent(new CustomEvent("exa:share"))}
+                    className="hover:bg-muted flex size-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
                   >
                     <ShareIcon className="size-4" />
                   </button>

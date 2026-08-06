@@ -14,7 +14,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { EngineSupervisor, type EngineStatus } from "./supervisor.ts";
 import type { EngineClient } from "./client.ts";
-import type { StudioAgentEvent } from "./bridge-map.ts";
 import { upsertProviderAuth } from "./auth-store.ts";
 import { mapCatalog, type CatalogProvider } from "./catalog-map.ts";
 
@@ -96,23 +95,6 @@ export class EngineService {
     return c ? c.listSessions() : [];
   }
 
-  /** A session's stored messages (part-based); empty when not installed. */
-  async listMessages(sessionId: string) {
-    const c = await this.ensureClient();
-    return c ? c.listMessages(sessionId) : [];
-  }
-
-  async createSession(): Promise<string | null> {
-    const c = await this.ensureClient();
-    return c ? c.createSession() : null;
-  }
-
-  async prompt(sessionId: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string, system?: string): Promise<boolean> {
-    const c = await this.ensureClient();
-    if (!c) return false;
-    await c.prompt(sessionId, text, model, agentName, system);
-    return true;
-  }
 
   /** The engine's own provider/model catalog; empty when not installed. */
   async providers(): Promise<{ providers: import("./client.ts").EngineProvider[]; defaults: Record<string, string> }> {
@@ -120,20 +102,6 @@ export class EngineService {
     return c ? c.providers() : { providers: [], defaults: {} };
   }
 
-  async abort(sessionId: string): Promise<void> {
-    const c = await this.ensureClient();
-    await c?.abort(sessionId);
-  }
-
-  async respondPermission(sessionId: string, permissionId: string, approve: boolean): Promise<void> {
-    const c = await this.ensureClient();
-    await c?.respondPermission(sessionId, permissionId, approve);
-  }
-
-  async subscribe(onEvent: (e: StudioAgentEvent) => void, signal?: AbortSignal): Promise<void> {
-    const c = await this.ensureClient();
-    if (c) await c.subscribe(onEvent, signal);
-  }
 
   async stop(): Promise<void> {
     await this.supervisor?.stop();
@@ -164,52 +132,153 @@ export class EngineService {
     return true;
   }
 
-  // Serialized form of the last provider block we wrote — avoids a
-  // write+dispose loop when nothing changed between /models refreshes.
+  // ── Engine config (opencode.json): this service is the ONLY writer. ──
+  // Rust and this process both used to write the file; a read-modify-write
+  // race wiped seeded blocks. All mutations now serialize through configLock.
+  private configLock: Promise<void> = Promise.resolve();
+  private seeded = false;
   private lastProviderSync = "";
+
+  /** Read-mutate-write opencode.json under the in-process lock. */
+  private async withConfig(mutate: (root: Record<string, unknown>) => boolean): Promise<boolean> {
+    const resolved = resolveEngineEnv(this.env);
+    if (!resolved) return false;
+    let changed = false;
+    const run = this.configLock.then(async () => {
+      const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+      const dir = join(resolved.configDir, "opencode");
+      const cfgPath = join(dir, "opencode.json");
+      let root: Record<string, unknown> = {};
+      try {
+        root = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+      } catch {
+        /* first write */
+      }
+      if (typeof root !== "object" || root === null) root = {};
+      changed = mutate(root);
+      if (changed) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(cfgPath, JSON.stringify(root, null, 2));
+      }
+    });
+    this.configLock = run.catch(() => undefined);
+    await run;
+    return changed;
+  }
+
+  /**
+   * Seed the engine defaults once per sidecar run (merge-only): the
+   * exasol-studio MCP gateway + a filesystem MCP server (launch ingredients
+   * arrive from Rust via env — the sidecar is the single config writer), and
+   * the "exa" agent: the data-work guardrail persona with the engine's
+   * coding/filesystem tools disabled, so it works through the MCP servers
+   * instead of behaving like a coding assistant.
+   */
+  async ensureSeedConfig(): Promise<void> {
+    if (this.seeded) return;
+    this.seeded = true;
+    const gatewayNode = this.env.EXA_GATEWAY_NODE?.trim();
+    const gatewayScript = this.env.EXA_GATEWAY_SCRIPT?.trim();
+    const agentDir = this.env.EXA_AGENT_DIR?.trim();
+    const npx = this.env.EXA_NPX?.trim();
+    const home = this.env.HOME || this.env.USERPROFILE;
+    const changed = await this.withConfig((root) => {
+      let dirty = false;
+      if (root.mcp === undefined) root.mcp = {};
+      const mcp = root.mcp;
+      if (typeof mcp === "object" && mcp !== null && !Array.isArray(mcp)) {
+        const m = mcp as Record<string, unknown>;
+        if (!("exasol-studio" in m) && gatewayNode && gatewayScript) {
+          m["exasol-studio"] = {
+            type: "local",
+            command: [gatewayNode, gatewayScript],
+            environment: agentDir ? { EXASOL_STUDIO_AGENT_DIR: agentDir } : {},
+            enabled: true,
+          };
+          dirty = true;
+        }
+        if (!("filesystem" in m) && npx && home) {
+          m.filesystem = {
+            type: "local",
+            command: [npx, "-y", "@modelcontextprotocol/server-filesystem", home],
+            enabled: true,
+          };
+          dirty = true;
+        } else {
+          // Migrate an earlier bare-"npx" seed (broken under the GUI PATH).
+          const fs = m.filesystem as { command?: unknown[] } | undefined;
+          if (fs && Array.isArray(fs.command) && fs.command[0] === "npx" && npx) {
+            fs.command[0] = npx;
+            dirty = true;
+          }
+        }
+      }
+      if (root.agent === undefined) root.agent = {};
+      const agents = root.agent;
+      if (typeof agents === "object" && agents !== null && !Array.isArray(agents) && !("exa" in agents)) {
+        (agents as Record<string, unknown>).exa = {
+          description: "Exa — the Exasol Studio data agent (databases, SQL, insights, dashboards)",
+          mode: "primary",
+          prompt:
+            "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.",
+          tools: {
+            bash: false,
+            edit: false,
+            write: false,
+            patch: false,
+            read: false,
+            grep: false,
+            glob: false,
+            list: false,
+            todowrite: false,
+            todoread: false,
+            task: false,
+          },
+        };
+        dirty = true;
+      }
+      return dirty;
+    });
+    if (changed) {
+      const c = await this.ensureClient().catch(() => null);
+      await c?.dispose().catch(() => undefined);
+    }
+  }
 
   /**
    * Declare Studio's LOCAL runtimes (Built-in AI, Ollama, LM Studio, …) to
-   * the ENGINE as OpenAI-compatible providers in its opencode.json, keyed by
-   * the SAME ids the panel sends with prompts — without this, prompting a
-   * local model fails with "engine error" because opencode has never heard
-   * of the provider. Merge-only for our known local ids; user entries and
-   * everything else in the config stay untouched.
+   * the ENGINE as OpenAI-compatible providers, keyed by the SAME ids the
+   * panel sends with prompts — without this, prompting a local model fails
+   * because opencode has never heard of the provider. Merge-only.
    */
   async syncLocalProviders(
     servers: { id: string; name: string; baseURL: string; models: { id: string; name?: string }[] }[],
   ): Promise<void> {
-    const resolved = resolveEngineEnv(this.env);
-    if (!resolved || servers.length === 0) return;
+    if (servers.length === 0) return;
     const entries: Record<string, unknown> = {};
-    for (const s of servers) {
-      entries[s.id] = {
+    for (const sv of servers) {
+      entries[sv.id] = {
         npm: "@ai-sdk/openai-compatible",
-        name: s.name,
-        options: { baseURL: s.baseURL },
-        models: Object.fromEntries(s.models.map((m) => [m.id, { name: m.name ?? m.id }])),
+        name: sv.name,
+        options: { baseURL: sv.baseURL },
+        models: Object.fromEntries(sv.models.map((m) => [m.id, { name: m.name ?? m.id }])),
       };
     }
     const serialized = JSON.stringify(entries);
     if (serialized === this.lastProviderSync) return;
-    const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
-    const cfgPath = join(resolved.configDir, "opencode", "opencode.json");
-    let root: Record<string, unknown> = {};
-    try {
-      root = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
-    } catch {
-      /* first write */
-    }
-    if (typeof root !== "object" || root === null) root = {};
-    const provider = (root.provider = (root.provider as Record<string, unknown>) ?? {});
-    if (typeof provider !== "object") return; // user made it non-object — leave alone
-    for (const [id, entry] of Object.entries(entries)) (provider as Record<string, unknown>)[id] = entry;
-    mkdirSync(join(resolved.configDir, "opencode"), { recursive: true });
-    writeFileSync(cfgPath, JSON.stringify(root, null, 2));
+    const changed = await this.withConfig((root) => {
+      if (root.provider === undefined) root.provider = {};
+      const provider = root.provider;
+      if (typeof provider !== "object" || provider === null || Array.isArray(provider)) return false;
+      for (const [id, entry] of Object.entries(entries)) (provider as Record<string, unknown>)[id] = entry;
+      return true;
+    });
     this.lastProviderSync = serialized;
-    // Hot-reload so the providers are usable immediately.
-    const c = await this.ensureClient().catch(() => null);
-    await c?.dispose().catch(() => undefined);
+    if (changed) {
+      // Hot-reload so the providers are usable immediately.
+      const c = await this.ensureClient().catch(() => null);
+      await c?.dispose().catch(() => undefined);
+    }
   }
 
   /** MCP servers: status map / add / connect-disconnect (engine-side). */

@@ -78,10 +78,26 @@ export class EngineSupervisor {
       void this.maybeRestart(taken);
     });
 
-    // Wait for the server to answer before declaring running.
-    const ok = await this.waitHealthy(port);
-    this.applyEvent(ok ? "ready" : "crash");
-    if (!ok) void this.maybeRestart(taken);
+    // Wait for the server to answer AND prove it is OURS — a user may run
+    // their own opencode on this port, and adopting a foreign server would
+    // silently drive their sessions/config. Identity = GET /path reporting
+    // our isolated config dir.
+    const verdict = await this.waitOurs(port);
+    if (verdict === "foreign") {
+      // Someone else's server owns this port; our spawn never bound. Leave
+      // the foreign server untouched and retry on the next candidate.
+      this.proc?.kill();
+      this.proc = undefined;
+      this.state = "stopped";
+      if (taken.length < this.cfg.portCandidates.length) {
+        return this.start([...taken, port]);
+      }
+      this.state = "failed";
+      this.reason = "Every engine port candidate is occupied by another process.";
+      return this.status(true);
+    }
+    this.applyEvent(verdict === "ours" ? "ready" : "crash");
+    if (verdict !== "ours") void this.maybeRestart(taken);
     return this.status(true);
   }
 
@@ -113,17 +129,30 @@ export class EngineSupervisor {
     await this.start(taken);
   }
 
-  private async waitHealthy(port: number, tries = 40): Promise<boolean> {
-    const url = `${baseUrlFor(port)}/app`;
+  /**
+   * Poll until the server on `port` answers, then verify identity: the
+   * engine's GET /path reports the config dir it runs with — it must be OUR
+   * isolated dir. "foreign" means a different opencode owns the port.
+   */
+  private async waitOurs(port: number, tries = 40): Promise<"ours" | "foreign" | "down"> {
+    const url = `${baseUrlFor(port)}/path`;
     for (let i = 0; i < tries; i++) {
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(500) });
-        if (res.ok || res.status === 404) return true; // server is up (route may vary)
+        if (res.ok) {
+          const body = (await res.json().catch(() => null)) as { config?: string } | null;
+          const cfg = body?.config ?? "";
+          return cfg.startsWith(this.opts.configDir) ? "ours" : "foreign";
+        }
+        if (res.status === 404) {
+          // A server without /path is not an opencode we can trust as ours.
+          return "foreign";
+        }
       } catch {
         /* not up yet */
       }
       await sleep(250);
     }
-    return false;
+    return "down";
   }
 }

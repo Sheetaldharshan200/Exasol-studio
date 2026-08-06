@@ -105,6 +105,21 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     // before any component update. Absent both → the panel shows the install
     // gate.
     cmd.env("EXA_ENGINE_DATA_ROOT", &state.data_dir);
+    // Engine-config seeding (MCP servers + the exa agent) lives in the
+    // SIDECAR — the single writer of opencode.json. Rust only supplies the
+    // launch ingredients it alone knows: the gateway spec and a real npx.
+    if let Ok(launch) = crate::ai_clients::mcp_launch(app) {
+        cmd.env("EXA_GATEWAY_NODE", &launch.command);
+        if let Some(script) = launch.args.first() {
+            cmd.env("EXA_GATEWAY_SCRIPT", script);
+        }
+        if let Some((_, dir)) = launch.env.iter().find(|(k, _)| k == "EXASOL_STUDIO_AGENT_DIR") {
+            cmd.env("EXA_AGENT_DIR", dir);
+        }
+    }
+    if let Some(npx) = crate::market::resolve_bin("npx") {
+        cmd.env("EXA_NPX", npx);
+    }
     if let Some(baseline) = crate::engine::bundled_engine_path(app) {
         let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
         let _ = std::fs::create_dir_all(&cfg_dir);
@@ -303,56 +318,5 @@ pub async fn agent_stream(app: AppHandle, session_id: String) -> AppResult<()> {
         cleanup(&app2);
     });
 
-    Ok(())
-}
-
-/// Attach to the Exa engine's SSE event stream (/v1/engine/events) and forward
-/// every mapped event to the webview as `engine-event`. Idempotent (one reader).
-#[tauri::command]
-pub async fn engine_stream(app: AppHandle) -> AppResult<()> {
-    let info = ensure_agent(&app)?;
-    {
-        let sidecar = app.state::<AgentSidecar>();
-        let mut streams = sidecar
-            .streams
-            .lock()
-            .map_err(|_| AppError::Assistant("agent state poisoned".into()))?;
-        // Sentinel key so we never spawn two engine readers.
-        if !streams.insert("__engine__".to_string()) {
-            return Ok(());
-        }
-    }
-    let url = format!("http://127.0.0.1:{}/v1/engine/events?token={}", info.port, info.token);
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let cleanup = |app: &AppHandle| {
-            if let Ok(mut s) = app.state::<AgentSidecar>().streams.lock() {
-                s.remove("__engine__");
-            }
-        };
-        let client = reqwest::Client::new();
-        let res = match client.get(&url).send().await {
-            Ok(r) => r,
-            Err(_) => return cleanup(&app2),
-        };
-        let mut buf = String::new();
-        let mut stream = res.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let Ok(bytes) = chunk else { break };
-            buf.push_str(&String::from_utf8_lossy(&bytes));
-            while let Some(pos) = buf.find("\n\n") {
-                let frame = buf[..pos].to_string();
-                buf.drain(..pos + 2);
-                for line in frame.lines() {
-                    if let Some(data) = line.strip_prefix("data: ") {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                            let _ = app2.emit("engine-event", v);
-                        }
-                    }
-                }
-            }
-        }
-        cleanup(&app2);
-    });
     Ok(())
 }

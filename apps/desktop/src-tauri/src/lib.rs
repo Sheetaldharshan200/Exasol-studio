@@ -41,6 +41,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -176,7 +177,6 @@ pub fn run() {
             agent::agent_api,
             agent::agent_grant_connection,
             agent::agent_stream,
-            agent::engine_stream,
             local_llm::llm_status,
             local_llm::llm_engine_install,
             local_llm::llm_model_install,

@@ -23,6 +23,9 @@ importers:
       '@assistant-ui/react-markdown':
         specifier: ^0.14.8
         version: 0.14.8(@assistant-ui/react@0.15.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.11)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@assistant-ui/react-opencode':
+        specifier: 0.2.17
+        version: 0.2.17(@assistant-ui/react@0.15.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.11)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(assistant-cloud@0.1.38)(react@19.2.7)(zustand@5.0.14(@types/react@19.2.17)(immer@11.1.11)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))
       '@exasol-studio/exasol-sql-parser':
         specifier: workspace:*
         version: link:../../packages/exasol-sql-parser
@@ -101,6 +104,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.1
         version: 2.7.1
+      '@tauri-apps/plugin-http':
+        specifier: ^2.5.9
+        version: 2.5.9
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.4
         version: 2.5.4
@@ -414,6 +420,16 @@ packages:
 
   '@assistant-ui/react-markdown@0.14.8':
     resolution: {integrity: sha512-vnJrM7i2fGOMUkg4DSyuorhVmq1VUocRJL3r+1ruaDv8KxHKBfewfEBCvcIt426nmyPaR9CxeoujwKhMI7P3ew==}
+    peerDependencies:
+      '@assistant-ui/react': ^0.15.0
+      '@types/react': '*'
+      react: ^18 || ^19
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
+  '@assistant-ui/react-opencode@0.2.17':
+    resolution: {integrity: sha512-mB3q772KaxeE+E7dpIrjpsk2I0v4GBt/0oQS2I8YxvKeRDF0Bbc4G3rIEfXJF1B/Xb9SvurIHP0kmZZrpWoB1w==}
     peerDependencies:
       '@assistant-ui/react': ^0.15.0
       '@types/react': '*'
@@ -3146,6 +3162,9 @@ packages:
 
   '@tauri-apps/plugin-dialog@2.7.1':
     resolution: {integrity: sha512-OK1UBXYt+ojcmxMktzzuyonYIFta8CmAASpX+CA+DTGK24KlHjhYI6x2iOJ/TjZF4N7/ACK1oFmEOjIY9IhzOQ==}
+
+  '@tauri-apps/plugin-http@2.5.9':
+    resolution: {integrity: sha512-lCiY0+vs4HvIUSvZrBs8TC3TiCB0MOPRmiUjTq4prW7SlcJE2jdLeT6KBsJrT9Tlplufl7W1pY6SFAO3gCWxDA==}
 
   '@tauri-apps/plugin-opener@2.5.4':
     resolution: {integrity: sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==}
@@ -6414,6 +6433,22 @@ snapshots:
       - react-dom
       - supports-color
 
+  '@assistant-ui/react-opencode@0.2.17(@assistant-ui/react@0.15.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.11)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(assistant-cloud@0.1.38)(react@19.2.7)(zustand@5.0.14(@types/react@19.2.17)(immer@11.1.11)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))':
+    dependencies:
+      '@assistant-ui/core': 0.3.5(@assistant-ui/store@0.3.3(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(react@19.2.7))(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(assistant-cloud@0.1.38)(react@19.2.7)(zustand@5.0.14(@types/react@19.2.17)(immer@11.1.11)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))
+      '@assistant-ui/react': 0.15.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.11)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
+      '@assistant-ui/store': 0.3.3(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(react@19.2.7)
+      '@opencode-ai/sdk': 1.18.11
+      react: 19.2.7
+    optionalDependencies:
+      '@types/react': 19.2.17
+    transitivePeerDependencies:
+      - '@assistant-ui/tap'
+      - assistant-cloud
+      - ioredis
+      - redis
+      - zustand
+
   '@assistant-ui/react@0.15.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.11)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))':
     dependencies:
       '@assistant-ui/core': 0.3.5(@assistant-ui/store@0.3.3(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(react@19.2.7))(@assistant-ui/tap@0.9.9(@types/react@19.2.17)(react@19.2.7))(@types/react@19.2.17)(assistant-cloud@0.1.38)(react@19.2.7)(zustand@5.0.14(@types/react@19.2.17)(immer@11.1.11)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)))
@@ -9153,6 +9188,10 @@ snapshots:
       '@tauri-apps/cli-win32-x64-msvc': 2.11.4
 
   '@tauri-apps/plugin-dialog@2.7.1':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+
+  '@tauri-apps/plugin-http@2.5.9':
     dependencies:
       '@tauri-apps/api': 2.11.1
 

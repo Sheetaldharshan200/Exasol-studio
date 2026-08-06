@@ -47,10 +47,7 @@ describe("EngineService (unprovisioned)", () => {
 
   test("ops degrade instead of throwing when there is no engine", async () => {
     assert.deepEqual(await svc.listSessions(), []);
-    assert.equal(await svc.createSession(), null);
-    assert.equal(await svc.prompt("s", "hi"), false);
-    await svc.abort("s");
-    await svc.respondPermission("s", "p", true);
-    await svc.subscribe(() => {});
+    assert.equal(await svc.deleteSession("s"), false);
+    assert.equal(await svc.compact("s"), false);
   });
 });

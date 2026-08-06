@@ -32,6 +32,7 @@ import {
   ExaComposerChips,
   ExaComposerControls,
   ExaComposerMenus,
+  ExaSendButton,
   ExaThreadSuggestions,
 } from "@/features/assistant/exa/ExaThread";
 import { Button } from "@/components/ui/button";
@@ -294,19 +295,9 @@ const ComposerAction: FC = () => {
           </AuiIf>
         </AuiIf>
         <AuiIf condition={(s) => !s.thread.isRunning}>
-          <ComposerPrimitive.Send asChild>
-            <TooltipIconButton
-              tooltip="Send message"
-              side="bottom"
-              type="button"
-              variant="default"
-              size="icon"
-              className="aui-composer-send size-7 rounded-full"
-              aria-label="Send message"
-            >
-              <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
-            </TooltipIconButton>
-          </ComposerPrimitive.Send>
+          {/* Studio: submit runs the panel's expand pipeline (slash commands,
+              @-context, directives) before appending to the runtime. */}
+          <ExaSendButton />
         </AuiIf>
         <AuiIf condition={(s) => s.thread.isRunning}>
           <ComposerPrimitive.Cancel asChild>

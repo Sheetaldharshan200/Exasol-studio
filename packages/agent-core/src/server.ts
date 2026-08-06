@@ -69,6 +69,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       if (parts[1] === "engine") {
         // GET /v1/engine/status
         if (req.method === "GET" && parts[2] === "status") {
+          // Seed the engine defaults (MCP servers + exa agent) once per run —
+          // the sidecar is the SINGLE writer of opencode.json.
+          void engine.ensureSeedConfig().catch(() => undefined);
           return json(res, 200, { ...(await engine.status()), provisioned: engine.provisioned });
         }
         // GET /v1/engine/providers — the engine's CONFIGURED providers/models
@@ -149,17 +152,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
             return json(res, 502, { error: e instanceof Error ? e.message : "callback failed" });
           }
         }
-        // GET /v1/engine/sessions | POST to create
-        if (parts[2] === "sessions" && !parts[3]) {
-          if (req.method === "GET") return json(res, 200, { sessions: await engine.listSessions() });
-          if (req.method === "POST") {
-            const id = await engine.createSession();
-            return id ? json(res, 200, { id }) : json(res, 503, { error: "engine not installed" });
-          }
-        }
-        // GET /v1/engine/sessions/:id/messages — stored history (replay)
-        if (req.method === "GET" && parts[2] === "sessions" && parts[3] && parts[4] === "messages") {
-          return json(res, 200, { messages: await engine.listMessages(decodeURIComponent(parts[3])) });
+        // GET /v1/engine/sessions — the sidebar's session list. Chat itself
+        // (create/prompt/stream/replay/permissions) is NOT proxied here: the
+        // webview talks to the engine directly via @assistant-ui/react-opencode.
+        if (req.method === "GET" && parts[2] === "sessions" && !parts[3]) {
+          return json(res, 200, { sessions: await engine.listSessions() });
         }
         // DELETE /v1/engine/sessions/:id — permanently remove a session
         if (req.method === "DELETE" && parts[2] === "sessions" && parts[3] && !parts[4]) {
@@ -173,18 +170,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           const ok = await engine.renameSession(decodeURIComponent(parts[3]), b.title.trim());
           return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
         }
-        // POST /v1/engine/sessions/:id/(prompt|abort|permission)
+        // POST /v1/engine/sessions/:id/(compact|undo|redo)
         if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
           const sid = decodeURIComponent(parts[3]);
-          if (parts[4] === "prompt") {
-            const b = await readBody<{ text?: string; model?: { providerID: string; modelID: string }; agent?: string; system?: string }>(req);
-            const ok = await engine.prompt(sid, b.text ?? "", b.model, b.agent, b.system);
-            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
-          }
-          if (parts[4] === "abort") {
-            await engine.abort(sid);
-            return json(res, 200, { ok: true });
-          }
           if (parts[4] === "compact") {
             const ok = await engine.compact(sid);
             return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
@@ -197,36 +185,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
               return json(res, 502, { error: e instanceof Error ? e.message : `${parts[4]} failed` });
             }
           }
-          if (parts[4] === "permission") {
-            const b = await readBody<{ permissionId?: string; approve?: boolean }>(req);
-            await engine.respondPermission(sid, b.permissionId ?? "", Boolean(b.approve));
-            return json(res, 200, { ok: true });
-          }
-        }
-        // GET /v1/engine/events — SSE stream of StudioAgentEvent
-        if (req.method === "GET" && parts[2] === "events") {
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          });
-          const ac = new AbortController();
-          req.on("close", () => ac.abort());
-          // The engine may not be installed/running when the app subscribes
-          // (the panel mounts before first install). NEVER end the stream —
-          // retry with a heartbeat until the client disconnects, so replies
-          // always flow once the engine comes up.
-          while (!ac.signal.aborted) {
-            try {
-              await engine.subscribe((e) => res.write(`data: ${JSON.stringify(e)}\n\n`), ac.signal);
-            } catch {
-              /* engine connection dropped — retry below */
-            }
-            if (ac.signal.aborted) break;
-            res.write(": engine-idle\n\n"); // SSE comment heartbeat
-            await new Promise((r) => setTimeout(r, 2000));
-          }
-          return res.end();
         }
         return json(res, 404, { error: "not found" });
       }

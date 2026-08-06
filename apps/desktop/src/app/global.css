@@ -826,3 +826,10 @@
 .md-body .selectedCell {
   background: color-mix(in oklab, var(--primary) 12%, transparent);
 }
+
+
+/* /details — hide tool-execution chips in the Exa thread. */
+[data-hide-tools] [data-slot^="aui_tool"],
+[data-hide-tools] [class*="aui-tool-"] {
+  display: none !important;
+}

@@ -1,42 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
-import { agent, type AgentProviderInfo, type EngineEvent, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
+import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
-import { expandCommand, parseSlash, transcriptMarkdown, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
+import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
-import { ExaThread, messageText, type ChatMode, type ExaMessage, type ExaPart } from "./exa/ExaThread";
+import { ExaThread, type ChatMode } from "./exa/ExaThread";
+import { engineClientFor } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
 
 /**
- * Exa engine (v2, opencode) chat panel — the continue.dev interaction grammar
- * on Studio's own components, driven entirely by /v1/engine/* + the engine-event
- * stream. When the engine component isn't installed it shows the install gate
- * (the correct first-run state); once running it is a full session chat with
- * markdown replies, live tool-call cards, `@`-context, interruption, and an
- * inline model selector in the composer.
+ * Exa engine (v2, opencode) chat panel. Chat itself runs on the official
+ * @assistant-ui/react-opencode runtime talking to the engine directly
+ * (tauri-plugin-http fetch); this panel owns everything around it — install
+ * gate, engine status, model/provider management via /v1/engine/*, sessions
+ * sidebar data, modes/chips/slash commands, and the `@`-context composer.
  *
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
 const ENGINE_TAG = "v1.18.12-exa.1";
 
-/**
- * Exa's scope guardrail, sent as the system prompt on every turn. Exa is a
- * data agent inside Exasol Studio — not a general-purpose assistant.
- */
-const EXA_SYSTEM = [
-  "You are Exa, the AI data analyst built into Exasol Studio, a desktop client for Exasol databases.",
-  "Your scope: the user's connected databases (Exasol first), SQL, data engineering, data quality, analysis, insights, reporting and dashboards.",
-  "Ground every answer in the live schema, the attached context blocks, and the available tools (the exasol-studio MCP server exposes the user's connected databases read-only; the filesystem server exposes local data files).",
-  "SQL safety: prefer read-only SELECT/WITH/DESCRIBE. Never run destructive or mutating statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly asked for that exact change in this conversation — and state clearly what will be modified before doing it.",
-  "Exasol dialect notes: identifiers fold to uppercase unless quoted; use LIMIT n (not FETCH FIRST/TOP).",
-  "If a request is unrelated to data work (general coding projects, essays, life advice, other apps), decline briefly and steer back to the user's data — one sentence, no lecture.",
-  "Audience: students, analysts, data scientists, BI and finance people, engineers. Be concise, practical, and show runnable SQL in fenced sql blocks.",
-].join("\n");
+// The scope guardrail lives ENGINE-side now: the seeded "exa" agent
+// (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.
 
 // Messages are ordered parts (text + tool calls inline) — see ExaThread.
 
@@ -65,15 +53,15 @@ export function ExaEnginePanel({
 } = {}) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ExaMessage[]>([]);
-  const [busy, setBusy] = useState(false);
+  // The official opencode runtime (inside ExaThread) owns messages, busy
+  // state, streaming and sessions. The panel keeps the surface state: the
+  // engine client, the live session id (for /compact, /undo, persistence),
+  // and everything around the composer.
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliBusy, setCliBusy] = useState(false);
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [model, setModel] = useState<PickedModel | null>(null);
-  // Model choice is shared across both surfaces (dock + full tab): persisted
-  // and broadcast, so picking a model in one immediately applies to the other.
+  // Model choice persists across surfaces and restarts.
   const pickModel = (m: PickedModel | null) => {
     setModel(m);
     try {
@@ -82,18 +70,9 @@ export function ExaEnginePanel({
     } catch {
       /* private mode */
     }
-    window.dispatchEvent(new CustomEvent("exa:model", { detail: { model: m, src: instanceId.current } }));
   };
-  useEffect(() => {
-    const onModel = (e: Event) => {
-      const d = (e as CustomEvent<{ model: PickedModel | null; src: string }>).detail;
-      if (d.src !== instanceId.current) setModel(d.model);
-    };
-    window.addEventListener("exa:model", onModel);
-    return () => window.removeEventListener("exa:model", onModel);
-  }, []);
-  // Composer state now lives here — the registry composer inside ExaThread
-  // reads/writes it through the ExaComposerContext api object below.
+  // Composer state — the registry composer inside ExaThread reads/writes it
+  // through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
   const [chips, setChips] = useState<ContextChip[]>([]);
   // A picked slash command shown as a chip; the input text is its argument.
@@ -102,8 +81,7 @@ export function ExaEnginePanel({
   const [hideTools, setHideTools] = useState(false);
   // Persisted engine sessions (auto-titled) for the sidebar.
   const [sessions, setSessions] = useState<EngineSessionInfo[]>([]);
-  // Archived = hidden locally (the engine has no archive concept); persisted
-  // per machine so archived chats stay out of the sidebar across restarts.
+  // Archived = hidden locally (the engine has no archive concept).
   const [archivedIds, setArchivedIds] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem("exa.archivedSessions") ?? "[]") as string[]);
@@ -111,60 +89,27 @@ export function ExaEnginePanel({
       return new Set();
     }
   });
-  const disposer = useRef<(() => void) | null>(null);
-  // The live session id, readable from the long-lived stream callback (state
-  // there would be a stale closure). Kept in sync with setSessionId below.
-  const sessionRef = useRef<string | null>(null);
-  // The side dock and the full tab are separate instances of this panel; they
-  // converge on ONE session: a change here is persisted + broadcast, and the
-  // other instance adopts it (hydrating from the engine's stored history).
-  const instanceId = useRef(`exa-${Math.random().toString(36).slice(2)}`);
-  const setSession = (id: string | null) => {
-    if (sessionRef.current === id) return;
-    sessionRef.current = id;
-    setSessionId(id);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("exa.activeSession");
+    } catch {
+      return null;
+    }
+  });
+  const onSessionChange = useCallback((id: string | undefined) => {
+    setActiveSessionId(id ?? null);
     try {
       if (id) localStorage.setItem("exa.activeSession", id);
       else localStorage.removeItem("exa.activeSession");
     } catch {
       /* private mode */
     }
-    window.dispatchEvent(new CustomEvent("exa:session", { detail: { id, src: instanceId.current } }));
-  };
-  /** Follow a session another surface switched to (or a restart restored). */
-  const adoptSession = useCallback(async (id: string | null) => {
-    sessionRef.current = id;
-    setSessionId(id);
-    setBusy(false);
-    if (!id) {
-      setMessages([]);
-      return;
-    }
-    try {
-      const r = await agent.engine.messages(id);
-      if (sessionRef.current === id) setMessages(r.messages);
-    } catch {
-      /* engine offline — the next live event will still land (same id) */
-    }
   }, []);
-  useEffect(() => {
-    const onSession = (e: Event) => {
-      const d = (e as CustomEvent<{ id: string | null; src: string }>).detail;
-      if (d.src === instanceId.current || d.id === sessionRef.current) return;
-      void adoptSession(d.id);
-    };
-    window.addEventListener("exa:session", onSession);
-    return () => window.removeEventListener("exa:session", onSession);
-  }, [adoptSession]);
-  // Bumped by newChat(); a send() whose token is stale abandons its turn.
-  const turnGen = useRef(0);
+  // The SDK client for the runtime — built once the engine reports its port.
+  const [engineClient, setEngineClient] = useState<Awaited<ReturnType<typeof engineClientFor>> | null>(null);
   // Guards loadModels against out-of-order responses (slow first load
   // overwriting a post-key-save refresh).
   const loadSeq = useRef(0);
-  // The session-list refresher, reachable from the long-lived stream callback.
-  const loadSessionsRef = useRef<() => void>(() => {});
-  // Engine message id → role, so part snapshots know whose part is streaming.
-  const rolesRef = useRef<Record<string, "user" | "assistant">>({});
 
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
@@ -247,123 +192,21 @@ export function ExaEnginePanel({
     }
   }
 
-  // Live event stream → messages + tool cards.
+  // Build the runtime's SDK client whenever the engine reports a port —
+  // engineClientFor caches per port, so a restart on the SAME port is a no-op
+  // while a port change (supervisor fallback) swaps in a fresh client.
   useEffect(() => {
-    let alive = true;
-    agent.engine
-      .stream((e: EngineEvent) => {
-        if (!alive) return;
-        // Drop events from a session that is no longer ours (after /clear or a
-        // session switch, a discarded turn can still emit). Events without a
-        // session id can't be attributed, so they pass through.
-        if (e.sessionId && e.sessionId !== sessionRef.current) return;
-        if (e.type === "message.upsert") {
-          // Track the role per engine message; stamp our optimistic user
-          // bubble with its engine id so its echo doesn't duplicate it.
-          rolesRef.current[e.messageId] = e.role;
-          if (e.role === "user") {
-            setMessages((m) => {
-              if (m.some((x) => x.engineId === e.messageId)) return m;
-              for (let i = m.length - 1; i >= 0; i--) {
-                if (m[i].role === "user" && !m[i].engineId) {
-                  const n = [...m];
-                  n[i] = { ...n[i], engineId: e.messageId };
-                  return n;
-                }
-              }
-              return m;
-            });
-          }
-        } else if (e.type === "part.snapshot") {
-          // v1.18 streams SNAPSHOTS (full part state) — upsert by ids.
-          const role = rolesRef.current[e.messageId] ?? "assistant";
-          setMessages((m) => {
-            let idx = m.findIndex((x) => x.engineId === e.messageId);
-            if (idx === -1 && role === "user") {
-              // The engine's echo of a prompt we already render — stamp only
-              // (our shown text intentionally differs from the engine prompt).
-              for (let i = m.length - 1; i >= 0; i--) {
-                if (m[i].role === "user" && !m[i].engineId) {
-                  const n = [...m];
-                  n[i] = { ...n[i], engineId: e.messageId };
-                  return n;
-                }
-              }
-              return m;
-            }
-            if (role === "user") return m; // never rewrite user bubbles
-            const toolOk = (status: string) => (status === "completed" ? true : status === "error" ? false : undefined);
-            if (idx === -1) {
-              const part: ExaPart =
-                e.part.kind === "text"
-                  ? { type: "text", text: e.part.text, partId: e.partId }
-                  : { type: "tool", callId: e.part.callId, name: e.part.name, ok: toolOk(e.part.status) };
-              return [...m, { role: "assistant", engineId: e.messageId, parts: [part] }];
-            }
-            const msg = m[idx];
-            const parts = [...msg.parts];
-            if (e.part.kind === "text") {
-              const pi = parts.findIndex((p) => p.type === "text" && p.partId === e.partId);
-              if (pi >= 0) parts[pi] = { ...parts[pi], type: "text", text: e.part.text, partId: e.partId };
-              else parts.push({ type: "text", text: e.part.text, partId: e.partId });
-            } else {
-              const tool = e.part;
-              const pi = parts.findIndex((p) => p.type === "tool" && p.callId === tool.callId);
-              if (pi >= 0) parts[pi] = { ...(parts[pi] as Extract<ExaPart, { type: "tool" }>), ok: toolOk(tool.status) };
-              else parts.push({ type: "tool", callId: tool.callId, name: tool.name, ok: toolOk(tool.status) });
-            }
-            const n = [...m];
-            n[idx] = { ...msg, parts };
-            return n;
-          });
-        } else if (e.type === "message.delta") {
-          setMessages((m) => {
-            const last = m[m.length - 1];
-            if (last?.role === "assistant") {
-              const parts = [...last.parts];
-              const tail = parts[parts.length - 1];
-              if (tail?.type === "text") parts[parts.length - 1] = { ...tail, text: tail.text + e.text };
-              else parts.push({ type: "text", text: e.text });
-              return [...m.slice(0, -1), { ...last, parts }];
-            }
-            return [...m, { role: "assistant", parts: [{ type: "text", text: e.text }] }];
-          });
-        } else if (e.type === "tool.start") {
-          setMessages((m) => {
-            const last = m[m.length - 1];
-            const part = { type: "tool" as const, callId: e.callId, name: e.name };
-            if (last?.role === "assistant") return [...m.slice(0, -1), { ...last, parts: [...last.parts, part] }];
-            return [...m, { role: "assistant", parts: [part] }];
-          });
-        } else if (e.type === "tool.result") {
-          // Touch ONLY the message holding this call — untouched references
-          // keep assistant-ui's converted-message cache warm.
-          setMessages((m) => {
-            const mi = m.findIndex((msg) => msg.parts.some((p) => p.type === "tool" && p.callId === e.callId));
-            if (mi === -1) return m;
-            const next = [...m];
-            next[mi] = {
-              ...next[mi],
-              parts: next[mi].parts.map((p) => (p.type === "tool" && p.callId === e.callId ? { ...p, ok: e.ok } : p)),
-            };
-            return next;
-          });
-        } else if (e.type === "session.idle" || e.type === "message.done") {
-          setBusy(false);
-          // Titles are generated engine-side after the turn — give it a beat.
-          window.setTimeout(loadSessionsRef.current, 1500);
-        } else if (e.type === "error") {
-          setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${e.message}` }] }]);
-          setBusy(false);
-        }
-      })
-      .then((d) => (disposer.current = d))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-      disposer.current?.();
-    };
-  }, []);
+    if (!status?.provisioned || !status.binaryPresent) return;
+    if (status.port) {
+      void engineClientFor(status.port).then(setEngineClient).catch(() => undefined);
+      return;
+    }
+    if (engineClient) return; // engine restarting — keep the old client until a new port appears
+    // Not running yet — poke it awake (any sidecar call starts it lazily), then re-check.
+    void agent.engine.sessions().catch(() => undefined);
+    const t = window.setTimeout(refreshStatus, 900);
+    return () => window.clearTimeout(t);
+  }, [status, engineClient, refreshStatus]);
 
   async function install() {
     setInstalling(true);
@@ -375,67 +218,14 @@ export function ExaEnginePanel({
     }
   }
 
-  // Modes — continue.dev's Chat/Plan/Agent mapped to the engine's NATIVE
-  // agents: Agent → opencode "build" (all tools), Plan → opencode "plan"
-  // (mutations gated behind ask). Chat has no tool-less built-in agent, so it
-  // rides "plan" plus a no-tools directive — worst case a tool call still
-  // needs explicit approval.
-  // All modes ride the seeded "exa" agent (guardrail prompt, coding tools
-  // denied engine-side); the directives below differentiate the behavior.
-  const MODE_TO_AGENT: Record<ChatMode, string> = { agent: "exa", plan: "exa", chat: "exa" };
+  // Modes — all of them ride the seeded "exa" agent (guardrail prompt, coding
+  // tools denied engine-side; the runtime pins defaultAgent). The per-message
+  // directives below are what differentiate Chat/Plan/Agent behavior.
   const MODE_DIRECTIVE: Record<ChatMode, string> = {
     chat: "Answer as a chat assistant. Do not run tools.",
     plan: "Only inspect (SELECT queries, schema reads). Never modify data or schema. Propose a plan and the exact SQL for the user to approve.",
     agent: "",
   };
-
-  async function send({ shown, engine, chips, mode, quote }: { shown: string; engine: string; chips: ContextChip[]; mode: ChatMode; quote?: string }) {
-    if (busy) return;
-    const directive = MODE_DIRECTIVE[mode];
-    const prompt = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, chips);
-    setMessages((m) => [...m, { role: "user", parts: [{ type: "text", text: shown }], ...(quote ? { quote } : {}) }]);
-    setBusy(true);
-    const fail = (msg: string) => {
-      setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text: `⚠︎ ${msg}` }] }]);
-      setBusy(false);
-      refreshStatus();
-    };
-    const gen = turnGen.current;
-    // If the event bridge died (e.g. it was started before the engine was
-    // installed), revive it so this turn's reply actually streams in.
-    void agent.engine.ensureStream();
-    try {
-      let sid = sessionId;
-      if (!sid) {
-        const created = await agent.engine.createSession();
-        if (gen !== turnGen.current) {
-          // The user hit /clear while the session was being created — abandon
-          // this turn and don't resurrect the discarded session.
-          if (created?.id) agent.engine.abort(created.id).catch(() => undefined);
-          return;
-        }
-        if (!created?.id) return fail("The Exa engine isn't running yet. Install it and wait for the header to read “running”.");
-        sid = created.id;
-        setSession(sid);
-      }
-      const r = await agent.engine.prompt(
-        sid,
-        prompt,
-        model ? { providerID: model.providerID, modelID: model.modelID } : undefined,
-        MODE_TO_AGENT[mode],
-        EXA_SYSTEM,
-      );
-      if (gen !== turnGen.current) return; // cleared mid-turn — UI already reset
-      if (!r?.ok) return fail("The engine could not run this turn — check that a model is selected and its provider is configured.");
-    } catch (e) {
-      if (gen === turnGen.current) fail(e instanceof Error ? e.message : "Engine request failed.");
-    }
-  }
-
-  async function stop() {
-    if (sessionId) await agent.engine.abort(sessionId).catch(() => undefined);
-    setBusy(false);
-  }
 
   /** Refresh the sidebar's session list (titles are engine-generated). */
   const loadSessions = useCallback(() => {
@@ -444,26 +234,19 @@ export function ExaEnginePanel({
       .then((r) => setSessions(r.sessions))
       .catch(() => undefined);
   }, []);
-  loadSessionsRef.current = loadSessions;
   useEffect(() => {
     if (!status?.provisioned || !status.binaryPresent) return;
     loadSessions();
-    // Restore the last active session (both surfaces converge on it).
-    if (!sessionRef.current) {
-      try {
-        const saved = localStorage.getItem("exa.activeSession");
-        if (saved) void adoptSession(saved);
-      } catch {
-        /* private mode */
-      }
-    }
-  }, [status?.provisioned, status?.binaryPresent, loadSessions, adoptSession]);
+    // Engine-generated titles land shortly after each turn — refresh gently.
+    const t = window.setInterval(loadSessions, 20_000);
+    return () => window.clearInterval(t);
+  }, [status?.provisioned, status?.binaryPresent, loadSessions]);
 
   /** Permanently delete a session engine-side. */
   async function deleteSession(id: string) {
     await agent.engine.deleteSession(id).catch(() => undefined);
     setSessions((ss) => ss.filter((s) => s.id !== id));
-    if (sessionRef.current === id) newChat();
+    if (activeSessionId === id) newChat();
   }
 
   /** Rename a session engine-side (overrides the auto-generated title). */
@@ -486,73 +269,41 @@ export function ExaEnginePanel({
       }
       return next;
     });
-    if (sessionRef.current === id) newChat();
+    if (activeSessionId === id) newChat();
   }
 
-  /** Open a past session: load its stored messages and make it live. */
-  async function selectSession(id: string) {
-    if (id === sessionId) return;
-    turnGen.current += 1; // abandon any in-flight turn
-    if (busy) void stop();
-    setSession(id);
-    setChips([]);
-    try {
-      const r = await agent.engine.messages(id);
-      // Only apply if the user hasn't switched again meanwhile.
-      if (sessionRef.current === id) setMessages(r.messages);
-    } catch {
-      if (sessionRef.current === id) setMessages([]);
-    }
-  }
-
-  /** /clear and the header + button: drop the session, start fresh. */
+  /** /new, /clear, the sidebar button: the runtime switches to a new thread. */
   function newChat() {
-    turnGen.current += 1; // any in-flight send() abandons itself
-    if (busy) void stop();
-    setSession(null);
-    setMessages([]);
+    setChips([]);
+    setPendingCommand(null);
+    window.dispatchEvent(new CustomEvent("exa:new-thread"));
   }
 
-  /** /share: export the conversation as a Markdown file. */
-  async function shareChat() {
-    if (messages.length === 0) return;
-    try {
-      const path = await saveDialog({ defaultPath: "exa-conversation.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
-      if (path) await ipc.writeTextFile(path, transcriptMarkdown(messages.map((m) => ({ role: m.role, text: messageText(m) }))));
-    } catch {
-      /* user cancelled */
-    }
+  /** Transient notices (help text, command results) via Studio's notifier. */
+  function notice(title: string, body?: string) {
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "info", title, body: body ?? "" } }));
   }
 
   /** /compact: engine-side summarization to reclaim the session's context. */
   async function compactChat() {
-    if (!sessionId) return;
-    const r = await agent.engine.compact(sessionId).catch(() => ({ ok: false }));
-    setMessages((m) => [
-      ...m,
-      { role: "assistant", parts: [{ type: "text", text: r.ok ? "_Session compacted — older turns were summarized to free context._" : "⚠︎ Compaction failed — is the engine running?" }] },
-    ]);
-    window.setTimeout(loadSessionsRef.current, 1500);
-  }
-
-  /** Append a local notice into the thread (help text, undo/redo results). */
-  function notice(text: string) {
-    setMessages((m) => [...m, { role: "assistant", parts: [{ type: "text", text }] }]);
+    if (!activeSessionId) return;
+    const r = await agent.engine.compact(activeSessionId).catch(() => ({ ok: false }));
+    notice(r.ok ? "Session compacted" : "Compaction failed", r.ok ? "Older turns were summarized to free context." : "Is the engine running?");
+    loadSessions();
   }
 
   /** /undo and /redo — the engine reverts/restores the last message. */
   async function undoRedo(kind: "undo" | "redo") {
-    if (!sessionId) return;
-    const r = await (kind === "undo" ? agent.engine.undo(sessionId) : agent.engine.redo(sessionId)).catch(() => ({ ok: false }));
-    if (r.ok) await adoptSession(sessionId); // re-sync from the engine's store
-    else notice(`⚠︎ ${kind === "undo" ? "Undo" : "Redo"} isn't available here.`);
+    if (!activeSessionId) return;
+    const r = await (kind === "undo" ? agent.engine.undo(activeSessionId) : agent.engine.redo(activeSessionId)).catch(() => ({ ok: false }));
+    if (!r.ok) notice(kind === "undo" ? "Undo isn't available here" : "Redo isn't available here");
   }
 
   /** Local slash commands (also reachable from the header/sidebar). */
   function runLocal(id: LocalCommandId) {
     if (id === "clear" || id === "new") newChat();
     else if (id === "compact" || id === "summarize") void compactChat();
-    else if (id === "export" || id === "share") void shareChat();
+    else if (id === "export" || id === "share") window.dispatchEvent(new CustomEvent("exa:share"));
     else if (id === "connect" || id === "models") window.dispatchEvent(new CustomEvent("exa:open-providers"));
     else if (id === "mcp") window.dispatchEvent(new CustomEvent("exa:open-mcp"));
     else if (id === "sessions" || id === "resume") window.dispatchEvent(new CustomEvent("exa:open-sessions"));
@@ -560,9 +311,9 @@ export function ExaEnginePanel({
     else if (id === "undo" || id === "redo") void undoRedo(id);
     else if (id === "help")
       notice(
-        "**Commands**\n\n" +
-          SLASH_COMMANDS.map((c) => `- \`/${c.title}\`${c.hint ? ` _${c.hint}_` : ""} — ${c.description}`).join("\n") +
-          "\n\nType `@` to attach database context (query, results, tables, schema).",
+        "Exa commands",
+        SLASH_COMMANDS.map((c) => `/${c.title}${c.hint ? ` <${c.hint}>` : ""} — ${c.description}`).join("\n") +
+          "\nType @ to attach database context (query, results, tables, schema).",
       );
   }
 
@@ -594,34 +345,34 @@ export function ExaEnginePanel({
     }
   }
 
-  /** Every submit path (registry composer, suggestions, edits) lands here. */
-  function sendText(text: string, quote?: string) {
-    // A command chip takes the typed text as its argument; typed "/cmd arg"
-    // still works too (suggestion pills, muscle memory).
-    const slash = pendingCommand
-      ? { command: pendingCommand, arg: text.trim() }
-      : parseSlash(text);
+  /**
+   * The composer's send pipeline (invoked from ExaSendButton and the
+   * suggestion chips): slash-command expansion with auto-attached context,
+   * manual @-chips, mode directives and quotes — returning the final engine
+   * text, or null when the input was a local command handled here.
+   */
+  function expandForSend(text: string, quote?: string): string | null {
+    const slash = pendingCommand ? { command: pendingCommand, arg: text.trim() } : parseSlash(text);
     if (slash?.command.kind === "local") {
       setPendingCommand(null);
       runLocal(slash.command.id as LocalCommandId);
-      return;
+      return null;
     }
-    let shown = text;
     let engine = text;
     let allChips = chips; // manual @-context chips from the composer
     if (slash) {
       const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
       const e = expandCommand(slash.command.id, slash.arg, snap);
       engine = e.text;
-      shown = pendingCommand ? `/${slash.command.title}${slash.arg ? ` ${slash.arg}` : ""}` : text;
       const auto = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
       allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
     }
-    // A quoted excerpt travels with the prompt so the model knows the referent.
-    if (quote) engine = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${engine}`;
+    const directive = MODE_DIRECTIVE[mode];
+    let out = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, allChips);
+    if (quote) out = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${out}`;
     setChips([]);
     setPendingCommand(null);
-    void send({ shown, engine, chips: allChips, mode, quote });
+    return out;
   }
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -689,21 +440,20 @@ export function ExaEnginePanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
+      {engineClient ? (
       <ExaThread
-        messages={messages}
-        busy={busy}
+        client={engineClient}
+        initialSessionId={activeSessionId ?? undefined}
+        onSessionChange={onSessionChange}
         hideTools={hideTools}
-        onSendText={sendText}
-        onCancel={() => void stop()}
         onApplySql={onApplySql}
         sessions={sessions.filter((s) => !archivedIds.has(s.id))}
-        activeSessionId={sessionId}
+        activeSessionId={activeSessionId}
         onNewThread={newChat}
-        onSelectSession={(id) => void selectSession(id)}
+        onSelectSession={(id) => onSessionChange(id)}
         onRenameSession={(id, title) => void renameSession(id, title)}
         onDeleteSession={(id) => void deleteSession(id)}
         onArchiveSession={archiveSession}
-        onShare={() => void shareChat()}
         headerActions={headerActions}
         sidebarFooter={sidebarFooter}
         defaultSidebarOpen={Boolean(onCollapse)}
@@ -729,8 +479,14 @@ export function ExaEnginePanel({
             refreshStatus();
             return loadModels();
           },
+          expandForSend,
         }}
       />
+      ) : (
+        <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Starting the Exa engine…
+        </div>
+      )}
     </div>
   );
 }

@@ -263,12 +263,6 @@ export const agent = {
   engine: {
     status: (): Promise<EngineStatus> => api("/engine/status"),
     sessions: (): Promise<{ sessions: EngineSessionInfo[] }> => api("/engine/sessions"),
-    createSession: (): Promise<{ id: string }> => api("/engine/sessions", "POST"),
-    /** A session's stored messages (part-based), for loading past chats. */
-    messages: (id: string): Promise<{ messages: EngineReplayMessage[] }> =>
-      api(`/engine/sessions/${encodeURIComponent(id)}/messages`),
-    prompt: (id: string, text: string, model?: { providerID: string; modelID: string }, agentName?: string, system?: string): Promise<{ ok: boolean }> =>
-      api(`/engine/sessions/${encodeURIComponent(id)}/prompt`, "POST", { text, model, agent: agentName, system }),
     /** The engine's CONFIGURED providers/models (GET /config/providers). */
     providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
     /** The FULL models.dev provider catalog (what opencode itself supports). */
@@ -302,35 +296,11 @@ export const agent = {
     /** Rename a stored session (overrides the auto-generated title). */
     renameSession: (id: string, title: string): Promise<{ ok: boolean }> =>
       api(`/engine/sessions/${encodeURIComponent(id)}/rename`, "POST", { title }),
-    abort: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/abort`, "POST"),
-    respondPermission: (id: string, permissionId: string, approve: boolean): Promise<{ ok: boolean }> =>
-      api(`/engine/sessions/${encodeURIComponent(id)}/permission`, "POST", { permissionId, approve }),
-    /** Subscribe to the engine's mapped event stream. Returns a disposer. */
-    async stream(onEvent: (e: EngineEvent) => void): Promise<() => void> {
-      const unlisten = await listen<EngineEvent>("engine-event", (ev) => onEvent(ev.payload));
-      await invoke("engine_stream");
-      return unlisten;
-    },
-    /** Restart the event bridge if its reader died (idempotent — the Rust
-     * side keeps a sentinel so at most one reader runs). */
-    async ensureStream(): Promise<void> {
-      try {
-        await invoke("engine_stream");
-      } catch {
-        /* web build / sidecar not up — the SSE route retries on its own */
-      }
-    },
   },
 };
 
 /** One persisted engine session (auto-titled by the engine). */
 export type EngineSessionInfo = { id: string; title?: string; updated?: number };
-
-/** One stored message from a session's replay endpoint. */
-export type EngineReplayMessage = {
-  role: "user" | "assistant";
-  parts: ({ type: "text"; text: string } | { type: "tool"; callId: string; name: string; ok?: boolean })[];
-};
 
 /** One input collected before an auth flow (select or text, may be conditional). */
 export type EngineAuthPrompt = {
@@ -379,24 +349,6 @@ export type EngineStatus = {
   port?: number;
   reason?: string;
 };
-
-/** Mapped engine event (mirrors agent-core StudioAgentEvent). */
-export type EngineEvent =
-  | { type: "message.upsert"; sessionId: string; messageId: string; role: "user" | "assistant" }
-  | {
-      type: "part.snapshot";
-      sessionId: string;
-      messageId: string;
-      partId: string;
-      part: { kind: "text"; text: string } | { kind: "tool"; callId: string; name: string; status: string };
-    }
-  | { type: "message.delta"; sessionId: string; text: string }
-  | { type: "message.done"; sessionId: string }
-  | { type: "tool.start"; sessionId: string; callId: string; name: string; args: unknown }
-  | { type: "tool.result"; sessionId: string; callId: string; ok: boolean; result: unknown }
-  | { type: "permission.request"; sessionId: string; requestId: string; title: string; detail?: string }
-  | { type: "error"; sessionId: string; message: string }
-  | { type: "session.idle"; sessionId: string };
 
 // ── Built-in local AI engine (managed llama-server, see local_llm.rs) ──
 
