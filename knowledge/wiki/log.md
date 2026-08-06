@@ -73,3 +73,12 @@ CI: single ubuntu runner; the upstream build script cross-compiles ALL targets v
 v1.18.12-exa.1 built green first run; binary verified: --version = 1.18.12-exa.1, patched strings present, upstream strings absent.
 Also this session: live-streaming root fix (engine emits message.part.updated SNAPSHOTS at properties.part.text; bridge now maps message.upsert/part.snapshot and the panel upserts by messageId/partId with a role registry), headerless panel with floating control cluster, Exa logo+name on the workbench tab.
 
+
+## [2026-08-06] review | Codex review of the assistant-ui/react-opencode runtime swap — 6 findings, all applied
+Change: Exa chat swapped from the hand-rolled external-store bridge onto @assistant-ui/react-opencode (commit fd6ef2c on agent-sql-casing); dead proxy chain deleted (engine_stream, /v1/engine/events, prompt/abort/permission/messages routes, bridge-map/replay-map).
+HIGH — session-switch race: sidebar click persisted the id before runtime.threads.switchToThread resolved; on failure localStorage/UI pointed at a session the runtime never opened. Fix: persist in .then(), log in .catch().
+MED — quote context dropped: the custom ExaSendButton bypasses composer.send(), so the composer's quote (selection-toolbar Quote) never reached expandForSend. Fix: read s.composer.quote, pass its text, clear via setQuote(undefined).
+MED — stale SDK client: the client-bootstrap effect bailed once engineClient was set, so an engine restart on a DIFFERENT port left the runtime on the dead port. Fix: always call engineClientFor(status.port) when a port is reported — it caches per port, so same-port is a no-op and a port change swaps a fresh client.
+LOW x3: dead ExaPart/ExaMessage/messageText types removed; exa-agent-engine.md wiki page updated (it still described the deleted bridge); trailing blank line at agent.rs EOF.
+Lesson: when a custom send path replaces ComposerPrimitive.Send, every piece of composer state it bypasses (quote, attachments) must be carried explicitly — the runtime only auto-includes them through composer.send().
+
