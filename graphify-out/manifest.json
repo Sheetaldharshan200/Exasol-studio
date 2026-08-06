@@ -1340,8 +1340,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1785999143.687189,
-    "ast_hash": "aadcab46624b65bffb7934c5b6f038e7",
+    "mtime": 1786000951.895277,
+    "ast_hash": "9ab2c2494b94d92027a0f983812ebb7a",
     "semantic_hash": ""
   },
   "packages/agent-core/evals/live.ts": {
@@ -2975,8 +2975,8 @@
     "semantic_hash": ""
   },
   "knowledge/wiki/log.md": {
-    "mtime": 1785999167.5619676,
-    "ast_hash": "40de37c02c6c3fbd04222b94f7b04f6c",
+    "mtime": 1786027821.9109244,
+    "ast_hash": "ca47fccf11f5fe6eaacbef7c98973b6f",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/ai-integrations.md": {
@@ -4110,8 +4110,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/ExaThread.tsx": {
-    "mtime": 1785998954.02717,
-    "ast_hash": "6b8ecb18b41dcc2a7883d886e0748b11",
+    "mtime": 1786000730.6255555,
+    "ast_hash": "cb37e439c4095b6d3e5518ad14c567b9",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/commands.test.ts": {
@@ -4250,8 +4250,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/engine-service.ts": {
-    "mtime": 1785993417.6577103,
-    "ast_hash": "822d7b651905faf4d1e9b35dd8afe53f",
+    "mtime": 1786000688.5030518,
+    "ast_hash": "b22b2ca5ede8e364bf3721d994d22a2c",
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/runtime-registry.test.ts": {
@@ -4285,8 +4285,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/supervisor.ts": {
-    "mtime": 1785989524.5236685,
-    "ast_hash": "2f8ea56c0b1d68306d9f55fe44bb8b14",
+    "mtime": 1786000020.5494256,
+    "ast_hash": "ca53f0580306351b2b952fdff8e8eb42",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/confd-admin-api.md": {
