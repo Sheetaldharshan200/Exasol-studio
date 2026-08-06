@@ -6,7 +6,7 @@
  * that performs them. The engine is a Marketplace component: when its binary
  * is absent the supervisor reports a clean disconnected state — never a crash.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
 import { connectEngine, type EngineClient } from "./client.ts";
 import { baseUrlFor, serveSpawnPlan } from "./spawn-args.ts";
@@ -105,6 +105,18 @@ export class EngineSupervisor {
     this.stopping = true;
     this.proc?.kill();
     this.proc = undefined;
+    // An ADOPTED survivor (an engine of ours left over from a previous
+    // sidecar run) is not our child process, so the kill above can't reach
+    // it — and a follow-up start() would silently re-adopt the stale
+    // process (its config is read once at boot; verified live 2026-08-06).
+    // Free the port explicitly, but only after re-proving the responder is
+    // ours via GET /path.
+    const port = this.port;
+    if (port != null && (await this.identify(port)) === "ours") {
+      await killPortOwner(port);
+      // Give the process a moment to release the port before any restart.
+      for (let i = 0; i < 12 && (await this.identify(port)) === "ours"; i++) await sleep(250);
+    }
     this.applyEvent("stop");
     this.stopping = false;
   }
@@ -135,24 +147,61 @@ export class EngineSupervisor {
    * isolated dir. "foreign" means a different opencode owns the port.
    */
   private async waitOurs(port: number, tries = 40): Promise<"ours" | "foreign" | "down"> {
-    const url = `${baseUrlFor(port)}/path`;
     for (let i = 0; i < tries; i++) {
-      try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(500) });
-        if (res.ok) {
-          const body = (await res.json().catch(() => null)) as { config?: string } | null;
-          const cfg = body?.config ?? "";
-          return cfg.startsWith(this.opts.configDir) ? "ours" : "foreign";
-        }
-        if (res.status === 404) {
-          // A server without /path is not an opencode we can trust as ours.
-          return "foreign";
-        }
-      } catch {
-        /* not up yet */
-      }
+      const verdict = await this.identify(port);
+      if (verdict !== "down") return verdict;
       await sleep(250);
     }
     return "down";
+  }
+
+  /** One identity probe: GET /path and match the config dir. */
+  private async identify(port: number): Promise<"ours" | "foreign" | "down"> {
+    try {
+      const res = await fetch(`${baseUrlFor(port)}/path`, { signal: AbortSignal.timeout(500) });
+      if (res.ok) {
+        const body = (await res.json().catch(() => null)) as { config?: string } | null;
+        const cfg = body?.config ?? "";
+        return cfg.startsWith(this.opts.configDir) ? "ours" : "foreign";
+      }
+      // A server without /path is not an opencode we can trust as ours.
+      if (res.status === 404) return "foreign";
+    } catch {
+      /* not up */
+    }
+    return "down";
+  }
+}
+
+/** Terminate whatever process listens on a localhost port (best-effort). */
+async function killPortOwner(port: number): Promise<void> {
+  const run = (cmd: string, args: string[]) =>
+    new Promise<string>((resolve) => {
+      execFile(cmd, args, { timeout: 3000 }, (_err, stdout) => resolve(stdout ?? ""));
+    });
+  try {
+    if (process.platform === "win32") {
+      const out = await run("netstat", ["-ano", "-p", "tcp"]);
+      const pids = new Set(
+        out
+          .split(/\r?\n/)
+          .filter((l) => l.includes(`:${port} `) && l.includes("LISTENING"))
+          .map((l) => l.trim().split(/\s+/).pop() ?? ""),
+      );
+      for (const pid of pids) if (/^\d+$/.test(pid)) await run("taskkill", ["/pid", pid, "/f"]);
+      return;
+    }
+    const out = await run("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"]);
+    for (const pid of out.split(/\s+/)) {
+      if (/^\d+$/.test(pid)) {
+        try {
+          process.kill(Number(pid), "SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  } catch {
+    /* best-effort — a stale survivor is better than a crash here */
   }
 }

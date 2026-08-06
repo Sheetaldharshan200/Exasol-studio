@@ -239,10 +239,26 @@ export class EngineService {
       }
       return dirty;
     });
-    if (changed) {
-      const c = await this.ensureClient().catch(() => null);
-      await c?.dispose().catch(() => undefined);
-    }
+    if (changed) await this.restartForConfig();
+  }
+
+  /**
+   * Apply an opencode.json change to a RUNNING engine. /instance/dispose is
+   * NOT enough: the engine caches the global config with an infinite TTL
+   * (config.ts cachedInvalidateWithTTL(…, Duration.infinity)) and only its
+   * own TUI worker ever invalidates it — mcp/agent/provider blocks are read
+   * at process boot. Verified live 2026-08-06: a running engine kept serving
+   * the pre-seed agent list after dispose; a restart loaded the seeded
+   * config. No-op when the engine isn't running (next start reads the file).
+   */
+  private async restartForConfig(): Promise<void> {
+    const s = this.supervisor;
+    if (!s) return;
+    const status = s.status(await s.binaryPresent());
+    if (status.state === "stopped") return;
+    await s.stop().catch(() => undefined);
+    this.client = null;
+    await s.start().catch(() => undefined);
   }
 
   /**
@@ -274,11 +290,8 @@ export class EngineService {
       return true;
     });
     this.lastProviderSync = serialized;
-    if (changed) {
-      // Hot-reload so the providers are usable immediately.
-      const c = await this.ensureClient().catch(() => null);
-      await c?.dispose().catch(() => undefined);
-    }
+    // Restart so the providers are usable immediately (boot-time config).
+    if (changed) await this.restartForConfig();
   }
 
   /** MCP servers: status map / add / connect-disconnect (engine-side). */
