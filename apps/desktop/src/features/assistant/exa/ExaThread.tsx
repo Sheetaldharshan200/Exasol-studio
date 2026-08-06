@@ -694,7 +694,11 @@ export function ExaThread({
   const runtime = useOpenCodeRuntime({
     client,
     initialSessionId,
-    defaultAgent: "exa",
+    // Chat mode rides the tools-free "exa-chat" agent (no tools attached at
+    // all — also what keeps small local models usable); Plan/Agent ride "exa"
+    // (MCP tools on, coding tools permission-denied). The hook reads options
+    // per render, so this follows the mode pill live.
+    defaultAgent: composerApi.mode === "chat" ? "exa-chat" : "exa",
     defaultModel: composerApi.model ? { providerID: composerApi.model.providerID, modelID: composerApi.model.modelID } : undefined,
     onThreadIdChange: (id) => onSessionChange?.(id),
     onError: (err) => console.error("[exa] engine runtime error", err),

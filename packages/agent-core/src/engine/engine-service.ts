@@ -215,27 +215,55 @@ export class EngineService {
       }
       if (root.agent === undefined) root.agent = {};
       const agents = root.agent;
-      if (typeof agents === "object" && agents !== null && !Array.isArray(agents) && !("exa" in agents)) {
-        (agents as Record<string, unknown>).exa = {
-          description: "Exa — the Exasol Studio data agent (databases, SQL, insights, dashboards)",
-          mode: "primary",
-          prompt:
-            "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.",
-          tools: {
-            bash: false,
-            edit: false,
-            write: false,
-            patch: false,
-            read: false,
-            grep: false,
-            glob: false,
-            list: false,
-            todowrite: false,
-            todoread: false,
-            task: false,
-          },
+      if (typeof agents === "object" && agents !== null && !Array.isArray(agents)) {
+        const a = agents as Record<string, Record<string, unknown>>;
+        const guardrailPrompt =
+          "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.";
+        // Tool lockdown MUST use `permission` — the engine's AgentConfig
+        // accepts a `tools` map in its schema but v1.18.12 never reads it
+        // (agent merge consumes only value.permission; verified in the fork
+        // source, agent.ts config loop). "edit" covers write/patch too via
+        // Permission.disabled's alias list.
+        const codingDeny = {
+          bash: "deny",
+          edit: "deny",
+          read: "deny",
+          grep: "deny",
+          glob: "deny",
+          list: "deny",
+          todowrite: "deny",
+          todoread: "deny",
+          task: "deny",
         };
-        dirty = true;
+        if (!("exa" in a)) {
+          a.exa = {
+            description: "Exa — the Exasol Studio data agent (databases, SQL, insights, dashboards)",
+            mode: "primary",
+            prompt: guardrailPrompt,
+            permission: codingDeny,
+          };
+          dirty = true;
+        } else if (a.exa.permission === undefined) {
+          // Migrate an earlier seed that used the inert `tools` map.
+          a.exa.permission = codingDeny;
+          delete a.exa.tools;
+          dirty = true;
+        }
+        // Chat mode's agent: NO tools at all ("*" deny, the same pattern the
+        // engine's own title/compaction agents use). Besides honoring "Chat =
+        // no tools", this keeps small local models usable: attaching tools
+        // makes llama-server enforce its native tool-call grammar, which tiny
+        // models fail (verified live with Llama 3.2 3B: errors with tools
+        // attached, answers fine without).
+        if (!("exa-chat" in a)) {
+          a["exa-chat"] = {
+            description: "Exa (chat) — conversation only, no tools",
+            mode: "primary",
+            prompt: guardrailPrompt + " You are in chat mode: answer from knowledge and the conversation only; you have no tools in this mode.",
+            permission: { "*": "deny" },
+          };
+          dirty = true;
+        }
       }
       return dirty;
     });
