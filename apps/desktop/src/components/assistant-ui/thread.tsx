@@ -68,6 +68,8 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -143,7 +145,8 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4",
+            // pt-14 clears the floating header actions overlaying the top edge.
+            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-14",
             isEmpty && "justify-center",
           )}
         >
@@ -320,17 +323,35 @@ const ComposerAction: FC = () => {
   );
 };
 
-/** Empty running reply → dot-matrix "Connecting"; streaming → pulsing dot. */
+/** Empty running reply → dot-matrix status; streaming → pulsing dot. The
+ * status label is DYNAMIC: it escalates with elapsed time, so a turn that is
+ * stalled (engine down, model unreachable) says so instead of implying
+ * progress forever. */
+const WORKING_STAGES: { after: number; label: string }[] = [
+  { after: 0, label: "Connecting" },
+  { after: 4, label: "Waiting for the model" },
+  { after: 12, label: "Still waiting — the model hasn't answered yet" },
+  { after: 30, label: "No response — check the model connection or press Stop" },
+];
+
 const AssistantWorkingIndicator: FC = () => {
   const isEmpty = useAuiState((s) => s.message.content.length === 0);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isEmpty) return;
+    const started = Date.now();
+    const t = window.setInterval(() => setElapsed((Date.now() - started) / 1000), 1000);
+    return () => window.clearInterval(t);
+  }, [isEmpty]);
   if (isEmpty) {
+    const stage = [...WORKING_STAGES].reverse().find((w) => elapsed >= w.after) ?? WORKING_STAGES[0];
     return (
       <span
         data-slot="aui_assistant-message-indicator"
         className="text-muted-foreground inline-flex items-center gap-2 align-middle"
       >
         <DotMatrix state="connecting" aria-hidden />
-        <span className="text-sm">Connecting</span>
+        <span className="text-sm">{stage.label}</span>
       </span>
     );
   }

@@ -750,7 +750,17 @@ export function ExaThread({
     defaultAgent: composerApi.mode === "chat" ? "exa-chat" : "exa",
     defaultModel: composerApi.model ? { providerID: composerApi.model.providerID, modelID: composerApi.model.modelID } : undefined,
     onThreadIdChange: (id) => onSessionChange?.(id),
-    onError: (err) => console.error("[exa] engine runtime error", err),
+    onError: (err) => {
+      // Console-only errors leave the working indicator implying progress
+      // forever — surface the failure where the user can see it.
+      console.error("[exa] engine runtime error", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "error", title: "Exa couldn't complete the turn", body: msg.slice(0, 300) },
+        }),
+      );
+    },
   });
 
   // Engine sessions are created EAGERLY, never lazily on first message: the
