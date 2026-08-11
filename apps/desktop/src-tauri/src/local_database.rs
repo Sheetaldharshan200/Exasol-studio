@@ -1580,13 +1580,18 @@ fn install_mcp_component(app: &AppHandle, data_dir: &Path, version: &str, channe
     )
 }
 
-/// Install the verified ExaPump artifact into its OWN dir. Verify-or-refuse: the
-/// SHA-pinned verified build only (obtain_artifact checks the hash), so this is
-/// safe for a raw binary. exapump_path prefers it once the manifest is written;
-/// revert drops the dir and falls back to the shared managed copy.
-fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
-    let component = &crate::component_lock::components().exapump;
-    let artifact = exapump_platform()?;
+/// Install an ExaPump artifact into its OWN dir. Verify-or-refuse: only
+/// SHA-pinned builds reach here (the verified lock, or an official release
+/// asset with GitHub's published digest — obtain_artifact checks the hash), so
+/// this is safe for a raw binary. exapump_path prefers it once the manifest is
+/// written; revert drops the dir and falls back to the shared managed copy.
+fn install_exapump_component(
+    app: &AppHandle,
+    data_dir: &Path,
+    artifact: &crate::component_lock::Artifact,
+    version: &str,
+    channel: &str,
+) -> AppResult<()> {
     let name = if cfg!(windows) { "exapump.exe" } else { "exapump" };
     let dir = components_update::component_dir(data_dir, ComponentId::ExaPump);
     // Fresh dir each time: the manifest is written LAST (on success), so a
@@ -1610,9 +1615,9 @@ fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> 
         data_dir,
         ComponentId::ExaPump,
         &InstalledManifest {
-            version: component.version.clone(),
+            version: version.into(),
             installed_at: chrono::Utc::now().to_rfc3339(),
-            channel: Some("verified".into()),
+            channel: Some(channel.into()),
         },
     )
 }
@@ -1633,10 +1638,13 @@ fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
     install_semantic_views(app, data_dir, &runtime, &python)
 }
 
-/// One-click independent update of a component. MCP (pip) can move to any
-/// upstream version (uv verifies package hashes); binaries are verify-or-refuse
-/// and always install the effective VERIFIED build (the `version` arg is ignored
-/// for them). No Studio release, no touching other components.
+/// One-click independent update of a component. No Studio release, no touching
+/// other components. Without `version` it installs the effective VERIFIED
+/// build; with `version` it installs that OFFICIAL release directly — MCP (pip)
+/// hash-verified by uv, binaries verified against the sha256 digest GitHub
+/// publishes per release asset (upstream::resolve_artifact refuses anything
+/// undigested). The manifest channel records "upstream" so Revert can always
+/// return to the verified baseline.
 #[tauri::command]
 pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
     let component = ComponentId::from_slug(&id)
@@ -1646,31 +1654,63 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
         match component {
             ComponentId::McpServer => {
                 let verified = verified_version(component);
-                let target = version.unwrap_or_else(|| verified.clone());
+                // A GitHub tag ("v1.2.3") becomes the pip version ("1.2.3").
+                let target = version.map(|v| v.trim_start_matches(['v', 'V']).to_string()).unwrap_or_else(|| verified.clone());
                 let channel = if target == verified { "verified" } else { "upstream" };
                 install_mcp_component(&app, &data_dir, &target, channel)?;
                 repoint_mcp_command(&data_dir)
             }
-            ComponentId::ExaPump => install_exapump_component(&app, &data_dir),
+            ComponentId::ExaPump => {
+                let verified = verified_version(component);
+                match version.filter(|v| *v != verified) {
+                    None => install_exapump_component(&app, &data_dir, exapump_platform()?, &verified, "verified"),
+                    Some(tag) => {
+                        // Official release: resolve a digest-verified artifact
+                        // BEFORE touching the installed copy.
+                        let lock = crate::component_lock::components();
+                        let lock_name = exapump_platform()?.name.clone();
+                        let artifact = crate::upstream::resolve_artifact(&lock.exapump.repository, &tag, &lock_name)?;
+                        install_exapump_component(&app, &data_dir, &artifact, &tag, "upstream")
+                    }
+                }
+            }
             ComponentId::SemanticViews => reconcile_semantic(&app, &data_dir),
             ComponentId::Personal => {
-                // Verify-or-refuse + never a needless swap: only run the
-                // (backup-first) engine update when a NEWER verified engine
-                // actually exists. Today verified == installed, so this returns
-                // here and never stops or touches the running database.
+                // Verify-or-refuse + never a needless swap: the (backup-first)
+                // engine update only runs toward a build STRICTLY newer than
+                // the installed one — the verified pin by default, or an
+                // official release when `version` names one.
                 let verified = verified_version(component);
                 let installed = crate::local_runtime::installed_personal_version(&app)
                     .unwrap_or_else(|| verified.clone());
-                if !components_update::is_newer(&verified, &installed) {
-                    return Err(AppError::InvalidSettings(
-                        "The database engine is already on the verified version; there's nothing to update.".into(),
-                    ));
+                let target = version.unwrap_or_else(|| verified.clone());
+                if !components_update::is_newer(&target, &installed) {
+                    return Err(AppError::InvalidSettings(format!(
+                        "The database engine is already on {installed}; there's nothing newer to install."
+                    )));
                 }
+                // Upstream target: resolve the digest-verified official asset
+                // BEFORE any backup or stop, so an unverifiable release never
+                // interrupts a running database.
+                let upstream = if target != verified {
+                    let lock = crate::component_lock::components();
+                    let lock_name = crate::component_lock::artifact_for(&lock.personal)
+                        .map(|a| a.name.clone())
+                        .ok_or_else(|| {
+                            AppError::Storage(format!(
+                                "Exasol Personal is not published for {}.",
+                                crate::component_lock::platform_key()
+                            ))
+                        })?;
+                    Some((crate::upstream::resolve_artifact(&lock.personal.repository, &target, &lock_name)?, target))
+                } else {
+                    None
+                };
                 // Serialize against a concurrent backup/update, and refuse
                 // while readiness verification is running (idle gate).
                 let _guard = MaintenanceGuard::acquire()?;
                 ensure_lifecycle_idle(&app, "stop")?;
-                crate::local_runtime::update_personal_engine(&app, JOB_ID)
+                crate::local_runtime::update_personal_engine(&app, JOB_ID, upstream)
             }
             ComponentId::ExaAgent => {
                 // Install/update the opencode engine payload from GitHub

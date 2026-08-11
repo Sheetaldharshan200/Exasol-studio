@@ -192,6 +192,15 @@ export function ExaEnginePanel({
     }
   }
 
+  // The exa terminal command ships with the app: write the PATH shim
+  // automatically once the engine is usable (idempotent — a plain file
+  // write, and the footer button stays as a manual repair/refresh).
+  useEffect(() => {
+    if (!status?.provisioned || !status.binaryPresent || cliInstalled || cliBusy) return;
+    void installCli().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.provisioned, status?.binaryPresent, cliInstalled]);
+
   // Build the runtime's SDK client whenever the engine reports a port —
   // engineClientFor caches per port, so a restart on the SAME port is a no-op
   // while a port change (supervisor fallback) swaps in a fresh client.

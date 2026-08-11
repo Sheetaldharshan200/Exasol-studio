@@ -5,6 +5,7 @@ mod engine;
 mod ai_clients;
 mod terminal;
 mod updates;
+mod upstream;
 mod bucketfs;
 mod catalog;
 mod connection;
@@ -188,6 +189,7 @@ pub fn run() {
             local_database::personal_local_status,
             local_database::personal_install_semantic_views,
             local_database::list_components,
+            upstream::components_upstream,
             local_database::update_component,
             local_database::revert_component,
             local_database::backup_local_database,

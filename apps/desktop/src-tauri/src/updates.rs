@@ -1,8 +1,9 @@
 //! Component update watcher (cron-style): every few hours, compare the pinned
 //! component versions against the OFFICIAL GitHub releases and push an in-app
 //! notification when something newer exists. Watch only — nothing is ever
-//! auto-updated; installs stay pinned to the verified lock until a Studio
-//! release moves them.
+//! auto-updated; the notification deep-links to Marketplace → Updates, where
+//! the official release installs directly (digest-verified, revertible to the
+//! verified baseline) — independent of Studio releases.
 
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -74,7 +75,7 @@ fn check_once(app: &AppHandle, already_notified: &mut HashSet<String>) {
                 app,
                 &format!("{name} {tag} is available"),
                 &format!(
-                    "You have {pinned}. The official release {tag} is out on github.com/{repo} — it will roll into Studio's verified component set with the next Studio update."
+                    "You have {pinned}. The official release {tag} is out on github.com/{repo} — open Marketplace → Updates to install it now, independent of Studio updates."
                 ),
             );
         }

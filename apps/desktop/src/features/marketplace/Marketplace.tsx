@@ -1601,15 +1601,26 @@ function ManagedComponents() {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Latest OFFICIAL release per component (id → tag), fetched after render so
+  // a slow network never blocks the panel. Empty on failure — the verified
+  // baseline is then all that's offered.
+  const [upstream, setUpstream] = useState<Record<string, string>>({});
 
-  // Studio-verified ONLY: the update decision comes from the verified lock
-  // (c.verified vs c.installed), never a live query to the component's repo.
-  // Users see what Studio has verified — upstream is deliberately not surfaced.
+  // Two update sources per component: the verified lock (Studio's known-good
+  // baseline, c.verified) and the component's own OFFICIAL releases — so
+  // updates are independent of Studio releases. Upstream installs are
+  // digest-verified (GitHub's per-asset sha256) and always revertible.
   const refresh = useCallback(async () => {
     const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
     setComps(list);
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void ipc
+      .componentsUpstream()
+      .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
+      .catch(() => undefined);
+  }, []);
 
   // Offer an Update only when verified is STRICTLY newer than installed (shared
   // helper mirrors the Rust is_newer) — never a downgrade or an equal version.
@@ -1624,13 +1635,22 @@ function ManagedComponents() {
 
   if (!comps) return null;
 
-  // The Updates tab lists only components that need action — a pending update or
-  // a non-verified "custom version". Rows that are already on the verified
-  // baseline are hidden (summarised below) so the tab isn't a full inventory.
+  // A newer OFFICIAL release than everything already installed/verified.
+  const upstreamFor = (c: ComponentInfo): string | null => {
+    if (c.opaqueVersion) return null; // revision-tracked (Semantic Views)
+    const tag = upstream[c.id];
+    if (!tag) return null;
+    return isNewer(tag, c.verified) && isNewer(tag, c.installed) ? tag : null;
+  };
+
+  // The Updates tab lists only components that need action — a pending verified
+  // update, a newer official release, or a non-verified "custom version". Rows
+  // already on the newest known version are hidden (summarised below).
   const isUpToDate = (c: ComponentInfo) =>
-    c.opaqueVersion
+    !upstreamFor(c) &&
+    (c.opaqueVersion
       ? Boolean(c.installed) && c.installed === c.verified
-      : !isNewer(c.verified, c.installed) && !(Boolean(c.installed) && c.installed !== c.verified);
+      : !isNewer(c.verified, c.installed) && !(Boolean(c.installed) && c.installed !== c.verified));
   const actionable = comps.filter((c) => !isUpToDate(c));
   const upToDateCount = comps.length - actionable.length;
 
@@ -1641,7 +1661,7 @@ function ManagedComponents() {
         <h3 className="text-[12.5px] font-semibold text-foreground">Managed components</h3>
       </div>
       <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        Each runs in its own isolated environment (its own Python where relevant, sharing an interpreter only when versions match) and updates on its own — independent of Studio releases. The verified version is the known-good baseline you can always revert to.
+        Each runs in its own isolated environment and updates on its own — independent of Studio releases. Newer official releases install directly (verified against the sha256 digest GitHub publishes per asset); the Studio-verified version stays the known-good baseline you can always revert to.
       </p>
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
       {actionable.length === 0 ? (
@@ -1693,9 +1713,32 @@ function ManagedComponents() {
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Revert
                   </button>
                 ) : null}
-                {/* Studio-verified ONLY. Every component updates to the version
-                    Studio has verified — never to a raw upstream release. The
-                    update is offered only when verified is ahead of installed. */}
+                {/* A newer OFFICIAL release installs directly — digest-verified
+                    against GitHub's published sha256, recorded as channel
+                    "upstream", revertible to the verified baseline any time.
+                    The DB engine additionally backs up + can roll back. */}
+                {upstreamFor(c) ? (
+                  <button
+                    onClick={() =>
+                      void run(
+                        c.id,
+                        () => ipc.updateComponent(c.id, upstreamFor(c) ?? undefined),
+                        `${c.name} updated to official ${upstreamFor(c)}.`,
+                      )
+                    }
+                    disabled={isBusy}
+                    title={
+                      c.id === "personal"
+                        ? `Install the official ${upstreamFor(c)} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
+                        : `Install the official ${upstreamFor(c)} release (digest-verified). Revert returns to Studio's verified ${c.verified}.`
+                    }
+                    className={upBtn}
+                  >
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {upstreamFor(c)}
+                  </button>
+                ) : null}
+                {/* The verified-baseline update: offered only when verified is
+                    ahead of installed (never a downgrade or an equal swap). */}
                 {c.opaqueVersion ? (
                   // Opaque revision (Semantic Views, DB-side): reconcile to the
                   // verified revision when the installed one differs. Not
@@ -1709,9 +1752,9 @@ function ManagedComponents() {
                   ) : upToDate
                 ) : isNewer(c.verified, c.installed) ? (
                   <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified}
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified} (verified)
                   </button>
-                ) : c.installed && c.installed !== c.verified ? (
+                ) : upstreamFor(c) ? null : c.installed && c.installed !== c.verified ? (
                   // Installed differs from verified but verified isn't newer →
                   // running a custom version AHEAD of the verified baseline (e.g.
                   // an earlier upstream update). Not "up to date" — Revert returns

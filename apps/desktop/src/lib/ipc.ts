@@ -495,6 +495,8 @@ export const ipc = {
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
   // Independent, isolated component management.
   listComponents: () => call<ComponentInfo[]>("list_components"),
+  /** Latest OFFICIAL release tag per managed component (best-effort). */
+  componentsUpstream: () => call<{ id: string; tag: string }[]>("components_upstream"),
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
   backupLocalDatabase: () => call<string>("backup_local_database"),

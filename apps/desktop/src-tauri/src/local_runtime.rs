@@ -409,6 +409,40 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     Ok(target)
 }
 
+/// Install a specific Exasol Personal launcher build from an OFFICIAL release
+/// artifact (digest-verified archive — see upstream::resolve_artifact). Mirrors
+/// ensure_personal_launcher's install tail; the lock's per-executable hash only
+/// exists for the verified build, so here the archive digest is the pin.
+fn install_personal_launcher_from(
+    app: &AppHandle,
+    id: &str,
+    artifact: &crate::component_lock::Artifact,
+    version: &str,
+) -> AppResult<PathBuf> {
+    let archive = runtime_dir(app)?.join(&artifact.name);
+    emit_log(app, id, format!("Installing Exasol Personal {version} (official release)…"), "info");
+    obtain_artifact(app, id, artifact, &archive)?;
+    let unpack = runtime_dir(app)?.join("launcher-unpack");
+    let _ = std::fs::remove_dir_all(&unpack);
+    std::fs::create_dir_all(&unpack)?;
+    let decoder = flate2::read::GzDecoder::new(File::open(&archive)?);
+    tar::Archive::new(decoder).unpack(&unpack)?;
+    let binary = find_file(&unpack, "exasol").ok_or_else(|| {
+        AppError::Storage("Exasol Personal archive did not contain `exasol`.".into())
+    })?;
+    let target = managed_exasol(app)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(binary, &target)?;
+    make_executable(&target)?;
+    let version_marker = runtime_dir(app)?.join("launcher.version");
+    std::fs::write(version_marker, version)?;
+    let _ = std::fs::remove_file(archive);
+    let _ = std::fs::remove_dir_all(unpack);
+    Ok(target)
+}
+
 fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
@@ -736,7 +770,11 @@ pub(crate) fn backup_personal_deployment(app: &AppHandle, id: &str) -> AppResult
 /// ops decision (the lock never advances to an incompatible engine). Until then
 /// it is unreachable (verified == installed), so it has not been exercised
 /// against a real cross-version upgrade.
-pub(crate) fn update_personal_engine(app: &AppHandle, id: &str) -> AppResult<()> {
+pub(crate) fn update_personal_engine(
+    app: &AppHandle,
+    id: &str,
+    upstream: Option<(crate::component_lock::Artifact, String)>,
+) -> AppResult<()> {
     let dir = personal_deployment_dir(app)?;
     if !dir.join("deployment.json").is_file() {
         return Err(AppError::Storage(
@@ -777,11 +815,15 @@ pub(crate) fn update_personal_engine(app: &AppHandle, id: &str) -> AppResult<()>
             backup.display()
         )));
     }
-    // Clear the marker so ensure_personal_launcher reinstalls the (newer) verified build.
+    // Clear the marker so the (newer) target build is actually installed.
     let _ = std::fs::remove_file(&version_marker);
 
     let swap = (|| -> AppResult<()> {
-        let new_cli = ensure_personal_launcher(app, id)?;
+        let new_cli = match &upstream {
+            // Official release: the digest-verified asset resolved by the caller.
+            Some((artifact, version)) => install_personal_launcher_from(app, id, artifact, version)?,
+            None => ensure_personal_launcher(app, id)?,
+        };
         let new_cli_s = new_cli.to_string_lossy().to_string();
         emit_log(app, id, "Starting the updated engine…", "info");
         if run_streamed(app, id, &new_cli_s, &["start", "--deployment-dir", &ddir])? != 0 {
