@@ -23,19 +23,21 @@ import {
 } from "@assistant-ui/react";
 import { useShallow } from "zustand/shallow";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   Dialog,
   DialogTitle,
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
 import { cn } from "@/lib/utils";
 
 const useFileSrc = (file: File | undefined) => {
@@ -117,28 +119,12 @@ const AttachmentPreviewDialog: FC<PropsWithChildren> = ({ children }) => {
   );
 };
 
-const AttachmentThumb: FC = () => {
-  const src = useAttachmentSrc();
-
-  return (
-    <Avatar className="aui-attachment-tile-avatar h-full w-full rounded-none after:hidden">
-      <AvatarImage
-        src={src}
-        alt="Attachment preview"
-        className="aui-attachment-tile-image object-cover"
-      />
-      <AvatarFallback>
-        <FileText className="aui-attachment-tile-fallback-icon text-muted-foreground/80 size-6 stroke-[1.5]" />
-      </AvatarFallback>
-    </Avatar>
-  );
-};
-
 const AttachmentUI: FC = () => {
   const aui = useAui();
   const isComposer = aui.attachment.source !== "message";
+  const src = useAttachmentSrc();
+  const name = useAuiState((s) => s.attachment.name);
 
-  const isImage = useAuiState((s) => s.attachment.type === "image");
   const typeLabel = useAuiState((s) => {
     const type = s.attachment.type;
     switch (type) {
@@ -152,7 +138,7 @@ const AttachmentUI: FC = () => {
         return type;
     }
   });
-
+  const ext = (name ?? "").split(".").pop()?.toUpperCase();
   const uploadState = useAuiState((s) =>
     s.attachment.status.type === "running"
       ? "uploading"
@@ -161,94 +147,61 @@ const AttachmentUI: FC = () => {
         ? "error"
         : undefined,
   );
-  const isUploading = uploadState === "uploading";
-  const isError = uploadState === "error";
-
   const errorMessage = useAuiState((s) =>
     s.attachment.status.type === "incomplete" &&
     s.attachment.status.reason === "error"
       ? (s.attachment.status.message ?? "Upload failed")
       : undefined,
   );
+  const meta =
+    uploadState === "uploading"
+      ? "Uploading…"
+      : uploadState === "error"
+        ? errorMessage
+        : ext && ext !== name?.toUpperCase()
+          ? `${ext} · ${typeLabel}`
+          : typeLabel;
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <AttachmentPrimitive.Root
-          className={cn(
-            "aui-attachment-root relative",
-            isComposer &&
-              "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none",
-            isImage &&
-              !isComposer &&
-              "aui-attachment-root-message only:*:first:size-24",
-          )}
-        >
-          <AttachmentPreviewDialog>
-            {/* Radix tooltip: asChild wraps the tile div directly. */}
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  "aui-attachment-tile bg-muted hover:after:bg-foreground/10 focus-visible:ring-ring/50 relative size-14 cursor-pointer overflow-hidden rounded-[calc(var(--composer-radius)-var(--composer-padding))] transition-transform outline-none after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-1 after:ring-black/10 after:transition-colors after:ring-inset focus-visible:ring-3 active:scale-[0.96] motion-reduce:transition-none dark:after:ring-white/10",
-                  isError &&
-                    "after:ring-destructive/60 dark:after:ring-destructive/60",
-                )}
-                role="button"
-                tabIndex={0}
-                aria-label={`${typeLabel} attachment${
-                  isError
-                    ? ", upload failed"
-                    : isUploading
-                      ? ", uploading"
-                      : ""
-                }`}
-              >
-              <AttachmentThumb />
-              {isUploading && (
-                <div
-                  aria-hidden="true"
-                  className="aui-attachment-tile-uploading bg-background/60 animate-in fade-in-0 absolute inset-0 flex items-center justify-center backdrop-blur-[2px] motion-reduce:animate-none"
-                >
-                  <Loader2Icon className="text-muted-foreground size-4 animate-spin" />
-                </div>
-              )}
-              {isError && (
-                <div
-                  aria-hidden="true"
-                  className="aui-attachment-tile-error bg-background/70 animate-in fade-in-0 absolute inset-0 flex items-center justify-center backdrop-blur-[2px] motion-reduce:animate-none"
-                >
-                  <AlertCircleIcon className="text-destructive size-4" />
-                </div>
-              )}
-              </div>
-            </TooltipTrigger>
-          </AttachmentPreviewDialog>
-          {isComposer && <AttachmentRemove />}
-        </AttachmentPrimitive.Root>
-        <TooltipContent side="top">
-          <AttachmentPrimitive.Name />
-          {errorMessage && (
-            <p className="aui-attachment-error-message">{errorMessage}</p>
-          )}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-};
-
-const AttachmentRemove: FC = () => {
-  return (
-    <AttachmentPrimitive.Remove
-      render={
-        <TooltipIconButton
-          tooltip="Remove file"
-          className="aui-attachment-tile-remove absolute end-1 top-1 size-5 rounded-full bg-black/50! text-white backdrop-blur-sm after:absolute after:-inset-1.5 hover:bg-black/70! hover:text-white! active:scale-[0.96] motion-reduce:transition-none"
-          side="top"
-        />
-      }
+    <AttachmentPrimitive.Root
+      className={cn(
+        "aui-attachment-root",
+        isComposer && "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none",
+      )}
     >
-      <XIcon className="aui-attachment-remove-icon size-3 stroke-[2.5]" />
-    </AttachmentPrimitive.Remove>
+      <Attachment className={cn("max-w-56", uploadState === "error" && "border-destructive/60")}>
+        <AttachmentPreviewDialog>
+          {src ? (
+            <AttachmentMedia variant="image" className="cursor-zoom-in">
+              <img src={src} alt={name ?? "Attachment"} />
+            </AttachmentMedia>
+          ) : (
+            <AttachmentMedia>
+              {uploadState === "uploading" ? (
+                <Loader2Icon className="animate-spin" />
+              ) : uploadState === "error" ? (
+                <AlertCircleIcon className="text-destructive" />
+              ) : (
+                <FileText />
+              )}
+            </AttachmentMedia>
+          )}
+        </AttachmentPreviewDialog>
+        <AttachmentContent>
+          <AttachmentTitle>
+            <AttachmentPrimitive.Name />
+          </AttachmentTitle>
+          <AttachmentDescription className={cn(uploadState === "error" && "text-destructive")}>{meta}</AttachmentDescription>
+        </AttachmentContent>
+        {isComposer ? (
+          <AttachmentActions>
+            <AttachmentPrimitive.Remove render={<AttachmentAction aria-label={`Remove ${name ?? "attachment"}`} />}>
+              <XIcon />
+            </AttachmentPrimitive.Remove>
+          </AttachmentActions>
+        ) : null}
+      </Attachment>
+    </AttachmentPrimitive.Root>
   );
 };
 
@@ -264,7 +217,7 @@ export const UserMessageAttachments: FC = () => {
 
 export const ComposerAttachments: FC = () => {
   return (
-    <div className="aui-composer-attachments flex w-full flex-row items-center gap-2 overflow-x-auto empty:hidden">
+    <div className="aui-composer-attachments flex w-full flex-row flex-wrap items-center gap-1.5 empty:hidden">
       <ComposerPrimitive.Attachments>
         {() => <AttachmentUI />}
       </ComposerPrimitive.Attachments>
@@ -277,12 +230,12 @@ export const ComposerAddAttachment: FC = () => {
     <ComposerPrimitive.AddAttachment
       render={
         <TooltipIconButton
-          tooltip="Add Attachment"
+          tooltip="Attach files or photos (multi-select)"
           side="bottom"
           variant="ghost"
           size="icon"
-          className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 size-7 rounded-full p-1 text-xs font-semibold active:scale-[0.96] motion-reduce:transition-none"
-          aria-label="Add Attachment"
+          className="aui-composer-add-attachment hover:bg-muted size-7 rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:transition-none"
+          aria-label="Attach files or photos"
         />
       }
     >

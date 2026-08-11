@@ -6,6 +6,10 @@ import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
 import {
   Archive as ArchiveIcon,
+  FileCode as FileCodeIcon,
+  FileText as FileTextIcon,
+  Slash as SlashIcon,
+  Table as TableIcon,
   ArrowUp as SendArrowIcon,
   Bot,
   Database as DatabaseIcon,
@@ -29,6 +33,16 @@ import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ComposerAddAttachment } from "@/components/assistant-ui/attachment";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
 import type { AgentProviderInfo } from "@/lib/agent-client";
 import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
@@ -447,29 +461,54 @@ export function ExaSendButton() {
 export function ExaComposerChips() {
   const api = useExaComposer();
   if (!api || (api.chips.length === 0 && !api.pendingCommand)) return null;
+  // Same card system as file/photo attachments (ui/attachment) — one visual
+  // language for everything pinned to the composer.
+  const chipIcon = (providerId: string) =>
+    providerId === "query" || providerId === "history"
+      ? FileCodeIcon
+      : providerId === "results" || providerId === "table" || providerId === "schema" || providerId === "connection"
+        ? TableIcon
+        : providerId === "file"
+          ? FileTextIcon
+          : WrenchIcon;
   return (
-    <div className="flex flex-wrap gap-1 px-2 pt-1.5">
+    <AttachmentGroup className="px-2 pt-1.5">
       {api.pendingCommand ? (
-        <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-[12px] leading-none font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-          /{api.pendingCommand.title}
-          <button type="button" onClick={() => api.setPendingCommand(null)} className="rounded opacity-70 hover:opacity-100" aria-label="Remove command">
-            <X className="size-3" />
-          </button>
-        </span>
+        <Attachment className="max-w-56">
+          <AttachmentMedia>
+            <SlashIcon />
+          </AttachmentMedia>
+          <AttachmentContent>
+            <AttachmentTitle>/{api.pendingCommand.title}</AttachmentTitle>
+            <AttachmentDescription>command — type its input, then send</AttachmentDescription>
+          </AttachmentContent>
+          <AttachmentActions>
+            <AttachmentAction aria-label="Remove command" onClick={() => api.setPendingCommand(null)}>
+              <X />
+            </AttachmentAction>
+          </AttachmentActions>
+        </Attachment>
       ) : null}
-      {api.chips.map((c) => (
-        <span
-          key={c.id}
-          className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-[12px] leading-none font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-        >
-          <WrenchIcon className="size-3" />
-          {c.label}
-          <button type="button" onClick={() => api.removeChip(c.id)} className="rounded opacity-70 hover:opacity-100" aria-label={`Remove ${c.label}`}>
-            <X className="size-3" />
-          </button>
-        </span>
-      ))}
-    </div>
+      {api.chips.map((c) => {
+        const Icon = chipIcon(c.providerId);
+        return (
+          <Attachment key={c.id} className="max-w-56">
+            <AttachmentMedia>
+              <Icon />
+            </AttachmentMedia>
+            <AttachmentContent>
+              <AttachmentTitle>{c.label}</AttachmentTitle>
+              <AttachmentDescription>@ context · sent with your message</AttachmentDescription>
+            </AttachmentContent>
+            <AttachmentActions>
+              <AttachmentAction aria-label={`Remove ${c.label}`} onClick={() => api.removeChip(c.id)}>
+                <X />
+              </AttachmentAction>
+            </AttachmentActions>
+          </Attachment>
+        );
+      })}
+    </AttachmentGroup>
   );
 }
 
