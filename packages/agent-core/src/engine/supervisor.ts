@@ -67,6 +67,27 @@ export class EngineSupervisor {
       this.reason = "No free localhost port for the engine.";
       return this.status(true);
     }
+
+    // NEVER adopt a survivor: an engine left over from a previous run read
+    // opencode.json at ITS boot, so its agents/MCP/provider config can be
+    // stale (config is cached process-for-life — verified live 2026-08-11:
+    // an adopted 12:01 survivor served no exa agent while the disk config
+    // had it). An occupied candidate that is OURS is killed and replaced by
+    // a fresh spawn; a foreign one is left untouched (next candidate).
+    const pre = await this.identify(port);
+    if (pre === "foreign") {
+      if (taken.length < this.cfg.portCandidates.length) {
+        return this.start([...taken, port]);
+      }
+      this.state = "failed";
+      this.reason = "Every engine port candidate is occupied by another process.";
+      return this.status(true);
+    }
+    if (pre === "ours") {
+      await killPortOwner(port);
+      for (let i = 0; i < 12 && (await this.identify(port)) !== "down"; i++) await sleep(250);
+    }
+
     this.port = port;
     this.applyEvent("start");
 
