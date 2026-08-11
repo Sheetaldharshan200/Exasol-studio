@@ -22,6 +22,10 @@ pub struct AppState {
     /// execute_sql registers a run once it knows the executing session; Stop
     /// (cancel_query) looks it up to KILL the running statement.
     pub running_queries: std::sync::Mutex<HashMap<String, (String, String)>>,
+    /// ConfD (Admin API) sessions keyed by connection profile id. Credentials
+    /// live ONLY here, for this app session — never returned to the frontend
+    /// and never persisted (admin-api-parity spec).
+    pub admin_sessions: std::sync::Mutex<HashMap<String, crate::confd::AdminSession>>,
 }
 
 impl AppState {
@@ -32,6 +36,7 @@ impl AppState {
             vault_key: std::sync::RwLock::new(None),
             master_secret: std::sync::RwLock::new(None),
             running_queries: std::sync::Mutex::new(HashMap::new()),
+            admin_sessions: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }

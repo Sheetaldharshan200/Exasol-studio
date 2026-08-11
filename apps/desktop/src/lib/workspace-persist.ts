@@ -34,6 +34,10 @@ const PERSISTABLE_VIEWS: ReadonlySet<TabView> = new Set<TabView>([
   "filePreview",
   "notebook",
   "git",
+  "logs",
+  "bucketfs",
+  "backups",
+  "health",
 ]);
 
 /** A tab's fields worth carrying across a restart. Anything not listed is

@@ -30,6 +30,10 @@ import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
+import { LogsPanel } from "@/features/connection/LogsPanel";
+import { BackupsPanel } from "@/features/connection/BackupsPanel";
+import { startBackupScheduler } from "@/features/connection/backup-scheduler";
+import { HealthPanel } from "@/features/connection/HealthPanel";
 import { LoadDataDialog } from "@/features/workbench/LoadDataDialog";
 import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/features/workbench/ObjectContextMenu";
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
@@ -284,6 +288,36 @@ export function ExasolStudio({
   }, [connKey]);
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
+
+  // Backup schedules tick every minute while Studio runs; the getter reads a
+  // ref so the interval survives connection-list changes. Missed occurrences
+  // (computer off/asleep) are caught up on launch with a notification.
+  const schedulerConnsRef = useRef(connections);
+  schedulerConnsRef.current = connections;
+  useEffect(
+    () => startBackupScheduler(() => schedulerConnsRef.current.map((c) => ({ id: c.profile.id, name: c.profile.name }))),
+    [],
+  );
+
+  // Focus the editor whenever the ACTIVE TAB becomes a SQL tab (new tab, tab
+  // switch), so a fresh query tab is immediately typeable — the caret blinks
+  // at line 1 instead of waiting for a click. Double rAF: the model swap for
+  // the new tab lands after the render commit.
+  const lastFocusedTabId = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeTab.view !== "sql" || lastFocusedTabId.current === activeTab.id) return;
+    lastFocusedTabId.current = activeTab.id;
+    const raf = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const ed = editorRef.current;
+        if (!ed) return;
+        ed.focus();
+        if ((activeTab.sql ?? "").trim() === "") ed.setPosition({ lineNumber: 1, column: 1 });
+      }),
+    );
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.id, activeTab.view]);
   const activeTabId = activeTab.id;
   const isSpecialTab = activeTab.view !== "sql";
   const visualizerTabs = tabs
@@ -1358,9 +1392,28 @@ export function ExasolStudio({
   }
 
   // Open (or focus) a read-only catalog surface for a connection.
-  function openView(profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps") {
+  function openView(
+    profileId: string,
+    view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health",
+  ) {
     onFocusConnection(profileId);
     const list = tabsByConn[profileId] ?? tabsFor(profileId);
+    // Admin surfaces (issue #45) are singleton tabs per connection.
+    if (view === "logs" || view === "bucketfs" || view === "backups" || view === "health") {
+      const existing = list.find((t) => t.view === view);
+      if (existing) {
+        setActiveIdByConn((a) => ({ ...a, [profileId]: existing.id }));
+        return;
+      }
+      const name = connections.find((c) => c.profile.id === profileId)?.profile.name ?? "connection";
+      const title =
+        view === "logs" ? `Logs · ${name}` : view === "bucketfs" ? `BucketFS · ${name}` : view === "backups" ? `Backups · ${name}` : `Health · ${name}`;
+      tabCounter.current += 1;
+      const tab: SqlTab = { id: `tab-${Date.now()}-${tabCounter.current}`, title, view, sql: "", response: null, execError: null };
+      setTabsByConn((prev) => ({ ...prev, [profileId]: [...(prev[profileId] ?? tabsFor(profileId)), tab] }));
+      setActiveIdByConn((a) => ({ ...a, [profileId]: tab.id }));
+      return;
+    }
     if (view === "dba") {
       const existing = list.find((t) => t.view === "dba");
       if (existing) {
@@ -2197,57 +2250,6 @@ export function ExasolStudio({
     }
   }
 
-  const addingDashRef = useRef(false);
-  async function sendResultToDashboard(sql: string) {
-    const trimmed = (sql ?? "").trim();
-    if (!trimmed) { void openBi(); return; }
-    if (addingDashRef.current) return; // guard double-clicks
-    addingDashRef.current = true;
-    // Schema: the query's own table, else the connection's default, else a catch-all.
-    const parsed = parseSingleTable(trimmed);
-    const schema = (parsed?.schema ?? connection?.profile.schema ?? "Ad hoc queries").trim() || "Ad hoc queries";
-    // Panel name: the active tab's name (e.g. "WEATHER_DAILY"), else the SQL itself.
-    const tabName = activeTab.view === "sql" && activeTab.title && activeTab.title !== "Untitled" ? activeTab.title : "";
-    const panelTitle = tabName || (trimmed.length > 60 ? trimmed.slice(0, 57) + "…" : trimmed);
-    const id = `schema-${schema.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "adhoc"}`;
-    const normSql = (s: string) => s.trim().replace(/;\s*$/, "").replace(/\s+/g, " ").toLowerCase();
-
-    try {
-      const metas = await dashClient.list();
-      // One dashboard per schema — match by title first (the backend may assign
-      // its own id), then by our deterministic id.
-      const existingMeta = metas.find((m) => m.title === schema) ?? metas.find((m) => m.id === id);
-      const dash: DashDoc = existingMeta
-        ? await dashClient.get(existingMeta.id)
-        : { version: 1, id, title: schema, description: `Panels built from ${schema} queries`, panels: [] };
-
-      // Don't append a duplicate: if this exact query is already a panel, just
-      // open the dashboard instead of adding it again.
-      const dup = dash.panels.find((p) => p.query && normSql(p.query.sql) === normSql(trimmed));
-      if (dup) {
-        openDashboardTab(dash.id, schema);
-        return;
-      }
-
-      const bottom = dash.panels.reduce((y, p) => Math.max(y, p.grid.y + p.grid.h), 0);
-      const panel: DashPanelDoc = {
-        id: `p-${Date.now()}-${dash.panels.length}`,
-        title: panelTitle,
-        grid: { x: 0, y: bottom, w: 6, h: 8 },
-        query: { sql: trimmed },
-        viz: { type: "table" },
-      };
-      const saved = await dashClient.save({ ...dash, panels: [...dash.panels, panel] });
-      openDashboardTab(saved.id, schema);
-    } catch {
-      // Agent sidecar unavailable — fall back to just opening the tab.
-      void openBi();
-    } finally {
-      // Brief cooldown so a stray double-fire can't create two panels.
-      window.setTimeout(() => { addingDashRef.current = false; }, 600);
-    }
-  }
-
   // Step through SQL history into the current editor.
   // Step through executed-SQL history. Index -1 is the user's live draft;
   // 0 is the most recent entry. "prev" (<) goes further back, "next" (>) comes
@@ -2620,9 +2622,6 @@ export function ExasolStudio({
                 </IconButton>
                 <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
                   <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
-                </IconButton>
-                <IconButton label="Open Dashboards" onClick={openBi}>
-                  <BarChart3 className="h-3.5 w-3.5" />
                 </IconButton>
                 <IconButton label="Stop the running query" onClick={() => void cancelRunning()} disabled={!running || stopping}>
                   {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
@@ -2998,6 +2997,14 @@ export function ExasolStudio({
                 />
               ) : activeTab.view === "dba" ? (
                 <DbaDashboard profileId={connection.profile.id} connectionName={connection.profile.name} onOpenSql={openSqlTab} />
+              ) : activeTab.view === "logs" ? (
+                <LogsPanel profileId={connection.profile.id} connectionName={connection.profile.name} />
+              ) : activeTab.view === "backups" ? (
+                <BackupsPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
+              ) : activeTab.view === "health" ? (
+                <HealthPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
+              ) : activeTab.view === "bucketfs" ? (
+                <BucketFsPanel profile={connection.profile} variant="tab" onClose={() => closeTab(activeTab.id)} />
               ) : (
                 // Key by tab id so every Visualizer tab is its OWN independent
                 // instance — a new tab starts fresh and never inherits the
@@ -3160,6 +3167,9 @@ export function ExasolStudio({
                   options={{
                     automaticLayout: true,
                     lightbulb: { enabled: "on" as never },
+                    // Default 10px + the folding zone left a wide gap between
+                    // the line number and the first character.
+                    lineDecorationsWidth: 0,
                     fontFamily: "JetBrains Mono",
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",
@@ -3202,7 +3212,6 @@ export function ExasolStudio({
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onOpenPlanTab={openPlanTab}
-                  onSendToDashboard={() => void sendResultToDashboard(activeTab.sql)}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
