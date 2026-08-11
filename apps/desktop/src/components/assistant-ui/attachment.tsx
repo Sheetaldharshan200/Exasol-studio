@@ -119,11 +119,38 @@ const AttachmentPreviewDialog: FC<PropsWithChildren> = ({ children }) => {
   );
 };
 
+/** Decode a data: URL into text (attachment payloads ride as data URLs). */
+function dataUrlToText(url: string): string | null {
+  try {
+    const comma = url.indexOf(",");
+    if (!url.startsWith("data:") || comma === -1) return null;
+    const meta = url.slice(0, comma);
+    const payload = url.slice(comma + 1);
+    const bytes = meta.includes(";base64") ? atob(payload) : decodeURIComponent(payload);
+    return new TextDecoder().decode(Uint8Array.from(bytes, (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+
 const AttachmentUI: FC = () => {
   const aui = useAui();
   const isComposer = aui.attachment.source !== "message";
   const src = useAttachmentSrc();
   const name = useAuiState((s) => s.attachment.name);
+  const file = useAuiState((s) => s.attachment.file);
+  const fileData = useAuiState((s) => {
+    const part = s.attachment.content?.find((c) => c.type === "file");
+    return part && "data" in part ? (part.data as string) : undefined;
+  });
+
+  // Clicking a FILE card opens its content as a workspace tab (images keep
+  // the zoom dialog instead).
+  const openInTab = async () => {
+    const text = file ? await file.text().catch(() => null) : fileData ? dataUrlToText(fileData) : null;
+    if (text == null) return;
+    window.dispatchEvent(new CustomEvent("studio:open-text-tab", { detail: { name, content: text } }));
+  };
 
   const typeLabel = useAuiState((s) => {
     const type = s.attachment.type;
@@ -176,7 +203,13 @@ const AttachmentUI: FC = () => {
               <img src={src} alt={name ?? "Attachment"} />
             </AttachmentMedia>
           ) : (
-            <AttachmentMedia>
+            <AttachmentMedia
+              role="button"
+              tabIndex={0}
+              title="Open in a new tab"
+              className="cursor-pointer"
+              onClick={() => void openInTab()}
+            >
               {uploadState === "uploading" ? (
                 <Loader2Icon className="animate-spin" />
               ) : uploadState === "error" ? (
@@ -187,7 +220,13 @@ const AttachmentUI: FC = () => {
             </AttachmentMedia>
           )}
         </AttachmentPreviewDialog>
-        <AttachmentContent>
+        <AttachmentContent
+          role="button"
+          tabIndex={0}
+          title={src ? undefined : "Open in a new tab"}
+          className={cn(!src && "cursor-pointer")}
+          onClick={src ? undefined : () => void openInTab()}
+        >
           <AttachmentTitle>
             <AttachmentPrimitive.Name />
           </AttachmentTitle>

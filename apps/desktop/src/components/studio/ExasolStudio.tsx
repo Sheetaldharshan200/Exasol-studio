@@ -1582,6 +1582,16 @@ export function ExasolStudio({
     return () => window.removeEventListener("studio:open-mcp-config", on);
   }, []);
 
+  // Clicking a file attachment in the Exa chat opens its content as a tab.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ name?: string; content?: string }>).detail ?? {};
+      if (typeof d.content === "string") openSqlTabRef.current(d.content, d.name || "Attachment");
+    };
+    window.addEventListener("studio:open-text-tab", on);
+    return () => window.removeEventListener("studio:open-text-tab", on);
+  }, []);
+
   // Open (or focus) a full-page tab by a simple single-instance view.
   function openSingletonTab(view: "notebook" | "skills" | "aiSettings", title: string, idPrefix: string) {
     const list = tabsFor(connKey);

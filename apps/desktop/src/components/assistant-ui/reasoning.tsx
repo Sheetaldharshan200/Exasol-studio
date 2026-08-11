@@ -278,27 +278,39 @@ function ReasoningText({
       if (!pinned) return;
       scrollEl.scrollTop = scrollEl.scrollHeight;
     };
-    // A pin's own scroll event can arrive after new content grew the scroll
-    // height and read as "not at bottom"; only an upward move at unchanged
-    // scroll height is user intent.
+    // Unpin on USER INPUT (wheel/touch up), not scroll-position heuristics:
+    // during streaming the scroll height grows every few ms, so an upward
+    // scroll always coincides with a height change and a position-based
+    // check swallows it — the view snaps back and reads as "can't scroll".
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) pinned = false;
+    };
+    let touchY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      touchY = e.touches[0]?.clientY ?? 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? 0;
+      if (y > touchY) pinned = false; // finger moving down = scrolling up
+      touchY = y;
+    };
     const onScroll = () => {
-      if (isAtBottom()) {
-        pinned = true;
-      } else if (
-        scrollEl.scrollTop < lastScrollTop &&
-        scrollEl.scrollHeight === lastScrollHeight
-      ) {
-        pinned = false;
-      }
+      if (isAtBottom()) pinned = true;
       lastScrollTop = scrollEl.scrollTop;
       lastScrollHeight = scrollEl.scrollHeight;
     };
 
     pin();
+    scrollEl.addEventListener("wheel", onWheel, { passive: true });
+    scrollEl.addEventListener("touchstart", onTouchStart, { passive: true });
+    scrollEl.addEventListener("touchmove", onTouchMove, { passive: true });
     scrollEl.addEventListener("scroll", onScroll);
     const observer = new ResizeObserver(pin);
     observer.observe(contentEl);
     return () => {
+      scrollEl.removeEventListener("wheel", onWheel);
+      scrollEl.removeEventListener("touchstart", onTouchStart);
+      scrollEl.removeEventListener("touchmove", onTouchMove);
       scrollEl.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };

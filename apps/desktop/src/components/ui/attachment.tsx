@@ -8,7 +8,13 @@ import { cn } from "@/lib/utils";
  */
 
 export function AttachmentGroup({ className, ...props }: ComponentProps<"div">) {
-  return <div data-slot="attachment-group" className={cn("flex flex-wrap gap-1.5", className)} {...props} />;
+  return (
+    <div
+      data-slot="attachment-group"
+      className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 [scrollbar-width:thin]", className)}
+      {...props}
+    />
+  );
 }
 
 export function Attachment({ className, ...props }: ComponentProps<"div">) {
@@ -16,7 +22,7 @@ export function Attachment({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="attachment"
       className={cn(
-        "group/attachment bg-muted/40 hover:bg-muted/70 relative flex items-center gap-2.5 rounded-lg border border-border/70 px-2 py-1.5 transition-colors",
+        "group/attachment bg-muted/40 hover:bg-muted/70 relative flex shrink-0 items-center gap-2.5 rounded-lg border border-border/70 px-2 py-1.5 transition-colors",
         className,
       )}
       {...props}
