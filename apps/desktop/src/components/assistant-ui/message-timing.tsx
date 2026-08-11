@@ -1,6 +1,6 @@
 "use client";
 
-import { useMessageTiming } from "@assistant-ui/react";
+import { useAuiState, useMessageTiming } from "@assistant-ui/react";
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +41,12 @@ export const MessageTiming: FC<{
   side?: "top" | "right" | "bottom" | "left";
 }> = ({ className, side = "right" }) => {
   const timing = useMessageTiming();
+  // The engine reports per-reply token usage in the message metadata
+  // (opencode assistant info: input/output/reasoning token counts).
+  const tokens = useAuiState((s) => {
+    const t = (s.message.metadata?.custom as { tokens?: { input?: number; output?: number; reasoning?: number } } | undefined)?.tokens;
+    return t && (t.input || t.output) ? t : undefined;
+  });
   if (timing?.totalStreamTime === undefined) return null;
 
   return (
@@ -95,6 +101,14 @@ export const MessageTiming: FC<{
                 {timing.totalChunks}
               </span>
             </div>
+            {tokens ? (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Tokens</span>
+                <span className="font-mono tabular-nums">
+                  {(tokens.input ?? 0).toLocaleString()} in · {((tokens.output ?? 0) + (tokens.reasoning ?? 0)).toLocaleString()} out
+                </span>
+              </div>
+            ) : null}
           </div>
         </TooltipContent>
       </Tooltip>

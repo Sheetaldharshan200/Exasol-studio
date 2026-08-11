@@ -551,8 +551,21 @@ const UserActionBar: FC = () => {
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
-      className="aui-user-action-bar-root flex flex-col items-end"
+      className="aui-user-action-bar-root flex flex-col items-end gap-0.5"
     >
+      <ActionBarPrimitive.Copy asChild>
+        <TooltipIconButton tooltip="Copy" className="aui-user-action-copy">
+          <AuiIf condition={(s) => Boolean(s.message.isCopied)}>
+            <CheckIcon />
+          </AuiIf>
+          <AuiIf condition={(s) => !s.message.isCopied}>
+            <CopyIcon />
+          </AuiIf>
+        </TooltipIconButton>
+      </ActionBarPrimitive.Copy>
+      {/* Edit renders only when the runtime supports it — the opencode
+          runtime has no message-edit yet, so the primitive stays hidden
+          instead of shipping a button that does nothing. */}
       <ActionBarPrimitive.Edit asChild>
         <TooltipIconButton tooltip="Edit" className="aui-user-action-edit">
           <PencilIcon />

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
-import { useOpenCodePermissions, useOpenCodeRuntime } from "@assistant-ui/react-opencode";
+import { OpenCodeAttachmentAdapter, useOpenCodePermissions, useOpenCodeRuntime } from "@assistant-ui/react-opencode";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -28,6 +28,7 @@ import type { EngineCatalogProvider, EngineSessionInfo } from "@/lib/agent-clien
 import { cn } from "@/lib/utils";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
+import { ComposerAddAttachment } from "@/components/assistant-ui/attachment";
 import type { AgentProviderInfo } from "@/lib/agent-client";
 import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
@@ -130,8 +131,6 @@ export type ExaComposerApi = {
   runLocal: (id: LocalCommandId) => void;
   /** The FULL models.dev catalog (every provider opencode supports). */
   loadCatalog: () => Promise<EngineCatalogProvider[]>;
-  /** The composer's + button: attach a file's content as a context chip. */
-  attachFile: () => void;
   /** Refresh providers/models after a successful OAuth connect. */
   onConnected: () => Promise<void> | void;
   /**
@@ -343,15 +342,9 @@ export function ExaComposerControls() {
   const ModeIcon = modeInfo.icon;
   return (
     <div className="flex min-w-0 items-center gap-1">
-      {/* `+` attaches a FILE as context (typing @ still opens the DB menu). */}
-      <button
-        type="button"
-        title="Attach a file (CSV, SQL, …)"
-        onClick={() => api.attachFile()}
-        className="hover:bg-muted focus-visible:bg-muted flex size-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground outline-none transition-colors hover:text-foreground"
-      >
-        <PlusIcon className="size-4" />
-      </button>
+      {/* `+` attaches files/photos (multi-select, sent to the engine as
+          file parts); typing @ still opens the DB context menu. */}
+      <ComposerAddAttachment />
       <ExaModelSelector
         providers={api.providers}
         model={api.model}
@@ -388,16 +381,23 @@ export function ExaSendButton() {
   const quote = useAuiState((s) => s.composer.quote);
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const submitRef = useRef(() => {});
+  const hasAttachments = useAuiState((s) => s.composer.attachments.length > 0);
   submitRef.current = () => {
     const raw = (text ?? "").trim();
     if (!api || isRunning) return;
-    // The quote lives in composer state (set by the selection toolbar); our
-    // custom send path bypasses composer.send(), so carry it explicitly.
+    if (!raw && !hasAttachments) return;
+    // The quote isn't serialized to the engine by the runtime — embed it in
+    // the text; the composer clears its own state on send().
     const expanded = api.expandForSend(raw, quote?.text);
-    aui.composer().setText("");
-    aui.composer().setQuote(undefined);
-    if (expanded === null || !expanded.trim()) return; // local command / empty
-    void aui.thread().append(expanded);
+    if (expanded === null) {
+      // Local command — handled panel-side; just clear the input.
+      aui.composer().setText("");
+      return;
+    }
+    // send() carries text + attachments + clears the composer. setText is
+    // store-synchronous, so send() sees the expanded prompt.
+    aui.composer().setText(expanded);
+    void aui.composer().send();
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -411,6 +411,22 @@ export function ExaSendButton() {
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
+  }, []);
+  useEffect(() => {
+    const PASTE_ATTACH_THRESHOLD = 4000;
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.('[data-slot="aui_composer-shell"]')) return;
+      const pasted = e.clipboardData?.getData("text/plain") ?? "";
+      if (pasted.length <= PASTE_ATTACH_THRESHOLD) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const file = new File([pasted], `pasted-${pasted.length}-chars.txt`, { type: "text/plain" });
+      void aui.composer().addAttachment(file);
+    };
+    document.addEventListener("paste", onPaste, true);
+    return () => document.removeEventListener("paste", onPaste, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   if (!api) return null;
   return (
@@ -740,9 +756,11 @@ export function ExaThread({
   // projection, tool calls, permissions and reconnect are all handled by it —
   // this replaced our hand-rolled external-store bridge (event mapping,
   // replay hydration, upserts, cross-surface sync).
+  const attachmentAdapter = useMemo(() => new OpenCodeAttachmentAdapter(), []);
   const runtime = useOpenCodeRuntime({
     client,
     initialSessionId,
+    adapters: { attachments: attachmentAdapter },
     // Chat mode rides the tools-free "exa-chat" agent (no tools attached at
     // all — also what keeps small local models usable); Plan/Agent ride "exa"
     // (MCP tools on, coding tools permission-denied). The hook reads options
