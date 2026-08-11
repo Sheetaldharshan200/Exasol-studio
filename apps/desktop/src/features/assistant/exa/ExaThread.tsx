@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
-import { useOpenCodeRuntime } from "@assistant-ui/react-opencode";
+import { useOpenCodePermissions, useOpenCodeRuntime } from "@assistant-ui/react-opencode";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -182,6 +182,55 @@ function ExaShareListener() {
     return () => window.removeEventListener("exa:share", onShare);
   }, [aui]);
   return null;
+}
+
+/**
+ * Tool-permission approvals: the engine PAUSES a turn until the request is
+ * answered, so pending asks must always be visible. Rendered as a bar pinned
+ * above the composer; each request offers Allow once / Always / Reject.
+ */
+function ExaPermissionBar() {
+  const { pending, reply } = useOpenCodePermissions();
+  if (pending.length === 0) return null;
+  return (
+    <div className="pointer-events-auto mx-auto mb-2 w-full max-w-2xl px-4">
+      {pending.map((req) => {
+        const label = req.title?.trim() || req.toolName || req.permission;
+        return (
+          <div key={req.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-panel px-3 py-2 shadow-sm">
+            <ShieldCheckIcon className="size-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-medium text-foreground">Exa asks to use {label}</p>
+              {req.patterns.length > 0 && req.patterns[0] !== "*" ? (
+                <p className="truncate font-mono text-[10.5px] text-muted-foreground">{req.patterns.join("  ")}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void reply(req.id, "once").catch(() => undefined)}
+              className="h-6.5 shrink-0 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85"
+            >
+              Allow once
+            </button>
+            <button
+              type="button"
+              onClick={() => void reply(req.id, "always").catch(() => undefined)}
+              className="h-6.5 shrink-0 rounded-md border border-border px-2 text-[11px] text-foreground hover:bg-muted"
+            >
+              Always
+            </button>
+            <button
+              type="button"
+              onClick={() => void reply(req.id, "reject").catch(() => undefined)}
+              className="h-6.5 shrink-0 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Reject
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Bucket sessions by recency for the sidebar's date-group headers. */
@@ -859,8 +908,13 @@ export function ExaThread({
                   {headerActions}
                 </div>
               </div>
-              <div className="min-h-0 flex-1">
-                <Thread components={{ Welcome: ExaWelcome }} />
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1">
+                  <Thread components={{ Welcome: ExaWelcome }} />
+                </div>
+                <div className="absolute inset-x-0 bottom-0 z-10">
+                  <ExaPermissionBar />
+                </div>
               </div>
             </div>
 

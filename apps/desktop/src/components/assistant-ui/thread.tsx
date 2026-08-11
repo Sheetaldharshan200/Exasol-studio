@@ -105,9 +105,12 @@ const ThreadComponentsContext =
 
 // Startup exposes a loading placeholder thread; treat it as a new chat so
 // the composer mounts centered. Loads after startup keep the docked layout.
+// A thread with no remoteId is NEW (its engine session is only created on the
+// first message) — the runtime reports it as perpetually "loading", so gate on
+// identity, not isLoading, or the welcome never renders.
 const isNewChatView = (s: AssistantState) =>
   s.thread.messages.length === 0 &&
-  (!s.thread.isLoading || s.threads.isLoading);
+  (s.threadListItem.remoteId == null || !s.thread.isLoading || s.threads.isLoading);
 
 export const Thread: FC<ThreadProps> = ({ components = EMPTY_COMPONENTS }) => {
   const isEmpty = useAuiState(isNewChatView);
