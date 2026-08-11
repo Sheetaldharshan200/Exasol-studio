@@ -456,7 +456,12 @@ export function ExaEnginePanel({
         onSessionChange={onSessionChange}
         hideTools={hideTools}
         onApplySql={onApplySql}
-        sessions={sessions.filter((s) => !archivedIds.has(s.id))}
+        sessions={sessions.filter(
+          // Hide archived ones, and blank eagerly-created sessions (engine
+          // default title) that never got a first message — except the active
+          // one, so the current chat always has its sidebar row.
+          (s) => !archivedIds.has(s.id) && (s.id === activeSessionId || !(s.title ?? "").startsWith("New session")),
+        )}
         activeSessionId={activeSessionId}
         onNewThread={newChat}
         onSelectSession={(id) => onSessionChange(id)}

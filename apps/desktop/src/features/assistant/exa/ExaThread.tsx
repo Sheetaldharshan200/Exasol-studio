@@ -753,12 +753,35 @@ export function ExaThread({
     onError: (err) => console.error("[exa] engine runtime error", err),
   });
 
-  // "New chat" (panel button, /new command) starts a fresh runtime thread.
+  // Engine sessions are created EAGERLY, never lazily on first message: the
+  // runtime reports a session-less thread as disabled, which disables the
+  // composer textarea — a fresh install could never type its first message.
+  const creatingRef = useRef(false);
+  const startFreshSession = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try {
+      const created = await client.session.create({});
+      const id = (created as { data?: { id?: string } })?.data?.id;
+      if (id) await runtime.threads.switchToThread(id);
+    } catch (err) {
+      console.error("[exa] could not create an engine session", err);
+    } finally {
+      creatingRef.current = false;
+    }
+  };
   useEffect(() => {
-    const newThread = () => void runtime.threads.switchToNewThread();
+    if (!initialSessionId) void startFreshSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // "New chat" (panel button, /new command) starts a fresh engine session.
+  useEffect(() => {
+    const newThread = () => void startFreshSession();
     window.addEventListener("exa:new-thread", newThread);
     return () => window.removeEventListener("exa:new-thread", newThread);
-  }, [runtime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, client]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
