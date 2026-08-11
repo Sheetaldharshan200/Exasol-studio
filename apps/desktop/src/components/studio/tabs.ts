@@ -71,6 +71,8 @@ export type SqlTab = {
   groupId?: string;
   /** For mcpConfig tabs — which connector preset to configure. */
   mcpPreset?: string;
+  /** For mcpConfig tabs — whose MCP registry: Studio's agent or the Exa engine. */
+  mcpTarget?: "studio" | "exa";
   /** For object tabs — the database object being inspected. */
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */

@@ -238,7 +238,6 @@ function ReasoningContent({
         "data-closed:animate-collapsible-up",
         "data-open:animate-collapsible-down",
         "data-closed:fill-mode-forwards",
-        "data-closed:pointer-events-none",
         "data-open:duration-(--animation-duration)",
         "data-closed:duration-(--animation-duration)",
         className,
@@ -310,7 +309,9 @@ function ReasoningText({
       ref={scrollRef}
       data-slot="reasoning-text"
       className={cn(
-        "aui-reasoning-text relative z-0 max-h-64 overflow-y-auto ps-6 pt-2 pb-2 leading-relaxed text-pretty",
+        // overscroll-contain: wheel input scrolls THIS box, not the thread
+        // viewport behind it — without it the box reads as unscrollable.
+        "aui-reasoning-text relative z-0 max-h-64 overflow-y-auto overscroll-contain ps-6 pt-2 pb-2 leading-relaxed text-pretty",
         "transform-gpu transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)]",
         "motion-reduce:animate-none",
         "group-data-open/collapsible-content:animate-in",

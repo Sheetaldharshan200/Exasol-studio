@@ -1,36 +1,20 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, Plug, RefreshCw, X } from "lucide-react";
-import { agent, type EngineMcpConfig } from "@/lib/agent-client";
+import { Loader2, Plug, Plus, RefreshCw, X } from "lucide-react";
+import { agent } from "@/lib/agent-client";
+import { MCP_PRESETS } from "@/features/marketplace/mcp-presets";
+import { ConnectorLogo } from "@/features/marketplace/ConnectorLogo";
 import { cn } from "@/lib/utils";
 
 /**
- * /mcp — the agent's MCP server configuration, engine-side: opencode owns the
- * servers (GET/POST /mcp, connect/disconnect), so anything added here becomes
- * tools the agent can call. Rendered as an overlay inside the Exa thread.
+ * /mcp — a compact STATUS view of the engine's MCP servers (what's there and
+ * whether it's running), rendered as an overlay inside the Exa thread.
+ * Adding/configuring happens in a full workspace tab (single-click connector
+ * presets with auth guidance) — the launcher grid below opens it per
+ * connector, targeted at the ENGINE's registry.
  */
-
-/**
- * One-click starting points for new users — the official/reference MCP
- * servers for the tools data & BI people actually use. "Use" prefills the
- * add form so the target (path, connection string) can be adjusted first.
- */
-const SUGGESTED: { name: string; kind: "remote" | "local"; target: string; detail: string }[] = [
-  { name: "github", kind: "remote", target: "https://api.githubcopilot.com/mcp/", detail: "Repos, issues, PRs (GitHub's official server)" },
-  { name: "atlassian", kind: "remote", target: "https://mcp.atlassian.com/v1/sse", detail: "Jira & Confluence (Atlassian's official server)" },
-  { name: "notion", kind: "remote", target: "https://mcp.notion.com/mcp", detail: "Notion pages & databases" },
-  { name: "postgres", kind: "local", target: "npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost:5432/db", detail: "Query Postgres — edit the connection string" },
-  { name: "filesystem", kind: "local", target: "npx -y @modelcontextprotocol/server-filesystem /path/to/data", detail: "Local files (CSV exports, reports) — edit the path" },
-  { name: "slack", kind: "local", target: "npx -y @modelcontextprotocol/server-slack", detail: "Slack messages (needs SLACK_BOT_TOKEN in env)" },
-];
 export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [servers, setServers] = useState<Record<string, { status: string }> | "loading" | "error">("loading");
   const [busyName, setBusyName] = useState<string | null>(null);
-  // Add form
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<"remote" | "local">("remote");
-  const [target, setTarget] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
 
   const refresh = () => {
     agent.engine
@@ -54,28 +38,18 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
     }
   }
 
-  async function add() {
-    const n = name.trim();
-    const t = target.trim();
-    if (!n || !t) return;
-    setAdding(true);
-    setAddError(null);
-    const config: EngineMcpConfig =
-      kind === "remote" ? { type: "remote", url: t, enabled: true } : { type: "local", command: t.split(/\s+/), enabled: true };
-    try {
-      await agent.engine.mcpAdd(n, config);
-      setName("");
-      setTarget("");
-      refresh();
-    } catch (e) {
-      setAddError(e instanceof Error ? e.message : "Could not add the server.");
-    } finally {
-      setAdding(false);
-    }
+  /** Open the full configuration tab for a connector (or the custom form). */
+  function configure(presetId: string, presetName: string) {
+    window.dispatchEvent(
+      new CustomEvent("studio:open-mcp-config", { detail: { presetId, presetName, target: "exa" } }),
+    );
+    onClose();
   }
 
   const statusTone = (s: string) =>
-    s === "connected" ? "bg-foreground/80" : s === "failed" ? "bg-destructive" : "bg-muted-foreground/50";
+    s === "connected" ? "bg-primary" : s === "failed" ? "bg-destructive" : "bg-muted-foreground/50";
+  const configured = servers === "loading" || servers === "error" ? new Set<string>() : new Set(Object.keys(servers));
+  const launchable = MCP_PRESETS.filter((p) => p.id === "custom" || !configured.has(p.name));
 
   return (
     <>
@@ -95,15 +69,16 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
           </div>
         </div>
 
+        {/* What's there and whether it's running. */}
         <div className="min-h-0 flex-1 overflow-y-auto p-2 [scrollbar-width:thin]">
           {servers === "loading" ? (
             <p className="flex items-center justify-center gap-2 py-4 text-[12px] text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" /> Loading servers…
             </p>
           ) : servers === "error" ? (
-            <p className="py-4 text-center text-[12px] text-muted-foreground">The engine isn't running — install/start it first.</p>
+            <p className="py-4 text-center text-[12px] text-muted-foreground">The engine isn't running — open a chat first, then retry.</p>
           ) : Object.keys(servers).length === 0 ? (
-            <p className="py-2 text-center text-[12px] text-muted-foreground">No MCP servers yet — pick a suggestion or add one below.</p>
+            <p className="py-2 text-center text-[12px] text-muted-foreground">No MCP servers yet — add one below.</p>
           ) : (
             Object.entries(servers).map(([n, s]) => {
               const connected = s.status === "connected";
@@ -126,73 +101,28 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
           )}
         </div>
 
-        {/* Suggested starting points — "Use" prefills the form below. */}
-        <div className="shrink-0 border-t border-border px-2 pt-1.5">
-          <p className="px-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Suggested</p>
-          <div className="max-h-32 overflow-y-auto pb-1 [scrollbar-width:thin]">
-            {SUGGESTED.filter((s) => servers === "loading" || servers === "error" || !(s.name in servers)).map((s) => (
-              <div key={s.name} className="hover:bg-muted/60 flex items-center gap-2 rounded-md px-1.5 py-1">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[12px] text-foreground">{s.name}</span>
-                  <span className="block truncate text-[10px] text-muted-foreground">{s.detail}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setName(s.name);
-                    setKind(s.kind);
-                    setTarget(s.target);
-                    setAddError(null);
-                  }}
-                  className="hover:bg-muted flex h-6 shrink-0 items-center rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                >
-                  Use
-                </button>
-              </div>
+        {/* Connector launcher: one click opens the full config tab (auth
+            guidance + single-click connect) targeted at the engine. */}
+        <div className="shrink-0 border-t border-border p-2">
+          <p className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Add a connector</p>
+          <div className="grid max-h-36 grid-cols-2 gap-1 overflow-y-auto pb-0.5 [scrollbar-width:thin]">
+            {launchable.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => configure(p.id, p.name)}
+                title={p.desc}
+                className="hover:bg-muted/60 flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-left"
+              >
+                {p.id === "custom" ? (
+                  <Plus className="size-5 shrink-0 rounded-md border border-dashed border-border p-0.5 text-muted-foreground" />
+                ) : (
+                  <ConnectorLogo logo={p.logo} className="size-5 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{p.name}</span>
+              </button>
             ))}
           </div>
-        </div>
-
-        {/* Add a server: remote URL or local command. */}
-        <div className="shrink-0 border-t border-border p-2" onKeyDown={(e) => e.stopPropagation()}>
-          <div className="mb-1.5 flex items-center gap-1">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Name (e.g. exasol)"
-              className="h-7 w-32 rounded-md border border-border bg-background px-2 text-[11.5px] outline-none focus:border-ring"
-            />
-            <div className="flex overflow-hidden rounded-md border border-border">
-              {(["remote", "local"] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setKind(k)}
-                  className={cn("px-2 py-1 text-[11px]", kind === k ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <input
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void add()}
-              placeholder={kind === "remote" ? "https://host/mcp" : "npx -y @exasol/mcp-server"}
-              className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] outline-none focus:border-ring"
-            />
-            <button
-              type="button"
-              onClick={() => void add()}
-              disabled={!name.trim() || !target.trim() || adding}
-              className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-foreground px-2.5 text-[11px] font-medium text-background disabled:opacity-50"
-            >
-              {adding ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />} Add
-            </button>
-          </div>
-          {addError ? <p className="mt-1 text-[11px] text-destructive">{addError}</p> : null}
         </div>
       </div>
     </>

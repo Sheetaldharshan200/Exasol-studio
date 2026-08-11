@@ -1066,9 +1066,9 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
-  function openMcpConfig(presetId: string, presetName: string) {
+  function openMcpConfig(presetId: string, presetName: string, target: "studio" | "exa" = "studio") {
     const key = connKey;
-    const existing = tabsFor(key).find((x) => x.view === "mcpConfig" && x.mcpPreset === presetId);
+    const existing = tabsFor(key).find((x) => x.view === "mcpConfig" && x.mcpPreset === presetId && (x.mcpTarget ?? "studio") === target);
     if (existing) {
       setActiveTabId(existing.id);
       return;
@@ -1076,9 +1076,10 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-mcp-${Date.now()}-${tabCounter.current}`,
-      title: `MCP · ${presetName}`,
+      title: target === "exa" ? `Exa MCP · ${presetName}` : `MCP · ${presetName}`,
       view: "mcpConfig",
       mcpPreset: presetId,
+      mcpTarget: target,
       sql: "",
       response: null,
       execError: null,
@@ -1566,6 +1567,19 @@ export function ExasolStudio({
     const on = () => openGitRef.current();
     window.addEventListener("studio:open-git", on);
     return () => window.removeEventListener("studio:open-git", on);
+  }, []);
+
+  // The Exa panel's /mcp "Add & configure" opens a connector config tab
+  // targeted at the ENGINE's MCP registry (vs Studio's own agent).
+  const openMcpConfigRef = useRef(openMcpConfig);
+  openMcpConfigRef.current = openMcpConfig;
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ presetId?: string; presetName?: string; target?: "studio" | "exa" }>).detail ?? {};
+      openMcpConfigRef.current(d.presetId ?? "custom", d.presetName ?? "Custom", d.target ?? "exa");
+    };
+    window.addEventListener("studio:open-mcp-config", on);
+    return () => window.removeEventListener("studio:open-mcp-config", on);
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
@@ -2895,7 +2909,7 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "mcpConfig" ? (
             <div className="min-h-0 flex-1">
-              <McpConfigTab presetId={activeTab.mcpPreset ?? "custom"} />
+              <McpConfigTab presetId={activeTab.mcpPreset ?? "custom"} target={activeTab.mcpTarget ?? "studio"} />
             </div>
           ) : activeTab.view === "filePreview" ? (
             <div className="min-h-0 flex-1">
