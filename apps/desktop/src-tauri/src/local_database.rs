@@ -1462,6 +1462,9 @@ pub struct ComponentInfo {
     pub verified: String,
     /// Whether an independent install currently overrides the verified stack.
     pub on_own_env: bool,
+    /// A maintenance operation (backup / engine update) is in flight for this
+    /// component — the UI shows the live log and disables actions.
+    pub busy: bool,
     /// Whether independent one-click update/revert is available for it yet.
     pub updatable: bool,
     /// pip/uv-managed (hashes verified by the index) → can move to any upstream
@@ -1571,6 +1574,10 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
             },
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
+            // Only the DB engine takes the maintenance lock today; surfacing
+            // it prevents "nothing is happening" double-clicks that hit the
+            // guard error after a remount lost the local busy state.
+            busy: id == ComponentId::Personal && DB_MAINTENANCE.load(Ordering::SeqCst),
             // All four components support independent update. Personal (DB
             // engine) is verify-or-refuse + backup-first: the Update button only
             // appears when a newer VERIFIED engine exists (today it doesn't, so

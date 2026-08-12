@@ -1604,6 +1604,10 @@ function IndependentComponents() {
   const [upstream, setUpstream] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Live progress for long component operations (the DB engine update backs
+  // up, stops, swaps and restarts the database — minutes, not seconds).
+  // Rust streams every step over market:log with the bootstrap job id.
+  const [live, setLive] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
@@ -1616,6 +1620,25 @@ function IndependentComponents() {
       .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
       .catch(() => undefined);
   }, []);
+  const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
+  useEffect(() => {
+    if (!anyBusy) return;
+    let unlisten: (() => void) | undefined;
+    void listen<{ id: string; line: string; level: string }>("market:log", (e) => {
+      if (e.payload.id !== "personal-local-bootstrap") return;
+      setLive((prev) => [...prev.slice(-5), e.payload.line]);
+    }).then((u) => {
+      unlisten = u;
+    });
+    // While busy, keep the row states fresh (the op may have started in a
+    // previous mount — the busy flag comes from Rust, not this component).
+    const t = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      unlisten?.();
+      window.clearInterval(t);
+      setLive([]);
+    };
+  }, [anyBusy, refresh]);
 
   async function run(id: string, action: () => Promise<void>, ok: string) {
     setBusy(id); setNote(null);
@@ -1651,6 +1674,13 @@ function IndependentComponents() {
         The local database, ExaPump, and the MCP server install once at setup and then live independently — each updates straight from its own official releases (verified against the sha256 digest GitHub publishes per asset), never coupled to Studio updates or to each other.
       </p>
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
+      {anyBusy && live.length > 0 ? (
+        <div className="mb-2 rounded-md border border-border bg-panel px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
+          {live.map((l, i) => (
+            <p key={i} className={cn("truncate", i === live.length - 1 && "text-foreground")}>{l}</p>
+          ))}
+        </div>
+      ) : null}
       {actionable.length === 0 ? (
         <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
           <Check className="h-3.5 w-3.5 text-primary" /> All {comps.length} components are on the latest official release.
@@ -1658,7 +1688,7 @@ function IndependentComponents() {
       ) : null}
       <div className="divide-y divide-border/60">
         {actionable.map((c) => {
-          const isBusy = busy === c.id;
+          const isBusy = busy === c.id || c.busy;
           const target = updateFor(c);
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
           return (
@@ -1668,6 +1698,7 @@ function IndependentComponents() {
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
                   <span>installed {c.installed ?? "—"}</span>
                   {target ? <span>official {target}</span> : null}
+                  {c.busy ? <span className="text-syntax-function">working — live log above</span> : null}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">

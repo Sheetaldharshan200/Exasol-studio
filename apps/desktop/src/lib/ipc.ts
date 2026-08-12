@@ -258,6 +258,8 @@ export type ComponentInfo = {
   verified: string;
   /** True when an independent install currently overrides the verified stack. */
   onOwnEnv: boolean;
+  /** A maintenance operation (backup / engine update) is in flight. */
+  busy: boolean;
   /** Whether one-click independent update/revert is available for it yet. */
   updatable: boolean;
   /** pip/uv-managed (index-hash-verified) → can update to any upstream version.
