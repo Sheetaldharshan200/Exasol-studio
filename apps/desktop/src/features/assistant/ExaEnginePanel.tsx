@@ -8,7 +8,7 @@ import { BrandLoader } from "@/components/brand/BrandLoader";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
-import { ExaThread, type ChatMode, type SqlOps } from "./exa/ExaThread";
+import { ExaThread, SQL_OPS_NONE, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor, engineReachable } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
 
@@ -110,9 +110,16 @@ export function ExaEnginePanel({
   // SQL operation grants (READ always on; C/U/D are explicit, persisted).
   const [sqlOps, setSqlOpsState] = useState<SqlOps>(() => {
     try {
-      return { create: false, update: false, delete: false, ...JSON.parse(localStorage.getItem("exa.sqlOps") ?? "{}") } as SqlOps;
+      const saved = JSON.parse(localStorage.getItem("exa.sqlOps") ?? "{}") as Partial<SqlOps>;
+      // Migrate the old 3-class shape: its "create" meant CREATE/INSERT/
+      // IMPORT, "update" UPDATE/MERGE/ALTER, "delete" DELETE/TRUNCATE/DROP.
+      const migrated: Partial<SqlOps> = { ...saved };
+      if (saved.create && saved.insert === undefined) migrated.insert = true;
+      if (saved.update && saved.alter === undefined) migrated.alter = true;
+      if (saved.delete && saved.drop === undefined) migrated.drop = true;
+      return { ...SQL_OPS_NONE, ...migrated };
     } catch {
-      return { create: false, update: false, delete: false };
+      return { ...SQL_OPS_NONE };
     }
   });
   const setSqlOps = (ops: SqlOps) => {
@@ -467,7 +474,17 @@ export function ExaEnginePanel({
       const auto = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
       allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
     }
-    const granted = ["READ", sqlOps.create && "CREATE (CREATE/INSERT/IMPORT)", sqlOps.update && "UPDATE (UPDATE/MERGE/ALTER)", sqlOps.delete && "DELETE (DELETE/TRUNCATE/DROP)"]
+    const granted = [
+      "READ (SELECT/WITH/DESCRIBE/EXPLAIN)",
+      sqlOps.insert && "INSERT (INSERT/IMPORT/MERGE-insert)",
+      sqlOps.update && "UPDATE (UPDATE/MERGE-update)",
+      sqlOps.delete && "DELETE (DELETE/TRUNCATE)",
+      sqlOps.create && "CREATE (CREATE schema/table/view/function)",
+      sqlOps.alter && "ALTER (ALTER/RENAME/COMMENT)",
+      sqlOps.drop && "DROP",
+      sqlOps.dcl && "ACCESS CONTROL (GRANT/REVOKE/users/roles)",
+      sqlOps.admin && "ADMINISTRATION (ALTER SYSTEM/SESSION/KILL)",
+    ]
       .filter(Boolean)
       .join(", ");
     const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;

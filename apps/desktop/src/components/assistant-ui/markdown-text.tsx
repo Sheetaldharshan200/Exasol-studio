@@ -15,6 +15,7 @@ import { CheckIcon, CopyIcon, FileInputIcon } from "lucide-react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { useExaApplySql } from "@/features/assistant/exa/ExaThread";
 import { cn } from "@/lib/utils";
+import { openLinkOrPath } from "@/lib/open-target";
 
 const MarkdownTextImpl = () => {
   return (
@@ -159,12 +160,19 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
+  a: ({ className, href, ...props }) => (
     <a
       className={cn(
-        "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
+        "aui-md-a text-primary hover:text-primary/80 cursor-pointer underline underline-offset-2",
         className,
       )}
+      href={href}
+      // Open OUTSIDE the webview: http(s) in the browser, file paths as a
+      // workspace tab — never navigate the app itself.
+      onClick={(e) => {
+        e.preventDefault();
+        if (href) openLinkOrPath(href);
+      }}
       {...props}
     />
   ),

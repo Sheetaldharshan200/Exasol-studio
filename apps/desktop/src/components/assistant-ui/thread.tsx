@@ -23,6 +23,7 @@ import {
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { stripMachineContext } from "@/features/assistant/exa/context";
+import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
   ComposerQuotePreview,
@@ -568,7 +569,27 @@ const UserMessageText: FC = () => {
   const text = useAuiState((s) => (s.part.type === "text" ? s.part.text : ""));
   const visible = stripMachineContext(text);
   if (!visible) return null;
-  return <span className="whitespace-pre-wrap">{visible}</span>;
+  // URLs and absolute file paths become brand-colored click-to-open targets
+  // (browser for links, a workspace tab for files).
+  const segments = visible.split(/(https?:\/\/[^\s]+|(?:^|(?<=\s))(?:\/|~\/)[\w.\-/]+)/g);
+  return (
+    <span className="whitespace-pre-wrap">
+      {segments.map((seg, i) =>
+        /^https?:\/\//.test(seg) || /^(\/|~\/)[\w.\-/]+$/.test(seg) ? (
+          <button
+            key={i}
+            type="button"
+            onClick={() => openLinkOrPath(seg)}
+            className="text-primary hover:text-primary/80 inline cursor-pointer underline underline-offset-2"
+          >
+            {seg}
+          </button>
+        ) : (
+          seg
+        ),
+      )}
+    </span>
+  );
 };
 
 const UserMessage: FC = () => {

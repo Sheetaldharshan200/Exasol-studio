@@ -80,8 +80,67 @@ import { ExaMcpPanel } from "./ExaMcpPanel";
 /** Chat = no tools · Plan = read-only tools · Agent = all tools. */
 export type ChatMode = "chat" | "plan" | "agent";
 
-/** SQL operation classes the user has granted (READ is always granted). */
-export type SqlOps = { create: boolean; update: boolean; delete: boolean };
+/**
+ * SQL operation classes the user has granted (READ/DQL is always granted).
+ * Real statement classes, not just C/U/D: DML split by risk, DDL split by
+ * destructiveness, plus access control and server administration.
+ */
+export type SqlOps = {
+  /** DML: INSERT, IMPORT, MERGE-insert. */
+  insert: boolean;
+  /** DML: UPDATE, MERGE-update. */
+  update: boolean;
+  /** DML: DELETE, TRUNCATE. */
+  delete: boolean;
+  /** DDL: CREATE (schema/table/view/function), EXPORT of new objects. */
+  create: boolean;
+  /** DDL: ALTER, RENAME, COMMENT. */
+  alter: boolean;
+  /** DDL: DROP. */
+  drop: boolean;
+  /** DCL: GRANT, REVOKE, CREATE/ALTER/DROP USER or ROLE. */
+  dcl: boolean;
+  /** Server administration: ALTER SYSTEM/SESSION, KILL. */
+  admin: boolean;
+};
+
+export const SQL_OPS_NONE: SqlOps = {
+  insert: false,
+  update: false,
+  delete: false,
+  create: false,
+  alter: false,
+  drop: false,
+  dcl: false,
+  admin: false,
+};
+
+/** Grouped rows for the shield dropdown — label + concrete statements. */
+export const SQL_OPS_ITEMS: { section: string; items: { key: keyof SqlOps; label: string; detail: string }[] }[] = [
+  {
+    section: "DML — data changes",
+    items: [
+      { key: "insert", label: "Insert", detail: "INSERT, IMPORT, MERGE (insert)" },
+      { key: "update", label: "Update", detail: "UPDATE, MERGE (update)" },
+      { key: "delete", label: "Delete", detail: "DELETE, TRUNCATE" },
+    ],
+  },
+  {
+    section: "DDL — schema changes",
+    items: [
+      { key: "create", label: "Create", detail: "CREATE schema/table/view/function" },
+      { key: "alter", label: "Alter", detail: "ALTER, RENAME, COMMENT" },
+      { key: "drop", label: "Drop", detail: "DROP objects" },
+    ],
+  },
+  {
+    section: "Access & server",
+    items: [
+      { key: "dcl", label: "Access control", detail: "GRANT, REVOKE, users & roles" },
+      { key: "admin", label: "Administration", detail: "ALTER SYSTEM/SESSION, KILL" },
+    ],
+  },
+];
 
 const MODES: { id: ChatMode; label: string; icon: typeof Bot; hint: string }[] = [
   { id: "agent", label: "Agent", icon: Bot, hint: "Agent — Exa can use all tools" },
@@ -347,10 +406,7 @@ function ExaPermissionBar() {
  */
 function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: SqlOps) => void }) {
   const [open, setOpen] = useState(false);
-  const granted = [ops.create && "C", ops.update && "U", ops.delete && "D"].filter(Boolean).join("+");
-  // Radix portals the menu to <body>, so the composer's transformed/animated
-  // ancestors can't clip or offset it (a hand-rolled absolute popover broke
-  // exactly that way). The Enter-capture handler checks this flag.
+  const grantedCount = Object.values(ops).filter(Boolean).length;
   useEffect(() => {
     if (open) document.body.dataset.exaMenuOpen = "1";
     else delete document.body.dataset.exaMenuOpen;
@@ -363,41 +419,43 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title="Which SQL operations the agent may run (read is always allowed)"
+          title="Which SQL operation classes the agent may run (read is always allowed)"
           className={cn(
             "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors",
-            granted ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
+            grantedCount ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
           )}
         >
           <ShieldCheckIcon className="h-3.5 w-3.5" />
-          <span className="hidden @md:inline">{granted ? `R+${granted}` : "Read-only"}</span>
+          <span className="hidden @md:inline">{grantedCount ? `Read +${grantedCount}` : "Read-only"}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-64">
+      <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</DropdownMenuLabel>
         <DropdownMenuCheckboxItem checked disabled className="text-[12px]">
-          Read — always allowed
+          <span className="flex min-w-0 flex-col">
+            <span>Read — always allowed</span>
+            <span className="text-[10.5px] text-muted-foreground">SELECT, WITH, DESCRIBE, EXPLAIN</span>
+          </span>
         </DropdownMenuCheckboxItem>
-        {(
-          [
-            ["create", "Create", "CREATE, INSERT, IMPORT"],
-            ["update", "Update", "UPDATE, MERGE, ALTER"],
-            ["delete", "Delete", "DELETE, TRUNCATE, DROP"],
-          ] as const
-        ).map(([key, label, detail]) => (
-          <DropdownMenuCheckboxItem
-            key={key}
-            checked={ops[key]}
-            // Keep the menu open so several classes can be granted in one go.
-            onSelect={(e) => e.preventDefault()}
-            onCheckedChange={(v) => onChange({ ...ops, [key]: Boolean(v) })}
-            className="text-[12px]"
-          >
-            <span className="flex min-w-0 flex-col">
-              <span>{label}</span>
-              <span className="text-[10.5px] text-muted-foreground">{detail}</span>
-            </span>
-          </DropdownMenuCheckboxItem>
+        {SQL_OPS_ITEMS.map((group) => (
+          <div key={group.section}>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{group.section}</DropdownMenuLabel>
+            {group.items.map(({ key, label, detail }) => (
+              <DropdownMenuCheckboxItem
+                key={key}
+                checked={ops[key]}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(v) => onChange({ ...ops, [key]: Boolean(v) })}
+                className="text-[12px]"
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span>{label}</span>
+                  <span className="text-[10.5px] text-muted-foreground">{detail}</span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            ))}
+          </div>
         ))}
         <DropdownMenuSeparator />
         <p className="px-2 pb-1.5 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
