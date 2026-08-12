@@ -64,7 +64,6 @@ import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type Sq
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
-import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
@@ -1593,7 +1592,7 @@ export function ExasolStudio({
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills" | "aiSettings", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -1614,27 +1613,8 @@ export function ExasolStudio({
   }
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
-  const openAiSettings = () => openSingletonTab("aiSettings", "AI Settings", "ais");
-  // AI settings opens as a workspace tab (like Marketplace) — requested from
-  // the AI panel or the native Settings window via a cross-window event.
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        un = await listen("open-ai-settings-tab", () => openAiSettings());
-      } catch {
-        /* non-tauri */
-      }
-    })();
-    const dom = () => openAiSettings();
-    window.addEventListener("studio:open-ai-settings", dom);
-    return () => {
-      un?.();
-      window.removeEventListener("studio:open-ai-settings", dom);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connKey]);
+
+
 
   // Clicking a notification navigates to what it's about (studio:navigate).
   const navigateRef = useRef<(to: string) => void>(() => undefined);
@@ -2679,7 +2659,6 @@ export function ExasolStudio({
           activeTab.view !== "git" &&
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
-          activeTab.view !== "aiSettings" &&
           activeTab.view !== "artifact" &&
           // The Exa tab is a full chat surface — no editor toolbar row (its
           // own header carries the brand; the agent works across ALL
@@ -3059,10 +3038,6 @@ export function ExasolStudio({
           ) : activeTab.view === "skills" ? (
             <div className="min-h-0 flex-1">
               <SkillsTab />
-            </div>
-          ) : activeTab.view === "aiSettings" ? (
-            <div className="min-h-0 flex-1">
-              <AiProvidersWindow standalone={false} />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">

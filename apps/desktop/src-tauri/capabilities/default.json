@@ -7,8 +7,7 @@
     "connect-run",
     "vschema",
     "settings",
-    "install-*",
-    "ai-providers"
+    "install-*"
   ],
   "permissions": [
     "core:default",

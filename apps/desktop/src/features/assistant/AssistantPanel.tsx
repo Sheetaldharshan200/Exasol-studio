@@ -53,7 +53,7 @@ import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
 import { agent, type AgentAttachment, type AgentEvent, type AgentProviderInfo, type ReplayItem, type SessionMeta } from "@/lib/agent-client";
-import { EV_AI_PROVIDERS_CHANGED, openAiProvidersWindow } from "@/lib/ai-window";
+import { EV_AI_PROVIDERS_CHANGED } from "@/lib/ai-window";
 import { sessionBus } from "@/lib/session-bus";
 import { errorMessage, ipc, isTauri, type PersonalLocalStatus } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -772,7 +772,7 @@ export function AssistantPanel({
       return;
     }
     if (!model) {
-      void openAiProvidersWindow();
+      window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "info", title: "Pick a model first", body: "Choose a model from the selector in the composer." } }));
       return;
     }
     const agentText = (slash?.cmd.expand ? slash.cmd.expand(slash.arg) : trimmed) + codeBlock;
@@ -1093,14 +1093,7 @@ export function AssistantPanel({
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
-          <button
-            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-            onClick={() => void openAiProvidersWindow()}
-            aria-label="AI providers"
-            title="AI providers"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-          </button>
+
           {onClose ? (
             <button
               className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
@@ -1563,10 +1556,7 @@ export function AssistantPanel({
                 providers={providers}
                 model={model}
                 onPick={pickModel}
-                onManage={() => {
-                  setShowPicker(false);
-                  void openAiProvidersWindow();
-                }}
+                onManage={() => setShowPicker(false)}
                 onRefresh={() => void refreshProviders()}
               />
             </div>

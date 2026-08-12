@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Settings2, X } from "lucide-react";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
-import { openAiProvidersWindow } from "@/lib/ai-window";
 import { cn } from "@/lib/utils";
 import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
 import { SYNTAX_DEFAULTS, SYNTAX_ROLES, sanitizeHex, syntaxSettingKey, type SyntaxRoleKey } from "@/components/studio/monaco-theme";
@@ -414,17 +413,9 @@ export function SettingsWindow() {
               <h2 className="text-[15px] font-bold">{current.label}</h2>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{current.desc}</p>
               {current.key === "ai" ? (
-                <div className="mt-5">
-                  <button
-                    onClick={() => void openAiProvidersWindow()}
-                    className="cta-glow flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/85"
-                  >
-                    <BxIcon name="brain-circuit" className="h-4 w-4 shrink-0" /> AI panel settings
-                  </button>
-                  <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                    Opens the assistant's own settings — the same panel used from the AI panel — so everything stays in one place.
-                  </p>
-                </div>
+                <p className="mt-5 text-[12px] leading-relaxed text-muted-foreground">
+                  AI settings are being rebuilt — model, provider and sandbox controls live in the Exa composer for now.
+                </p>
               ) : (
                 <>
                   <div className="mt-5 space-y-5">

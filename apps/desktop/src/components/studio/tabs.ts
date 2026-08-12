@@ -32,7 +32,6 @@ export type TabView =
   | "git"
   | "notebook"
   | "skills"
-  | "aiSettings"
   | "connProps"
   | "plan"
   | "logs"
@@ -150,7 +149,6 @@ export const TAB_ICON: Record<TabView, IconName> = {
   git: "git",
   notebook: "notebook",
   skills: "skills",
-  aiSettings: "brain-circuit",
   plan: "clock-dashed-half",
   logs: "list",
   bucketfs: "folder-open",

@@ -14,8 +14,6 @@ import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
 import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
-import { isAiProvidersWindow } from "@/lib/ai-window";
-import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
 import { agent as agentClient } from "@/lib/agent-client";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
@@ -42,9 +40,6 @@ export function App() {
     return <InstallWindow />;
   }
   // The standalone AI provider setup window.
-  if (isAiProvidersWindow()) {
-    return <AiProvidersWindow />;
-  }
   return <MainApp />;
 }
 
