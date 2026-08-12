@@ -11,7 +11,7 @@ export function AttachmentGroup({ className, ...props }: ComponentProps<"div">) 
   return (
     <div
       data-slot="attachment-group"
-      className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 [scrollbar-width:thin]", className)}
+      className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className)}
       {...props}
     />
   );

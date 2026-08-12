@@ -628,6 +628,20 @@ export function ExasolStudio({
   }
   const openSqlTabRef = useRef(openSqlTab);
   openSqlTabRef.current = openSqlTab;
+  // Attachment clicks: focus an existing tab for the same file, else open one
+  // (ref carries fresh closures into the mount-once event listener).
+  const openTextTabRef = useRef((name: string, content: string) => {
+    void name;
+    void content;
+  });
+  openTextTabRef.current = (name, content) => {
+    const existing = tabsFor(connKey).find((t) => t.title === name && t.view === "sql");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    openSqlTab(content, name);
+  };
 
   // 2) Tab drag & drop: reorder chips; dropping ON a grouped chip adopts its
   // group; dropping on a group header joins that group.
@@ -1573,14 +1587,18 @@ export function ExasolStudio({
     return () => window.removeEventListener("studio:open-mcp-config", on);
   }, []);
 
-  // Clicking a file attachment in the Exa chat opens its content as a tab.
+  // Clicking a file attachment in the Exa chat opens its content as a tab —
+  // and clicking the SAME file again focuses the existing tab instead of
+  // stacking duplicates.
   useEffect(() => {
     const on = (e: Event) => {
       const d = (e as CustomEvent<{ name?: string; content?: string }>).detail ?? {};
-      if (typeof d.content === "string") openSqlTabRef.current(d.content, d.name || "Attachment");
+      if (typeof d.content !== "string") return;
+      openTextTabRef.current(d.name || "Attachment", d.content);
     };
     window.addEventListener("studio:open-text-tab", on);
     return () => window.removeEventListener("studio:open-text-tab", on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
