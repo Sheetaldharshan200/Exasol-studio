@@ -84,8 +84,14 @@ export class EngineSupervisor {
       return this.status(true);
     }
     if (pre === "ours") {
-      await killPortOwner(port);
-      for (let i = 0; i < 12 && (await this.identify(port)) !== "down"; i++) await sleep(250);
+      const freed = await this.killOursAndWait(port);
+      if (!freed) {
+        // Spawning beside a live survivor would just re-adopt it via
+        // waitOurs — refuse with a clear reason instead.
+        this.state = "failed";
+        this.reason = "A previous engine instance would not exit; quit any running `exa` processes or restart Studio.";
+        return this.status(true);
+      }
     }
 
     this.port = port;
@@ -134,9 +140,7 @@ export class EngineSupervisor {
     // ours via GET /path.
     const port = this.port;
     if (port != null && (await this.identify(port)) === "ours") {
-      await killPortOwner(port);
-      // Give the process a moment to release the port before any restart.
-      for (let i = 0; i < 12 && (await this.identify(port)) === "ours"; i++) await sleep(250);
+      await this.killOursAndWait(port);
     }
     this.applyEvent("stop");
     this.stopping = false;
@@ -167,6 +171,21 @@ export class EngineSupervisor {
    * engine's GET /path reports the config dir it runs with — it must be OUR
    * isolated dir. "foreign" means a different opencode owns the port.
    */
+  /** SIGTERM the port's owner, wait; escalate to SIGKILL; true once freed. */
+  private async killOursAndWait(port: number): Promise<boolean> {
+    await killPortOwner(port, false);
+    for (let i = 0; i < 12; i++) {
+      if ((await this.identify(port)) === "down") return true;
+      await sleep(250);
+    }
+    await killPortOwner(port, true);
+    for (let i = 0; i < 12; i++) {
+      if ((await this.identify(port)) === "down") return true;
+      await sleep(250);
+    }
+    return false;
+  }
+
   private async waitOurs(port: number, tries = 40): Promise<"ours" | "foreign" | "down"> {
     for (let i = 0; i < tries; i++) {
       const verdict = await this.identify(port);
@@ -195,7 +214,7 @@ export class EngineSupervisor {
 }
 
 /** Terminate whatever process listens on a localhost port (best-effort). */
-async function killPortOwner(port: number): Promise<void> {
+async function killPortOwner(port: number, force: boolean): Promise<void> {
   const run = (cmd: string, args: string[]) =>
     new Promise<string>((resolve) => {
       execFile(cmd, args, { timeout: 3000 }, (_err, stdout) => resolve(stdout ?? ""));
@@ -216,7 +235,7 @@ async function killPortOwner(port: number): Promise<void> {
     for (const pid of out.split(/\s+/)) {
       if (/^\d+$/.test(pid)) {
         try {
-          process.kill(Number(pid), "SIGTERM");
+          process.kill(Number(pid), force ? "SIGKILL" : "SIGTERM");
         } catch {
           /* already gone */
         }

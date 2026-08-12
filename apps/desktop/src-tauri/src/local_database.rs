@@ -1517,9 +1517,11 @@ fn verified_version(id: ComponentId) -> String {
 
 /// The version actually in effect: the component's own-env manifest when it has
 /// been independently installed, otherwise the verified baseline (the shared
-/// stack is pinned to verified). Semantic Views is opt-in + DB-side, so its
-/// installed version is the readiness marker's revision, or None when it hasn't
-/// been installed at all.
+/// stack is pinned to verified) — UNLESS the bootstrap recorded the component
+/// as failed, in which case nothing is actually installed and reporting the
+/// verified version would hide the failure ("shows latest, no retry"). Semantic
+/// Views is opt-in + DB-side, so its installed version is the readiness
+/// marker's revision, or None when it hasn't been installed at all.
 fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
     if id == ComponentId::SemanticViews {
         return std::fs::read_to_string(data_dir.join("personal-local/semantic-example.ready"))
@@ -1527,9 +1529,18 @@ fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
     }
-    components_update::read_manifest(data_dir, id)
-        .map(|m| m.version)
-        .or_else(|| Some(verified_version(id)))
+    if let Some(m) = components_update::read_manifest(data_dir, id) {
+        return Some(m.version);
+    }
+    let bootstrap = read_status(data_dir);
+    if bootstrap
+        .components
+        .get(id.slug())
+        .is_some_and(|c| c.state == "failed")
+    {
+        return None;
+    }
+    Some(verified_version(id))
 }
 
 /// Enumerate managed components with their installed vs. verified versions —

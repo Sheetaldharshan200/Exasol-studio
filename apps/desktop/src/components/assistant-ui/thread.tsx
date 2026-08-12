@@ -564,22 +564,33 @@ const UserMessage: FC = () => {
 };
 
 const UserActionBar: FC = () => {
+  // Copy must strip the machine context (the primitive copies RAW message
+  // text, which would leak the hidden directives to the clipboard).
+  const [copied, setCopied] = useState(false);
+  const text = useAuiState((s) =>
+    s.message.content
+      .map((p) => (p.type === "text" ? stripMachineContext(p.text) : ""))
+      .filter(Boolean)
+      .join("\n"),
+  );
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
       className="aui-user-action-bar-root flex flex-col items-end gap-0.5"
     >
-      <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy" className="aui-user-action-copy">
-          <AuiIf condition={(s) => Boolean(s.message.isCopied)}>
-            <CheckIcon />
-          </AuiIf>
-          <AuiIf condition={(s) => !s.message.isCopied}>
-            <CopyIcon />
-          </AuiIf>
-        </TooltipIconButton>
-      </ActionBarPrimitive.Copy>
+      <TooltipIconButton
+        tooltip="Copy"
+        className="aui-user-action-copy"
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </TooltipIconButton>
       {/* Edit renders only when the runtime supports it — the opencode
           runtime has no message-edit yet, so the primitive stays hidden
           instead of shipping a button that does nothing. */}

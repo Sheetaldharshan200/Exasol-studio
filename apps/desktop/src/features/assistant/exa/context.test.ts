@@ -6,6 +6,7 @@ import {
   buildPrompt,
   tableArguments,
   schemaArguments,
+  neutralizeSentinels,
   stripMachineContext,
   wrapMachineContext,
   type ExaSnapshot,
@@ -178,5 +179,19 @@ describe("machine-context sentinel", () => {
   test("an unterminated block never renders half a directive", () => {
     assert.equal(stripMachineContext("<exa_context>secret directive\nhello"), "");
     assert.equal(stripMachineContext("hi <exa_context>partial"), "hi");
+  });
+});
+
+describe("neutralizeSentinels", () => {
+  test("user-typed tags survive visibly instead of vanishing", () => {
+    const raw = "what does <exa_context> mean? also </exa_context>";
+    const neutral = neutralizeSentinels(raw);
+    assert.equal(stripMachineContext(neutral), neutral);
+    assert.ok(!neutral.includes("<exa_context>"));
+  });
+
+  test("an unterminated user tag cannot swallow the message", () => {
+    const msg = `${wrapMachineContext("directive")}\n\n${neutralizeSentinels("evil <exa_context> tail")}`;
+    assert.equal(stripMachineContext(msg), "evil &lt;exa_context&gt; tail");
   });
 });

@@ -67,15 +67,30 @@ fn common_suffix_len(a: &str, b: &str) -> usize {
 /// The release asset that corresponds to the verified lock's artifact for this
 /// platform: names embed a version but end in a stable platform suffix
 /// ("…-macos-aarch64", "…_macOS_arm64.tar.gz"), so the longest common suffix
-/// with the lock's artifact name identifies the right asset. A short suffix
-/// (< 8 chars, e.g. only an extension) is no evidence — None, not a guess.
+/// with the lock's artifact name identifies the right asset. The suffix must
+/// be at least 12 chars — a bare architecture tail like "-aarch64" (8) is
+/// shared across OSes ("…-linux-aarch64" vs "…-macos-aarch64") and would pick
+/// a wrong-OS binary when the right one is missing; digest verification can't
+/// catch that. Ties are ambiguity — None, not a guess.
+const MIN_ASSET_SUFFIX: usize = 12;
+
 pub fn pick_asset<'a>(lock_name: &str, assets: &'a [UpstreamAsset]) -> Option<&'a UpstreamAsset> {
-    assets
+    let mut scored: Vec<(usize, &UpstreamAsset)> = assets
         .iter()
         .map(|a| (common_suffix_len(lock_name, &a.name), a))
-        .filter(|(len, _)| *len >= 8)
-        .max_by_key(|(len, _)| *len)
-        .map(|(_, a)| a)
+        .filter(|(len, _)| *len >= MIN_ASSET_SUFFIX)
+        .collect();
+    scored.sort_by_key(|(len, _)| std::cmp::Reverse(*len));
+    match scored.as_slice() {
+        [] => None,
+        [(best, asset), rest @ ..] => {
+            if rest.first().is_some_and(|(second, _)| second == best) {
+                return None; // two equally-good candidates — ambiguous
+            }
+            let _ = best;
+            Some(asset)
+        }
+    }
 }
 
 /// A hash-verified Artifact from a release asset — or None when GitHub
@@ -177,6 +192,26 @@ mod tests {
         let assets = vec![asset("notes.txt", None), asset("data.gz", None)];
         assert!(pick_asset("exapump-0.11.2-macos-aarch64", &assets).is_none());
         assert!(pick_asset("exapump-0.11.2-macos-aarch64", &[]).is_none());
+    }
+
+    #[test]
+    fn pick_asset_never_falls_back_to_another_os() {
+        // The right platform asset is MISSING: "-aarch64" alone (8 chars)
+        // must not match the linux build for a macos lock name.
+        let assets = vec![
+            asset("exapump-0.12.0-linux-aarch64", None),
+            asset("exapump-0.12.0-windows-x86_64.exe", None),
+        ];
+        assert!(pick_asset("exapump-0.11.2-macos-aarch64", &assets).is_none());
+    }
+
+    #[test]
+    fn pick_asset_refuses_ambiguous_ties() {
+        let assets = vec![
+            asset("a-macos-aarch64", None),
+            asset("b-macos-aarch64", None),
+        ];
+        assert!(pick_asset("exapump-0.11.2-macos-aarch64", &assets).is_none());
     }
 
     #[test]

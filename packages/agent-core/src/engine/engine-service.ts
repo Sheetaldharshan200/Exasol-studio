@@ -80,14 +80,30 @@ export class EngineService {
     return s.status(await s.binaryPresent());
   }
 
+  /**
+   * Serialize engine lifecycle transitions (start / stop+restart): a config
+   * restart racing an in-flight start() could apply a stale ready/crash over
+   * the newer state. Ops queue through one promise chain; the cached-client
+   * fast path stays lock-free.
+   */
+  private lifecycle: Promise<unknown> = Promise.resolve();
+  private withLifecycle<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.lifecycle.then(fn);
+    this.lifecycle = run.catch(() => undefined);
+    return run;
+  }
+
   /** Ensure the server is running and return a connected client, or null. */
   private async ensureClient(): Promise<EngineClient | null> {
-    const supervisor = this.resolveSupervisor();
-    if (!supervisor) return null;
     if (this.client) return this.client;
-    await supervisor.start();
-    this.client = await supervisor.client();
-    return this.client;
+    return this.withLifecycle(async () => {
+      const supervisor = this.resolveSupervisor();
+      if (!supervisor) return null;
+      if (this.client) return this.client; // settled while queued
+      await supervisor.start();
+      this.client = await supervisor.client();
+      return this.client;
+    });
   }
 
   async listSessions() {
@@ -104,8 +120,10 @@ export class EngineService {
 
 
   async stop(): Promise<void> {
-    await this.supervisor?.stop();
-    this.client = null;
+    await this.withLifecycle(async () => {
+      await this.supervisor?.stop();
+      this.client = null;
+    });
   }
 
   /**
@@ -308,13 +326,15 @@ export class EngineService {
    * config. No-op when the engine isn't running (next start reads the file).
    */
   private async restartForConfig(): Promise<void> {
-    const s = this.supervisor;
-    if (!s) return;
-    const status = s.status(await s.binaryPresent());
-    if (status.state === "stopped") return;
-    await s.stop().catch(() => undefined);
-    this.client = null;
-    await s.start().catch(() => undefined);
+    await this.withLifecycle(async () => {
+      const s = this.supervisor;
+      if (!s) return;
+      const status = s.status(await s.binaryPresent());
+      if (status.state === "stopped") return;
+      await s.stop().catch(() => undefined);
+      this.client = null;
+      await s.start().catch(() => undefined);
+    });
   }
 
   /**

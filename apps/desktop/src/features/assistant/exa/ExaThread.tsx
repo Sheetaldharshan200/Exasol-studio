@@ -213,6 +213,42 @@ function ExaShareListener() {
 }
 
 /**
+ * Self-healing for a missed event stream: while the UI believes a run is in
+ * progress, poll the engine's session status; if the engine reports IDLE the
+ * completion events were lost — re-open the thread to resync history + run
+ * state. Live precedent: a turn completed engine-side in 13s while the UI
+ * hung on "No response" with a dead Stop.
+ */
+function ExaRunWatchdog({ client, runtime }: { client: OpencodeClient; runtime: ReturnType<typeof useOpenCodeRuntime> }) {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const remoteId = useAuiState((s) => s.threadListItem.remoteId);
+  useEffect(() => {
+    if (!isRunning || !remoteId) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const res = await (client as unknown as { session: { status: () => Promise<{ data?: Record<string, { type?: string }> }> } }).session.status();
+          const st = res?.data?.[remoteId];
+          const busy = st?.type === "busy" || st?.type === "retry";
+          if (!cancelled && !busy) {
+            console.warn("[exa] run watchdog: engine idle while UI shows running — resyncing thread", remoteId);
+            void runtime.threads.switchToThread(remoteId).catch(() => undefined);
+          }
+        } catch {
+          /* engine unreachable — the status poll itself proves nothing */
+        }
+      })();
+    }, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isRunning, remoteId, client, runtime]);
+  return null;
+}
+
+/**
  * Tool-permission approvals: the engine PAUSES a turn until the request is
  * answered, so pending asks must always be visible. Rendered as a bar pinned
  * above the composer; each request offers Allow once / Always / Reject.
@@ -1084,6 +1120,7 @@ export function ExaThread({
       <ExaComposerContext.Provider value={composerApi}>
         <ExaApplySqlContext.Provider value={onApplySql ?? null}>
           <ExaShareListener />
+          <ExaRunWatchdog client={client} runtime={runtime} />
           {/* Neutral accent inside the thread: the example's design is
               monochrome (no green) — scope primary to foreground here so the
               send button, links and chips render neutral while the rest of

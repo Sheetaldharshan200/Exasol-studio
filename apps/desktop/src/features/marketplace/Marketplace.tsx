@@ -1633,7 +1633,13 @@ function IndependentComponents() {
     const tag = upstream[c.id];
     return tag && isNewerVersion(tag, c.installed) ? tag : null;
   };
-  const actionable = comps.filter((c) => updateFor(c) || (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified));
+  const actionable = comps.filter(
+    (c) =>
+      updateFor(c) ||
+      // Setup recorded a failure (or it was never installed) — offer a retry.
+      (!c.opaqueVersion && !c.installed) ||
+      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified),
+  );
 
   return (
     <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
@@ -1693,6 +1699,11 @@ function IndependentComponents() {
                 ) : c.opaqueVersion && c.installed ? (
                   <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled.`)} disabled={isBusy} className={upBtn}>
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
+                  </button>
+                ) : !c.opaqueVersion && !c.installed ? (
+                  // Its bootstrap step failed — install it on its own now.
+                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} installed.`)} disabled={isBusy} className={upBtn}>
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install
                   </button>
                 ) : null}
               </div>

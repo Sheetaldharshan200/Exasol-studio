@@ -196,6 +196,16 @@ export function wrapMachineContext(context: string): string {
   return body ? `${CTX_OPEN}\n${body}\n${CTX_CLOSE}` : "";
 }
 
+/**
+ * Neutralize sentinel tokens in USER-provided text before it is joined with
+ * a wrapped block: someone typing the literal tags could otherwise hide
+ * their own text from the UI (or, unterminated, swallow the rest of the
+ * message). Same approach as buildPrompt's </context> neutralization.
+ */
+export function neutralizeSentinels(text: string): string {
+  return text.replace(/<(\/?)exa_context>/gi, "&lt;$1exa_context&gt;");
+}
+
 /** The user-visible remainder of a message (machine context removed). */
 export function stripMachineContext(text: string): string {
   let out = text;

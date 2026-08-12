@@ -6,7 +6,7 @@ import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
-import { buildPrompt, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
+import { buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -395,7 +395,8 @@ export function ExaEnginePanel({
       runLocal(slash.command.id as LocalCommandId);
       return null;
     }
-    let engine = text;
+    // A user typing the literal sentinel tags must not break the stripping.
+    let engine = neutralizeSentinels(text);
     let allChips = chips; // manual @-context chips from the composer
     if (slash) {
       const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
