@@ -1,20 +1,18 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { AgentMark } from "@/components/studio/AgentMark";
-import type { PetAvatarId } from "@/components/studio/PetAvatar";
-import { petBus } from "@/lib/pet-bus";
 import { cn } from "@/lib/utils";
 
-// The agent's visible hand: a Magic-UI-style smooth spring cursor, optionally
-// accompanied by the pet companion. Driven imperatively — the AI's ui_* tools
+// The agent's visible hand: a Magic-UI-style smooth spring cursor. Driven
+// imperatively — the AI's ui_* tools
 // resolve a target element, the cursor glides there, pulses, and the real
 // action handler fires. Reduced motion → instant fade-in at the target.
 
-export type CursorMode = "pet" | "cursor" | "off";
+export type CursorMode = "cursor" | "off";
 
 export type AgentCursorHandle = {
   /** Fly to an element, dwell briefly, then resolve (caller runs the action). */
-  flyTo: (el: HTMLElement | null, label: string, mode: CursorMode, avatar?: PetAvatarId) => Promise<void>;
+  flyTo: (el: HTMLElement | null, label: string, mode: CursorMode) => Promise<void>;
   /** Flash success/failure at the current position, then fade out. */
   finish: (ok: boolean) => Promise<void>;
 };
@@ -23,7 +21,6 @@ const SPRING = { stiffness: 130, damping: 18, mass: 0.6 };
 
 export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_props, ref) {
   const [visible, setVisible] = useState(false);
-  const withPetRef = useRef(true);
   const [label, setLabel] = useState("");
   const [state, setState] = useState<"moving" | "acting" | "done" | "failed">("moving");
   const x = useMotionValue(typeof window === "undefined" ? 0 : window.innerWidth / 2);
@@ -39,11 +36,9 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
   const hideTimer = useRef<number | null>(null);
 
   useImperativeHandle(ref, () => ({
-    async flyTo(el, lbl, mode, av) {
+    async flyTo(el, lbl, mode) {
       if (mode === "off") return;
       if (hideTimer.current) window.clearTimeout(hideTimer.current);
-      withPetRef.current = mode === "pet";
-      void av;
       setLabel(lbl);
       setState("moving");
 
@@ -56,7 +51,6 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
       const tx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
       const ty = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
-      if (mode === "pet") petBus.emit({ type: "travel", x: tx + 30, y: ty + 26 });
       if (reduced) {
         x.set(tx);
         y.set(ty);
@@ -77,16 +71,11 @@ export const AgentCursor = forwardRef<AgentCursorHandle>(function AgentCursor(_p
         await settled(sx, sy, tx, ty);
       }
       setState("acting");
-      if (withPetRef.current) petBus.emit({ type: "work" });
       await sleep(reduced ? 150 : 420);
     },
 
     async finish(ok) {
       setState(ok ? "done" : "failed");
-      if (withPetRef.current) {
-        petBus.emit({ type: "celebrate", ok });
-        window.setTimeout(() => petBus.emit({ type: "home" }), 900);
-      }
       await sleep(650);
       setVisible(false);
       hideTimer.current = window.setTimeout(() => setLabel(""), 300);

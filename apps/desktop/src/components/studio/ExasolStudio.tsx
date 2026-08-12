@@ -24,7 +24,6 @@ import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as 
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
-import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
 import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
@@ -744,7 +743,6 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
-  const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
   // Plain functions (redefined each render) so they always see the CURRENT
   // connection/tabs — a useCallback([]) here froze them at the disconnected
@@ -837,15 +835,9 @@ export function ExasolStudio({
     action: string,
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; detail?: string }> {
-    let mode: CursorMode = "pet";
-    let avatar: import("@/components/studio/PetAvatar").PetAvatarId = "exa";
-    try {
-      const { settings } = await agentClient.getSettings();
-      mode = settings.petMode;
-      avatar = settings.petAvatar ?? "exa";
-    } catch {
-      // default to pet
-    }
+    // The pet companion is gone — UI actions always show the agent cursor
+    // (the ui_* "off"/direct branches read this; keep the wide type).
+    const mode = "cursor" as CursorMode;
 
     const target = String(params.target ?? "");
     const railId = target === "dashboards" ? "bi" : target;
@@ -866,7 +858,7 @@ export function ExasolStudio({
         : action === "open"
           ? `Opening ${target}…`
           : "Preparing SQL…";
-    await cursorRef.current?.flyTo(el, label, mode, avatar);
+    await cursorRef.current?.flyTo(el, label, mode);
 
     let result: { ok: boolean; detail?: string };
     try {
@@ -919,14 +911,14 @@ export function ExasolStudio({
           const hop = (id: string, lbl: string) => async () => {
             const el = anchor(id);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            await cursorRef.current?.flyTo(el, lbl, mode);
             return true;
           };
           const fillStep = (id: string, value: string, lbl: string) => async () => {
             await ensureForm();
             const el = anchor(id);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            await cursorRef.current?.flyTo(el, lbl, mode);
             return fillAnchor(id, value);
           };
           const openTab = (viaAnchor: string) => async () => {
@@ -935,7 +927,7 @@ export function ExasolStudio({
             if (anchor("connect.name")) return true;
             const el = anchor(viaAnchor);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode, avatar);
+            await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode);
             openConnect();
             // Wait until the form is actually mounted (up to ~2s), not a fixed delay.
             for (let i = 0; i < 20 && !anchor("connect.name"); i++) {
@@ -953,7 +945,7 @@ export function ExasolStudio({
             (id, lbl) => async () => {
               const el = anchor(id);
               if (!el) return false;
-              await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+              await cursorRef.current?.flyTo(el, lbl, mode);
               el.click();
               return true;
             },
@@ -974,7 +966,7 @@ export function ExasolStudio({
             action: async () => {
               await ensureForm();
               const submit = anchor("connect.submit");
-              await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
+              await cursorRef.current?.flyTo(submit, "Connecting…", mode);
               // Do the REAL connect via IPC so we get the true outcome — a
               // domain failure (bad password, DB down) throws with the actual
               // message instead of a silent 45s timeout that looks like a
@@ -3344,28 +3336,6 @@ export function ExasolStudio({
       </div>
 
       <AgentCursor ref={cursorRef} />
-      <FloatingPet
-        connectionId={connection?.profile.id ?? null}
-        onUiAction={handleUiAction}
-        onDashboardSaved={openSavedDashboard}
-        onArtifact={openArtifact}
-        onSpawn={() => setExtraPets((p) => [...p, { id: `${Date.now()}`, name: `task ${p.length + 1}` }])}
-        tag={extraPets.length ? "main" : undefined}
-      />
-      {extraPets.map((p, i) => (
-        <FloatingPet
-          key={p.id}
-          standalone
-          offset={i + 1}
-          connectionId={connection?.profile.id ?? null}
-          onUiAction={handleUiAction}
-          onDashboardSaved={openSavedDashboard}
-          onArtifact={openArtifact}
-          onClose={() => setExtraPets((list) => list.filter((x) => x.id !== p.id))}
-          tag={p.name}
-          onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}
-        />
-      ))}
       <div className="shrink-0">
         <HistoryDock
           entries={history}

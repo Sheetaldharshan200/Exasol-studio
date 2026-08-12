@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Plus, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
@@ -494,9 +495,9 @@ export function ExaEnginePanel({
   if (!status || !status.provisioned || !status.binaryPresent) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-panel px-8 text-center">
-        <AgentMark className="h-11 w-11" active />
         {installError ? (
           <>
+            <AgentMark className="h-11 w-11" />
             <p className="max-w-md text-[12px] leading-relaxed text-muted-foreground">{installError}</p>
             <button
               onClick={() => void install()}
@@ -506,9 +507,7 @@ export function ExaEnginePanel({
             </button>
           </>
         ) : (
-          <p className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {installing ? "Setting up the Exa engine (one-time)…" : "Starting Exa…"}
-          </p>
+          <BrandLoader size={56} label={installing ? "Setting up the Exa engine (one-time)…" : "Starting Exa…"} />
         )}
       </div>
     );
@@ -517,6 +516,9 @@ export function ExaEnginePanel({
   // Surface controls live in the thread header (right of the share button).
   const headerActions = (
     <>
+      <button onClick={() => newChat()} title="New chat" className={iconBtn}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
       <span
         title={`Engine ${status.state}`}
         className={cn("mx-1 h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-foreground/70" : "bg-muted-foreground/40")}
@@ -605,8 +607,8 @@ export function ExaEnginePanel({
       />
       </ExaErrorBoundary>
       ) : (
-        <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Starting the Exa engine…
+        <div className="flex flex-1 items-center justify-center">
+          <BrandLoader size={56} label="Starting the Exa engine…" />
         </div>
       )}
     </div>
