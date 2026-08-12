@@ -530,11 +530,7 @@ const AssistantActionBar: FC = () => {
           </AuiIf>
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh">
-          <RefreshCwIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Reload>
+      <AssistantReloadButton />
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger asChild>
           <TooltipIconButton
@@ -605,11 +601,56 @@ const UserMessage: FC = () => {
   );
 };
 
+/**
+ * Reload that actually regenerates: the runtime's Reload primitive only
+ * reverts (the reply lingers and nothing reruns). This clears the turn by
+ * reverting to the preceding user message engine-side and resends the SAME
+ * prompt — the reply disappears and regenerates like a fresh turn.
+ */
+const AssistantReloadButton: FC = () => {
+  const parent = useAuiState((s) => {
+    const msgs = s.thread.messages;
+    const i = msgs.findIndex((m) => m.id === s.message.id);
+    for (let j = i - 1; j >= 0; j--) {
+      if (msgs[j].role === "user") {
+        const text = msgs[j].content
+          .map((p) => (p.type === "text" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+        return { id: msgs[j].id, text };
+      }
+    }
+    return null;
+  });
+  if (!parent) return null;
+  return (
+    <TooltipIconButton
+      tooltip="Regenerate — reruns your last prompt"
+      onClick={() =>
+        window.dispatchEvent(
+          new CustomEvent("exa:reload-message", { detail: { parentId: parent.id, text: parent.text } }),
+        )
+      }
+    >
+      <RefreshCwIcon />
+    </TooltipIconButton>
+  );
+};
+
 const UserActionBar: FC = () => {
   // Copy must strip the machine context (the primitive copies RAW message
   // text, which would leak the hidden directives to the clipboard).
   const [copied, setCopied] = useState(false);
   const messageId = useAuiState((s) => s.message.id);
+  // Edit = rewind-to-here; offering it mid-history invites accidental loss
+  // of everything after, so it renders on the LAST user message only.
+  const isLastUser = useAuiState((s) => {
+    const msgs = s.thread.messages;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") return msgs[i].id === s.message.id;
+    }
+    return false;
+  });
   const text = useAuiState((s) =>
     s.message.content
       .map((p) => (p.type === "text" ? stripMachineContext(p.text) : ""))
@@ -637,17 +678,19 @@ const UserActionBar: FC = () => {
       {/* Edit = engine-side revert to this message + prefill the composer
           with its text (the opencode runtime has no native message-edit;
           revert-and-resend is the engine's own edit semantics). */}
-      <TooltipIconButton
-        tooltip="Edit — rewinds the conversation to this message"
-        className="aui-user-action-edit"
-        onClick={() =>
-          window.dispatchEvent(
-            new CustomEvent("exa:edit-message", { detail: { messageId, text } }),
-          )
-        }
-      >
-        <PencilIcon />
-      </TooltipIconButton>
+      {isLastUser ? (
+        <TooltipIconButton
+          tooltip="Edit — rewinds the conversation to this message"
+          className="aui-user-action-edit"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("exa:edit-message", { detail: { messageId, text } }),
+            )
+          }
+        >
+          <PencilIcon />
+        </TooltipIconButton>
+      ) : null}
     </ActionBarPrimitive.Root>
   );
 };

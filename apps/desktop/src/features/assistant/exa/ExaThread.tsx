@@ -1217,6 +1217,36 @@ export function ExaThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, client]);
 
+  // Regenerate: revert to the user message engine-side (clears it and the
+  // reply), resync, then resend the SAME full prompt as a fresh turn.
+  useEffect(() => {
+    const onReload = (e: Event) => {
+      const d = (e as CustomEvent<{ parentId?: string; text?: string }>).detail ?? {};
+      const parentId = d.parentId;
+      if (!parentId) return;
+      void (async () => {
+        try {
+          const id = (runtime.threads.mainItem.getState?.() as { remoteId?: string } | undefined)?.remoteId;
+          if (!id) return;
+          await (client as unknown as { session: { revert: (o: { sessionID: string; messageID: string }) => Promise<unknown> } }).session.revert({
+            sessionID: id,
+            messageID: parentId,
+          });
+          await runtime.threads.switchToThread(id).catch(() => undefined);
+          // Resend the ORIGINAL full text (machine context included) so the
+          // regenerated turn carries the same directives and chip context.
+          runtime.thread.composer.setText(d.text ?? "");
+          await runtime.thread.composer.send();
+        } catch (err) {
+          console.error("[exa] regenerate failed", err);
+        }
+      })();
+    };
+    window.addEventListener("exa:reload-message", onReload);
+    return () => window.removeEventListener("exa:reload-message", onReload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, client]);
+
   // "New chat" (panel button, /new command) starts a fresh engine session.
   useEffect(() => {
     const newThread = () => void startFreshSession();
