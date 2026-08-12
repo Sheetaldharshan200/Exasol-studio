@@ -580,7 +580,7 @@ const UserMessageText: FC = () => {
             key={i}
             type="button"
             onClick={() => openLinkOrPath(seg)}
-            className="text-primary hover:text-primary/80 inline cursor-pointer underline underline-offset-2"
+            className="inline cursor-pointer text-[#5FC33B] underline underline-offset-2 hover:text-[#5FC33B]/80"
           >
             {seg}
           </button>

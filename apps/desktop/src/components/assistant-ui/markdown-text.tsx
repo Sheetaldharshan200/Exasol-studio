@@ -15,7 +15,7 @@ import { CheckIcon, CopyIcon, FileInputIcon } from "lucide-react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { useExaApplySql } from "@/features/assistant/exa/ExaThread";
 import { cn } from "@/lib/utils";
-import { openLinkOrPath } from "@/lib/open-target";
+import { looksLikePath, openLinkOrPath } from "@/lib/open-target";
 
 const MarkdownTextImpl = () => {
   return (
@@ -163,7 +163,7 @@ const defaultComponents = memoizeMarkdownComponents({
   a: ({ className, href, ...props }) => (
     <a
       className={cn(
-        "aui-md-a text-primary hover:text-primary/80 cursor-pointer underline underline-offset-2",
+        "aui-md-a cursor-pointer text-[#5FC33B] underline underline-offset-2 hover:text-[#5FC33B]/80",
         className,
       )}
       href={href}
@@ -269,8 +269,25 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  code: function Code({ className, ...props }) {
+  code: function Code({ className, children, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
+    // Inline code that IS a file location opens as a workspace tab on click.
+    const text = typeof children === "string" ? children : "";
+    if (!isCodeBlock && looksLikePath(text)) {
+      return (
+        <button
+          type="button"
+          onClick={() => openLinkOrPath(text)}
+          title="Open in a new tab"
+          className={cn(
+            "aui-md-inline-code bg-muted inline cursor-pointer rounded-md px-1.5 py-0.5 font-mono text-[0.85em] text-[#5FC33B] underline underline-offset-2 hover:text-[#5FC33B]/80",
+            className,
+          )}
+        >
+          {children}
+        </button>
+      );
+    }
     return (
       <code
         className={cn(
@@ -279,7 +296,9 @@ const defaultComponents = memoizeMarkdownComponents({
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+      </code>
     );
   },
   CodeHeader,
