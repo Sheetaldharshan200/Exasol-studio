@@ -325,20 +325,18 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
  * answer, Submit/Dismiss.
  */
 function ExaQuestionnaire() {
+  // useOpenCodeQuestions is safe on any runtime (empty when extras are
+  // absent); useOpenCodeRuntimeExtras THROWS on a session-less thread, so it
+  // lives in the card — which only mounts when a question exists, and a
+  // question can only come from a live opencode session.
   const questions = useOpenCodeQuestions();
-  const extras = useOpenCodeRuntimeExtras();
   const req = questions[0];
   if (!req) return null;
-  return <ExaQuestionnaireCard key={req.id} req={req} extras={extras} />;
+  return <ExaQuestionnaireCard key={req.id} req={req} />;
 }
 
-function ExaQuestionnaireCard({
-  req,
-  extras,
-}: {
-  req: ReturnType<typeof useOpenCodeQuestions>[number];
-  extras: ReturnType<typeof useOpenCodeRuntimeExtras>;
-}) {
+function ExaQuestionnaireCard({ req }: { req: ReturnType<typeof useOpenCodeQuestions>[number] }) {
+  const extras = useOpenCodeRuntimeExtras();
   const [selected, setSelected] = useState<Record<number, string[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);

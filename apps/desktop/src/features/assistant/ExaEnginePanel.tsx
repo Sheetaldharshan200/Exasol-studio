@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
@@ -35,6 +35,38 @@ const EMPTY_SNAPSHOT: ExaSnapshot = {
   lastResult: null,
   history: [],
 };
+
+/**
+ * A crash inside the chat surface must degrade to an inline message — never
+ * unmount the app (a thrown render = full black screen without a boundary).
+ */
+class ExaErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error("[exa] panel crashed", error);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+          <p className="text-[13px] font-medium text-foreground">The Exa panel hit an error.</p>
+          <p className="max-w-sm text-[11.5px] text-muted-foreground">{String(this.state.error.message ?? this.state.error).slice(0, 240)}</p>
+          <button
+            type="button"
+            onClick={() => this.setState({ error: null })}
+            className="mt-1 rounded-md border border-border px-3 py-1 text-[11.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Reload the panel
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function ExaEnginePanel({
   onClose,
@@ -442,6 +474,7 @@ export function ExaEnginePanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
       {engineClient ? (
+      <ExaErrorBoundary>
       <ExaThread
         client={engineClient}
         initialSessionId={activeSessionId ?? undefined}
@@ -489,6 +522,7 @@ export function ExaEnginePanel({
           setSqlOps,
         }}
       />
+      </ExaErrorBoundary>
       ) : (
         <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Starting the Exa engine…
