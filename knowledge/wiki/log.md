@@ -89,3 +89,11 @@ Finding 2: AgentConfig's `tools: Record<string,boolean>` exists in the SDK schem
 Finding 3: small local models fail when ANY tools are attached — llama-server enforces its native tool-call grammar and Llama 3.2 3B errors every turn ("peg-native format"); it answers fine without tools. opencode never strips tools by capability (tool_call flag is metadata only). Fix: new `exa-chat` agent with permission {"*": "deny"} (same shape as opencode's own title/compaction agents); Chat mode sends defaultAgent exa-chat. Verified live: exa-chat + builtin 3B answers, identifies as Exa, declines codebase refactoring.
 Commits: fd6ef2c (runtime swap), 10f1dd5 (restart-on-config-change + survivor kill), 525d8ca (permission guardrail + exa-chat).
 
+
+## [2026-08-12] feature | Independent components, structured questions, sandbox model, fork CLI branding (exa.3)
+Managed-components concept removed: bootstrap installs DB+ExaPump+MCP server; component failures notify-and-continue (warn closure in local_database.rs setup; DB + python validation stack stay fatal). Updates tab = plain Components list vs each component's own latest official release (digest-verified).
+Engine question tool enabled for the exa agent + questionnaire card UI (useOpenCodeQuestions + replyToQuestion); prompt directs the agent to look up real options (list databases via MCP) before asking. Seed migrations keep permission+prompt current on drift.
+Sandbox: webfetch/websearch denied by default in the exa agent seed; AI Settings → Guardrails 'Exa sandbox' toggle flips them via new /v1/engine/network route (single-writer config + engine restart). CRUD grants: shield control next to mode switcher (READ always; C/U/D checkboxes persisted, ride as a hard directive).
+Fork v1.18.12-exa.3: TUI ASCII logo (exa in upstream's block font), terminal DEFAULT_TITLE, CLI scriptName — three central points only; identifiers/config filenames stay upstream for merge safety.
+Also this arc: attachments via OpenCodeAttachmentAdapter (multi-select; composer.send() path carries them), paste>4k→text attachment, ui/attachment card system for files+@-chips (horizontal strip, click file → editor tab), tokens row in timing popover, user-message Copy, borderless reasoning + wheel-based scroll unpin (position heuristics swallowed scrolls during streaming growth).
+
