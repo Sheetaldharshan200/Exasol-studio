@@ -68,6 +68,9 @@ import { ExaMcpPanel } from "./ExaMcpPanel";
 /** Chat = no tools · Plan = read-only tools · Agent = all tools. */
 export type ChatMode = "chat" | "plan" | "agent";
 
+/** SQL operation classes the user has granted (READ is always granted). */
+export type SqlOps = { create: boolean; update: boolean; delete: boolean };
+
 const MODES: { id: ChatMode; label: string; icon: typeof Bot; hint: string }[] = [
   { id: "agent", label: "Agent", icon: Bot, hint: "Agent — Exa can use all tools" },
   { id: "plan", label: "Plan", icon: NotebookPen, hint: "Plan — read-only tools, propose before changing" },
@@ -147,6 +150,9 @@ export type ExaComposerApi = {
   loadCatalog: () => Promise<EngineCatalogProvider[]>;
   /** Refresh providers/models after a successful OAuth connect. */
   onConnected: () => Promise<void> | void;
+  /** Which SQL operation classes the agent may use (read is always on). */
+  sqlOps: SqlOps;
+  setSqlOps: (ops: SqlOps) => void;
   /**
    * The panel's send pipeline: slash-command expansion, @-context chips,
    * mode directives, quote injection. Returns the final engine text, or
@@ -242,6 +248,71 @@ function ExaPermissionBar() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * CRUD grants next to the mode switcher: READ is always allowed; Create,
+ * Update and Delete are explicit per-conversation grants the send pipeline
+ * turns into a hard directive (and the guardrail prompt already refuses
+ * destructive SQL that was never requested).
+ */
+function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: SqlOps) => void }) {
+  const [open, setOpen] = useState(false);
+  const granted = [ops.create && "C", ops.update && "U", ops.delete && "D"].filter(Boolean).join("");
+  useEffect(() => {
+    if (open) document.body.dataset.exaMenuOpen = "1";
+    else delete document.body.dataset.exaMenuOpen;
+    return () => {
+      delete document.body.dataset.exaMenuOpen;
+    };
+  }, [open]);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Which SQL operations the agent may run (read is always allowed)"
+        className={cn(
+          "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors",
+          granted ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <ShieldCheckIcon className="h-3.5 w-3.5" />
+        <span className="hidden @md:inline">{granted ? `R+${granted.split("").join("+")}` : "Read-only"}</span>
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute bottom-9 left-0 z-40 w-56 rounded-lg border border-border bg-popover p-2 shadow-xl">
+            <p className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</p>
+            <label className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground">
+              <input type="checkbox" checked disabled className="accent-[var(--primary)]" /> Read (always allowed)
+            </label>
+            {(
+              [
+                ["create", "Create (CREATE, INSERT, IMPORT)"],
+                ["update", "Update (UPDATE, MERGE, ALTER)"],
+                ["delete", "Delete (DELETE, TRUNCATE, DROP)"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="hover:bg-muted flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-foreground">
+                <input
+                  type="checkbox"
+                  checked={ops[key]}
+                  onChange={(e) => onChange({ ...ops, [key]: e.target.checked })}
+                  className="accent-[var(--primary)]"
+                />
+                {label}
+              </label>
+            ))}
+            <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-muted-foreground">
+              Ungranted classes are refused even if a task seems to need them.
+            </p>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -492,6 +563,7 @@ export function ExaComposerControls() {
         <ModeIcon className="h-3.5 w-3.5" />
         <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
+      <ExaSqlOpsSelector ops={api.sqlOps} onChange={api.setSqlOps} />
     </div>
   );
 }

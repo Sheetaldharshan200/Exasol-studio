@@ -237,6 +237,11 @@ export class EngineService {
           // The engine denies `question` by default; Exa uses it to ask
           // structured multiple-choice questions the panel renders natively.
           question: "allow",
+          // SANDBOX by default: no internet until the user turns it on
+          // (Settings will flip these to "allow"). MCP servers the user adds
+          // are their own explicit grants.
+          webfetch: "deny",
+          websearch: "deny",
         };
         if (!("exa" in a)) {
           a.exa = {
@@ -258,6 +263,14 @@ export class EngineService {
           if (perm.question !== "allow") {
             perm.question = "allow";
             dirty = true;
+          }
+          // Sandbox migration: seed the internet-off default ONCE (absent key
+          // = older seed). A user choice ("allow" via Settings) is respected.
+          for (const key of ["webfetch", "websearch"]) {
+            if (perm[key] === undefined) {
+              perm[key] = "deny";
+              dirty = true;
+            }
           }
           if (a.exa.prompt !== guardrailPrompt) {
             a.exa.prompt = guardrailPrompt;

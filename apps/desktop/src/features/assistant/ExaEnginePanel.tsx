@@ -7,7 +7,7 @@ import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
-import { ExaThread, type ChatMode } from "./exa/ExaThread";
+import { ExaThread, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
 
@@ -74,6 +74,22 @@ export function ExaEnginePanel({
   // Composer state — the registry composer inside ExaThread reads/writes it
   // through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
+  // SQL operation grants (READ always on; C/U/D are explicit, persisted).
+  const [sqlOps, setSqlOpsState] = useState<SqlOps>(() => {
+    try {
+      return { create: false, update: false, delete: false, ...JSON.parse(localStorage.getItem("exa.sqlOps") ?? "{}") } as SqlOps;
+    } catch {
+      return { create: false, update: false, delete: false };
+    }
+  });
+  const setSqlOps = (ops: SqlOps) => {
+    setSqlOpsState(ops);
+    try {
+      localStorage.setItem("exa.sqlOps", JSON.stringify(ops));
+    } catch {
+      /* private mode */
+    }
+  };
   const [chips, setChips] = useState<ContextChip[]>([]);
   // A picked slash command shown as a chip; the input text is its argument.
   const [pendingCommand, setPendingCommand] = useState<SlashCommand | null>(null);
@@ -348,7 +364,11 @@ export function ExaEnginePanel({
       const auto = e.providerIds.map((id) => resolveContext(id, null, snap)).filter((c): c is ContextChip => c !== null);
       allChips = [...chips, ...auto.filter((a) => !chips.some((c) => c.id === a.id))];
     }
-    const directive = MODE_DIRECTIVE[mode];
+    const granted = ["READ", sqlOps.create && "CREATE (CREATE/INSERT/IMPORT)", sqlOps.update && "UPDATE (UPDATE/MERGE/ALTER)", sqlOps.delete && "DELETE (DELETE/TRUNCATE/DROP)"]
+      .filter(Boolean)
+      .join(", ");
+    const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;
+    const directive = [MODE_DIRECTIVE[mode], opsDirective].filter(Boolean).join(" ");
     let out = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, allChips);
     if (quote) out = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${out}`;
     setChips([]);
@@ -465,6 +485,8 @@ export function ExaEnginePanel({
             return loadModels();
           },
           expandForSend,
+          sqlOps,
+          setSqlOps,
         }}
       />
       ) : (
