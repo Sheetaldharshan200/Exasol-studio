@@ -97,3 +97,13 @@ Sandbox: webfetch/websearch denied by default in the exa agent seed; AI Settings
 Fork v1.18.12-exa.3: TUI ASCII logo (exa in upstream's block font), terminal DEFAULT_TITLE, CLI scriptName — three central points only; identifiers/config filenames stay upstream for merge safety.
 Also this arc: attachments via OpenCodeAttachmentAdapter (multi-select; composer.send() path carries them), paste>4k→text attachment, ui/attachment card system for files+@-chips (horizontal strip, click file → editor tab), tokens row in timing popover, user-message Copy, borderless reasoning + wheel-based scroll unpin (position heuristics swallowed scrolls during streaming growth).
 
+
+## [2026-08-12] review | Codex review of the sandbox/questionnaire/observability arc — 6 findings, all applied
+HIGH supervisor.ts: start() SIGTERM'd an 'ours' survivor, waited 3s, spawned anyway — waitOurs then re-adopted the stale process. Now: SIGTERM → wait → SIGKILL → wait → REFUSE (state failed) if the port never frees.
+HIGH engine-service.ts: restartForConfig raced ensureClient start() — stale ready/crash over newer state. Fixed with a withLifecycle promise-chain mutex (cached-client fast path stays lock-free).
+HIGH upstream.rs: 8-char suffix let '-aarch64' match a LINUX asset for a macOS lock name when the platform asset is missing (digest can't catch wrong-OS). Min suffix 12 + tie refusal + tests.
+MED thread.tsx: user-message Copy copied RAW text → leaked hidden <exa_context> directives to clipboard; custom copy strips.
+MED context.ts: user-typed sentinel tags could hide their own text / swallow the message; neutralizeSentinels() on send (same as buildPrompt </context>), tested.
+MED local_database.rs/Marketplace: failed bootstrap component reported verified version as installed → 'shows latest, no retry'. Failed → installed:None + Install button.
+Also this arc: run watchdog (poll session status while UI running; engine idle → resync — recovers lost event streams), webview.log console tee + append_app_log, force-abort side channel on Stop, machine-context sentinel, ENGINE_BASELINE_TAG precedence over stale component copies, exa.4 CLI branding (wordmark + by Exasol).
+

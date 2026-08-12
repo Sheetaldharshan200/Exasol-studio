@@ -545,8 +545,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/files.rs": {
-    "mtime": 1784292466.9469974,
-    "ast_hash": "4ea168ce1e9e4bf0d58ebf5c20421659",
+    "mtime": 1786512053.4638333,
+    "ast_hash": "f34b91795bf911693b6239a74a095840",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/fs.rs": {
@@ -565,13 +565,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/lib.rs": {
-    "mtime": 1786431377.809552,
-    "ast_hash": "1a60f3211175f43c893205b2b441a32f",
+    "mtime": 1786512053.482461,
+    "ast_hash": "4fde5cb0656e3f98d9c6457e8971c618",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_database.rs": {
-    "mtime": 1786508382.7231426,
-    "ast_hash": "320aaa39f810ea93de1144303f436a0e",
+    "mtime": 1786527347.0310488,
+    "ast_hash": "3148c75a7ba40cc4716446106ee2b099",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_llm.rs": {
@@ -730,8 +730,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1786445536.9262555,
-    "ast_hash": "c1502785dcaea2c21b17b271fb4df14e",
+    "mtime": 1786511026.33592,
+    "ast_hash": "a78e1b761d11bb8995cab414b40d496f",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/FloatingPet.tsx": {
@@ -1030,8 +1030,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/Marketplace.tsx": {
-    "mtime": 1786506215.6250246,
-    "ast_hash": "0bb24445b8edf437ba85549e71b87a75",
+    "mtime": 1786527365.1608891,
+    "ast_hash": "6b0295294bbc19a3a00657d2b12d786b",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/McpConfigTab.tsx": {
@@ -1155,8 +1155,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/Notifications.tsx": {
-    "mtime": 1785576555.5252054,
-    "ast_hash": "dfd6cf61d5c61833a45ab7da319ae12a",
+    "mtime": 1786509028.4978652,
+    "ast_hash": "9390fc23c9c5deb4a64948a8b3851888",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/ObjectContextMenu.tsx": {
@@ -1310,8 +1310,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/main.tsx": {
-    "mtime": 1785702054.1226742,
-    "ast_hash": "2753304062c9e379de4223ec1c97a623",
+    "mtime": 1786512376.4798508,
+    "ast_hash": "44529c1b169bfad0e196f675aef27cf6",
     "semantic_hash": ""
   },
   "apps/desktop/src/state/useConnections.ts": {
@@ -1330,8 +1330,8 @@
     "semantic_hash": ""
   },
   "marketplace/catalog.json": {
-    "mtime": 1786508382.7293541,
-    "ast_hash": "bd3134c4ee50f6a65ca0942d0255b950",
+    "mtime": 1786511213.750068,
+    "ast_hash": "6a991dd3afb3cb2153393ec7a338383a",
     "semantic_hash": ""
   },
   "package.json": {
@@ -1340,8 +1340,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1786508530.6635656,
-    "ast_hash": "f6c9b166d68199de724e3d648ac5cb97",
+    "mtime": 1786527516.1887097,
+    "ast_hash": "00c3db137df55465045f33c5c992e618",
     "semantic_hash": ""
   },
   "packages/agent-core/evals/live.ts": {
@@ -1675,8 +1675,8 @@
     "semantic_hash": ""
   },
   "scripts/fetch-runtime.mjs": {
-    "mtime": 1786508382.7223036,
-    "ast_hash": "40a990cfc69a9ab4c603d48fdefe120b",
+    "mtime": 1786511213.7430356,
+    "ast_hash": "7efd2f7838af7ae38eece66cfc7f2449",
     "semantic_hash": ""
   },
   "scripts/gen-ui-map.mjs": {
@@ -3990,8 +3990,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/engine.rs": {
-    "mtime": 1785960234.332524,
-    "ast_hash": "94a2c2d8654701c78c3a8fd238919e75",
+    "mtime": 1786511213.6501024,
+    "ast_hash": "6631944bcc2c1986c28cf03251d7c050",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/assistant-ui/attachment.tsx": {
@@ -4030,8 +4030,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/assistant-ui/thread.tsx": {
-    "mtime": 1786440214.2432015,
-    "ast_hash": "e3626032a6fcfe7f6c01ab5e762b3d48",
+    "mtime": 1786527069.028491,
+    "ast_hash": "c20fad6c43aa723b0695966db357520a",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/assistant-ui/tool-fallback.tsx": {
@@ -4095,8 +4095,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/ExaEnginePanel.tsx": {
-    "mtime": 1786508382.7226965,
-    "ast_hash": "ccdf3ccfb941a93e438ff1ffb0d6cf44",
+    "mtime": 1786527035.5957239,
+    "ast_hash": "72b5db7e1bd098a9741c31725750bec8",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/ExaMcpPanel.tsx": {
@@ -4110,8 +4110,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/ExaThread.tsx": {
-    "mtime": 1786506767.6457264,
-    "ast_hash": "bdcced1e734920ef156452de9c87ec14",
+    "mtime": 1786514306.8988416,
+    "ast_hash": "5a41cb070d3c96be3d9c2b2bdd271698",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/commands.test.ts": {
@@ -4125,13 +4125,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/context.test.ts": {
-    "mtime": 1785862061.5753133,
-    "ast_hash": "03b74a9f553fd0880e8be7d3fb1a10d7",
+    "mtime": 1786527035.6262338,
+    "ast_hash": "0bc9dac0e75e2b604c5d1ce5e711991f",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/context.ts": {
-    "mtime": 1785951978.6097996,
-    "ast_hash": "a57af8cc7a839ba13b064e3cb5c2db9e",
+    "mtime": 1786527035.5693905,
+    "ast_hash": "1e98c64546da2724bc6adc33c4421d59",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/assistant/exa/engine-client.ts": {
@@ -4250,8 +4250,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/engine-service.ts": {
-    "mtime": 1786508081.7773752,
-    "ast_hash": "eeab8ba94f5dc4fbf1d2ff8d7ff979bd",
+    "mtime": 1786515393.2228699,
+    "ast_hash": "06db55af23020df5fd6d8999014faaed",
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/runtime-registry.test.ts": {
@@ -4285,8 +4285,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/src/engine/supervisor.ts": {
-    "mtime": 1786438049.6268446,
-    "ast_hash": "817cb62ec40a4eba09ee0b27ad6bda06",
+    "mtime": 1786515356.5380907,
+    "ast_hash": "738253903ac4196d5a5b26d911253f6e",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/confd-admin-api.md": {
@@ -4385,13 +4385,18 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/upstream.rs": {
-    "mtime": 1786430760.110665,
-    "ast_hash": "201365e6258dc394f8fa9e299b12eda7",
+    "mtime": 1786515441.5976388,
+    "ast_hash": "41229ad8e24441dd8304c675628950f0",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/ui/attachment.tsx": {
     "mtime": 1786445536.9549978,
     "ast_hash": "94e54f30caa15a9206a24954ac8371ad",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/app-log.ts": {
+    "mtime": 1786512127.8585413,
+    "ast_hash": "2bdbc6ea6488ad3b44fe6362c69bc31d",
     "semantic_hash": ""
   }
 }
