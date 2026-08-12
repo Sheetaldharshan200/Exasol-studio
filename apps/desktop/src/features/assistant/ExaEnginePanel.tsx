@@ -159,9 +159,14 @@ export function ExaEnginePanel({
   // overwriting a post-key-save refresh).
   const loadSeq = useRef(0);
 
+  // The agent's ACTUAL internet capability (engine-enforced tool permission,
+  // toggled in AI Settings). Woven into every message's directive so the
+  // model never claims web access its tool list doesn't have.
+  const [networkAllowed, setNetworkAllowed] = useState(false);
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
     ipc.engineCliStatus().then((s) => setCliInstalled(s.installed)).catch(() => undefined);
+    agent.engine.network().then((r) => setNetworkAllowed(r.allowed)).catch(() => undefined);
   }, []);
   useEffect(() => refreshStatus(), [refreshStatus]);
 
@@ -400,7 +405,10 @@ export function ExaEnginePanel({
       .filter(Boolean)
       .join(", ");
     const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;
-    const directive = [MODE_DIRECTIVE[mode], opsDirective].filter(Boolean).join(" ");
+    const netDirective = networkAllowed
+      ? ""
+      : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled in AI Settings under Guardrails.";
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective].filter(Boolean).join(" ");
     let out = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, allChips);
     if (quote) out = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${out}`;
     setChips([]);

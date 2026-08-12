@@ -55,6 +55,14 @@ import {
   type ExaSnapshot,
 } from "./context";
 import { filterCommands, type LocalCommandId, type SlashCommand } from "./commands";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ExaMcpPanel } from "./ExaMcpPanel";
 
 /**
@@ -260,7 +268,10 @@ function ExaPermissionBar() {
  */
 function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: SqlOps) => void }) {
   const [open, setOpen] = useState(false);
-  const granted = [ops.create && "C", ops.update && "U", ops.delete && "D"].filter(Boolean).join("");
+  const granted = [ops.create && "C", ops.update && "U", ops.delete && "D"].filter(Boolean).join("+");
+  // Radix portals the menu to <body>, so the composer's transformed/animated
+  // ancestors can't clip or offset it (a hand-rolled absolute popover broke
+  // exactly that way). The Enter-capture handler checks this flag.
   useEffect(() => {
     if (open) document.body.dataset.exaMenuOpen = "1";
     else delete document.body.dataset.exaMenuOpen;
@@ -269,51 +280,52 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
     };
   }, [open]);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        title="Which SQL operations the agent may run (read is always allowed)"
-        className={cn(
-          "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors",
-          granted ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <ShieldCheckIcon className="h-3.5 w-3.5" />
-        <span className="hidden @md:inline">{granted ? `R+${granted.split("").join("+")}` : "Read-only"}</span>
-      </button>
-      {open ? (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute bottom-9 left-0 z-40 w-56 rounded-lg border border-border bg-popover p-2 shadow-xl">
-            <p className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</p>
-            <label className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground">
-              <input type="checkbox" checked disabled className="accent-[var(--primary)]" /> Read (always allowed)
-            </label>
-            {(
-              [
-                ["create", "Create (CREATE, INSERT, IMPORT)"],
-                ["update", "Update (UPDATE, MERGE, ALTER)"],
-                ["delete", "Delete (DELETE, TRUNCATE, DROP)"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className="hover:bg-muted flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-foreground">
-                <input
-                  type="checkbox"
-                  checked={ops[key]}
-                  onChange={(e) => onChange({ ...ops, [key]: e.target.checked })}
-                  className="accent-[var(--primary)]"
-                />
-                {label}
-              </label>
-            ))}
-            <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-muted-foreground">
-              Ungranted classes are refused even if a task seems to need them.
-            </p>
-          </div>
-        </>
-      ) : null}
-    </div>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title="Which SQL operations the agent may run (read is always allowed)"
+          className={cn(
+            "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors",
+            granted ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <ShieldCheckIcon className="h-3.5 w-3.5" />
+          <span className="hidden @md:inline">{granted ? `R+${granted}` : "Read-only"}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-64">
+        <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem checked disabled className="text-[12px]">
+          Read — always allowed
+        </DropdownMenuCheckboxItem>
+        {(
+          [
+            ["create", "Create", "CREATE, INSERT, IMPORT"],
+            ["update", "Update", "UPDATE, MERGE, ALTER"],
+            ["delete", "Delete", "DELETE, TRUNCATE, DROP"],
+          ] as const
+        ).map(([key, label, detail]) => (
+          <DropdownMenuCheckboxItem
+            key={key}
+            checked={ops[key]}
+            // Keep the menu open so several classes can be granted in one go.
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => onChange({ ...ops, [key]: Boolean(v) })}
+            className="text-[12px]"
+          >
+            <span className="flex min-w-0 flex-col">
+              <span>{label}</span>
+              <span className="text-[10.5px] text-muted-foreground">{detail}</span>
+            </span>
+          </DropdownMenuCheckboxItem>
+        ))}
+        <DropdownMenuSeparator />
+        <p className="px-2 pb-1.5 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+          Ungranted classes are refused even if a task seems to need them.
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
