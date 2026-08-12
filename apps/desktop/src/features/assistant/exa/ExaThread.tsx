@@ -1443,6 +1443,15 @@ export function ExaThread({
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="pointer-events-none absolute right-2 top-1.5 z-10">
                 <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-border/40 bg-background/70 px-1 py-0.5 backdrop-blur-sm">
+                  {/* Primary action first, passive/window controls last. */}
+                  <button
+                    type="button"
+                    title="New chat"
+                    onClick={onNewThread}
+                    className="hover:bg-muted flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    <PlusIcon className="size-4" />
+                  </button>
                   <button
                     type="button"
                     title={sidebarOpen ? "Hide history" : "Chat history"}
@@ -1459,6 +1468,7 @@ export function ExaThread({
                   >
                     <ShareIcon className="size-4" />
                   </button>
+                  <span className="mx-0.5 h-4 w-px shrink-0 bg-border/60" aria-hidden />
                   {headerActions}
                 </div>
               </div>

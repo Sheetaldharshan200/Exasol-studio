@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, Plus, Terminal, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
@@ -533,9 +533,6 @@ export function ExaEnginePanel({
   // Surface controls live in the thread header (right of the share button).
   const headerActions = (
     <>
-      <button onClick={() => newChat()} title="New chat" className={iconBtn}>
-        <Plus className="h-3.5 w-3.5" />
-      </button>
       <span
         title={`Engine ${status.state}`}
         className={cn("mx-1 h-1.5 w-1.5 rounded-full", status.state === "running" ? "bg-foreground/70" : "bg-muted-foreground/40")}
