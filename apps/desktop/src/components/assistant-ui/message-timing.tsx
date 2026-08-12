@@ -47,6 +47,12 @@ export const MessageTiming: FC<{
     const t = (s.message.metadata?.custom as { tokens?: { input?: number; output?: number; reasoning?: number } } | undefined)?.tokens;
     return t && (t.input || t.output) ? t : undefined;
   });
+  // What this reply COST (the engine prices token usage per model). 0 on
+  // subscription models (ChatGPT/Copilot sign-in) — included in the plan.
+  const cost = useAuiState((s) => {
+    const c = (s.message.metadata?.custom as { cost?: number } | undefined)?.cost;
+    return typeof c === "number" ? c : undefined;
+  });
   if (timing?.totalStreamTime === undefined) return null;
 
   return (
@@ -106,6 +112,14 @@ export const MessageTiming: FC<{
                 <span className="text-muted-foreground">Tokens</span>
                 <span className="font-mono tabular-nums">
                   {(tokens.input ?? 0).toLocaleString()} in · {((tokens.output ?? 0) + (tokens.reasoning ?? 0)).toLocaleString()} out
+                </span>
+              </div>
+            ) : null}
+            {cost !== undefined ? (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Cost</span>
+                <span className="font-mono tabular-nums">
+                  {cost > 0 ? `$${cost.toFixed(cost < 0.01 ? 4 : 2)}` : "included in plan"}
                 </span>
               </div>
             ) : null}
