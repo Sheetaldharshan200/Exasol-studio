@@ -392,7 +392,16 @@ const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({
   const running = part.status.type === "running";
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? running;
-  const steps = part.indices.length;
+  // Count only the meaningful work (reasoning + tool calls) — the group also
+  // swallows step-boundary data markers, which render nothing.
+  const steps = useAuiState(
+    (s) =>
+      part.indices.filter((i) => {
+        const t = s.message.content[i]?.type;
+        return t === "reasoning" || t === "tool-call";
+      }).length,
+  );
+  if (steps === 0) return <>{children}</>;
   return (
     <div data-slot="aui_chain-of-thought" className="mb-3">
       <button
@@ -434,6 +443,11 @@ const AssistantMessage: FC = () => {
           groupBy={groupPartByType({
             reasoning: ["group-chainOfThought", "group-reasoning"],
             "tool-call": ["group-chainOfThought", "group-tool"],
+            // Step boundaries arrive as data parts (opencode-step-start /
+            // -finish, rendering null); unmapped types SPLIT consecutive
+            // groups — without this the work phase fractures into one
+            // "Worked" disclosure per engine step.
+            data: ["group-chainOfThought"],
             "standalone-tool-call": [],
           })}
         >
