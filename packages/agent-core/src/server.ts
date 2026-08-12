@@ -152,6 +152,16 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
             return json(res, 502, { error: e instanceof Error ? e.message : "callback failed" });
           }
         }
+        // GET/POST /v1/engine/network — the Exa agent's internet access
+        // (sandboxed off by default; toggled from AI Settings → Guardrails).
+        if (parts[2] === "network" && !parts[3]) {
+          if (req.method === "GET") return json(res, 200, { allowed: engine.agentNetwork() });
+          if (req.method === "POST") {
+            const b = await readBody<{ allow?: boolean }>(req);
+            const ok = await engine.setAgentNetwork(Boolean(b.allow));
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          }
+        }
         // GET /v1/engine/sessions — the sidebar's session list. Chat itself
         // (create/prompt/stream/replay/permissions) is NOT proxied here: the
         // webview talks to the engine directly via @assistant-ui/react-opencode.

@@ -10,7 +10,7 @@
  * EXA_ENGINE_DATA_ROOT), then the bundled baseline (EXA_ENGINE_BIN). Absent →
  * every op degrades cleanly to "not installed".
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { EngineSupervisor, type EngineStatus } from "./supervisor.ts";
 import type { EngineClient } from "./client.ts";
@@ -315,6 +315,40 @@ export class EngineService {
     await s.stop().catch(() => undefined);
     this.client = null;
     await s.start().catch(() => undefined);
+  }
+
+  /**
+   * The Exa agent's internet access (webfetch/websearch). SANDBOXED by
+   * default — the seed denies both until the user turns this on. Reading
+   * parses the config file; writing goes through the single-writer lock and
+   * restarts a running engine (permission is boot-time config).
+   */
+  agentNetwork(): boolean {
+    const resolved = resolveEngineEnv(this.env);
+    if (!resolved) return false;
+    try {
+      const raw = readFileSync(join(resolved.configDir, "opencode", "opencode.json"), "utf8");
+      const root = JSON.parse(raw) as { agent?: { exa?: { permission?: Record<string, string> } } };
+      return root.agent?.exa?.permission?.webfetch === "allow";
+    } catch {
+      return false;
+    }
+  }
+
+  async setAgentNetwork(allow: boolean): Promise<boolean> {
+    const action = allow ? "allow" : "deny";
+    const changed = await this.withConfig((root) => {
+      const agents = root.agent as Record<string, { permission?: Record<string, unknown> }> | undefined;
+      const exa = agents?.exa;
+      if (!exa) return false;
+      exa.permission = exa.permission ?? {};
+      if (exa.permission.webfetch === action && exa.permission.websearch === action) return false;
+      exa.permission.webfetch = action;
+      exa.permission.websearch = action;
+      return true;
+    });
+    if (changed) await this.restartForConfig();
+    return true;
   }
 
   /**

@@ -727,6 +727,51 @@ function InDatabaseSection({
 
 /* ────────────────────────── Guardrails ────────────────────────── */
 
+/**
+ * The Exa agent's sandbox: no internet until turned on here (enforced
+ * ENGINE-side as tool permissions, not prompt guidance). MCP servers the
+ * user adds are their own explicit grants; SQL operation classes are granted
+ * per conversation at the composer's shield control.
+ */
+function ExaSandboxSection() {
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    agent.engine
+      .network()
+      .then((r) => setAllowed(r.allowed))
+      .catch(() => setAllowed(false));
+  }, []);
+  return (
+    <section>
+      <div className="mb-1 flex items-center gap-1.5">
+        <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+        <h2 className="text-[13px] font-semibold">Exa sandbox</h2>
+      </div>
+      <p className="mb-2.5 text-[11.5px] text-muted-foreground">
+        Exa runs sandboxed: it can use your connected databases and the MCP servers you added, and nothing else.
+        Internet access is <span className="font-medium text-foreground">off by default</span> and enforced in the
+        engine as tool permissions. SQL write access is granted per conversation with the shield control next to the
+        Agent/Plan switcher.
+      </p>
+      <ToggleRow
+        label="Internet access (web fetch & search)"
+        desc="When off, the agent's webfetch/websearch tools are denied engine-side. Turning this on restarts the engine to apply."
+        checked={Boolean(allowed)}
+        onChange={(v) => {
+          if (busy || allowed === null) return;
+          setBusy(true);
+          setAllowed(v);
+          void agent.engine
+            .setNetwork(v)
+            .catch(() => setAllowed(!v))
+            .finally(() => setBusy(false));
+        }}
+      />
+    </section>
+  );
+}
+
 function GuardrailsSection({
   settings,
   patch,
@@ -737,6 +782,8 @@ function GuardrailsSection({
   if (!settings) return <p className="text-[12px] text-muted-foreground">Loading…</p>;
   return (
     <>
+      <ExaSandboxSection />
+
       <section>
         <div className="mb-1 flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-primary" />

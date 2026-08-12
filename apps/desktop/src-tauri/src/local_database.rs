@@ -1511,7 +1511,7 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::SemanticViews => c.semantic_views.revision.clone(),
         // The pinned opencode release the Marketplace offers (matches
         // catalog.json exa-agent.latest + fetch-runtime.mjs EXA_ENGINE_TAG).
-        ComponentId::ExaAgent => "v1.18.12-exa.2".to_string(),
+        ComponentId::ExaAgent => "v1.18.12-exa.3".to_string(),
     }
 }
 
