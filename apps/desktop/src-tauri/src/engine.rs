@@ -24,7 +24,7 @@ const OPENCODE_REPO: &str = "Sheetaldharshan200/exa";
 
 /// The engine tag this app ships as its bundled baseline (single source for
 /// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
-pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.5";
+pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.6";
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
@@ -236,7 +236,44 @@ pub fn cli_shim_contents(engine_binary: &Path, config_dir: &Path) -> String {
             "@echo off\r\nset \"OPENCODE_CONFIG_DIR={cfg}\"\r\nset \"XDG_DATA_HOME={cfg}\"\r\nset \"XDG_CONFIG_HOME={cfg}\"\r\n\"{bin}\" %*\r\n"
         )
     } else {
-        format!("#!/bin/sh\nexport OPENCODE_CONFIG_DIR=\"{cfg}\"\nexport XDG_DATA_HOME=\"{cfg}\"\nexport XDG_CONFIG_HOME=\"{cfg}\"\nexec \"{bin}\" \"$@\"\n")
+        // `exa sandbox [status|on|off]` gives the CLI the same control the
+        // app's globe toggle has: it edits the exa agent's webfetch/websearch
+        // permissions in the shared config (each CLI invocation boots a fresh
+        // engine instance, so the change applies to the NEXT `exa` run; the
+        // Studio panel applies it at its next engine restart).
+        format!(
+            r#"#!/bin/sh
+export OPENCODE_CONFIG_DIR="{cfg}"
+export XDG_DATA_HOME="{cfg}"
+export XDG_CONFIG_HOME="{cfg}"
+if [ "$1" = "sandbox" ]; then
+  CONF="{cfg}/opencode/opencode.json"
+  MODE="${{2:-status}}"
+  python3 - "$CONF" "$MODE" <<'PYEXA'
+import json, sys
+path, mode = sys.argv[1], sys.argv[2]
+try:
+    root = json.load(open(path))
+except Exception:
+    print("exa sandbox: config not found at", path); sys.exit(1)
+perm = root.setdefault("agent", {{}}).setdefault("exa", {{}}).setdefault("permission", {{}})
+if mode in ("on", "off"):
+    action = "allow" if mode == "on" else "deny"
+    perm["webfetch"] = action
+    perm["websearch"] = action
+    json.dump(root, open(path, "w"), indent=2)
+allowed = perm.get("webfetch") == "allow"
+print("internet access:", "ON (webfetch/websearch allowed)" if allowed else "OFF - sandboxed (webfetch/websearch denied)")
+if mode in ("on", "off"):
+    print("applies to the next `exa` run; Exasol Studio applies it at its next engine restart.")
+elif mode != "status":
+    print("usage: exa sandbox [status|on|off]")
+PYEXA
+  exit $?
+fi
+exec "{bin}" "$@"
+"#
+        )
     }
 }
 
