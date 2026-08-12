@@ -646,9 +646,13 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
             // here isn't expected; skip rather than follow it.
         } else if ty.is_dir() {
             copy_dir_all(&from, &to)?;
-        } else {
+        } else if ty.is_file() {
             std::fs::copy(&from, &to)?;
         }
+        // Anything else — unix sockets (the VM runner's vm.sock), FIFOs,
+        // device nodes — cannot be copied (ENOTSUP, os error 102) and holds
+        // no data worth backing up: skip. The runner recreates its socket
+        // on start.
     }
     Ok(())
 }
@@ -1332,6 +1336,23 @@ mod tests {
         let image = crate::component_lock::components().nano.immutable_image();
         assert!(image.starts_with("docker.io/exasol/nano@sha256:"));
         assert_eq!(image.rsplit(':').next().unwrap().len(), 64);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn copy_dir_all_skips_unix_sockets() {
+        let root = std::env::temp_dir().join(format!("exasol-studio-sock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("data.txt"), b"keep me").unwrap();
+        // A live unix socket in the tree (like the VM runner's vm.sock).
+        let _listener = std::os::unix::net::UnixListener::bind(src.join("vm.sock")).unwrap();
+        let out = root.join("out");
+        copy_dir_all(&src, &out).expect("socket must not fail the copy");
+        assert_eq!(std::fs::read(out.join("data.txt")).unwrap(), b"keep me");
+        assert!(!out.join("vm.sock").exists(), "socket is skipped, not copied");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
