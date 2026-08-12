@@ -2902,6 +2902,26 @@ export function ExasolStudio({
           </div>
           ) : null}
 
+          {/* Exa stays MOUNTED while its tab exists — switching tabs must
+              not destroy the runtime/composer (attachments, draft text). */}
+          {(() => {
+            const exaTab = tabsFor(connKey).find((t) => t.view === "exaEngine");
+            if (!exaTab) return null;
+            return (
+              <div className={cn("min-h-0 flex-1 flex-col", activeTab.view === "exaEngine" ? "flex" : "hidden")}>
+                <ExaEnginePanel
+                  getSnapshot={getExaSnapshot}
+                  onApplySql={applySqlToEditor}
+                  onCollapse={() => {
+                    closeTab(exaTab.id);
+                    setAiOpen(true);
+                    aiPanelRef.current?.expand();
+                  }}
+                />
+              </div>
+            );
+          })()}
+
           {/* Connect flow, catalog surface, file preview, or SQL editor */}
           {activeTab.view === "connect" ? (
             // New connection = the SAME unified Database Connection page in
@@ -2987,19 +3007,7 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <Docs />
             </div>
-          ) : activeTab.view === "exaEngine" ? (
-            <div className="min-h-0 flex-1">
-              <ExaEnginePanel
-                getSnapshot={getExaSnapshot}
-                onApplySql={applySqlToEditor}
-                onCollapse={() => {
-                  closeTab(activeTab.id);
-                  setAiOpen(true);
-                  aiPanelRef.current?.expand();
-                }}
-              />
-            </div>
-          ) : activeTab.view === "git" ? (
+          ) : activeTab.view === "exaEngine" ? null : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
               <GitPanel full />
             </div>
