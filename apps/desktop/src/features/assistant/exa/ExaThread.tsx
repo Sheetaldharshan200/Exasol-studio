@@ -8,6 +8,9 @@ import {
   Archive as ArchiveIcon,
   FileCode as FileCodeIcon,
   FileText as FileTextIcon,
+  Globe as GlobeIcon,
+  GlobeLock as GlobeLockIcon,
+  Loader2 as Loader2Icon,
   Slash as SlashIcon,
   Table as TableIcon,
   ArrowUp as SendArrowIcon,
@@ -162,6 +165,9 @@ export type ExaComposerApi = {
   /** Which SQL operation classes the agent may use (read is always on). */
   sqlOps: SqlOps;
   setSqlOps: (ops: SqlOps) => void;
+  /** Sandbox: the agent's internet access — live-enforced state + toggle. */
+  network: { allowed: boolean; applying: boolean };
+  setNetwork: (allow: boolean) => void;
   /**
    * The panel's send pipeline: slash-command expansion, @-context chips,
    * mode directives, quote injection. Returns the final engine text, or
@@ -210,6 +216,42 @@ function ExaShareListener() {
     return () => window.removeEventListener("exa:share", onShare);
   }, [aui]);
   return null;
+}
+
+/**
+ * The sandbox control: internet access on/off, enforced ENGINE-side (the
+ * denied tools are stripped from the model's tool list — not a prompt).
+ * Toggling restarts the engine to apply and then VERIFIES enforcement, so
+ * the icon always reflects what is actually in force.
+ */
+function ExaNetworkToggle({ network, onToggle }: { network: { allowed: boolean; applying: boolean }; onToggle: (allow: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      disabled={network.applying}
+      onClick={() => onToggle(!network.allowed)}
+      title={
+        network.applying
+          ? "Applying — restarting the engine to enforce the change"
+          : network.allowed
+            ? "Internet access is ON (webfetch/websearch enabled). Click to sandbox — restarts the engine."
+            : "Sandboxed — no internet access (webfetch/websearch stripped from the tool list). Click to enable — restarts the engine."
+      }
+      className={cn(
+        "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors disabled:opacity-60",
+        network.allowed ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {network.applying ? (
+        <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : network.allowed ? (
+        <GlobeIcon className="h-3.5 w-3.5" />
+      ) : (
+        <GlobeLockIcon className="h-3.5 w-3.5" />
+      )}
+      <span className="hidden @md:inline">{network.applying ? "Applying" : network.allowed ? "Internet" : "Sandboxed"}</span>
+    </button>
+  );
 }
 
 /**
@@ -611,6 +653,7 @@ export function ExaComposerControls() {
         <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
       <ExaSqlOpsSelector ops={api.sqlOps} onChange={api.setSqlOps} />
+      <ExaNetworkToggle network={api.network} onToggle={api.setNetwork} />
     </div>
   );
 }

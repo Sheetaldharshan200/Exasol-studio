@@ -756,15 +756,16 @@ function ExaSandboxSection() {
       </p>
       <ToggleRow
         label="Internet access (web fetch & search)"
-        desc="When off, the agent's webfetch/websearch tools are denied engine-side. Turning this on restarts the engine to apply."
+        desc="When off, the agent's webfetch/websearch tools are stripped from its tool list engine-side. Toggling restarts the engine and VERIFIES the enforced state before reporting success."
         checked={Boolean(allowed)}
         onChange={(v) => {
           if (busy || allowed === null) return;
           setBusy(true);
-          setAllowed(v);
           void agent.engine
             .setNetwork(v)
-            .catch(() => setAllowed(!v))
+            .then(() => agent.engine.network())
+            .then((r) => setAllowed(r.allowed))
+            .catch(() => undefined)
             .finally(() => setBusy(false));
         }}
       />

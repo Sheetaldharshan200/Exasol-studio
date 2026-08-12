@@ -68,6 +68,8 @@ export type EngineClient = {
   removeAuth(providerId: string): Promise<void>;
   /** Reset instance state so new credentials take effect (no restart). */
   dispose(): Promise<void>;
+  /** The exa agent's LIVE web access (last webfetch rule wins); null when unknown. */
+  agentWebAccess(): Promise<boolean | null>;
   /** MCP servers: status map, add one, and connect/disconnect by name. */
   mcpList(): Promise<Record<string, { status: string }>>;
   mcpAdd(name: string, config: McpConfig): Promise<void>;
@@ -144,6 +146,16 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
     },
     async dispose() {
       await http("/instance/dispose", { method: "POST" });
+    },
+    async agentWebAccess() {
+      // The ENGINE's merged ruleset is the enforced truth (config files can
+      // drift from a running instance — permissions are boot-time state).
+      const agents = await http<{ name?: string; permission?: { permission?: string; action?: string }[] }[]>("/agent");
+      const exa = agents.find((a) => a.name === "exa");
+      if (!exa) return null;
+      const rules = (exa.permission ?? []).filter((r) => r.permission === "webfetch");
+      if (rules.length === 0) return true; // engine default: allowed
+      return rules[rules.length - 1].action !== "deny";
     },
     async mcpList() {
       return http<Record<string, { status: string }>>("/mcp");

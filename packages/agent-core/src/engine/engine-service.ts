@@ -343,7 +343,8 @@ export class EngineService {
    * parses the config file; writing goes through the single-writer lock and
    * restarts a running engine (permission is boot-time config).
    */
-  agentNetwork(): boolean {
+  /** The CONFIGURED state (what the next engine boot will enforce). */
+  agentNetworkConfigured(): boolean {
     const resolved = resolveEngineEnv(this.env);
     if (!resolved) return false;
     try {
@@ -355,7 +356,27 @@ export class EngineService {
     }
   }
 
-  async setAgentNetwork(allow: boolean): Promise<boolean> {
+  /**
+   * The state that matters: what a RUNNING engine actually enforces (its
+   * permissions are boot-time state, so config and instance can drift). Falls
+   * back to the configured state when the engine is down.
+   */
+  async agentNetwork(): Promise<{ allowed: boolean; live: boolean }> {
+    const configured = this.agentNetworkConfigured();
+    if (this.client) {
+      const live = await this.client.agentWebAccess().catch(() => null);
+      if (live !== null) return { allowed: live, live: true };
+    }
+    return { allowed: configured, live: false };
+  }
+
+  /**
+   * Flip the sandbox: write the config, restart a running engine (boot-time
+   * permission), then VERIFY the live instance enforces the requested state.
+   * `verified` false means the config is set but enforcement could not be
+   * confirmed — the caller must surface that, never assume.
+   */
+  async setAgentNetwork(allow: boolean): Promise<{ ok: boolean; verified: boolean }> {
     const action = allow ? "allow" : "deny";
     const changed = await this.withConfig((root) => {
       const agents = root.agent as Record<string, { permission?: Record<string, unknown> }> | undefined;
@@ -368,7 +389,10 @@ export class EngineService {
       return true;
     });
     if (changed) await this.restartForConfig();
-    return true;
+    const c = await this.ensureClient().catch(() => null);
+    if (!c) return { ok: true, verified: false };
+    const live = await c.agentWebAccess().catch(() => null);
+    return { ok: true, verified: live === allow };
   }
 
   /**

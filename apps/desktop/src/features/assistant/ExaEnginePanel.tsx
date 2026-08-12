@@ -163,10 +163,38 @@ export function ExaEnginePanel({
   // toggled in AI Settings). Woven into every message's directive so the
   // model never claims web access its tool list doesn't have.
   const [networkAllowed, setNetworkAllowed] = useState(false);
+  const [networkApplying, setNetworkApplying] = useState(false);
   const refreshStatus = useCallback(() => {
     agent.engine.status().then(setStatus).catch(() => setStatus(null));
     ipc.engineCliStatus().then((s) => setCliInstalled(s.installed)).catch(() => undefined);
     agent.engine.network().then((r) => setNetworkAllowed(r.allowed)).catch(() => undefined);
+  }, []);
+  /** Flip the sandbox with verified enforcement + honest feedback. */
+  const setNetwork = useCallback((allow: boolean) => {
+    setNetworkApplying(true);
+    agent.engine
+      .setNetwork(allow)
+      .then((r) => {
+        if (r.verified) {
+          setNetworkAllowed(allow);
+          notice(
+            allow ? "Internet access enabled" : "Sandbox enforced",
+            allow
+              ? "webfetch/websearch are live in the agent's tool list (verified against the running engine)."
+              : "webfetch/websearch are stripped from the agent's tool list (verified against the running engine).",
+          );
+        } else {
+          notice(
+            "Sandbox change saved, not yet verified",
+            "The setting is written, but the running engine could not confirm enforcement — it applies at the next engine start.",
+          );
+        }
+        // Re-read the LIVE state rather than trusting our own write.
+        return agent.engine.network().then((s) => setNetworkAllowed(s.allowed));
+      })
+      .catch(() => notice("Sandbox change failed", "Could not reach the engine — try again."))
+      .finally(() => setNetworkApplying(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => refreshStatus(), [refreshStatus]);
 
@@ -537,6 +565,8 @@ export function ExaEnginePanel({
           expandForSend,
           sqlOps,
           setSqlOps,
+          network: { allowed: networkAllowed, applying: networkApplying },
+          setNetwork,
         }}
       />
       </ExaErrorBoundary>

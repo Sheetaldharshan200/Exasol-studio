@@ -155,11 +155,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         // GET/POST /v1/engine/network — the Exa agent's internet access
         // (sandboxed off by default; toggled from AI Settings → Guardrails).
         if (parts[2] === "network" && !parts[3]) {
-          if (req.method === "GET") return json(res, 200, { allowed: engine.agentNetwork() });
+          if (req.method === "GET") return json(res, 200, await engine.agentNetwork());
           if (req.method === "POST") {
             const b = await readBody<{ allow?: boolean }>(req);
-            const ok = await engine.setAgentNetwork(Boolean(b.allow));
-            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+            const r = await engine.setAgentNetwork(Boolean(b.allow));
+            return json(res, 200, r);
           }
         }
         // GET /v1/engine/sessions — the sidebar's session list. Chat itself

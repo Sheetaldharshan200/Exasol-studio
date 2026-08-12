@@ -264,9 +264,12 @@ export const agent = {
   // ── Exa engine (opencode) — v2 chat backend over /v1/engine/* ─────────────
   engine: {
     status: (): Promise<EngineStatus> => api("/engine/status"),
-    /** Exa agent internet access (sandboxed off by default). */
-    network: (): Promise<{ allowed: boolean }> => api("/engine/network"),
-    setNetwork: (allow: boolean): Promise<{ ok: boolean }> => api("/engine/network", "POST", { allow }),
+    /** Exa agent internet access — the LIVE enforced state when the engine
+     * is running (`live: true`), else the configured next-boot state. */
+    network: (): Promise<{ allowed: boolean; live: boolean }> => api("/engine/network"),
+    /** Flip the sandbox; `verified` false = config set but live enforcement
+     * unconfirmed — surface it, never assume. Restarts a running engine. */
+    setNetwork: (allow: boolean): Promise<{ ok: boolean; verified: boolean }> => api("/engine/network", "POST", { allow }),
     sessions: (): Promise<{ sessions: EngineSessionInfo[] }> => api("/engine/sessions"),
     /** The engine's CONFIGURED providers/models (GET /config/providers). */
     providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
