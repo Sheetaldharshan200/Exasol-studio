@@ -36,7 +36,7 @@ export type EngineProvider = {
   name: string;
   /** How it was configured: "env" | "config" | "custom" | "api". */
   source?: string;
-  models: { id: string; name: string; context?: number }[];
+  models: { id: string; name: string; context?: number; variants?: string[] }[];
 };
 
 export type EngineSessionInfo = { id: string; title?: string; updated?: number };
@@ -74,7 +74,7 @@ export type EngineClient = {
   mcpToggle(name: string, connect: boolean): Promise<void>;
 };
 
-type RawModel = { name?: string; limit?: { context?: number } };
+type RawModel = { name?: string; limit?: { context?: number }; variants?: Record<string, unknown> };
 type RawProvider = { id: string; name?: string; source?: string; models?: Record<string, RawModel> };
 
 type RawClient = {
@@ -160,7 +160,14 @@ export async function connectEngine(baseUrl: string): Promise<EngineClient> {
         id: p.id,
         name: p.name ?? p.id,
         source: p.source,
-        models: Object.entries(p.models ?? {}).map(([id, m]) => ({ id, name: m?.name ?? id, context: m?.limit?.context })),
+        models: Object.entries(p.models ?? {}).map(([id, m]) => ({
+          id,
+          name: m?.name ?? id,
+          context: m?.limit?.context,
+          // Reasoning-effort variants (low/medium/high/xhigh) the engine
+          // computed for this model; picked in the model selector.
+          variants: m?.variants ? Object.keys(m.variants) : undefined,
+        })),
       }));
       return { providers, defaults: r?.data?.default ?? {} };
     },

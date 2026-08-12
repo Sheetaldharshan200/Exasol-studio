@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export type PickedModel = { providerID: string; modelID: string; label: string };
+export type PickedModel = { providerID: string; modelID: string; label: string; variant?: string };
 
 /**
  * The composer's model selector, in the assistant-ui model-selector design
@@ -200,8 +200,13 @@ export function ExaModelSelector({
     }
   }
 
-  const pick = (p: AgentProviderInfo, m: AgentProviderInfo["models"][number]) =>
-    onPick({ providerID: p.id, modelID: m.id, label: `${p.name} · ${m.name || m.id}` });
+  const pick = (p: AgentProviderInfo, m: AgentProviderInfo["models"][number], variant?: string) =>
+    onPick({
+      providerID: p.id,
+      modelID: m.id,
+      label: `${p.name} · ${m.name || m.id}${variant ? ` · ${variant}` : ""}`,
+      variant,
+    });
 
   const keyInput = (providerId: string, envKey?: string) => (
     <div className="px-2 py-1.5" onKeyDown={(e) => e.stopPropagation()}>
@@ -514,6 +519,34 @@ export function ExaModelSelector({
                           <>
                             {p.models.map((m) => {
                               const active = model?.providerID === p.id && model?.modelID === m.id;
+                              if (m.variants?.length) {
+                                // Reasoning-effort levels: pick the model at a
+                                // specific effort, or its default.
+                                return (
+                                  <DropdownMenuSub key={m.id}>
+                                    <DropdownMenuSubTrigger className="gap-2">
+                                      {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
+                                      <span className="min-w-0 flex-1 truncate text-[12px]">
+                                        {m.name || m.id}
+                                        {active && model?.variant ? <span className="text-muted-foreground"> · {model.variant}</span> : null}
+                                      </span>
+                                      <ModelBadges context={m.context} reasoning={m.reasoning} image={m.image} />
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuSubContent className="w-44">
+                                      <DropdownMenuItem onSelect={() => pick(p, m)} className="gap-2">
+                                        {active && !model?.variant ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
+                                        <span className="text-[12px]">Default effort</span>
+                                      </DropdownMenuItem>
+                                      {m.variants.map((v) => (
+                                        <DropdownMenuItem key={v} onSelect={() => pick(p, m, v)} className="gap-2">
+                                          {active && model?.variant === v ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
+                                          <span className="text-[12px] capitalize">{v}</span>
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </DropdownMenuSubContent>
+                                  </DropdownMenuSub>
+                                );
+                              }
                               return (
                                 <DropdownMenuItem key={m.id} onSelect={() => pick(p, m)} className="gap-2">
                                   {active ? <Check className="h-3.5 w-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}

@@ -567,6 +567,7 @@ const UserActionBar: FC = () => {
   // Copy must strip the machine context (the primitive copies RAW message
   // text, which would leak the hidden directives to the clipboard).
   const [copied, setCopied] = useState(false);
+  const messageId = useAuiState((s) => s.message.id);
   const text = useAuiState((s) =>
     s.message.content
       .map((p) => (p.type === "text" ? stripMachineContext(p.text) : ""))
@@ -591,14 +592,20 @@ const UserActionBar: FC = () => {
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
       </TooltipIconButton>
-      {/* Edit renders only when the runtime supports it — the opencode
-          runtime has no message-edit yet, so the primitive stays hidden
-          instead of shipping a button that does nothing. */}
-      <ActionBarPrimitive.Edit asChild>
-        <TooltipIconButton tooltip="Edit" className="aui-user-action-edit">
-          <PencilIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Edit>
+      {/* Edit = engine-side revert to this message + prefill the composer
+          with its text (the opencode runtime has no native message-edit;
+          revert-and-resend is the engine's own edit semantics). */}
+      <TooltipIconButton
+        tooltip="Edit — rewinds the conversation to this message"
+        className="aui-user-action-edit"
+        onClick={() =>
+          window.dispatchEvent(
+            new CustomEvent("exa:edit-message", { detail: { messageId, text } }),
+          )
+        }
+      >
+        <PencilIcon />
+      </TooltipIconButton>
     </ActionBarPrimitive.Root>
   );
 };

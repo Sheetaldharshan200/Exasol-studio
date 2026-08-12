@@ -1047,7 +1047,16 @@ export function ExaThread({
     // (MCP tools on, coding tools permission-denied). The hook reads options
     // per render, so this follows the mode pill live.
     defaultAgent: composerApi.mode === "chat" ? "exa-chat" : "exa",
-    defaultModel: composerApi.model ? { providerID: composerApi.model.providerID, modelID: composerApi.model.modelID } : undefined,
+    // The variant (reasoning effort) rides INSIDE the model ref — the engine
+    // accepts model.variant since v1.18.12-exa.5 (the runtime forwards the
+    // object verbatim but has no top-level variant channel).
+    defaultModel: composerApi.model
+      ? ({
+          providerID: composerApi.model.providerID,
+          modelID: composerApi.model.modelID,
+          ...(composerApi.model.variant ? { variant: composerApi.model.variant } : {}),
+        } as { providerID: string; modelID: string })
+      : undefined,
     onThreadIdChange: (id) => onSessionChange?.(id),
     onError: (err) => {
       // Console-only errors leave the working indicator implying progress
@@ -1104,6 +1113,34 @@ export function ExaThread({
     };
     window.addEventListener("exa:force-abort", onAbort);
     return () => window.removeEventListener("exa:force-abort", onAbort);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, client]);
+
+  // Edit a user message: revert the session to that message engine-side
+  // (its own edit semantics — everything from it onward is undone), resync,
+  // and prefill the composer with the message text for editing.
+  useEffect(() => {
+    const onEdit = (e: Event) => {
+      const d = (e as CustomEvent<{ messageId?: string; text?: string }>).detail ?? {};
+      const messageId = d.messageId;
+      if (!messageId) return;
+      void (async () => {
+        try {
+          const id = (runtime.threads.mainItem.getState?.() as { remoteId?: string } | undefined)?.remoteId;
+          if (!id) return;
+          await (client as unknown as { session: { revert: (o: { sessionID: string; messageID: string }) => Promise<unknown> } }).session.revert({
+            sessionID: id,
+            messageID: messageId,
+          });
+          await runtime.threads.switchToThread(id).catch(() => undefined);
+          runtime.thread.composer.setText(d.text ?? "");
+        } catch (err) {
+          console.error("[exa] edit (revert) failed", err);
+        }
+      })();
+    };
+    window.addEventListener("exa:edit-message", onEdit);
+    return () => window.removeEventListener("exa:edit-message", onEdit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, client]);
 

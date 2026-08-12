@@ -12,6 +12,8 @@ export type AgentModelInfo = {
   context?: number;
   toolCall?: boolean;
   reasoning?: boolean;
+  /** Reasoning-effort variants the engine computed (low/medium/high/xhigh). */
+  variants?: string[];
   /** Model accepts image input. */
   image?: boolean;
 };
@@ -341,7 +343,7 @@ export type EngineProviderInfo = {
   name: string;
   /** How it was configured: "env" | "config" | "custom" | "api". */
   source?: string;
-  models: { id: string; name: string; context?: number }[];
+  models: { id: string; name: string; context?: number; variants?: string[] }[];
 };
 
 /** Engine install/run status (from /v1/engine/status). */

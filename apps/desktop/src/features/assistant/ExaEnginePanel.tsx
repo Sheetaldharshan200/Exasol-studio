@@ -21,7 +21,7 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
-const ENGINE_TAG = "v1.18.12-exa.4";
+const ENGINE_TAG = "v1.18.12-exa.5";
 
 // The scope guardrail lives ENGINE-side now: the seeded "exa" agent
 // (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.
@@ -185,7 +185,7 @@ export function ExaEnginePanel({
           const eng = await agent.engine.providers();
           for (const ep of eng.providers) {
             if (ep.models.length === 0) continue;
-            const models = ep.models.map((m) => ({ id: m.id, name: m.name, context: m.context }));
+            const models = ep.models.map((m) => ({ id: m.id, name: m.name, context: m.context, variants: m.variants }));
             const idx = ps.findIndex((p) => p.id === ep.id);
             if (idx === -1) {
               ps = [...ps, { id: ep.id, name: ep.name, kind: "cloud", configured: true, models }];
