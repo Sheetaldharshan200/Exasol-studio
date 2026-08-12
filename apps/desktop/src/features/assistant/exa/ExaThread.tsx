@@ -812,6 +812,11 @@ export function ExaComposerMenus() {
     else setText("");
   };
   useEffect(() => setHover(0), [atTrigger?.query, slashTrigger?.query, argFor]);
+  // Deleting the @ token closes the WHOLE menu — including the argument
+  // stage, which otherwise kept the picker open over an empty composer.
+  useEffect(() => {
+    if (argFor && !atTrigger) setArgFor(null);
+  }, [argFor, atTrigger]);
   useEffect(() => {
     if (!listKind) return;
     const onKey = (e: KeyboardEvent) => {
