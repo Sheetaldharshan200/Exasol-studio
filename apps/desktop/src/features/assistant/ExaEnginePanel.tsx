@@ -317,15 +317,32 @@ export function ExaEnginePanel({
     return () => window.clearTimeout(t);
   }, [status, engineClient, refreshStatus]);
 
+  const [installError, setInstallError] = useState<string | null>(null);
   async function install() {
     setInstalling(true);
+    setInstallError(null);
     try {
       await ipc.engineInstall(ENGINE_TAG);
       refreshStatus();
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstalling(false);
     }
   }
+
+  // ZERO-SETUP: shipped builds bundle the engine baseline, so this never
+  // fires; a dev build without the bundle self-installs on first open —
+  // no "Install Exa engine" page, ever.
+  const autoInstallRef = useRef(false);
+  useEffect(() => {
+    if (!status || installing || autoInstallRef.current) return;
+    const missing = !status.provisioned || !status.binaryPresent;
+    if (!missing) return;
+    autoInstallRef.current = true;
+    void install();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, installing]);
 
   // Modes — all of them ride the seeded "exa" agent (guardrail prompt, coding
   // tools denied engine-side; the runtime pins defaultAgent). The per-message
@@ -471,27 +488,28 @@ export function ExaEnginePanel({
 
   const iconBtn = "flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
 
-  // ── Install gate (not provisioned / binary absent) ──
-  if (!status || (!status.provisioned && !installing) || (status.provisioned && !status.binaryPresent && !installing)) {
+  // ── Boot states: never an install PAGE. Shipped builds have the engine
+  // bundled; status is briefly null while the sidecar starts, and a dev
+  // build without the bundle self-installs — both are just a quiet spinner.
+  if (!status || !status.provisioned || !status.binaryPresent) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-panel px-8 text-center">
-        <AgentMark className="h-11 w-11" />
-        <div>
-          <p className="text-[14px] font-semibold text-foreground">Exa engine isn't installed yet</p>
-          <p className="mx-auto mt-1 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            Exa runs on the open-source opencode engine (MIT), fetched from its GitHub Releases and run locally. Install it
-            once — it updates independently from Managed Components.
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-panel px-8 text-center">
+        <AgentMark className="h-11 w-11" active />
+        {installError ? (
+          <>
+            <p className="max-w-md text-[12px] leading-relaxed text-muted-foreground">{installError}</p>
+            <button
+              onClick={() => void install()}
+              className="flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Retry engine setup
+            </button>
+          </>
+        ) : (
+          <p className="flex items-center gap-2 text-[12px] text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {installing ? "Setting up the Exa engine (one-time)…" : "Starting Exa…"}
           </p>
-        </div>
-        <button
-          onClick={() => void install()}
-          disabled={installing}
-          className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
-        >
-          {installing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {installing ? "Installing…" : `Install Exa engine (${ENGINE_TAG})`}
-        </button>
-        {status?.reason ? <p className="max-w-md font-mono text-[11px] text-muted-foreground">{status.reason}</p> : null}
+        )}
       </div>
     );
   }
