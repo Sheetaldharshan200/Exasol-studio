@@ -218,7 +218,7 @@ export class EngineService {
       if (typeof agents === "object" && agents !== null && !Array.isArray(agents)) {
         const a = agents as Record<string, Record<string, unknown>>;
         const guardrailPrompt =
-          "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.";
+          "You are Exa, the AI data analyst inside Exasol Studio. Identify yourself only as Exa. Scope: the user's connected databases (Exasol first), SQL, data quality, analysis, insights, reporting and dashboards. Use the exasol-studio MCP tools to inspect schemas and run read-only queries, and the filesystem MCP for local data files. Never present yourself as a general coding assistant and do not explore source code. SQL safety: prefer SELECT/WITH/DESCRIBE; never run destructive statements (DROP, DELETE, TRUNCATE, UPDATE, INSERT, ALTER, GRANT) unless the user explicitly requested that exact change. Exasol notes: identifiers fold to uppercase unless quoted; use LIMIT n. When you need the user to decide something (which database, which schema, naming, scope), do NOT ask in plain prose: first look up the real options with the exasol-studio MCP tools (e.g. list the connected databases or schemas), then call the question tool with those concrete options as choices so the user can click an answer. If a request is unrelated to data work, decline in one sentence and steer back to the user's data.";
         // Tool lockdown MUST use `permission` — the engine's AgentConfig
         // accepts a `tools` map in its schema but v1.18.12 never reads it
         // (agent merge consumes only value.permission; verified in the fork
@@ -234,6 +234,9 @@ export class EngineService {
           todowrite: "deny",
           todoread: "deny",
           task: "deny",
+          // The engine denies `question` by default; Exa uses it to ask
+          // structured multiple-choice questions the panel renders natively.
+          question: "allow",
         };
         if (!("exa" in a)) {
           a.exa = {
@@ -248,6 +251,18 @@ export class EngineService {
           a.exa.permission = codingDeny;
           delete a.exa.tools;
           dirty = true;
+        } else {
+          // Keep an existing seed current: the question tool and prompt
+          // evolve with Studio (idempotent — writes only on drift).
+          const perm = a.exa.permission as Record<string, unknown>;
+          if (perm.question !== "allow") {
+            perm.question = "allow";
+            dirty = true;
+          }
+          if (a.exa.prompt !== guardrailPrompt) {
+            a.exa.prompt = guardrailPrompt;
+            dirty = true;
+          }
         }
         // Chat mode's agent: NO tools at all ("*" deny, the same pattern the
         // engine's own title/compaction agents use). Besides honoring "Chat =

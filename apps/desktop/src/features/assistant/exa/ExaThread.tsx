@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
-import { OpenCodeAttachmentAdapter, useOpenCodePermissions, useOpenCodeRuntime } from "@assistant-ui/react-opencode";
+import { OpenCodeAttachmentAdapter, useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -242,6 +242,120 @@ function ExaPermissionBar() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Structured questions from the engine's `question` tool (the agent asks
+ * "which database / schema / option?" with concrete choices instead of prose).
+ * The turn PAUSES until answered — rendered as a questionnaire card pinned
+ * above the composer: choice rows (single or multi), an optional custom
+ * answer, Submit/Dismiss.
+ */
+function ExaQuestionnaire() {
+  const questions = useOpenCodeQuestions();
+  const extras = useOpenCodeRuntimeExtras();
+  const req = questions[0];
+  if (!req) return null;
+  return <ExaQuestionnaireCard key={req.id} req={req} extras={extras} />;
+}
+
+function ExaQuestionnaireCard({
+  req,
+  extras,
+}: {
+  req: ReturnType<typeof useOpenCodeQuestions>[number];
+  extras: ReturnType<typeof useOpenCodeRuntimeExtras>;
+}) {
+  const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [custom, setCustom] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (qi: number, label: string, multiple: boolean) => {
+    setSelected((prev) => {
+      const cur = prev[qi] ?? [];
+      if (!multiple) return { ...prev, [qi]: cur[0] === label ? [] : [label] };
+      return { ...prev, [qi]: cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label] };
+    });
+  };
+  const answersFor = (qi: number): string[] => {
+    const picks = selected[qi] ?? [];
+    const typed = (custom[qi] ?? "").trim();
+    return typed ? [...picks, typed] : picks;
+  };
+  const complete = req.questions.every((_, qi) => answersFor(qi).length > 0);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await extras.replyToQuestion(req.id, req.questions.map((_, qi) => answersFor(qi)));
+    } catch (err) {
+      console.error("[exa] question reply failed", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pointer-events-auto mx-auto mb-2 w-full max-w-2xl px-4">
+      <div className="max-h-[50vh] overflow-y-auto overscroll-contain rounded-xl border border-border bg-panel p-3 shadow-lg [scrollbar-width:thin]">
+        {req.questions.map((q, qi) => (
+          <div key={qi} className={cn(qi > 0 && "mt-3 border-t border-border/60 pt-3")}>
+            <div className="mb-0.5 flex items-center gap-2">
+              {q.header ? (
+                <span className="rounded bg-secondary px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">{q.header}</span>
+              ) : null}
+              {q.multiple ? <span className="text-[10px] text-muted-foreground">select all that apply</span> : null}
+            </div>
+            <p className="mb-2 text-[13px] font-medium text-foreground">{q.question}</p>
+            <div className="space-y-1">
+              {q.options.map((o) => {
+                const on = (selected[qi] ?? []).includes(o.label);
+                return (
+                  <button
+                    key={o.label}
+                    type="button"
+                    onClick={() => toggle(qi, o.label, Boolean(q.multiple))}
+                    className={cn(
+                      "flex w-full flex-col items-start rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                      on ? "border-primary/60 bg-primary/10" : "border-border/70 hover:bg-muted/60",
+                    )}
+                  >
+                    <span className="text-[12.5px] font-medium text-foreground">{o.label}</span>
+                    {o.description ? <span className="text-[11px] text-muted-foreground">{o.description}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={custom[qi] ?? ""}
+              onChange={(e) => setCustom((prev) => ({ ...prev, [qi]: e.target.value }))}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="Or type your own answer…"
+              className="mt-1.5 h-8 w-full rounded-lg border border-border bg-background px-2.5 text-[12px] outline-none focus:border-ring"
+            />
+          </div>
+        ))}
+        <div className="mt-3 flex items-center justify-end gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void extras.rejectQuestion(req.id).catch(() => undefined)}
+            className="hover:bg-muted flex h-7 items-center rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            Dismiss
+          </button>
+          <button
+            type="button"
+            disabled={busy || !complete}
+            onClick={() => void submit()}
+            className="flex h-7 items-center rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+          >
+            Answer
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1003,6 +1117,7 @@ export function ExaThread({
                   <Thread components={{ Welcome: ExaWelcome }} />
                 </div>
                 <div className="absolute inset-x-0 bottom-0 z-10">
+                  <ExaQuestionnaire />
                   <ExaPermissionBar />
                 </div>
               </div>
