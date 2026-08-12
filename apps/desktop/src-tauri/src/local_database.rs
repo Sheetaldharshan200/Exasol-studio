@@ -1135,8 +1135,29 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
 
+    // Components are INDEPENDENT: the bootstrap installs the database plus
+    // ExaPump and the MCP server, and a component that fails to install must
+    // never block the rest — notify, mark it failed, continue. Each can be
+    // retried on its own from the Marketplace later.
+    let mut setup_warnings: Vec<String> = Vec::new();
+    let mut warn = |app: &AppHandle, status: &mut BootstrapStatus, name: &str, versions: &[(&str, String)], error: &AppError, warnings: &mut Vec<String>| {
+        for (slug, version) in versions {
+            set_component(status, slug, "failed", version, Some(error.to_string()));
+        }
+        emit_log(app, JOB_ID, format!("{name} setup failed ({error}) — continuing; retry it from the Marketplace."), "err");
+        let _ = app.emit(
+            "studio:notice",
+            serde_json::json!({
+                "kind": "warning",
+                "title": format!("{name} setup failed"),
+                "body": format!("{error} — the rest of the setup continued; retry {name} from the Marketplace."),
+            }),
+        );
+        warnings.push(name.to_string());
+    };
+
     status.step = "exapump".into();
-    status.message = "Installing verified ExaPump…".into();
+    status.message = "Installing ExaPump…".into();
     set_component(
         &mut status,
         "exapump",
@@ -1145,8 +1166,10 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
     write_status(&app, &data_dir, status.clone())?;
-    ensure_exapump(&app, &data_dir)?;
-    set_component(&mut status, "exapump", "ready", &lock.exapump.version, None);
+    match ensure_exapump(&app, &data_dir) {
+        Ok(_) => set_component(&mut status, "exapump", "ready", &lock.exapump.version, None),
+        Err(e) => warn(&app, &mut status, "ExaPump", &[("exapump", lock.exapump.version.clone())], &e, &mut setup_warnings),
+    }
 
     status.step = "agent-skills".into();
     status.message = "Verifying bundled Exasol agent skills and Fable Method…".into();
@@ -1165,21 +1188,32 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
     write_status(&app, &data_dir, status.clone())?;
-    ensure_agent_skills(&app)?;
-    set_component(
-        &mut status,
-        "agent-skills",
-        "ready",
-        &lock.agent_skills.revision,
-        None,
-    );
-    set_component(
-        &mut status,
-        "fable-method",
-        "ready",
-        &lock.fable_method.revision,
-        None,
-    );
+    match ensure_agent_skills(&app) {
+        Ok(()) => {
+            set_component(
+                &mut status,
+                "agent-skills",
+                "ready",
+                &lock.agent_skills.revision,
+                None,
+            );
+            set_component(
+                &mut status,
+                "fable-method",
+                "ready",
+                &lock.fable_method.revision,
+                None,
+            );
+        }
+        Err(e) => warn(
+            &app,
+            &mut status,
+            "Agent skills",
+            &[("agent-skills", lock.agent_skills.revision.clone()), ("fable-method", lock.fable_method.revision.clone())],
+            &e,
+            &mut setup_warnings,
+        ),
+    }
 
     status.step = "connection-profile".into();
     status.message = "Saving the built-in local connection in the Studio vault…".into();
@@ -1197,15 +1231,25 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     status.message =
         "Provisioning a read-only identity and validating the Exasol MCP server…".into();
     write_status(&app, &data_dir, status.clone())?;
-    let (mcp_runtime, mcp_profile) = provision_mcp_identity(&app, &python, &runtime)?;
-    validate_and_configure_mcp(&app, &data_dir, &python, &mcp_runtime, &mcp_profile.id)?;
-    set_component(
-        &mut status,
-        "mcp-server",
-        "ready",
-        &lock.python_stack.mcp_server_version,
-        None,
-    );
+    match provision_mcp_identity(&app, &python, &runtime)
+        .and_then(|(mcp_runtime, mcp_profile)| validate_and_configure_mcp(&app, &data_dir, &python, &mcp_runtime, &mcp_profile.id))
+    {
+        Ok(()) => set_component(
+            &mut status,
+            "mcp-server",
+            "ready",
+            &lock.python_stack.mcp_server_version,
+            None,
+        ),
+        Err(e) => warn(
+            &app,
+            &mut status,
+            "Exasol MCP server",
+            &[("mcp-server", lock.python_stack.mcp_server_version.clone())],
+            &e,
+            &mut setup_warnings,
+        ),
+    }
 
     // Semantic Views is OPT-IN — never installed by default. A previous
     // installation (marker present) keeps reporting ready; otherwise it stays
@@ -1224,9 +1268,20 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
 
     status.state = "ready".into();
     status.step = "complete".into();
-    status.message = "Local Exasol and the complete AI/data stack are ready.".into();
+    status.message = if setup_warnings.is_empty() {
+        "Local Exasol and the complete AI/data stack are ready.".into()
+    } else {
+        format!(
+            "Local Exasol is ready. {} failed to set up — retry from the Marketplace.",
+            setup_warnings.join(", ")
+        )
+    };
     write_status(&app, &data_dir, status)?;
-    emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, agent skills, ExaPump, and MCP server are ready.", "success");
+    if setup_warnings.is_empty() {
+        emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, agent skills, ExaPump, and MCP server are ready.", "success");
+    } else {
+        emit_log(&app, JOB_ID, format!("✓ Local Exasol is ready ({} failed — retry from the Marketplace).", setup_warnings.join(", ")), "info");
+    }
     Ok(())
 }
 

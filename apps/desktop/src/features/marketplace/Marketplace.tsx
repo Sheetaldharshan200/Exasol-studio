@@ -1093,7 +1093,7 @@ export function Marketplace() {
               </div>
             </div>
 
-            {nav === "updates" ? <ManagedComponents /> : null}
+            {nav === "updates" ? <IndependentComponents /> : null}
             {nav === "ai-clients" ? (
               <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
@@ -1593,23 +1593,18 @@ async function simulate(
 }
 
 /**
- * Managed components — each updates independently, in its own isolated
- * environment, decoupled from Studio releases. Studio's verified version is the
- * known-good baseline you can always revert to. Shown atop the Updates section.
+ * Components — installed once at setup (local database, ExaPump, MCP server),
+ * then fully INDEPENDENT: each updates straight from its own official
+ * releases (digest-verified), on its own schedule, with no coupling to
+ * Studio releases or to each other. A component that failed during setup is
+ * retried from its own card.
  */
-function ManagedComponents() {
+function IndependentComponents() {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
+  const [upstream, setUpstream] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  // Latest OFFICIAL release per component (id → tag), fetched after render so
-  // a slow network never blocks the panel. Empty on failure — the verified
-  // baseline is then all that's offered.
-  const [upstream, setUpstream] = useState<Record<string, string>>({});
 
-  // Two update sources per component: the verified lock (Studio's known-good
-  // baseline, c.verified) and the component's own OFFICIAL releases — so
-  // updates are independent of Studio releases. Upstream installs are
-  // digest-verified (GitHub's per-asset sha256) and always revertible.
   const refresh = useCallback(async () => {
     const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
     setComps(list);
@@ -1622,10 +1617,6 @@ function ManagedComponents() {
       .catch(() => undefined);
   }, []);
 
-  // Offer an Update only when verified is STRICTLY newer than installed (shared
-  // helper mirrors the Rust is_newer) — never a downgrade or an equal version.
-  const isNewer = isNewerVersion;
-
   async function run(id: string, action: () => Promise<void>, ok: string) {
     setBusy(id); setNote(null);
     try { await action(); setNote(ok); await refresh(); }
@@ -1635,66 +1626,48 @@ function ManagedComponents() {
 
   if (!comps) return null;
 
-  // A newer OFFICIAL release than everything already installed/verified.
-  const upstreamFor = (c: ComponentInfo): string | null => {
-    if (c.opaqueVersion) return null; // revision-tracked (Semantic Views)
+  // A component is actionable when its own official releases moved past what
+  // is installed. Opaque revisions (Semantic Views) reconcile by difference.
+  const updateFor = (c: ComponentInfo): string | null => {
+    if (c.opaqueVersion) return null;
     const tag = upstream[c.id];
-    if (!tag) return null;
-    return isNewer(tag, c.verified) && isNewer(tag, c.installed) ? tag : null;
+    return tag && isNewerVersion(tag, c.installed) ? tag : null;
   };
-
-  // The Updates tab lists only components that need action — a pending verified
-  // update, a newer official release, or a non-verified "custom version". Rows
-  // already on the newest known version are hidden (summarised below).
-  const isUpToDate = (c: ComponentInfo) =>
-    !upstreamFor(c) &&
-    (c.opaqueVersion
-      ? Boolean(c.installed) && c.installed === c.verified
-      : !isNewer(c.verified, c.installed) && !(Boolean(c.installed) && c.installed !== c.verified));
-  const actionable = comps.filter((c) => !isUpToDate(c));
-  const upToDateCount = comps.length - actionable.length;
+  const actionable = comps.filter((c) => updateFor(c) || (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified));
 
   return (
     <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
       <div className="mb-1 flex items-center gap-2">
         <ShieldCheck className="h-4 w-4 text-primary" />
-        <h3 className="text-[12.5px] font-semibold text-foreground">Managed components</h3>
+        <h3 className="text-[12.5px] font-semibold text-foreground">Components</h3>
       </div>
       <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        Each runs in its own isolated environment and updates on its own — independent of Studio releases. Newer official releases install directly (verified against the sha256 digest GitHub publishes per asset); the Studio-verified version stays the known-good baseline you can always revert to.
+        The local database, ExaPump, and the MCP server install once at setup and then live independently — each updates straight from its own official releases (verified against the sha256 digest GitHub publishes per asset), never coupled to Studio updates or to each other.
       </p>
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
       {actionable.length === 0 ? (
         <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-primary" /> All {comps.length} managed components are up to date.
+          <Check className="h-3.5 w-3.5 text-primary" /> All {comps.length} components are on the latest official release.
         </p>
       ) : null}
       <div className="divide-y divide-border/60">
         {actionable.map((c) => {
           const isBusy = busy === c.id;
+          const target = updateFor(c);
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
-          const upToDate = <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> up to date</span>;
           return (
             <div key={c.id} className="flex items-center gap-3 py-2.5">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
-                  {c.onOwnEnv ? (
-                    <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-medium uppercase text-primary" title="Independently installed in its own environment">own env</span>
-                  ) : (
-                    <span className="rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground" title="Running Studio's verified version">verified</span>
-                  )}
-                </div>
+                <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
                   <span>installed {c.installed ?? "—"}</span>
-                  <span>verified {c.verified}</span>
+                  {target ? <span>official {target}</span> : null}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {c.id === "personal" ? (
-                  // The DB engine carries data — a backup is always available,
-                  // and the (backup-first) update only appears when a newer
-                  // verified engine exists.
+                  // The DB engine carries data — back up any time; its update
+                  // is backup-first with automatic rollback.
                   <button
                     onClick={() => void run(c.id, async () => { await ipc.backupLocalDatabase(); }, "Local database backed up (see personal-local/backups).")}
                     disabled={isBusy}
@@ -1704,80 +1677,29 @@ function ManagedComponents() {
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
                   </button>
                 ) : null}
-                {c.onOwnEnv ? (
+                {target ? (
                   <button
-                    onClick={() => void run(c.id, () => ipc.revertComponent(c.id), `${c.name} reverted to verified ${c.verified}.`)}
-                    disabled={isBusy}
-                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />} Revert
-                  </button>
-                ) : null}
-                {/* A newer OFFICIAL release installs directly — digest-verified
-                    against GitHub's published sha256, recorded as channel
-                    "upstream", revertible to the verified baseline any time.
-                    The DB engine additionally backs up + can roll back. */}
-                {upstreamFor(c) ? (
-                  <button
-                    onClick={() =>
-                      void run(
-                        c.id,
-                        () => ipc.updateComponent(c.id, upstreamFor(c) ?? undefined),
-                        `${c.name} updated to official ${upstreamFor(c)}.`,
-                      )
-                    }
+                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, target), `${c.name} updated to ${target}.`)}
                     disabled={isBusy}
                     title={
                       c.id === "personal"
-                        ? `Install the official ${upstreamFor(c)} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
-                        : `Install the official ${upstreamFor(c)} release (digest-verified). Revert returns to Studio's verified ${c.verified}.`
+                        ? `Install the official ${target} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
+                        : `Install the official ${target} release (digest-verified).`
                     }
                     className={upBtn}
                   >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {upstreamFor(c)}
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {target}
+                  </button>
+                ) : c.opaqueVersion && c.installed ? (
+                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled.`)} disabled={isBusy} className={upBtn}>
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
                   </button>
                 ) : null}
-                {/* The verified-baseline update: offered only when verified is
-                    ahead of installed (never a downgrade or an equal swap). */}
-                {c.opaqueVersion ? (
-                  // Opaque revision (Semantic Views, DB-side): reconcile to the
-                  // verified revision when the installed one differs. Not
-                  // installed → nothing to update here (install it from its card).
-                  !c.installed ? (
-                    <span className="text-[10.5px] text-muted-foreground/70">not installed</span>
-                  ) : c.installed !== c.verified ? (
-                    <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled to the verified revision.`)} disabled={isBusy} className={upBtn}>
-                      {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
-                    </button>
-                  ) : upToDate
-                ) : isNewer(c.verified, c.installed) ? (
-                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} updated to verified ${c.verified}.`)} disabled={isBusy} className={upBtn}>
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {c.verified} (verified)
-                  </button>
-                ) : upstreamFor(c) ? null : c.installed && c.installed !== c.verified ? (
-                  // Installed differs from verified but verified isn't newer →
-                  // running a custom version AHEAD of the verified baseline (e.g.
-                  // an earlier upstream update). Not "up to date" — Revert returns
-                  // it to the verified build.
-                  <span
-                    className="flex items-center gap-1 text-[11px] text-syntax-function"
-                    title={`Running ${c.installed}, newer than Studio's verified ${c.verified}. This version isn't Studio-verified — use Revert to return to the verified build.`}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-syntax-function" /> custom version
-                  </span>
-                ) : (
-                  upToDate
-                )}
               </div>
             </div>
           );
         })}
       </div>
-      {actionable.length > 0 && upToDateCount > 0 ? (
-        <p className="mt-2.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70">
-          <Check className="h-3 w-3 text-primary/70" /> {upToDateCount} other component{upToDateCount === 1 ? "" : "s"} up to date.
-        </p>
-      ) : null}
     </section>
   );
 }
