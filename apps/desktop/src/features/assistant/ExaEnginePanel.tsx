@@ -471,8 +471,8 @@ export function ExaEnginePanel({
       .join(", ");
     const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;
     const netDirective = networkAllowed
-      ? ""
-      : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled in AI Settings under Guardrails.";
+      ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
+      : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
     const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective].filter(Boolean).join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
     // block so the UI renders only what the user actually typed — see

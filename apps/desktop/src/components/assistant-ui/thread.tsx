@@ -608,27 +608,37 @@ const UserMessage: FC = () => {
  * prompt — the reply disappears and regenerates like a fresh turn.
  */
 const AssistantReloadButton: FC = () => {
-  const parent = useAuiState((s) => {
+  // SCALAR selectors only: an object-returning selector creates a fresh
+  // reference every run, which useSyncExternalStore treats as a permanent
+  // change — an infinite re-render loop (React #185).
+  const parentId = useAuiState((s) => {
+    const msgs = s.thread.messages;
+    const i = msgs.findIndex((m) => m.id === s.message.id);
+    for (let j = i - 1; j >= 0; j--) {
+      if (msgs[j].role === "user") return msgs[j].id;
+    }
+    return null;
+  });
+  const parentText = useAuiState((s) => {
     const msgs = s.thread.messages;
     const i = msgs.findIndex((m) => m.id === s.message.id);
     for (let j = i - 1; j >= 0; j--) {
       if (msgs[j].role === "user") {
-        const text = msgs[j].content
+        return msgs[j].content
           .map((p) => (p.type === "text" ? p.text : ""))
           .filter(Boolean)
           .join("\n");
-        return { id: msgs[j].id, text };
       }
     }
     return null;
   });
-  if (!parent) return null;
+  if (!parentId) return null;
   return (
     <TooltipIconButton
       tooltip="Regenerate — reruns your last prompt"
       onClick={() =>
         window.dispatchEvent(
-          new CustomEvent("exa:reload-message", { detail: { parentId: parent.id, text: parent.text } }),
+          new CustomEvent("exa:reload-message", { detail: { parentId, text: parentText ?? "" } }),
         )
       }
     >
