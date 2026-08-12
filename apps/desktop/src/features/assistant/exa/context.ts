@@ -180,3 +180,35 @@ export function buildPrompt(userText: string, chips: ContextChip[]): string {
   const context = chips.map((c) => c.body).join("\n\n").replace(/<\/(context)>/gi, "&lt;/$1&gt;");
   return `<context>\n${context}\n</context>\n\n${userText}`;
 }
+
+// ── Machine-context sentinel ────────────────────────────────────────────────
+// Directives, chips and other machine-added context ride INSIDE the message
+// text (the engine runtime has no hidden-part channel), wrapped in this tag
+// so the UI can show only what the user actually typed. The model reads the
+// tag naturally; strip helpers keep it out of bubbles and exports.
+
+const CTX_OPEN = "<exa_context>";
+const CTX_CLOSE = "</exa_context>";
+
+/** Wrap machine context for embedding at the top of an outgoing message. */
+export function wrapMachineContext(context: string): string {
+  const body = context.trim();
+  return body ? `${CTX_OPEN}\n${body}\n${CTX_CLOSE}` : "";
+}
+
+/** The user-visible remainder of a message (machine context removed). */
+export function stripMachineContext(text: string): string {
+  let out = text;
+  for (;;) {
+    const start = out.indexOf(CTX_OPEN);
+    if (start === -1) break;
+    const end = out.indexOf(CTX_CLOSE, start);
+    if (end === -1) {
+      // Unterminated block — drop from the marker on, never render half.
+      out = out.slice(0, start);
+      break;
+    }
+    out = out.slice(0, start) + out.slice(end + CTX_CLOSE.length);
+  }
+  return out.replace(/^\s+/, "").replace(/\s+$/, "");
+}

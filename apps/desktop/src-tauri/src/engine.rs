@@ -22,6 +22,10 @@ use crate::state::AppState;
 
 const OPENCODE_REPO: &str = "Sheetaldharshan200/exa";
 
+/// The engine tag this app ships as its bundled baseline (single source for
+/// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
+pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.4";
+
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
 pub fn asset_for(os: &str, arch: &str) -> Option<String> {
@@ -87,7 +91,25 @@ pub fn bundled_engine_path(app: &AppHandle) -> Option<PathBuf> {
 /// first, then the bundled baseline — so a fresh install works offline and an
 /// update moves it forward without touching the app.
 pub fn resolve_engine_binary(app: &AppHandle, data_dir: &Path) -> Option<PathBuf> {
-    engine_binary_path(data_dir).or_else(|| bundled_engine_path(app))
+    // An app update must never be shadowed by a STALE independent install:
+    // the component copy wins only while it is at least as new as the
+    // baseline this app ships (verified live 2026-08-12: an exa.1 component
+    // kept serving pre-branding binaries under an exa.3 app).
+    if let Some(component) = engine_binary_path(data_dir) {
+        let installed = crate::components_update::read_manifest(data_dir, ComponentId::ExaAgent).map(|m| m.version);
+        let stale = installed
+            .as_deref()
+            .map(|v| crate::components_update::is_newer(ENGINE_BASELINE_TAG, v))
+            .unwrap_or(false);
+        if !stale {
+            return Some(component);
+        }
+        if let Some(baseline) = bundled_engine_path(app) {
+            return Some(baseline);
+        }
+        return Some(component);
+    }
+    bundled_engine_path(app)
 }
 
 #[derive(Debug, Clone, Serialize)]

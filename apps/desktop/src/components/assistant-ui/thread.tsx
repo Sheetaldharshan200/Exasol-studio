@@ -22,6 +22,7 @@ import {
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
+import { stripMachineContext } from "@/features/assistant/exa/context";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
   ComposerQuotePreview,
@@ -313,6 +314,10 @@ const ComposerAction: FC = () => {
               size="icon"
               className="aui-composer-cancel size-7 rounded-full"
               aria-label="Stop generating"
+              // Belt & braces: the primitive cancels through the runtime; the
+              // event also aborts ENGINE-side directly and forces a resync,
+              // so Stop still works when the event stream is unhealthy.
+              onClick={() => window.dispatchEvent(new CustomEvent("exa:force-abort"))}
             >
               <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
             </Button>
@@ -516,6 +521,18 @@ const AssistantActionBar: FC = () => {
   );
 };
 
+/**
+ * User text with the machine context stripped: directives and @-chip context
+ * ride inside an <exa_context> block in the SAME text part (the runtime has
+ * no hidden-part channel), so the bubble renders only what the user typed.
+ */
+const UserMessageText: FC = () => {
+  const text = useAuiState((s) => (s.part.type === "text" ? s.part.text : ""));
+  const visible = stripMachineContext(text);
+  if (!visible) return null;
+  return <span className="whitespace-pre-wrap">{visible}</span>;
+};
+
 const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -531,7 +548,7 @@ const UserMessage: FC = () => {
           <MessagePrimitive.Quote>
             {(quote) => <QuoteBlock {...quote} />}
           </MessagePrimitive.Quote>
-          <MessagePrimitive.Parts />
+          <MessagePrimitive.Parts components={{ Text: UserMessageText }} />
         </div>
         <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
           <UserActionBar />

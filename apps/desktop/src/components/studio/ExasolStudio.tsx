@@ -2681,6 +2681,11 @@ export function ExasolStudio({
           activeTab.view !== "skills" &&
           activeTab.view !== "aiSettings" &&
           activeTab.view !== "artifact" &&
+          // The Exa tab is a full chat surface — no editor toolbar row (its
+          // own header carries the brand; the agent works across ALL
+          // connected databases via the MCP gateway, so a per-tab connection
+          // switcher was misleading anyway).
+          activeTab.view !== "exaEngine" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
@@ -2869,14 +2874,10 @@ export function ExasolStudio({
               </>
             ) : (
               <span className="flex items-center gap-1.5 px-1 text-[12px] font-medium text-foreground">
-                {activeTab.view === "exaEngine" ? (
-                  <AgentMark className="h-3.5 w-3.5" />
-                ) : (
-                  (() => {
-                    const TabIcon = TAB_ICON[activeTab.view];
-                    return <Icon name={TabIcon} className="h-3.5 w-3.5 text-primary" />;
-                  })()
-                )}
+                {(() => {
+                  const TabIcon = TAB_ICON[activeTab.view];
+                  return <Icon name={TabIcon} className="h-3.5 w-3.5 text-primary" />;
+                })()}
                 {activeTab.title}
               </span>
             )}

@@ -48,6 +48,7 @@ import { ExaModelSelector, type PickedModel } from "./ExaModelSelector";
 import {
   filterProviders,
   resolveContext,
+  stripMachineContext,
   schemaArguments,
   tableArguments,
   type ContextChip,
@@ -190,7 +191,7 @@ function ExaShareListener() {
         if (m.role !== "user" && m.role !== "assistant") continue;
         lines.push(m.role === "user" ? "## You" : "## Exa", "");
         for (const part of m.content) {
-          if (part.type === "text" && part.text) lines.push(part.text, "");
+          if (part.type === "text" && part.text) lines.push(m.role === "user" ? stripMachineContext(part.text) : part.text, "");
           else if (part.type === "tool-call") lines.push(`> tool: ${part.toolName ?? "tool"}`, "");
         }
       }
@@ -605,9 +606,18 @@ export function ExaSendButton() {
       return;
     }
     // send() carries text + attachments + clears the composer. setText is
-    // store-synchronous, so send() sees the expanded prompt.
-    aui.composer().setText(expanded);
-    void aui.composer().send();
+    // store-synchronous, so send() sees the expanded prompt. On ANY failure
+    // put the user's RAW text back — never the machine-expanded prompt.
+    try {
+      aui.composer().setText(expanded);
+      void Promise.resolve(aui.composer().send()).catch((err) => {
+        console.error("[exa] send failed", err);
+        aui.composer().setText(raw);
+      });
+    } catch (err) {
+      console.error("[exa] send threw", err);
+      aui.composer().setText(raw);
+    }
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1037,6 +1047,29 @@ export function ExaThread({
     if (!initialSessionId) void startFreshSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Stop must work even when the event stream is unhealthy: abort the
+  // session ENGINE-side directly, then re-open the thread to force a full
+  // resync (history + run state) instead of waiting for events.
+  useEffect(() => {
+    const onAbort = () => {
+      void (async () => {
+        try {
+          const id = (runtime.threads.mainItem.getState?.() as { remoteId?: string } | undefined)?.remoteId;
+          if (!id) return;
+          await (client as unknown as { session: { abort: (o: { sessionID: string }) => Promise<unknown> } }).session
+            .abort({ sessionID: id })
+            .catch(() => undefined);
+          window.setTimeout(() => void runtime.threads.switchToThread(id).catch(() => undefined), 800);
+        } catch (err) {
+          console.error("[exa] force-abort failed", err);
+        }
+      })();
+    };
+    window.addEventListener("exa:force-abort", onAbort);
+    return () => window.removeEventListener("exa:force-abort", onAbort);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, client]);
 
   // "New chat" (panel button, /new command) starts a fresh engine session.
   useEffect(() => {

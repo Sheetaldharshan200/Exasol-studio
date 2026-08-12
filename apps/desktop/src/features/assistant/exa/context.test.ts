@@ -6,6 +6,8 @@ import {
   buildPrompt,
   tableArguments,
   schemaArguments,
+  stripMachineContext,
+  wrapMachineContext,
   type ExaSnapshot,
 } from "./context.ts";
 
@@ -153,5 +155,28 @@ describe("buildPrompt", () => {
     // Exactly one real closing tag — the injected one, at the end.
     assert.equal((p.match(/<\/context>/g) ?? []).length, 1);
     assert.match(p, /&lt;\/context&gt;/);
+  });
+});
+
+describe("machine-context sentinel", () => {
+  test("wrap + strip round-trips to just the user text", () => {
+    const wrapped = wrapMachineContext("Allowed SQL operation classes: READ.");
+    const message = `${wrapped}\n\ncreate a new schema`;
+    assert.equal(stripMachineContext(message), "create a new schema");
+  });
+
+  test("empty context wraps to nothing", () => {
+    assert.equal(wrapMachineContext("   "), "");
+    assert.equal(stripMachineContext("plain text"), "plain text");
+  });
+
+  test("multiple blocks are all removed", () => {
+    const two = `${wrapMachineContext("a")}\n${wrapMachineContext("b")}\nhello`;
+    assert.equal(stripMachineContext(two), "hello");
+  });
+
+  test("an unterminated block never renders half a directive", () => {
+    assert.equal(stripMachineContext("<exa_context>secret directive\nhello"), "");
+    assert.equal(stripMachineContext("hi <exa_context>partial"), "hi");
   });
 });

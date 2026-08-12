@@ -6,7 +6,7 @@ import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
-import { buildPrompt, resolveContext, type ContextChip, type ExaSnapshot } from "./exa/context";
+import { buildPrompt, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -21,7 +21,7 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
-const ENGINE_TAG = "v1.18.12-exa.3";
+const ENGINE_TAG = "v1.18.12-exa.4";
 
 // The scope guardrail lives ENGINE-side now: the seeded "exa" agent
 // (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.
@@ -245,14 +245,17 @@ export function ExaEnginePanel({
     }
   }
 
-  // The exa terminal command ships with the app: write the PATH shim
-  // automatically once the engine is usable (idempotent — a plain file
-  // write, and the footer button stays as a manual repair/refresh).
+  // The exa terminal command ships with the app: (re)write the PATH shim
+  // once per run when the engine is usable — the shim embeds an absolute
+  // binary path, so it must refresh after app/engine updates or it keeps
+  // launching the old binary. Idempotent plain file write.
+  const shimWrittenRef = useRef(false);
   useEffect(() => {
-    if (!status?.provisioned || !status.binaryPresent || cliInstalled || cliBusy) return;
+    if (!status?.provisioned || !status.binaryPresent || shimWrittenRef.current || cliBusy) return;
+    shimWrittenRef.current = true;
     void installCli().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.provisioned, status?.binaryPresent, cliInstalled]);
+  }, [status?.provisioned, status?.binaryPresent]);
 
   // Build the runtime's SDK client whenever the engine reports a port —
   // engineClientFor caches per port, so a restart on the SAME port is a no-op
@@ -409,8 +412,13 @@ export function ExaEnginePanel({
       ? ""
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled in AI Settings under Guardrails.";
     const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective].filter(Boolean).join(" ");
-    let out = buildPrompt(directive ? `${directive}\n\n${engine}` : engine, allChips);
-    if (quote) out = `Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${out}`;
+    // Machine additions (directives + chip context) ride inside the sentinel
+    // block so the UI renders only what the user actually typed — see
+    // stripMachineContext in the user-message renderer.
+    const chipContext = allChips.length ? buildPrompt("", allChips).trimEnd() : "";
+    const machine = wrapMachineContext([directive, chipContext].filter(Boolean).join("\n\n"));
+    let out = machine ? `${machine}\n\n${engine}` : engine;
+    if (quote) out = `${machine ? machine + "\n\n" : ""}Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${engine}`;
     setChips([]);
     setPendingCommand(null);
     return out;

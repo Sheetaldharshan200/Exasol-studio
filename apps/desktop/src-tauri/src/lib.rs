@@ -118,6 +118,7 @@ pub fn run() {
             files::write_text_file,
             files::save_attachment,
             files::install_cli,
+            files::append_app_log,
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,
