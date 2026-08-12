@@ -62,20 +62,33 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
 }
 
 fn check_once(app: &AppHandle, already_notified: &mut HashSet<String>) {
+    use tauri::Manager;
     let lock = crate::component_lock::components();
+    let data_dir = app.state::<crate::state::AppState>().data_dir.clone();
+    // Compare against what is ACTUALLY INSTALLED — an independent update past
+    // the pin must not keep notifying about a version the user already runs.
+    let installed_or = |id: crate::components_update::ComponentId, pin: &str| -> String {
+        crate::components_update::read_manifest(&data_dir, id)
+            .map(|m| m.version)
+            .unwrap_or_else(|| pin.to_string())
+    };
+    let personal = crate::local_runtime::installed_personal_version(app)
+        .unwrap_or_else(|| lock.personal.version.clone());
+    let exapump = installed_or(crate::components_update::ComponentId::ExaPump, &lock.exapump.version);
+    let mcp = installed_or(crate::components_update::ComponentId::McpServer, &lock.python_stack.mcp_server_version);
     let watched: [(&str, &str, &str); 3] = [
-        ("Exasol Personal", &lock.personal.repository, &lock.personal.version),
-        ("ExaPump", &lock.exapump.repository, &lock.exapump.version),
-        ("Exasol MCP Server", "exasol/mcp-server", &lock.python_stack.mcp_server_version),
+        ("Exasol Personal", &lock.personal.repository, &personal),
+        ("ExaPump", &lock.exapump.repository, &exapump),
+        ("Exasol MCP Server", "exasol/mcp-server", &mcp),
     ];
-    for (name, repo, pinned) in watched {
+    for (name, repo, installed) in watched {
         let Some(tag) = latest_release_tag(repo) else { continue };
-        if is_newer(&tag, pinned) && already_notified.insert(format!("{repo}@{tag}")) {
+        if is_newer(&tag, installed) && already_notified.insert(format!("{repo}@{tag}")) {
             notify(
                 app,
                 &format!("{name} {tag} is available"),
                 &format!(
-                    "You have {pinned}. The official release {tag} is out on github.com/{repo} — open Marketplace → Updates to install it now, independent of Studio updates."
+                    "You have {installed}. The official release {tag} is out on github.com/{repo} — open Marketplace → Updates to install it now, independent of Studio updates."
                 ),
             );
         }
