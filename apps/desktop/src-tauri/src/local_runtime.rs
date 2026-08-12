@@ -358,6 +358,19 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     let managed = managed_exasol(app)?;
     let version_marker = runtime_dir(app)?.join("launcher.version");
     let installed_version = std::fs::read_to_string(&version_marker).unwrap_or_default();
+    // An independently-updated NEWER engine must never be rolled back by the
+    // pin (verified live: a completed v2.2.0 update was silently downgraded
+    // to the v2.1.0 pin at the next app boot by this very check).
+    if managed.is_file()
+        && !installed_version.trim().is_empty()
+        && crate::components_update::is_newer(installed_version.trim(), &component.version)
+    {
+        if let Ok(output) = Command::new(&managed).args(["install", "--help"]).output() {
+            if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local") {
+                return Ok(managed);
+            }
+        }
+    }
     let checksum_valid = managed.is_file()
         && artifact.executable_sha256.as_ref().is_some_and(|expected| {
             sha256_file(&managed).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
