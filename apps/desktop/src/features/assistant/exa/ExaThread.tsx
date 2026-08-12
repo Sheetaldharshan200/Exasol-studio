@@ -574,7 +574,19 @@ export function ExaThreadSuggestions() {
     }
     const expanded = api?.expandForSend(prompt);
     if (expanded === null || expanded === undefined || !expanded.trim()) return;
-    void aui.thread().append(expanded);
+    // Same guarded path as the send button: composer.send() (carries
+    // composer state, rejections restore the visible prompt instead of
+    // dying as unhandled "session is still initializing" errors).
+    try {
+      aui.composer().setText(expanded);
+      void Promise.resolve(aui.composer().send()).catch((err) => {
+        console.error("[exa] suggestion send failed", err);
+        aui.composer().setText(prompt);
+      });
+    } catch (err) {
+      console.error("[exa] suggestion send threw", err);
+      aui.composer().setText(prompt);
+    }
   };
   if (!api) return null;
 
@@ -1127,11 +1139,24 @@ export function ExaThread({
     if (creatingRef.current) return;
     creatingRef.current = true;
     try {
-      const created = await client.session.create({});
-      const id = (created as { data?: { id?: string } })?.data?.id;
-      if (id) await runtime.threads.switchToThread(id);
-    } catch (err) {
-      console.error("[exa] could not create an engine session", err);
+      // The engine may still be booting — retry with backoff instead of
+      // leaving the thread session-less forever (disabled composer, every
+      // send rejected with "session is still initializing").
+      let delay = 500;
+      for (let i = 0; i < 10; i++) {
+        try {
+          const created = await client.session.create({});
+          const id = (created as { data?: { id?: string } })?.data?.id;
+          if (id) {
+            await runtime.threads.switchToThread(id);
+            return;
+          }
+        } catch (err) {
+          if (i === 9) console.error("[exa] could not create an engine session", err);
+        }
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 5000);
+      }
     } finally {
       creatingRef.current = false;
     }

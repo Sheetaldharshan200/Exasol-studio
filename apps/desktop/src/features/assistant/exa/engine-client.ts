@@ -32,3 +32,18 @@ export async function engineClientFor(port: number): Promise<EngineClient> {
   cached = { port, client };
   return client;
 }
+
+/** True once the engine actually answers /path on this port (same transport
+ * the runtime will use). Handing the runtime a client before the engine is
+ * reachable leaves its first loads failed and the thread permanently
+ * "initializing" — a dead composer. */
+export async function engineReachable(port: number): Promise<boolean> {
+  try {
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    const f = inTauri ? (await import("@tauri-apps/plugin-http")).fetch : globalThis.fetch.bind(globalThis);
+    const res = await f(`http://127.0.0.1:${port}/path`, { signal: AbortSignal.timeout(1500) } as RequestInit);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

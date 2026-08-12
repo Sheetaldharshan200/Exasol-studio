@@ -8,7 +8,7 @@ import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
 import { buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, type ChatMode, type SqlOps } from "./exa/ExaThread";
-import { engineClientFor } from "./exa/engine-client";
+import { engineClientFor, engineReachable } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
 
 /**
@@ -291,8 +291,24 @@ export function ExaEnginePanel({
   useEffect(() => {
     if (!status?.provisioned || !status.binaryPresent) return;
     if (status.port) {
-      void engineClientFor(status.port).then(setEngineClient).catch(() => undefined);
-      return;
+      const port = status.port;
+      let cancelled = false;
+      // The engine may still be BOOTING when the port is first reported —
+      // hand the runtime a client only once /path actually answers, or its
+      // first loads fail and the thread sticks at "initializing" (dead
+      // composer, every send rejected).
+      void (async () => {
+        for (let i = 0; i < 40 && !cancelled; i++) {
+          if (await engineReachable(port)) {
+            if (!cancelled) void engineClientFor(port).then(setEngineClient).catch(() => undefined);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
     if (engineClient) return; // engine restarting — keep the old client until a new port appears
     // Not running yet — poke it awake (any sidecar call starts it lazily), then re-check.

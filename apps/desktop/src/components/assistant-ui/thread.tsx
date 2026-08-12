@@ -55,6 +55,7 @@ import {
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BrainIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -381,6 +382,33 @@ const MessageError: FC = () => {
   );
 };
 
+/**
+ * ONE disclosure for the whole work phase: reasoning bursts and tool calls
+ * between the user's message and the final answer collapse into a single
+ * "Worked · N steps" row (auto-open while running, collapsed when done) —
+ * instead of a noisy stack of alternating "Reasoning"/"1 tool call" headers.
+ */
+const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({ part, children }) => {
+  const running = part.status.type === "running";
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? running;
+  const steps = part.indices.length;
+  return (
+    <div data-slot="aui_chain-of-thought" className="mb-3">
+      <button
+        type="button"
+        onClick={() => setUserOpen(!open)}
+        className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-[12.5px] transition-colors"
+      >
+        <BrainIcon className={cn("size-3.5", running && "animate-pulse")} />
+        <span>{running ? "Working" : `Worked · ${steps} step${steps === 1 ? "" : "s"}`}</span>
+        <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+      </button>
+      {open ? <div className="border-border/60 mt-2 space-y-1 border-s ps-3">{children}</div> : null}
+    </div>
+  );
+};
+
 const AssistantMessage: FC = () => {
   const {
     ToolFallback: ToolFallbackComponent = ToolFallback,
@@ -412,7 +440,7 @@ const AssistantMessage: FC = () => {
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
-                return <div data-slot="aui_chain-of-thought">{children}</div>;
+                return <ChainOfThoughtGroup part={part}>{children}</ChainOfThoughtGroup>;
               case "group-tool":
                 if (ToolGroup) {
                   return <ToolGroup group={part}>{children}</ToolGroup>;
