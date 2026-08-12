@@ -1601,7 +1601,7 @@ async function simulate(
  */
 function IndependentComponents() {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
-  const [upstream, setUpstream] = useState<Record<string, string>>({});
+  const [upstream, setUpstream] = useState<Record<string, string> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   // Live progress for long component operations (the DB engine update backs
@@ -1614,12 +1614,13 @@ function IndependentComponents() {
     setComps(list);
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => {
+  const refreshUpstream = useCallback(() => {
     void ipc
       .componentsUpstream()
       .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      .catch(() => undefined);
+      .catch(() => setUpstream({}));
   }, []);
+  useEffect(() => refreshUpstream(), [refreshUpstream]);
   const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
   useEffect(() => {
     if (!anyBusy) return;
@@ -1642,12 +1643,22 @@ function IndependentComponents() {
 
   async function run(id: string, action: () => Promise<void>, ok: string) {
     setBusy(id); setNote(null);
-    try { await action(); setNote(ok); await refresh(); }
+    try {
+      await action();
+      setNote(ok);
+      // Refresh IN PLACE: rows update from fresh data without unmounting the
+      // section (no loader flash — comps/upstream stay non-null throughout).
+      await refresh();
+      refreshUpstream();
+    }
     catch (e) { setNote(errorMessage(e)); }
     finally { setBusy(null); }
   }
 
-  if (!comps) {
+  // Loader until BOTH facts exist: what's installed AND what the latest
+  // official releases are — otherwise "all up to date" flashes first and the
+  // update buttons pop in seconds later.
+  if (!comps || upstream === null) {
     return (
       <section className="mb-6 flex items-center justify-center rounded-xl border border-border bg-panel/40 p-8">
         <BrandLoader size={44} label="Checking components…" />
@@ -1659,7 +1670,7 @@ function IndependentComponents() {
   // is installed. Opaque revisions (Semantic Views) reconcile by difference.
   const updateFor = (c: ComponentInfo): string | null => {
     if (c.opaqueVersion) return null;
-    const tag = upstream[c.id];
+    const tag = upstream?.[c.id];
     return tag && isNewerVersion(tag, c.installed) ? tag : null;
   };
   const actionable = comps.filter(
@@ -1676,9 +1687,7 @@ function IndependentComponents() {
         <ShieldCheck className="h-4 w-4 text-primary" />
         <h3 className="text-[12.5px] font-semibold text-foreground">Components</h3>
       </div>
-      <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        The local database, ExaPump, and the MCP server install once at setup and then live independently — each updates straight from its own official releases (verified against the sha256 digest GitHub publishes per asset), never coupled to Studio updates or to each other.
-      </p>
+
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
       {anyBusy && live.length > 0 ? (
         <div className="mb-2 rounded-md border border-border bg-panel px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
@@ -1689,7 +1698,7 @@ function IndependentComponents() {
       ) : null}
       {actionable.length === 0 ? (
         <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-primary" /> All {comps.length} components are on the latest official release.
+          <Check className="h-3.5 w-3.5 text-primary" /> All installed components are up to date.
         </p>
       ) : null}
       <div className="divide-y divide-border/60">
@@ -1738,9 +1747,15 @@ function IndependentComponents() {
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
                   </button>
                 ) : !c.opaqueVersion && !c.installed ? (
-                  // Its bootstrap step failed — install it on its own now.
-                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} installed.`)} disabled={isBusy} className={upBtn}>
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install
+                  // Fresh/failed install: resolve to the LATEST official
+                  // release (digest-verified); the pin is only the fallback
+                  // when the release can't be resolved.
+                  <button
+                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, upstream[c.id] ?? undefined), `${c.name} installed${upstream[c.id] ? ` (${upstream[c.id]})` : ""}.`)}
+                    disabled={isBusy}
+                    className={upBtn}
+                  >
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install{upstream[c.id] ? ` ${upstream[c.id]}` : ""}
                   </button>
                 ) : null}
               </div>
