@@ -1000,7 +1000,7 @@ export function ExaThread({
       const msg = err instanceof Error ? err.message : String(err);
       window.dispatchEvent(
         new CustomEvent("studio:notice", {
-          detail: { kind: "error", title: "Exa couldn't complete the turn", body: msg.slice(0, 300) },
+          detail: { kind: "warning", title: "Exa couldn't complete the turn", body: msg.slice(0, 300) },
         }),
       );
     },
