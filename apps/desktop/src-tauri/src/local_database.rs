@@ -1135,8 +1135,29 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
 
+    // Components are INDEPENDENT: the bootstrap installs the database plus
+    // ExaPump and the MCP server, and a component that fails to install must
+    // never block the rest — notify, mark it failed, continue. Each can be
+    // retried on its own from the Marketplace later.
+    let mut setup_warnings: Vec<String> = Vec::new();
+    let mut warn = |app: &AppHandle, status: &mut BootstrapStatus, name: &str, versions: &[(&str, String)], error: &AppError, warnings: &mut Vec<String>| {
+        for (slug, version) in versions {
+            set_component(status, slug, "failed", version, Some(error.to_string()));
+        }
+        emit_log(app, JOB_ID, format!("{name} setup failed ({error}) — continuing; retry it from the Marketplace."), "err");
+        let _ = app.emit(
+            "studio:notice",
+            serde_json::json!({
+                "kind": "warning",
+                "title": format!("{name} setup failed"),
+                "body": format!("{error} — the rest of the setup continued; retry {name} from the Marketplace."),
+            }),
+        );
+        warnings.push(name.to_string());
+    };
+
     status.step = "exapump".into();
-    status.message = "Installing verified ExaPump…".into();
+    status.message = "Installing ExaPump…".into();
     set_component(
         &mut status,
         "exapump",
@@ -1145,8 +1166,10 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
     write_status(&app, &data_dir, status.clone())?;
-    ensure_exapump(&app, &data_dir)?;
-    set_component(&mut status, "exapump", "ready", &lock.exapump.version, None);
+    match ensure_exapump(&app, &data_dir) {
+        Ok(_) => set_component(&mut status, "exapump", "ready", &lock.exapump.version, None),
+        Err(e) => warn(&app, &mut status, "ExaPump", &[("exapump", lock.exapump.version.clone())], &e, &mut setup_warnings),
+    }
 
     status.step = "agent-skills".into();
     status.message = "Verifying bundled Exasol agent skills and Fable Method…".into();
@@ -1165,21 +1188,32 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
     write_status(&app, &data_dir, status.clone())?;
-    ensure_agent_skills(&app)?;
-    set_component(
-        &mut status,
-        "agent-skills",
-        "ready",
-        &lock.agent_skills.revision,
-        None,
-    );
-    set_component(
-        &mut status,
-        "fable-method",
-        "ready",
-        &lock.fable_method.revision,
-        None,
-    );
+    match ensure_agent_skills(&app) {
+        Ok(()) => {
+            set_component(
+                &mut status,
+                "agent-skills",
+                "ready",
+                &lock.agent_skills.revision,
+                None,
+            );
+            set_component(
+                &mut status,
+                "fable-method",
+                "ready",
+                &lock.fable_method.revision,
+                None,
+            );
+        }
+        Err(e) => warn(
+            &app,
+            &mut status,
+            "Agent skills",
+            &[("agent-skills", lock.agent_skills.revision.clone()), ("fable-method", lock.fable_method.revision.clone())],
+            &e,
+            &mut setup_warnings,
+        ),
+    }
 
     status.step = "connection-profile".into();
     status.message = "Saving the built-in local connection in the Studio vault…".into();
@@ -1197,15 +1231,25 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     status.message =
         "Provisioning a read-only identity and validating the Exasol MCP server…".into();
     write_status(&app, &data_dir, status.clone())?;
-    let (mcp_runtime, mcp_profile) = provision_mcp_identity(&app, &python, &runtime)?;
-    validate_and_configure_mcp(&app, &data_dir, &python, &mcp_runtime, &mcp_profile.id)?;
-    set_component(
-        &mut status,
-        "mcp-server",
-        "ready",
-        &lock.python_stack.mcp_server_version,
-        None,
-    );
+    match provision_mcp_identity(&app, &python, &runtime)
+        .and_then(|(mcp_runtime, mcp_profile)| validate_and_configure_mcp(&app, &data_dir, &python, &mcp_runtime, &mcp_profile.id))
+    {
+        Ok(()) => set_component(
+            &mut status,
+            "mcp-server",
+            "ready",
+            &lock.python_stack.mcp_server_version,
+            None,
+        ),
+        Err(e) => warn(
+            &app,
+            &mut status,
+            "Exasol MCP server",
+            &[("mcp-server", lock.python_stack.mcp_server_version.clone())],
+            &e,
+            &mut setup_warnings,
+        ),
+    }
 
     // Semantic Views is OPT-IN — never installed by default. A previous
     // installation (marker present) keeps reporting ready; otherwise it stays
@@ -1224,9 +1268,20 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
 
     status.state = "ready".into();
     status.step = "complete".into();
-    status.message = "Local Exasol and the complete AI/data stack are ready.".into();
+    status.message = if setup_warnings.is_empty() {
+        "Local Exasol and the complete AI/data stack are ready.".into()
+    } else {
+        format!(
+            "Local Exasol is ready. {} failed to set up — retry from the Marketplace.",
+            setup_warnings.join(", ")
+        )
+    };
     write_status(&app, &data_dir, status)?;
-    emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, agent skills, ExaPump, and MCP server are ready.", "success");
+    if setup_warnings.is_empty() {
+        emit_log(&app, JOB_ID, "✓ Local Exasol, PyExasol, agent skills, ExaPump, and MCP server are ready.", "success");
+    } else {
+        emit_log(&app, JOB_ID, format!("✓ Local Exasol is ready ({} failed — retry from the Marketplace).", setup_warnings.join(", ")), "info");
+    }
     Ok(())
 }
 
@@ -1407,6 +1462,9 @@ pub struct ComponentInfo {
     pub verified: String,
     /// Whether an independent install currently overrides the verified stack.
     pub on_own_env: bool,
+    /// A maintenance operation (backup / engine update) is in flight for this
+    /// component — the UI shows the live log and disables actions.
+    pub busy: bool,
     /// Whether independent one-click update/revert is available for it yet.
     pub updatable: bool,
     /// pip/uv-managed (hashes verified by the index) → can move to any upstream
@@ -1426,6 +1484,9 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
         ComponentId::SemanticViews => c.semantic_views.repository.clone(),
+        // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
+        // (the source of truth), rebranded in-product as Exa.
+        ComponentId::ExaAgent => "Sheetaldharshan200/exa".to_string(),
     }
 }
 
@@ -1451,14 +1512,19 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.version.clone(),
         ComponentId::McpServer => c.python_stack.mcp_server_version.clone(),
         ComponentId::SemanticViews => c.semantic_views.revision.clone(),
+        // The pinned opencode release the Marketplace offers (matches
+        // catalog.json exa-agent.latest + fetch-runtime.mjs EXA_ENGINE_TAG).
+        ComponentId::ExaAgent => crate::engine::ENGINE_BASELINE_TAG.to_string(),
     }
 }
 
 /// The version actually in effect: the component's own-env manifest when it has
 /// been independently installed, otherwise the verified baseline (the shared
-/// stack is pinned to verified). Semantic Views is opt-in + DB-side, so its
-/// installed version is the readiness marker's revision, or None when it hasn't
-/// been installed at all.
+/// stack is pinned to verified) — UNLESS the bootstrap recorded the component
+/// as failed, in which case nothing is actually installed and reporting the
+/// verified version would hide the failure ("shows latest, no retry"). Semantic
+/// Views is opt-in + DB-side, so its installed version is the readiness
+/// marker's revision, or None when it hasn't been installed at all.
 fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
     if id == ComponentId::SemanticViews {
         return std::fs::read_to_string(data_dir.join("personal-local/semantic-example.ready"))
@@ -1466,9 +1532,18 @@ fn installed_version(data_dir: &Path, id: ComponentId) -> Option<String> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
     }
-    components_update::read_manifest(data_dir, id)
-        .map(|m| m.version)
-        .or_else(|| Some(verified_version(id)))
+    if let Some(m) = components_update::read_manifest(data_dir, id) {
+        return Some(m.version);
+    }
+    let bootstrap = read_status(data_dir);
+    if bootstrap
+        .components
+        .get(id.slug())
+        .is_some_and(|c| c.state == "failed")
+    {
+        return None;
+    }
+    Some(verified_version(id))
 }
 
 /// Enumerate managed components with their installed vs. verified versions —
@@ -1499,6 +1574,10 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
             },
             verified: verified_version(id),
             on_own_env: components_update::read_manifest(&data_dir, id).is_some(),
+            // Only the DB engine takes the maintenance lock today; surfacing
+            // it prevents "nothing is happening" double-clicks that hit the
+            // guard error after a remount lost the local busy state.
+            busy: id == ComponentId::Personal && DB_MAINTENANCE.load(Ordering::SeqCst),
             // All four components support independent update. Personal (DB
             // engine) is verify-or-refuse + backup-first: the Update button only
             // appears when a newer VERIFIED engine exists (today it doesn't, so
@@ -1574,13 +1653,18 @@ fn install_mcp_component(app: &AppHandle, data_dir: &Path, version: &str, channe
     )
 }
 
-/// Install the verified ExaPump artifact into its OWN dir. Verify-or-refuse: the
-/// SHA-pinned verified build only (obtain_artifact checks the hash), so this is
-/// safe for a raw binary. exapump_path prefers it once the manifest is written;
-/// revert drops the dir and falls back to the shared managed copy.
-fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
-    let component = &crate::component_lock::components().exapump;
-    let artifact = exapump_platform()?;
+/// Install an ExaPump artifact into its OWN dir. Verify-or-refuse: only
+/// SHA-pinned builds reach here (the verified lock, or an official release
+/// asset with GitHub's published digest — obtain_artifact checks the hash), so
+/// this is safe for a raw binary. exapump_path prefers it once the manifest is
+/// written; revert drops the dir and falls back to the shared managed copy.
+fn install_exapump_component(
+    app: &AppHandle,
+    data_dir: &Path,
+    artifact: &crate::component_lock::Artifact,
+    version: &str,
+    channel: &str,
+) -> AppResult<()> {
     let name = if cfg!(windows) { "exapump.exe" } else { "exapump" };
     let dir = components_update::component_dir(data_dir, ComponentId::ExaPump);
     // Fresh dir each time: the manifest is written LAST (on success), so a
@@ -1604,9 +1688,9 @@ fn install_exapump_component(app: &AppHandle, data_dir: &Path) -> AppResult<()> 
         data_dir,
         ComponentId::ExaPump,
         &InstalledManifest {
-            version: component.version.clone(),
+            version: version.into(),
             installed_at: chrono::Utc::now().to_rfc3339(),
-            channel: Some("verified".into()),
+            channel: Some(channel.into()),
         },
     )
 }
@@ -1627,10 +1711,13 @@ fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
     install_semantic_views(app, data_dir, &runtime, &python)
 }
 
-/// One-click independent update of a component. MCP (pip) can move to any
-/// upstream version (uv verifies package hashes); binaries are verify-or-refuse
-/// and always install the effective VERIFIED build (the `version` arg is ignored
-/// for them). No Studio release, no touching other components.
+/// One-click independent update of a component. No Studio release, no touching
+/// other components. Without `version` it installs the effective VERIFIED
+/// build; with `version` it installs that OFFICIAL release directly — MCP (pip)
+/// hash-verified by uv, binaries verified against the sha256 digest GitHub
+/// publishes per release asset (upstream::resolve_artifact refuses anything
+/// undigested). The manifest channel records "upstream" so Revert can always
+/// return to the verified baseline.
 #[tauri::command]
 pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
     let component = ComponentId::from_slug(&id)
@@ -1640,31 +1727,69 @@ pub async fn update_component(app: AppHandle, id: String, version: Option<String
         match component {
             ComponentId::McpServer => {
                 let verified = verified_version(component);
-                let target = version.unwrap_or_else(|| verified.clone());
+                // A GitHub tag ("v1.2.3") becomes the pip version ("1.2.3").
+                let target = version.map(|v| v.trim_start_matches(['v', 'V']).to_string()).unwrap_or_else(|| verified.clone());
                 let channel = if target == verified { "verified" } else { "upstream" };
                 install_mcp_component(&app, &data_dir, &target, channel)?;
                 repoint_mcp_command(&data_dir)
             }
-            ComponentId::ExaPump => install_exapump_component(&app, &data_dir),
+            ComponentId::ExaPump => {
+                let verified = verified_version(component);
+                match version.filter(|v| *v != verified) {
+                    None => install_exapump_component(&app, &data_dir, exapump_platform()?, &verified, "verified"),
+                    Some(tag) => {
+                        // Official release: resolve a digest-verified artifact
+                        // BEFORE touching the installed copy.
+                        let lock = crate::component_lock::components();
+                        let lock_name = exapump_platform()?.name.clone();
+                        let artifact = crate::upstream::resolve_artifact(&lock.exapump.repository, &tag, &lock_name)?;
+                        install_exapump_component(&app, &data_dir, &artifact, &tag, "upstream")
+                    }
+                }
+            }
             ComponentId::SemanticViews => reconcile_semantic(&app, &data_dir),
             ComponentId::Personal => {
-                // Verify-or-refuse + never a needless swap: only run the
-                // (backup-first) engine update when a NEWER verified engine
-                // actually exists. Today verified == installed, so this returns
-                // here and never stops or touches the running database.
+                // Verify-or-refuse + never a needless swap: the (backup-first)
+                // engine update only runs toward a build STRICTLY newer than
+                // the installed one — the verified pin by default, or an
+                // official release when `version` names one.
                 let verified = verified_version(component);
                 let installed = crate::local_runtime::installed_personal_version(&app)
                     .unwrap_or_else(|| verified.clone());
-                if !components_update::is_newer(&verified, &installed) {
-                    return Err(AppError::InvalidSettings(
-                        "The database engine is already on the verified version; there's nothing to update.".into(),
-                    ));
+                let target = version.unwrap_or_else(|| verified.clone());
+                if !components_update::is_newer(&target, &installed) {
+                    return Err(AppError::InvalidSettings(format!(
+                        "The database engine is already on {installed}; there's nothing newer to install."
+                    )));
                 }
+                // Upstream target: resolve the digest-verified official asset
+                // BEFORE any backup or stop, so an unverifiable release never
+                // interrupts a running database.
+                let upstream = if target != verified {
+                    let lock = crate::component_lock::components();
+                    let lock_name = crate::component_lock::artifact_for(&lock.personal)
+                        .map(|a| a.name.clone())
+                        .ok_or_else(|| {
+                            AppError::Storage(format!(
+                                "Exasol Personal is not published for {}.",
+                                crate::component_lock::platform_key()
+                            ))
+                        })?;
+                    Some((crate::upstream::resolve_artifact(&lock.personal.repository, &target, &lock_name)?, target))
+                } else {
+                    None
+                };
                 // Serialize against a concurrent backup/update, and refuse
                 // while readiness verification is running (idle gate).
                 let _guard = MaintenanceGuard::acquire()?;
                 ensure_lifecycle_idle(&app, "stop")?;
-                crate::local_runtime::update_personal_engine(&app, JOB_ID)
+                crate::local_runtime::update_personal_engine(&app, JOB_ID, upstream)
+            }
+            ComponentId::ExaAgent => {
+                // Install/update the opencode engine payload from GitHub
+                // Releases into the component dir — same UI path as exapump.
+                let tag = version.unwrap_or_else(|| verified_version(component));
+                crate::engine::install_engine(&data_dir, &tag).map(|_| ())
             }
         }
     })

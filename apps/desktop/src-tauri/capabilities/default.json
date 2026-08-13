@@ -7,8 +7,7 @@
     "connect-run",
     "vschema",
     "settings",
-    "install-*",
-    "ai-providers"
+    "install-*"
   ],
   "permissions": [
     "core:default",
@@ -25,9 +24,30 @@
     "core:event:allow-emit-to",
     "dialog:allow-save",
     "dialog:allow-open",
-    "opener:allow-open-url",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://**"
+        },
+        {
+          "url": "http://**"
+        }
+      ]
+    },
     "opener:allow-open-path",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "http://127.0.0.1:*"
+        },
+        {
+          "url": "http://localhost:*"
+        }
+      ]
+    }
   ]
 }

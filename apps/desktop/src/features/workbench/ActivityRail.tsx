@@ -28,6 +28,7 @@ export type ActivityId =
   | "skills"
   | "marketplace"
   | "guides"
+  | "exaEngine"
   | "bi"
   | "mcp";
 
@@ -49,7 +50,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
 // Items that open a full-screen tab (highlighted by the active tab's view,
 // not the sidebar panel). "bi" launches an external tool, so it's an action —
 // never a persistent selection. Everything else is a sidebar panel.
-const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "notebook", "skills", "bi"]);
+const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "notebook", "skills", "bi", "exaEngine"]);
 const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "mcp"]);
 
 export function ActivityRail({
@@ -64,6 +65,7 @@ export function ActivityRail({
 }: {
   active: ActivityId;
   sidebarOpen: boolean;
+  /** Whether the Exa side dock is open (drives the AI logo highlight). */
   aiOpen: boolean;
   /** The active workspace tab's view (drives full-tab icon highlighting). */
   activeView: string | null;
@@ -141,13 +143,13 @@ export function ActivityRail({
               onClick={onToggleAi}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground",
-                aiOpen && "text-primary",
+                (aiOpen || activeView === "exaEngine") && "text-primary",
               )}
             >
               <AgentMark className="h-[19px] w-[19px]" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">Exa</TooltipContent>
+          <TooltipContent side="right">Exa — AI assistant</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>

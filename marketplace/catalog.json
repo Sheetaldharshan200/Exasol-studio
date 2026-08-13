@@ -5,62 +5,58 @@
     "exasol-personal": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.1.0",
-      "homepage": "https://github.com/exasol/exasol-personal",
-      "mirrorTag": "mirror-exasol-personal"
+      "homepage": "https://github.com/exasol/exasol-personal"
     },
     "exasol-cloud": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.1.0",
-      "homepage": "https://github.com/exasol/exasol-personal",
-      "mirrorTag": "mirror-exasol-cloud"
+      "homepage": "https://github.com/exasol/exasol-personal"
     },
     "exapump": {
       "repo": "exasol-labs/exapump",
       "latest": "v0.11.3",
-      "homepage": "https://github.com/exasol-labs/exapump",
-      "mirrorTag": "mirror-exapump"
+      "homepage": "https://github.com/exasol-labs/exapump"
     },
     "mcp-server": {
       "repo": "exasol/mcp-server",
       "latest": "2.0.0",
-      "homepage": "https://github.com/exasol/mcp-server",
-      "mirrorTag": "mirror-mcp-server"
+      "homepage": "https://github.com/exasol/mcp-server"
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
       "latest": "2.3.0",
-      "homepage": "https://github.com/exasol/pyexasol",
-      "mirrorTag": "mirror-pyexasol"
+      "homepage": "https://github.com/exasol/pyexasol"
     },
     "sqlalchemy-exasol": {
       "repo": "exasol/sqlalchemy-exasol",
       "latest": "7.1.1",
-      "homepage": "https://github.com/exasol/sqlalchemy-exasol",
-      "mirrorTag": "mirror-sqlalchemy-exasol"
+      "homepage": "https://github.com/exasol/sqlalchemy-exasol"
     },
     "json-tables": {
       "repo": "exasol-labs/exasol-json-tables",
       "latest": null,
-      "homepage": "https://github.com/exasol-labs/exasol-json-tables",
-      "mirrorTag": "mirror-json-tables"
+      "homepage": "https://github.com/exasol-labs/exasol-json-tables"
     },
     "ai-lab": {
       "repo": "exasol/ai-lab",
       "latest": "6.0.0",
-      "homepage": "https://github.com/exasol/ai-lab",
-      "mirrorTag": "mirror-ai-lab"
+      "homepage": "https://github.com/exasol/ai-lab"
     },
     "agent-skills": {
       "repo": "exasol-labs/exasol-agent-skills",
       "latest": "v0.23.0",
-      "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
-      "mirrorTag": "mirror-agent-skills"
+      "homepage": "https://github.com/exasol-labs/exasol-agent-skills"
     },
     "superset": {
       "repo": "apache/superset",
       "latest": "6.1.0",
-      "homepage": "https://github.com/apache/superset",
-      "mirrorTag": "mirror-superset"
+      "homepage": "https://github.com/apache/superset"
+    },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa",
+      "latest": "v1.18.12-exa.13",
+      "homepage": "https://github.com/Sheetaldharshan200/exa",
+      "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
     }
   }
 }

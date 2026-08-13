@@ -24,9 +24,10 @@ import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as 
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
-import { FloatingPet } from "@/components/studio/FloatingPet";
 import { agent as agentClient } from "@/lib/agent-client";
 import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail";
+import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
+import { AgentMark } from "@/components/studio/AgentMark";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
@@ -62,7 +63,6 @@ import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type Sq
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
-import { AiProvidersWindow } from "@/features/assistant/AiProvidersWindow";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
@@ -335,14 +335,31 @@ export function ExasolStudio({
     [connKey],
   );
 
+  // One Exa surface at a time: opening the dock closes an active Exa tab
+  // (via this ref, current each render), and activating the Exa tab closes
+  // the dock (effect below) — the two must never show together.
+  const closeActiveExaTabRef = useRef<() => void>(() => {});
   const toggleAi = useCallback(() => {
     setAiOpen((o) => {
       const next = !o;
-      if (next) aiPanelRef.current?.expand();
-      else aiPanelRef.current?.collapse();
+      if (next) {
+        closeActiveExaTabRef.current();
+        aiPanelRef.current?.expand();
+      } else aiPanelRef.current?.collapse();
       return next;
     });
   }, []);
+
+  closeActiveExaTabRef.current = () => {
+    if (activeTab.view === "exaEngine") closeTab(activeTab.id);
+  };
+  // The Exa tab becoming active closes the dock (the reverse direction).
+  useEffect(() => {
+    if (activeTab.view === "exaEngine") {
+      setAiOpen(false);
+      aiPanelRef.current?.collapse();
+    }
+  }, [activeTab.view]);
 
   const loadHistory = useCallback(() => {
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
@@ -611,6 +628,20 @@ export function ExasolStudio({
   }
   const openSqlTabRef = useRef(openSqlTab);
   openSqlTabRef.current = openSqlTab;
+  // Attachment clicks: focus an existing tab for the same file, else open one
+  // (ref carries fresh closures into the mount-once event listener).
+  const openTextTabRef = useRef((name: string, content: string) => {
+    void name;
+    void content;
+  });
+  openTextTabRef.current = (name, content) => {
+    const existing = tabsFor(connKey).find((t) => t.title === name && t.view === "sql");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    openSqlTab(content, name);
+  };
 
   // 2) Tab drag & drop: reorder chips; dropping ON a grouped chip adopts its
   // group; dropping on a group header joins that group.
@@ -726,7 +757,6 @@ export function ExasolStudio({
 
   // ── Agent UI control (the pet): ui_* tools land here ──
   const cursorRef = useRef<AgentCursorHandle | null>(null);
-  const [extraPets, setExtraPets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => initTraceRecorder(), []);
   // Plain functions (redefined each render) so they always see the CURRENT
   // connection/tabs — a useCallback([]) here froze them at the disconnected
@@ -819,15 +849,9 @@ export function ExasolStudio({
     action: string,
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; detail?: string }> {
-    let mode: CursorMode = "pet";
-    let avatar: import("@/components/studio/PetAvatar").PetAvatarId = "exa";
-    try {
-      const { settings } = await agentClient.getSettings();
-      mode = settings.petMode;
-      avatar = settings.petAvatar ?? "exa";
-    } catch {
-      // default to pet
-    }
+    // The pet companion is gone — UI actions always show the agent cursor
+    // (the ui_* "off"/direct branches read this; keep the wide type).
+    const mode = "cursor" as CursorMode;
 
     const target = String(params.target ?? "");
     const railId = target === "dashboards" ? "bi" : target;
@@ -848,7 +872,7 @@ export function ExasolStudio({
         : action === "open"
           ? `Opening ${target}…`
           : "Preparing SQL…";
-    await cursorRef.current?.flyTo(el, label, mode, avatar);
+    await cursorRef.current?.flyTo(el, label, mode);
 
     let result: { ok: boolean; detail?: string };
     try {
@@ -901,14 +925,14 @@ export function ExasolStudio({
           const hop = (id: string, lbl: string) => async () => {
             const el = anchor(id);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            await cursorRef.current?.flyTo(el, lbl, mode);
             return true;
           };
           const fillStep = (id: string, value: string, lbl: string) => async () => {
             await ensureForm();
             const el = anchor(id);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+            await cursorRef.current?.flyTo(el, lbl, mode);
             return fillAnchor(id, value);
           };
           const openTab = (viaAnchor: string) => async () => {
@@ -917,7 +941,7 @@ export function ExasolStudio({
             if (anchor("connect.name")) return true;
             const el = anchor(viaAnchor);
             if (!el) return false;
-            await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode, avatar);
+            await cursorRef.current?.flyTo(el, "Opening the connect tab…", mode);
             openConnect();
             // Wait until the form is actually mounted (up to ~2s), not a fixed delay.
             for (let i = 0; i < 20 && !anchor("connect.name"); i++) {
@@ -935,7 +959,7 @@ export function ExasolStudio({
             (id, lbl) => async () => {
               const el = anchor(id);
               if (!el) return false;
-              await cursorRef.current?.flyTo(el, lbl, mode, avatar);
+              await cursorRef.current?.flyTo(el, lbl, mode);
               el.click();
               return true;
             },
@@ -956,7 +980,7 @@ export function ExasolStudio({
             action: async () => {
               await ensureForm();
               const submit = anchor("connect.submit");
-              await cursorRef.current?.flyTo(submit, "Connecting…", mode, avatar);
+              await cursorRef.current?.flyTo(submit, "Connecting…", mode);
               // Do the REAL connect via IPC so we get the true outcome — a
               // domain failure (bad password, DB down) throws with the actual
               // message instead of a silent 45s timeout that looks like a
@@ -1047,9 +1071,9 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
-  function openMcpConfig(presetId: string, presetName: string) {
+  function openMcpConfig(presetId: string, presetName: string, target: "studio" | "exa" = "studio") {
     const key = connKey;
-    const existing = tabsFor(key).find((x) => x.view === "mcpConfig" && x.mcpPreset === presetId);
+    const existing = tabsFor(key).find((x) => x.view === "mcpConfig" && x.mcpPreset === presetId && (x.mcpTarget ?? "studio") === target);
     if (existing) {
       setActiveTabId(existing.id);
       return;
@@ -1057,9 +1081,10 @@ export function ExasolStudio({
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-mcp-${Date.now()}-${tabCounter.current}`,
-      title: `MCP · ${presetName}`,
+      title: target === "exa" ? `Exa MCP · ${presetName}` : `MCP · ${presetName}`,
       view: "mcpConfig",
       mcpPreset: presetId,
+      mcpTarget: target,
       sql: "",
       response: null,
       execError: null,
@@ -1177,7 +1202,11 @@ export function ExasolStudio({
             "opacity-70 before:absolute before:inset-y-1 before:-left-px before:z-10 before:w-0.5 before:rounded-full before:bg-primary",
         )}
       >
-        <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        {tab.view === "exaEngine" ? (
+          <AgentMark className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <Icon name={TabIcon} className={cn("h-3.5 w-3.5 shrink-0", tab.id === activeTabId && "text-primary")} />
+        )}
         {isEditing ? (
           <input
             autoFocus
@@ -1545,8 +1574,35 @@ export function ExasolStudio({
     return () => window.removeEventListener("studio:open-git", on);
   }, []);
 
+  // The Exa panel's /mcp "Add & configure" opens a connector config tab
+  // targeted at the ENGINE's MCP registry (vs Studio's own agent).
+  const openMcpConfigRef = useRef(openMcpConfig);
+  openMcpConfigRef.current = openMcpConfig;
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ presetId?: string; presetName?: string; target?: "studio" | "exa" }>).detail ?? {};
+      openMcpConfigRef.current(d.presetId ?? "custom", d.presetName ?? "Custom", d.target ?? "exa");
+    };
+    window.addEventListener("studio:open-mcp-config", on);
+    return () => window.removeEventListener("studio:open-mcp-config", on);
+  }, []);
+
+  // Clicking a file attachment in the Exa chat opens its content as a tab —
+  // and clicking the SAME file again focuses the existing tab instead of
+  // stacking duplicates.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ name?: string; content?: string }>).detail ?? {};
+      if (typeof d.content !== "string") return;
+      openTextTabRef.current(d.name || "Attachment", d.content);
+    };
+    window.addEventListener("studio:open-text-tab", on);
+    return () => window.removeEventListener("studio:open-text-tab", on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills" | "aiSettings", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -1567,27 +1623,8 @@ export function ExasolStudio({
   }
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
-  const openAiSettings = () => openSingletonTab("aiSettings", "AI Settings", "ais");
-  // AI settings opens as a workspace tab (like Marketplace) — requested from
-  // the AI panel or the native Settings window via a cross-window event.
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        un = await listen("open-ai-settings-tab", () => openAiSettings());
-      } catch {
-        /* non-tauri */
-      }
-    })();
-    const dom = () => openAiSettings();
-    window.addEventListener("studio:open-ai-settings", dom);
-    return () => {
-      un?.();
-      window.removeEventListener("studio:open-ai-settings", dom);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connKey]);
+
+
 
   // Clicking a notification navigates to what it's about (studio:navigate).
   const navigateRef = useRef<(to: string) => void>(() => undefined);
@@ -1625,6 +1662,27 @@ export function ExasolStudio({
       id: `tab-docs-${Date.now()}-${tabCounter.current}`,
       title: "Guides & Docs",
       view: "guides",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
+  // Open the Exa engine (v2) chat as a global tab — not connection-scoped.
+  function openExaEngine() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "exaEngine");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-exa-${Date.now()}-${tabCounter.current}`,
+      title: "Exa",
+      view: "exaEngine",
       sql: "",
       response: null,
       execError: null,
@@ -2312,6 +2370,34 @@ export function ExasolStudio({
     ? `Connected to ${connection.server.databaseName ?? "Exasol"} ${connection.server.version ?? ""} as ${connection.server.currentUser}.${schema ? ` Current schema: ${schema}.` : ""}`
     : "Not connected to a database yet.";
 
+  // Live workbench view Exa's `@`-context reads (schema/SQL/results) and the
+  // action that lands a reply's SQL block back in the editor. Both are handed
+  // to every ExaEnginePanel instance (side dock + full tab).
+  const getExaSnapshot = useCallback(
+    () => ({
+      connectionName: connection ? connection.server.databaseName ?? "Exasol" : undefined,
+      schema,
+      schemas,
+      catalog: sqlCatalogRef.current,
+      editorSql: activeTab.view === "sql" ? activeTab.sql : "",
+      lastResult,
+      history: history.slice(0, 20).map((h) => ({ sql: h.sql })),
+    }),
+    [connection, schema, schemas, activeTab, lastResult, history],
+  );
+  // Plain function (not memoized): it reads the current connKey/tab closures at
+  // call time, so Apply always lands in the active connection's editor — never
+  // a stale bucket. It's only invoked from event handlers, so identity churn is
+  // harmless.
+  const applySqlToEditor = (sql: string) => {
+    if (activeTab.view === "sql") {
+      const base = activeTab.sql.trimEnd();
+      patchTab(activeTab.id, { sql: base ? `${base}\n\n${sql}\n` : `${sql}\n` });
+    } else {
+      openSqlTab(sql, "From Exa");
+    }
+  };
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TitleBar
@@ -2583,8 +2669,12 @@ export function ExasolStudio({
           activeTab.view !== "git" &&
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
-          activeTab.view !== "aiSettings" &&
           activeTab.view !== "artifact" &&
+          // The Exa tab is a full chat surface — no editor toolbar row (its
+          // own header carries the brand; the agent works across ALL
+          // connected databases via the MCP gateway, so a per-tab connection
+          // switcher was misleading anyway).
+          activeTab.view !== "exaEngine" &&
           activeTab.view !== "object" ? (
           <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {!isSpecialTab ? (
@@ -2801,6 +2891,26 @@ export function ExasolStudio({
           </div>
           ) : null}
 
+          {/* Exa stays MOUNTED while its tab exists — switching tabs must
+              not destroy the runtime/composer (attachments, draft text). */}
+          {(() => {
+            const exaTab = tabsFor(connKey).find((t) => t.view === "exaEngine");
+            if (!exaTab) return null;
+            return (
+              <div className={cn("min-h-0 flex-1 flex-col", activeTab.view === "exaEngine" ? "flex" : "hidden")}>
+                <ExaEnginePanel
+                  getSnapshot={getExaSnapshot}
+                  onApplySql={applySqlToEditor}
+                  onCollapse={() => {
+                    closeTab(exaTab.id);
+                    setAiOpen(true);
+                    aiPanelRef.current?.expand();
+                  }}
+                />
+              </div>
+            );
+          })()}
+
           {/* Connect flow, catalog surface, file preview, or SQL editor */}
           {activeTab.view === "connect" ? (
             // New connection = the SAME unified Database Connection page in
@@ -2819,7 +2929,7 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "mcpConfig" ? (
             <div className="min-h-0 flex-1">
-              <McpConfigTab presetId={activeTab.mcpPreset ?? "custom"} />
+              <McpConfigTab presetId={activeTab.mcpPreset ?? "custom"} target={activeTab.mcpTarget ?? "studio"} />
             </div>
           ) : activeTab.view === "filePreview" ? (
             <div className="min-h-0 flex-1">
@@ -2886,7 +2996,7 @@ export function ExasolStudio({
             <div className="min-h-0 flex-1">
               <Docs />
             </div>
-          ) : activeTab.view === "git" ? (
+          ) : activeTab.view === "exaEngine" ? null : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
               <GitPanel full />
             </div>
@@ -2938,10 +3048,6 @@ export function ExasolStudio({
           ) : activeTab.view === "skills" ? (
             <div className="min-h-0 flex-1">
               <SkillsTab />
-            </div>
-          ) : activeTab.view === "aiSettings" ? (
-            <div className="min-h-0 flex-1">
-              <AiProvidersWindow standalone={false} />
             </div>
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
@@ -3221,54 +3327,33 @@ export function ExasolStudio({
           </ResizablePanel>
           <ResizableHandle groupDirection="horizontal" />
 
-          {/* AI assistant — resizable + collapsible */}
+          {/* Exa (opencode) assistant — resizable + collapsible. Same panel as
+              the full "Exa" tab, so both surfaces are one agent. */}
           <ResizablePanel
             panelRef={aiPanelRef}
             collapsible
             collapsedSize="0px"
-            defaultSize="320px"
-            minSize="240px"
-            maxSize="520px"
+            defaultSize="440px"
+            minSize="320px"
+            maxSize="820px"
             onResize={() => setAiOpen(!(aiPanelRef.current?.isCollapsed() ?? false))}
             className="min-w-0"
           >
-            <AssistantPanel
-              contextSummary={contextSummary}
-              editorSql={activeTab.sql}
-              pendingPrompt={aiPrompt}
-              connectionId={connection?.profile.id ?? null}
-              connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name }))}
+            <ExaEnginePanel
+              getSnapshot={getExaSnapshot}
+              onApplySql={applySqlToEditor}
               onClose={toggleAi}
-              onUiAction={handleUiAction}
-              onOpenAttachment={openChatAttachment}
+              onExpand={() => {
+                openExaEngine();
+                setAiOpen(false);
+                aiPanelRef.current?.collapse();
+              }}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
 
       <AgentCursor ref={cursorRef} />
-      <FloatingPet
-        connectionId={connection?.profile.id ?? null}
-        onUiAction={handleUiAction}
-        onDashboardSaved={openSavedDashboard}
-        onArtifact={openArtifact}
-        onSpawn={() => setExtraPets((p) => [...p, { id: `${Date.now()}`, name: `task ${p.length + 1}` }])}
-        tag={extraPets.length ? "main" : undefined}
-      />
-      {extraPets.map((p, i) => (
-        <FloatingPet
-          key={p.id}
-          standalone
-          offset={i + 1}
-          connectionId={connection?.profile.id ?? null}
-          onUiAction={handleUiAction}
-          onDashboardSaved={openSavedDashboard}
-          onArtifact={openArtifact}
-          onClose={() => setExtraPets((list) => list.filter((x) => x.id !== p.id))}
-          tag={p.name}
-          onRename={(name) => setExtraPets((list) => list.map((x) => (x.id === p.id ? { ...x, name } : x)))}
-        />
-      ))}
       <div className="shrink-0">
         <HistoryDock
           entries={history}

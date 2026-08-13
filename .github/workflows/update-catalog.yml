@@ -74,8 +74,8 @@ jobs:
             fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0
-            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s", "mirrorTag": "mirror-%s" }' \
-              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" "$id" >> catalog.json
+            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s" }' \
+              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" >> catalog.json
           done <<< "$items"
           echo '' >> catalog.json
           echo '  }' >> catalog.json

@@ -358,6 +358,19 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     let managed = managed_exasol(app)?;
     let version_marker = runtime_dir(app)?.join("launcher.version");
     let installed_version = std::fs::read_to_string(&version_marker).unwrap_or_default();
+    // An independently-updated NEWER engine must never be rolled back by the
+    // pin (verified live: a completed v2.2.0 update was silently downgraded
+    // to the v2.1.0 pin at the next app boot by this very check).
+    if managed.is_file()
+        && !installed_version.trim().is_empty()
+        && crate::components_update::is_newer(installed_version.trim(), &component.version)
+    {
+        if let Ok(output) = Command::new(&managed).args(["install", "--help"]).output() {
+            if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local") {
+                return Ok(managed);
+            }
+        }
+    }
     let checksum_valid = managed.is_file()
         && artifact.executable_sha256.as_ref().is_some_and(|expected| {
             sha256_file(&managed).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
@@ -404,6 +417,40 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
         )));
     }
     std::fs::write(version_marker, &component.version)?;
+    let _ = std::fs::remove_file(archive);
+    let _ = std::fs::remove_dir_all(unpack);
+    Ok(target)
+}
+
+/// Install a specific Exasol Personal launcher build from an OFFICIAL release
+/// artifact (digest-verified archive — see upstream::resolve_artifact). Mirrors
+/// ensure_personal_launcher's install tail; the lock's per-executable hash only
+/// exists for the verified build, so here the archive digest is the pin.
+fn install_personal_launcher_from(
+    app: &AppHandle,
+    id: &str,
+    artifact: &crate::component_lock::Artifact,
+    version: &str,
+) -> AppResult<PathBuf> {
+    let archive = runtime_dir(app)?.join(&artifact.name);
+    emit_log(app, id, format!("Installing Exasol Personal {version} (official release)…"), "info");
+    obtain_artifact(app, id, artifact, &archive)?;
+    let unpack = runtime_dir(app)?.join("launcher-unpack");
+    let _ = std::fs::remove_dir_all(&unpack);
+    std::fs::create_dir_all(&unpack)?;
+    let decoder = flate2::read::GzDecoder::new(File::open(&archive)?);
+    tar::Archive::new(decoder).unpack(&unpack)?;
+    let binary = find_file(&unpack, "exasol").ok_or_else(|| {
+        AppError::Storage("Exasol Personal archive did not contain `exasol`.".into())
+    })?;
+    let target = managed_exasol(app)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(binary, &target)?;
+    make_executable(&target)?;
+    let version_marker = runtime_dir(app)?.join("launcher.version");
+    std::fs::write(version_marker, version)?;
     let _ = std::fs::remove_file(archive);
     let _ = std::fs::remove_dir_all(unpack);
     Ok(target)
@@ -612,9 +659,13 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
             // here isn't expected; skip rather than follow it.
         } else if ty.is_dir() {
             copy_dir_all(&from, &to)?;
-        } else {
+        } else if ty.is_file() {
             std::fs::copy(&from, &to)?;
         }
+        // Anything else — unix sockets (the VM runner's vm.sock), FIFOs,
+        // device nodes — cannot be copied (ENOTSUP, os error 102) and holds
+        // no data worth backing up: skip. The runner recreates its socket
+        // on start.
     }
     Ok(())
 }
@@ -736,7 +787,11 @@ pub(crate) fn backup_personal_deployment(app: &AppHandle, id: &str) -> AppResult
 /// ops decision (the lock never advances to an incompatible engine). Until then
 /// it is unreachable (verified == installed), so it has not been exercised
 /// against a real cross-version upgrade.
-pub(crate) fn update_personal_engine(app: &AppHandle, id: &str) -> AppResult<()> {
+pub(crate) fn update_personal_engine(
+    app: &AppHandle,
+    id: &str,
+    upstream: Option<(crate::component_lock::Artifact, String)>,
+) -> AppResult<()> {
     let dir = personal_deployment_dir(app)?;
     if !dir.join("deployment.json").is_file() {
         return Err(AppError::Storage(
@@ -777,11 +832,15 @@ pub(crate) fn update_personal_engine(app: &AppHandle, id: &str) -> AppResult<()>
             backup.display()
         )));
     }
-    // Clear the marker so ensure_personal_launcher reinstalls the (newer) verified build.
+    // Clear the marker so the (newer) target build is actually installed.
     let _ = std::fs::remove_file(&version_marker);
 
     let swap = (|| -> AppResult<()> {
-        let new_cli = ensure_personal_launcher(app, id)?;
+        let new_cli = match &upstream {
+            // Official release: the digest-verified asset resolved by the caller.
+            Some((artifact, version)) => install_personal_launcher_from(app, id, artifact, version)?,
+            None => ensure_personal_launcher(app, id)?,
+        };
         let new_cli_s = new_cli.to_string_lossy().to_string();
         emit_log(app, id, "Starting the updated engine…", "info");
         if run_streamed(app, id, &new_cli_s, &["start", "--deployment-dir", &ddir])? != 0 {
@@ -1290,6 +1349,23 @@ mod tests {
         let image = crate::component_lock::components().nano.immutable_image();
         assert!(image.starts_with("docker.io/exasol/nano@sha256:"));
         assert_eq!(image.rsplit(':').next().unwrap().len(), 64);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn copy_dir_all_skips_unix_sockets() {
+        let root = std::env::temp_dir().join(format!("exasol-studio-sock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("data.txt"), b"keep me").unwrap();
+        // A live unix socket in the tree (like the VM runner's vm.sock).
+        let _listener = std::os::unix::net::UnixListener::bind(src.join("vm.sock")).unwrap();
+        let out = root.join("out");
+        copy_dir_all(&src, &out).expect("socket must not fail the copy");
+        assert_eq!(std::fs::read(out.join("data.txt")).unwrap(), b"keep me");
+        assert!(!out.join("vm.sock").exists(), "socket is skipped, not copied");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

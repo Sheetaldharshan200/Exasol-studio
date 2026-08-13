@@ -1,9 +1,11 @@
 mod agent;
 mod backup;
 pub mod confd;
+mod engine;
 mod ai_clients;
 mod terminal;
 mod updates;
+mod upstream;
 mod bucketfs;
 mod catalog;
 mod connection;
@@ -40,6 +42,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -68,6 +71,11 @@ pub fn run() {
             confd::confd_status,
             confd::confd_disconnect,
             confd::confd_job,
+            engine::engine_status,
+            engine::engine_install,
+            engine::engine_cli_status,
+            engine::engine_install_cli,
+            engine::engine_uninstall_cli,
             terminal::term_create,
             terminal::term_write,
             terminal::term_resize,
@@ -110,6 +118,7 @@ pub fn run() {
             files::write_text_file,
             files::save_attachment,
             files::install_cli,
+            files::append_app_log,
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,
@@ -181,6 +190,7 @@ pub fn run() {
             local_database::personal_local_status,
             local_database::personal_install_semantic_views,
             local_database::list_components,
+            upstream::components_upstream,
             local_database::update_component,
             local_database::revert_component,
             local_database::backup_local_database,

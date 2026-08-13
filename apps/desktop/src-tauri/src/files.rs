@@ -13,6 +13,26 @@ pub async fn write_text_file(path: String, contents: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Append webview log lines to `<data>/logs/webview.log` so frontend errors
+/// survive a crash/blank screen (the release webview has no visible console).
+/// Rotates at ~2 MB by truncating — a diagnostics tail, not an archive.
+#[tauri::command]
+pub async fn append_app_log(app: tauri::AppHandle, lines: String) -> AppResult<()> {
+    use std::io::Write;
+    let dir = app
+        .state::<crate::state::AppState>()
+        .data_dir
+        .join("logs");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("webview.log");
+    if std::fs::metadata(&path).map(|m| m.len() > 2_000_000).unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    f.write_all(lines.as_bytes())?;
+    Ok(())
+}
+
 /// Install the `exa-agent` terminal command: a tiny wrapper in ~/.local/bin
 /// that runs the bundled CLI with the bundled Node (system node as fallback).
 /// Returns the wrapper path; the UI shows a PATH hint if needed.

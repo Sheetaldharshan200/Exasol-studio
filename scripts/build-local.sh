@@ -33,9 +33,20 @@ fi
 # Key was generated with an empty passphrase; allow override.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
-# Prebundle the locked runtime artifacts (Exasol Personal, ExaPump) so a fresh
-# install works offline. Skip with EXASOL_PREBUNDLE=0 for quick dev builds.
+# Prebundle the platform runtime (Node + llama.cpp + Exa engine baseline) and
+# the locked runtime artifacts (Exasol Personal, ExaPump) so a fresh install
+# works offline with ZERO downloads — the same layout CI release builds ship.
+# Skip with EXASOL_PREBUNDLE=0 for quick dev builds (the Exa panel then shows
+# its install gate, and Built-in AI falls back to on-demand downloads).
+# fetch-runtime.mjs WIPES resources/runtime, so it must run BEFORE
+# prefetch-runtime.py (which writes into the same dir). It is skipped when the
+# engine baseline is already present — delete resources/runtime to force a
+# refetch after bumping a pinned tag.
 if [ "${EXASOL_PREBUNDLE:-1}" = "1" ]; then
+  if [ ! -d "$REPO_ROOT/apps/desktop/src-tauri/resources/runtime/exa-engine" ]; then
+    HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+    node "$REPO_ROOT/scripts/fetch-runtime.mjs" "$HOST_TRIPLE"
+  fi
   python3 "$REPO_ROOT/scripts/prefetch-runtime.py"
 fi
 

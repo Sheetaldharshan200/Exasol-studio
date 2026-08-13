@@ -465,8 +465,8 @@ export async function mockInvoke(
         generatedAt: "2026-07-01T08:00:00Z",
         mirrorRepo: "Sheetaldharshan200/Exasol-studio",
         items: {
-          pyexasol: { repo: "exasol/pyexasol", latest: "v1.5.0", homepage: "", mirrorTag: "mirror-pyexasol" },
-          exapump: { repo: "exasol/exapump", latest: "v1.4.0", homepage: "", mirrorTag: "mirror-exapump" },
+          pyexasol: { repo: "exasol/pyexasol", latest: "v1.5.0", homepage: "" },
+          exapump: { repo: "exasol/exapump", latest: "v1.4.0", homepage: "" },
         },
       };
 

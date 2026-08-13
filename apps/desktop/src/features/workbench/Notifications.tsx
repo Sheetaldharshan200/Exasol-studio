@@ -221,7 +221,9 @@ export function Notifications() {
                 <div className="flex flex-col gap-1.5">
                   <AnimatePresence initial={false}>
                     {items.map((n) => {
-                      const Icon = KIND_ICON[n.kind];
+                      // Unknown kinds (bad dispatch, stale persisted data)
+                      // must never crash the whole app at mount.
+                      const Icon = KIND_ICON[n.kind] ?? Info;
                       return (
                         <AnimatedListItem key={n.id}>
                           <button
@@ -244,7 +246,7 @@ export function Notifications() {
                             <span
                               className={cn(
                                 "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
-                                KIND_CHIP[n.kind],
+                                KIND_CHIP[n.kind] ?? KIND_CHIP.info,
                               )}
                             >
                               <Icon className="h-3.5 w-3.5" />

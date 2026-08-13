@@ -258,6 +258,8 @@ export type ComponentInfo = {
   verified: string;
   /** True when an independent install currently overrides the verified stack. */
   onOwnEnv: boolean;
+  /** A maintenance operation (backup / engine update) is in flight. */
+  busy: boolean;
   /** Whether one-click independent update/revert is available for it yet. */
   updatable: boolean;
   /** pip/uv-managed (index-hash-verified) → can update to any upstream version.
@@ -292,7 +294,6 @@ export type CatalogEntry = {
   repo: string;
   latest: string | null;
   homepage: string;
-  mirrorTag: string;
 };
 export type MarketCatalog = {
   generatedAt: string | null;
@@ -391,6 +392,9 @@ export type BackupRunResult = { dir: string; tables: number; rows: number; skipp
 
 /** Admin API (ConfD) session state — deliberately password-free. */
 export type AdminApiStatus = { connected: boolean; host?: string | null; port?: number | null; user?: string | null };
+
+/** Exa engine install state (opencode component). */
+export type EngineInstallStatus = { installed: boolean; version?: string | null; binaryPath?: string | null };
 
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -492,6 +496,8 @@ export const ipc = {
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
   // Independent, isolated component management.
   listComponents: () => call<ComponentInfo[]>("list_components"),
+  /** Latest OFFICIAL release tag per managed component (best-effort). */
+  componentsUpstream: () => call<{ id: string; tag: string }[]>("components_upstream"),
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
   backupLocalDatabase: () => call<string>("backup_local_database"),
@@ -626,6 +632,14 @@ export const ipc = {
   /** Run an allowlisted ConfD job; returns the job's result structure. */
   confdJob: (profileId: string, job: string, params: Record<string, unknown>) =>
     call<unknown>("confd_job", { profileId, job, params }),
+  // ── Exa engine (opencode binary from GitHub Releases) ─────────────────────
+  engineStatus: () => call<EngineInstallStatus>("engine_status"),
+  /** Download + install the engine for `tag` (e.g. "v1.18.12"). */
+  engineInstall: (tag: string) => call<EngineInstallStatus>("engine_install", { tag }),
+  /** exa CLI shim state / install-to-PATH / uninstall. */
+  engineCliStatus: () => call<{ installed: boolean; path?: string | null }>("engine_cli_status"),
+  engineInstallCli: () => call<{ installed: boolean; path?: string | null }>("engine_install_cli"),
+  engineUninstallCli: () => call<void>("engine_uninstall_cli"),
   getAppSettings: () => call<Record<string, unknown>>("get_app_settings"),
   setAppSettings: (patch: Record<string, unknown>) =>
     call<Record<string, unknown>>("set_app_settings", { patch }),

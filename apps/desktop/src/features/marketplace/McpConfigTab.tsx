@@ -57,18 +57,33 @@ function AuditView() {
   );
 }
 
-export function McpConfigTab({ presetId }: { presetId: string }) {
+export function McpConfigTab({ presetId, target = "studio" }: { presetId: string; target?: "studio" | "exa" }) {
   if (presetId === "audit") return <AuditView />;
   const preset: McpPreset = MCP_PRESETS.find((p) => p.id === presetId) ?? MCP_PRESETS[MCP_PRESETS.length - 1];
   const isCustom = preset.id === "custom";
+  const isExa = target === "exa";
   const [envVals, setEnvVals] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState({ name: "", command: "", args: "", transport: "stdio" as "stdio" | "http", url: "", token: "" });
+  // Auth method for presets that offer both: a local API-token server or the
+  // service's hosted MCP endpoint (browser sign-in).
+  const [authMethod, setAuthMethod] = useState<"token" | "remote">("token");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [connected, setConnected] = useState<{ toolCount: number; tools?: string[] } | null>(null);
+  const useRemote = !isCustom && authMethod === "remote" && Boolean(preset.remote);
 
-  // Already connected? Show live status.
+  // Already connected? Show live status. The Exa engine reports a status map
+  // (no tool list); Studio's agent reports connected servers with tools.
   useEffect(() => {
+    if (isExa) {
+      agent.engine
+        .mcp()
+        .then((r) => {
+          if (r.servers[preset.name]?.status === "connected") setConnected({ toolCount: 0 });
+        })
+        .catch(() => undefined);
+      return;
+    }
     agent
       .mcpList()
       .then((list) => {
@@ -76,29 +91,51 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
         if (hit) setConnected({ toolCount: hit.toolCount, tools: hit.tools });
       })
       .catch(() => undefined);
-  }, [preset.name]);
+  }, [preset.name, isExa]);
 
   async function connect() {
     setBusy(true);
     setErr(null);
     try {
       const name = isCustom ? custom.name.trim() : preset.name;
-      if (isCustom && custom.transport === "http") {
+      const remoteUrl = isCustom ? custom.url.trim() : (preset.remote?.url ?? "");
+      const wantsRemote = isCustom ? custom.transport === "http" : useRemote;
+      const command = isCustom ? custom.command.trim() : preset.command;
+      const args = isCustom
+        ? custom.args.trim().split(/\s+/).filter(Boolean)
+        : [...preset.args, ...(preset.argInputs ?? []).map((a) => envVals[`arg:${a.key}`] ?? "")];
+      const env = !isCustom && preset.env.length
+        ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
+        : undefined;
+
+      if (isExa) {
+        // The Exa engine owns these servers (opencode /mcp). Its tools join
+        // the agent; every call still asks approval in the chat.
+        const config = wantsRemote
+          ? {
+              type: "remote" as const,
+              url: remoteUrl,
+              headers: custom.token.trim() ? { Authorization: `Bearer ${custom.token.trim()}` } : undefined,
+              enabled: true,
+            }
+          : { type: "local" as const, command: [command, ...args], environment: env, enabled: true };
+        await agent.engine.mcpAdd(name, config);
+        const r = await agent.engine.mcp();
+        const status = r.servers[name]?.status;
+        if (status === "connected") setConnected({ toolCount: 0 });
+        else setErr(`The server was saved but reports "${status ?? "unknown"}" — check the credentials, then retry from /mcp in the chat.`);
+        return;
+      }
+
+      if (wantsRemote) {
         // Remote MCP server — no local process, no Docker. Self-sustained.
         await agent.mcpAdd({
           name,
           transport: "http",
-          url: custom.url.trim(),
+          url: remoteUrl,
           headers: custom.token.trim() ? { Authorization: `Bearer ${custom.token.trim()}` } : undefined,
         });
       } else {
-        const command = isCustom ? custom.command.trim() : preset.command;
-        const args = isCustom
-          ? custom.args.trim().split(/\s+/).filter(Boolean)
-          : [...preset.args, ...(preset.argInputs ?? []).map((a) => envVals[`arg:${a.key}`] ?? "")];
-        const env = preset.env.length
-          ? Object.fromEntries(preset.env.map((e) => [e.key, envVals[e.key] ?? ""]))
-          : undefined;
         await agent.mcpAdd({ name, command, args, env });
       }
       const list = await agent.mcpList();
@@ -114,8 +151,9 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
 
   const canConnect = isCustom
     ? custom.name.trim() && (custom.transport === "http" ? custom.url.trim() : custom.command.trim())
-    : preset.env.every((e) => !e.secret || envVals[e.key]?.trim()) &&
-      (preset.argInputs ?? []).every((a) => envVals[`arg:${a.key}`]?.trim());
+    : useRemote ||
+      (preset.env.every((e) => !e.secret || envVals[e.key]?.trim()) &&
+        (preset.argInputs ?? []).every((a) => envVals[`arg:${a.key}`]?.trim()));
 
   return (
     <div className="h-full overflow-y-auto bg-editor">
@@ -129,7 +167,8 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
         {connected ? (
           <div className="mb-6 rounded-xl border border-primary/40 bg-primary/8 p-4">
             <div className="flex items-center gap-2 text-[13px] font-medium text-foreground">
-              <CheckCircle2 className="h-4 w-4 text-primary" /> Connected — {connected.toolCount} tools available to the agent
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              {connected.toolCount > 0 ? `Connected — ${connected.toolCount} tools available to the agent` : "Connected — its tools have joined the agent"}
             </div>
             {connected.tools?.length ? (
               <p className="mt-1.5 text-[11.5px] text-muted-foreground">
@@ -195,7 +234,29 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
               <h2 className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
                 <ShieldCheck className="h-4 w-4 text-primary" /> Authentication
               </h2>
-              {preset.env.length === 0 ? (
+              {preset.remote ? (
+                <div className="mb-3">
+                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Auth method</span>
+                  <div className="inline-flex rounded-lg border border-border p-0.5">
+                    {([["token", "API token (runs locally)"], ["remote", "Hosted server (browser sign-in)"]] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setAuthMethod(val)}
+                        className={cn(
+                          "rounded-md px-3 py-1 text-[12px] font-medium transition-colors",
+                          authMethod === val ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {authMethod === "remote" ? (
+                    <p className="mt-2 text-[12px] text-muted-foreground">{preset.remote.hint ?? "Connects to the service's hosted MCP server — no local process, no token to paste."}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {useRemote ? null : preset.env.length === 0 ? (
                 <p className="text-[12px] text-muted-foreground">No credentials needed — this connector works with local resources only.</p>
               ) : (
                 <>
@@ -231,7 +292,7 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
                 </>
               )}
             </section>
-            {preset.argInputs?.length ? (
+            {!useRemote && preset.argInputs?.length ? (
               <section className="mb-6 space-y-3">
                 {preset.argInputs.map((a) => (
                   <label key={a.key} className="block">
@@ -250,7 +311,7 @@ export function McpConfigTab({ presetId }: { presetId: string }) {
             <section className="mb-6">
               <h2 className="mb-1 text-[13px] font-semibold text-foreground">Runs as</h2>
               <code className="block rounded-lg border border-border bg-panel px-3 py-2 font-mono text-[12px] text-muted-foreground">
-                {preset.command} {preset.args.join(" ")}
+                {useRemote ? preset.remote?.url : `${preset.command} ${preset.args.join(" ")}`}
               </code>
             </section>
           </>

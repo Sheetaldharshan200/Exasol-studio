@@ -90,13 +90,44 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     let script = script_path(app)?;
     let data_dir = state.data_dir.join("agent");
 
-    let mut child = Command::new(node)
-        .arg(&script)
+    let mut cmd = Command::new(node);
+    cmd.arg(&script)
         .arg("--data-dir")
         .arg(&data_dir)
         .stdin(Stdio::piped()) // held open; closing it shuts the agent down
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    // Provision the Exa engine (opencode) for the sidecar's EngineService.
+    // ALWAYS pass the data ROOT so the service resolves the installed component
+    // copy lazily — installing the engine takes effect without a sidecar
+    // restart. Also pass the bundled baseline so a fresh install works offline
+    // before any component update. Absent both → the panel shows the install
+    // gate.
+    cmd.env("EXA_ENGINE_DATA_ROOT", &state.data_dir);
+    // Engine-config seeding (MCP servers + the exa agent) lives in the
+    // SIDECAR — the single writer of opencode.json. Rust only supplies the
+    // launch ingredients it alone knows: the gateway spec and a real npx.
+    if let Ok(launch) = crate::ai_clients::mcp_launch(app) {
+        cmd.env("EXA_GATEWAY_NODE", &launch.command);
+        if let Some(script) = launch.args.first() {
+            cmd.env("EXA_GATEWAY_SCRIPT", script);
+        }
+        if let Some((_, dir)) = launch.env.iter().find(|(k, _)| k == "EXASOL_STUDIO_AGENT_DIR") {
+            cmd.env("EXA_AGENT_DIR", dir);
+        }
+    }
+    if let Some(npx) = crate::market::resolve_bin("npx") {
+        cmd.env("EXA_NPX", npx);
+    }
+    if let Some(baseline) = crate::engine::bundled_engine_path(app) {
+        let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
+        let _ = std::fs::create_dir_all(&cfg_dir);
+        cmd.env("EXA_ENGINE_BIN", baseline);
+        cmd.env("EXA_ENGINE_CONFIG_DIR", cfg_dir);
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| AppError::Assistant(format!("failed to start agent: {e}")))?;
 

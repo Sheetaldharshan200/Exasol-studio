@@ -32,13 +32,13 @@ export type TabView =
   | "git"
   | "notebook"
   | "skills"
-  | "aiSettings"
   | "connProps"
   | "plan"
   | "logs"
   | "bucketfs"
   | "backups"
-  | "health";
+  | "health"
+  | "exaEngine";
 
 /** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
  *  async profile that finishes after a tab-switch can't flip another tab's
@@ -70,6 +70,8 @@ export type SqlTab = {
   groupId?: string;
   /** For mcpConfig tabs — which connector preset to configure. */
   mcpPreset?: string;
+  /** For mcpConfig tabs — whose MCP registry: Studio's agent or the Exa engine. */
+  mcpTarget?: "studio" | "exa";
   /** For object tabs — the database object being inspected. */
   objectRef?: ObjectRef;
   /** For object tabs — the owning connection. */
@@ -147,12 +149,12 @@ export const TAB_ICON: Record<TabView, IconName> = {
   git: "git",
   notebook: "notebook",
   skills: "skills",
-  aiSettings: "brain-circuit",
   plan: "clock-dashed-half",
   logs: "list",
   bucketfs: "folder-open",
   backups: "database",
   health: "heart",
+  exaEngine: "brain-circuit",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */

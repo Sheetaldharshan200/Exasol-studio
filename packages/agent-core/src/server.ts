@@ -16,6 +16,8 @@ import type { Attachment } from "./loop.ts";
 import { SkillStore } from "./skills.ts";
 import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
+import { EngineService } from "./engine/engine-service.ts";
+import { localBaseURL } from "./providers.ts";
 
 // Minimal localhost HTTP + SSE server. No framework by design: six routes,
 // token auth, and Server-Sent Events — node:http covers all of it.
@@ -33,6 +35,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
+  // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
+  // the sidecar's env; degrades cleanly to "not installed" when absent.
+  const engine = new EngineService();
 
   const server = createServer(async (req, res) => {
     try {
@@ -50,7 +55,148 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // GET /v1/models
       if (req.method === "GET" && parts[1] === "models") {
         const providers = await registry.list();
+        // Declare the RUNNING local runtimes to the engine so prompts with
+        // these provider ids resolve (fire-and-forget; merge-only config).
+        const locals = providers
+          .filter((p) => p.kind === "local" && p.running && p.models.length > 0)
+          .map((p) => ({ id: p.id, name: p.name, baseURL: localBaseURL(p.id), models: p.models }))
+          .filter((p): p is typeof p & { baseURL: string } => typeof p.baseURL === "string");
+        if (locals.length > 0) void engine.syncLocalProviders(locals).catch(() => undefined);
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
+      }
+
+      // ── Exa engine (opencode) ───────────────────────────────────────────
+      if (parts[1] === "engine") {
+        // GET /v1/engine/status
+        if (req.method === "GET" && parts[2] === "status") {
+          // Seed the engine defaults (MCP servers + exa agent) once per run —
+          // the sidecar is the SINGLE writer of opencode.json.
+          void engine.ensureSeedConfig().catch(() => undefined);
+          return json(res, 200, { ...(await engine.status()), provisioned: engine.provisioned });
+        }
+        // GET /v1/engine/providers — the engine's CONFIGURED providers/models
+        if (req.method === "GET" && parts[2] === "providers") {
+          return json(res, 200, await engine.providers());
+        }
+        // GET /v1/engine/catalog — the FULL models.dev provider catalog
+        if (req.method === "GET" && parts[2] === "catalog") {
+          try {
+            return json(res, 200, { providers: await engine.catalog() });
+          } catch {
+            return json(res, 502, { error: "catalog unavailable (offline?)" });
+          }
+        }
+        // POST /v1/engine/auth — save a provider API key into the engine
+        if (req.method === "POST" && parts[2] === "auth") {
+          const b = await readBody<{ providerId?: string; key?: string }>(req);
+          if (!b.providerId || !b.key) return json(res, 400, { error: "providerId and key required" });
+          const ok = await engine.setProviderAuth(b.providerId, b.key);
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+        }
+        // DELETE /v1/engine/auth/:providerId — disconnect a provider
+        if (req.method === "DELETE" && parts[2] === "auth" && parts[3]) {
+          try {
+            const ok = await engine.removeProviderAuth(decodeURIComponent(parts[3]));
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "disconnect failed" });
+          }
+        }
+        // GET /v1/engine/auth-methods — per-provider connect-flow spec
+        if (req.method === "GET" && parts[2] === "auth-methods") {
+          return json(res, 200, { methods: await engine.authMethods() });
+        }
+        // GET /v1/engine/connected — provider ids with working credentials
+        if (req.method === "GET" && parts[2] === "connected") {
+          return json(res, 200, { connected: await engine.connectedProviders() });
+        }
+        // /v1/engine/mcp — server status map | add | connect/disconnect
+        if (parts[2] === "mcp" && !parts[3]) {
+          if (req.method === "GET") return json(res, 200, { servers: await engine.mcpList() });
+          if (req.method === "POST") {
+            const b = await readBody<{ name?: string; config?: import("./engine/client.ts").McpConfig }>(req);
+            if (!b.name?.trim() || !b.config) return json(res, 400, { error: "name and config required" });
+            try {
+              const ok = await engine.mcpAdd(b.name.trim(), b.config);
+              return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+            } catch (e) {
+              return json(res, 502, { error: e instanceof Error ? e.message : "mcp add failed" });
+            }
+          }
+        }
+        if (req.method === "POST" && parts[2] === "mcp" && parts[3] && (parts[4] === "connect" || parts[4] === "disconnect")) {
+          try {
+            const ok = await engine.mcpToggle(decodeURIComponent(parts[3]), parts[4] === "connect");
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "mcp toggle failed" });
+          }
+        }
+        // POST /v1/engine/oauth/(authorize|callback)
+        if (req.method === "POST" && parts[2] === "oauth" && parts[3] === "authorize") {
+          const b = await readBody<{ providerId?: string; method?: number; inputs?: Record<string, string> }>(req);
+          if (!b.providerId || typeof b.method !== "number") return json(res, 400, { error: "providerId and method required" });
+          try {
+            return json(res, 200, { authorization: await engine.oauthAuthorize(b.providerId, b.method, b.inputs) });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "authorize failed" });
+          }
+        }
+        if (req.method === "POST" && parts[2] === "oauth" && parts[3] === "callback") {
+          const b = await readBody<{ providerId?: string; method?: number; code?: string }>(req);
+          if (!b.providerId || typeof b.method !== "number") return json(res, 400, { error: "providerId and method required" });
+          try {
+            const ok = await engine.oauthCallback(b.providerId, b.method, b.code);
+            return json(res, ok ? 200 : 502, ok ? { ok: true } : { error: "authorization was not completed" });
+          } catch (e) {
+            return json(res, 502, { error: e instanceof Error ? e.message : "callback failed" });
+          }
+        }
+        // GET/POST /v1/engine/network — the Exa agent's internet access
+        // (sandboxed off by default; toggled from AI Settings → Guardrails).
+        if (parts[2] === "network" && !parts[3]) {
+          if (req.method === "GET") return json(res, 200, await engine.agentNetwork());
+          if (req.method === "POST") {
+            const b = await readBody<{ allow?: boolean }>(req);
+            const r = await engine.setAgentNetwork(Boolean(b.allow));
+            return json(res, 200, r);
+          }
+        }
+        // GET /v1/engine/sessions — the sidebar's session list. Chat itself
+        // (create/prompt/stream/replay/permissions) is NOT proxied here: the
+        // webview talks to the engine directly via @assistant-ui/react-opencode.
+        if (req.method === "GET" && parts[2] === "sessions" && !parts[3]) {
+          return json(res, 200, { sessions: await engine.listSessions() });
+        }
+        // DELETE /v1/engine/sessions/:id — permanently remove a session
+        if (req.method === "DELETE" && parts[2] === "sessions" && parts[3] && !parts[4]) {
+          const ok = await engine.deleteSession(decodeURIComponent(parts[3]));
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+        }
+        // POST /v1/engine/sessions/:id/rename {title}
+        if (req.method === "POST" && parts[2] === "sessions" && parts[3] && parts[4] === "rename") {
+          const b = await readBody<{ title?: string }>(req);
+          if (!b.title?.trim()) return json(res, 400, { error: "title required" });
+          const ok = await engine.renameSession(decodeURIComponent(parts[3]), b.title.trim());
+          return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+        }
+        // POST /v1/engine/sessions/:id/(compact|undo|redo)
+        if (req.method === "POST" && parts[2] === "sessions" && parts[3]) {
+          const sid = decodeURIComponent(parts[3]);
+          if (parts[4] === "compact") {
+            const ok = await engine.compact(sid);
+            return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+          }
+          if (parts[4] === "undo" || parts[4] === "redo") {
+            try {
+              const ok = parts[4] === "undo" ? await engine.undo(sid) : await engine.redo(sid);
+              return json(res, ok ? 200 : 503, ok ? { ok: true } : { error: "engine not installed" });
+            } catch (e) {
+              return json(res, 502, { error: e instanceof Error ? e.message : `${parts[4]} failed` });
+            }
+          }
+        }
+        return json(res, 404, { error: "not found" });
       }
 
       // POST /v1/providers/probe {baseURL, apiKey?} — test an OpenAI-compatible
@@ -308,6 +454,52 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const cleaned = out.text.replace(/^\s*```(?:sql)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         if (!cleaned) return json(res, 500, { error: "The model returned no SQL." });
         return json(res, 200, { database: target.name, sql: cleaned });
+      }
+      // POST /v1/gateway/kb {database, question, limit?} → {cards} — the
+      // knowledge base: Studio's per-connection table graph (summaries, columns,
+      // relationships) searched for a question, so the agent grounds answers in
+      // what Studio already learned about the schema instead of re-discovering
+      // it. Read-only; gated by the same exposure toggle as the SQL service.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "kb") {
+        const body = await readBody<{ database?: string; question?: string; limit?: number }>(req);
+        const wanted = (body.database ?? "").trim();
+        const question = (body.question ?? "").trim();
+        if (!wanted || !question) return json(res, 400, { error: "database and question are required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ?? conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        if (!target) return json(res, 404, { error: `No connected database named "${wanted}".` });
+        if ((config.get().gatewayExposure ?? {})[target.id] === false) {
+          return json(res, 403, { error: `"${target.name}" is not exposed on the Studio gateway.` });
+        }
+        const limit = Math.min(20, Math.max(1, body.limit ?? 5));
+        return json(res, 200, { database: target.name, cards: kb.search(target.id, question, limit) });
+      }
+      // POST /v1/gateway/memory {database?, query} → {memories} — recall the
+      // durable facts Studio remembers (user prefs + verified project notes),
+      // ranked for the query. POST /v1/gateway/memory/remember {database?,
+      // note} stores one. Both carry a crown-jewel capability onto the engine.
+      if (parts[1] === "gateway" && parts[2] === "memory") {
+        const connFor = (name?: string) => {
+          const w = (name ?? "").trim();
+          if (!w) return null;
+          const c = db.list().find((x) => x.id === w || x.name.toLowerCase() === w.toLowerCase());
+          return c?.id ?? null;
+        };
+        if (req.method === "POST" && !parts[3]) {
+          const b = await readBody<{ database?: string; query?: string }>(req);
+          const q = (b.query ?? "").trim();
+          if (!q) return json(res, 400, { error: "query is required" });
+          return json(res, 200, { memories: await memory.recall(connFor(b.database), q, 8) });
+        }
+        if (req.method === "POST" && parts[3] === "remember") {
+          const b = await readBody<{ database?: string; note?: string; scope?: "user" | "project" }>(req);
+          const note = (b.note ?? "").trim();
+          if (!note) return json(res, 400, { error: "note is required" });
+          memory.remember(b.scope === "user" ? "user" : "project", connFor(b.database), note);
+          return json(res, 200, { ok: true });
+        }
+        return json(res, 404, { error: "not found" });
       }
       // Dashboards service: Studio's saved dashboards (their panels carry the
       // SQL), exposed on the bus when the service toggle is on.

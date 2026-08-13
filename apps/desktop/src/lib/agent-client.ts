@@ -12,6 +12,8 @@ export type AgentModelInfo = {
   context?: number;
   toolCall?: boolean;
   reasoning?: boolean;
+  /** Reasoning-effort variants the engine computed (low/medium/high/xhigh). */
+  variants?: string[];
   /** Model accepts image input. */
   image?: boolean;
 };
@@ -98,8 +100,6 @@ export type AgentSettings = {
   enableInsights: boolean;
   enableCompaction: boolean;
   enableUiTools: boolean;
-  petMode: "pet" | "cursor" | "off";
-  petAvatar: "exa" | "byte" | "pixel" | "quill" | "dot";
   allowDestructiveUi: boolean;
   allowFileAccess: boolean;
   autoCommit: boolean;
@@ -258,6 +258,102 @@ export const agent = {
     await invoke("agent_stream", { sessionId });
     return unlisten;
   },
+
+  // ── Exa engine (opencode) — v2 chat backend over /v1/engine/* ─────────────
+  engine: {
+    status: (): Promise<EngineStatus> => api("/engine/status"),
+    /** Exa agent internet access — the LIVE enforced state when the engine
+     * is running (`live: true`), else the configured next-boot state. */
+    network: (): Promise<{ allowed: boolean; live: boolean }> => api("/engine/network"),
+    /** Flip the sandbox; `verified` false = config set but live enforcement
+     * unconfirmed — surface it, never assume. Restarts a running engine. */
+    setNetwork: (allow: boolean): Promise<{ ok: boolean; verified: boolean }> => api("/engine/network", "POST", { allow }),
+    sessions: (): Promise<{ sessions: EngineSessionInfo[] }> => api("/engine/sessions"),
+    /** The engine's CONFIGURED providers/models (GET /config/providers). */
+    providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
+    /** The FULL models.dev provider catalog (what opencode itself supports). */
+    catalog: (): Promise<{ providers: EngineCatalogProvider[] }> => api("/engine/catalog"),
+    /** Save a provider API key into the engine's own auth store. */
+    setAuth: (providerId: string, key: string): Promise<{ ok: boolean }> => api("/engine/auth", "POST", { providerId, key }),
+    /** Remove a provider's credential from the engine (disconnect). */
+    removeAuth: (providerId: string): Promise<{ ok: boolean }> => api(`/engine/auth/${encodeURIComponent(providerId)}`, "DELETE"),
+    /** Per-provider auth methods — opencode's connect-flow spec. */
+    authMethods: (): Promise<{ methods: Record<string, EngineAuthMethod[]> }> => api("/engine/auth-methods"),
+    /** Provider ids with working credentials (verifies a saved key took). */
+    connected: (): Promise<{ connected: string[] }> => api("/engine/connected"),
+    /** Start an OAuth flow; authorization is null for non-oauth methods. */
+    oauthAuthorize: (providerId: string, method: number, inputs?: Record<string, string>): Promise<{ authorization: EngineOAuthAuthorization | null }> =>
+      api("/engine/oauth/authorize", "POST", { providerId, method, inputs }),
+    /** Complete an OAuth flow — resolves when the engine finishes polling. */
+    oauthCallback: (providerId: string, method: number, code?: string): Promise<{ ok: boolean }> =>
+      api("/engine/oauth/callback", "POST", { providerId, method, code }),
+    /** Engine-side session compaction (/compact). */
+    compact: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/compact`, "POST"),
+    /** MCP servers: status map, add one, connect/disconnect by name. */
+    mcp: (): Promise<{ servers: Record<string, { status: string }> }> => api("/engine/mcp"),
+    mcpAdd: (name: string, config: EngineMcpConfig): Promise<{ ok: boolean }> => api("/engine/mcp", "POST", { name, config }),
+    mcpToggle: (name: string, connect: boolean): Promise<{ ok: boolean }> =>
+      api(`/engine/mcp/${encodeURIComponent(name)}/${connect ? "connect" : "disconnect"}`, "POST"),
+    /** Undo (revert) / redo (unrevert) the last message in a session. */
+    undo: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/undo`, "POST"),
+    redo: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}/redo`, "POST"),
+    /** Permanently delete a stored session. */
+    deleteSession: (id: string): Promise<{ ok: boolean }> => api(`/engine/sessions/${encodeURIComponent(id)}`, "DELETE"),
+    /** Rename a stored session (overrides the auto-generated title). */
+    renameSession: (id: string, title: string): Promise<{ ok: boolean }> =>
+      api(`/engine/sessions/${encodeURIComponent(id)}/rename`, "POST", { title }),
+  },
+};
+
+/** One persisted engine session (auto-titled by the engine). */
+export type EngineSessionInfo = { id: string; title?: string; updated?: number };
+
+/** One input collected before an auth flow (select or text, may be conditional). */
+export type EngineAuthPrompt = {
+  type: "text" | "select";
+  key: string;
+  message: string;
+  placeholder?: string;
+  options?: { label: string; value: string; hint?: string }[];
+  when?: { key: string; op: "eq" | "neq"; value: string };
+};
+
+/** One auth method a provider supports (e.g. "ChatGPT Pro/Plus (browser)"). */
+export type EngineAuthMethod = { type: "oauth" | "api"; label: string; prompts?: EngineAuthPrompt[] };
+
+/** An in-flight OAuth authorization (open `url`, follow `instructions`). */
+export type EngineOAuthAuthorization = { url: string; method: "auto" | "code"; instructions: string };
+
+/** An MCP server definition for the engine (local command or remote URL). */
+export type EngineMcpConfig =
+  | { type: "local"; command: string[]; cwd?: string; environment?: Record<string, string>; enabled?: boolean }
+  | { type: "remote"; url: string; headers?: Record<string, string>; enabled?: boolean };
+
+/** One provider from the FULL models.dev catalog (/v1/engine/catalog). */
+export type EngineCatalogProvider = {
+  id: string;
+  name: string;
+  env: string[];
+  modelCount: number;
+  popular: boolean;
+};
+
+/** One provider from the engine's own catalog (/v1/engine/providers). */
+export type EngineProviderInfo = {
+  id: string;
+  name: string;
+  /** How it was configured: "env" | "config" | "custom" | "api". */
+  source?: string;
+  models: { id: string; name: string; context?: number; variants?: string[] }[];
+};
+
+/** Engine install/run status (from /v1/engine/status). */
+export type EngineStatus = {
+  state: "stopped" | "starting" | "running" | "backoff" | "failed";
+  binaryPresent: boolean;
+  provisioned: boolean;
+  port?: number;
+  reason?: string;
 };
 
 // ── Built-in local AI engine (managed llama-server, see local_llm.rs) ──

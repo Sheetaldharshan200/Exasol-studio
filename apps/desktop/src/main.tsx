@@ -7,7 +7,9 @@ import { ThemeProvider } from "@/components/theme/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyWindowControlsInset } from "@/lib/platform";
 import { applyThemePreset } from "@/lib/theme-presets";
+import { installAppLog } from "@/lib/app-log";
 
+installAppLog(); // diagnostics tail FIRST — crashes before this die unrecorded
 applyWindowControlsInset();
 applyThemePreset(); // restore the user's saved color preset + radius
 

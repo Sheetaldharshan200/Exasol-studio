@@ -16,6 +16,8 @@ export type McpPreset = {
   /** Where the user creates the credential. */
   tokenUrl?: string;
   tokenHint?: string;
+  /** Hosted MCP endpoint (auth-method choice: token-local vs remote). */
+  remote?: { url: string; hint?: string };
   /** Brand mark id (BrandMarks) or a lucide fallback keyword. */
   logo?: string;
 };
@@ -35,6 +37,7 @@ export const MCP_PRESETS: McpPreset[] = [
     ],
     tokenUrl: "https://id.atlassian.com/manage-profile/security/api-tokens",
     tokenHint: "Create an API token in your Atlassian account (Security → API tokens). It acts like a scoped password and can be revoked anytime.",
+    remote: { url: "https://mcp.atlassian.com/v1/sse", hint: "Atlassian's hosted MCP server — sign-in happens in your browser on first use." },
   },
   {
     id: "github",
@@ -46,6 +49,7 @@ export const MCP_PRESETS: McpPreset[] = [
     env: [{ key: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal access token", secret: true }],
     tokenUrl: "https://github.com/settings/tokens",
     tokenHint: "Create a fine-grained personal access token with read-only scopes for the repos you need — revocable and least-privilege.",
+    remote: { url: "https://api.githubcopilot.com/mcp/", hint: "GitHub's hosted MCP server — uses your GitHub sign-in." },
   },
   {
     id: "excel",
