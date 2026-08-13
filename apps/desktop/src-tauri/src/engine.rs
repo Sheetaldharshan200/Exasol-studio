@@ -24,7 +24,7 @@ const OPENCODE_REPO: &str = "Sheetaldharshan200/exa";
 
 /// The engine tag this app ships as its bundled baseline (single source for
 /// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
-pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.13";
+pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.15";
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
@@ -35,14 +35,24 @@ pub fn asset_for(os: &str, arch: &str) -> Option<String> {
         _ => return None,
     };
     Some(match os {
-        "macos" => format!("opencode-darwin-{a}.zip"),
-        "linux" => format!("opencode-linux-{a}.tar.gz"),
-        "windows" => format!("opencode-windows-{a}.zip"),
+        "macos" => format!("exa-darwin-{a}.zip"),
+        "linux" => format!("exa-linux-{a}.tar.gz"),
+        "windows" => format!("exa-windows-{a}.zip"),
         _ => return None,
     })
 }
 
 fn binary_name() -> &'static str {
+    if std::env::consts::OS == "windows" {
+        "exa.exe"
+    } else {
+        "exa"
+    }
+}
+
+/// Pre-exa.14 archives shipped the binary under the upstream name; existing
+/// component installs and cached bundles keep working through this fallback.
+fn legacy_binary_name() -> &'static str {
     if std::env::consts::OS == "windows" {
         "opencode.exe"
     } else {
@@ -52,10 +62,13 @@ fn binary_name() -> &'static str {
 
 /// The installed component copy of the engine binary, if present.
 pub fn engine_binary_path(data_dir: &Path) -> Option<PathBuf> {
-    let installed = component_dir(data_dir, ComponentId::ExaAgent)
-        .join("bin")
-        .join(binary_name());
-    installed.exists().then_some(installed)
+    let bin_dir = component_dir(data_dir, ComponentId::ExaAgent).join("bin");
+    let installed = bin_dir.join(binary_name());
+    if installed.exists() {
+        return Some(installed);
+    }
+    let legacy = bin_dir.join(legacy_binary_name());
+    legacy.exists().then_some(legacy)
 }
 
 /// Recursively find the engine binary inside a directory (the bundled archive
@@ -70,7 +83,7 @@ fn find_binary(dir: &Path, depth: u8) -> Option<PathBuf> {
         let p = e.path();
         if p.is_dir() {
             subdirs.push(p);
-        } else if p.file_name().map(|n| n == binary_name()).unwrap_or(false) {
+        } else if p.file_name().map(|n| n == binary_name() || n == legacy_binary_name()).unwrap_or(false) {
             return Some(p);
         }
     }
@@ -236,41 +249,13 @@ pub fn cli_shim_contents(engine_binary: &Path, config_dir: &Path) -> String {
             "@echo off\r\nset \"OPENCODE_CONFIG_DIR={cfg}\"\r\nset \"XDG_DATA_HOME={cfg}\"\r\nset \"XDG_CONFIG_HOME={cfg}\"\r\n\"{bin}\" %*\r\n"
         )
     } else {
-        // `exa sandbox [status|on|off]` gives the CLI the same control the
-        // app's globe toggle has: it edits the exa agent's webfetch/websearch
-        // permissions in the shared config (each CLI invocation boots a fresh
-        // engine instance, so the change applies to the NEXT `exa` run; the
-        // Studio panel applies it at its next engine restart).
+        // Sandbox and ops are native engine commands since exa.14; the shim
+        // only pins the config dir so app + CLI share the same engine state.
         format!(
             r#"#!/bin/sh
 export OPENCODE_CONFIG_DIR="{cfg}"
 export XDG_DATA_HOME="{cfg}"
 export XDG_CONFIG_HOME="{cfg}"
-if [ "$1" = "sandbox" ]; then
-  CONF="{cfg}/opencode/opencode.json"
-  MODE="${{2:-status}}"
-  python3 - "$CONF" "$MODE" <<'PYEXA'
-import json, sys
-path, mode = sys.argv[1], sys.argv[2]
-try:
-    root = json.load(open(path))
-except Exception:
-    print("exa sandbox: config not found at", path); sys.exit(1)
-perm = root.setdefault("agent", {{}}).setdefault("exa", {{}}).setdefault("permission", {{}})
-if mode in ("on", "off"):
-    action = "allow" if mode == "on" else "deny"
-    perm["webfetch"] = action
-    perm["websearch"] = action
-    json.dump(root, open(path, "w"), indent=2)
-allowed = perm.get("webfetch") == "allow"
-print("internet access:", "ON (webfetch/websearch allowed)" if allowed else "OFF - sandboxed (webfetch/websearch denied)")
-if mode in ("on", "off"):
-    print("applies to the next `exa` run; Exasol Studio applies it at its next engine restart.")
-elif mode != "status":
-    print("usage: exa sandbox [status|on|off]")
-PYEXA
-  exit $?
-fi
 exec "{bin}" "$@"
 "#
         )
@@ -357,12 +342,12 @@ mod tests {
     // Rust installer and the TS mapper can never disagree on asset names.
     #[test]
     fn asset_for_matches_the_ts_mapper() {
-        assert_eq!(asset_for("macos", "aarch64").as_deref(), Some("opencode-darwin-arm64.zip"));
-        assert_eq!(asset_for("macos", "x86_64").as_deref(), Some("opencode-darwin-x64.zip"));
-        assert_eq!(asset_for("linux", "aarch64").as_deref(), Some("opencode-linux-arm64.tar.gz"));
-        assert_eq!(asset_for("linux", "x86_64").as_deref(), Some("opencode-linux-x64.tar.gz"));
-        assert_eq!(asset_for("windows", "x86_64").as_deref(), Some("opencode-windows-x64.zip"));
-        assert_eq!(asset_for("windows", "aarch64").as_deref(), Some("opencode-windows-arm64.zip"));
+        assert_eq!(asset_for("macos", "aarch64").as_deref(), Some("exa-darwin-arm64.zip"));
+        assert_eq!(asset_for("macos", "x86_64").as_deref(), Some("exa-darwin-x64.zip"));
+        assert_eq!(asset_for("linux", "aarch64").as_deref(), Some("exa-linux-arm64.tar.gz"));
+        assert_eq!(asset_for("linux", "x86_64").as_deref(), Some("exa-linux-x64.tar.gz"));
+        assert_eq!(asset_for("windows", "x86_64").as_deref(), Some("exa-windows-x64.zip"));
+        assert_eq!(asset_for("windows", "aarch64").as_deref(), Some("exa-windows-arm64.zip"));
     }
 
     #[test]
