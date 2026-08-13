@@ -26,6 +26,7 @@ import {
   Sparkles as SparklesIcon,
   Trash2 as Trash2Icon,
   Upload as ShareIcon,
+  UserRound as UserRoundIcon,
   Wrench as WrenchIcon,
   X,
   Zap as ZapIcon,
@@ -224,6 +225,9 @@ export type ExaComposerApi = {
   /** Which SQL operation classes the agent may use (read is always on). */
   sqlOps: SqlOps;
   setSqlOps: (ops: SqlOps) => void;
+  /** Presentation persona for the whole chat (null = adaptive). */
+  persona: string | null;
+  setPersona: (name: string | null) => void;
   /** Sandbox: the agent's internet access — live-enforced state + toggle. */
   network: { allowed: boolean; applying: boolean };
   setNetwork: (allow: boolean) => void;
@@ -395,6 +399,80 @@ function ExaPermissionBar() {
         );
       })}
     </div>
+  );
+}
+
+/** The personas exa can present answers for (mirrors the CLI's `exa persona`). */
+export const EXA_PERSONAS: { key: string; label: string; detail: string }[] = [
+  { key: "data-analyst", label: "Data Analyst", detail: "Tables and SQL, moderate depth" },
+  { key: "bi-analyst", label: "BI Analyst", detail: "KPIs, comparisons, charts" },
+  { key: "data-scientist", label: "Data Scientist", detail: "Models, features, metrics" },
+  { key: "finance-analyst", label: "Finance Analyst", detail: "Fiscal periods, currency, margins" },
+  { key: "data-engineer", label: "Data Engineer", detail: "Pipelines, schemas, performance" },
+  { key: "dba", label: "DBA", detail: "Administration, sessions, storage" },
+  { key: "executive", label: "Executive", detail: "Headline and business meaning first" },
+];
+
+/**
+ * Presentation persona for the whole chat: the send pipeline turns the pick
+ * into a per-message directive, so it applies immediately and to every
+ * message until changed (the CLI equivalent is `exa persona set`).
+ */
+function ExaPersonaSelector({ persona, onChange }: { persona: string | null; onChange: (name: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const active = EXA_PERSONAS.find((p) => p.key === persona);
+  useEffect(() => {
+    if (open) document.body.dataset.exaMenuOpen = "1";
+    else delete document.body.dataset.exaMenuOpen;
+    return () => {
+      delete document.body.dataset.exaMenuOpen;
+    };
+  }, [open]);
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title="Who the answers are written for (applies to the whole chat)"
+          className={cn(
+            "hover:bg-muted focus-visible:bg-muted flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] outline-none transition-colors",
+            active ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <UserRoundIcon className="h-3.5 w-3.5" />
+          <span className="hidden @md:inline">{active ? active.label : "Adaptive"}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
+        <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Answers written for</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={!persona}
+          onSelect={(e) => e.preventDefault()}
+          onCheckedChange={() => onChange(null)}
+          className="text-[12px]"
+        >
+          <span className="flex min-w-0 flex-col">
+            <span>Adaptive</span>
+            <span className="text-[10.5px] text-muted-foreground">Exa matches each question's depth</span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        {EXA_PERSONAS.map(({ key, label, detail }) => (
+          <DropdownMenuCheckboxItem
+            key={key}
+            checked={persona === key}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => onChange(v ? key : null)}
+            className="text-[12px]"
+          >
+            <span className="flex min-w-0 flex-col">
+              <span>{label}</span>
+              <span className="text-[10.5px] text-muted-foreground">{detail}</span>
+            </span>
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -723,6 +801,7 @@ export function ExaComposerControls() {
         <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
       <ExaSqlOpsSelector ops={api.sqlOps} onChange={api.setSqlOps} />
+      <ExaPersonaSelector persona={api.persona} onChange={api.setPersona} />
       <ExaNetworkToggle network={api.network} onToggle={api.setNetwork} />
     </div>
   );
