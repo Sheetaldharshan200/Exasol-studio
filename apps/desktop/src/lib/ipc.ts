@@ -294,7 +294,6 @@ export type CatalogEntry = {
   repo: string;
   latest: string | null;
   homepage: string;
-  mirrorTag: string;
 };
 export type MarketCatalog = {
   generatedAt: string | null;
