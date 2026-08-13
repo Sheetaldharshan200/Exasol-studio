@@ -311,6 +311,14 @@ export class EngineService {
           dirty = true;
         }
       }
+      // CLI parity: `exa` in a terminal boots the same agent as the app's
+      // panel (guardrail persona, brand voice, sandbox) instead of the
+      // engine's stock build agent. The app selects "exa" explicitly, so
+      // this only changes what the CLI defaults to.
+      if (root.default_agent !== "exa") {
+        root.default_agent = "exa";
+        dirty = true;
+      }
       return dirty;
     });
     if (changed) await this.restartForConfig();
