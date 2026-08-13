@@ -115,6 +115,34 @@ jobs:
         shell: bash
         run: python3 scripts/prefetch-runtime.py ${{ matrix.target }} || python scripts/prefetch-runtime.py ${{ matrix.target }}
 
+      # linuxdeploy ldd-scans every ELF in the AppDir and ABORTS the whole
+      # bundle when ldd fails on one (v2026.4.0 arm64: "Failed to run ldd:
+      # exited with code 1" on runtime/exa-engine/opencode — a binary ldd
+      # handles fine in a plain ubuntu:22.04 arm64 container, so this is a
+      # runner/linuxdeploy quirk). The bundled runtime is self-contained and
+      # must not have its dependencies deployed or rewritten anyway, so when
+      # ldd fails on a runtime file, report "statically linked" (= no deps to
+      # deploy) instead of failing; everything else keeps real ldd behavior.
+      - name: Shim ldd to skip the self-contained runtime (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          set -euo pipefail
+          echo "diagnostic: real ldd on the bundled engine:"
+          ldd apps/desktop/src-tauri/resources/runtime/exa-engine/opencode || true
+          sudo mv /usr/bin/ldd /usr/bin/ldd.real
+          sudo tee /usr/bin/ldd >/dev/null <<'SH'
+          #!/bin/bash
+          out=$(/usr/bin/ldd.real "$@" 2>&1); rc=$?
+          if [ $rc -ne 0 ]; then
+            case "$*" in
+              *"/runtime/"*) printf '\tstatically linked\n'; exit 0;;
+            esac
+          fi
+          printf '%s\n' "$out"
+          exit $rc
+          SH
+          sudo chmod +x /usr/bin/ldd
+
       - name: Build & publish (draft release)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
