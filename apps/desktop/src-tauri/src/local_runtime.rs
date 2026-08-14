@@ -371,6 +371,38 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
             }
         }
     }
+    // Bootstrap installs the LATEST official release from the original repo
+    // (digest-verified) — components are never bundled and never coupled to
+    // the Studio release. The verified lock below is the fallback when the
+    // release API or a usable digest is unavailable.
+    if let Some(release) = crate::upstream::latest(&component.repository) {
+        let installed = installed_version.trim();
+        if installed == release.tag && managed.is_file() {
+            if let Ok(output) = Command::new(&managed).args(["install", "--help"]).output() {
+                if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local") {
+                    return Ok(managed);
+                }
+            }
+        }
+        if installed != release.tag {
+            if let Some(official) = crate::upstream::pick_asset(&artifact.name, &release.assets)
+                .and_then(|asset| crate::upstream::artifact_from(asset))
+            {
+                match install_personal_launcher_from(app, id, &official, &release.tag) {
+                    Ok(path) => return Ok(path),
+                    Err(err) => emit_log(
+                        app,
+                        id,
+                        format!(
+                            "Latest official install failed ({err}) — falling back to verified {}.",
+                            component.version
+                        ),
+                        "warning",
+                    ),
+                }
+            }
+        }
+    }
     let checksum_valid = managed.is_file()
         && artifact.executable_sha256.as_ref().is_some_and(|expected| {
             sha256_file(&managed).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))

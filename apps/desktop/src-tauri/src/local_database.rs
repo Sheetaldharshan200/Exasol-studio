@@ -846,13 +846,27 @@ fn exapump_platform() -> AppResult<&'static crate::component_lock::Artifact> {
 
 fn ensure_exapump(app: &AppHandle, data_dir: &Path) -> AppResult<PathBuf> {
     let component = &crate::component_lock::components().exapump;
-    let artifact = exapump_platform()?;
+    let lock_artifact = exapump_platform()?;
     let name = if cfg!(windows) {
         "exapump.exe"
     } else {
         "exapump"
     };
     let target = data_dir.join("personal-local/bin").join(name);
+    // Latest OFFICIAL release first (digest-verified from the original repo,
+    // never bundled); the verified lock is the fallback when the release API
+    // or a usable digest is unavailable.
+    let latest = crate::upstream::latest(&component.repository)
+        .filter(|release| release.tag != component.version)
+        .and_then(|release| {
+            crate::upstream::pick_asset(&lock_artifact.name, &release.assets)
+                .and_then(|asset| crate::upstream::artifact_from(asset))
+                .map(|artifact| (artifact, release.tag))
+        });
+    let (artifact, version) = match &latest {
+        Some((artifact, tag)) => (artifact, tag.as_str()),
+        None => (lock_artifact, component.version.as_str()),
+    };
     if target.is_file()
         && crate::local_runtime::sha256_file(&target)?.eq_ignore_ascii_case(&artifact.sha256)
     {
@@ -861,7 +875,7 @@ fn ensure_exapump(app: &AppHandle, data_dir: &Path) -> AppResult<PathBuf> {
     emit_log(
         app,
         JOB_ID,
-        format!("Installing verified ExaPump {}…", component.version),
+        format!("Installing verified ExaPump {version}…"),
         "info",
     );
     crate::local_runtime::obtain_artifact(app, JOB_ID, artifact, &target)?;

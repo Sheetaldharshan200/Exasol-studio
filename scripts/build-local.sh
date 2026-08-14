@@ -39,7 +39,7 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
 # Skip with EXASOL_PREBUNDLE=0 for quick dev builds (the Exa panel then shows
 # its install gate, and Built-in AI falls back to on-demand downloads).
 # fetch-runtime.mjs WIPES resources/runtime, so it must run BEFORE
-# prefetch-runtime.py (which writes into the same dir). It is skipped when the
+# the engine restage below. It is skipped when the
 # engine baseline is already present — delete resources/runtime to force a
 # refetch after bumping a pinned tag.
 if [ "${EXASOL_PREBUNDLE:-1}" = "1" ]; then
@@ -47,7 +47,6 @@ if [ "${EXASOL_PREBUNDLE:-1}" = "1" ]; then
     HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
     node "$REPO_ROOT/scripts/fetch-runtime.mjs" "$HOST_TRIPLE"
   fi
-  python3 "$REPO_ROOT/scripts/prefetch-runtime.py"
 fi
 
 cd "$REPO_ROOT/apps/desktop"
