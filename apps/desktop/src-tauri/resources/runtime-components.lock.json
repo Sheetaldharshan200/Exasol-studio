@@ -4,12 +4,12 @@
   "generatedAt": "2026-08-01T06:11:01Z",
   "personal": {
     "repository": "exasol/exasol-personal",
-    "version": "v2.1.0",
+    "version": "v2.2.0",
     "artifacts": {
       "macos-aarch64": {
         "name": "exasol-personal_macOS_arm64.tar.gz",
-        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.1.0/exasol-personal_macOS_arm64.tar.gz",
-        "sha256": "5d15cb69103155a279d68fe8c2a0309417561d64104cc5b2d49c687dee013d80",
+        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.2.0/exasol-personal_macOS_arm64.tar.gz",
+        "sha256": "9cc2f58768f9a8adb604602adaf207b27fe6cd6ec3611f4318066429c4e140f5",
         "executableSha256": "fa6e07c5bb7610268131cbb665c82b07e6ef2dc8cb975a024afbec4f32ce8e54"
       },
       "macos-x86_64": {
@@ -76,7 +76,7 @@
   },
   "exapump": {
     "repository": "exasol-labs/exapump",
-    "version": "v0.11.3",
+    "version": "v0.12.0",
     "artifacts": {
       "linux-aarch64": {
         "name": "exapump-0.11.3-linux-aarch64",
@@ -89,9 +89,9 @@
         "sha256": "b1f7c1c876e48a780b83188f998e4b266a3473cadd81d2a5d3ac8dcaa941d92a"
       },
       "macos-aarch64": {
-        "name": "exapump-0.11.3-macos-aarch64",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-macos-aarch64",
-        "sha256": "56fe3afcb84b2e4ea36fdd0e65e819887770b7088c55783ad6e89df9bed298c5"
+        "name": "exapump-0.12.0-macos-aarch64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-macos-aarch64",
+        "sha256": "abaa6b45cca8e04bbcc8e2a29b8a88f62690ea7e9cbab1411f381b2d26532534"
       },
       "macos-x86_64": {
         "name": "exapump-0.11.3-macos-x86_64",
