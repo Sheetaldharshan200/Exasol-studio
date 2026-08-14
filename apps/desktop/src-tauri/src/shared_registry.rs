@@ -127,6 +127,12 @@ pub fn read_credential(id: &str) -> Option<String> {
     std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
 
+/// Whether a registry host refers to a database on this machine. Only those
+/// can be adopted — a remote database is somebody else's to manage.
+pub fn is_local_host(host: &str) -> bool {
+    matches!(host.trim().to_ascii_lowercase().as_str(), "127.0.0.1" | "localhost" | "::1" | "[::1]")
+}
+
 /// Entries the CLI (or another program) registered that Studio has no profile
 /// for yet — matched on the derived id so the same database is never imported
 /// twice under two names.
@@ -228,6 +234,16 @@ mod tests {
         assert!(json.contains("\"schema\":\"SALES\""));
         assert!(!json.contains("\"password\""), "secrets never belong in the shared registry");
         assert_eq!(parse_registry(&json).connections.len(), 1);
+    }
+
+    #[test]
+    fn only_databases_on_this_machine_are_adoptable() {
+        for host in ["127.0.0.1", "localhost", "LOCALHOST", " ::1 "] {
+            assert!(is_local_host(host), "{host} should be adoptable");
+        }
+        for host in ["db.internal", "10.0.0.5", "exasol.example.com", ""] {
+            assert!(!is_local_host(host), "{host} must not be adopted");
+        }
     }
 
     #[test]

@@ -1212,7 +1212,57 @@ fn ensure_nano(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     })
 }
 
+/// A local database already registered in the shared registry and answering
+/// on its port.
+///
+/// Deploying a second Exasol when one is already running wastes ~170MB and
+/// leaves the user guessing which copy holds their data. If the `exa` CLI (or
+/// an earlier Studio run, or the starter kit) already registered a local
+/// database that responds, Studio adopts it instead of bootstrapping its own.
+pub fn adopt_shared_local() -> Option<RuntimeConnection> {
+    let registry = crate::shared_registry::read_registry();
+    for entry in registry.connections {
+        let local = crate::shared_registry::is_local_host(&entry.host);
+        if !local {
+            continue;
+        }
+        if !port_answers(&entry.host, entry.port) {
+            continue;
+        }
+        let Some(password) = crate::shared_registry::read_credential(&entry.id) else {
+            continue; // no shared secret: cannot connect for the user
+        };
+        return Some(RuntimeConnection {
+            kind: "adopted".into(),
+            host: entry.host,
+            port: entry.port,
+            user: entry.user,
+            password,
+            engine: None,
+        });
+    }
+    None
+}
+
+fn port_answers(host: &str, port: u16) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let Ok(mut addrs) = (host, port).to_socket_addrs() else {
+        return false;
+    };
+    addrs.any(|addr| TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500)).is_ok())
+}
+
 pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
+    // Reuse a running, already-registered local database before deploying one.
+    if let Some(adopted) = adopt_shared_local() {
+        emit_log(
+            app,
+            id,
+            format!("Using the local Exasol already running on {}:{}", adopted.host, adopted.port),
+            "info",
+        );
+        return Ok(adopted);
+    }
     if std::env::consts::OS == "macos" {
         ensure_personal(app, id)
     } else {
