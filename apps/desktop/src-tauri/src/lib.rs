@@ -28,6 +28,7 @@ mod local_runtime;
 mod market;
 mod metadata;
 mod profiles;
+mod shared_registry;
 mod query;
 mod security;
 mod settings;

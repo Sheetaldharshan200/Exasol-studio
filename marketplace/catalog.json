@@ -53,9 +53,9 @@
       "homepage": "https://github.com/apache/superset"
     },
     "exa-agent": {
-      "repo": "Sheetaldharshan200/exa",
-      "latest": "v1.18.12-exa.22",
-      "homepage": "https://github.com/Sheetaldharshan200/exa",
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.2",
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
       "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
     }
   }

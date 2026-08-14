@@ -1,15 +1,15 @@
 /**
  * Engine credential store (exa-agent-v2): write provider API keys into the
- * opencode server's own auth.json, so keys saved in Studio's UI configure the
+ * engine's own auth.json, so keys saved in Studio's UI configure the
  * ENGINE — the single source of truth for cloud providers. The engine runs
  * with XDG_DATA_HOME pinned to Studio's config dir (spawn-args.ts), so the
- * file lives at <configDir>/opencode/auth.json.
+ * file lives at <configDir>/exa/auth.json.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export function authPath(configDir: string): string {
-  return join(configDir, "opencode", "auth.json");
+  return join(configDir, "exa", "auth.json");
 }
 
 /**

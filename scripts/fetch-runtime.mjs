@@ -37,7 +37,7 @@ const TARGETS = {
 // Pinned Exa engine (opencode) — the SAME source of truth as the Marketplace
 // component (catalog.json exa-agent.latest). Bumping here bundles a newer
 // baseline; the component-update flow can still move users past it at runtime.
-const EXA_ENGINE_TAG = "v1.18.12-exa.22";
+const EXA_ENGINE_TAG = "v2026.1.2";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const runtimeDir = join(root, "apps/desktop/src-tauri/resources/runtime");
@@ -106,10 +106,10 @@ async function main() {
   extract(llamaArchive, llamaDir);
 
   // ── Exa engine (opencode) — baseline for offline first run ──
-  console.log(`Fetching Exa engine (opencode ${EXA_ENGINE_TAG})…`);
+  console.log(`Fetching Exa engine (${EXA_ENGINE_TAG})…`);
   const exaArchive = join(tmp, spec.exa);
   mkdirSync(tmp, { recursive: true });
-  await download(`https://github.com/Sheetaldharshan200/exa/releases/download/${EXA_ENGINE_TAG}/${spec.exa}`, exaArchive);
+  await download(`https://github.com/Sheetaldharshan200/exa-engine/releases/download/${EXA_ENGINE_TAG}/${spec.exa}`, exaArchive);
   const exaDir = join(runtimeDir, "exa-engine");
   mkdirSync(exaDir, { recursive: true });
   extract(exaArchive, exaDir);

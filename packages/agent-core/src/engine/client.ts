@@ -1,9 +1,9 @@
 /**
- * Typed client wrapper over the opencode SDK (exa-agent-v2, task 1.3). The rest
+ * Typed client wrapper over the engine SDK (exa-agent-v2, task 1.3). The rest
  * of Studio talks to sessions/providers/MCP through THIS narrow surface, not
  * the SDK directly, so an engine/SDK change is contained here. Chat itself
  * (prompt/stream/replay/permissions) is NOT proxied here anymore — the webview
- * talks to the engine directly via @assistant-ui/react-opencode. The SDK is
+ * talks to the engine directly via the assistant-ui runtime. The SDK is
  * imported dynamically so a build without the engine installed still loads —
  * the engine is a Marketplace component that may be absent until downloaded.
  */

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EngineService, resolveEngineEnv } from "./engine-service.ts";
 
-const bin = () => (process.platform === "win32" ? "opencode.exe" : "opencode");
+const bin = () => (process.platform === "win32" ? "exa.exe" : "exa");
 
 describe("resolveEngineEnv", () => {
   test("resolves the installed component copy from the data root", () => {

@@ -20,11 +20,11 @@ use crate::components_update::{component_dir, write_manifest, ComponentId, Insta
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-const OPENCODE_REPO: &str = "Sheetaldharshan200/exa";
+const EXA_REPO: &str = "Sheetaldharshan200/exa-engine";
 
 /// The engine tag this app ships as its bundled baseline (single source for
 /// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
-pub const ENGINE_BASELINE_TAG: &str = "v1.18.12-exa.22";
+pub const ENGINE_BASELINE_TAG: &str = "v2026.1.2";
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
@@ -156,7 +156,7 @@ pub fn install_engine(data_dir: &Path, tag: &str) -> AppResult<EngineInstallStat
     let arch = std::env::consts::ARCH;
     let asset =
         asset_for(os, arch).ok_or_else(|| AppError::InvalidSettings(format!("No Exa engine build for {os}/{arch}.")))?;
-    let url = format!("https://github.com/{OPENCODE_REPO}/releases/download/{tag}/{asset}");
+    let url = format!("https://github.com/{EXA_REPO}/releases/download/{tag}/{asset}");
 
     let dir = component_dir(data_dir, ComponentId::ExaAgent);
     let bin_dir = dir.join("bin");
@@ -246,14 +246,14 @@ pub fn cli_shim_contents(engine_binary: &Path, config_dir: &Path) -> String {
     let cfg = config_dir.to_string_lossy();
     if std::env::consts::OS == "windows" {
         format!(
-            "@echo off\r\nset \"OPENCODE_CONFIG_DIR={cfg}\"\r\nset \"XDG_DATA_HOME={cfg}\"\r\nset \"XDG_CONFIG_HOME={cfg}\"\r\n\"{bin}\" %*\r\n"
+            "@echo off\r\nset \"EXA_CONFIG_DIR={cfg}\"\r\nset \"XDG_DATA_HOME={cfg}\"\r\nset \"XDG_CONFIG_HOME={cfg}\"\r\n\"{bin}\" %*\r\n"
         )
     } else {
         // Sandbox and ops are native engine commands since exa.14; the shim
         // only pins the config dir so app + CLI share the same engine state.
         format!(
             r#"#!/bin/sh
-export OPENCODE_CONFIG_DIR="{cfg}"
+export EXA_CONFIG_DIR="{cfg}"
 export XDG_DATA_HOME="{cfg}"
 export XDG_CONFIG_HOME="{cfg}"
 exec "{bin}" "$@"
@@ -373,7 +373,7 @@ mod tests {
         assert!(s.contains("/opt/exa/opencode"));
         assert!(s.contains("/data/exa/config"));
         // Config-dir env is set so the CLI shares sessions with the app.
-        assert!(s.contains("OPENCODE_CONFIG_DIR"));
+        assert!(s.contains("EXA_CONFIG_DIR"));
         if std::env::consts::OS != "windows" {
             assert!(s.starts_with("#!/bin/sh"));
             assert!(s.contains("exec "));

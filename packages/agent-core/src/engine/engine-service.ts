@@ -19,7 +19,7 @@ import { mapCatalog, type CatalogProvider } from "./catalog-map.ts";
 
 export type EngineEnv = { binary: string; configDir: string } | null;
 
-const binaryName = () => (process.platform === "win32" ? "opencode.exe" : "opencode");
+const binaryName = () => (process.platform === "win32" ? "exa.exe" : "exa");
 
 /**
  * Where the engine binary + config live, resolved from env each call: the
@@ -150,22 +150,22 @@ export class EngineService {
     return true;
   }
 
-  // ── Engine config (opencode.json): this service is the ONLY writer. ──
+  // ── Engine config (exa.json): this service is the ONLY writer. ──
   // Rust and this process both used to write the file; a read-modify-write
   // race wiped seeded blocks. All mutations now serialize through configLock.
   private configLock: Promise<void> = Promise.resolve();
   private seeded = false;
   private lastProviderSync = "";
 
-  /** Read-mutate-write opencode.json under the in-process lock. */
+  /** Read-mutate-write exa.json under the in-process lock. */
   private async withConfig(mutate: (root: Record<string, unknown>) => boolean): Promise<boolean> {
     const resolved = resolveEngineEnv(this.env);
     if (!resolved) return false;
     let changed = false;
     const run = this.configLock.then(async () => {
       const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
-      const dir = join(resolved.configDir, "opencode");
-      const cfgPath = join(dir, "opencode.json");
+      const dir = join(resolved.configDir, "exa");
+      const cfgPath = join(dir, "exa.json");
       let root: Record<string, unknown> = {};
       try {
         root = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
@@ -325,7 +325,7 @@ export class EngineService {
   }
 
   /**
-   * Apply an opencode.json change to a RUNNING engine. /instance/dispose is
+   * Apply an exa.json change to a RUNNING engine. /instance/dispose is
    * NOT enough: the engine caches the global config with an infinite TTL
    * (config.ts cachedInvalidateWithTTL(…, Duration.infinity)) and only its
    * own TUI worker ever invalidates it — mcp/agent/provider blocks are read
@@ -356,7 +356,7 @@ export class EngineService {
     const resolved = resolveEngineEnv(this.env);
     if (!resolved) return false;
     try {
-      const raw = readFileSync(join(resolved.configDir, "opencode", "opencode.json"), "utf8");
+      const raw = readFileSync(join(resolved.configDir, "exa", "exa.json"), "utf8");
       const root = JSON.parse(raw) as { agent?: { exa?: { permission?: Record<string, string> } } };
       return root.agent?.exa?.permission?.webfetch === "allow";
     } catch {
@@ -407,7 +407,7 @@ export class EngineService {
    * Declare Studio's LOCAL runtimes (Built-in AI, Ollama, LM Studio, …) to
    * the ENGINE as OpenAI-compatible providers, keyed by the SAME ids the
    * panel sends with prompts — without this, prompting a local model fails
-   * because opencode has never heard of the provider. Merge-only.
+   * because the engine has never heard of the provider. Merge-only.
    */
   async syncLocalProviders(
     servers: { id: string; name: string; baseURL: string; models: { id: string; name?: string }[] }[],
@@ -534,14 +534,14 @@ export class EngineService {
     return true;
   }
 
-  // The full models.dev catalog (the same source opencode uses), cached so
+  // The full models.dev catalog (the canonical public catalog), cached so
   // opening the connect UI repeatedly doesn't hammer the network.
   private catalogCache: { at: number; providers: CatalogProvider[] } | null = null;
 
   async catalog(): Promise<CatalogProvider[]> {
     const TTL = 10 * 60_000;
     if (this.catalogCache && Date.now() - this.catalogCache.at < TTL) return this.catalogCache.providers;
-    const url = this.env.OPENCODE_MODELS_URL?.trim() || "https://models.opencode.ai/api.json";
+    const url = this.env.EXA_MODELS_URL?.trim() || "https://models.dev/api.json";
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`catalog fetch failed: ${res.status}`);
     const providers = mapCatalog((await res.json()) as Parameters<typeof mapCatalog>[0]);
