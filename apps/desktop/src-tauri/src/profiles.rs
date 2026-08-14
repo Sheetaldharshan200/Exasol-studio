@@ -100,6 +100,9 @@ pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<Con
     // Pick up databases connected from the `exa` CLI before listing, so the
     // two programs show the same set. Failures here are ignored on purpose:
     // the user's own connections must still list if sharing has a problem.
+    if let Err(err) = publish_local_profiles(&state) {
+        eprintln!("could not publish connections to the shared registry: {err}");
+    }
     if let Err(err) = import_shared_connections(&state) {
         eprintln!("could not import shared connections: {err}");
     }
@@ -203,6 +206,52 @@ pub fn save_profile(
     // Don't echo the stored secret back to the caller.
     profile.password = String::new();
     Ok(profile)
+}
+
+/// Publish Studio's existing connections outward, so databases that predate
+/// the shared registry (deployed or added before this build) are visible to
+/// the `exa` CLI without waiting for the user to re-save them.
+///
+/// Metadata is published for every connection; the PASSWORD only for local
+/// ones. A production database's credential stays in Studio's vault — writing
+/// every stored secret to a plaintext file the user never asked for would be
+/// a poor trade for convenience. Local databases are the case where sharing
+/// is the point, and their secret is usually a generated local one.
+pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
+    let registry = crate::shared_registry::read_registry();
+    let key = dek(state);
+    let mut published = 0usize;
+    for profile in load_profiles(state)? {
+        let id = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+        let is_local = crate::shared_registry::is_local_host(&profile.host);
+        let known = registry.connections.iter().any(|c| c.id == id);
+        let credential_present = crate::shared_registry::read_credential(&id).is_some();
+        // Nothing to do when it is already listed AND (remote, or its secret
+        // is already shared).
+        if known && (!is_local || credential_present) {
+            continue;
+        }
+        let password = if is_local {
+            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty())
+        } else {
+            None
+        };
+        let entry = crate::shared_registry::SharedConnection {
+            id,
+            name: profile.name.clone(),
+            host: profile.host.clone(),
+            port: profile.port,
+            user: profile.username.clone(),
+            schema: profile.schema.clone(),
+            managed: None,
+            source: Some("studio".into()),
+            created_at: profile.created_at.clone(),
+        };
+        if crate::shared_registry::publish(entry, password.as_deref()).is_ok() {
+            published += 1;
+        }
+    }
+    Ok(published)
 }
 
 /// Import databases the CLI (or another program) registered that Studio has no
