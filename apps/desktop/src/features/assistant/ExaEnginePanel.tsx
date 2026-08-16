@@ -22,7 +22,7 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
-const ENGINE_TAG = "v2026.1.9";
+const ENGINE_TAG = "v2026.1.12";
 
 // The scope guardrail lives ENGINE-side now: the seeded "exa" agent
 // (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.

@@ -37,7 +37,7 @@ const TARGETS = {
 // Pinned Exa engine (opencode) — the SAME source of truth as the Marketplace
 // component (catalog.json exa-agent.latest). Bumping here bundles a newer
 // baseline; the component-update flow can still move users past it at runtime.
-const EXA_ENGINE_TAG = "v2026.1.9";
+const EXA_ENGINE_TAG = "v2026.1.12";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const runtimeDir = join(root, "apps/desktop/src-tauri/resources/runtime");
