@@ -212,30 +212,25 @@ pub fn save_profile(
 /// the shared registry (deployed or added before this build) are visible to
 /// the `exa` CLI without waiting for the user to re-save them.
 ///
-/// Metadata is published for every connection; the PASSWORD only for local
-/// ones. A production database's credential stays in Studio's vault — writing
-/// every stored secret to a plaintext file the user never asked for would be
-/// a poor trade for convenience. Local databases are the case where sharing
-/// is the point, and their secret is usually a generated local one.
+/// Metadata AND the password are published for every connection, because the
+/// password goes to the operating system's credential store rather than a
+/// plaintext file — the same protection Studio's own vault provides, and the
+/// reason there is no longer a local-only exception. A machine with no
+/// credential store falls back to a 0600 file (see shared_registry).
 pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
     let registry = crate::shared_registry::read_registry();
     let key = dek(state);
     let mut published = 0usize;
     for profile in load_profiles(state)? {
         let id = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
-        let is_local = crate::shared_registry::is_local_host(&profile.host);
         let known = registry.connections.iter().any(|c| c.id == id);
         let credential_present = crate::shared_registry::read_credential(&id).is_some();
-        // Nothing to do when it is already listed AND (remote, or its secret
-        // is already shared).
-        if known && (!is_local || credential_present) {
+        // Nothing to do when it is already listed and its secret is shared.
+        if known && credential_present {
             continue;
         }
-        let password = if is_local {
-            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty())
-        } else {
-            None
-        };
+        let password =
+            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty());
         let entry = crate::shared_registry::SharedConnection {
             id,
             name: profile.name.clone(),

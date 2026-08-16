@@ -13,11 +13,16 @@
 //! driver). This module is the bridge: publish outward on save, import inward
 //! what the CLI added.
 //!
-//! Passwords: Studio encrypts its own copy with the vault key, which the CLI
-//! cannot read. Sharing therefore means writing the password to the shared
-//! credential file at 0600 — the same convention `~/.netrc`, `~/.pgpass` and
-//! the Exasol starter kit already use. Without it a shared connection is
-//! useless to the other program.
+//! Passwords are NOT in the registry and are not written to disk in the clear.
+//! They go to the operating system's credential store — Keychain on macOS, the
+//! Secret Service on Linux, Credential Manager on Windows — under the service
+//! name `exa`, keyed by connection id, which is exactly where the CLI looks.
+//! Studio keeps its own vault-encrypted copy as well; the OS store is the
+//! shared channel between the two programs.
+//!
+//! A 0600 file is still read as a fallback (machines with no credential store,
+//! and secrets written by older builds), but nothing new is written there
+//! while a store is available.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -108,23 +113,113 @@ pub fn publish(entry: SharedConnection, password: Option<&str>) -> AppResult<()>
     let next = upsert(read_registry(), entry);
     std::fs::write(&path, serde_json::to_string_pretty(&next)? + "\n")?;
 
-    if let (Some(secret), Some(cred)) = (password.filter(|p| !p.is_empty()), credential_path(&id)) {
-        if let Some(dir) = cred.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        std::fs::write(&cred, secret)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600));
+    if let Some(secret) = password.filter(|p| !p.is_empty()) {
+        if !write_credential(&id, secret) {
+            // No credential store on this machine: fall back to a 0600 file so
+            // sharing still works, rather than silently dropping the secret.
+            if let Some(cred) = credential_path(&id) {
+                if let Some(dir) = cred.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::write(&cred, secret)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600));
+                }
+            }
         }
     }
     Ok(())
 }
 
+/// The shared service name. Must match the CLI's `SERVICE` constant, or the
+/// two programs address different items and neither sees the other's secrets.
+pub const SERVICE: &str = "exa";
+
+fn secret_read_command(id: &str) -> Option<Vec<String>> {
+    let own = |parts: &[&str]| Some(parts.iter().map(|s| s.to_string()).collect());
+    match std::env::consts::OS {
+        "macos" => own(&["security", "find-generic-password", "-a", id, "-s", SERVICE, "-w"]),
+        "linux" => own(&["secret-tool", "lookup", "service", SERVICE, "account", id]),
+        "windows" => Some(vec![
+            "powershell".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            format!(
+                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];(New-Object Windows.Security.Credentials.PasswordVault).Retrieve('{SERVICE}','{id}').Password"
+            ),
+        ]),
+        _ => None,
+    }
+}
+
+fn secret_write_command(id: &str, secret: &str) -> Option<Vec<String>> {
+    let own = |parts: &[&str]| Some(parts.iter().map(|s| s.to_string()).collect());
+    match std::env::consts::OS {
+        // -U updates in place; without it a repeat save fails and silently
+        // keeps the old password.
+        "macos" => own(&["security", "add-generic-password", "-a", id, "-s", SERVICE, "-w", secret, "-U"]),
+        // The secret goes on stdin, never the command line, so it cannot be
+        // read out of a process listing.
+        "linux" => own(&["secret-tool", "store", "--label", "exa", "service", SERVICE, "account", id]),
+        "windows" => Some(vec![
+            "powershell".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            format!(
+                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Add((New-Object Windows.Security.Credentials.PasswordCredential('{SERVICE}','{id}','{secret}')))"
+            ),
+        ]),
+        _ => None,
+    }
+}
+
+/// Read a shared secret: the OS credential store first, then the legacy file.
 pub fn read_credential(id: &str) -> Option<String> {
+    if let Some(cmd) = secret_read_command(id) {
+        if let Ok(output) = std::process::Command::new(&cmd[0]).args(&cmd[1..]).output() {
+            if output.status.success() {
+                let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !value.is_empty() {
+                    return Some(value);
+                }
+            }
+        }
+    }
     let path = credential_path(id)?;
-    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Store a shared secret. Returns false when it could only be written to a
+/// file, so callers can tell the user their machine has no credential store.
+fn write_credential(id: &str, secret: &str) -> bool {
+    if let Some(cmd) = secret_write_command(id, secret) {
+        use std::io::Write;
+        use std::process::Stdio;
+        let needs_stdin = std::env::consts::OS == "linux";
+        let spawned = std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .stdin(if needs_stdin { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        if let Ok(mut child) = spawned {
+            if needs_stdin {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(secret.as_bytes());
+                }
+            }
+            if child.wait().map(|s| s.success()).unwrap_or(false) {
+                // Never leave a plaintext copy behind once the store has it.
+                if let Some(path) = credential_path(id) {
+                    let _ = std::fs::remove_file(path);
+                }
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Whether a registry host refers to a database on this machine. Only those
@@ -234,6 +329,32 @@ mod tests {
         assert!(json.contains("\"schema\":\"SALES\""));
         assert!(!json.contains("\"password\""), "secrets never belong in the shared registry");
         assert_eq!(parse_registry(&json).connections.len(), 1);
+    }
+
+    /// The CLI addresses keychain items as service "exa", account <id>. If
+    /// this drifts, each program stores secrets the other cannot find — and
+    /// nothing would fail loudly, connections would just stop working.
+    #[test]
+    fn secret_commands_match_the_cli_addressing() {
+        assert_eq!(SERVICE, "exa");
+        if let Some(read) = secret_read_command("my-db") {
+            let joined = read.join(" ");
+            assert!(joined.contains(SERVICE), "read must use the shared service: {joined}");
+            assert!(joined.contains("my-db"), "read must use the connection id: {joined}");
+        }
+        if let Some(write) = secret_write_command("my-db", "hunter2") {
+            let joined = write.join(" ");
+            assert!(joined.contains(SERVICE));
+            assert!(joined.contains("my-db"));
+            if std::env::consts::OS == "macos" {
+                // Without -U a repeat save fails and keeps the old password.
+                assert!(write.iter().any(|p| p == "-U"), "keychain write must update in place");
+            }
+            if std::env::consts::OS == "linux" {
+                // The secret goes on stdin so it cannot be read from `ps`.
+                assert!(!joined.contains("hunter2"), "secret must not be on the command line");
+            }
+        }
     }
 
     #[test]
