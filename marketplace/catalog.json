@@ -54,7 +54,7 @@
     },
     "exa-agent": {
       "repo": "Sheetaldharshan200/exa-engine",
-      "latest": "v2026.1.2",
+      "latest": "v2026.1.7",
       "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
       "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
     }

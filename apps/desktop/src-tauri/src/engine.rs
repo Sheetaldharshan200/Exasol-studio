@@ -24,7 +24,7 @@ const EXA_REPO: &str = "Sheetaldharshan200/exa-engine";
 
 /// The engine tag this app ships as its bundled baseline (single source for
 /// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
-pub const ENGINE_BASELINE_TAG: &str = "v2026.1.2";
+pub const ENGINE_BASELINE_TAG: &str = "v2026.1.7";
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
