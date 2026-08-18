@@ -4,19 +4,19 @@
   "generatedAt": "2026-08-01T06:11:01Z",
   "personal": {
     "repository": "exasol/exasol-personal",
-    "version": "v2.1.0",
+    "version": "v2.2.0",
     "artifacts": {
       "macos-aarch64": {
         "name": "exasol-personal_macOS_arm64.tar.gz",
-        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.1.0/exasol-personal_macOS_arm64.tar.gz",
-        "sha256": "5d15cb69103155a279d68fe8c2a0309417561d64104cc5b2d49c687dee013d80",
+        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.2.0/exasol-personal_macOS_arm64.tar.gz",
+        "sha256": "9cc2f58768f9a8adb604602adaf207b27fe6cd6ec3611f4318066429c4e140f5",
         "executableSha256": "fa6e07c5bb7610268131cbb665c82b07e6ef2dc8cb975a024afbec4f32ce8e54"
       },
       "macos-x86_64": {
         "name": "exasol-personal_macOS_x86_64.tar.gz",
-        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.1.0/exasol-personal_macOS_x86_64.tar.gz",
-        "sha256": "ba3924246e1d60923569c7649b96b48ac1ee1a35d32ac42abae97d5416d24844",
-        "executableSha256": "a9f265b92d73b1fae626207cb6de35138a2824a82dec77080a12d8f00c6d3635"
+        "url": "https://github.com/exasol/exasol-personal/releases/download/v2.2.0/exasol-personal_macOS_x86_64.tar.gz",
+        "sha256": "afacdb4f005f2ad34e0d1839989f5189bc85d2c08505b899b09ca92ad89bb5f1",
+        "executableSha256": "ee5d5842cb8bddbe93bcdf0323e71c3fd3c55ff22ac63cd14b068b006d5f4a11"
       }
     }
   },
@@ -76,32 +76,32 @@
   },
   "exapump": {
     "repository": "exasol-labs/exapump",
-    "version": "v0.11.3",
+    "version": "v0.12.0",
     "artifacts": {
       "linux-aarch64": {
-        "name": "exapump-0.11.3-linux-aarch64",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-linux-aarch64",
-        "sha256": "2d2caf1476e8f66c083429437b1a29d5186adaa2adf115924e873814d72b7ca5"
+        "name": "exapump-0.12.0-linux-aarch64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-linux-aarch64",
+        "sha256": "cd021810593b31211db7cf41836465db03525993e0219c522c95f7e448603487"
       },
       "linux-x86_64": {
-        "name": "exapump-0.11.3-linux-x86_64",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-linux-x86_64",
-        "sha256": "b1f7c1c876e48a780b83188f998e4b266a3473cadd81d2a5d3ac8dcaa941d92a"
+        "name": "exapump-0.12.0-linux-x86_64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-linux-x86_64",
+        "sha256": "11a62199d12b32d3f05fbbc387015d21eaaa87f5b41f223e9fa354485c7e1acd"
       },
       "macos-aarch64": {
-        "name": "exapump-0.11.3-macos-aarch64",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-macos-aarch64",
-        "sha256": "56fe3afcb84b2e4ea36fdd0e65e819887770b7088c55783ad6e89df9bed298c5"
+        "name": "exapump-0.12.0-macos-aarch64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-macos-aarch64",
+        "sha256": "abaa6b45cca8e04bbcc8e2a29b8a88f62690ea7e9cbab1411f381b2d26532534"
       },
       "macos-x86_64": {
-        "name": "exapump-0.11.3-macos-x86_64",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-macos-x86_64",
-        "sha256": "57912026aa3b591f02a8efda48abe1f410dec3391677ab7c07965bd9091db1fe"
+        "name": "exapump-0.12.0-macos-x86_64",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-macos-x86_64",
+        "sha256": "a3dca22a6651b231bef9945f003e5651b3573d0d320d55324c15f7fe716b67bd"
       },
       "windows-x86_64": {
-        "name": "exapump-0.11.3-windows-x86_64.exe",
-        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.11.3/exapump-0.11.3-windows-x86_64.exe",
-        "sha256": "7a1ab709539c8c071eb8e9803e3aa8dfcb7f79228ce87d920d11e641421ce135"
+        "name": "exapump-0.12.0-windows-x86_64.exe",
+        "url": "https://github.com/exasol-labs/exapump/releases/download/v0.12.0/exapump-0.12.0-windows-x86_64.exe",
+        "sha256": "5b69226bc8fb521e692dae33d44f75a1f31d2c7078376aed64a23e3d0d633bc9"
       }
     }
   },

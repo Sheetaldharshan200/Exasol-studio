@@ -1,6 +1,6 @@
 /**
  * Provider catalog mapping (exa-agent-v2): slim the models.dev catalog (the
- * same source opencode itself uses — 200+ providers) into what the connect
+ * the canonical public catalog — 200+ providers) into what the connect
  * UI needs, with the popular providers pinned first. Pure; tested in
  * catalog-map.test.ts.
  */
@@ -15,7 +15,7 @@ export type CatalogProvider = {
 };
 
 /** Pinned first, in this order (the providers our users actually reach for). */
-const POPULAR = ["ollama", "lmstudio", "openai", "google", "openrouter", "anthropic", "opencode", "groq", "github-copilot"];
+const POPULAR = ["ollama", "lmstudio", "openai", "google", "openrouter", "anthropic", "groq", "github-copilot"];
 
 type RawCatalog = Record<string, { name?: string; env?: string[]; models?: Record<string, unknown> } | undefined>;
 

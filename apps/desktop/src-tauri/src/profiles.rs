@@ -97,6 +97,15 @@ pub fn touch_profile(state: &AppState, profile_id: &str) -> AppResult<()> {
 
 #[tauri::command]
 pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<ConnectionProfile>> {
+    // Pick up databases connected from the `exa` CLI before listing, so the
+    // two programs show the same set. Failures here are ignored on purpose:
+    // the user's own connections must still list if sharing has a problem.
+    if let Err(err) = publish_local_profiles(&state) {
+        eprintln!("could not publish connections to the shared registry: {err}");
+    }
+    if let Err(err) = import_shared_connections(&state) {
+        eprintln!("could not import shared connections: {err}");
+    }
     // Never hand stored passwords (encrypted or not) to the frontend — the UI
     // doesn't need them; reconnects decrypt server-side in `find_profile`.
     let mut profiles = load_profiles(&state)?;
@@ -175,9 +184,105 @@ pub fn save_profile(
     }
 
     write_json(&profiles_path(&state), &profiles)?;
+
+    // Publish outward so the `exa` CLI sees this database too. Best effort:
+    // a shared-registry problem must never fail saving a connection here.
+    let plaintext = security::decrypt_secret(key.as_ref(), &profile.password).unwrap_or_default();
+    let shared = crate::shared_registry::SharedConnection {
+        id: crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username),
+        name: profile.name.clone(),
+        host: profile.host.clone(),
+        port: profile.port,
+        user: profile.username.clone(),
+        schema: profile.schema.clone(),
+        managed: None,
+        source: Some("studio".into()),
+        created_at: profile.created_at.clone(),
+    };
+    if let Err(err) = crate::shared_registry::publish(shared, Some(plaintext.as_str())) {
+        eprintln!("could not publish connection to the shared registry: {err}");
+    }
+
     // Don't echo the stored secret back to the caller.
     profile.password = String::new();
     Ok(profile)
+}
+
+/// Publish Studio's existing connections outward, so databases that predate
+/// the shared registry (deployed or added before this build) are visible to
+/// the `exa` CLI without waiting for the user to re-save them.
+///
+/// Metadata AND the password are published for every connection, because the
+/// password goes to the operating system's credential store rather than a
+/// plaintext file — the same protection Studio's own vault provides, and the
+/// reason there is no longer a local-only exception. A machine with no
+/// credential store falls back to a 0600 file (see shared_registry).
+pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
+    let registry = crate::shared_registry::read_registry();
+    let key = dek(state);
+    let mut published = 0usize;
+    for profile in load_profiles(state)? {
+        let id = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+        let known = registry.connections.iter().any(|c| c.id == id);
+        let credential_present = crate::shared_registry::read_credential(&id).is_some();
+        // Nothing to do when it is already listed and its secret is shared.
+        if known && credential_present {
+            continue;
+        }
+        let password =
+            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty());
+        let entry = crate::shared_registry::SharedConnection {
+            id,
+            name: profile.name.clone(),
+            host: profile.host.clone(),
+            port: profile.port,
+            user: profile.username.clone(),
+            schema: profile.schema.clone(),
+            managed: None,
+            source: Some("studio".into()),
+            created_at: profile.created_at.clone(),
+        };
+        if crate::shared_registry::publish(entry, password.as_deref()).is_ok() {
+            published += 1;
+        }
+    }
+    Ok(published)
+}
+
+/// Import databases the CLI (or another program) registered that Studio has no
+/// profile for yet, so a connection made in the terminal shows up here.
+/// Best effort by design: sync is a convenience, never a startup dependency.
+pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
+    let registry = crate::shared_registry::read_registry();
+    let existing = load_profiles(state)?;
+    let known: Vec<(String, u16, String)> = existing
+        .iter()
+        .map(|p| (p.host.clone(), p.port, p.username.clone()))
+        .collect();
+    let missing = crate::shared_registry::missing_locally(&registry, &known);
+    let mut imported = 0usize;
+    for entry in missing {
+        let password = crate::shared_registry::read_credential(&entry.id).unwrap_or_default();
+        let profile = ConnectionProfile {
+            id: String::new(),
+            name: entry.name.clone(),
+            host: entry.host.clone(),
+            port: entry.port,
+            username: entry.user.clone(),
+            password,
+            schema: entry.schema.clone(),
+            notes: None,
+            ssl_mode: default_ssl_mode(),
+            compression: false,
+            driver_id: default_driver(),
+            created_at: entry.created_at.clone(),
+            last_used_at: None,
+        };
+        if save_profile(state, profile).is_ok() {
+            imported += 1;
+        }
+    }
+    Ok(imported)
 }
 
 /// Create or reconcile the built-in local connection. Studio

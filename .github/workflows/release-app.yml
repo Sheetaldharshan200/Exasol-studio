@@ -108,13 +108,6 @@ jobs:
       - name: Bundle platform runtime
         run: node scripts/fetch-runtime.mjs ${{ matrix.target }}
 
-      # Prebundle the verified Exasol components (Personal launcher, ExaPump)
-      # so first install needs no download. Platforms without a locked
-      # artifact are skipped — install falls back to the verified download.
-      - name: Prebundle Exasol runtime components
-        shell: bash
-        run: python3 scripts/prefetch-runtime.py ${{ matrix.target }} || python scripts/prefetch-runtime.py ${{ matrix.target }}
-
       # linuxdeploy ldd-scans every ELF in the AppDir and ABORTS the whole
       # bundle when ldd fails on one (v2026.4.0 arm64: "Failed to run ldd:
       # exited with code 1" on runtime/exa-engine/opencode — a binary ldd
@@ -128,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "diagnostic: real ldd on the bundled engine:"
-          ldd apps/desktop/src-tauri/resources/runtime/exa-engine/opencode || true
+          ldd apps/desktop/src-tauri/resources/runtime/exa-engine/exa || true
           sudo mv /usr/bin/ldd /usr/bin/ldd.real
           sudo tee /usr/bin/ldd >/dev/null <<'SH'
           #!/bin/bash

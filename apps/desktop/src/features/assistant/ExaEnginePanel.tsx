@@ -22,7 +22,7 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * The engine binary is the opencode Marketplace component; this tag is the
  * baseline the Managed Components / Updates flow moves forward.
  */
-const ENGINE_TAG = "v1.18.12-exa.13";
+const ENGINE_TAG = "v2026.1.12";
 
 // The scope guardrail lives ENGINE-side now: the seeded "exa" agent
 // (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.
@@ -126,6 +126,23 @@ export function ExaEnginePanel({
     setSqlOpsState(ops);
     try {
       localStorage.setItem("exa.sqlOps", JSON.stringify(ops));
+    } catch {
+      /* private mode */
+    }
+  };
+  // Presentation persona for the whole chat (persisted; null = adaptive).
+  const [persona, setPersonaState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("exa.persona") || null;
+    } catch {
+      return null;
+    }
+  });
+  const setPersona = (name: string | null) => {
+    setPersonaState(name);
+    try {
+      if (name) localStorage.setItem("exa.persona", name);
+      else localStorage.removeItem("exa.persona");
     } catch {
       /* private mode */
     }
@@ -491,7 +508,10 @@ export function ExaEnginePanel({
     const netDirective = networkAllowed
       ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
-    const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective].filter(Boolean).join(" ");
+    const personaDirective = persona
+      ? `The user's persona is ${persona}: execute each request at the discipline it needs, but present the answer at that persona's depth and preferred format.`
+      : "";
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective, personaDirective].filter(Boolean).join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
     // block so the UI renders only what the user actually typed — see
     // stripMachineContext in the user-message renderer.
@@ -615,6 +635,8 @@ export function ExaEnginePanel({
           expandForSend,
           sqlOps,
           setSqlOps,
+          persona,
+          setPersona,
           network: { allowed: networkAllowed, applying: networkApplying },
           setNetwork,
         }}

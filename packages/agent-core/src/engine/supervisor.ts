@@ -1,6 +1,6 @@
 /**
  * Runtime supervisor for the Exa engine (exa-agent-v2, task 1.2). Spawns the
- * opencode release binary as a localhost server, health-checks it, restarts
+ * exa engine binary as a localhost server, health-checks it, restarts
  * with backoff per the pure policy, and hands out a connected client. All
  * DECISIONS live in supervisor-policy.ts (tested); this file is the thin I/O
  * that performs them. The engine is a Marketplace component: when its binary
@@ -69,7 +69,7 @@ export class EngineSupervisor {
     }
 
     // NEVER adopt a survivor: an engine left over from a previous run read
-    // opencode.json at ITS boot, so its agents/MCP/provider config can be
+    // exa.json at ITS boot, so its agents/MCP/provider config can be
     // stale (config is cached process-for-life — verified live 2026-08-11:
     // an adopted 12:01 survivor served no exa agent while the disk config
     // had it). An occupied candidate that is OURS is killed and replaced by
@@ -106,7 +106,7 @@ export class EngineSupervisor {
     });
 
     // Wait for the server to answer AND prove it is OURS — a user may run
-    // their own opencode on this port, and adopting a foreign server would
+    // their own engine on this port, and adopting a foreign server would
     // silently drive their sessions/config. Identity = GET /path reporting
     // our isolated config dir.
     const verdict = await this.waitOurs(port);
@@ -169,7 +169,7 @@ export class EngineSupervisor {
   /**
    * Poll until the server on `port` answers, then verify identity: the
    * engine's GET /path reports the config dir it runs with — it must be OUR
-   * isolated dir. "foreign" means a different opencode owns the port.
+   * isolated dir. "foreign" means a different engine owns the port.
    */
   /** SIGTERM the port's owner, wait; escalate to SIGKILL; true once freed. */
   private async killOursAndWait(port: number): Promise<boolean> {
