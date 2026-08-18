@@ -137,13 +137,31 @@ pub(crate) fn resolve_bin(bin: &str) -> Option<PathBuf> {
 
 pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
     let component = &crate::component_lock::components().uv;
-    let version = &component.version;
-    let artifact = crate::component_lock::artifact_for(component).ok_or_else(|| {
+    let locked = crate::component_lock::artifact_for(component).ok_or_else(|| {
         AppError::Storage(format!(
-            "uv {version} is not bundled for {}.",
+            "uv has no artifact for {}.",
             crate::component_lock::platform_key()
         ))
     })?;
+    // The original repository is the source of truth, as it already is for
+    // Exasol Personal and ExaPump. uv was the last component still tied to
+    // whatever version happened to be pinned when Studio was built, so a pin
+    // that went stale shipped an old uv with a checksum that matched the old
+    // file and therefore raised nothing.
+    //
+    // Verify-or-refuse still holds: the hash is GitHub's own per-asset digest,
+    // and an asset published without one is refused rather than installed
+    // unverified. The pin is the fallback for an unreachable release API.
+    let upstream = crate::upstream::latest(&component.repository).and_then(|release| {
+        crate::upstream::pick_asset(&locked.name, &release.assets)
+            .and_then(crate::upstream::artifact_from)
+            .map(|artifact| (artifact, release.tag))
+    });
+    let (artifact, version) = match &upstream {
+        Some((artifact, tag)) => (artifact, tag.trim_start_matches('v').to_string()),
+        None => (locked, component.version.clone()),
+    };
+    let version = &version;
     let managed_name = if std::env::consts::OS == "windows" {
         "uv.exe"
     } else {
