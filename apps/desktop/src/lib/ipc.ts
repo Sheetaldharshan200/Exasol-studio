@@ -404,16 +404,23 @@ export const isTauri = (): boolean =>
 // Mobile — on phones later. Only the transport differs, resolved here in ONE
 // place, in order:
 //   1. Tauri IPC        — desktop/mobile shells (native Rust backend)
-//   2. Hosted backend   — web with VITE_BACKEND_URL set: POST /ipc/<command>
-//                         (the contract the headless server implements)
-//   3. Built-in mock    — plain browser demo, no backend at all
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.replace(/\/$/, "");
+//   2. Hosted backend   — the server that served this page, or an explicit
+//                         VITE_BACKEND_URL: POST /ipc/<command>
+//   3. Built-in mock    — demo only, and only when asked for
+//
+// Same-origin is the default because the usual case is a backend that serves
+// this bundle itself (`exa web`). Defaulting to the mock instead meant a build
+// hosted by a working backend still showed invented data, which is
+// indistinguishable from the real thing until someone trusts a number.
+const EXPLICIT_BACKEND = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.replace(/\/$/, "");
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_BACKEND === "true";
+const BACKEND_URL = USE_MOCK ? undefined : (EXPLICIT_BACKEND ?? "");
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
     return invoke<T>(command, args);
   }
-  if (BACKEND_URL) {
+  if (BACKEND_URL !== undefined) {
     const res = await fetch(`${BACKEND_URL}/ipc/${command}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
