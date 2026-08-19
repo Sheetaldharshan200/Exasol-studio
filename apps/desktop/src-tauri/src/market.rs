@@ -1017,8 +1017,11 @@ pub async fn market_install_run(
     let pyexasol_package = format!("pyexasol=={}", stack.pyexasol_version);
     let result: AppResult<String> = match id.as_str() {
         "mcp-server" => install_uv_tool(&app, &id, &mcp_package),
-        "agent-skills" => crate::local_database::ensure_agent_skills(&app)
-            .map(|_| "Bundled Exasol agent skills are ready.".into()),
+        "agent-skills" => {
+            let dir = app.state::<crate::state::AppState>().data_dir.clone();
+            crate::local_database::ensure_agent_skills(&app, &dir)
+                .map(|revision| format!("Exasol agent skills synced from exasol-labs ({revision})."))
+        }
         "pyexasol" => install_uv_pip(&app, &id, &pyexasol_package),
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
         "ai-lab" => install_ai_lab(&app, &id),
@@ -1027,7 +1030,7 @@ pub async fn market_install_run(
         "exasol-cloud" => install_personal_cloud(&app, &id),
         "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone())
             .await
-            .map(|_| "Exasol Semantic Views is installed on your local database.".into()),
+            .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
         _ => match (url, filename) {
             (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
             _ => Err(AppError::Storage(

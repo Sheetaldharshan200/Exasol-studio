@@ -37,7 +37,7 @@ export type AgentSettings = {
 };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
-  defaultSkills: ["fable-method"],
+  defaultSkills: [],
   readPolicy: "allow",
   writePolicy: "ask",
   maxSteps: 12,

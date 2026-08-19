@@ -33,7 +33,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCES_PATH = ROOT / ".github/runtime-component-sources.json"
 LOCK_PATH = ROOT / "apps/desktop/src-tauri/resources/runtime-components.lock.json"
 PYTHON_STACK = ROOT / "apps/desktop/src-tauri/resources/python-stack"
-MANAGED_SKILLS = ROOT / "packages/agent-core/skills/.runtime-managed.json"
 GENERATOR = ".github/scripts/refresh_runtime_components.py"
 
 
@@ -186,84 +185,10 @@ def resolve_nano(source: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def resolve_revision(repository: str) -> str:
-    try:
-        release = api_json(f"https://api.github.com/repos/{repository}/releases/latest")
-        ref = release["tag_name"]
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-        ref = api_json(f"https://api.github.com/repos/{repository}")["default_branch"]
-    commit = api_json(f"https://api.github.com/repos/{repository}/commits/{ref}")
-    revision = commit["sha"]
-    if not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise RuntimeError(f"GitHub returned a non-immutable revision for {repository}: {revision}")
-    return revision
-
-
-def archive_tree(repository: str, revision: str, temporary: Path) -> Path:
-    payload = request(
-        f"https://api.github.com/repos/{repository}/tarball/{revision}",
-        accept="application/vnd.github+json",
-    )
-    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-        root = temporary.resolve()
-        for member in archive.getmembers():
-            target = (temporary / member.name).resolve()
-            if root not in target.parents and target != root:
-                raise RuntimeError(f"Unsafe path in {repository} archive: {member.name}")
-        archive.extractall(temporary, filter="data")
-    roots = [path for path in temporary.iterdir() if path.is_dir()]
-    if len(roots) != 1:
-        raise RuntimeError(f"Unexpected archive layout for {repository}")
-    return roots[0]
-
-
 def replace_tree(source: Path, destination: Path) -> None:
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(source, destination, ignore=shutil.ignore_patterns(".git", ".github"))
-
-
-def vendor_source(name: str, source: dict[str, Any], revision: str, previous: str | None) -> None:
-    destination = ROOT / source["destination"]
-    if revision == previous and destination.is_dir():
-        return
-    with tempfile.TemporaryDirectory() as folder:
-        tree = archive_tree(source["repository"], revision, Path(folder))
-        if name == "agentSkills":
-            skill_source = tree / source["sourcePath"]
-            new_names = sorted(path.name for path in skill_source.iterdir() if path.is_dir())
-            old_names = load_json(MANAGED_SKILLS).get("paths", []) if MANAGED_SKILLS.exists() else []
-            for old_name in old_names:
-                shutil.rmtree(destination / old_name, ignore_errors=True)
-            for new_name in new_names:
-                replace_tree(skill_source / new_name, destination / new_name)
-            MANAGED_SKILLS.write_text(
-                json.dumps({"repository": source["repository"], "paths": new_names}, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            (destination / "exasol-agent-skills.UPSTREAM.txt").write_text(
-                f"Source: https://github.com/{source['repository']}.git\nCommit: {revision}\n"
-                f"Path: {source['sourcePath']}\n",
-                encoding="utf-8",
-            )
-        else:
-            replace_tree(tree, destination)
-            (destination / "UPSTREAM.txt").write_text(
-                f"Source: https://github.com/{source['repository']}\nCommit: {revision}\n",
-                encoding="utf-8",
-            )
-
-
-def vendored_digest(name: str, source: dict[str, Any]) -> str:
-    destination = ROOT / source["destination"]
-    if name == "agentSkills":
-        managed = load_json(MANAGED_SKILLS)["paths"]
-        paths = [destination / path for path in managed]
-        paths.extend([MANAGED_SKILLS, destination / "exasol-agent-skills.UPSTREAM.txt"])
-        return tree_digest(paths, destination)
-    return tree_digest([destination], destination)
 
 
 def refresh_python_stack(config: dict[str, Any]) -> dict[str, str]:
@@ -304,13 +229,6 @@ def refresh() -> None:
         verify()
     sources = load_json(SOURCES_PATH)
     previous = load_json(LOCK_PATH) if LOCK_PATH.exists() else {}
-    revisions = {
-        name: resolve_revision(source["repository"])
-        for name, source in sources["vendoredSources"].items()
-    }
-    for name, source in sources["vendoredSources"].items():
-        vendor_source(name, source, revisions[name], previous.get(name, {}).get("revision"))
-
     resolved: dict[str, Any] = {
         "schemaVersion": 1,
         "generatedBy": GENERATOR,
@@ -320,14 +238,6 @@ def refresh() -> None:
         "uv": resolve_release(sources["githubReleases"]["uv"], previous.get("uv")),
         "pythonStack": refresh_python_stack(sources["pythonStack"]),
         "exapump": resolve_release(sources["githubReleases"]["exapump"], previous.get("exapump")),
-        **{
-            name: {
-                "repository": source["repository"],
-                "revision": revisions[name],
-                "contentSha256": vendored_digest(name, source),
-            }
-            for name, source in sources["vendoredSources"].items()
-        },
     }
     comparable_old = {key: value for key, value in previous.items() if key != "generatedAt"}
     comparable_new = {key: value for key, value in resolved.items() if key != "generatedAt"}
@@ -381,14 +291,6 @@ def verify() -> None:
         raise RuntimeError("PyExasol version differs between uv.lock and the component lock")
     if versions.get("exasol-mcp-server") != lock["pythonStack"]["mcpServerVersion"]:
         raise RuntimeError("MCP server version differs between uv.lock and the component lock")
-    for name, source in sources["vendoredSources"].items():
-        component = lock[name]
-        if component["repository"] != source["repository"] or not re.fullmatch(r"[0-9a-f]{40}", component["revision"]):
-            raise RuntimeError(f"{name} does not use an immutable source revision")
-        if not (ROOT / source["destination"]).is_dir():
-            raise RuntimeError(f"{name} vendored destination is missing")
-        if component.get("contentSha256") != vendored_digest(name, source):
-            raise RuntimeError(f"{name} vendored content differs from the generated lock")
     rust_sources = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "apps/desktop/src-tauri/src").glob("*.rs"))
     if re.search(r"releases/download/v?\d|@sha256:[0-9a-f]{64}", rust_sources):
         raise RuntimeError("Release versions or digests must not be embedded in Rust source")

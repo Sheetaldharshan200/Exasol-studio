@@ -521,10 +521,9 @@ export async function mockInvoke(
           pyexasol: { state: "ready", version: runtimeComponents.pythonStack.pyexasolVersion, error: null, connectionId: null },
           "mcp-server": { state: "ready", version: runtimeComponents.pythonStack.mcpServerVersion, error: null, connectionId: null },
           exapump: { state: "ready", version: runtimeComponents.exapump.version, error: null, connectionId: null },
-          "agent-skills": { state: "ready", version: runtimeComponents.agentSkills.revision, error: null, connectionId: null },
-          "fable-method": { state: "ready", version: runtimeComponents.fableMethod.revision, error: null, connectionId: null },
+          "agent-skills": { state: "ready", version: "latest", error: null, connectionId: null },
         },
-        semanticViews: { state: "ready", version: runtimeComponents.semanticViews.revision, error: null, connectionId: "conn-demo-1" },
+        semanticViews: { state: "ready", version: "latest", error: null, connectionId: "conn-demo-1" },
         updatedAt: new Date().toISOString(),
       };
     case "vault_status":
@@ -809,7 +808,7 @@ export async function mockInvoke(
         { id: "personal", name: "Exasol Personal", repo: runtimeComponents.personal.repository, installed: runtimeComponents.personal.version, verified: runtimeComponents.personal.version, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: false },
         { id: "exapump", name: "ExaPump", repo: runtimeComponents.exapump.repository, installed: runtimeComponents.exapump.version, verified: runtimeComponents.exapump.version, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: false },
         { id: "mcp-server", name: "Exasol MCP Server", repo: "exasol/mcp-server", installed: runtimeComponents.pythonStack.mcpServerVersion, verified: runtimeComponents.pythonStack.mcpServerVersion, onOwnEnv: false, updatable: true, pipManaged: true, opaqueVersion: false },
-        { id: "semantic-views", name: "Semantic Views", repo: runtimeComponents.semanticViews.repository, installed: runtimeComponents.semanticViews.revision, verified: runtimeComponents.semanticViews.revision, onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: true },
+        { id: "semantic-views", name: "Semantic Views", repo: "exasol-labs/exasol-semantic-views", installed: "latest", verified: "latest", onOwnEnv: false, updatable: true, pipManaged: false, opaqueVersion: true },
       ];
     case "update_component":
     case "revert_component":

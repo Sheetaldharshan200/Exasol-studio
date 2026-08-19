@@ -288,7 +288,7 @@ export type Release = {
   htmlUrl: string | null;
   assets: ReleaseAsset[];
 } | null;
-export type InstalledItem = { id: string; version: string; path: string; filename: string };
+export type InstalledItem = { id: string; version: string; path: string; filename: string; note?: string };
 
 export type CatalogEntry = {
   repo: string;

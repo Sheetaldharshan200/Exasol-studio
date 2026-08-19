@@ -54,7 +54,6 @@
       "../../../packages/agent-core/dist/mcp-gateway.cjs": "mcp-gateway.cjs",
       "../../../packages/agent-core/dist/exa-agent.cjs": "exa-agent.cjs",
       "../../../packages/agent-core/dist/skills": "skills",
-      "resources/exasol-semantic-views": "exasol-semantic-views",
       "resources/python-stack": "python-stack",
       "resources/runtime-components.lock.json": "runtime-components.lock.json",
       "resources/runtime": "runtime"
