@@ -19,10 +19,11 @@ import type { PickedModel } from "./exa/ExaModelSelector";
  * gate, engine status, model/provider management via /v1/engine/*, sessions
  * sidebar data, modes/chips/slash commands, and the `@`-context composer.
  *
- * The engine binary is the opencode Marketplace component; this tag is the
- * baseline the Managed Components / Updates flow moves forward.
+ * The engine binary is the exa Marketplace component. "latest" resolves
+ * against the engine repo's releases at install time — never pinned, per the
+ * no-pinning policy; the Rust side falls back to its bundled baseline offline.
  */
-const ENGINE_TAG = "v2026.1.12";
+const ENGINE_TAG = "latest";
 
 // The scope guardrail lives ENGINE-side now: the seeded "exa" agent
 // (prompt + coding tools disabled) — see engine-service.ensureSeedConfig.

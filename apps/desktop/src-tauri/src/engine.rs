@@ -22,9 +22,24 @@ use crate::state::AppState;
 
 const EXA_REPO: &str = "Sheetaldharshan200/exa-engine";
 
-/// The engine tag this app ships as its bundled baseline (single source for
-/// the Rust side; scripts/fetch-runtime.mjs and the panel pin must agree).
-pub const ENGINE_BASELINE_TAG: &str = "v2026.1.12";
+/// The offline fallback tag: what the bundled baseline was built from
+/// (scripts/fetch-runtime.mjs resolves the real latest at build time). Live
+/// installs never pin — "latest" resolves against the engine repo's releases,
+/// so the sidecar always speaks the current engine's feature set (providers,
+/// subscription sign-in, database tools).
+pub const ENGINE_BASELINE_TAG: &str = "v2026.1.59";
+
+/// Resolve the tag to install: "latest" asks the release API (digest-verified
+/// helper), anything else is used verbatim. Offline, the bundled baseline tag
+/// keeps installs working rather than failing on a network lookup.
+pub fn resolve_engine_tag(tag: &str) -> String {
+    if tag != "latest" {
+        return tag.to_string();
+    }
+    crate::upstream::latest(EXA_REPO)
+        .map(|r| r.tag)
+        .unwrap_or_else(|| ENGINE_BASELINE_TAG.to_string())
+}
 
 /// The release asset filename for an (os, arch), or None when unsupported.
 /// Mirrors agent-core `engine/opencode-release.ts::assetFor`.
@@ -152,6 +167,7 @@ pub fn engine_status(app: AppHandle, state: State<'_, AppState>) -> AppResult<En
 /// engine installs/updates through the same UI as exapump. The component is
 /// isolated, so a bad extract never touches app files or the bundled baseline.
 pub fn install_engine(data_dir: &Path, tag: &str) -> AppResult<EngineInstallStatus> {
+    let tag = &resolve_engine_tag(tag);
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
     let asset =
