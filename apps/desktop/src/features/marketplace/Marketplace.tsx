@@ -403,6 +403,21 @@ export function Marketplace() {
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
   const [releases, setReleases] = useState<Record<string, Release>>({});
   const [installed, setInstalled] = useState<InstalledItem[]>([]);
+  // Semantic Views installs INTO a database, so the card offers which one.
+  // "" means the managed local runtime. Read via a ref inside the install
+  // queue so a queued install uses the choice made when it was clicked.
+  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+  const [semanticTarget, setSemanticTarget] = useState<string>("");
+  const semanticTargetRef = useRef("");
+  useEffect(() => {
+    semanticTargetRef.current = semanticTarget;
+  }, [semanticTarget]);
+  useEffect(() => {
+    ipc
+      .listConnectionProfiles()
+      .then((list) => setProfiles(list.map((p) => ({ id: p.id, name: p.name }))))
+      .catch(() => undefined);
+  }, []);
   // Authoritative install/version for the managed components (single source).
   const [components, setComponents] = useState<ComponentInfo[]>([]);
   const [detected, setDetected] = useState<Record<string, boolean>>({});
@@ -583,7 +598,15 @@ export function Marketplace() {
         })
           .then((u) => {
             un = u;
-            ipc.marketInstallRun(item.id, version, asset?.url, asset?.name).catch(() => finish(false));
+            ipc
+              .marketInstallRun(
+                item.id,
+                version,
+                asset?.url,
+                asset?.name,
+                item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
+              )
+              .catch(() => finish(false));
           })
           .catch(() => finish(false));
       }),
@@ -867,10 +890,32 @@ export function Marketplace() {
             Get <ExternalLink className="h-3.5 w-3.5" />
           </button>
         ) : (
-          <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-            {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
-            {isInstalling ? "Installing…" : "Install"}
-          </button>
+          <>
+            {item.id === "semantic-views" && profiles.length > 0 ? (
+              <select
+                value={semanticTarget}
+                onChange={(e) => setSemanticTarget(e.target.value)}
+                disabled={isInstalling}
+                aria-label="Database to install Semantic Views into"
+                className="h-7 rounded-md border border-border bg-background px-2 text-[12px] text-foreground disabled:opacity-50"
+              >
+                <option value="">Local database (managed)</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+              {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+              {isInstalling
+                ? "Installing…"
+                : item.id === "semantic-views"
+                  ? `Install in ${semanticTarget ? (profiles.find((p) => p.id === semanticTarget)?.name ?? "database") : "local database"}`
+                  : "Install"}
+            </button>
+          </>
         )}
         {item.install === "personal-local" && (inst || onSystem) ? (
           <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">

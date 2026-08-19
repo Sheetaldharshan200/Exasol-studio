@@ -1010,6 +1010,9 @@ pub async fn market_install_run(
     version: Option<String>,
     url: Option<String>,
     filename: Option<String>,
+    // Which database an in-database add-on (Semantic Views) installs into.
+    // Absent means the managed local runtime; other items ignore it.
+    profile_id: Option<String>,
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
     let stack = &crate::component_lock::components().python_stack;
@@ -1028,7 +1031,7 @@ pub async fn market_install_run(
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
-        "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone())
+        "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
             .await
             .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
         _ => match (url, filename) {
