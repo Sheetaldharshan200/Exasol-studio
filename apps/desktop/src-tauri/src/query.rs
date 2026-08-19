@@ -438,8 +438,9 @@ pub async fn execute_sql(
     let profile = crate::profiles::find_profile(&state, &profile_id)?;
     let (results, success, profile_session, profile_base_stmt) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
+        let app_for_driver = app.clone();
         let resp = tokio::task::spawn_blocking(move || {
-            crate::driver_exec::execute_via_driver(&app, &profile, &stmts, max_rows)
+            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows)
         })
         .await
         .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
@@ -591,6 +592,23 @@ pub async fn execute_sql(
     // only records what the user actually ran.
     if add_history.unwrap_or(true) {
         history::append_history(&state, entry)?;
+    }
+
+    // A statement that changed the schema may have invalidated a semantic
+    // model bound to it. Revalidate in the background — never on the query's
+    // own latency — and only for statements that actually succeeded: failed
+    // DDL changed nothing.
+    if results
+        .iter()
+        .any(|r| r.error.is_none() && crate::semantic_sync::is_schema_change(&r.statement))
+    {
+        if let Ok(pool) = require_pool(&state, &profile_id).await {
+            let app_handle = app.clone();
+            let pid = profile_id.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::semantic_sync::revalidate(&app_handle, &pool, &pid).await;
+            });
+        }
     }
 
     Ok(ExecuteResponse {

@@ -107,6 +107,40 @@ export function ExasolStudio({
     return () => un?.();
   }, []);
 
+  // After any schema-changing statement, the backend revalidates every
+  // semantic model on that connection and reports here. Silence would leave
+  // "the model broke because of this morning's ALTER" to be discovered later,
+  // inside someone else's query, as a compiler error with no cause attached.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      un = await listen<{ profileId: string; issueCount: number; issues: string[] }>(
+        "semantic:validation",
+        (e) => {
+          const { issueCount, issues } = e.payload;
+          window.dispatchEvent(
+            new CustomEvent("studio:notice", {
+              detail:
+                issueCount > 0
+                  ? {
+                      kind: "warning",
+                      title: `Semantic Views: ${issueCount} issue${issueCount === 1 ? "" : "s"} after schema change`,
+                      body: issues.slice(0, 3).join("\n"),
+                    }
+                  : {
+                      kind: "success",
+                      title: "Semantic Views revalidated",
+                      body: "All models are still consistent with the schema.",
+                    },
+            }),
+          );
+        },
+      );
+    });
+    return () => un?.();
+  }, []);
+
   // Query state — tabs and the active tab are kept per connection, so each
   // database keeps its own workspace. A "__none__" bucket covers the
   // not-connected state so there is always a valid active tab.
