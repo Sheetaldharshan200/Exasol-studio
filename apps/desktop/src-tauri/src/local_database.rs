@@ -1462,27 +1462,62 @@ pub fn semantic_views_installed(app: &AppHandle) -> bool {
 
 /// Opt-in install of the Exasol Semantic Views framework (Marketplace action).
 #[tauri::command]
-pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<SemanticInstallInfo> {
+pub async fn personal_install_semantic_views(
+    app: AppHandle,
+    profile_id: Option<String>,
+) -> AppResult<SemanticInstallInfo> {
     tauri::async_runtime::spawn_blocking(move || -> AppResult<SemanticInstallInfo> {
         let data_dir = app.state::<AppState>().data_dir.clone();
         let mut status = read_status(&data_dir);
+        // The framework installs into ONE database. Which one is the caller's
+        // choice: any connection profile, defaulting to the managed local
+        // runtime — Semantic Views was never inherently local-only, the old
+        // code just had nowhere to say otherwise.
+        let target_profile = profile_id.filter(|id| !id.is_empty());
         status.semantic_views = CapabilityState {
             state: "installing".into(),
             // The real revision is known once the source repository has been
             // fetched; the install path records it in the manifest and marker.
             version: None,
             error: None,
-            connection_id: status.profile_id.clone(),
+            connection_id: target_profile.clone().or_else(|| status.profile_id.clone()),
         };
         write_status(&app, &data_dir, status.clone())?;
         let result = (|| -> AppResult<SemanticInstall> {
-            let runtime = crate::local_runtime::ensure_runtime(&app, JOB_ID)?;
             let python = venv_python(&data_dir);
             if !python.is_file() {
                 return Err(AppError::Storage(
                     "Set up the local database first — the managed Python stack is not installed yet.".into(),
                 ));
             }
+            let runtime = match &target_profile {
+                // A named database: connect to it as it is. Starting the local
+                // runtime here would boot a database the user did not ask for.
+                Some(id) => {
+                    let state = app.state::<AppState>();
+                    let profile = crate::profiles::find_profile(&state, id)?;
+                    let password = if profile.password.is_empty() {
+                        crate::shared_registry::read_credential(&profile.id).unwrap_or_default()
+                    } else {
+                        profile.password.clone()
+                    };
+                    if password.is_empty() {
+                        return Err(AppError::Storage(format!(
+                            "No stored password for \"{}\" — open the connection once so its credential is saved.",
+                            profile.name
+                        )));
+                    }
+                    crate::local_runtime::RuntimeConnection {
+                        kind: profile.name.clone(),
+                        host: profile.host.clone(),
+                        port: profile.port,
+                        user: profile.username.clone(),
+                        password,
+                        engine: None,
+                    }
+                }
+                None => crate::local_runtime::ensure_runtime(&app, JOB_ID)?,
+            };
             install_semantic_views(&app, &data_dir, &runtime, &python)
         })();
         match &result {
