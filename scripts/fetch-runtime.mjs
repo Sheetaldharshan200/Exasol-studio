@@ -37,7 +37,18 @@ const TARGETS = {
 // Pinned Exa engine (opencode) — the SAME source of truth as the Marketplace
 // component (catalog.json exa-agent.latest). Bumping here bundles a newer
 // baseline; the component-update flow can still move users past it at runtime.
-const EXA_ENGINE_TAG = "v2026.1.12";
+// Resolved at build time from the engine repo's latest release — the bundled
+// baseline is only the offline fallback, so it should be as current as the
+// build that carries it.
+async function latestEngineTag() {
+  const res = await fetch("https://api.github.com/repos/Sheetaldharshan200/exa-engine/releases/latest", {
+    headers: { accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`could not resolve latest exa-engine release: ${res.status}`);
+  const tag = (await res.json()).tag_name;
+  if (!tag) throw new Error("latest exa-engine release has no tag");
+  return tag;
+}
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const runtimeDir = join(root, "apps/desktop/src-tauri/resources/runtime");
@@ -105,11 +116,12 @@ async function main() {
   mkdirSync(llamaDir, { recursive: true });
   extract(llamaArchive, llamaDir);
 
-  // ── Exa engine (opencode) — baseline for offline first run ──
-  console.log(`Fetching Exa engine (${EXA_ENGINE_TAG})…`);
+  // ── Exa engine — baseline for offline first run ──
+  const engineTag = await latestEngineTag();
+  console.log(`Fetching Exa engine (${engineTag})…`);
   const exaArchive = join(tmp, spec.exa);
   mkdirSync(tmp, { recursive: true });
-  await download(`https://github.com/Sheetaldharshan200/exa-engine/releases/download/${EXA_ENGINE_TAG}/${spec.exa}`, exaArchive);
+  await download(`https://github.com/Sheetaldharshan200/exa-engine/releases/download/${engineTag}/${spec.exa}`, exaArchive);
   const exaDir = join(runtimeDir, "exa-engine");
   mkdirSync(exaDir, { recursive: true });
   extract(exaArchive, exaDir);
