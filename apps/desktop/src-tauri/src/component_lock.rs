@@ -15,9 +15,6 @@ pub struct RuntimeComponents {
     pub uv: ReleaseComponent,
     pub python_stack: PythonStack,
     pub exapump: ReleaseComponent,
-    pub semantic_views: SourceComponent,
-    pub agent_skills: SourceComponent,
-    pub fable_method: SourceComponent,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,14 +54,6 @@ pub struct PythonStack {
     pub pyexasol_version: String,
     pub mcp_server_version: String,
     pub lock_sha256: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SourceComponent {
-    pub repository: String,
-    pub revision: String,
-    pub content_sha256: String,
 }
 
 pub fn platform_key() -> String {
@@ -115,14 +104,6 @@ fn baked() -> &'static RuntimeComponents {
             assert!(!release.repository.is_empty());
         }
         assert!(!parsed.nano.tag.is_empty());
-        for source in [
-            &parsed.semantic_views,
-            &parsed.agent_skills,
-            &parsed.fable_method,
-        ] {
-            assert!(!source.repository.is_empty());
-            assert_eq!(source.content_sha256.len(), 64);
-        }
         parsed
     })
 }

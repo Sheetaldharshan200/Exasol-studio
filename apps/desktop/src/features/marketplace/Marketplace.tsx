@@ -774,7 +774,15 @@ export function Marketplace() {
         ) : null}
         {inst || (did && runtimeReady) ? (
           <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-            <Check className="h-2.5 w-2.5" /> installed
+            <Check className="h-2.5 w-2.5" />
+            {/*
+              Semantic Views is SQL objects inside ONE database, so a bare
+              "installed" is ambiguous the moment a second database exists. The
+              install note records where it landed; surface that here.
+            */}
+            {item.id === "semantic-views" && inst?.note?.includes(" in ")
+              ? `installed in ${inst.note.split(" in ").pop()?.replace(/\.$/, "")}`
+              : "installed"}
           </span>
         ) : onSystem ? (
           <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">

@@ -152,6 +152,53 @@ pub async fn components_upstream() -> AppResult<Vec<UpstreamInfo>> {
     .map_err(|e| AppError::Storage(e.to_string()))
 }
 
+
+/// A source repository's default branch, fetched fresh and extracted.
+///
+/// The vendored copies these calls replace were pinned to whatever revision
+/// happened to be current when someone last ran the refresh script — the same
+/// staleness the release components had. Source components are not couplable
+/// to Studio releases either: the original repository is the source of truth,
+/// fetched when the component is actually installed.
+///
+/// Returns the extracted tree and the commit it came from. GitHub encodes the
+/// commit in the tarball's root directory name (`owner-repo-<sha>`), so the
+/// revision recorded in install manifests is the real one, not "latest".
+pub fn fetch_source_tree(repo: &str, destination: &std::path::Path) -> AppResult<(std::path::PathBuf, String)> {
+    let response = reqwest::blocking::Client::new()
+        .get(format!("https://api.github.com/repos/{repo}/tarball"))
+        .header("User-Agent", "exasol-studio")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(120))
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| AppError::Storage(format!("could not fetch {repo}: {e}")))?;
+    let bytes = response
+        .bytes()
+        .map_err(|e| AppError::Storage(format!("could not read {repo} archive: {e}")))?;
+
+    let _ = std::fs::remove_dir_all(destination);
+    std::fs::create_dir_all(destination)?;
+    let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+    tar::Archive::new(decoder)
+        .unpack(destination)
+        .map_err(|e| AppError::Storage(format!("could not extract {repo} archive: {e}")))?;
+
+    // The tarball has a single root: owner-repo-<sha>.
+    let root = std::fs::read_dir(destination)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| path.is_dir())
+        .ok_or_else(|| AppError::Storage(format!("{repo} archive was empty")))?;
+    let revision = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.rsplit('-').next())
+        .unwrap_or("unknown")
+        .to_string();
+    Ok((root, revision))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

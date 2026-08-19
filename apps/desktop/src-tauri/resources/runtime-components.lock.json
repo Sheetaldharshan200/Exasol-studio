@@ -104,20 +104,5 @@
         "sha256": "5b69226bc8fb521e692dae33d44f75a1f31d2c7078376aed64a23e3d0d633bc9"
       }
     }
-  },
-  "semanticViews": {
-    "repository": "exasol-labs/exasol-semantic-views",
-    "revision": "f9f0be63a38bb93dc9af502891e48ac809c21426",
-    "contentSha256": "ec0058ac6336721d7a9381b98b3ed703ff9df99ef8ab4a33d986542521f70dc1"
-  },
-  "agentSkills": {
-    "repository": "exasol-labs/exasol-agent-skills",
-    "revision": "15ef73b2edf22ed849e8ce8c19ff98fba9a7add7",
-    "contentSha256": "eb16b49b60a314414b5cb4b4a10fa3ace6dad7c984221902204d8a2c56c894e1"
-  },
-  "fableMethod": {
-    "repository": "Sahir619/fable-method",
-    "revision": "88b5cf36b10ee3679e08ee0f0181b9774d481508",
-    "contentSha256": "c88aebf650ee522594639d3776d64ecbbf289ac069b32443ea491cdfcc4e03d4"
   }
 }

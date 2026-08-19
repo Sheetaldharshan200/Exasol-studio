@@ -37,26 +37,17 @@
       "registry": "docker.io",
       "repository": "exasol/nano",
       "stableTagPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+-nano\\.[0-9]+$",
-      "requiredArchitectures": ["amd64", "arm64"]
+      "requiredArchitectures": [
+        "amd64",
+        "arm64"
+      ]
     }
   },
   "pythonStack": {
     "python": "3.12",
-    "packages": ["exasol-mcp-server", "pyexasol"]
-  },
-  "vendoredSources": {
-    "semanticViews": {
-      "repository": "exasol-labs/exasol-semantic-views",
-      "destination": "apps/desktop/src-tauri/resources/exasol-semantic-views"
-    },
-    "agentSkills": {
-      "repository": "exasol-labs/exasol-agent-skills",
-      "sourcePath": "plugins/exasol/skills",
-      "destination": "packages/agent-core/skills"
-    },
-    "fableMethod": {
-      "repository": "Sahir619/fable-method",
-      "destination": "packages/agent-core/skills/fable-method"
-    }
+    "packages": [
+      "exasol-mcp-server",
+      "pyexasol"
+    ]
   }
 }

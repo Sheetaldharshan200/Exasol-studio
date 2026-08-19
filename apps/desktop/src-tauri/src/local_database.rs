@@ -72,12 +72,9 @@ impl Default for BootstrapStatus {
         );
         components.insert(
             "agent-skills".into(),
-            CapabilityState::waiting(&lock.agent_skills.revision),
+            CapabilityState::waiting("latest"),
         );
-        components.insert(
-            "fable-method".into(),
-            CapabilityState::waiting(&lock.fable_method.revision),
-        );
+
         Self {
             state: "idle".into(),
             step: "waiting".into(),
@@ -900,48 +897,105 @@ fn ensure_exapump(app: &AppHandle, data_dir: &Path) -> AppResult<PathBuf> {
     Ok(target)
 }
 
-pub(crate) fn ensure_agent_skills(app: &AppHandle) -> AppResult<()> {
-    let packaged = app
-        .path()
-        .resolve("skills", tauri::path::BaseDirectory::Resource)
-        .ok()
-        .or_else(|| {
-            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../packages/agent-core/skills");
-            dev.is_dir().then_some(dev)
-        })
-        .ok_or_else(|| AppError::Storage("Bundled agent skills are missing.".into()))?;
-    for skill in [
-        "fable-method/SKILL.md",
-        "exasol-semantic-analyst/SKILL.md",
-        "exasol/SKILL.md",
-        "exasol-database/SKILL.md",
-    ] {
-        if !packaged.join(skill).is_file() {
-            return Err(AppError::Storage(format!(
-                "Bundled agent skill `{skill}` is missing."
-            )));
+/// Sync the Exasol agent skills from their source repository.
+///
+/// exasol-labs/exasol-agent-skills is the source of truth, not a vendored
+/// copy pinned at whatever revision the refresh script last saw. The latest
+/// skills land in the agent's own skills directory, which the SkillStore
+/// already reads; whatever is on disk from a previous sync (or the copy that
+/// ships with the app) stands when the network is unavailable, so first run
+/// offline still works and a sync failure is a warning rather than a broken
+/// bootstrap.
+pub(crate) fn ensure_agent_skills(app: &AppHandle, data_dir: &Path) -> AppResult<String> {
+    const REPO: &str = "exasol-labs/exasol-agent-skills";
+    const SOURCE_PATH: &str = "plugins/exasol/skills";
+    let target = data_dir.join("agent/skills");
+    std::fs::create_dir_all(&target)?;
+
+    let staging = data_dir.join("agent/skills-staging");
+    match crate::upstream::fetch_source_tree(REPO, &staging) {
+        Ok((tree, revision)) => {
+            let source = tree.join(SOURCE_PATH);
+            if !source.is_dir() {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(AppError::Storage(format!(
+                    "{REPO} no longer contains {SOURCE_PATH}."
+                )));
+            }
+            for entry in std::fs::read_dir(&source)?.flatten() {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let dest = target.join(entry.file_name());
+                let _ = std::fs::remove_dir_all(&dest);
+                copy_tree(&entry.path(), &dest)?;
+            }
+            let _ = std::fs::remove_dir_all(&staging);
+            Ok(revision)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            // Offline or rate-limited: previously synced or bundled skills
+            // stand. Only fail when there is nothing at all to fall back to.
+            let bundled = app
+                .path()
+                .resolve("skills", tauri::path::BaseDirectory::Resource)
+                .ok()
+                .filter(|dir| dir.join("exasol/SKILL.md").is_file());
+            let synced = target.join("exasol/SKILL.md").is_file();
+            if synced || bundled.is_some() {
+                return Ok("cached".into());
+            }
+            Err(e)
+        }
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) -> AppResult<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)?.flatten() {
+        let dest = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &dest)?;
+        } else {
+            std::fs::copy(entry.path(), &dest)?;
         }
     }
     Ok(())
 }
 
-fn semantic_bundle(app: &AppHandle) -> AppResult<PathBuf> {
-    if let Ok(path) = app.path().resolve(
-        "exasol-semantic-views",
-        tauri::path::BaseDirectory::Resource,
-    ) {
-        if path.join("tools/install.py").is_file() {
-            return Ok(path);
-        }
+/// What a Semantic Views install produced: the revision that was fetched and
+/// the database it landed in. The framework is SQL objects INSIDE one
+/// database, so "installed" is only meaningful with a database name attached.
+pub struct SemanticInstall {
+    pub revision: String,
+    pub database: String,
+}
+
+/// The serializable answer the Marketplace shows: not just "installed", but
+/// installed WHERE — the framework lives inside one database, and a user with
+/// several needs to know which one it landed in.
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticInstallInfo {
+    pub revision: String,
+    pub database: String,
+}
+
+/// Semantic Views is an add-on, fetched from its own repository when the user
+/// installs it — it was never Studio's to bundle. The 2MB vendored copy meant
+/// every user carried it whether or not they wanted it, at whatever revision
+/// the refresh script last pinned.
+fn semantic_bundle(data_dir: &Path) -> AppResult<(PathBuf, String)> {
+    const REPO: &str = "exasol-labs/exasol-semantic-views";
+    let staging = data_dir.join("personal-local/semantic-views-src");
+    let (tree, revision) = crate::upstream::fetch_source_tree(REPO, &staging)?;
+    if !tree.join("tools/install.py").is_file() {
+        return Err(AppError::Storage(format!(
+            "{REPO} does not contain tools/install.py."
+        )));
     }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/exasol-semantic-views");
-    if dev.join("tools/install.py").is_file() {
-        return Ok(dev);
-    }
-    Err(AppError::Storage(
-        "Bundled Exasol Semantic Views installer is missing.".into(),
-    ))
+    Ok((tree, revision))
 }
 
 fn install_semantic_views(
@@ -949,9 +1003,10 @@ fn install_semantic_views(
     data_dir: &Path,
     runtime: &RuntimeConnection,
     python: &Path,
-) -> AppResult<()> {
-    let semantic_revision = &crate::component_lock::components().semantic_views.revision;
+) -> AppResult<SemanticInstall> {
     let marker = data_dir.join("personal-local/semantic-example.ready");
+    let (bundle, semantic_revision) = semantic_bundle(data_dir)?;
+    let semantic_revision = &semantic_revision;
     // Record the components-update manifest so the Managed Components page shows
     // Semantic Views as installed. Without this it reads no manifest and shows
     // "not installed" even though the framework is in place (marker + status).
@@ -962,14 +1017,14 @@ fn install_semantic_views(
             &InstalledManifest {
                 version: semantic_revision.clone(),
                 installed_at: chrono::Utc::now().to_rfc3339(),
-                channel: Some("verified".into()),
+                channel: Some("latest".into()),
             },
         )
     };
     let previously_ready = std::fs::read_to_string(&marker)
         .ok()
         .is_some_and(|version| version.trim() == semantic_revision);
-    let installer = semantic_bundle(app)?.join("tools/install.py");
+    let installer = bundle.join("tools/install.py");
     let probe = installer
         .parent()
         .expect("installer has tools directory")
@@ -984,9 +1039,16 @@ fn install_semantic_views(
         ("EXASOL_USER", runtime.user.as_str()),
         ("EXASOL_PASSWORD", runtime.password.as_str()),
     ];
+    let summary = SemanticInstall {
+        revision: semantic_revision.clone(),
+        database: format!("{} ({}:{})", runtime.kind, runtime.host, runtime.port),
+    };
     if previously_ready {
         match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
-            0 => return record_installed(),
+            0 => {
+                record_installed()?;
+                return Ok(summary);
+            }
             4 => return Err(AppError::Storage("Existing SALES/MART objects are incomplete or user-owned; automatic setup refused to reset them.".into())),
             _ => emit_log(app, JOB_ID, "Persisted Semantic Views readiness is stale; reconciling the managed installation…", "info"),
         }
@@ -1019,7 +1081,8 @@ fn install_semantic_views(
         code => return Err(AppError::Storage(format!("Semantic Views readiness probe exited with code {code}."))),
     }
     std::fs::write(marker, semantic_revision)?;
-    record_installed()
+    record_installed()?;
+    Ok(summary)
 }
 
 /// Unified-credential model: the local database's SYS password is the Studio master
@@ -1186,44 +1249,18 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     }
 
     status.step = "agent-skills".into();
-    status.message = "Verifying bundled Exasol agent skills and Fable Method…".into();
-    set_component(
-        &mut status,
-        "agent-skills",
-        "installing",
-        &lock.agent_skills.revision,
-        None,
-    );
-    set_component(
-        &mut status,
-        "fable-method",
-        "installing",
-        &lock.fable_method.revision,
-        None,
-    );
+    status.message = "Syncing Exasol agent skills from exasol-labs…".into();
+    set_component(&mut status, "agent-skills", "installing", "latest", None);
     write_status(&app, &data_dir, status.clone())?;
-    match ensure_agent_skills(&app) {
-        Ok(()) => {
-            set_component(
-                &mut status,
-                "agent-skills",
-                "ready",
-                &lock.agent_skills.revision,
-                None,
-            );
-            set_component(
-                &mut status,
-                "fable-method",
-                "ready",
-                &lock.fable_method.revision,
-                None,
-            );
+    match ensure_agent_skills(&app, &data_dir) {
+        Ok(revision) => {
+            set_component(&mut status, "agent-skills", "ready", &revision, None);
         }
         Err(e) => warn(
             &app,
             &mut status,
             "Agent skills",
-            &[("agent-skills", lock.agent_skills.revision.clone()), ("fable-method", lock.fable_method.revision.clone())],
+            &[("agent-skills", "latest".into())],
             &e,
             &mut setup_warnings,
         ),
@@ -1331,13 +1368,21 @@ fn fully_ready(status: &BootstrapStatus) -> bool {
             component.state == "ready" && component.version.as_deref() == Some(version)
         })
     };
+    // Agent skills track their source repository rather than a pinned
+    // revision, so readiness is the state alone — any synced (or bundled)
+    // revision is a working one.
+    let component_ready = |name: &str| {
+        status
+            .components
+            .get(name)
+            .is_some_and(|component| component.state == "ready")
+    };
     status.state == "ready"
         && status.local_ready
         && component_at("pyexasol", &lock.python_stack.pyexasol_version)
         && component_at("mcp-server", &lock.python_stack.mcp_server_version)
         && component_at("exapump", &lock.exapump.version)
-        && component_at("agent-skills", &lock.agent_skills.revision)
-        && component_at("fable-method", &lock.fable_method.revision)
+        && component_ready("agent-skills")
 }
 
 #[tauri::command]
@@ -1417,19 +1462,20 @@ pub fn semantic_views_installed(app: &AppHandle) -> bool {
 
 /// Opt-in install of the Exasol Semantic Views framework (Marketplace action).
 #[tauri::command]
-pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
-        let lock = crate::component_lock::components();
+pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<SemanticInstallInfo> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<SemanticInstallInfo> {
         let data_dir = app.state::<AppState>().data_dir.clone();
         let mut status = read_status(&data_dir);
         status.semantic_views = CapabilityState {
             state: "installing".into(),
-            version: Some(lock.semantic_views.revision.clone()),
+            // The real revision is known once the source repository has been
+            // fetched; the install path records it in the manifest and marker.
+            version: None,
             error: None,
             connection_id: status.profile_id.clone(),
         };
         write_status(&app, &data_dir, status.clone())?;
-        let result = (|| -> AppResult<()> {
+        let result = (|| -> AppResult<SemanticInstall> {
             let runtime = crate::local_runtime::ensure_runtime(&app, JOB_ID)?;
             let python = venv_python(&data_dir);
             if !python.is_file() {
@@ -1440,8 +1486,9 @@ pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<()> {
             install_semantic_views(&app, &data_dir, &runtime, &python)
         })();
         match &result {
-            Ok(()) => {
+            Ok(install) => {
                 status.semantic_views.state = "ready".into();
+                status.semantic_views.version = Some(install.revision.clone());
                 status.semantic_views.error = None;
             }
             Err(error) => {
@@ -1450,7 +1497,10 @@ pub async fn personal_install_semantic_views(app: AppHandle) -> AppResult<()> {
             }
         }
         write_status(&app, &data_dir, status)?;
-        result
+        result.map(|install| SemanticInstallInfo {
+            revision: install.revision,
+            database: install.database,
+        })
     })
     .await
     .map_err(|error| AppError::Storage(error.to_string()))?
@@ -1497,7 +1547,7 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::Personal => c.personal.repository.clone(),
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
-        ComponentId::SemanticViews => c.semantic_views.repository.clone(),
+        ComponentId::SemanticViews => "exasol-labs/exasol-semantic-views".to_string(),
         // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
         // (the source of truth), rebranded in-product as Exa.
         ComponentId::ExaAgent => "Sheetaldharshan200/exa".to_string(),
@@ -1525,7 +1575,9 @@ fn verified_version(id: ComponentId) -> String {
         ComponentId::Personal => c.personal.version.clone(),
         ComponentId::ExaPump => c.exapump.version.clone(),
         ComponentId::McpServer => c.python_stack.mcp_server_version.clone(),
-        ComponentId::SemanticViews => c.semantic_views.revision.clone(),
+        // Fetched from its source repository at install time; there is no
+        // pinned revision to report until an install has recorded one.
+        ComponentId::SemanticViews => "latest".to_string(),
         // The pinned opencode release the Marketplace offers (matches
         // catalog.json exa-agent.latest + fetch-runtime.mjs EXA_ENGINE_TAG).
         ComponentId::ExaAgent => crate::engine::ENGINE_BASELINE_TAG.to_string(),
@@ -1722,7 +1774,7 @@ fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
     }
     let runtime = crate::local_runtime::ensure_runtime(app, JOB_ID)?;
     let runtime = query_ready_runtime(app, &python, &runtime)?;
-    install_semantic_views(app, data_dir, &runtime, &python)
+    install_semantic_views(app, data_dir, &runtime, &python).map(|_| ())
 }
 
 /// One-click independent update of a component. No Studio release, no touching
@@ -2022,7 +2074,7 @@ mod tests {
         status.local_ready = true;
         status.semantic_views = CapabilityState {
             state: "ready".into(),
-            version: Some(lock.semantic_views.revision.clone()),
+            version: Some("latest".into()),
             error: None,
             connection_id: Some("local".into()),
         };
@@ -2041,20 +2093,9 @@ mod tests {
             None,
         );
         set_component(&mut status, "exapump", "ready", &lock.exapump.version, None);
-        set_component(
-            &mut status,
-            "agent-skills",
-            "ready",
-            &lock.agent_skills.revision,
-            None,
-        );
-        set_component(
-            &mut status,
-            "fable-method",
-            "ready",
-            &lock.fable_method.revision,
-            None,
-        );
+        // Agent skills report whatever revision the sync fetched — readiness
+        // does not depend on a pinned value.
+        set_component(&mut status, "agent-skills", "ready", "15ef73b", None);
         assert!(fully_ready(&status));
 
         status.components.get_mut("mcp-server").unwrap().version = Some("older".into());
