@@ -237,6 +237,11 @@ export type ExaComposerApi = {
    * null when the input was a local command it handled itself.
    */
   expandForSend: (text: string, quote?: string) => string | null;
+  /**
+   * `!command` — run a shell command through the engine (the TUI's shell
+   * mode). Injected by ExaThread, which owns the client and session.
+   */
+  runShell?: (command: string) => Promise<void>;
 };
 
 const ExaComposerContext = createContext<ExaComposerApi | null>(null);
@@ -825,6 +830,16 @@ export function ExaSendButton() {
     const raw = (text ?? "").trim();
     if (!api || isRunning) return;
     if (!raw && !hasAttachments) return;
+    // `!command` — shell mode, exactly like the TUI: the engine runs the
+    // command in this session and the output arrives as a normal turn.
+    if (raw.startsWith("!") && raw.length > 1 && api.runShell) {
+      aui.composer().setText("");
+      void api.runShell(raw.slice(1)).catch((err) => {
+        console.error("[exa] shell command failed", err);
+        aui.composer().setText(raw);
+      });
+      return;
+    }
     // The quote isn't serialized to the engine by the runtime — embed it in
     // the text; the composer clears its own state on send().
     const expanded = api.expandForSend(raw, quote?.text);
@@ -1392,9 +1407,31 @@ export function ExaThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, client]);
 
+  // `!command` from the composer: the engine executes it in the session and
+  // streams the output as a turn — the same path as the TUI's shell mode.
+  const apiWithShell = useMemo<ExaComposerApi>(
+    () => ({
+      ...composerApi,
+      runShell: async (command: string) => {
+        const sessionID = activeSessionId ?? initialSessionId;
+        if (!sessionID || !command.trim()) return;
+        await client.session.shell({
+          sessionID,
+          agent: composerApi.mode === "chat" ? "exa-chat" : "exa",
+          ...(composerApi.model
+            ? { model: { providerID: composerApi.model.providerID, modelID: composerApi.model.modelID } }
+            : {}),
+          command: command.trim(),
+        });
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composerApi, client, activeSessionId, initialSessionId],
+  );
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ExaComposerContext.Provider value={composerApi}>
+      <ExaComposerContext.Provider value={apiWithShell}>
         <ExaApplySqlContext.Provider value={onApplySql ?? null}>
           <ExaShareListener />
           <ExaRunWatchdog client={client} runtime={runtime} />

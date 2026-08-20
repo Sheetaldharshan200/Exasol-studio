@@ -44,7 +44,6 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
   { id: "bi", label: "Dashboards", icon: "dashboards" },
   { id: "git", label: "Source Control", icon: "git" },
   { id: "favorites", label: "Favorites", icon: "favorites" },
-  { id: "guides", label: "Guides & Docs", icon: "guides" },
 ];
 
 // Items that open a full-screen tab (highlighted by the active tab's view,

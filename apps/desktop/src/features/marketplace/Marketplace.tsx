@@ -917,6 +917,16 @@ export function Marketplace() {
             </button>
           </>
         )}
+        {item.homepage && !comingSoon && item.install !== "reference" ? (
+          <button
+            onClick={() => openExternal(item.homepage)}
+            title={`Docs — ${item.homepage}`}
+            aria-label={`Open the ${item.name} documentation on GitHub`}
+            className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Docs <ExternalLink className="h-3 w-3" />
+          </button>
+        ) : null}
         {item.install === "personal-local" && (inst || onSystem) ? (
           <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
             <Server className="h-3.5 w-3.5" /> Manage (start/stop)

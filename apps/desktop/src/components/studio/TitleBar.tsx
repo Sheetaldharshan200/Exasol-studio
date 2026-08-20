@@ -4,14 +4,40 @@
  *
  * Extracted from ExasolStudio.tsx.
  */
-import { PlugZap, Unplug } from "lucide-react";
+import { BookOpen, PlugZap, Unplug } from "lucide-react";
 
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { ThemeCustomizer } from "@/components/studio/ThemeCustomizer";
 import { Notifications } from "@/features/workbench/Notifications";
 import { cn } from "@/lib/utils";
+import { agent } from "@/lib/agent-client";
+import { ipc, isTauri } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
+
+/**
+ * The docs ship inside the exa engine the app already runs — serving them
+ * from the sidecar means an installed Studio has the complete documentation
+ * (both the Studio and exa notebooks) with no network and no separate copy.
+ */
+async function openDocs() {
+  try {
+    const status = await agent.engine.status();
+    if (status.state === "running" && status.port) {
+      const url = `http://127.0.0.1:${status.port}/docs/studio`;
+      if (isTauri()) await ipc.openExternal(url).catch(() => window.open(url, "_blank"));
+      else window.open(url, "_blank");
+      return;
+    }
+  } catch {
+    // fall through to the notice
+  }
+  window.dispatchEvent(
+    new CustomEvent("studio:notice", {
+      detail: { kind: "info", title: "Docs are served by the engine", body: "The Exa engine is still starting — try again in a moment." },
+    }),
+  );
+}
 
 export function TitleBar({
   connection,
@@ -58,6 +84,14 @@ export function TitleBar({
             {connection!.server.databaseName ?? "exasol"} {connection!.server.version ?? ""}
           </span>
         ) : null}
+        <button
+          onClick={() => void openDocs()}
+          title="Documentation (Exasol Studio & exa)"
+          aria-label="Open the documentation"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+        </button>
         <Notifications />
         <ThemeCustomizer />
         <ThemeToggle className="h-6 w-6 rounded-md hover:bg-secondary" />
