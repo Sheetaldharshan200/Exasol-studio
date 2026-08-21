@@ -31,7 +31,7 @@ import {
 import { CopyButton } from "@/components/ui/copy-button";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { TerminalView } from "@/features/workbench/TerminalView";
-import { ipc } from "@/lib/ipc";
+import { ipc , isTauri } from "@/lib/ipc";
 import type { ExecuteResponse, GitLogEntry, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows } from "@/lib/result-stats";
@@ -589,8 +589,9 @@ export function HistoryDock({
   }, [open, mode]);
   // VS Code-style bottom panel: uppercase tab strip in the header, active tab
   // underlined; actions on the right are contextual to the active tab.
+  // Terminals are native PTYs — desktop only; the web build hides the tab.
   const TABS: { id: "terminal" | "history"; label: string }[] = [
-    { id: "terminal", label: "Terminal" },
+    ...(isTauri() ? [{ id: "terminal", label: "Terminal" } as const] : []),
     { id: "history", label: "SQL History" },
   ];
   return (

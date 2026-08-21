@@ -15,7 +15,13 @@ export function isSettingsWindow(): boolean {
  * just focused.
  */
 export async function openSettingsWindow(category?: string): Promise<boolean> {
-  if (!isTauri()) return false;
+  if (!isTauri()) {
+    // Browser build: the same view in a new tab — the app router renders the
+    // standalone Settings surface for ?view=settings.
+    const url = `${window.location.pathname}?view=${SETTINGS_WINDOW_LABEL}${category ? `&cat=${encodeURIComponent(category)}` : ""}`;
+    window.open(url, "exasol-studio-settings");
+    return true;
+  }
   try {
     const { WebviewWindow, getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
     const existing = (await getAllWebviewWindows()).find((w) => w.label === SETTINGS_WINDOW_LABEL);
