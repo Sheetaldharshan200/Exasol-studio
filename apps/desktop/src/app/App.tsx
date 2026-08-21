@@ -72,8 +72,10 @@ function MainApp() {
   }, [onboarded, vault?.configured, vault?.unlocked]);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    // The status READ works in the web build too (the exa backend reports the
+    // shared deployment's real state); only the Tauri event stream is native.
     void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
+    if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     void import("@tauri-apps/api/event").then(async ({ listen }) => {
       unlisten = await listen<PersonalLocalStatus>("personal-local:status", (event) => setLocalStatus(event.payload));
