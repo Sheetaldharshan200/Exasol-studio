@@ -11,6 +11,7 @@ import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
 import { isVsWindow } from "@/lib/vs-window";
 import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
+import { SettingsModalHost } from "@/features/settings/SettingsModal";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
 import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
@@ -40,7 +41,13 @@ export function App() {
     return <InstallWindow />;
   }
   // The standalone AI provider setup window.
-  return <MainApp />;
+  return (
+    <>
+      <MainApp />
+      {/* Web-only settings modal; inert in Tauri (native window is used). */}
+      <SettingsModalHost />
+    </>
+  );
 }
 
 function MainApp() {
