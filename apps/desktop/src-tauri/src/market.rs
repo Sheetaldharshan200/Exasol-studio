@@ -1190,14 +1190,23 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
     use crate::local_database as db;
     let mut map = serde_json::Map::new();
 
-    // Exasol Personal is a DATABASE: installed vs. actually running are distinct.
+    // Exasol Personal is a DATABASE: installed vs. actually running are
+    // distinct — and BOTH count installs made outside Studio (the exa CLI's
+    // shared default deployment), so the card never says "Install" next to a
+    // database that already runs on this machine.
     map.insert(
         "exasol-personal".into(),
-        json!(crate::local_runtime::runtime_installed(&app)),
+        json!(
+            crate::local_runtime::runtime_installed(&app)
+                || crate::local_runtime::shared_deployment_installed()
+        ),
     );
     map.insert(
         "exasol-personal:running".into(),
-        json!(crate::local_runtime::runtime_running(&app)),
+        json!(
+            crate::local_runtime::runtime_running(&app)
+                || crate::local_runtime::shared_deployment_running()
+        ),
     );
     map.insert("exasol-cloud".into(), json!(bin_present("exasol")));
 

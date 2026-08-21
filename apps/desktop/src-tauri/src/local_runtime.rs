@@ -511,10 +511,30 @@ fn personal_deployment_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(runtime_dir(app)?.join("deployment"))
 }
 
-/// The shared default-dir deployment other tools manage. Detection only —
-/// Studio never operates on it.
+/// The shared default-dir deployment other tools manage (the `exa` CLI's
+/// `exa connect` install lands here). Detection only — Studio never operates
+/// on it.
 fn legacy_deployment_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".exasol/personal/deployments/default"))
+}
+
+/// An Exasol Personal installed by another tool (the exa CLI, a starter kit)
+/// in the shared default directory. The Marketplace card must reflect it —
+/// "Install" next to a database that is already running reads as broken sync.
+pub(crate) fn shared_deployment_installed() -> bool {
+    legacy_deployment_dir().is_some_and(|d| d.join("deployment.json").is_file())
+}
+
+/// Whether the shared deployment's database answers, on the port its own
+/// deployment.json records (8563 when unrecorded).
+pub(crate) fn shared_deployment_running() -> bool {
+    let port = legacy_deployment_dir()
+        .and_then(|d| std::fs::read(d.join("deployment.json")).ok())
+        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+        .and_then(|v| v.get("connection")?.get("dbPort")?.as_u64())
+        .map(|p| p as u16)
+        .unwrap_or(PORT);
+    port_ready(port)
 }
 
 fn read_personal_connection(app: &AppHandle) -> AppResult<RuntimeConnection> {
