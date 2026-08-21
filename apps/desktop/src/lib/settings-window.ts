@@ -2,6 +2,9 @@ import { isTauri } from "@/lib/ipc";
 
 export const SETTINGS_WINDOW_LABEL = "settings";
 
+/** Event that opens the web build's in-app settings modal. */
+export const OPEN_SETTINGS_MODAL = "studio:open-settings-modal";
+
 /** True when the current webview is the standalone Settings window. */
 export function isSettingsWindow(): boolean {
   if (typeof window === "undefined") return false;
@@ -16,10 +19,9 @@ export function isSettingsWindow(): boolean {
  */
 export async function openSettingsWindow(category?: string): Promise<boolean> {
   if (!isTauri()) {
-    // Browser build: the same view in a new tab — the app router renders the
-    // standalone Settings surface for ?view=settings.
-    const url = `${window.location.pathname}?view=${SETTINGS_WINDOW_LABEL}${category ? `&cat=${encodeURIComponent(category)}` : ""}`;
-    window.open(url, "exasol-studio-settings");
+    // Browser build: an in-app modal (SettingsModalHost) instead of a new tab —
+    // the ?view=settings route still works for direct links.
+    window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_MODAL, { detail: { category } }));
     return true;
   }
   try {

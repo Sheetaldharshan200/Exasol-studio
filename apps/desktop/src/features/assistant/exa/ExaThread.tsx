@@ -15,6 +15,7 @@ import {
   Table as TableIcon,
   ArrowUp as SendArrowIcon,
   Bot,
+  Check,
   Database as DatabaseIcon,
   History as HistoryIcon,
   MessageSquare,
@@ -34,6 +35,7 @@ import {
 import type { ReactNode } from "react";
 import type { EngineCatalogProvider, EngineSessionInfo } from "@/lib/agent-client";
 import { cn } from "@/lib/utils";
+import { personaFromAnswers } from "./persona";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ComposerAddAttachment } from "@/components/assistant-ui/attachment";
@@ -569,9 +571,16 @@ function ExaQuestionnaire() {
 
 function ExaQuestionnaireCard({ req }: { req: ReturnType<typeof useOpenCodeQuestions>[number] }) {
   const extras = useOpenCodeRuntimeExtras();
+  const api = useExaComposer();
+  const [rawStep, setStep] = useState(0);
   const [selected, setSelected] = useState<Record<number, string[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+
+  const total = req.questions.length;
+  const step = Math.min(rawStep, Math.max(0, total - 1));
+  const q = req.questions[step];
+  if (!q) return null;
 
   const toggle = (qi: number, label: string, multiple: boolean) => {
     setSelected((prev) => {
@@ -585,12 +594,19 @@ function ExaQuestionnaireCard({ req }: { req: ReturnType<typeof useOpenCodeQuest
     const typed = (custom[qi] ?? "").trim();
     return typed ? [...picks, typed] : picks;
   };
+  const stepAnswered = answersFor(step).length > 0;
   const complete = req.questions.every((_, qi) => answersFor(qi).length > 0);
+  const last = step === total - 1;
 
   const submit = async () => {
     setBusy(true);
     try {
-      await extras.replyToQuestion(req.id, req.questions.map((_, qi) => answersFor(qi)));
+      const answers = req.questions.map((_, qi) => answersFor(qi));
+      await extras.replyToQuestion(req.id, answers);
+      // An answered "what is your role?" updates the persona everywhere —
+      // the picker, the persisted choice, and every following prompt.
+      const persona = personaFromAnswers(req.questions as { question: string }[], answers);
+      if (persona) api?.setPersona(persona);
     } catch (err) {
       console.error("[exa] question reply failed", err);
     } finally {
@@ -599,62 +615,119 @@ function ExaQuestionnaireCard({ req }: { req: ReturnType<typeof useOpenCodeQuest
   };
 
   return (
-    <div className="pointer-events-auto mx-auto mb-2 w-full max-w-2xl px-4">
-      <div className="max-h-[50vh] overflow-y-auto overscroll-contain rounded-xl border border-border bg-panel p-3 shadow-lg [scrollbar-width:thin]">
-        {req.questions.map((q, qi) => (
-          <div key={qi} className={cn(qi > 0 && "mt-3 border-t border-border/60 pt-3")}>
-            <div className="mb-0.5 flex items-center gap-2">
-              {q.header ? (
-                <span className="rounded bg-secondary px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">{q.header}</span>
-              ) : null}
-              {q.multiple ? <span className="text-[10px] text-muted-foreground">select all that apply</span> : null}
-            </div>
-            <p className="mb-2 text-[13px] font-medium text-foreground">{q.question}</p>
-            <div className="space-y-1">
-              {q.options.map((o) => {
-                const on = (selected[qi] ?? []).includes(o.label);
-                return (
-                  <button
-                    key={o.label}
-                    type="button"
-                    onClick={() => toggle(qi, o.label, Boolean(q.multiple))}
+    <div className="pointer-events-auto mx-auto mb-2 w-full max-w-2xl px-2 sm:px-4">
+      <div className="flex max-h-[55vh] flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-lg">
+        {/* One question per card; Prev/Next walk the set, Answer sends all. */}
+        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+          {q.header ? (
+            <span className="rounded bg-secondary px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">{q.header}</span>
+          ) : (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Question</span>
+          )}
+          {total > 1 ? (
+            <span className="ml-auto flex items-center gap-1.5">
+              <span className="flex items-center gap-1">
+                {req.questions.map((_, qi) => (
+                  <span
+                    key={qi}
                     className={cn(
-                      "flex w-full flex-col items-start rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                      on ? "border-primary/60 bg-primary/10" : "border-border/70 hover:bg-muted/60",
+                      "h-1.5 w-1.5 rounded-full transition-colors",
+                      qi === step ? "bg-primary" : answersFor(qi).length > 0 ? "bg-primary/40" : "bg-muted-foreground/30",
+                    )}
+                  />
+                ))}
+              </span>
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {step + 1} of {total}
+              </span>
+            </span>
+          ) : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]">
+          <p className="mb-2 text-[13px] font-medium text-foreground">
+            {q.question}
+            {q.multiple ? <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">select all that apply</span> : null}
+          </p>
+          <div className="space-y-1">
+            {q.options.map((o) => {
+              const on = (selected[step] ?? []).includes(o.label);
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => toggle(step, o.label, Boolean(q.multiple))}
+                  className={cn(
+                    "flex w-full items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                    on ? "border-primary/60 bg-primary/10" : "border-border/70 hover:bg-muted/60",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center border",
+                      q.multiple ? "rounded" : "rounded-full",
+                      on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
                     )}
                   >
-                    <span className="text-[12.5px] font-medium text-foreground">{o.label}</span>
-                    {o.description ? <span className="text-[11px] text-muted-foreground">{o.description}</span> : null}
-                  </button>
-                );
-              })}
-            </div>
-            <input
-              value={custom[qi] ?? ""}
-              onChange={(e) => setCustom((prev) => ({ ...prev, [qi]: e.target.value }))}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="Or type your own answer…"
-              className="mt-1.5 h-8 w-full rounded-lg border border-border bg-background px-2.5 text-[12px] outline-none focus:border-ring"
-            />
+                    {on ? <Check className="h-2.5 w-2.5" /> : null}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-medium text-foreground">{o.label}</span>
+                    {o.description ? <span className="block text-[11px] leading-snug text-muted-foreground">{o.description}</span> : null}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        ))}
-        <div className="mt-3 flex items-center justify-end gap-1.5">
+          <input
+            disabled={busy}
+            value={custom[step] ?? ""}
+            onChange={(e) => setCustom((prev) => ({ ...prev, [step]: e.target.value }))}
+            onKeyDown={(e) => e.stopPropagation()}
+            placeholder="Or type your own answer…"
+            className="mt-1.5 h-8 w-full rounded-lg border border-border bg-background px-2.5 text-[12px] outline-none focus:border-ring"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 border-t border-border/60 bg-panel px-3 py-2">
           <button
             type="button"
             disabled={busy}
             onClick={() => void extras.rejectQuestion(req.id).catch(() => undefined)}
-            className="hover:bg-muted flex h-7 items-center rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="hover:bg-muted flex h-7 items-center rounded-md px-2 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             Dismiss
           </button>
-          <button
-            type="button"
-            disabled={busy || !complete}
-            onClick={() => void submit()}
-            className="flex h-7 items-center rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-          >
-            Answer
-          </button>
+          <div className="ml-auto flex items-center gap-1.5">
+            {total > 1 ? (
+              <button
+                type="button"
+                disabled={busy || step === 0}
+                onClick={() => setStep((n) => Math.max(0, n - 1))}
+                className="hover:bg-muted flex h-7 items-center rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+              >
+                Prev
+              </button>
+            ) : null}
+            {!last ? (
+              <button
+                type="button"
+                disabled={busy || !stepAnswered}
+                onClick={() => setStep((n) => Math.min(total - 1, n + 1))}
+                className="flex h-7 items-center rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy || !complete}
+                onClick={() => void submit()}
+                className="flex h-7 items-center rounded-md bg-primary px-3 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                Answer
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Settings2, X } from "lucide-react";
+import { Maximize2, Minimize2, Search, Settings2, X } from "lucide-react";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -283,10 +283,20 @@ const DEFAULTS: Record<string, SettingValue> = {
   ),
 };
 
-export function SettingsWindow() {
+/** Embedded mode: rendered inside the web app's settings modal instead of a
+ * native window — fills its container and gets expand/close controls. */
+export type SettingsEmbed = {
+  onClose: () => void;
+  category?: string;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+};
+
+export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) {
   // Deep link: ?cat=<category key> opens straight to that page (the status
   // bar's Spaces/UTF-8 chips use this).
-  const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("cat") : null;
+  const requested =
+    embedded?.category ?? (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("cat") : null);
   const requestedCat = CATEGORIES.find((c) => c.key === requested);
   const [tab, setTab] = useState<"general" | "database">(requestedCat?.tab ?? "general");
   const [query, setQuery] = useState("");
@@ -346,12 +356,31 @@ export function SettingsWindow() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-editor text-foreground">
+    <div className={cn("flex flex-col bg-editor text-foreground", embedded ? "h-full" : "h-screen")}>
       {/* Title bar (draggable) */}
       <div data-tauri-drag-region className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
         <Settings2 className="h-4 w-4 text-primary" />
         <span className="text-[13px] font-semibold">Settings</span>
-        {isTauri() ? (
+        {embedded ? (
+          <span className="ml-auto flex items-center gap-0.5">
+            {embedded.onToggleExpand ? (
+              <button
+                onClick={embedded.onToggleExpand}
+                title={embedded.expanded ? "Restore size" : "Expand"}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                {embedded.expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </button>
+            ) : null}
+            <button
+              onClick={embedded.onClose}
+              title="Close settings"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </span>
+        ) : isTauri() ? (
           <button
             onClick={() => import("@tauri-apps/api/webviewWindow").then((m) => m.getCurrentWebviewWindow().close())}
             className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
