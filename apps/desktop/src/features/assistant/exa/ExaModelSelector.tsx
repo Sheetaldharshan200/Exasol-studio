@@ -109,8 +109,12 @@ export function ExaModelSelector({
         // The engine polls the flow inline; this resolves when auth completes.
         const done = await agent.engine.oauthCallback(providerId, idx);
         finishOauth(providerId, done.ok);
+        return;
       }
-      // method "code": wait for the user to paste the code (submitOauthCode).
+      // method "code": the paste box renders only outside "waiting", so the
+      // state must return to idle here — leaving it waiting hid the input
+      // forever (the Claude Pro/Max flow was unfinishable).
+      setOauthState("idle");
     } catch {
       setOauthState("failed");
     }
