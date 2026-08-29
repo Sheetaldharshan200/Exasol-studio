@@ -98,8 +98,15 @@ export function ExasolStudio({
   // in the Databases panel (connect when ready, install when not).
   const [localStatus, setLocalStatus] = useState<PersonalLocalStatus | null>(null);
   useEffect(() => {
-    if (!isTauri()) return;
     void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
+    if (!isTauri()) {
+      // No Tauri events in the browser — poll so a CLI install/start of the
+      // shared Personal deployment shows up without a reload.
+      const timer = setInterval(() => {
+        void ipc.personalLocalStatus().then(setLocalStatus).catch(() => undefined);
+      }, 20_000);
+      return () => clearInterval(timer);
+    }
     let un: (() => void) | undefined;
     void import("@tauri-apps/api/event").then(async ({ listen }) => {
       un = await listen<PersonalLocalStatus>("personal-local:status", (e) => setLocalStatus(e.payload));

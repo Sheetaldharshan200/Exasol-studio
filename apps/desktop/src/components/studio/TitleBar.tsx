@@ -79,18 +79,14 @@ export function TitleBar({
       </div>
 
       <div className="flex items-center gap-2">
-        {connected ? (
-          <span className="hidden font-mono text-[11px] md:inline">
-            {connection!.server.databaseName ?? "exasol"} {connection!.server.version ?? ""}
-          </span>
-        ) : null}
         <button
           onClick={() => void openDocs()}
           title="Documentation (Exasol Studio & exa)"
           aria-label="Open the documentation"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className="flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           <BookOpen className="h-3.5 w-3.5" />
+          Docs
         </button>
         <Notifications />
         <ThemeCustomizer />
