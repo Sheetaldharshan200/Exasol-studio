@@ -65,10 +65,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      # tauri-build's build.rs wants the frontendDist directory to exist; the
-      # tests don't need a real bundle, only the path.
-      - name: Stub frontend dist
-        run: mkdir -p apps/desktop/dist && touch apps/desktop/dist/index.html
+      # tauri-build's build.rs verifies frontendDist and every bundle resource
+      # path exists. The tests never execute those files — the release
+      # workflow builds them for real — so empty stand-ins satisfy build.rs
+      # without pulling the whole JS/runtime pipeline into this job.
+      - name: Stub frontend dist and bundle resources
+        run: |
+          mkdir -p apps/desktop/dist && touch apps/desktop/dist/index.html
+          mkdir -p packages/agent-core/dist/skills
+          touch packages/agent-core/dist/agent-core.cjs \
+                packages/agent-core/dist/mcp-gateway.cjs \
+                packages/agent-core/dist/exa-agent.cjs
+          mkdir -p apps/desktop/src-tauri/resources/runtime \
+                   apps/desktop/src-tauri/resources/python-stack
 
       - name: cargo test
         run: cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml
