@@ -107,3 +107,11 @@ MED context.ts: user-typed sentinel tags could hide their own text / swallow the
 MED local_database.rs/Marketplace: failed bootstrap component reported verified version as installed → 'shows latest, no retry'. Failed → installed:None + Install button.
 Also this arc: run watchdog (poll session status while UI running; engine idle → resync — recovers lost event streams), webview.log console tee + append_app_log, force-abort side channel on Stop, machine-context sentinel, ENGINE_BASELINE_TAG precedence over stale component copies, exa.4 CLI branding (wordmark + by Exasol).
 
+
+## [2026-08-29] review | Codex review of question-stepper/persona-sync (Studio PR #67) — 4 findings fixed
+personaFromAnswers: 'who is/are' matched audience questions ('Who is this report for?') — persona must only follow the USER's own role; audience/target/recipient/reader questions are now excluded.
+personaFromAnswers: positive-only substring matchers assigned personas from negated text ('not a developer') — a negation guard (not/n't/except/non-) now skips those answers.
+ExaQuestionnaireCard: options/custom input stayed editable while replyToQuestion was in flight, desyncing the sent snapshot — inputs now disabled while busy.
+ExaQuestionnaireCard: step index could point past a changed question set — now clamped against the live count.
+Also shipped: web market_detect in exa studio-ipc (CLI-installed Personal shows detected/running), personal_local_status fetch+poll in web sidebar (was Tauri-only), web settings as expandable modal, Docs button icon+label.
+
