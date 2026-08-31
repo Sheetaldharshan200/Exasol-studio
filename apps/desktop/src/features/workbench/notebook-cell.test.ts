@@ -40,6 +40,12 @@ test("renderer routing covers every kind family", () => {
   assert.equal(cellRenderer("wat"), "grid");
 });
 
+test("a custom option with its own series always routes to echarts", () => {
+  assert.equal(cellRenderer("bar", { option: { series: [{ type: "sankey" }] } }), "echarts");
+  assert.equal(cellRenderer(undefined, { option: { series: [] } }), "echarts");
+  assert.equal(cellRenderer("bar", { option: { tooltip: {} } }), "recharts");
+});
+
 test("kpi picks the first numeric value and formats thousands", () => {
   assert.deepEqual(kpiValue([{ name: "LABEL" }, { name: "REVENUE" }], [["Jan", "1234567"]]), { label: "REVENUE", value: "1,234,567" });
   assert.deepEqual(kpiValue([{ name: "PCT" }], [["3.14"]]), { label: "PCT", value: "3.14" });

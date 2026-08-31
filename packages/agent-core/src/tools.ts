@@ -512,7 +512,7 @@ export function buildTools(ctx: {
                 const saved = ctx.dashboards!.save({ version: 1, description: "", ...dashboard });
                 session.record({ kind: "dashboard.saved", id: saved.id, title: saved.title, panels: saved.panels.length });
                 session.emit({ type: "dashboard-saved", id: saved.id, title: saved.title });
-                return { ok: true, id: saved.id, note: "Saved and opened in the Dashboards view for the user." };
+                return { ok: true, id: saved.id, note: "Saved. The user renders it in the Notebook: Import menu → this dashboard (panels become auto-running cells)." };
               } catch (e) {
                 return {
                   ok: false,

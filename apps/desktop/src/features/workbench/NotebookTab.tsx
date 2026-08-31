@@ -28,7 +28,7 @@ import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
 import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
 import { ChartKindPicker, EchartsCell, KpiCell } from "@/features/workbench/cell-viz";
-import { cellRenderer, resolveCellConnection } from "@/features/workbench/notebook-cell";
+import { cellRenderer, resolveCellConnection, type CellViz } from "@/features/workbench/notebook-cell";
 import { SYSTEM_DASHBOARDS } from "@/features/bi/system-dashboards";
 import type { Dashboard } from "@/lib/agent-client";
 import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
@@ -74,6 +74,8 @@ type Cell = {
   /** Which connected database this cell runs on (default: the active one). */
   connProfileId?: string;
   connName?: string;
+  /** Field mapping / stacking / raw ECharts override from an imported panel. */
+  viz?: CellViz;
 };
 
 let seq = 0;
@@ -96,7 +98,7 @@ const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
 const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
 const NB_ACTIVE_KEY = "studio.notebooks.active";
 
-type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string }[]; updatedAt: number };
+type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string; viz?: CellViz }[]; updatedAt: number };
 
 /** Load all notebooks, migrating the legacy single notebook on first run. */
 function loadNotebooks(): NotebookDoc[] {
@@ -152,7 +154,7 @@ export function NotebookTab({
   const activeBook = books.find((b) => b.id === activeId) ?? books[0];
   const [cells, setCells] = useState<Cell[]>(() => {
     const b = loadNotebooks().find((x) => x.id === (localStorage.getItem(NB_ACTIVE_KEY) ?? "")) ?? loadNotebooks()[0];
-    return b.cells.length ? b.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")];
+    return b.cells.length ? b.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })) : [mkCell("sql")];
   });
   const [renamingBook, setRenamingBook] = useState<string | null>(null);
 
@@ -162,7 +164,7 @@ export function NotebookTab({
     const t = setTimeout(() => {
       setBooks((bs) => {
         const next = bs.map((b) =>
-          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
+          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })), updatedAt: Date.now() } : b,
         );
         try {
           localStorage.setItem(NBS_KEY, JSON.stringify(next));
@@ -180,10 +182,10 @@ export function NotebookTab({
     if (id === activeId) return;
     setBooks((bs) => {
       const next = bs.map((b) =>
-        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })), updatedAt: Date.now() } : b,
       );
       const target = next.find((b) => b.id === id);
-      setCells(target && target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")]);
+      setCells(target && target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })) : [mkCell("sql")]);
       try {
         localStorage.setItem(NBS_KEY, JSON.stringify(next));
       } catch {
@@ -221,7 +223,7 @@ export function NotebookTab({
         const target = next[0];
         setActiveId(target.id);
         localStorage.setItem(NB_ACTIVE_KEY, target.id);
-        setCells(target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")]);
+        setCells(target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })) : [mkCell("sql")]);
       }
       try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
       return next;
@@ -401,7 +403,14 @@ export function NotebookTab({
         imported.push(mkCell("markdown", p.viz.content));
       } else if (p.query?.sql?.trim()) {
         const chart = p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
-        imported.push(mkCell("sql", `-- ${p.title || "Panel"}\n${p.query.sql.trim()}`, chart));
+        const cell = mkCell("sql", `-- ${p.title || "Panel"}\n${p.query.sql.trim()}`, chart);
+        if (p.viz.type === "echarts") {
+          // Field mapping, stacking and raw option survive the import — a
+          // custom-designed panel must render the same as it did before.
+          const e = p.viz as { xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> };
+          if (e.xField || e.yFields || e.stacked || e.option) cell.viz = { xField: e.xField, yFields: e.yFields, stacked: e.stacked, option: e.option };
+        }
+        imported.push(cell);
       }
     }
     return imported;
@@ -417,9 +426,9 @@ export function NotebookTab({
     const id = existing?.id ?? `nb-${Date.now().toString(36)}`;
     setBooks((bs) => {
       const withCurrent = bs.map((b) =>
-        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })), updatedAt: Date.now() } : b,
       );
-      const doc = { id, title, cells: imported.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() };
+      const doc = { id, title, cells: imported.map((c) => ({ type: c.type, src: c.src, chart: c.chart, viz: c.viz })), updatedAt: Date.now() };
       const next = existing ? withCurrent.map((b) => (b.id === id ? doc : b)) : [...withCurrent, doc];
       try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
       return next;
@@ -448,7 +457,12 @@ export function NotebookTab({
           // not just the query text.
           const chart =
             p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
-          imported.push(mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`, chart));
+          const cell = mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`, chart);
+          if (p.viz.type === "echarts") {
+            const e = p.viz as { xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> };
+            if (e.xField || e.yFields || e.stacked || e.option) cell.viz = { xField: e.xField, yFields: e.yFields, stacked: e.stacked, option: e.option };
+          }
+          imported.push(cell);
         }
       }
       if (imported.length <= 1) {
@@ -964,7 +978,7 @@ const CellView = memo(function CellView({
             </div>
             {!collapsed && cell.result.kind === "resultSet"
               ? (() => {
-                  switch (cellRenderer(cell.chart)) {
+                  switch (cellRenderer(cell.chart, cell.viz)) {
                     case "kpi":
                       return <div className="border-t border-border/60"><KpiCell result={cell.result} /></div>;
                     case "recharts":
@@ -974,7 +988,7 @@ const CellView = memo(function CellView({
                         </div>
                       );
                     case "echarts":
-                      return <div className="h-72 border-t border-border/60"><EchartsCell chart={cell.chart!} result={cell.result} /></div>;
+                      return <div className="h-72 border-t border-border/60"><EchartsCell chart={cell.chart ?? "bar"} viz={cell.viz} result={cell.result} /></div>;
                     default:
                       return <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />;
                   }
@@ -995,7 +1009,9 @@ const CellView = memo(function CellView({
   prev.last === next.last &&
   prev.dragging === next.dragging &&
   prev.queued === next.queued &&
-  prev.editorTheme === next.editorTheme,
+  prev.editorTheme === next.editorTheme &&
+  prev.connections === next.connections &&
+  prev.activeProfileId === next.activeProfileId,
 );
 
 /** In-flow insert affordance BETWEEN cells: occupies real layout space, so it

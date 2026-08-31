@@ -31,8 +31,14 @@ export function resolveCellConnection(
   return { ok: false, error: "Connect a database first (＋ above)." };
 }
 
-/** Which renderer a cell's chart kind uses. Unknown kinds fall back to the grid. */
-export function cellRenderer(chart: string | undefined): "grid" | "kpi" | "recharts" | "echarts" {
+/** Extra visualization detail carried over from an imported dashboard panel. */
+export type CellViz = { xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> };
+
+/** Which renderer a cell's chart kind uses. Unknown kinds fall back to the
+ *  grid; a custom ECharts option with its own series always renders through
+ *  ECharts (full-override mode), whatever the declared kind. */
+export function cellRenderer(chart: string | undefined, viz?: CellViz): "grid" | "kpi" | "recharts" | "echarts" {
+  if (viz?.option && (viz.option as { series?: unknown }).series) return "echarts";
   if (!chart || chart === "table") return "grid";
   if (chart === "kpi") return "kpi";
   if (RECHARTS_KINDS.has(chart)) return "recharts";

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
@@ -410,6 +410,14 @@ export function ExasolStudio({
       aiPanelRef.current?.collapse();
     }
   }, [activeTab.view]);
+
+  // Stable identity for the notebook's connection list — a fresh array every
+  // render would defeat CellView memoization (every keystroke re-rendering
+  // every Monaco cell).
+  const notebookConns = useMemo(
+    () => connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` })),
+    [connections],
+  );
 
   const loadHistory = useCallback(() => {
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
@@ -2998,7 +3006,7 @@ export function ExasolStudio({
               <NotebookTab
                 profileId={connection?.profile.id ?? null}
                 connectionName={connection?.profile.name ?? ""}
-                connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
+                connections={notebookConns}
                 editorTheme={editorTheme}
                 beforeMount={(m) => {
                   applyMonacoThemes(m);

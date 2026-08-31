@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { buildChartOption, type EchartsViz } from "@/features/bi/chart-option";
 import { VIZ_TILES, vizTile } from "@/features/bi/viz-tiles";
-import { kpiValue } from "@/features/workbench/notebook-cell";
+import { kpiValue, type CellViz } from "@/features/workbench/notebook-cell";
 import type { StatementResult } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import {
@@ -69,14 +69,14 @@ export function KpiCell({ result }: { result: StatementResult }) {
 
 /** ECharts-rendered kinds (scatter, heatmap, funnel, treemap, gauge) — lazy
  *  echarts, option from the shared pure builder. */
-export function EchartsCell({ chart, result }: { chart: string; result: StatementResult }) {
+export function EchartsCell({ chart, viz, result }: { chart: string; viz?: CellViz; result: StatementResult }) {
   const ref = useRef<HTMLDivElement>(null);
   const [empty, setEmpty] = useState(false);
   useEffect(() => {
     if (!ref.current || result.kind !== "resultSet") return;
     let instance: import("echarts").ECharts | null = null;
     let disposed = false;
-    const built = buildChartOption({ type: "echarts", chart } as EchartsViz, result);
+    const built = buildChartOption({ type: "echarts", chart, ...viz } as EchartsViz, result);
     setEmpty(!built);
     if (!built) return;
     void import("echarts").then((echarts) => {
@@ -92,7 +92,7 @@ export function EchartsCell({ chart, result }: { chart: string; result: Statemen
       ro.disconnect();
       instance?.dispose();
     };
-  }, [chart, result]);
+  }, [chart, viz, result]);
   if (result.kind !== "resultSet" || empty) {
     return <p className="px-3 py-6 text-center text-[12px] text-muted-foreground">No rows to chart.</p>;
   }
