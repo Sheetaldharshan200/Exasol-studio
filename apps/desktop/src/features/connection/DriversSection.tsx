@@ -138,8 +138,8 @@ export function DriversSection({
       {error ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</div>
       ) : null}
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full border-separate border-spacing-0 text-[12px]">
+      <div className="overflow-x-auto rounded-lg border border-border [scrollbar-width:thin]">
+        <table className="w-full min-w-[560px] border-separate border-spacing-0 text-[12px]">
           <thead>
             <tr className="text-left text-muted-foreground">
               {["Driver", "Protocol", "Status", "Artifact", ""].map((h, i) => (

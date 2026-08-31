@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { BookOpen, ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { agent } from "@/lib/agent-client";
-import { ipc } from "@/lib/ipc";
 import { isTauri } from "@/lib/ipc";
 
 /**
@@ -13,6 +12,17 @@ import { isTauri } from "@/lib/ipc";
 export function DocsTab({ path }: { path?: string }) {
   const [base, setBase] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // Follow the APP's theme, live: the docs run in an iframe (cross-origin in
+  // the desktop shell), so the theme travels as a query param and a toggle
+  // reloads the frame with the other one.
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setDark(document.documentElement.classList.contains("dark")),
+    );
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -35,35 +45,11 @@ export function DocsTab({ path }: { path?: string }) {
     };
   }, []);
 
-  const openExternal = (url: string) => {
-    if (isTauri()) void ipc.openExternal(url).catch(() => window.open(url, "_blank"));
-    else window.open(url, "_blank");
-  };
-  const docsUrl = base === null ? null : `${base}/docs/studio${path ? `/${path.replace(/^\/+/, "")}` : ""}`;
+  const docsUrl =
+    base === null ? null : `${base}/docs/studio${path ? `/${path.replace(/^\/+/, "")}` : ""}?theme=${dark ? "dark" : "light"}`;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <BookOpen className="h-3.5 w-3.5 text-primary" />
-        <span className="text-[12.5px] font-medium text-foreground">Documentation</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={() => docsUrl && openExternal(docsUrl)}
-            disabled={!docsUrl}
-            className="flex h-6 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-          >
-            <ExternalLink className="h-3 w-3" /> Open in browser
-          </button>
-          <button
-            onClick={() => base !== null && openExternal(`${base}/docs/exa`)}
-            disabled={base === null}
-            title="The exa engine's own docs — opens in your browser"
-            className="flex h-6 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-          >
-            exa docs <ExternalLink className="h-3 w-3" />
-          </button>
-        </div>
-      </header>
       <div className="min-h-0 flex-1">
         {failed ? (
           <p className="px-6 py-10 text-center text-[13px] text-muted-foreground">
@@ -74,7 +60,7 @@ export function DocsTab({ path }: { path?: string }) {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <iframe src={docsUrl} title="Exasol Studio documentation" className="h-full w-full border-0 bg-editor" />
+          <iframe key={docsUrl} src={docsUrl} title="Exasol Studio documentation" className="h-full w-full border-0 bg-editor" />
         )}
       </div>
     </div>
