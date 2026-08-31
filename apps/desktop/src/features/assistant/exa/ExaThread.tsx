@@ -1472,6 +1472,20 @@ export function ExaThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, client]);
 
+  // A session deleted from the history list while OPEN in this thread: start
+  // fresh — the runtime would otherwise keep rendering the dead session.
+  useEffect(() => {
+    const onDeleted = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      const current = (runtime.threads.mainItem.getState?.() as { remoteId?: string } | undefined)?.remoteId;
+      if (current === id) void startFreshSession();
+    };
+    window.addEventListener("exa:session-deleted", onDeleted);
+    return () => window.removeEventListener("exa:session-deleted", onDeleted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime]);
+
   // "New chat" (panel button, /new command) starts a fresh engine session.
   useEffect(() => {
     const newThread = () => void startFreshSession();

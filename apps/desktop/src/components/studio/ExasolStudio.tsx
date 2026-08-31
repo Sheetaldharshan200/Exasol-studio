@@ -45,6 +45,7 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 import { askExa } from "@/features/assistant/exa/ask-exa";
+import { DocsTab } from "@/features/workbench/DocsTab";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
@@ -403,6 +404,13 @@ export function ExasolStudio({
     window.addEventListener("studio:assistant-open", onOpen);
     return () => window.removeEventListener("studio:assistant-open", onOpen);
   }, [activeTab.view]);
+  // Title bar "Docs" + welcome guides → the in-app docs tab (deep-linkable).
+  useEffect(() => {
+    const onDocs = (e: Event) => openDocsTab((e as CustomEvent<{ path?: string }>).detail?.path);
+    window.addEventListener("studio:open-docs", onDocs);
+    return () => window.removeEventListener("studio:open-docs", onDocs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connKey, tabs]);
   // The Exa tab becoming active closes the dock (the reverse direction).
   useEffect(() => {
     if (activeTab.view === "exaEngine") {
@@ -1679,6 +1687,29 @@ export function ExasolStudio({
     window.addEventListener("studio:navigate", on);
     return () => window.removeEventListener("studio:navigate", on);
   }, []);
+
+  /** Documentation INSIDE the app: one docs tab, retargetable to a deep link. */
+  function openDocsTab(path?: string) {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "docs");
+    if (existing) {
+      updateTabs(connKey, (l) => l.map((t) => (t.id === existing.id ? { ...t, docsPath: path } : t)));
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-docsview-${Date.now()}-${tabCounter.current}`,
+      title: "Docs",
+      view: "docs",
+      docsPath: path,
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
 
   // Open (or focus) the Guides & Docs tab.
   function openGuides() {
@@ -2973,7 +3004,7 @@ export function ExasolStudio({
                 onOpenFile={() => void openSqlFile()}
                 onConnect={() => openConnect()}
                 onMarketplace={openMarketplace}
-                onGuides={openGuides}
+                onGuides={(path) => openDocsTab(path)}
                 onOpenRecent={(id) => void connectSaved(id)}
               />
             </div>
@@ -3037,6 +3068,10 @@ export function ExasolStudio({
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
               <ArtifactTab title={activeTab.title} html={activeTab.artifactHtml ?? ""} onOpen={openArtifact} />
+            </div>
+          ) : activeTab.view === "docs" ? (
+            <div className="min-h-0 flex-1">
+              <DocsTab key={activeTab.docsPath ?? ""} path={activeTab.docsPath} />
             </div>
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">

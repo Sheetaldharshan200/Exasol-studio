@@ -20,23 +20,9 @@ import type { ActiveConnection } from "@/state/useConnections";
  * from the sidecar means an installed Studio has the complete documentation
  * (both the Studio and exa notebooks) with no network and no separate copy.
  */
-async function openDocs() {
-  try {
-    const status = await agent.engine.status();
-    if (status.state === "running" && status.port) {
-      const url = `http://127.0.0.1:${status.port}/docs/studio`;
-      if (isTauri()) await ipc.openExternal(url).catch(() => window.open(url, "_blank"));
-      else window.open(url, "_blank");
-      return;
-    }
-  } catch {
-    // fall through to the notice
-  }
-  window.dispatchEvent(
-    new CustomEvent("studio:notice", {
-      detail: { kind: "info", title: "Docs are served by the engine", body: "The Exa engine is still starting — try again in a moment." },
-    }),
-  );
+function openDocs() {
+  // Render the docs INSIDE the app (Docs tab, iframe of the served site).
+  window.dispatchEvent(new CustomEvent("studio:open-docs"));
 }
 
 export function TitleBar({
@@ -80,7 +66,7 @@ export function TitleBar({
 
       <div className="flex items-center gap-2">
         <button
-          onClick={() => void openDocs()}
+          onClick={openDocs}
           title="Documentation (Exasol Studio & exa)"
           aria-label="Open the documentation"
           className="flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
