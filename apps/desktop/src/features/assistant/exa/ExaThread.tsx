@@ -1502,6 +1502,33 @@ export function ExaThread({
     [composerApi, client, activeSessionId, initialSessionId],
   );
 
+  // The cross-feature prompt seam: any surface (notebook cells, editor AI
+  // actions) dispatches `exa:prompt` with { text } and the message is sent as
+  // a normal turn — expanded like a typed message so directives/chips apply.
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      // Two ExaThreads can be mounted (side dock + full tab, one agent) —
+      // the first listener claims the event so the prompt sends exactly once.
+      const detail = (e as CustomEvent<{ text?: string; send?: boolean; claimed?: boolean }>).detail;
+      if (!detail || detail.claimed) return;
+      detail.claimed = true;
+      const text = detail.text?.trim();
+      if (!text) return;
+      void (async () => {
+        try {
+          const expanded = apiWithShell.expandForSend(text);
+          runtime.thread.composer.setText(expanded ?? text);
+          if (detail.send !== false) await runtime.thread.composer.send();
+        } catch (err) {
+          console.error("[exa] exa:prompt send failed", err);
+        }
+      })();
+    };
+    window.addEventListener("exa:prompt", onPrompt);
+    return () => window.removeEventListener("exa:prompt", onPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, apiWithShell]);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ExaComposerContext.Provider value={apiWithShell}>

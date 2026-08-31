@@ -27,6 +27,10 @@ import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
 import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
+import { ChartKindPicker, EchartsCell, KpiCell } from "@/features/workbench/cell-viz";
+import { cellRenderer, resolveCellConnection } from "@/features/workbench/notebook-cell";
+import { SYSTEM_DASHBOARDS } from "@/features/bi/system-dashboards";
+import type { Dashboard } from "@/lib/agent-client";
 import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
 import {
   Select,
@@ -67,6 +71,9 @@ type Cell = {
   /** Chart type from an imported dashboard panel — the cell renders this
    *  visualization (not just a table) once it runs. */
   chart?: string;
+  /** Which connected database this cell runs on (default: the active one). */
+  connProfileId?: string;
+  connName?: string;
 };
 
 let seq = 0;
@@ -89,7 +96,7 @@ const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
 const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
 const NB_ACTIVE_KEY = "studio.notebooks.active";
 
-type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string }[]; updatedAt: number };
+type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string }[]; updatedAt: number };
 
 /** Load all notebooks, migrating the legacy single notebook on first run. */
 function loadNotebooks(): NotebookDoc[] {
@@ -132,7 +139,7 @@ export function NotebookTab({
   beforeMount: (m: Monaco) => void;
   onConnectDb: () => void;
   onAddVirtualSchema: () => void;
-  onAsk: (text: string, kind: CellType) => void;
+  onAsk: (text: string, kind: CellType, chart?: string) => void;
 }) {
   // Multiple named notebooks, all persisted. `cells` is the ACTIVE notebook's
   // working state; edits flow back into the store on an idle debounce.
@@ -145,7 +152,7 @@ export function NotebookTab({
   const activeBook = books.find((b) => b.id === activeId) ?? books[0];
   const [cells, setCells] = useState<Cell[]>(() => {
     const b = loadNotebooks().find((x) => x.id === (localStorage.getItem(NB_ACTIVE_KEY) ?? "")) ?? loadNotebooks()[0];
-    return b.cells.length ? b.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")];
+    return b.cells.length ? b.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")];
   });
   const [renamingBook, setRenamingBook] = useState<string | null>(null);
 
@@ -155,7 +162,7 @@ export function NotebookTab({
     const t = setTimeout(() => {
       setBooks((bs) => {
         const next = bs.map((b) =>
-          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
+          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
         );
         try {
           localStorage.setItem(NBS_KEY, JSON.stringify(next));
@@ -173,10 +180,10 @@ export function NotebookTab({
     if (id === activeId) return;
     setBooks((bs) => {
       const next = bs.map((b) =>
-        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
       );
       const target = next.find((b) => b.id === id);
-      setCells(target && target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
+      setCells(target && target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")]);
       try {
         localStorage.setItem(NBS_KEY, JSON.stringify(next));
       } catch {
@@ -214,7 +221,7 @@ export function NotebookTab({
         const target = next[0];
         setActiveId(target.id);
         localStorage.setItem(NB_ACTIVE_KEY, target.id);
-        setCells(target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
+        setCells(target.cells.length ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName })) : [mkCell("sql")]);
       }
       try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
       return next;
@@ -289,21 +296,26 @@ export function NotebookTab({
         patch(id, { editing: false }); // render the preview
         return;
       }
-      if (!profileId) {
-        patch(id, { error: "Connect a database first (＋ above).", result: null });
+      const resolved = resolveCellConnection(
+        cell,
+        profileId ? { profileId, name: connectionName } : null,
+        connections.map((c) => ({ id: c.id, name: c.name })),
+      );
+      if (!resolved.ok) {
+        patch(id, { error: resolved.error, result: null });
         return;
       }
       if (!cell.src.trim()) return;
       patch(id, { running: true, error: null });
       try {
-        const res = await ipc.executeSql(profileId, connectionName, cell.src, 1000, false);
+        const res = await ipc.executeSql(resolved.conn.profileId, resolved.conn.name, cell.src, 1000, false);
         const r = res.results[res.results.length - 1] ?? null;
         patch(id, { running: false, result: r, error: r?.error ?? null, count: ++execCount.current });
       } catch (e) {
         patch(id, { running: false, error: errorMessage(e), result: null, count: ++execCount.current });
       }
     },
-    [profileId, connectionName, patch],
+    [profileId, connectionName, connections, patch],
   );
 
   function move(id: string, dir: -1 | 1) {
@@ -380,6 +392,49 @@ export function NotebookTab({
       setDashList([]);
     }
   }
+  /** Convert dashboard panels to notebook cells (markdown → markdown, query → SQL+chart). */
+  function cellsFromDashboard(dash: Dashboard): Cell[] {
+    const imported: Cell[] = [];
+    imported.push(mkCell("markdown", `## ${dash.title}\n\n${dash.description || ""}`.trim()));
+    for (const p of dash.panels) {
+      if (p.viz.type === "markdown") {
+        imported.push(mkCell("markdown", p.viz.content));
+      } else if (p.query?.sql?.trim()) {
+        const chart = p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
+        imported.push(mkCell("sql", `-- ${p.title || "Panel"}\n${p.query.sql.trim()}`, chart));
+      }
+    }
+    return imported;
+  }
+
+  /** System dashboards live in code — open one as its own auto-running
+   *  notebook (regenerated on every open; edits belong in a copy). */
+  function openSystemDashboard(factory: () => Dashboard) {
+    const dash = factory();
+    const title = `System · ${dash.title}`;
+    const imported = cellsFromDashboard(dash);
+    const existing = books.find((b) => b.title === title);
+    const id = existing?.id ?? `nb-${Date.now().toString(36)}`;
+    setBooks((bs) => {
+      const withCurrent = bs.map((b) =>
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, connProfileId: c.connProfileId, connName: c.connName })), updatedAt: Date.now() } : b,
+      );
+      const doc = { id, title, cells: imported.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() };
+      const next = existing ? withCurrent.map((b) => (b.id === id ? doc : b)) : [...withCurrent, doc];
+      try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      return next;
+    });
+    setActiveId(id);
+    localStorage.setItem(NB_ACTIVE_KEY, id);
+    setCells(imported);
+    if (profileId) {
+      const ids = imported.filter((c) => c.type === "sql").map((c) => c.id);
+      setTimeout(() => { void (async () => { for (const cid of ids) await runCell(cid); })(); }, 50);
+    } else {
+      notify("warning", "Connect a database", "Connect to a database and press Run all to render the panels.");
+    }
+  }
+
   async function importDashboard(id: string) {
     try {
       const dash = await dashboards.get(id);
@@ -559,10 +614,13 @@ export function NotebookTab({
               onRun={() => void runCell(cell.id)}
               onEdit={() => patch(cell.id, { editing: true })}
               onType={(t) => setType(cell.id, t)}
-              onChart={(t) => patch(cell.id, { chart: t })}
+              onChart={(t) => patch(cell.id, { chart: t === "table" ? undefined : t })}
+              onConn={(c) => patch(cell.id, { connProfileId: c?.id, connName: c?.name })}
+              connections={connections}
+              activeProfileId={profileId}
               onMove={(d) => move(cell.id, d)}
               onRemove={() => remove(cell.id)}
-              onAsk={() => onAsk(cell.src, cell.type)}
+              onAsk={() => onAsk(cell.src, cell.type, cell.chart)}
               queued={runQueue.has(cell.id)}
               dragging={dragId === cell.id}
               onGrip={() => {
@@ -577,6 +635,33 @@ export function NotebookTab({
           <InsertZone onAdd={() => setCells((cs) => [...cs, mkCell("sql")])} />
         </div>
       </div>
+
+      {/* Bottom bar: built-in System dashboards open as auto-running notebooks. */}
+      <footer className="flex h-9 shrink-0 items-center gap-2 border-t border-border bg-panel/40 px-4">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button title="Built-in system dashboards" className="flex h-6.5 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+              <Icon name="dashboards" className="h-3.5 w-3.5 text-primary" /> System <ChevronDown className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>System dashboards</DropdownMenuLabel>
+            {SYSTEM_DASHBOARDS.map((factory) => {
+              const d = factory();
+              return (
+                <DropdownMenuItem key={d.title} onClick={() => openSystemDashboard(factory)}>
+                  <Icon name="dashboards" className="h-3.5 w-3.5" />
+                  <span className="flex flex-col">
+                    <span>{d.title}</span>
+                    <span className="text-[10px] text-muted-foreground">{d.description}</span>
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="text-[10.5px] text-muted-foreground">Live views of the engine — refreshed on open, never deletable.</span>
+      </footer>
     </div>
   );
 }
@@ -592,6 +677,9 @@ const CellView = memo(function CellView({
   onEdit,
   onType,
   onChart,
+  onConn,
+  connections,
+  activeProfileId,
   onMove,
   onRemove,
   onAsk,
@@ -609,6 +697,9 @@ const CellView = memo(function CellView({
   onEdit: () => void;
   onType: (t: CellType) => void;
   onChart: (t: string) => void;
+  onConn: (c: { id: string; name: string } | null) => void;
+  connections: NotebookConn[];
+  activeProfileId: string | null;
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   onAsk: () => void;
@@ -617,9 +708,6 @@ const CellView = memo(function CellView({
   onGrip: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [resultView, setResultView] = useState<"table" | "chart">(
-    cell.chart && cell.chart !== "table" && cell.chart !== "kpi" ? "chart" : "table",
-  );
   const [mdFocused, setMdFocused] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const isSql = cell.type === "sql";
@@ -742,6 +830,28 @@ const CellView = memo(function CellView({
               })}
             </SelectContent>
           </Select>
+          {isSql && connections.length > 0 ? (
+            // Which database this cell queries — default follows the active connection.
+            <Select
+              value={cell.connProfileId ?? "__active__"}
+              onValueChange={(v) => onConn(v === "__active__" ? null : { id: v, name: connections.find((c) => c.id === v)?.name ?? v })}
+            >
+              <SelectTrigger size="sm" className="h-6 max-w-[190px] text-[11px]" title="Database this cell runs on">
+                <Database className={cn("h-3 w-3 shrink-0", cell.connProfileId ? "text-teal" : "text-primary")} />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__active__">
+                  <span className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5 text-primary" /> Active ({connections.find((c) => c.id === activeProfileId)?.name ?? "none"})</span>
+                </SelectItem>
+                {connections.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" /> {c.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           {/* Preview ↔ Code toggle: diagrams default to Preview so the user
               visualizes the result, not the raw markup. */}
           {isMermaid ? (
@@ -847,51 +957,29 @@ const CellView = memo(function CellView({
                 {cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
               </button>
               {cell.result.kind === "resultSet" && cell.result.rows.length > 0 ? (
-                <>
-                  <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
-                    {(["table", "chart"] as const).map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setResultView(v)}
-                        className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px] capitalize", resultView === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
-                      >
-                        {v === "table" ? <TableIcon className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />} {v}
-                      </button>
-                    ))}
-                  </div>
-                  {resultView === "chart" ? (
-                    // Full chart-type palette per cell (issue #16).
-                    <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
-                      {(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"] as const).map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => onChart(t)}
-                          className={cn(
-                            "h-5 rounded px-1.5 text-[10px]",
-                            (cell.chart ?? "bar") === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
+                // Visual picker: every chart kind as a picture tile; "table" = the grid.
+                <ChartKindPicker value={cell.chart ?? "table"} onChange={onChart} />
               ) : null}
               <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
             </div>
-            {!collapsed && cell.result.kind === "resultSet" ? (
-              resultView === "chart" ? (
-                <div className="h-64 border-t border-border/60">
-                  <ShadcnChartPanel
-                    chart={(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"].includes(cell.chart ?? "") ? cell.chart : "bar") as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"}
-                    result={cell.result}
-                  />
-                </div>
-              ) : (
-                <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
-              )
-            ) : null}
+            {!collapsed && cell.result.kind === "resultSet"
+              ? (() => {
+                  switch (cellRenderer(cell.chart)) {
+                    case "kpi":
+                      return <div className="border-t border-border/60"><KpiCell result={cell.result} /></div>;
+                    case "recharts":
+                      return (
+                        <div className="h-64 border-t border-border/60">
+                          <ShadcnChartPanel chart={cell.chart as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"} result={cell.result} />
+                        </div>
+                      );
+                    case "echarts":
+                      return <div className="h-72 border-t border-border/60"><EchartsCell chart={cell.chart!} result={cell.result} /></div>;
+                    default:
+                      return <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />;
+                  }
+                })()
+              : null}
           </div>
         ) : null}
       </div>
@@ -920,70 +1008,6 @@ function InsertZone({ onAdd }: { onAdd: () => void }) {
         <Plus className="h-2.5 w-2.5" /> Cell
       </button>
       <span className="h-px flex-1 bg-border/60" />
-    </div>
-  );
-}
-
-/** Quick bar/line chart of a result set: first non-numeric column = category
- *  (x), numeric columns = series. Lazy-loads echarts, theme-aware. */
-function ResultChart({ columns, rows }: { columns: { name: string; typeName: string }[]; rows: unknown[][] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [kind, setKind] = useState<"bar" | "line">("bar");
-
-  const isNum = (v: unknown) => v !== null && v !== "" && !Number.isNaN(Number(v));
-  const numericCols = columns
-    .map((c, i) => ({ c, i }))
-    .filter(({ i }) => rows.slice(0, 20).every((r) => r[i] === null || isNum(r[i])) && rows.some((r) => isNum(r[i])));
-  const catIdx = columns.findIndex((_, i) => !numericCols.some((n) => n.i === i));
-  const xIdx = catIdx >= 0 ? catIdx : 0;
-
-  useEffect(() => {
-    if (!ref.current || !numericCols.length) return;
-    let chart: import("echarts").ECharts | null = null;
-    let disposed = false;
-    void import("echarts").then((echarts) => {
-      if (disposed || !ref.current) return;
-      const dark = document.documentElement.classList.contains("dark");
-      chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
-      const cats = rows.slice(0, 200).map((r) => String(r[xIdx] ?? ""));
-      const palette = ["#5fc33b", "#4a9fd4", "#e0a63a", "#c65fd0", "#e05f5f", "#2bb8a3"];
-      chart.setOption({
-        color: palette,
-        grid: { top: 24, right: 16, bottom: 40, left: 52 },
-        tooltip: { trigger: "axis" },
-        legend: { top: 0, textStyle: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, type: "scroll" },
-        xAxis: { type: "category", data: cats, axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10, rotate: cats.length > 8 ? 30 : 0 } },
-        yAxis: { type: "value", axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, splitLine: { lineStyle: { color: dark ? "#27272a" : "#e4e4e7" } } },
-        series: numericCols.map(({ c, i }) => ({
-          name: c.name,
-          type: kind,
-          data: rows.slice(0, 200).map((r) => (isNum(r[i]) ? Number(r[i]) : null)),
-          smooth: kind === "line",
-          barMaxWidth: 28,
-        })),
-      });
-    });
-    const ro = new ResizeObserver(() => chart?.resize());
-    ro.observe(ref.current);
-    return () => {
-      disposed = true;
-      ro.disconnect();
-      chart?.dispose();
-    };
-  }, [columns, rows, kind, xIdx, numericCols.length]);
-
-  if (!numericCols.length) {
-    return <p className="px-3 py-6 text-center text-[12px] text-muted-foreground">No numeric columns to chart.</p>;
-  }
-  return (
-    <div className="rounded-md bg-background/40 p-1">
-      <div className="flex items-center gap-0.5 px-1 pb-0.5">
-        {(["bar", "line"] as const).map((k) => (
-          <button key={k} onClick={() => setKind(k)} className={cn("rounded px-1.5 py-0.5 text-[10.5px] capitalize", kind === k ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>{k}</button>
-        ))}
-        <span className="ml-1 text-[10px] text-muted-foreground/70">x: {columns[xIdx]?.name}</span>
-      </div>
-      <div ref={ref} style={{ height: 300 }} className="w-full" />
     </div>
   );
 }
