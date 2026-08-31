@@ -372,6 +372,33 @@ const AssistantWorkingIndicator: FC = () => {
   );
 };
 
+/** Escalating one-line status while the engine summarizes the session —
+ * honest about the fact that small local models are slow at this, and that
+ * Stop is available when it drags. Negative top margin swallows the
+ * inter-message gap so the line hugs the reply above it. */
+const COMPACTING_STAGES: { after: number; label: string }[] = [
+  { after: 0, label: "compacting context…" },
+  { after: 15, label: "compacting context… local models are slow at summarizing" },
+  { after: 45, label: "still compacting — a larger model would be much faster here" },
+  { after: 90, label: "compaction is dragging — press Stop and switch models if you're stuck" },
+];
+
+const CompactingStatus: FC = () => {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const t = window.setInterval(() => setElapsed((Date.now() - started) / 1000), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const stage = [...COMPACTING_STAGES].reverse().find((w) => elapsed >= w.after) ?? COMPACTING_STAGES[0];
+  return (
+    <MessagePrimitive.Root data-role="assistant" className="-mt-9 flex items-center gap-1.5 px-2 text-[11px] text-muted-foreground/70">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/50" />
+      {stage.label}
+    </MessagePrimitive.Root>
+  );
+};
+
 const MessageError: FC = () => {
   return (
     <MessagePrimitive.Error>
@@ -433,12 +460,7 @@ const AssistantMessage: FC = () => {
   const isRunning = useAuiState((s) => s.message.status?.type === "running");
   if (isCompaction) {
     if (!isRunning) return null;
-    return (
-      <MessagePrimitive.Root data-role="assistant" className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-muted-foreground/70">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/50" />
-        compacting context…
-      </MessagePrimitive.Root>
-    );
+    return <CompactingStatus />;
   }
 
   const ACTION_BAR_PT = "pt-1.5";
