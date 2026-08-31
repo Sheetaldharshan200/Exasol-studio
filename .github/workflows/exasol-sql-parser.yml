@@ -1,0 +1,22 @@
+name: exasol-sql-parser
+on:
+  push:
+    paths: ["packages/exasol-sql-parser/**", ".github/workflows/exasol-sql-parser.yml"]
+  pull_request:
+    paths: ["packages/exasol-sql-parser/**"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: packages/exasol-sql-parser } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - run: pnpm run generate
+      - run: pnpm run typecheck
+      - run: pnpm run test

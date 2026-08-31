@@ -1,0 +1,11 @@
+[project]
+name = "exasol-studio-local-stack"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "exasol-mcp-server",
+  "pyexasol",
+]
+
+[tool.uv]
+package = false

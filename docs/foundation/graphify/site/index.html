@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exasol Studio Graphify</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07161d;
+        --panel: #112b35;
+        --line: rgba(255,255,255,0.1);
+        --text: #eff7f9;
+        --muted: #9ab1b9;
+        --accent: #5fc33b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, sans-serif;
+        background: linear-gradient(180deg, #061118 0%, #0a1a22 100%);
+        color: var(--text);
+      }
+      header {
+        padding: 32px 28px 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+      }
+      p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        max-width: 760px;
+        line-height: 1.6;
+      }
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 18px;
+        padding: 0 28px 28px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: 0 14px 48px rgba(0,0,0,0.22);
+      }
+      .card h2 {
+        margin: 0 0 14px;
+        font-size: 16px;
+      }
+      .card img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--line);
+      }
+      .badge {
+        display: inline-flex;
+        margin-top: 14px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: rgba(95,195,59,0.16);
+        color: var(--accent);
+        border: 1px solid rgba(95,195,59,0.28);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Graphify</h1>
+      <p>Implementation-aware system diagrams for Exasol Studio. These SVGs are generated from the Mermaid source files in the foundation docs and surfaced here for quick visual review in a browser.</p>
+      <div class="badge">7 diagrams rendered</div>
+    </header>
+    <main>
+      <article class="card"><h2>Agent Workflow</h2><img src="../rendered/agent-workflow.svg" alt="Agent Workflow" /></article>
+<article class="card"><h2>Cicd Workflow</h2><img src="../rendered/cicd-workflow.svg" alt="Cicd Workflow" /></article>
+<article class="card"><h2>Data Flow</h2><img src="../rendered/data-flow.svg" alt="Data Flow" /></article>
+<article class="card"><h2>Development Lifecycle</h2><img src="../rendered/development-lifecycle.svg" alt="Development Lifecycle" /></article>
+<article class="card"><h2>Module Dependencies</h2><img src="../rendered/module-dependencies.svg" alt="Module Dependencies" /></article>
+<article class="card"><h2>Repository Relationships</h2><img src="../rendered/repository-relationships.svg" alt="Repository Relationships" /></article>
+<article class="card"><h2>System Architecture</h2><img src="../rendered/system-architecture.svg" alt="System Architecture" /></article>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "githubReleases": {
+    "personal": {
+      "repository": "exasol/exasol-personal",
+      "executable": "exasol",
+      "assets": {
+        "macos-aarch64": "^exasol-personal_macOS_arm64\\.tar\\.gz$",
+        "macos-x86_64": "^exasol-personal_macOS_x86_64\\.tar\\.gz$"
+      }
+    },
+    "exapump": {
+      "repository": "exasol-labs/exapump",
+      "assets": {
+        "linux-aarch64": "^exapump-[^-]+-linux-aarch64$",
+        "linux-x86_64": "^exapump-[^-]+-linux-x86_64$",
+        "macos-aarch64": "^exapump-[^-]+-macos-aarch64$",
+        "macos-x86_64": "^exapump-[^-]+-macos-x86_64$",
+        "windows-x86_64": "^exapump-[^-]+-windows-x86_64\\.exe$"
+      }
+    },
+    "uv": {
+      "repository": "astral-sh/uv",
+      "executable": "uv",
+      "assets": {
+        "linux-aarch64": "^uv-aarch64-unknown-linux-gnu\\.tar\\.gz$",
+        "linux-x86_64": "^uv-x86_64-unknown-linux-gnu\\.tar\\.gz$",
+        "macos-aarch64": "^uv-aarch64-apple-darwin\\.tar\\.gz$",
+        "macos-x86_64": "^uv-x86_64-apple-darwin\\.tar\\.gz$",
+        "windows-aarch64": "^uv-aarch64-pc-windows-msvc\\.zip$",
+        "windows-x86_64": "^uv-x86_64-pc-windows-msvc\\.zip$"
+      }
+    }
+  },
+  "containerImages": {
+    "nano": {
+      "registry": "docker.io",
+      "repository": "exasol/nano",
+      "stableTagPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+-nano\\.[0-9]+$",
+      "requiredArchitectures": [
+        "amd64",
+        "arm64"
+      ]
+    }
+  },
+  "pythonStack": {
+    "python": "3.12",
+    "packages": [
+      "exasol-mcp-server",
+      "pyexasol"
+    ]
+  }
+}

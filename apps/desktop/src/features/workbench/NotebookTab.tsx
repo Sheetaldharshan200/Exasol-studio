@@ -1,0 +1,1025 @@
+import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
+import Editor, { type Monaco } from "@monaco-editor/react";
+import { BrandLoader } from "@/components/brand/BrandLoader";
+import {
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
+  ChevronDown,
+  Code,
+  Code2,
+  Database,
+  Download,
+  Eye,
+  GripVertical,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Share2,
+  Sparkles,
+  Table as TableIcon,
+  Text as TextIcon,
+  Trash2,
+  Waypoints,
+} from "lucide-react";
+import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
+import { SourceLogo } from "@/features/connection/SourceLogo";
+import { MermaidView } from "@/features/workbench/MermaidView";
+import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
+import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { dashboards } from "@/lib/agent-client";
+import { Icon } from "@/components/ui/icon";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { buildNotebookMarkdown, buildNotebookHtml, printNotebookHtml, type ExportCell } from "@/features/workbench/notebook-export";
+import { cn } from "@/lib/utils";
+
+type CellType = "sql" | "markdown" | "mermaid";
+const CELL_TYPES: { value: CellType; label: string; icon: typeof Code2 }[] = [
+  { value: "sql", label: "SQL", icon: Code2 },
+  { value: "markdown", label: "Markdown", icon: TextIcon },
+  { value: "mermaid", label: "Mermaid", icon: Share2 },
+];
+type Cell = {
+  id: string;
+  type: CellType;
+  src: string;
+  running: boolean;
+  result: StatementResult | null;
+  error: string | null;
+  count: number | null;
+  editing: boolean;
+  /** Chart type from an imported dashboard panel — the cell renders this
+   *  visualization (not just a table) once it runs. */
+  chart?: string;
+};
+
+let seq = 0;
+const mkCell = (type: CellType = "sql", src = "", chart?: string): Cell => ({
+  id: `c${++seq}-${Math.random().toString(36).slice(2, 6)}`,
+  type,
+  src,
+  running: false,
+  result: null,
+  error: null,
+  count: null,
+  // Text/diagram cells are preview-first once they have content; SQL always edits.
+  editing: type === "sql" ? true : !src,
+  chart,
+});
+
+export type NotebookConn = { id: string; name: string; host: string };
+
+const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
+const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
+const NB_ACTIVE_KEY = "studio.notebooks.active";
+
+type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string }[]; updatedAt: number };
+
+/** Load all notebooks, migrating the legacy single notebook on first run. */
+function loadNotebooks(): NotebookDoc[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NBS_KEY) ?? "[]") as NotebookDoc[];
+    if (Array.isArray(raw) && raw.length) return raw;
+  } catch {
+    /* fresh */
+  }
+  let cells: { type: CellType; src: string }[] = [{ type: "sql", src: "" }];
+  try {
+    const legacy = JSON.parse(localStorage.getItem(NB_KEY) ?? "[]") as { type: CellType; src: string }[];
+    if (Array.isArray(legacy) && legacy.length) cells = legacy;
+  } catch {
+    /* none */
+  }
+  return [{ id: `nb-${Date.now().toString(36)}`, title: "Notebook 1", cells, updatedAt: Date.now() }];
+}
+
+/**
+ * The data notebook for analysts & scientists: connect one or more databases
+ * (including cross-database virtual schemas), then explore with SQL + Markdown
+ * cells — Monaco editing with Exasol autocompletion, per-cell AI assist, and
+ * scrollable result grids.
+ */
+export function NotebookTab({
+  profileId,
+  connectionName,
+  connections,
+  editorTheme,
+  beforeMount,
+  onConnectDb,
+  onAddVirtualSchema,
+  onAsk,
+}: {
+  profileId: string | null;
+  connectionName: string;
+  connections: NotebookConn[];
+  editorTheme: string;
+  beforeMount: (m: Monaco) => void;
+  onConnectDb: () => void;
+  onAddVirtualSchema: () => void;
+  onAsk: (text: string, kind: CellType) => void;
+}) {
+  // Multiple named notebooks, all persisted. `cells` is the ACTIVE notebook's
+  // working state; edits flow back into the store on an idle debounce.
+  const [books, setBooks] = useState<NotebookDoc[]>(loadNotebooks);
+  const [activeId, setActiveId] = useState<string>(() => {
+    const saved = localStorage.getItem(NB_ACTIVE_KEY);
+    const all = loadNotebooks();
+    return all.some((b) => b.id === saved) ? (saved as string) : all[0].id;
+  });
+  const activeBook = books.find((b) => b.id === activeId) ?? books[0];
+  const [cells, setCells] = useState<Cell[]>(() => {
+    const b = loadNotebooks().find((x) => x.id === (localStorage.getItem(NB_ACTIVE_KEY) ?? "")) ?? loadNotebooks()[0];
+    return b.cells.length ? b.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")];
+  });
+  const [renamingBook, setRenamingBook] = useState<string | null>(null);
+
+  // Persist on idle, not on every keystroke — a synchronous JSON.stringify +
+  // localStorage write per character is a real typing-jank source.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setBooks((bs) => {
+        const next = bs.map((b) =>
+          b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
+        );
+        try {
+          localStorage.setItem(NBS_KEY, JSON.stringify(next));
+        } catch {
+          /* quota */
+        }
+        return next;
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [cells, activeId]);
+
+  /** Switch to another notebook: flush the current cells, then load the target. */
+  function openBook(id: string) {
+    if (id === activeId) return;
+    setBooks((bs) => {
+      const next = bs.map((b) =>
+        b.id === activeId ? { ...b, cells: cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart })), updatedAt: Date.now() } : b,
+      );
+      const target = next.find((b) => b.id === id);
+      setCells(target && target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
+      try {
+        localStorage.setItem(NBS_KEY, JSON.stringify(next));
+      } catch {
+        /* quota */
+      }
+      return next;
+    });
+    setActiveId(id);
+    localStorage.setItem(NB_ACTIVE_KEY, id);
+  }
+
+  function newBook() {
+    const id = `nb-${Date.now().toString(36)}`;
+    const title = `Notebook ${books.length + 1}`;
+    setBooks((bs) => [...bs, { id, title, cells: [{ type: "sql", src: "" }], updatedAt: Date.now() }]);
+    openBook(id);
+    setRenamingBook(id); // name it right away
+  }
+
+  function renameBook(id: string, title: string) {
+    const t = title.trim();
+    setBooks((bs) => {
+      const next = bs.map((b) => (b.id === id && t ? { ...b, title: t, updatedAt: Date.now() } : b));
+      try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      return next;
+    });
+    setRenamingBook(null);
+  }
+
+  function deleteBook(id: string) {
+    setBooks((bs) => {
+      let next = bs.filter((b) => b.id !== id);
+      if (!next.length) next = [{ id: `nb-${Date.now().toString(36)}`, title: "Notebook 1", cells: [{ type: "sql", src: "" }], updatedAt: Date.now() }];
+      if (id === activeId) {
+        const target = next[0];
+        setActiveId(target.id);
+        localStorage.setItem(NB_ACTIVE_KEY, target.id);
+        setCells(target.cells.length ? target.cells.map((c) => mkCell(c.type, c.src, c.chart)) : [mkCell("sql")]);
+      }
+      try { localStorage.setItem(NBS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      return next;
+    });
+  }
+  const execCount = useRef(0);
+  const runningAll = useRef(false);
+  const [runQueue, setRunQueue] = useState<Set<string>>(new Set());
+
+  // Pointer-based drag reorder of cells (HTML5 DnD is flaky in the webview).
+  // A green insertion line marks where the cell will drop; the reorder is
+  // committed on release, not live — so the target is always clear.
+  const drag = useRef<{ id: string; moved: boolean } | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; pos: "above" | "below" } | null>(null);
+  const dropTargetRef = useRef<{ id: string; pos: "above" | "below" } | null>(null);
+  dropTargetRef.current = dropTarget;
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!drag.current) return;
+      drag.current.moved = true;
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-cell-id]");
+      const over = el?.dataset.cellId;
+      if (!over || over === drag.current.id) {
+        setDropTarget(null);
+        return;
+      }
+      const rect = el!.getBoundingClientRect();
+      setDropTarget({ id: over, pos: e.clientY < rect.top + rect.height / 2 ? "above" : "below" });
+    };
+    const onUp = () => {
+      const d = drag.current;
+      const dt = dropTargetRef.current;
+      if (d && dt && d.id !== dt.id) {
+        setCells((cs) => {
+          const from = cs.findIndex((c) => c.id === d.id);
+          if (from < 0) return cs;
+          const next = [...cs];
+          const [m] = next.splice(from, 1);
+          const t = next.findIndex((c) => c.id === dt.id);
+          if (t < 0) return cs;
+          next.splice(dt.pos === "below" ? t + 1 : t, 0, m);
+          return next;
+        });
+      }
+      drag.current = null;
+      setDragId(null);
+      setDropTarget(null);
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
+  const patch = useCallback((id: string, p: Partial<Cell>) => {
+    setCells((cs) => cs.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  }, []);
+
+  const runCell = useCallback(
+    async (id: string) => {
+      let cell: Cell | undefined;
+      setCells((cs) => {
+        cell = cs.find((c) => c.id === id);
+        return cs;
+      });
+      if (!cell) return;
+      if (cell.type === "markdown" || cell.type === "mermaid") {
+        patch(id, { editing: false }); // render the preview
+        return;
+      }
+      if (!profileId) {
+        patch(id, { error: "Connect a database first (＋ above).", result: null });
+        return;
+      }
+      if (!cell.src.trim()) return;
+      patch(id, { running: true, error: null });
+      try {
+        const res = await ipc.executeSql(profileId, connectionName, cell.src, 1000, false);
+        const r = res.results[res.results.length - 1] ?? null;
+        patch(id, { running: false, result: r, error: r?.error ?? null, count: ++execCount.current });
+      } catch (e) {
+        patch(id, { running: false, error: errorMessage(e), result: null, count: ++execCount.current });
+      }
+    },
+    [profileId, connectionName, patch],
+  );
+
+  function move(id: string, dir: -1 | 1) {
+    setCells((cs) => {
+      const i = cs.findIndex((c) => c.id === id);
+      const j = i + dir;
+      if (j < 0 || j >= cs.length) return cs;
+      const next = [...cs];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+  function remove(id: string) {
+    setCells((cs) => (cs.length === 1 ? [mkCell("sql")] : cs.filter((c) => c.id !== id)));
+  }
+  function setType(id: string, type: CellType) {
+    patch(id, { type, result: null, error: null, editing: true });
+  }
+  async function runAll() {
+    if (runningAll.current) return;
+    runningAll.current = true;
+    const order = cells.map((c) => c.id);
+    setRunQueue(new Set(order)); // everyone queued…
+    for (const id of order) {
+      setRunQueue((q) => {
+        const n = new Set(q);
+        n.delete(id);
+        return n;
+      });
+      await runCell(id); // …executed one by one, in order
+    }
+    setRunQueue(new Set());
+    runningAll.current = false;
+  }
+
+  const notify = (kind: "success" | "warning", title: string, body: string, go?: string) =>
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body, go } }));
+
+  // Export the whole notebook — notes, SQL + result tables, and diagrams — as
+  // one document (Markdown / self-contained HTML / PDF via the print dialog).
+  async function doExport(kind: "markdown" | "html" | "pdf") {
+    const exportCells: ExportCell[] = cells.map((c) => ({ type: c.type, src: c.src, result: c.result }));
+    const title = activeBook.title || "Exasol Notebook";
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "notebook";
+    try {
+      if (kind === "markdown") {
+        const md = buildNotebookMarkdown(title, exportCells);
+        const path = await saveDialog({ defaultPath: `${slug}.md`, filters: [{ name: "Markdown", extensions: ["md"] }] });
+        if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+        return;
+      }
+      const html = await buildNotebookHtml(title, exportCells);
+      if (kind === "html") {
+        const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
+        if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+      } else {
+        printNotebookHtml(html);
+        notify("success", "Print dialog opened", "Choose “Save as PDF”. No dialog? Export HTML and print from your browser.");
+      }
+    } catch (e) {
+      notify("warning", "Export failed", errorMessage(e));
+    }
+  }
+
+  // Import a dashboard's panels as cells: markdown panels → markdown cells,
+  // query panels → SQL cells (titled with a comment). Ecosystem glue between
+  // Dashboards and the Notebook.
+  const [dashList, setDashList] = useState<{ id: string; title: string; panels: number }[] | null>(null);
+  async function loadDashList() {
+    try {
+      const list = await dashboards.list();
+      setDashList(list.map((d) => ({ id: d.id, title: d.title, panels: d.panels })));
+    } catch {
+      setDashList([]);
+    }
+  }
+  async function importDashboard(id: string) {
+    try {
+      const dash = await dashboards.get(id);
+      const imported: Cell[] = [];
+      imported.push(mkCell("markdown", `## ${dash.title}\n\n${dash.description || ""}`.trim()));
+      for (const p of dash.panels) {
+        if (p.viz.type === "markdown") {
+          imported.push(mkCell("markdown", p.viz.content));
+        } else if (p.query?.sql?.trim()) {
+          // Carry the panel's visualization, so the cell renders the CHART,
+          // not just the query text.
+          const chart =
+            p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
+          imported.push(mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`, chart));
+        }
+      }
+      if (imported.length <= 1) {
+        notify("warning", "Nothing to import", "That dashboard has no markdown or SQL panels.");
+        return;
+      }
+      setCells((cs) => [...cs, ...imported]);
+      // Run the imported panels right away so the charts appear — the point of
+      // importing is the visuals, not the SQL.
+      if (profileId) {
+        const ids = imported.filter((c) => c.type === "sql").map((c) => c.id);
+        setTimeout(() => { void (async () => { for (const cid of ids) await runCell(cid); })(); }, 50);
+        notify("success", "Dashboard imported", `${imported.length - 1} panel${imported.length === 2 ? "" : "s"} from “${dash.title}” rendering now.`);
+      } else {
+        notify("warning", "Dashboard imported", "Connect to a database and press Run all to render the panels.");
+      }
+    } catch (e) {
+      notify("warning", "Import failed", errorMessage(e));
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-editor">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
+        {/* Notebook picker: switch / create / rename / delete. */}
+        {renamingBook === activeBook.id ? (
+          <input
+            autoFocus
+            defaultValue={activeBook.title}
+            onBlur={(e) => renameBook(activeBook.id, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") renameBook(activeBook.id, (e.target as HTMLInputElement).value);
+              else if (e.key === "Escape") setRenamingBook(null);
+            }}
+            className="h-7 w-44 rounded-md border border-primary/50 bg-background px-2 font-heading text-[13px] font-bold text-foreground outline-none"
+          />
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex h-7 items-center gap-1.5 rounded-md px-1.5 font-heading text-[14px] font-bold text-foreground hover:bg-secondary" title="Switch notebook">
+                <Icon name="notebook" className="h-4 w-4 text-primary" />
+                <span className="max-w-[220px] truncate">{activeBook.title}</span>
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel>Notebooks</DropdownMenuLabel>
+              {books.map((b) => (
+                <DropdownMenuItem key={b.id} onClick={() => openBook(b.id)}>
+                  <Icon name="notebook" className="h-3.5 w-3.5" />
+                  <span className="flex-1 truncate">{b.title}</span>
+                  {b.id === activeId ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={newBook}><Plus className="h-3.5 w-3.5" /> New notebook</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setRenamingBook(activeBook.id)}><Pencil className="h-3.5 w-3.5" /> Rename</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => deleteBook(activeBook.id)}><Trash2 className="h-3.5 w-3.5" /> Delete notebook</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <span className="text-[11px] text-muted-foreground">Explore data with SQL &amp; Markdown</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <DropdownMenu onOpenChange={(open) => { if (open) void loadDashList(); }}>
+            <DropdownMenuTrigger asChild>
+              <button title="Import dashboard panels as cells" className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                <Icon name="dashboards" className="h-3.5 w-3.5" /> Import <ChevronDown className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>From dashboard</DropdownMenuLabel>
+              {dashList === null ? (
+                <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
+              ) : dashList.length === 0 ? (
+                <DropdownMenuItem disabled>No dashboards yet</DropdownMenuItem>
+              ) : (
+                dashList.map((d) => (
+                  <DropdownMenuItem key={d.id} onClick={() => void importDashboard(d.id)}>
+                    <Icon name="dashboards" className="h-3.5 w-3.5" />
+                    <span className="flex-1 truncate">{d.title}</span>
+                    <span className="text-[10px] text-muted-foreground">{d.panels}</span>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button onClick={() => setCells((cs) => [...cs, mkCell("sql")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+            <Plus className="h-3.5 w-3.5" /> Cell
+          </button>
+          <button onClick={() => void runAll()} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
+            <Play className="h-3.5 w-3.5" /> Run all
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button title="Export the whole notebook" className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                <Download className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void doExport("markdown")}>Markdown (.md)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void doExport("html")}>HTML (.html)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void doExport("pdf")}>PDF (print…)</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {/* Sources bar — connect databases / virtual schemas to query here. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-panel/30 px-4 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Data sources</span>
+        {connections.map((c) => (
+          <span
+            key={c.id}
+            title={c.host}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11.5px]",
+              c.id === profileId ? "border-primary/40 bg-primary/8 text-foreground" : "border-border text-muted-foreground",
+            )}
+          >
+            <SourceLogo className="h-4 w-4 rounded" />
+            <span className="max-w-[160px] truncate font-medium">{c.name}</span>
+            <span className={cn("h-1.5 w-1.5 rounded-full", c.id === profileId ? "bg-primary" : "bg-muted-foreground/40")} />
+          </span>
+        ))}
+        {/* Connect actions. Once a database is connected, virtual schemas are
+            the notebook's primary building block, so lead with that and shrink
+            "Connect database" to a compact secondary + . */}
+        {connections.length > 0 ? (
+          <>
+            <button onClick={onAddVirtualSchema} className="flex items-center gap-1 rounded-full border border-teal/40 bg-teal/8 px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:border-teal/70 hover:bg-teal/12">
+              <Plus className="h-3.5 w-3.5" /> <Waypoints className="h-3.5 w-3.5 text-teal" /> Virtual schema
+            </button>
+            <button onClick={onConnectDb} title="Connect another database" className="flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+              <Plus className="h-3.5 w-3.5" /> <Database className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : (
+          <button onClick={onConnectDb} className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+            <Plus className="h-3.5 w-3.5" /> <Database className="h-3.5 w-3.5" /> Connect database
+          </button>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
+        <div className="mx-auto flex max-w-4xl flex-col">
+          {cells.map((cell, i) => (
+            <Fragment key={cell.id}>
+            <InsertZone onAdd={() => setCells((cs) => [...cs.slice(0, i), mkCell("sql"), ...cs.slice(i)])} />
+            <div className="relative">
+              {dropTarget?.id === cell.id && dropTarget.pos === "above" ? (
+                <div className="pointer-events-none absolute -top-1 left-0 right-0 z-30 h-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--primary)]" />
+              ) : null}
+              {dropTarget?.id === cell.id && dropTarget.pos === "below" ? (
+                <div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-30 h-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--primary)]" />
+              ) : null}
+            <CellView
+              cell={cell}
+              first={i === 0}
+              last={i === cells.length - 1}
+              editorTheme={editorTheme}
+              beforeMount={beforeMount}
+              onChange={(src) => patch(cell.id, { src })}
+              onRun={() => void runCell(cell.id)}
+              onEdit={() => patch(cell.id, { editing: true })}
+              onType={(t) => setType(cell.id, t)}
+              onChart={(t) => patch(cell.id, { chart: t })}
+              onMove={(d) => move(cell.id, d)}
+              onRemove={() => remove(cell.id)}
+              onAsk={() => onAsk(cell.src, cell.type)}
+              queued={runQueue.has(cell.id)}
+              dragging={dragId === cell.id}
+              onGrip={() => {
+                drag.current = { id: cell.id, moved: false };
+                setDragId(cell.id);
+                document.body.style.cursor = "grabbing";
+              }}
+            />
+            </div>
+            </Fragment>
+          ))}
+          <InsertZone onAdd={() => setCells((cs) => [...cs, mkCell("sql")])} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CellView = memo(function CellView({
+  cell,
+  first,
+  last,
+  editorTheme,
+  beforeMount,
+  onChange,
+  onRun,
+  onEdit,
+  onType,
+  onChart,
+  onMove,
+  onRemove,
+  onAsk,
+  queued,
+  dragging,
+  onGrip,
+}: {
+  cell: Cell;
+  first: boolean;
+  last: boolean;
+  editorTheme: string;
+  beforeMount: (m: Monaco) => void;
+  onChange: (src: string) => void;
+  onRun: () => void;
+  onEdit: () => void;
+  onType: (t: CellType) => void;
+  onChart: (t: string) => void;
+  onMove: (dir: -1 | 1) => void;
+  onRemove: () => void;
+  onAsk: () => void;
+  queued: boolean;
+  dragging: boolean;
+  onGrip: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [resultView, setResultView] = useState<"table" | "chart">(
+    cell.chart && cell.chart !== "table" && cell.chart !== "kpi" ? "chart" : "table",
+  );
+  const [mdFocused, setMdFocused] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const isSql = cell.type === "sql";
+  const isMd = cell.type === "markdown";
+  const isMermaid = cell.type === "mermaid";
+  const rendered = isMermaid && !cell.editing; // mermaid preview (md is always WYSIWYG)
+  const lines = Math.min(18, Math.max(3, cell.src.split("\n").length));
+  const editorHeight = lines * 19 + 16;
+
+  // Markdown cell: full-width, no gutter — a Word-style WYSIWYG document you
+  // edit in place. Type dropdown + drag/delete appear on hover, top-right.
+  if (isMd) {
+    return (
+      <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
+        <div className={cn("relative rounded-lg", mdFocused ? "bg-secondary/10 ring-1 ring-border" : "hover:bg-secondary/10")}>
+          <MarkdownEditor
+            value={cell.src}
+            onChange={onChange}
+            onFocusChange={setMdFocused}
+            // While editing, the cell controls live INSIDE the toolbar's right
+            // end — never overlapping the formatting buttons.
+            trailing={
+              <>
+                <button onClick={onAsk} title="Ask Exa about this note" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+                <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+                  <SelectTrigger size="sm" className="h-6 w-[118px] text-[11px]"><SelectValue /></SelectTrigger>
+                  <SelectContent align="end">
+                    {CELL_TYPES.map((t) => { const I = t.icon; return (<SelectItem key={t.value} value={t.value}><span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span></SelectItem>); })}
+                  </SelectContent>
+                </Select>
+                <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
+                <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+              </>
+            }
+          />
+          {/* Not editing → compact hover controls, top-right (no toolbar to collide with). */}
+          {!mdFocused ? (
+            <div className="pointer-events-none absolute right-1.5 top-1 z-10 flex items-center gap-0.5 rounded-md bg-editor opacity-0 transition-opacity group-hover/cell:pointer-events-auto group-hover/cell:opacity-100">
+              <button onClick={onAsk} title="Ask Exa about this note" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+              <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+                <SelectTrigger size="sm" className="h-6 w-[118px] text-[11px]"><SelectValue /></SelectTrigger>
+                <SelectContent align="end">
+                  {CELL_TYPES.map((t) => { const I = t.icon; return (<SelectItem key={t.value} value={t.value}><span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span></SelectItem>); })}
+                </SelectContent>
+              </Select>
+              <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
+              <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  // Mermaid preview: clean, notebook-style — click to edit, hover controls.
+  if (rendered) {
+    return (
+      <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
+        <div className="relative rounded-lg">
+          <MermaidView code={cell.src} />
+          <div className="pointer-events-none absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-md bg-editor opacity-0 transition-opacity group-hover/cell:pointer-events-auto group-hover/cell:opacity-100">
+            <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+              <SelectTrigger size="sm" className="h-6 w-[118px] text-[11px]"><SelectValue /></SelectTrigger>
+              <SelectContent align="end">
+                {CELL_TYPES.map((t) => { const I = t.icon; return (<SelectItem key={t.value} value={t.value}><span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span></SelectItem>); })}
+              </SelectContent>
+            </Select>
+            <button onClick={onAsk} title="Ask Exa about this diagram" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+            <button onClick={onEdit} title="Edit the diagram code" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
+            <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
+            <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div data-cell-id={cell.id} className={cn("group/cell relative transition-opacity", dragging && "opacity-40")}>
+
+      <div className={cn("overflow-hidden rounded-lg border border-border bg-editor transition-colors", queued && "ring-2 ring-inset ring-primary/40")}>
+        <div className="flex items-stretch">
+          {/* Left-center gutter — SQL only: the Jupyter [n] that turns into a
+              Run button on hover (run control + indicator). Text/diagram cells
+              have no run — they render when you click away. */}
+          {isSql ? (
+            <button
+              onClick={onRun}
+              disabled={cell.running}
+              title="Run (⌘/Ctrl+Enter)"
+              className="group/run flex w-10 shrink-0 select-none items-center justify-center"
+            >
+              {cell.running ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              ) : (
+                <>
+                  <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">[{cell.count ?? " "}]</span>
+                  <Play className="hidden h-3.5 w-3.5 fill-current text-primary group-hover/run:block" />
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="w-10 shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+        {/* Cell header: type dropdown + (Markdown) format toolbar + (Text/Diagram) Preview|Code toggle. */}
+        <div className="flex items-center gap-2 px-2 pt-1.5">
+          <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
+            <SelectTrigger size="sm" className="h-6 w-[124px] text-[11.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CELL_TYPES.map((t) => {
+                const I = t.icon;
+                return (
+                  <SelectItem key={t.value} value={t.value}>
+                    <span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {/* Preview ↔ Code toggle: diagrams default to Preview so the user
+              visualizes the result, not the raw markup. */}
+          {isMermaid ? (
+            <div className="ml-auto flex items-center gap-0.5 rounded-md bg-secondary/60 p-0.5">
+              <button
+                onClick={onRun}
+                className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px]", !cell.editing ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <Eye className="h-3 w-3" /> Preview
+              </button>
+              <button
+                onClick={onEdit}
+                className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px]", cell.editing ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <Code className="h-3 w-3" /> Code
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {isSql ? (
+              // Monaco SQL cell — Exasol autocompletion comes from the app-global
+              // completion provider on the shared monaco instance.
+              <div style={{ height: editorHeight }} className="py-1">
+                <Editor
+                  height="100%"
+                  defaultLanguage="sql"
+                  theme={editorTheme}
+                  beforeMount={beforeMount}
+                  loading={<BrandLoader size={32} />}
+                  value={cell.src}
+                  onChange={(v) => onChange(v ?? "")}
+                  onMount={(ed, monaco) => {
+                    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRun());
+                  }}
+                  options={{
+                    fontFamily: "JetBrains Mono",
+                    fontSize: 12.5,
+                    minimap: { enabled: false },
+                    lineNumbers: "off",
+                    folding: false,
+                    scrollBeyondLastLine: false,
+                    renderLineHighlight: "none",
+                    overviewRulerLanes: 0,
+                    scrollbar: { vertical: "auto", horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
+                    padding: { top: 6, bottom: 6 },
+                    wordWrap: "on",
+                    // Ensure Exasol autocompletion actually pops in cells.
+                    quickSuggestions: { other: true, comments: false, strings: false },
+                    suggestOnTriggerCharacters: true,
+                    tabCompletion: "on",
+                    fixedOverflowWidgets: true,
+                  }}
+                />
+              </div>
+            ) : (
+              // Markdown / Mermaid source editor (preview-first: render on run).
+              <textarea
+                ref={taRef}
+                value={cell.src}
+                autoFocus
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onRun(); } }}
+                // Click away → render (unless focus moved to this cell's own
+                // controls like the format toolbar).
+                onBlur={(e) => {
+                  const cellEl = (e.currentTarget as HTMLElement).closest("[data-cell-id]");
+                  if (!cellEl || !cellEl.contains(e.relatedTarget as Node)) onRun();
+                }}
+                rows={lines}
+                placeholder={isMermaid ? "graph TD; A[Start] --> B[Next]   ·   click away to render" : "# Markdown — images, tables, links   ·   click away to render"}
+                className="min-w-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 [scrollbar-width:thin]"
+              />
+            )}
+          </div>
+
+          <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onGrip(); }}
+              title="Drag to reorder"
+              className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            {isSql ? (
+              <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            <button onClick={() => onMove(-1)} disabled={first} title="Move up" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+            <button onClick={() => onMove(1)} disabled={last} title="Move down" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+            <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+
+        {isSql && cell.error ? (
+          <div className="mx-2 mb-2 rounded-md bg-destructive/5 px-3 py-2 font-mono text-[11.5px] text-destructive [overflow-wrap:anywhere]">{cell.error}</div>
+        ) : isSql && cell.result ? (
+          <div className="px-1 pb-1">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", collapsed && "-rotate-90")} />
+                {cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
+              </button>
+              {cell.result.kind === "resultSet" && cell.result.rows.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
+                    {(["table", "chart"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setResultView(v)}
+                        className={cn("flex h-5 items-center gap-1 rounded px-1.5 text-[10.5px] capitalize", resultView === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
+                      >
+                        {v === "table" ? <TableIcon className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />} {v}
+                      </button>
+                    ))}
+                  </div>
+                  {resultView === "chart" ? (
+                    // Full chart-type palette per cell (issue #16).
+                    <div className="flex items-center gap-0.5 rounded-md bg-background/60 p-0.5">
+                      {(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => onChart(t)}
+                          className={cn(
+                            "h-5 rounded px-1.5 text-[10px]",
+                            (cell.chart ?? "bar") === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+              <span className="ml-auto font-mono">{cell.result.elapsedMs} ms</span>
+            </div>
+            {!collapsed && cell.result.kind === "resultSet" ? (
+              resultView === "chart" ? (
+                <div className="h-64 border-t border-border/60">
+                  <ShadcnChartPanel
+                    chart={(["bar", "hbar", "line", "area", "pie", "donut", "radar", "radial"].includes(cell.chart ?? "") ? cell.chart : "bar") as "bar" | "hbar" | "line" | "area" | "pie" | "donut" | "radar" | "radial"}
+                    result={cell.result}
+                  />
+                </div>
+              ) : (
+                <ResultGrid columns={cell.result.columns} rows={cell.result.rows} truncated={cell.result.truncated} />
+              )
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+    </div>
+  );
+}, (prev, next) =>
+  // Skip re-render unless THIS cell's data or view flags changed. Unedited
+  // cells keep the same `cell` object reference across setCells, so typing in
+  // one cell no longer re-renders every other cell's Monaco/TipTap editor.
+  prev.cell === next.cell &&
+  prev.first === next.first &&
+  prev.last === next.last &&
+  prev.dragging === next.dragging &&
+  prev.queued === next.queued &&
+  prev.editorTheme === next.editorTheme,
+);
+
+/** In-flow insert affordance BETWEEN cells: occupies real layout space, so it
+ *  can never be painted over or slide under a neighboring cell. */
+function InsertZone({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="flex h-5 items-center justify-center opacity-0 transition-opacity hover:opacity-100">
+      <span className="h-px flex-1 bg-border/60" />
+      <button onClick={onAdd} title="Add a cell here" className="mx-1 flex items-center gap-0.5 rounded border border-border bg-editor px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:text-foreground">
+        <Plus className="h-2.5 w-2.5" /> Cell
+      </button>
+      <span className="h-px flex-1 bg-border/60" />
+    </div>
+  );
+}
+
+/** Quick bar/line chart of a result set: first non-numeric column = category
+ *  (x), numeric columns = series. Lazy-loads echarts, theme-aware. */
+function ResultChart({ columns, rows }: { columns: { name: string; typeName: string }[]; rows: unknown[][] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [kind, setKind] = useState<"bar" | "line">("bar");
+
+  const isNum = (v: unknown) => v !== null && v !== "" && !Number.isNaN(Number(v));
+  const numericCols = columns
+    .map((c, i) => ({ c, i }))
+    .filter(({ i }) => rows.slice(0, 20).every((r) => r[i] === null || isNum(r[i])) && rows.some((r) => isNum(r[i])));
+  const catIdx = columns.findIndex((_, i) => !numericCols.some((n) => n.i === i));
+  const xIdx = catIdx >= 0 ? catIdx : 0;
+
+  useEffect(() => {
+    if (!ref.current || !numericCols.length) return;
+    let chart: import("echarts").ECharts | null = null;
+    let disposed = false;
+    void import("echarts").then((echarts) => {
+      if (disposed || !ref.current) return;
+      const dark = document.documentElement.classList.contains("dark");
+      chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
+      const cats = rows.slice(0, 200).map((r) => String(r[xIdx] ?? ""));
+      const palette = ["#5fc33b", "#4a9fd4", "#e0a63a", "#c65fd0", "#e05f5f", "#2bb8a3"];
+      chart.setOption({
+        color: palette,
+        grid: { top: 24, right: 16, bottom: 40, left: 52 },
+        tooltip: { trigger: "axis" },
+        legend: { top: 0, textStyle: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, type: "scroll" },
+        xAxis: { type: "category", data: cats, axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10, rotate: cats.length > 8 ? 30 : 0 } },
+        yAxis: { type: "value", axisLabel: { color: dark ? "#a1a1aa" : "#52525b", fontSize: 10 }, splitLine: { lineStyle: { color: dark ? "#27272a" : "#e4e4e7" } } },
+        series: numericCols.map(({ c, i }) => ({
+          name: c.name,
+          type: kind,
+          data: rows.slice(0, 200).map((r) => (isNum(r[i]) ? Number(r[i]) : null)),
+          smooth: kind === "line",
+          barMaxWidth: 28,
+        })),
+      });
+    });
+    const ro = new ResizeObserver(() => chart?.resize());
+    ro.observe(ref.current);
+    return () => {
+      disposed = true;
+      ro.disconnect();
+      chart?.dispose();
+    };
+  }, [columns, rows, kind, xIdx, numericCols.length]);
+
+  if (!numericCols.length) {
+    return <p className="px-3 py-6 text-center text-[12px] text-muted-foreground">No numeric columns to chart.</p>;
+  }
+  return (
+    <div className="rounded-md bg-background/40 p-1">
+      <div className="flex items-center gap-0.5 px-1 pb-0.5">
+        {(["bar", "line"] as const).map((k) => (
+          <button key={k} onClick={() => setKind(k)} className={cn("rounded px-1.5 py-0.5 text-[10.5px] capitalize", kind === k ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>{k}</button>
+        ))}
+        <span className="ml-1 text-[10px] text-muted-foreground/70">x: {columns[xIdx]?.name}</span>
+      </div>
+      <div ref={ref} style={{ height: 300 }} className="w-full" />
+    </div>
+  );
+}
+
+function ResultGrid({ columns, rows, truncated }: { columns: { name: string; typeName: string }[]; rows: unknown[][]; truncated: boolean }) {
+  return (
+    <div className="max-h-[420px] overflow-auto [scrollbar-width:thin]">
+      <table className="w-full border-collapse text-[11.5px]">
+        <thead className="sticky top-0 z-10 bg-secondary">
+          <tr>
+            <th className="border-b border-border px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">#</th>
+            {columns.map((c) => (
+              <th key={c.name} className="border-b border-border px-2.5 py-1 text-left font-medium whitespace-nowrap">
+                {c.name}
+                <span className="ml-1 font-mono text-[9.5px] font-normal text-muted-foreground">{c.typeName}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          {rows.map((row, ri) => (
+            <tr key={ri} className="hover:bg-secondary/40">
+              <td className="border-b border-border/40 px-2 py-1 text-right text-[10px] text-muted-foreground/60 select-none">{ri + 1}</td>
+              {row.map((v, ci) => (
+                <td key={ci} className={cn("max-w-[360px] truncate border-b border-border/40 px-2.5 py-1 whitespace-nowrap", v === null && "text-muted-foreground/50 italic")} title={v === null ? "NULL" : String(v)}>
+                  {v === null ? "NULL" : String(v)}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {rows.length === 0 ? (
+            <tr><td colSpan={columns.length + 1} className="px-3 py-4 text-center text-muted-foreground">No rows.</td></tr>
+          ) : null}
+        </tbody>
+      </table>
+      {truncated ? <p className="border-t border-border px-3 py-1.5 text-[10.5px] text-muted-foreground">Showing the first {rows.length} rows.</p> : null}
+    </div>
+  );
+}

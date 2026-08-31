@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --dir apps/desktop build",
+  "outputDirectory": "apps/desktop/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

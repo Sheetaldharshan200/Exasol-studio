@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-08-01T10:48:19Z",
+  "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
+  "items": {
+    "exasol-personal": {
+      "repo": "exasol/exasol-personal",
+      "latest": "v2.1.0",
+      "homepage": "https://github.com/exasol/exasol-personal"
+    },
+    "exasol-cloud": {
+      "repo": "exasol/exasol-personal",
+      "latest": "v2.1.0",
+      "homepage": "https://github.com/exasol/exasol-personal"
+    },
+    "exapump": {
+      "repo": "exasol-labs/exapump",
+      "latest": "v0.11.3",
+      "homepage": "https://github.com/exasol-labs/exapump"
+    },
+    "mcp-server": {
+      "repo": "exasol/mcp-server",
+      "latest": "2.0.0",
+      "homepage": "https://github.com/exasol/mcp-server"
+    },
+    "pyexasol": {
+      "repo": "exasol/pyexasol",
+      "latest": "2.3.0",
+      "homepage": "https://github.com/exasol/pyexasol"
+    },
+    "sqlalchemy-exasol": {
+      "repo": "exasol/sqlalchemy-exasol",
+      "latest": "7.1.1",
+      "homepage": "https://github.com/exasol/sqlalchemy-exasol"
+    },
+    "json-tables": {
+      "repo": "exasol-labs/exasol-json-tables",
+      "latest": null,
+      "homepage": "https://github.com/exasol-labs/exasol-json-tables"
+    },
+    "ai-lab": {
+      "repo": "exasol/ai-lab",
+      "latest": "6.0.0",
+      "homepage": "https://github.com/exasol/ai-lab"
+    },
+    "agent-skills": {
+      "repo": "exasol-labs/exasol-agent-skills",
+      "latest": "v0.23.0",
+      "homepage": "https://github.com/exasol-labs/exasol-agent-skills"
+    },
+    "superset": {
+      "repo": "apache/superset",
+      "latest": "6.1.0",
+      "homepage": "https://github.com/apache/superset"
+    },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.12",
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
+      "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
+    }
+  }
+}

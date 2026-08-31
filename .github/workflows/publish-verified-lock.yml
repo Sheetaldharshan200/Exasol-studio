@@ -1,0 +1,71 @@
+name: Publish verified lock (signed)
+
+# Over-the-air delivery of the VALIDATED runtime lock: when the compatibility
+# matrix (refresh-runtime-components) lands a new runtime-components.lock.json on
+# main, sign it (detached ed25519) and publish the lock + .sig to the
+# `verified-lock` branch, which the app fetches from VERIFIED_LOCK_URL.
+#
+# INERT BY DEFAULT: it publishes ONLY when the repo secret
+# VERIFIED_LOCK_SIGNING_KEY_HEX is set. With no key it signs nothing and pushes
+# nothing — and the app's embedded VERIFIED_LOCK_PUBKEY_HEX is also empty, so
+# even a hand-placed lock would be rejected. See docs/verified-lock-signing.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/desktop/src-tauri/resources/runtime-components.lock.json
+  workflow_dispatch:
+
+concurrency:
+  group: publish-verified-lock
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Sign the validated lock (inert without a key)
+        id: sign
+        env:
+          VERIFIED_LOCK_SIGNING_KEY_HEX: ${{ secrets.VERIFIED_LOCK_SIGNING_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          rm -rf out-lock && mkdir -p out-lock
+          # The crypto dep is only needed on the signing path; skip installing it
+          # entirely when no key is provisioned (the signer no-ops without it).
+          if [ -n "${VERIFIED_LOCK_SIGNING_KEY_HEX:-}" ]; then
+            python -m pip install --quiet cryptography
+          fi
+          python .github/scripts/sign_verified_lock.py \
+            apps/desktop/src-tauri/resources/runtime-components.lock.json out-lock
+          if [ -f out-lock/runtime-components.lock.json.sig ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No signing key set — nothing to publish (inert)."
+          fi
+
+      - name: Publish to the verified-lock branch
+        if: steps.sign.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp out-lock/runtime-components.lock.json out-lock/runtime-components.lock.json.sig "$tmp/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The verified-lock branch holds ONLY the current signed lock; a fresh
+          # orphan snapshot each publish keeps it minimal and force-serves latest.
+          git switch --orphan verified-lock
+          git rm -rf --quiet . || true
+          cp "$tmp/runtime-components.lock.json" "$tmp/runtime-components.lock.json.sig" .
+          git add runtime-components.lock.json runtime-components.lock.json.sig
+          git commit -m "chore: publish signed verified lock"
+          git push --force origin verified-lock

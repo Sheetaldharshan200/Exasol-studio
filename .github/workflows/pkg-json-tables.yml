@@ -1,0 +1,133 @@
+name: pkg / json-tables
+
+# JSON Tables (exasol-labs/exasol-json-tables) is a Python package plus a Rust
+# ingest engine (crate `json_to_parquet`). We cross-build the engine for every
+# distribution ONCE here and publish the binaries + wheel to our
+# `mirror-json-tables` release, so end users never need Rust/cargo — the app
+# just downloads the prebuilt artifact. Change-gated on the upstream commit.
+
+on:
+  schedule:
+    - cron: "30 7 * * 2" # Tue 07:30 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: pkg-json-tables
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: exasol-labs/exasol-json-tables
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+      changed: ${{ steps.v.outputs.changed }}
+    steps:
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$UPSTREAM/commits/main" | jq -r '.sha // ""' | cut -c1-12)
+          last=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/mirror-json-tables" \
+            | jq -r '.body // ""' | sed -n 's/.*version=\([^ ]*\).*/\1/p') || last=""
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ -n "$sha" ] && [ "$sha" != "$last" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::json-tables unchanged ($sha) — skipping."
+          fi
+
+  ingest:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    name: ingest ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS x86 (macos-13) dropped — that runner is the slow one. The rest
+        # of the distributions stay.
+        include:
+          - { os: ubuntu-22.04, label: linux-x86_64, ext: "" }
+          - { os: ubuntu-22.04-arm, label: linux-aarch64, ext: "" }
+          - { os: macos-14, label: macos-aarch64, ext: "" }
+          - { os: windows-latest, label: windows-x86_64, ext: ".exe" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: exasol-labs/exasol-json-tables
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: ${{ matrix.label }}
+      - name: Build ingest engine
+        run: cargo build --release --manifest-path crates/json_tables_ingest/Cargo.toml --target-dir "${{ github.workspace }}/rust-target"
+      - name: Stage binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          bin="rust-target/release/json_to_parquet${{ matrix.ext }}"
+          if [ ! -f "$bin" ]; then
+            # Fall back: find the built executable anywhere under a release dir.
+            bin=$(find . -type f -name "json_to_parquet${{ matrix.ext }}" -path "*/release/*" | head -n1)
+          fi
+          test -n "$bin" && test -f "$bin"
+          cp "$bin" "out/exasol-json-tables-ingest-${{ matrix.label }}${{ matrix.ext }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ingest-${{ matrix.label }}
+          path: out/*
+
+  wheel:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: exasol-labs/exasol-json-tables
+      - uses: astral-sh/setup-uv@v5
+      - name: Build wheel
+        run: |
+          set -euxo pipefail
+          uv build --wheel || uv pip wheel . -w dist --no-deps
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+
+  publish:
+    needs: [check, ingest, wheel]
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mirror-json-tables
+          name: json-tables (prebuilt by CI)
+          body: |
+            Prebuilt JSON Tables ingest engine (all distributions) + Python wheel,
+            built once from ${{ env.UPSTREAM }} so users need no Rust/cargo.
+            version=${{ needs.check.outputs.sha }}
+          files: release/*
+          prerelease: true

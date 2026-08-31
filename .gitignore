@@ -1,0 +1,75 @@
+# Node and frontend artifacts
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.pnpm-store/
+pnpm-debug.log*
+
+# Rust artifacts
+target/
+Cargo.lock.bak
+
+# Logs and temp files
+*.log
+.DS_Store
+tmp/
+temp/
+*.tmp
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+
+# IDE and tooling state
+.idea/
+.vscode/
+.zed/
+
+# Test artifacts
+playwright-report/
+coverage/
+test-results/
+
+# Desktop and app state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.trace
+*.profraw
+*.profdata
+
+# Tauri and bundler output
+src-tauri/target/
+apps/**/dist/
+apps/**/.vite/
+
+# Graphify generated assets
+docs/foundation/graphify/rendered/
+
+# Claude Code session exports (date-time prefixed transcripts)
+**/????-??-??-??????-*.txt
+
+# CI-fetched app runtime (Node + llama engine) — bundled at release time only
+apps/desktop/src-tauri/resources/runtime/*
+!apps/desktop/src-tauri/resources/runtime/.gitkeep
+
+# Graphify: commit the portable graph, ignore the machine-local AST/stat cache
+graphify-out/cache/
+graphify-out/*.html
+graphify-out/.DS_Store
+# Obsidian per-machine workspace state (keep the vault notes, not the UI state)
+knowledge/vault/.obsidian/*
+!knowledge/vault/.obsidian/.gitkeep
+graphify-out/[0-9][0-9][0-9][0-9]-*/
+graphify-out/*.sig
+graphify-out/.graphify_analysis.json
+verified-lock.seed

@@ -1,0 +1,41 @@
+{
+  "name": "@exasol-studio/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless agentic AI core for Exasol Studio — HTTP+SSE server, provider registry, agent loop.",
+  "type": "module",
+  "main": "dist/agent-core.cjs",
+  "bin": {
+    "exa-agent": "dist/exa-agent.cjs"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\" && esbuild src/mcp-gateway.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-gateway.cjs --external:node:*",
+    "build:cli": "pnpm run build && esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/exa-agent.cjs --external:node:* --banner:js=\"#!/usr/bin/env node\" && node -e \"require('fs').chmodSync('dist/exa-agent.cjs', 0o755)\"",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "evals": "node --experimental-strip-types evals/run.ts",
+    "evals:live": "node --experimental-strip-types evals/live.ts",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='src/tool-repair.ts' --test-coverage-include='src/csv-import.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@exasol/exasol-driver-ts": "^0.4.1",
+    "@langchain/anthropic": "^1.5.1",
+    "@langchain/core": "^1.2.3",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.8",
+    "@langchain/openai": "^1.5.5",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/sdk": "^1.18.11",
+    "hyparquet": "^1.26.2",
+    "ws": "^8.21.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

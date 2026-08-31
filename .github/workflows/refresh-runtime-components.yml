@@ -1,0 +1,301 @@
+name: Refresh bundled runtime components
+
+on:
+  schedule:
+    # Resolve upstream state daily; unchanged releases produce no commit/build.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-runtime-components
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Resolve latest compatible and immutable component set
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
+        run: python .github/scripts/refresh_runtime_components.py
+      - name: Stage generated candidate
+        id: changes
+        shell: bash
+        run: |
+          git add \
+            apps/desktop/src-tauri/resources/runtime-components.lock.json \
+            apps/desktop/src-tauri/resources/python-stack \
+            apps/desktop/src-tauri/resources/exasol-semantic-views \
+            packages/agent-core/skills
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream component changed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --binary > runtime-components.patch
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          name: runtime-components-candidate
+          path: runtime-components.patch
+          if-no-files-found: error
+
+  validate:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS Apple Silicon
+          - os: macos-15-intel
+            label: macOS Intel
+          - os: ubuntu-22.04
+            label: Linux x64
+          - os: ubuntu-22.04-arm
+            label: Linux ARM64
+          - os: windows-latest
+            label: Windows x64
+    name: Validate ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      # The `runner` context is not allowed in job-level `env` — GitHub rejects
+      # the whole workflow file (0s "startup failure" on every push, and the
+      # daily cron silently never fires). Export it from a step instead.
+      - name: Point uv at a temp project environment
+        shell: bash
+        run: echo "UV_PROJECT_ENVIRONMENT=${RUNNER_TEMP}/runtime-components-python" >> "$GITHUB_ENV"
+      # Force LF everywhere BEFORE checkout so Windows never CRLF-converts the
+      # vendored files that get SHA-256 tree-hashed (python-stack, semantic-views,
+      # uv.lock) — CRLF changed their bytes and broke `--verify` ("… vendored
+      # content differs from the generated lock"). Belt-and-suspenders with the
+      # .gitattributes -text rules.
+      - name: Force LF checkout (Windows tree-hash stability)
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: runtime-components-candidate
+      - name: Apply candidate
+        run: git apply --binary runtime-components.patch
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+          key: runtime-components-${{ matrix.os }}
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+      - name: Install and build application workspace
+        shell: bash # Windows defaults to PowerShell; these are bash scripts.
+        env:
+          # vite build SIGABRTs (exit 134) on the ~7 GB macOS runners with the
+          # default V8 heap — the app bundle (Monaco/Perspective/echarts) is
+          # large. Same headroom release-app.yml uses. Harmless on other OSes.
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          pnpm install --frozen-lockfile
+          # build:cli (not build) so dist/exa-agent.cjs — a REQUIRED Tauri
+          # resource (tauri.conf.json) — exists before cargo test runs build.rs.
+          pnpm --dir packages/agent-core build:cli
+          pnpm build:desktop
+      - name: Verify generated state and Python solution
+        # MUST be bash: this uses bash line-continuations (\) and `python -c`
+        # quoting that PowerShell (the Windows default) mangles ("Failed to
+        # spawn: \"), which was the Windows validate failure.
+        shell: bash
+        env:
+          UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
+        run: |
+          python .github/scripts/refresh_runtime_components.py --verify
+          python .github/scripts/refresh_runtime_components.py --verify-platform-artifacts
+          uv lock --check --project apps/desktop/src-tauri/resources/python-stack
+          uv sync --locked --no-install-project --project apps/desktop/src-tauri/resources/python-stack
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
+            python -c "import importlib.metadata as m; print(m.version('pyexasol'), m.version('exasol-mcp-server'))"
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
+            python -c "import exasol.ai.mcp.server.main, shutil; assert shutil.which('exasol-mcp-server')"
+      - name: Test desktop component integration
+        shell: bash # Windows defaults to PowerShell; these are bash scripts.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144 # tauri build re-runs vite (see above)
+        run: |
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+          pnpm --dir apps/desktop tauri build --no-bundle
+      - name: Start Nano and load Semantic Views
+        if: startsWith(matrix.label, 'Linux')
+        shell: bash
+        run: |
+          image=$(jq -r '.nano | "\(.registry)/\(.repository)@\(.digest)"' apps/desktop/src-tauri/resources/runtime-components.lock.json)
+          docker buildx imagetools inspect "$image" --raw > "${RUNNER_TEMP}/nano-manifest.json"
+          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | index("amd64") and index("arm64")' "${RUNNER_TEMP}/nano-manifest.json"
+          password_file="${RUNNER_TEMP}/nano-password"
+          printf '%s' 'StudioCiOnly-9mW2zK7q' > "$password_file"
+          chmod 600 "$password_file"
+          docker run -d --name exasol-studio-ci-nano \
+            --shm-size=2g --pids-limit=-1 \
+            -p 127.0.0.1:8563:8563 \
+            -v "$password_file:/run/secrets/sys_password:ro" \
+            "$image" init sys_password_file=/run/secrets/sys_password
+          # Wait for real SQL readiness, not just an open port: Docker's port
+          # proxy accepts 8563 immediately (before Nano's engine is up), so a
+          # bare TCP connect returns instantly and the installer then hits
+          # "SSL: UNEXPECTED_EOF". Poll an actual pyexasol connection instead.
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
+          import ssl, sys, time
+          import pyexasol
+          last = None
+          for i in range(120):
+              try:
+                  c = pyexasol.connect(dsn="127.0.0.1:8563", user="sys",
+                                       password="StudioCiOnly-9mW2zK7q", encryption=True,
+                                       websocket_sslopt={"cert_reqs": ssl.CERT_NONE})
+                  c.execute("SELECT 1").fetchval()
+                  c.close()
+                  print(f"Nano SQL-ready after ~{i * 5}s")
+                  sys.exit(0)
+              except Exception as e:  # noqa: BLE001 — any failure means "not ready yet"
+                  last = e
+                  time.sleep(5)
+          raise SystemExit(f"Nano was not SQL-ready within ten minutes: {last}")
+          PY
+          export EXASOL_HOST=127.0.0.1 EXASOL_PORT=8563 EXASOL_USER=sys EXASOL_PASSWORD='StudioCiOnly-9mW2zK7q'
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
+            python apps/desktop/src-tauri/resources/exasol-semantic-views/tools/install.py --skip-package --example
+          # probe_ready.py is optional: install.py already confirms readiness
+          # ("Sales model published"), and newer semantic-views drops the file.
+          probe=apps/desktop/src-tauri/resources/exasol-semantic-views/tools/probe_ready.py
+          if [ -f "$probe" ]; then
+            uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python "$probe"
+          fi
+          export EXA_DSN=127.0.0.1:8563 EXA_USER=sys EXA_PASSWORD='StudioCiOnly-9mW2zK7q' EXA_SSL_CERT_VALIDATION=no
+          uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
+          import json, os, queue, shutil, subprocess, sys, threading, time
+          process = subprocess.Popen(
+              [shutil.which("exasol-mcp-server")], stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              env=os.environ.copy(),
+          )
+          lines = queue.Queue()
+          threading.Thread(target=lambda: [lines.put(line) for line in process.stdout], daemon=True).start()
+          threading.Thread(target=lambda: [sys.stderr.write(line) for line in process.stderr], daemon=True).start()
+          process.stdin.write(json.dumps({
+              "jsonrpc": "2.0", "id": 1, "method": "initialize",
+              "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                         "clientInfo": {"name": "exasol-studio-ci", "version": "validation"}},
+          }) + "\n")
+          process.stdin.flush()
+          initialize_received = False
+          try:
+              deadline = time.monotonic() + 60
+              while time.monotonic() < deadline:
+                  if process.poll() is not None:
+                      raise RuntimeError(f"MCP server exited before initialize (code {process.returncode})")
+                  try:
+                      line = lines.get(timeout=max(0, min(1, deadline - time.monotonic())))
+                  except queue.Empty:
+                      continue
+                  try:
+                      message = json.loads(line)
+                  except json.JSONDecodeError:
+                      print(f"Ignoring non-protocol MCP stdout: {line.rstrip()}", file=sys.stderr)
+                      continue
+                  if message.get("id") == 1 and "result" in message and not initialize_received:
+                      initialize_received = True
+                      process.stdin.write(json.dumps({
+                          "jsonrpc": "2.0", "method": "notifications/initialized", "params": {},
+                      }) + "\n")
+                      process.stdin.write(json.dumps({
+                          "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
+                      }) + "\n")
+                      process.stdin.flush()
+                      continue
+                  if message.get("id") == 2 and isinstance(message.get("result", {}).get("tools"), list):
+                      print("MCP initialize and tools/list handshake verified")
+                      break
+              else:
+                  raise RuntimeError("complete initialize and tools/list response not received")
+          finally:
+              process.terminate()
+              try:
+                  process.wait(timeout=5)
+              except subprocess.TimeoutExpired:
+                  process.kill()
+                  process.wait()
+          PY
+      - name: Stop Nano validation container
+        if: always() && startsWith(matrix.label, 'Linux')
+        run: docker rm -f exasol-studio-ci-nano || true
+
+  commit:
+    needs: [refresh, validate]
+    if: needs.refresh.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: runtime-components-candidate
+      - run: git apply --binary runtime-components.patch
+      - name: Publish validated component refresh for review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="automation/runtime-components"
+          git switch -c "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            apps/desktop/src-tauri/resources/runtime-components.lock.json \
+            apps/desktop/src-tauri/resources/python-stack \
+            apps/desktop/src-tauri/resources/exasol-semantic-views \
+            packages/agent-core/skills
+          git commit -m "chore(runtime): refresh bundled components"
+          git push --force-with-lease --set-upstream origin "$branch"
+          if gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr edit "$branch" --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging."
+          else
+            gh pr create \
+              --base "$GITHUB_REF_NAME" \
+              --head "$branch" \
+              --title "chore(runtime): refresh bundled components" \
+              --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging."
+          fi

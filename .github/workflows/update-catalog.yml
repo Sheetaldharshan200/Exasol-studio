@@ -1,0 +1,116 @@
+name: Update marketplace catalog
+
+# Produces marketplace/catalog.json — the single source of truth the app reads
+# for the latest version of every item and whether an update is available.
+# Trust model: components pinned in the VALIDATED runtime-components.lock.json
+# (Exasol Personal, ExaPump, MCP Server) take their "latest" from that lock —
+# the version the cross-platform compatibility matrix approved — never a raw
+# upstream release tag. Other items track their upstream latest.
+# One cheap ubuntu job; commits only when the catalog actually changed. Runs
+# after the weekly package builds (Wed) and on demand.
+
+on:
+  schedule:
+    - cron: "0 8 * * 3" # Wed 08:00 UTC (after Mon/Tue package builds)
+  workflow_dispatch:
+
+concurrency:
+  group: update-catalog
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write # the refresh lands via a reviewed PR (main is protected)
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build catalog.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # id|upstream repo|homepage
+          items=$(cat <<'EOF'
+          exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
+          mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
+          pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
+          sqlalchemy-exasol|exasol/sqlalchemy-exasol|https://github.com/exasol/sqlalchemy-exasol
+          json-tables|exasol-labs/exasol-json-tables|https://github.com/exasol-labs/exasol-json-tables
+          ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
+          agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills
+          superset|apache/superset|https://github.com/apache/superset
+          EOF
+          )
+          echo '{' > catalog.json
+          echo "  \"generatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> catalog.json
+          echo "  \"mirrorRepo\": \"${{ github.repository }}\"," >> catalog.json
+          echo '  "items": {' >> catalog.json
+          first=1
+          while IFS='|' read -r id repo homepage; do
+            [ -z "$id" ] && continue
+            latest="null"
+            # Studio-verified only: for components pinned in the VALIDATED lock,
+            # the catalog "latest" IS the lock version (what the cross-platform
+            # compatibility matrix approved) — never a raw upstream release tag.
+            # Non-lock items still track their upstream latest.
+            locked=$(jq -r --arg id "$id" '
+              if $id=="exasol-personal" or $id=="exasol-cloud" then .personal.version
+              elif $id=="exapump" then .exapump.version
+              elif $id=="mcp-server" then .pythonStack.mcpServerVersion
+              else empty end' apps/desktop/src-tauri/resources/runtime-components.lock.json 2>/dev/null || true)
+            if [ -n "$locked" ] && [ "$locked" != "null" ]; then
+              latest="$locked"
+            elif [ -n "$repo" ]; then
+              # No -f: a repo with no published release returns 404 with a JSON
+              # body; jq then yields "null". Guard the whole pipe so set -e is happy.
+              latest=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"') || latest="null"
+            fi
+            [ "$first" -eq 0 ] && echo ',' >> catalog.json
+            first=0
+            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s" }' \
+              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" >> catalog.json
+          done <<< "$items"
+          echo '' >> catalog.json
+          echo '  }' >> catalog.json
+          echo '}' >> catalog.json
+          mkdir -p marketplace
+          jq . catalog.json > marketplace/catalog.json
+          rm -f catalog.json
+          cat marketplace/catalog.json
+
+      # main is protected (changes only via reviewed PRs), so the refreshed
+      # catalog goes through a PR like the runtime-components refresh. Auto-merge
+      # is requested so it lands as soon as a human approves — no extra step.
+      - name: Publish catalog refresh for review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add marketplace/catalog.json
+          if git diff --cached --quiet; then
+            echo "Catalog unchanged — nothing to commit."
+            exit 0
+          fi
+          branch="automation/catalog"
+          git switch -c "$branch"
+          git commit -m "chore: refresh marketplace catalog"
+          # Plain --force: the branch is bot-owned scratch state, and a fresh clone
+          # has no remote-tracking ref for --force-with-lease to verify against.
+          git push --force --set-upstream origin "$branch"
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: refresh marketplace catalog" \
+              --body "Automated catalog refresh — \"latest\" for lock-pinned components derives from the validated runtime-components lock. Approve to land (auto-merge)."
+          fi
+          gh pr merge "$branch" --auto --squash || echo "auto-merge not available — the PR awaits review."

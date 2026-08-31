@@ -1,0 +1,56 @@
+version: 1
+workflow:
+  stages:
+    - name: intake
+      owner: project-agent
+      window: primary-window
+      outputs:
+        - task_scope
+        - impacted_docs
+        - risk_flags
+    - name: architecture_review
+      owner: architecture-agent
+      window: architecture-window
+      outputs:
+        - boundary_assessment
+        - adr_needed
+    - name: exasol_validation
+      owner: exasol-integration-agent
+      window: integration-window
+      outputs:
+        - support_classification
+        - source_links
+        - stale_claim_warnings
+    - name: implementation
+      owner: project-agent
+      window: implementation-window
+      outputs:
+        - code_or_doc_changes
+    - name: qa_and_safety
+      owner: qa-safety-agent
+      window: validation-window
+      outputs:
+        - validation_result
+        - residual_risks
+    - name: documentation_sync
+      owner: documentation-agent
+      window: documentation-window
+      outputs:
+        - updated_docs
+        - traceability_status
+    - name: final_merge
+      owner: project-agent
+      window: primary-window
+      outputs:
+        - final_summary
+        - next_actions
+
+handoff_requirements:
+  - task_scope
+  - files
+  - requirements
+  - adrs
+  - risks
+  - expected_output
+  - validation
+

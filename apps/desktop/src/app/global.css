@@ -1,0 +1,835 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Shimmer utility used by the assistant-ui thread components (reasoning/tool). */
+@import "tw-shimmer";
+
+/* Horizontal chip rows in the Exa thread scroll without a visible scrollbar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+@import "@fontsource-variable/figtree";
+@import "@fontsource-variable/inter";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+/* Optional user-selectable fonts (theme customizer) — all SIL-OFL licensed.
+   Browsers fetch a face only when it's actually used, so these cost nothing
+   until picked. */
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/source-sans-3";
+@import "@fontsource-variable/fira-code";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-panel: var(--panel);
+  --color-panel-foreground: var(--panel-foreground);
+  --color-activitybar: var(--activitybar);
+  --color-editor: var(--editor);
+  --color-titlebar: var(--titlebar);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-tab-active: var(--tab-active);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-teal: var(--teal);
+  --color-syntax-keyword: var(--syntax-keyword);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-comment: var(--syntax-comment);
+  --color-syntax-function: var(--syntax-function);
+  --color-syntax-type: var(--syntax-type);
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: "Figtree Variable", "Figtree", "Inter Variable", system-ui, sans-serif;
+}
+
+/* Light theme - Exasol "mist" scale */
+:root {
+  --radius: 0.5rem;
+  --background: #f4f7fb;
+  --foreground: #0b1730;
+  --titlebar: #ffffff;
+  --activitybar: #eaeff6;
+  --panel: #ffffff;
+  --panel-foreground: #0b1730;
+  --editor: #ffffff;
+  --tab-active: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #0b1730;
+  --popover: #ffffff;
+  --popover-foreground: #0b1730;
+  --primary: #4fa823;
+  --primary-foreground: #ffffff;
+  --secondary: #eaeff6;
+  --secondary-foreground: #0b1730;
+  --muted: #eaeff6;
+  --muted-foreground: #566481;
+  --accent: #eef2f7;
+  --accent-foreground: #0b1730;
+  --signal: #5fc33b;
+  --signal-foreground: #050a1c;
+  --destructive: #d13b32;
+  --destructive-foreground: #ffffff;
+  --border: #dce3ee;
+  --input: #dce3ee;
+  --ring: #4fa823;
+  --info: #3f6fbf;
+  --warning: #b45309;
+  --teal: #1fa08b;
+  --chart-1: #5fc33b;
+  --chart-2: #3f6fbf;
+  --chart-3: #f59e0b;
+  --chart-4: #1fa08b;
+  --chart-5: #7c5cd6;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1730;
+  --sidebar-primary: #4fa823;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eaeff6;
+  --sidebar-accent-foreground: #0b1730;
+  --sidebar-border: #dce3ee;
+  --sidebar-ring: #4fa823;
+  --syntax-keyword: #157f3c;
+  --syntax-string: #a7681c;
+  --syntax-number: #0b73a2;
+  --syntax-comment: #6b7280;
+  --syntax-function: #5b45c7;
+  --syntax-type: #167ea6;
+}
+
+/* Dark theme - black foundation with the Exasol green accent (brand default) */
+.dark {
+  --background: #0a0a0b;
+  --foreground: #f4f4f5;
+  --titlebar: #060607;
+  --activitybar: #060607;
+  --panel: #111113;
+  --panel-foreground: #ededee;
+  --editor: #0a0a0b;
+  --tab-active: #1b1b1e;
+  --card: #111113;
+  --card-foreground: #f4f4f5;
+  --popover: #161618;
+  --popover-foreground: #f4f4f5;
+  --primary: #5fc33b;
+  --primary-foreground: #06120a;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #ededee;
+  --muted: #111113;
+  --muted-foreground: #8a8a90;
+  --accent: #1c1c1f;
+  --accent-foreground: #f4f4f5;
+  --destructive: #f0625a;
+  --destructive-foreground: #fff7f6;
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #5fc33b;
+  --info: #6f8fd6;
+  --warning: #eab54f;
+  --teal: #4ed3b8;
+  --chart-1: #5fc33b;
+  --chart-2: #6f8fd6;
+  --chart-3: #eab54f;
+  --chart-4: #4ed3b8;
+  --chart-5: #b79cf5;
+  --sidebar: #111113;
+  --sidebar-foreground: #ededee;
+  --sidebar-primary: #5fc33b;
+  --sidebar-primary-foreground: #06120a;
+  --sidebar-accent: #1c1c1f;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+  --sidebar-ring: #5fc33b;
+  --syntax-keyword: #82dd4b;
+  --syntax-string: #e9a94f;
+  --syntax-number: #5fd0c0;
+  --syntax-comment: #6a6a70;
+  --syntax-function: #b79cf5;
+  --syntax-type: #4ed3b8;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+    box-sizing: border-box;
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    @apply bg-background text-foreground;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /* Unified "activation" for every form control — the subtle primary border +
+     thin ring used on the master-password screens, applied app-wide. */
+  input,
+  textarea,
+  select {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  /* `data-bare` opts a control out — for borderless fields that live inside a
+     card which already provides the box (the chat composer, the pet input),
+     so they don't render a second inner border on focus. */
+  input:not([data-bare]):focus-visible,
+  textarea:not([data-bare]):focus-visible,
+  select:not([data-bare]):focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent);
+  }
+}
+
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+}
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+}
+
+/* `--/ … /` UDF script blocks in the SQL editor: an embedded code block —
+   tinted lines with a left rule, plus a language chip on the marker line
+   (statement-badges.ts). */
+.exa-udf-block {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.exa-udf-lang {
+  color: color-mix(in srgb, var(--primary) 80%, var(--muted-foreground));
+  font-size: 0.8em;
+  font-style: italic;
+  opacity: 0.9;
+}
+/* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
+   tokenizer's comment/operator colors (!important beats the .mtk* rules). */
+.exa-udf-marker {
+  /* Color only — weight/style changes alter glyph metrics and made the
+     content shift when a block appeared or disappeared. */
+  color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
+  font-style: normal !important;
+}
+
+@layer components {
+  /* Green CTA glow — resting halo, intensifies on hover */
+  .cta-glow {
+    box-shadow: 0 8px 30px -10px color-mix(in oklch, var(--primary), transparent 35%);
+    transition:
+      box-shadow 0.3s ease,
+      transform 0.15s ease;
+  }
+  .cta-glow:hover {
+    box-shadow:
+      0 10px 38px -8px color-mix(in oklch, var(--primary), transparent 20%),
+      0 0 0 1px color-mix(in oklch, var(--primary), transparent 55%);
+  }
+  .cta-glow:active {
+    transform: translateY(1px);
+  }
+
+  /* Full-surface shine sweep across the entire button (not just text) */
+  .btn-shine {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .btn-shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(
+      110deg,
+      transparent 25%,
+      rgba(255, 255, 255, 0.55) 48%,
+      rgba(255, 255, 255, 0.7) 50%,
+      rgba(255, 255, 255, 0.55) 52%,
+      transparent 75%
+    );
+    transform: translateX(-130%);
+    animation: btn-shine 2.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    pointer-events: none;
+  }
+  @keyframes btn-shine {
+    0% {
+      transform: translateX(-130%);
+    }
+    55%,
+    100% {
+      transform: translateX(130%);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-shine::after {
+    animation: none;
+  }
+}
+
+::view-transition-old(root), ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+/* React Flow — theme the controls / minimap so they're visible in dark mode */
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
+}
+.react-flow__controls-button {
+  background: var(--popover);
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  width: 26px;
+  height: 26px;
+}
+.react-flow__controls-button:hover {
+  background: var(--secondary);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
+}
+.react-flow__minimap {
+  background-color: var(--popover) !important;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.react-flow__attribution {
+  display: none;
+}
+
+/* MagicUI ShineBorder animation */
+@keyframes shine {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+.animate-shine {
+  animation: shine var(--duration, 14s) infinite linear;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .motion-safe\:animate-shine {
+    animation: shine var(--duration, 14s) infinite linear;
+  }
+}
+/* Rendered GitHub markdown in the Docs/Guides tab */
+.md-body {
+  font-size: 13px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+  word-wrap: break-word;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  color: var(--foreground);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 1.2em 0 0.5em;
+}
+.md-body h1 { font-size: 1.5em; }
+.md-body h2 { font-size: 1.25em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md-body h3 { font-size: 1.1em; }
+.md-body p { margin: 0.6em 0; }
+.md-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.md-body ul, .md-body ol { margin: 0.6em 0; padding-left: 1.4em; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: 0.25em 0; }
+.md-body code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.86em;
+  background: var(--secondary);
+  border-radius: 4px;
+  padding: 0.12em 0.36em;
+}
+.md-body pre {
+  background: var(--muted, var(--secondary));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.9em 0;
+}
+.md-body pre code { background: transparent; padding: 0; font-size: 0.82rem; }
+.md-body blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.9em;
+  color: var(--muted-foreground);
+  margin: 0.8em 0;
+}
+.md-body table { border-collapse: collapse; display: block; overflow-x: auto; margin: 0.9em 0; }
+.md-body th, .md-body td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.md-body th { background: var(--secondary); font-weight: 600; }
+.md-body img { max-width: 100%; border-radius: 6px; }
+.md-body hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
+
+/* TipTap WYSIWYG markdown editor (notebook text cells) */
+.tiptap.ProseMirror { min-height: 2.25rem; }
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.tiptap img.ProseMirror-selectednode { outline: 2px solid var(--primary); outline-offset: 1px; }
+.tiptap:focus { outline: none; }
+.tiptap u, .md-body u { text-decoration: underline; }
+.tiptap s, .md-body s, .tiptap del { text-decoration: line-through; }
+
+/* Code blocks in the WYSIWYG editor: language tag (top-right corner, from
+   data-language) + highlight.js token colors mapped to the app's syntax palette. */
+.tiptap pre { position: relative; }
+.tiptap pre[data-language]::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.md-body .hljs-keyword, .md-body .hljs-literal, .md-body .hljs-selector-tag { color: var(--syntax-keyword); font-weight: 600; }
+.md-body .hljs-string, .md-body .hljs-regexp, .md-body .hljs-addition { color: var(--syntax-string); }
+.md-body .hljs-number, .md-body .hljs-symbol { color: var(--syntax-number); }
+.md-body .hljs-comment, .md-body .hljs-quote, .md-body .hljs-meta { color: var(--syntax-comment); font-style: italic; }
+.md-body .hljs-title, .md-body .hljs-function, .md-body .hljs-name, .md-body .hljs-section { color: var(--syntax-function); }
+.md-body .hljs-type, .md-body .hljs-built_in, .md-body .hljs-attr, .md-body .hljs-attribute, .md-body .hljs-variable { color: var(--syntax-type); }
+
+/* Indeterminate progress bar (script installs) */
+@keyframes exa-indeterminate {
+  0% { left: -45%; }
+  100% { left: 100%; }
+}
+.exa-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--primary) 85%, transparent),
+    var(--primary),
+    color-mix(in srgb, var(--primary) 85%, transparent),
+    transparent
+  );
+  box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 45%, transparent);
+  animation: exa-indeterminate 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ── Assistant markdown ──────────────────────────────────────────────── */
+.assistant-markdown { overflow-wrap: anywhere; word-break: break-word; }
+.assistant-markdown > *:first-child { margin-top: 0; }
+.assistant-markdown > *:last-child { margin-bottom: 0; }
+.assistant-markdown p { margin: 0.4rem 0; }
+.assistant-markdown ul, .assistant-markdown ol { margin: 0.4rem 0; padding-left: 1.1rem; }
+.assistant-markdown ul { list-style: disc; }
+.assistant-markdown ol { list-style: decimal; }
+.assistant-markdown li { margin: 0.15rem 0; }
+.assistant-markdown h1, .assistant-markdown h2, .assistant-markdown h3 {
+  margin: 0.6rem 0 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.assistant-markdown code {
+  border-radius: 4px;
+  background: var(--secondary);
+  padding: 0.1rem 0.3rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+}
+.assistant-markdown pre {
+  margin: 0.45rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel, var(--secondary));
+  padding: 0.55rem 0.7rem;
+}
+.assistant-markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.assistant-markdown a { color: var(--primary); text-decoration: underline; }
+.assistant-markdown table { margin: 0.4rem 0; border-collapse: collapse; font-size: 0.78rem; }
+.assistant-markdown th, .assistant-markdown td { border: 1px solid var(--border); padding: 0.2rem 0.5rem; }
+
+/* ── Agent mark & panel ──────────────────────────────────────────────── */
+@keyframes agent-core-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes agent-node-orbit {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.25; }
+}
+.agent-mark-active .agent-mark-core {
+  animation: agent-core-pulse 1.3s ease-in-out infinite;
+}
+.agent-mark-active .agent-mark-node {
+  animation: agent-node-orbit 1.3s ease-in-out infinite;
+}
+.agent-mark-active .agent-mark-node:nth-of-type(3) { animation-delay: 0.22s; }
+.agent-mark-active .agent-mark-node:nth-of-type(4) { animation-delay: 0.44s; }
+
+.agent-hero-glow {
+  box-shadow: 0 0 34px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+@keyframes agent-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.agent-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 40%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-shimmer 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-mark-active .agent-mark-core,
+  .agent-mark-active .agent-mark-node,
+  .agent-shimmer { animation: none; }
+}
+
+/* ── Agent pet ──────────────────────────────────────────────────────── */
+@keyframes agent-pet-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes agent-pet-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-6px) scale(1.06); }
+}
+.agent-pet { animation: agent-pet-bob 1.6s ease-in-out infinite; }
+.agent-pet-acting { animation: agent-pet-bob 0.7s ease-in-out infinite; }
+.agent-pet-happy { animation: agent-pet-hop 0.5s ease-in-out 2; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-pet, .agent-pet-acting, .agent-pet-happy { animation: none; }
+}
+
+/* ── Pet characters ─────────────────────────────────────────────────── */
+@keyframes pet-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+.pet-svg .pet-eyes { transform-origin: 24px 21px; animation: pet-blink 3.4s ease-in-out infinite; }
+
+@keyframes pet-body-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.6px); }
+}
+.pet-svg .pet-body { animation: pet-body-bob 1.8s ease-in-out infinite; }
+
+@keyframes pet-step-l {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(1.5px, -2.6px); }
+}
+@keyframes pet-step-r {
+  0%, 100% { transform: translate(0, -2.6px); }
+  50% { transform: translate(-1.5px, 0); }
+}
+@keyframes pet-walk-tilt {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+.pet-svg-walking { transform-origin: 24px 40px; animation: pet-walk-tilt 0.45s ease-in-out infinite; }
+.pet-svg-walking .pet-leg-l { animation: pet-step-l 0.32s linear infinite; }
+.pet-svg-walking .pet-leg-r { animation: pet-step-r 0.32s linear infinite; }
+.pet-svg-walking .pet-body { animation: pet-body-bob 0.32s ease-in-out infinite; }
+
+@keyframes pet-jump {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-5px) scale(1.05); }
+}
+.pet-svg-happy { animation: pet-jump 0.5s ease-in-out 3; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-svg, .pet-svg *, .pet-svg-walking, .pet-svg-happy { animation: none !important; }
+}
+
+@keyframes pet-dizzy-wobble {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+.pet-svg-dizzy { transform-origin: 24px 24px; animation: pet-dizzy-wobble 0.35s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pet-svg-dizzy { animation: none; } }
+
+/* ── Editor AI bulb (selection-following) ─────────────────────────────── */
+.exa-ai-bulb-wrap { position: relative; z-index: 60; }
+.exa-ai-bulb-wrap { transform: translateX(-135%); }
+.exa-ai-bulb {
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; width: 18px; height: 18px; line-height: 1;
+  border: none; background: transparent; color: var(--muted-foreground);
+  transition: color 0.15s ease;
+}
+.exa-ai-bulb:hover { color: var(--primary); }
+.exa-ai-menu {
+  position: absolute; top: 24px; left: 0; min-width: 215px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--popover);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+}
+.exa-ai-menu button {
+  display: block; width: 100%; text-align: left; padding: 5px 9px;
+  border-radius: 6px; font-size: 12px; color: var(--foreground);
+}
+.exa-ai-menu button:hover { background: var(--secondary); }
+
+/* Markdown-cell tables (TipTap TableKit) — real grid lines, compact cells */
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.md-body th {
+  background: color-mix(in oklab, var(--secondary) 60%, transparent);
+  font-weight: 600;
+}
+.md-body .selectedCell {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+
+
+/* /details — hide tool-execution chips in the Exa thread. */
+[data-hide-tools] [data-slot^="aui_tool"],
+[data-hide-tools] [class*="aui-tool-"] {
+  display: none !important;
+}

@@ -1,0 +1,26 @@
+{
+  "name": "exasol-studio",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.7.0",
+  "description": "Exasol Studio repository tooling and documentation workspace",
+  "scripts": {
+    "dev:desktop": "pnpm --dir ./apps/desktop dev",
+    "build:desktop": "pnpm --dir ./apps/desktop build",
+    "typecheck:desktop": "pnpm --dir ./apps/desktop exec tsc --noEmit -p ./tsconfig.json",
+    "test": "pnpm run test:agent-core && pnpm run test:desktop && pnpm run test:parser && pnpm run test:rust",
+    "test:agent-core": "pnpm --dir ./packages/agent-core test",
+    "test:desktop": "pnpm --dir ./apps/desktop test",
+    "test:parser": "pnpm --dir ./packages/exasol-sql-parser test",
+    "test:rust": "cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml",
+    "test:coverage": "pnpm --dir ./packages/agent-core test:coverage",
+    "graphify:check": "\"$npm_node_execpath\" ./tools/scripts/check-graphify.mjs",
+    "graphify:render": "\"$npm_node_execpath\" ./tools/scripts/render-graphify.mjs",
+    "graphify:html": "\"$npm_node_execpath\" ./tools/scripts/build-graphify-html.mjs",
+    "graphify": "\"$npm_node_execpath\" ./tools/scripts/check-graphify.mjs && \"$npm_node_execpath\" ./tools/scripts/render-graphify.mjs && \"$npm_node_execpath\" ./tools/scripts/build-graphify-html.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "mermaid": "^11.16.0"
+  }
+}
