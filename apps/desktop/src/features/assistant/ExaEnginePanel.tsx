@@ -379,11 +379,23 @@ export function ExaEnginePanel({
     agent: "",
   };
 
-  /** Refresh the sidebar's session list (titles are engine-generated). */
+  /** Refresh the sidebar's session list (titles are engine-generated).
+   *  Also validates the persisted active session: a chat deleted in another
+   *  window (or a stale localStorage entry) must not reopen as the thread. */
   const loadSessions = useCallback(() => {
     agent.engine
       .sessions()
-      .then((r) => setSessions(r.sessions))
+      .then((r) => {
+        setSessions(r.sessions);
+        setActiveSessionId((current) => {
+          if (current && !r.sessions.some((s) => s.id === current)) {
+            try { localStorage.removeItem("exa.activeSession"); } catch { /* private mode */ }
+            window.dispatchEvent(new CustomEvent("exa:session-deleted", { detail: { id: current } }));
+            return null;
+          }
+          return current;
+        });
+      })
       .catch(() => undefined);
   }, []);
   useEffect(() => {
@@ -398,7 +410,11 @@ export function ExaEnginePanel({
   async function deleteSession(id: string) {
     await agent.engine.deleteSession(id).catch(() => undefined);
     setSessions((ss) => ss.filter((s) => s.id !== id));
+    // The runtime's open thread is tracked separately from activeSessionId —
+    // tell the thread directly so a deleted chat can never stay on screen.
+    window.dispatchEvent(new CustomEvent("exa:session-deleted", { detail: { id } }));
     if (activeSessionId === id) newChat();
+    else if (localStorage.getItem("exa.activeSession") === id) localStorage.removeItem("exa.activeSession");
   }
 
   /** Rename a session engine-side (overrides the auto-generated title). */

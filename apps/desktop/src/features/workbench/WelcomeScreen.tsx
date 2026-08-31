@@ -24,7 +24,7 @@ export function WelcomeScreen({
   onOpenFile: () => void;
   onConnect: () => void;
   onMarketplace: () => void;
-  onGuides: () => void;
+  onGuides: (path: string) => void;
   onOpenRecent: (id: string) => void;
 }) {
   const start: { icon: IconName; label: string; onClick: () => void }[] = [
@@ -34,12 +34,13 @@ export function WelcomeScreen({
     { icon: "marketplace", label: "Browse the Marketplace…", onClick: onMarketplace },
   ];
 
-  const guides = [
-    "Get started with Exasol Studio",
-    "Connect to your Exasol database",
-    "Load data with ExaPump",
-    "Write and run your first query",
-    "Drivers & multi-driver execution",
+  // Each entry deep-links to its page in the in-app Docs tab.
+  const guides: { label: string; path: string }[] = [
+    { label: "Get started with Exasol Studio", path: "getting-started" },
+    { label: "Connect to your Exasol database", path: "connections" },
+    { label: "Load data with ExaPump", path: "workbench/files" },
+    { label: "Write and run your first query", path: "workbench/sql-editor" },
+    { label: "Drivers & multi-driver execution", path: "connections/drivers" },
   ];
 
   const openExternal = (url: string) => {
@@ -102,8 +103,8 @@ export function WelcomeScreen({
           <h2 className="mb-1 flex items-center gap-1.5 text-[15px] font-medium text-foreground/90">Guides</h2>
           <div className="flex flex-col">
             {guides.map((g) => (
-              <Link key={g} icon="guides" onClick={onGuides}>
-                {g}
+              <Link key={g.path} icon="guides" onClick={() => onGuides(g.path)}>
+                {g.label}
               </Link>
             ))}
           </div>
