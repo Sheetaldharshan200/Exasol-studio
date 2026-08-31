@@ -425,6 +425,22 @@ const AssistantMessage: FC = () => {
     ToolGroup,
     ReasoningGroup,
   } = useContext(ThreadComponentsContext);
+  // Engine-side context compaction produces an assistant "summary" message
+  // (mode: "compaction"). It's bookkeeping, not an answer — small local
+  // models make this fire every turn, flooding the chat with template text.
+  // Render a quiet marker instead of the summary.
+  const isCompaction = useAuiState(
+    (s) => (s.message.metadata?.custom as { mode?: string } | undefined)?.mode === "compaction",
+  );
+  if (isCompaction) {
+    return (
+      <MessagePrimitive.Root data-role="assistant" className="flex items-center justify-center py-1">
+        <span className="rounded-full border border-border/60 px-2.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+          context compacted
+        </span>
+      </MessagePrimitive.Root>
+    );
+  }
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -593,6 +609,14 @@ const UserMessageText: FC = () => {
 };
 
 const UserMessage: FC = () => {
+  // The engine's synthetic post-compaction follow-up ("Continue if you have
+  // next steps…") is machine chatter, never something the user typed — hide it.
+  const isSyntheticContinue = useAuiState((s) => {
+    const oc = (s.message.metadata?.custom as { opencode?: { parts?: { metadata?: { compaction_continue?: boolean } }[] } } | undefined)
+      ?.opencode;
+    return Boolean(oc?.parts?.some((part) => part?.metadata?.compaction_continue));
+  });
+  if (isSyntheticContinue) return null;
   return (
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"

@@ -2687,6 +2687,7 @@ export function ExasolStudio({
           activeTab.view !== "filePreview" &&
           activeTab.view !== "marketplace" &&
           activeTab.view !== "guides" &&
+          activeTab.view !== "docs" &&
           activeTab.view !== "welcome" &&
           activeTab.view !== "mcpConfig" &&
           activeTab.view !== "git" &&
