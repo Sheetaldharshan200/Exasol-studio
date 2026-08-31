@@ -434,7 +434,10 @@ const AssistantMessage: FC = () => {
   if (isCompaction) {
     if (!isRunning) return null;
     return (
-      <MessagePrimitive.Root data-role="assistant" className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-muted-foreground/70">
+      // -mt swallows the inter-message gap and the previous reply's reserved
+      // action-bar band — this is a one-line status, not a message, so it
+      // hugs the reply above it instead of floating a paragraph away.
+      <MessagePrimitive.Root data-role="assistant" className="-mt-9 flex items-center gap-1.5 px-2 text-[11px] text-muted-foreground/70">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/50" />
         compacting context…
       </MessagePrimitive.Root>
