@@ -426,18 +426,18 @@ const AssistantMessage: FC = () => {
     ReasoningGroup,
   } = useContext(ThreadComponentsContext);
   // Engine-side context compaction produces an assistant "summary" message
-  // (mode: "compaction"). It's bookkeeping, not an answer — small local
-  // models make this fire every turn, flooding the chat with template text.
-  // Render a quiet marker instead of the summary.
+  // (mode: "compaction"). It's bookkeeping, not an answer — show a tiny
+  // status only WHILE it runs; once done it vanishes and the flow continues.
   const isCompaction = useAuiState(
     (s) => (s.message.metadata?.custom as { mode?: string } | undefined)?.mode === "compaction",
   );
+  const isRunning = useAuiState((s) => s.message.status?.type === "running");
   if (isCompaction) {
+    if (!isRunning) return null;
     return (
-      <MessagePrimitive.Root data-role="assistant" className="flex items-center justify-center py-1">
-        <span className="rounded-full border border-border/60 px-2.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
-          context compacted
-        </span>
+      <MessagePrimitive.Root data-role="assistant" className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-muted-foreground/70">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/50" />
+        compacting context…
       </MessagePrimitive.Root>
     );
   }
