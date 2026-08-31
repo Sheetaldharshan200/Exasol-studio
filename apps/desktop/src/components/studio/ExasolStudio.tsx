@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
@@ -17,7 +17,6 @@ import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
 import { Docs } from "@/features/marketplace/Docs";
-import { DashboardsTab, DashboardTab } from "@/features/bi/Dashboards";
 import { ArtifactTab } from "@/features/artifact/ArtifactTab";
 import { artifacts as artifactClient } from "@/lib/agent-client";
 import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as DashPanelDoc } from "@/lib/agent-client";
@@ -45,6 +44,7 @@ import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
+import { askExa } from "@/features/assistant/exa/ask-exa";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
@@ -62,7 +62,6 @@ import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { openVsWindow, VS_DONE } from "@/lib/vs-window";
-import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
@@ -205,7 +204,6 @@ export function ExasolStudio({
   // The editor text the user had typed before stepping into SQL history, so
   // "next" past the newest entry restores it instead of losing it.
   const historyDraft = useRef<string | null>(null);
-  const [aiPrompt, setAiPrompt] = useState<{ text: string; nonce: number; send?: boolean; code?: string; codeLang?: string } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
   const [vsFor, setVsFor] = useState<string | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
@@ -394,6 +392,17 @@ export function ExasolStudio({
   closeActiveExaTabRef.current = () => {
     if (activeTab.view === "exaEngine") closeTab(activeTab.id);
   };
+  // askExa() (notebook cells, editor AI actions) needs the assistant visible —
+  // the full Exa tab counts; otherwise expand the side dock.
+  useEffect(() => {
+    const onOpen = () => {
+      if (activeTab.view === "exaEngine") return;
+      setAiOpen(true);
+      aiPanelRef.current?.expand();
+    };
+    window.addEventListener("studio:assistant-open", onOpen);
+    return () => window.removeEventListener("studio:assistant-open", onOpen);
+  }, [activeTab.view]);
   // The Exa tab becoming active closes the dock (the reverse direction).
   useEffect(() => {
     if (activeTab.view === "exaEngine") {
@@ -401,6 +410,14 @@ export function ExasolStudio({
       aiPanelRef.current?.collapse();
     }
   }, [activeTab.view]);
+
+  // Stable identity for the notebook's connection list — a fresh array every
+  // render would defeat CellView memoization (every keystroke re-rendering
+  // every Monaco cell).
+  const notebookConns = useMemo(
+    () => connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` })),
+    [connections],
+  );
 
   const loadHistory = useCallback(() => {
     ipc.sqlHistoryList().then(setHistory).catch(() => undefined);
@@ -802,33 +819,6 @@ export function ExasolStudio({
   // Plain functions (redefined each render) so they always see the CURRENT
   // connection/tabs — a useCallback([]) here froze them at the disconnected
   // first render and opened tabs in the wrong bucket.
-  // Open (or focus) a single dashboard as its own workbench tab, bound to its
-  // id. Dashboards used to open inside the one "Dashboards" list tab; now each
-  // is a first-class tab (like a query), so several can be open side by side.
-  function openDashboardTab(dashboardId: string, title?: string) {
-    // Deterministic id per (connection, dashboard): two rapid opens compute the
-    // SAME id, so the idempotent updater below appends at most once and both
-    // focus the one real tab — no duplicate-append race, no orphan active id.
-    const tabId = `tab-dash-${connKey}-${dashboardId}`;
-    const tab: SqlTab = {
-      id: tabId,
-      title: title || "Dashboard",
-      view: "dashboard",
-      dashboardId,
-      sql: "",
-      response: null,
-      execError: null,
-    };
-    updateTabs(connKey, (l) => (l.some((t) => t.id === tabId) ? l : [...l, tab]));
-    setActiveTabId(tabId);
-    sidebarPanelRef.current?.collapse();
-    setSidebarOpen(false);
-  }
-
-  function openSavedDashboard(id: string) {
-    openDashboardTab(id);
-  }
-
   async function openArtifact(id: string, title: string) {
       const a = await artifactClient.get(id).catch(() => null);
       if (!a) return;
@@ -895,7 +885,7 @@ export function ExasolStudio({
     const mode = "cursor" as CursorMode;
 
     const target = String(params.target ?? "");
-    const railId = target === "dashboards" ? "bi" : target;
+    const railId = target === "dashboards" ? "notebook" : target;
     const anchorSel =
       action === "connect"
         ? '[data-agent-id="titlebar.connect"]'
@@ -1051,7 +1041,7 @@ export function ExasolStudio({
             openGuides();
             break;
           case "bi":
-            void openBi();
+            openNotebook();
             break;
           case "settings":
             void openSettingsWindow();
@@ -1677,7 +1667,7 @@ export function ExasolStudio({
     if (to === "git") openGit();
     else if (to === "notebook") openNotebook();
     else if (to === "skills") openSkills();
-    else if (to === "bi") void openBi();
+    else if (to === "bi") openNotebook();
     else if (to.startsWith("marketplace")) {
       openMarketplace();
       if (to === "marketplace:updates")
@@ -2016,10 +2006,8 @@ export function ExasolStudio({
     const selected = sel ? editor?.getModel()?.getValueInRange(sel) ?? "" : "";
     const sql = (selected.trim() || activeTab.sql).trim();
     if (!sql) return;
-    setAiOpen(true);
-    aiPanelRef.current?.expand();
     const p = AI_SQL_PROMPTS[kind](sql);
-    setAiPrompt({ text: p.text, nonce: Date.now(), send: p.send });
+    askExa(p.text, { send: p.send });
   }
 
   // Inline AI edits (optimize / fix / edit) → a review diff in the editor with
@@ -2066,38 +2054,7 @@ export function ExasolStudio({
     else aiAskSql(k as keyof typeof AI_SQL_PROMPTS);
   };
 
-  function aiExplain() {
-    aiAskSql("explain-plan");
-  }
 
-  // Open (or focus) the Dashboards tab — agent-built dashboards rendered
-  // waits for it to come up.
-  function openBiTab() {
-    const list = tabsFor(connKey);
-    const existing = list.find((t) => t.view === "bi");
-    if (existing) {
-      setActiveTabId(existing.id);
-    } else {
-      tabCounter.current += 1;
-      const tab: SqlTab = {
-        id: `tab-bi-${Date.now()}-${tabCounter.current}`,
-        title: "Dashboards",
-        view: "bi",
-        sql: "",
-        response: null,
-        execError: null,
-      };
-      updateTabs(connKey, (l) => [...l, tab]);
-      setActiveTabId(tab.id);
-    }
-    // Full-tab view — collapse the side panel like Marketplace/Guides.
-    sidebarPanelRef.current?.collapse();
-    setSidebarOpen(false);
-  }
-
-  async function openBi() {
-    openBiTab();
-  }
 
   // "Dashboards" from a result: add this query as a panel to the dashboard for
   // its schema — one dashboard per schema, so every query against WEATHER lands
@@ -2480,10 +2437,6 @@ export function ExasolStudio({
               else openSkills();
               return;
             }
-            if (id === "bi") {
-              void openBi();
-              return;
-            }
             if (id === activity && sidebarOpen) {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -2703,8 +2656,6 @@ export function ExasolStudio({
           activeTab.view !== "filePreview" &&
           activeTab.view !== "marketplace" &&
           activeTab.view !== "guides" &&
-          activeTab.view !== "bi" &&
-          activeTab.view !== "dashboard" &&
           activeTab.view !== "welcome" &&
           activeTab.view !== "mcpConfig" &&
           activeTab.view !== "git" &&
@@ -2750,9 +2701,6 @@ export function ExasolStudio({
                   disabled={running || !connected}
                 >
                   <RunExplainIcon className="h-4 w-4 text-primary" />
-                </IconButton>
-                <IconButton label="AI: explain the plan for the selection" onClick={aiExplain} disabled={!connected}>
-                  <Sparkles className="h-3.5 w-3.5 text-syntax-function" />
                 </IconButton>
                 <IconButton label="Stop the running query" onClick={() => void cancelRunning()} disabled={!running || stopping}>
                   {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
@@ -3058,7 +3006,7 @@ export function ExasolStudio({
               <NotebookTab
                 profileId={connection?.profile.id ?? null}
                 connectionName={connection?.profile.name ?? ""}
-                connections={connections.map((c) => ({ id: c.profile.id, name: c.profile.name, host: `${c.profile.host}:${c.profile.port}` }))}
+                connections={notebookConns}
                 editorTheme={editorTheme}
                 beforeMount={(m) => {
                   applyMonacoThemes(m);
@@ -3068,21 +3016,17 @@ export function ExasolStudio({
                 }}
                 onConnectDb={() => openConnect()}
                 onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
-                onAsk={(text, kind) => {
-                  setAiOpen(true);
-                  aiPanelRef.current?.expand();
+                onAsk={(text, kind, chart) => {
+                  // Cell → exa: the prompt carries the source and, for chart
+                  // cells, the current design so exa can modify it directly.
                   const ask = {
-                    sql: { text: "Explain this SQL, spot any issues, and suggest an improvement.", lang: "sql" },
+                    sql: chart && chart !== "table"
+                      ? { text: `This notebook cell renders its result as a "${chart}" chart. Help me improve or redesign the visualization and the SQL behind it — suggest the best chart kind and any query changes.`, lang: "sql" }
+                      : { text: "Explain this SQL, spot any issues, and suggest an improvement.", lang: "sql" },
                     markdown: { text: "Improve this note — fix wording, structure it better, and fill any gaps.", lang: "markdown" },
                     mermaid: { text: "Explain this diagram and suggest how to improve or extend it.", lang: "mermaid" },
                   }[kind ?? "sql"];
-                  setAiPrompt({
-                    text: ask.text,
-                    code: text || "",
-                    codeLang: ask.lang,
-                    nonce: Date.now(),
-                    send: false,
-                  });
+                  askExa(`${ask.text}\n\n\`\`\`${ask.lang}\n${text || ""}\n\`\`\``, { send: false });
                 }}
               />
             </div>
@@ -3093,23 +3037,6 @@ export function ExasolStudio({
           ) : activeTab.view === "artifact" ? (
             <div className="min-h-0 flex-1">
               <ArtifactTab title={activeTab.title} html={activeTab.artifactHtml ?? ""} onOpen={openArtifact} />
-            </div>
-          ) : activeTab.view === "bi" ? (
-            <div className="min-h-0 flex-1">
-              <DashboardsTab
-                profileId={connection?.profile.id ?? null}
-                connectionName={connection?.profile.name ?? ""}
-                onOpenDashboard={openDashboardTab}
-              />
-            </div>
-          ) : activeTab.view === "dashboard" && activeTab.dashboardId ? (
-            <div className="min-h-0 flex-1">
-              <DashboardTab
-                dashboardId={activeTab.dashboardId}
-                profileId={connection?.profile.id ?? null}
-                connectionName={connection?.profile.name ?? ""}
-                onClose={() => closeTab(activeTab.id)}
-              />
             </div>
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">

@@ -78,11 +78,12 @@ test("prunes an active id that points at a dropped tab", () => {
   assert.equal(out.activeIdByConn.c1, undefined); // "gone" wasn't persisted
 });
 
-test("keeps a dashboard tab's dashboardId and an object tab's ref", () => {
+test("keeps an object tab's ref; a legacy dashboard tab is dropped", () => {
   const state: WorkspaceState = {
     tabsByConn: {
       c1: [
-        tab({ id: "d", view: "dashboard", dashboardId: "dash-42", title: "Sales" }),
+        // Persisted before the Dashboards surface was folded into the Notebook.
+        tab({ id: "d", view: "dashboard" as unknown as SqlTab["view"], title: "Sales" }),
         tab({ id: "o", view: "object", objectProfileId: "c1", objectRef: { type: "table", schema: "S", name: "T" } as unknown as SqlTab["objectRef"] }),
       ],
     },
@@ -90,8 +91,8 @@ test("keeps a dashboard tab's dashboardId and an object tab's ref", () => {
     activeIdByConn: {},
   };
   const out = roundTrip(state)!;
-  assert.equal(out.tabsByConn.c1[0].dashboardId, "dash-42");
-  assert.equal(out.tabsByConn.c1[1].objectProfileId, "c1");
+  assert.equal(out.tabsByConn.c1.length, 1);
+  assert.equal(out.tabsByConn.c1[0].objectProfileId, "c1");
 });
 
 test("connections with no persistable tabs are omitted entirely", () => {
@@ -106,13 +107,13 @@ test("connections with no persistable tabs are omitted entirely", () => {
   assert.equal(out.activeIdByConn.c1, undefined);
 });
 
-test("drops tabs whose view is missing its required identity field", () => {
+test("drops tabs whose view is missing its required identity field (and legacy dashboards)", () => {
   const raw = JSON.stringify({
     v: 1,
     tabsByConn: {
       c1: [
-        { id: "d-ok", title: "D", view: "dashboard", dashboardId: "x", sql: "" },
-        { id: "d-bad", title: "D", view: "dashboard", sql: "" }, // no dashboardId
+        { id: "s-ok", title: "Q", view: "sql", sql: "SELECT 1" },
+        { id: "d-legacy", title: "D", view: "dashboard", dashboardId: "x", sql: "" }, // pre-notebook-hub tab
         { id: "o-bad", title: "O", view: "object", objectProfileId: "c1", sql: "" }, // no objectRef
         { id: "f-bad", title: "F", view: "filePreview", sql: "" }, // no filePath
       ],
@@ -121,7 +122,7 @@ test("drops tabs whose view is missing its required identity field", () => {
     activeIdByConn: {},
   });
   const out = deserializeWorkspace(raw)!;
-  assert.deepEqual(out.tabsByConn.c1.map((t) => t.id), ["d-ok"]);
+  assert.deepEqual(out.tabsByConn.c1.map((t) => t.id), ["s-ok"]);
 });
 
 test("deserialize returns null for empty, corrupt, or wrong-version input", () => {

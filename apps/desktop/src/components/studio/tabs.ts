@@ -24,8 +24,6 @@ export type TabView =
   | "guides"
   | "object"
   | "dba"
-  | "bi"
-  | "dashboard"
   | "welcome"
   | "artifact"
   | "mcpConfig"
@@ -51,8 +49,6 @@ export type SqlTab = {
   view: TabView;
   /** Result panel sub-view (defaults to "results" when unset). */
   resultView?: ResultView;
-  /** For "dashboard" tabs — the dashboard this tab renders. */
-  dashboardId?: string;
   /** For "connect" tabs — pre-fill the new-connection form (e.g. the bundled
    *  Exasol Personal profile when a direct connect fell back to the form). */
   connectDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
@@ -141,8 +137,6 @@ export const TAB_ICON: Record<TabView, IconName> = {
   marketplace: "marketplace",
   guides: "guides",
   object: "table",
-  bi: "dashboards",
-  dashboard: "dashboards",
   connProps: "sliders",
   welcome: "home",
   artifact: "file",

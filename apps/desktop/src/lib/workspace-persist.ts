@@ -28,8 +28,6 @@ const VERSION = 1;
 const PERSISTABLE_VIEWS: ReadonlySet<TabView> = new Set<TabView>([
   "sql",
   "object",
-  "bi",
-  "dashboard",
   "connProps",
   "filePreview",
   "notebook",
@@ -48,7 +46,6 @@ const KEEP: readonly (keyof SqlTab)[] = [
   "title",
   "view",
   "resultView",
-  "dashboardId",
   "connectDraft",
   "sql",
   "pinned",
@@ -80,7 +77,6 @@ function reviveTab(raw: unknown): SqlTab | null {
   if (!PERSISTABLE_VIEWS.has(t.view)) return null;
   // A tab whose view needs identity fields to render must carry them, or it
   // would fall through to the generic Visualizer on restore. Drop it instead.
-  if (t.view === "dashboard" && typeof t.dashboardId !== "string") return null;
   if (t.view === "object" && (!t.objectRef || typeof t.objectProfileId !== "string")) return null;
   if (t.view === "filePreview" && typeof t.filePath !== "string") return null;
   return {
