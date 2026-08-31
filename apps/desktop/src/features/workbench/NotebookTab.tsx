@@ -23,7 +23,7 @@ import {
   Trash2,
   Waypoints,
 } from "lucide-react";
-import { errorMessage, ipc, type StatementResult } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type StatementResult } from "@/lib/ipc";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
 import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
@@ -363,14 +363,27 @@ export function NotebookTab({
     const title = activeBook.title || "Exasol Notebook";
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "notebook";
     try {
+      // Browser build: no native save dialog — hand the file to the browser's
+      // own download flow (the Tauri dialog API throws in a plain web page).
+      const download = (filename: string, text: string, mime: string) => {
+        const url = URL.createObjectURL(new Blob([text], { type: mime }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        notify("success", "Notebook exported", `Downloaded ${filename}`);
+      };
       if (kind === "markdown") {
         const md = buildNotebookMarkdown(title, exportCells);
+        if (!isTauri()) { download(`${slug}.md`, md, "text/markdown"); return; }
         const path = await saveDialog({ defaultPath: `${slug}.md`, filters: [{ name: "Markdown", extensions: ["md"] }] });
         if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
         return;
       }
       const html = await buildNotebookHtml(title, exportCells);
       if (kind === "html") {
+        if (!isTauri()) { download(`${slug}.html`, html, "text/html"); return; }
         const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
         if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
       } else {

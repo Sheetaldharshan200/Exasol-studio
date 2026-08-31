@@ -254,8 +254,22 @@ export function Notifications() {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start justify-between gap-2">
                                 <span className="text-[13px] font-medium text-foreground">{n.title}</span>
-                                <span className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground">
-                                  {timeAgo(n.at)}
+                                {/* Timestamp and dismiss share the right edge as siblings
+                                    with a real gap — the × used to float on top of "1h ago". */}
+                                <span className="flex shrink-0 items-center gap-1.5">
+                                  <span className="font-mono text-[10px] text-muted-foreground">{timeAgo(n.at)}</span>
+                                  <span
+                                    role="button"
+                                    tabIndex={-1}
+                                    aria-label="Dismiss"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      dismiss(n.id);
+                                    }}
+                                    className="flex h-4.5 w-4.5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-background hover:text-foreground"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </span>
                                 </span>
                               </div>
                               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{n.body}</p>
@@ -263,18 +277,6 @@ export function Notifications() {
                             {!n.read ? (
                               <span className="absolute top-3 left-0 h-6 w-0.5 rounded-r bg-primary" />
                             ) : null}
-                            <span
-                              role="button"
-                              tabIndex={-1}
-                              aria-label="Dismiss"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                dismiss(n.id);
-                              }}
-                              className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-background hover:text-foreground"
-                            >
-                              <X className="h-3 w-3" />
-                            </span>
                           </button>
                         </AnimatedListItem>
                       );
