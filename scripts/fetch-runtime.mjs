@@ -70,12 +70,23 @@ function extract(archive, dir) {
 }
 
 /** Find the newest llama.cpp release asset URL for this platform (no API — use
- *  the redirect from /releases/latest, which isn't rate-limited). */
+ *  the redirect from /releases/latest, which isn't rate-limited).
+ *
+ *  llama.cpp's "latest" is now a semver marker release (e.g. v0.3.0) whose only
+ *  asset is nightly-tag.txt naming the blessed `b####` build tag — the b-tags
+ *  are where the per-platform binaries actually live. Older behavior (latest
+ *  IS a b-tag) still works. */
 async function latestLlamaAsset(fragment, ext) {
   const r = await fetch("https://github.com/ggml-org/llama.cpp/releases/latest", { redirect: "manual" });
   const loc = r.headers.get("location") ?? "";
-  const tag = loc.split("/").pop();
+  let tag = loc.split("/").pop();
   if (!tag) throw new Error("could not resolve llama.cpp latest tag");
+  if (!/^b\d+$/.test(tag)) {
+    const nightly = await fetch(`https://github.com/ggml-org/llama.cpp/releases/download/${tag}/nightly-tag.txt`);
+    if (!nightly.ok) throw new Error(`llama.cpp latest (${tag}) is not a build tag and has no nightly-tag.txt`);
+    tag = (await nightly.text()).trim();
+    if (!/^b\d+$/.test(tag)) throw new Error(`nightly-tag.txt named an unexpected tag: "${tag}"`);
+  }
   const name = `llama-${tag}${fragment}${ext}`;
   return `https://github.com/ggml-org/llama.cpp/releases/download/${tag}/${name}`;
 }
