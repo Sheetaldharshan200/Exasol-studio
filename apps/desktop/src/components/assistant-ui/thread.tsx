@@ -21,7 +21,7 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { stripMachineContext } from "@/features/assistant/exa/context";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
@@ -148,8 +148,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
       >
         <div
           className={cn(
-            // pt-14 clears the floating header actions overlaying the top edge.
-            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-14",
+            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-3",
             isEmpty && "justify-center",
           )}
         >
@@ -335,10 +334,10 @@ const ComposerAction: FC = () => {
  * stalled (engine down, model unreachable) says so instead of implying
  * progress forever. */
 const WORKING_STAGES: { after: number; label: string }[] = [
-  { after: 0, label: "Connecting" },
-  { after: 4, label: "Waiting for the model" },
-  { after: 12, label: "Still waiting — the model hasn't answered yet" },
-  { after: 30, label: "No response — check the model connection or press Stop" },
+  { after: 0, label: "Thinking" },
+  { after: 5, label: "Waiting for the model to answer" },
+  { after: 15, label: "Still working — larger prompts and local models take longer" },
+  { after: 40, label: "No response yet — check the model connection or press Stop" },
 ];
 
 const AssistantWorkingIndicator: FC = () => {
@@ -357,7 +356,7 @@ const AssistantWorkingIndicator: FC = () => {
         data-slot="aui_assistant-message-indicator"
         className="text-muted-foreground inline-flex items-center gap-2 align-middle"
       >
-        <DotMatrix state="connecting" aria-hidden />
+        <BrandLoader size={22} aria-hidden />
         <span className="text-sm">{stage.label}</span>
       </span>
     );

@@ -1671,8 +1671,10 @@ export function ExaThread({
             {/* ── Main column: headerless — a floating cluster carries the
                 controls; the workbench tab already names the surface. ── */}
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="pointer-events-none absolute right-2 top-1.5 z-10">
-                <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-border/40 bg-background/70 px-1 py-0.5 backdrop-blur-sm">
+              {/* Real header row (not a floating overlay): scrolled messages
+                  can never slide underneath the controls. */}
+              <div className="flex shrink-0 items-center justify-end px-2 pt-1.5">
+                <div className="flex items-center gap-0.5 rounded-full border border-border/40 bg-background/70 px-1 py-0.5">
                   {/* Primary action first, passive/window controls last. */}
                   <button
                     type="button"
