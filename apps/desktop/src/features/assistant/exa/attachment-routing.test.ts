@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildDataFileNote, fileExt, fmtBytes, INLINE_LIMIT_BYTES, routeAttachment } from "./attachment-routing.ts";
+import { buildDataFileNote, extractDataFileNotes, fileExt, fmtBytes, INLINE_LIMIT_BYTES, routeAttachment } from "./attachment-routing.ts";
 
 test("data extensions go to disk regardless of size", () => {
   assert.equal(routeAttachment("orders.csv", 10), "disk");
@@ -31,6 +31,21 @@ test("note carries path, size and a capped preview", () => {
   const long = buildDataFileNote("/p", "n.csv", 1, ["x".repeat(500)]);
   assert.ok(long.includes("…"));
   assert.ok(!long.includes("x".repeat(300)));
+});
+
+test("extractDataFileNotes round-trips what buildDataFileNote emits", () => {
+  const a = buildDataFileNote("/tmp/att/customer.csv", "customer.csv", 489_472, ["id,name"]);
+  const b = buildDataFileNote("/tmp/att/line item.csv", "line item.csv", 14_890_000);
+  const notes = extractDataFileNotes(`prefix\n${a}\n${b}\nload this data`);
+  assert.equal(notes.length, 2);
+  assert.deepEqual(notes[0], { name: "customer.csv", size: "478 KB", path: "/tmp/att/customer.csv" });
+  assert.equal(notes[1].name, "line item.csv");
+  assert.equal(notes[1].path, "/tmp/att/line item.csv");
+});
+
+test("extractDataFileNotes ignores unrelated text", () => {
+  assert.deepEqual(extractDataFileNotes("load this data"), []);
+  assert.deepEqual(extractDataFileNotes(""), []);
 });
 
 test("fmtBytes picks sane units", () => {

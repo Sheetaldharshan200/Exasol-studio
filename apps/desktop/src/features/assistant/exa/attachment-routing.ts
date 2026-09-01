@@ -29,6 +29,21 @@ export function fmtBytes(n: number): string {
   return `${Math.round((n / (1024 * 1024)) * 10) / 10} MB`;
 }
 
+/** A note found in a sent message — the visible pin's data. */
+export type DataFileNote = { name: string; size: string; path: string };
+
+/** Recover the file pins from a sent message's raw text (the notes travel
+ *  sentinel-hidden inside it, so pins survive reloads without any extra
+ *  message metadata). Matches what `buildDataFileNote` emits. */
+export function extractDataFileNotes(text: string): DataFileNote[] {
+  const out: DataFileNote[] = [];
+  const re = /Attached data file "([^"\n]+)" \(([^)\n]+)\) saved to: ([^\n]+)/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    out.push({ name: m[1], size: m[2], path: m[3].trim() });
+  }
+  return out;
+}
+
 /** The text part sent in place of the file body. `firstLines` (for text-like
  *  data) gives the model the header/shape without the payload. */
 export function buildDataFileNote(path: string, name: string, size: number, firstLines?: string[]): string {
