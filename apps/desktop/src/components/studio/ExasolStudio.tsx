@@ -802,6 +802,9 @@ export function ExasolStudio({
     try {
       const server = await ipc.connect(p.id);
       await onConnected(p, server);
+      // Landing surface after connecting: a fresh query tab, ready to type —
+      // not whatever tab (often the notebook) happened to be open.
+      await openBuiltSql("", false);
     } catch {
       // Direct connect couldn't proceed (DB still starting, password cleared,
       // etc.) — open the connect form PRE-FILLED with this profile so the user
@@ -881,6 +884,7 @@ export function ExasolStudio({
     const server = await ipc.connect(profile.id);
     await onConnected(profile, server);
     await agentClient.grantConnection(profile.id).catch(() => undefined);
+    await openBuiltSql("", false);
     return { ok: true, detail: profile.id };
   }
 
@@ -2945,6 +2949,7 @@ export function ExasolStudio({
                 onConnected={async (p, srv) => {
                   await onConnected(p, srv);
                   await agentClient.grantConnection(p.id).catch(() => undefined);
+                  await openBuiltSql("", false);
                 }}
               />
             </div>
