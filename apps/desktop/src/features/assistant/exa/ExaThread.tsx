@@ -23,6 +23,8 @@ import {
   NotebookPen,
   Pencil as PencilIcon,
   AppWindow,
+  Pencil,
+  PencilOff,
   Plus as PlusIcon,
   Search,
   ShieldCheck as ShieldCheckIcon,
@@ -998,8 +1000,10 @@ function PinAutoApply() {
   });
   useEffect(() => {
     if (!sig || !applySql) return;
-    const w = window as unknown as { __exaPinnedCell?: string | null; __exaPinnedTabId?: string | null; __exaAutoApplied?: Set<string> };
+    const w = window as unknown as { __exaPinnedCell?: string | null; __exaPinnedTabId?: string | null; __exaPinnedTabWrite?: boolean; __exaAutoApplied?: Set<string> };
     if (!w.__exaPinnedCell && !w.__exaPinnedTabId) return;
+    // Pencil off = the tab pin is context-only: never write into the tab.
+    if (!w.__exaPinnedCell && w.__exaPinnedTabWrite === false) return;
     const [id, text] = [sig.slice(0, sig.indexOf("\u0000")), sig.slice(sig.indexOf("\u0000") + 1)];
     const sql = lastSqlFence(text);
     if (!sql) return;
@@ -1058,7 +1062,9 @@ export function ExaComposerChips() {
             // A pinned QUERY tab receives the reply's final ```sql block
             // directly (see the auto-apply watcher below).
             if (snap.activeTab?.view === "sql") {
-              (window as unknown as { __exaPinnedTabId?: string | null }).__exaPinnedTabId = snap.activeTab.id;
+              const w = window as unknown as { __exaPinnedTabId?: string | null; __exaPinnedTabWrite?: boolean };
+              w.__exaPinnedTabId = snap.activeTab.id;
+              w.__exaPinnedTabWrite = true;
             }
           }}
           title={`Attach the ${activeTab.view} tab as context`}
@@ -1086,6 +1092,11 @@ export function ExaComposerChips() {
       ) : null}
       {api.chips.map((c) => {
         const Icon = chipIcon(c.providerId);
+        const w = window as unknown as { __exaPinnedTabId?: string | null; __exaPinnedTabWrite?: boolean };
+        // The tab pin's write toggle: pencil = the reply's final SQL writes
+        // into the tab; struck pencil = context only, nothing is applied.
+        const isWritableTabPin = c.id === "tab" && Boolean(w.__exaPinnedTabId);
+        const writeOn = w.__exaPinnedTabWrite !== false;
         return (
           <Attachment key={c.id} className="max-w-56">
             <AttachmentMedia>
@@ -1093,9 +1104,23 @@ export function ExaComposerChips() {
             </AttachmentMedia>
             <AttachmentContent>
               <AttachmentTitle>{c.label}</AttachmentTitle>
-              <AttachmentDescription>@ context · sent with your message</AttachmentDescription>
+              <AttachmentDescription>
+                {isWritableTabPin ? (writeOn ? "pinned tab · replies write into it" : "pinned tab · context only") : "@ context · sent with your message"}
+              </AttachmentDescription>
             </AttachmentContent>
             <AttachmentActions>
+              {isWritableTabPin ? (
+                <AttachmentAction
+                  aria-label={writeOn ? "Switch to context only (no writes into the tab)" : "Let replies write into the tab"}
+                  onClick={() => {
+                    w.__exaPinnedTabWrite = !writeOn;
+                    // Refresh the chip body to match the mode (replace-by-id).
+                    api.addChip(resolveContext("tab", w.__exaPinnedTabWrite ? null : "readonly", api.getSnapshot()));
+                  }}
+                >
+                  {writeOn ? <Pencil className="text-primary" /> : <PencilOff />}
+                </AttachmentAction>
+              ) : null}
               <AttachmentAction aria-label={`Remove ${c.label}`} onClick={() => api.removeChip(c.id)}>
                 <X />
               </AttachmentAction>

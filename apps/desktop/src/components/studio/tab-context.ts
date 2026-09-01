@@ -5,7 +5,15 @@
 
 import type { SqlTab } from "./tabs";
 
-export type TabContext = { id: string; view: string; title: string; body: string };
+export type TabContext = {
+  id: string;
+  view: string;
+  title: string;
+  body: string;
+  /** For writable targets (query tabs): the WORK-ON-THIS mandate, appended
+   *  only while the pin's pencil (write mode) is on. */
+  mandate?: string;
+};
 
 type NotebookDocLite = { id: string; title: string; cells: { type: string; src: string; chart?: string }[] };
 
@@ -36,8 +44,8 @@ export function describeTabForContext(
         ...base,
         view: "sql",
         title: tab.title,
-        body:
-          `The user pinned the open query tab "${tab.title}". Current SQL:\n\n\`\`\`sql\n${tab.sql.trim() || "-- (empty)"}\n\`\`\`${err}\n\n` +
+        body: `The user pinned the open query tab "${tab.title}". Current SQL:\n\n\`\`\`sql\n${tab.sql.trim() || "-- (empty)"}\n\`\`\`${err}`,
+        mandate:
           "WORK ON THIS TAB DIRECTLY: write or fix the SQL (verify with your database tools when you can) and finish with the final SQL in a ```sql code block — the app writes that block INTO this query tab. Do the job; don't just describe it.",
       };
     }
