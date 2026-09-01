@@ -573,8 +573,12 @@ pub async fn execute_sql(
         .map(|r| r.row_count)
         .sum();
 
+    // Millis alone collide when runs land in the same millisecond (notebook
+    // Run-All, fast statements) — duplicate ids duplicate React rows on sort.
+    static HISTORY_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = HISTORY_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let entry = HistoryEntry {
-        id: format!("h-{}", chrono::Utc::now().timestamp_millis()),
+        id: format!("h-{}-{}", chrono::Utc::now().timestamp_millis(), seq),
         executed_at: chrono::Utc::now().to_rfc3339(),
         profile_id: profile_id.clone(),
         connection_name,

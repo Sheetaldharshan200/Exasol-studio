@@ -16,6 +16,7 @@ import {
   ChevronUp,
   CircleSlash2,
   History,
+  ListFilter,
   Loader2,
   Pencil,
   Plus,
@@ -28,6 +29,15 @@ import {
 } from "lucide-react";
 
 import { CopyButton } from "@/components/ui/copy-button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
@@ -299,6 +309,10 @@ type LogSortKey = "time" | "status" | "command" | "exec" | "fetch" | "rows" | "m
 function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
   const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
   const [detail, setDetail] = useState<{ label: string; value: string; mono: boolean; sql?: string } | null>(null);
+  // Value filters (empty set = show everything). Status and Command filter by
+  // picking values from a dropdown, not by flipping sort direction.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [commandFilter, setCommandFilter] = useState<Set<string>>(new Set());
 
   const verb = (e: HistoryEntry) => (e.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
   const sortVal = (e: HistoryEntry, key: LogSortKey): string | number => {
@@ -313,14 +327,31 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
       case "sql": return e.sql;
     }
   };
-  const sorted = [...entries].sort((a, b) => {
-    const va = sortVal(a, sort.key);
-    const vb = sortVal(b, sort.key);
+  // Stable per-entry render key: entries persisted before ids carried a
+  // sequence number can SHARE an id (same-millisecond runs), and duplicate
+  // React keys duplicate rows once the sort reorders them. The original list
+  // position disambiguates and never changes with the sort.
+  const keyed = entries.map((e, i) => ({ e, k: `${e.id}#${i}` }));
+  const commandOptions = [...new Set(entries.map(verb))].sort();
+  const filtered = keyed.filter(
+    ({ e }) =>
+      (statusFilter.size === 0 || statusFilter.has(e.success ? "Success" : "Failed")) &&
+      (commandFilter.size === 0 || commandFilter.has(verb(e))),
+  );
+  const sorted = [...filtered].sort((a, b) => {
+    const va = sortVal(a.e, sort.key);
+    const vb = sortVal(b.e, sort.key);
     const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
     return cmp * sort.dir;
   });
   const flip = (key: LogSortKey) =>
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
+  const toggleIn = (set: Set<string>, value: string): Set<string> => {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return next;
+  };
 
   const HEADERS: { key: LogSortKey; label: string; width?: number | string; right?: boolean }[] = [
     { key: "time", label: "Time", width: 78 },
@@ -346,33 +377,93 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
         </colgroup>
         <thead className="sticky top-0 z-10">
           <tr className="text-left text-muted-foreground">
-            {HEADERS.map((h) => (
-              <th key={h.key} className="border-r border-b border-border bg-secondary p-0 font-medium last:border-r-0">
-                <button
-                  onClick={() => flip(h.key)}
-                  className={cn(
-                    "flex w-full items-center gap-1 px-2.5 py-1.5 hover:text-foreground",
-                    h.right && "justify-end",
-                    sort.key === h.key && "text-foreground",
-                  )}
-                >
-                  {h.label}
-                  {sort.key === h.key ? (
-                    sort.dir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-                  ) : null}
-                </button>
-              </th>
-            ))}
+            {HEADERS.map((h) => {
+              // Status and Command are LOW-CARDINALITY columns: their header
+              // opens a dropdown listing the actual values to filter by (plus
+              // explicit sort actions) — up/down toggling alone is useless
+              // for two-value columns.
+              const filterSpec =
+                h.key === "status"
+                  ? { values: ["Success", "Failed"], set: statusFilter, update: setStatusFilter }
+                  : h.key === "command"
+                    ? { values: commandOptions, set: commandFilter, update: setCommandFilter }
+                    : null;
+              if (filterSpec) {
+                const active = filterSpec.set.size > 0;
+                return (
+                  <th key={h.key} className="border-r border-b border-border bg-secondary p-0 font-medium last:border-r-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={cn(
+                            "flex w-full items-center gap-1 px-2.5 py-1.5 hover:text-foreground",
+                            (sort.key === h.key || active) && "text-foreground",
+                          )}
+                        >
+                          {h.label}
+                          {active ? <ListFilter className="h-3 w-3 text-primary" /> : null}
+                          {sort.key === h.key ? (
+                            sort.dir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                          ) : null}
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-44">
+                        <DropdownMenuLabel>Show only</DropdownMenuLabel>
+                        {filterSpec.values.map((v) => (
+                          <DropdownMenuCheckboxItem
+                            key={v}
+                            checked={filterSpec.set.has(v)}
+                            onCheckedChange={() => filterSpec.update(toggleIn(filterSpec.set, v))}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            {v}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                        {active ? (
+                          <DropdownMenuItem onClick={() => filterSpec.update(new Set())}>
+                            <X className="h-3.5 w-3.5" /> Clear filter
+                          </DropdownMenuItem>
+                        ) : null}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setSort({ key: h.key, dir: 1 })}>
+                          <ChevronUp className="h-3.5 w-3.5" /> Sort ascending
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setSort({ key: h.key, dir: -1 })}>
+                          <ChevronDown className="h-3.5 w-3.5" /> Sort descending
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </th>
+                );
+              }
+              return (
+                <th key={h.key} className="border-r border-b border-border bg-secondary p-0 font-medium last:border-r-0">
+                  <button
+                    onClick={() => flip(h.key)}
+                    className={cn(
+                      "flex w-full items-center gap-1 px-2.5 py-1.5 hover:text-foreground",
+                      h.right && "justify-end",
+                      sort.key === h.key && "text-foreground",
+                    )}
+                  >
+                    {h.label}
+                    {sort.key === h.key ? (
+                      sort.dir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                    ) : null}
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {sorted.map((e) => {
+          {sorted.map(({ e, k }) => {
             const rows = e.truncated ? `${e.rowCount.toLocaleString()}+` : e.rowCount.toLocaleString();
             const summary =
               `${e.success ? "Success" : "Failed"} · ${verb(e)}${e.statementCount > 1 ? ` ×${e.statementCount}` : ""} · ` +
               `${new Date(e.executedAt).toLocaleString()} · ${e.connectionName}`;
             return (
-              <tr key={e.id} className="align-top">
+              <tr key={k} className="align-top">
                 <td className="border-r border-b border-border p-0 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
                   <button className={cellBtn} onClick={() => openDetail("Executed at", `${new Date(e.executedAt).toLocaleString()}\n\n${summary}`)}>
                     {new Date(e.executedAt).toLocaleTimeString()}
