@@ -21,6 +21,7 @@ import {
   MessageSquare,
   NotebookPen,
   Pencil as PencilIcon,
+  AppWindow,
   Plus as PlusIcon,
   Search,
   ShieldCheck as ShieldCheckIcon,
@@ -982,11 +983,29 @@ export function ExaSendButton() {
 /** Context chips row shown above the registry composer's input. */
 export function ExaComposerChips() {
   const api = useExaComposer();
-  if (!api || (api.chips.length === 0 && !api.pendingCommand)) return null;
+  // Copilot-style "current tab" pin: the active workbench tab (query,
+  // notebook, visualizer, …) is always offered; clicking attaches it as
+  // context. Re-reads on tab switches via studio:tab-context-changed.
+  const [tabTick, setTabTick] = useState(0);
+  useEffect(() => {
+    const on = () => setTabTick((t) => t + 1);
+    window.addEventListener("studio:tab-context-changed", on);
+    return () => window.removeEventListener("studio:tab-context-changed", on);
+  }, []);
+  const activeTab = useMemo(() => {
+    void tabTick;
+    return api?.getSnapshot().activeTab ?? null;
+  }, [api, tabTick]);
+  if (!api) return null;
+  const tabPinned = api.chips.some((c) => c.providerId === "tab");
+  const suggestTab = activeTab && !tabPinned;
+  if (api.chips.length === 0 && !api.pendingCommand && !suggestTab) return null;
   // Same card system as file/photo attachments (ui/attachment) — one visual
   // language for everything pinned to the composer.
   const chipIcon = (providerId: string) =>
-    providerId === "query" || providerId === "history"
+    providerId === "tab"
+      ? AppWindow
+      : providerId === "query" || providerId === "history"
       ? FileCodeIcon
       : providerId === "results" || providerId === "table" || providerId === "schema" || providerId === "connection"
         ? TableIcon
@@ -995,6 +1014,20 @@ export function ExaComposerChips() {
           : WrenchIcon;
   return (
     <AttachmentGroup className="px-2 pt-1.5">
+      {suggestTab ? (
+        // Ghost pill (dashed): one click pins what's on screen. Becomes a real
+        // chip below; removing the chip brings the suggestion back.
+        <button
+          type="button"
+          onClick={() => api.addChip(resolveContext("tab", null, api.getSnapshot()))}
+          title={`Attach the ${activeTab.view} tab as context`}
+          className="flex h-6 items-center gap-1.5 self-center rounded-lg border border-dashed border-border px-2 text-[11.5px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+        >
+          <PlusIcon className="h-3 w-3" />
+          <span className="max-w-40 truncate">{activeTab.title}</span>
+          <span className="text-[10px] text-muted-foreground/60">current tab</span>
+        </button>
+      ) : null}
       {api.pendingCommand ? (
         // A command is not an attachment — just the /name in the accent color,
         // with a quiet ✕ to drop it.
