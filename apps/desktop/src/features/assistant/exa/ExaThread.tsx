@@ -11,7 +11,6 @@ import {
   Globe as GlobeIcon,
   GlobeLock as GlobeLockIcon,
   Loader2 as Loader2Icon,
-  Slash as SlashIcon,
   Table as TableIcon,
   ArrowUp as SendArrowIcon,
   Bot,
@@ -996,20 +995,19 @@ export function ExaComposerChips() {
   return (
     <AttachmentGroup className="px-2 pt-1.5">
       {api.pendingCommand ? (
-        <Attachment className="max-w-56">
-          <AttachmentMedia>
-            <SlashIcon />
-          </AttachmentMedia>
-          <AttachmentContent>
-            <AttachmentTitle>/{api.pendingCommand.title}</AttachmentTitle>
-            <AttachmentDescription>command — type its input, then send</AttachmentDescription>
-          </AttachmentContent>
-          <AttachmentActions>
-            <AttachmentAction aria-label="Remove command" onClick={() => api.setPendingCommand(null)}>
-              <X />
-            </AttachmentAction>
-          </AttachmentActions>
-        </Attachment>
+        // A command is not an attachment — just the /name in the accent color,
+        // with a quiet ✕ to drop it.
+        <span className="flex h-6 items-center gap-1 self-center pl-1 text-[12.5px] font-medium text-syntax-function">
+          /{api.pendingCommand.title}
+          <button
+            type="button"
+            aria-label="Remove command"
+            onClick={() => api.setPendingCommand(null)}
+            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
       ) : null}
       {api.chips.map((c) => {
         const Icon = chipIcon(c.providerId);
