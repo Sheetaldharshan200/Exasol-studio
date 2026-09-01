@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
 import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
@@ -147,7 +148,26 @@ export function ExaEnginePanel({
     } catch {
       /* private mode */
     }
+    window.dispatchEvent(new CustomEvent("exa:persona-changed"));
   };
+  // Settings → AI → Personalization edits the same store (this window via the
+  // custom event, the standalone settings window via the storage event) — the
+  // picker must follow instantly either way.
+  useEffect(() => {
+    const sync = () => {
+      try {
+        setPersonaState(localStorage.getItem("exa.persona") || null);
+      } catch {
+        /* private mode */
+      }
+    };
+    window.addEventListener("exa:persona-changed", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("exa:persona-changed", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
   const [chips, setChips] = useState<ContextChip[]>([]);
   // A picked slash command shown as a chip; the input text is its argument.
   const [pendingCommand, setPendingCommand] = useState<SlashCommand | null>(null);
@@ -525,9 +545,9 @@ export function ExaEnginePanel({
     const netDirective = networkAllowed
       ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
-    const personaDirective = persona
-      ? `The user's persona is ${persona}: execute each request at the discipline it needs, but present the answer at that persona's depth and preferred format.`
-      : "";
+    // Persona + personalization (Settings → AI): read at send time so an edit
+    // in Settings shapes the very next message, no reload anywhere.
+    const personaDirective = styleDirective(persona, loadAiStyle());
     const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective, personaDirective].filter(Boolean).join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
     // block so the UI renders only what the user actually typed — see
