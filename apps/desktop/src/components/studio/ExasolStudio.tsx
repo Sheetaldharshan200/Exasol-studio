@@ -2103,10 +2103,10 @@ export function ExasolStudio({
       send: true,
       text:
         `Explain the execution plan of this SQL in plain language.\n\n` +
-        `1) Run profile_query on the statement to get the REAL plan — never guess stages.\n` +
-        `2) Explain in at most 6 short bullets: what runs first, join order and join types, where most rows/time go, and any full scans or network redistributions.\n` +
-        `3) Finish with exactly ONE improvement backed by the profile (filter, join order, projection, rewrite) — or state plainly that the plan is already efficient.\n\n` +
-        `Rules: short sentences; define any jargon in brackets; cite real numbers from the profile; no speculation.\n\n\`\`\`sql\n${sql}\n\`\`\``,
+        `The REAL measured plan from this exact run is attached below — use it, never guess stages.\n` +
+        `Explain in at most 6 short bullets: what runs first, join order and join types, where most rows/time go, and any full scans or network redistributions.\n` +
+        `Finish with exactly ONE improvement backed by the plan (filter, join order, projection, rewrite) — or state plainly that the plan is already efficient.\n\n` +
+        `Rules: short sentences; define any jargon in brackets; cite real numbers from the plan; no speculation.\n\n\`\`\`sql\n${sql}\n\`\`\``,
     }),
     explain: (sql) => ({
       send: true,
@@ -2132,7 +2132,50 @@ export function ExasolStudio({
     const sql = (selected.trim() || activeTab.sql).trim();
     if (!sql) return;
     const p = AI_SQL_PROMPTS[kind](sql);
+    if (kind === "explain-plan") {
+      void aiExplainPlanWithData(sql, p.text);
+      return;
+    }
     askExa(p.text, { send: p.send });
+  }
+
+  /** AI plan explain, grounded: pull the run's REAL profile rows (same
+   *  baseline Query Performance uses) and attach them — the engine has no
+   *  profiling tool, so the app supplies the evidence. */
+  async function aiExplainPlanWithData(sql: string, promptText: string) {
+    const tab = activeTab;
+    const conn = connection;
+    if (!conn || !tab.profileSession || !tab.profileBaseStmt) {
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "warning", title: "Run the query first", body: "The AI explains the plan of a real run — execute the statement (⌘⏎), then Explain plan again." },
+        }),
+      );
+      return;
+    }
+    let planBlock = "";
+    try {
+      await ipc.executeSql(conn.profile.id, conn.profile.name, "FLUSH STATISTICS", 1, false).catch(() => null);
+      const planSql = `SELECT PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = ${tab.profileSession} AND STMT_ID > ${tab.profileBaseStmt} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK') ORDER BY STMT_ID, PART_ID LIMIT 60`;
+      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, planSql, 60, false);
+      const r = res.results[0];
+      if (r && r.kind === "resultSet" && r.rows.length) {
+        const head = r.columns.map((c) => c.name).join(" | ");
+        const rows = r.rows.map((row) => row.map((v) => (v === null ? "" : String(v))).join(" | "));
+        planBlock = `\n\nMeasured plan (EXA_USER_PROFILE_LAST_DAY, this run):\n\n${head}\n${r.columns.map(() => "---").join(" | ")}\n${rows.join("\n")}`;
+      }
+    } catch {
+      /* plan fetch failed — send without it rather than not at all */
+    }
+    if (!planBlock) {
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "warning", title: "No plan captured yet", body: "Statistics haven't landed for this run — try again in a few seconds." },
+        }),
+      );
+      return;
+    }
+    askExa(promptText + planBlock, { send: true });
   }
 
   // Inline AI edits (optimize / fix / edit) → a review diff in the editor with
