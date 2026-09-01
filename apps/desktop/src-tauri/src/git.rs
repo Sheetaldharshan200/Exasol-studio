@@ -487,3 +487,308 @@ pub fn git_graph(limit: Option<u32>) -> AppResult<Vec<GitCommit>> {
     }
     Ok(commits)
 }
+
+// ── Commit history: rich log, details, changed files, per-file diff ──────────
+// Ported from GitDesktop (https://github.com/theBGuy/GitDesktop),
+// src-tauri/src/git/history.rs and diff.rs. Copyright 2026 theBGuy.
+// Licensed under the Apache License, Version 2.0 — see THIRD-PARTY-NOTICES.md.
+
+fn validate_hash(hash: &str) -> AppResult<()> {
+    if hash.is_empty() || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::Storage(format!("invalid commit hash: {hash}")));
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitInfo {
+    pub hash: String,
+    pub subject: String,
+    pub author: String,
+    pub author_email: String,
+    /// Committer date, strict ISO 8601 (%cI) — the UI formats it relatively.
+    pub date: String,
+    pub tags: Vec<String>,
+    pub is_merge: bool,
+}
+
+/// The `%H%x00%s%x00%an%x00%ae%x00%cI%x00%D%x00%P` log format, one commit per
+/// line. Paired with `parse_commit_log` so listings can't drift into reporting
+/// empty tags or merge flags.
+const LOG_FORMAT: &str = "--format=%H%x00%s%x00%an%x00%ae%x00%cI%x00%D%x00%P";
+
+fn parse_commit_log(text: &str) -> Vec<GitCommitInfo> {
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\0');
+            Some(GitCommitInfo {
+                hash: parts.next()?.to_string(),
+                subject: parts.next()?.to_string(),
+                author: parts.next()?.to_string(),
+                author_email: parts.next()?.to_string(),
+                date: parts.next()?.to_string(),
+                // %D: "HEAD -> main, tag: v1.0, origin/main" — keep the tags.
+                tags: parts
+                    .next()
+                    .unwrap_or("")
+                    .split(", ")
+                    .filter_map(|d| d.strip_prefix("tag: "))
+                    .map(str::to_string)
+                    .collect(),
+                // %P: space-separated parent hashes.
+                is_merge: parts.next().unwrap_or("").split_whitespace().count() > 1,
+            })
+        })
+        .collect()
+}
+
+/// Paged commit history. When `search` is set, searches the whole history by
+/// commit message (literal, case-insensitive) instead of paging recent commits.
+#[tauri::command]
+pub fn git_log_rich(
+    limit: Option<u32>,
+    skip: Option<u32>,
+    search: Option<String>,
+) -> AppResult<Vec<GitCommitInfo>> {
+    if resolve_bin("git").is_none() {
+        return Ok(vec![]);
+    }
+    let (head_exists, _, _) = run(&["rev-parse", "--verify", "--quiet", "HEAD"])?;
+    if !head_exists {
+        return Ok(vec![]);
+    }
+    let limit_arg = limit.unwrap_or(100).clamp(1, 500).to_string();
+    let skip_arg = skip.unwrap_or(0).to_string();
+    let search = search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let mut args: Vec<&str> = vec!["log", "-n", &limit_arg, "--skip", &skip_arg, LOG_FORMAT];
+    if let Some(q) = &search {
+        // Literal, case-insensitive match against the whole commit message.
+        args.extend(["-i", "-F", "--grep", q.as_str()]);
+    }
+    let (ok, out, _) = run(&args)?;
+    if !ok {
+        return Ok(vec![]);
+    }
+    Ok(parse_commit_log(&out))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitDetails {
+    pub hash: String,
+    pub subject: String,
+    pub body: String,
+    pub author: String,
+    pub author_email: String,
+    pub date: String,
+}
+
+#[tauri::command]
+pub fn git_commit_details(hash: String) -> AppResult<GitCommitDetails> {
+    validate_hash(&hash)?;
+    // -z terminates the record so the multi-line body (%b) parses unambiguously.
+    let (ok, out, err) = run(&[
+        "log",
+        "-1",
+        "-z",
+        "--format=%H%x00%s%x00%an%x00%ae%x00%cI%x00%b",
+        &hash,
+    ])?;
+    if !ok {
+        return Err(AppError::Storage(format!("git log failed: {}", err.trim())));
+    }
+    let record = out.trim_end_matches('\0');
+    let mut parts = record.splitn(6, '\0');
+    let (Some(hash), Some(subject), Some(author), Some(author_email), Some(date)) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return Err(AppError::Storage("unexpected git log output".into()));
+    };
+    let body = parts.next().unwrap_or("").trim().to_string();
+    Ok(GitCommitDetails {
+        hash: hash.to_string(),
+        subject: subject.to_string(),
+        body,
+        author: author.to_string(),
+        author_email: author_email.to_string(),
+        date: date.to_string(),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffStat {
+    pub path: String,
+    /// For renames: the pre-rename path — the per-file diff needs BOTH
+    /// pathspecs, or a pure rename renders as a newly added file.
+    pub old_path: Option<String>,
+    pub added: u32,
+    pub deleted: u32,
+    pub is_binary: bool,
+}
+
+/// Parse `git … --numstat -z` output.
+/// Regular entry: `added\tdeleted\tpath\0`.
+/// Rename entry:  `added\tdeleted\t\0oldpath\0newpath\0` (entry reports the new path).
+/// Binary files report `-` for both counts.
+fn parse_numstat_z(text: &str) -> Vec<GitDiffStat> {
+    let mut entries = Vec::new();
+    let mut tokens = text.split('\0');
+    while let Some(token) = tokens.next() {
+        if token.is_empty() {
+            continue;
+        }
+        let mut fields = token.splitn(3, '\t');
+        let (Some(added), Some(deleted), Some(path)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let is_binary = added == "-";
+        let added = added.parse().unwrap_or(0);
+        let deleted = deleted.parse().unwrap_or(0);
+        let (path, old_path) = if path.is_empty() {
+            // rename: old path, then new path — the entry reports the new one.
+            let old = tokens.next().unwrap_or("");
+            match tokens.next() {
+                Some(new_path) if !new_path.is_empty() => {
+                    (new_path.to_string(), Some(old.to_string()).filter(|o| !o.is_empty()))
+                }
+                _ => continue,
+            }
+        } else {
+            (path.to_string(), None)
+        };
+        entries.push(GitDiffStat {
+            path,
+            old_path,
+            added,
+            deleted,
+            is_binary,
+        });
+    }
+    entries
+}
+
+/// Files changed by a commit. `-m --first-parent` makes merge commits show
+/// their diff against the first parent (like GitHub), and `show` handles the
+/// root commit by diffing against the empty tree.
+#[tauri::command]
+pub fn git_commit_files(hash: String) -> AppResult<Vec<GitDiffStat>> {
+    validate_hash(&hash)?;
+    let (ok, out, err) = run(&[
+        "show",
+        "-m",
+        "--first-parent",
+        "--numstat",
+        "-z",
+        "--format=",
+        &hash,
+    ])?;
+    if !ok {
+        return Err(AppError::Storage(format!("git show failed: {}", err.trim())));
+    }
+    Ok(parse_numstat_z(&out))
+}
+
+/// The unified diff one commit introduced to one file (vs its first parent).
+/// For renames pass `old_path` too: the diff needs both sides' pathspecs, or a
+/// pure rename shows as an added file.
+#[tauri::command]
+pub fn git_commit_file_diff(hash: String, path: String, old_path: Option<String>) -> AppResult<String> {
+    validate_hash(&hash)?;
+    if path.is_empty() {
+        return Err(AppError::Storage("empty file path".into()));
+    }
+    // Literal pathspecs: a raw `[slug]`-style path would otherwise glob.
+    let spec = format!(":(literal){path}");
+    let old_spec = old_path
+        .filter(|o| !o.is_empty() && *o != path)
+        .map(|o| format!(":(literal){o}"));
+    let mut args: Vec<&str> = vec![
+        "show",
+        "-m",
+        "--first-parent",
+        "--find-renames",
+        "--no-color",
+        "--format=",
+        &hash,
+        "--",
+        &spec,
+    ];
+    if let Some(old) = &old_spec {
+        args.push(old.as_str());
+    }
+    let (ok, out, err) = run(&args)?;
+    if !ok {
+        return Err(AppError::Storage(format!("git show failed: {}", err.trim())));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numstat_regular_and_binary() {
+        let out = "3\t1\tsrc/a.ts\0-\t-\tlogo.png\0";
+        let e = parse_numstat_z(out);
+        assert_eq!(e.len(), 2);
+        assert_eq!((e[0].path.as_str(), e[0].added, e[0].deleted, e[0].is_binary), ("src/a.ts", 3, 1, false));
+        assert_eq!((e[1].path.as_str(), e[1].is_binary), ("logo.png", true));
+    }
+
+    #[test]
+    fn numstat_rename_reports_both_paths() {
+        let out = "5\t2\t\0old/name.ts\0new/name.ts\0";
+        let e = parse_numstat_z(out);
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].path, "new/name.ts");
+        assert_eq!(e[0].old_path.as_deref(), Some("old/name.ts"));
+        assert_eq!((e[0].added, e[0].deleted), (5, 2));
+        // Non-rename entries carry no old path.
+        assert_eq!(parse_numstat_z("1\t1\ta.ts\0")[0].old_path, None);
+    }
+
+    #[test]
+    fn numstat_empty_and_garbage() {
+        assert!(parse_numstat_z("").is_empty());
+        assert!(parse_numstat_z("nonsense-no-tabs\0").is_empty());
+    }
+
+    #[test]
+    fn commit_log_parses_tags_and_merge_flag() {
+        let line = "abc123\0Fix bug\0Alice\0a@x.io\02026-09-01T10:00:00+02:00\0HEAD -> main, tag: v1.2, origin/main\0p1 p2\n";
+        let c = &parse_commit_log(line)[0];
+        assert_eq!(c.subject, "Fix bug");
+        assert_eq!(c.tags, vec!["v1.2"]);
+        assert!(c.is_merge);
+    }
+
+    #[test]
+    fn commit_log_skips_malformed_lines() {
+        assert!(parse_commit_log("only-one-field\n").is_empty());
+        let two = parse_commit_log("h\0s\0a\0e\0d\0\0\nh2\0s2\0a2\0e2\0d2\0\0p\n");
+        assert_eq!(two.len(), 2);
+        assert!(two[0].tags.is_empty());
+        assert!(!two[1].is_merge);
+    }
+
+    #[test]
+    fn hash_validation_rejects_injection() {
+        assert!(validate_hash("abc123DEF").is_ok());
+        assert!(validate_hash("").is_err());
+        assert!(validate_hash("--help").is_err());
+        assert!(validate_hash("abc;rm -rf").is_err());
+    }
+}

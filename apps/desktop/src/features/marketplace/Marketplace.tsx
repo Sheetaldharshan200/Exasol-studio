@@ -46,180 +46,23 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { BrandLoader } from "@/components/brand/BrandLoader";
+import { McpMark } from "@/components/brand/McpMark";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
-type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
-type Install = "personal-local" | "personal-cloud" | "binary" | "uv-tool" | "uv-pip" | "source-build" | "semantic-views" | "bundled" | "reference";
+import {
+  catalogRepos,
+  readMetaSnapshot,
+  resolveCatalog,
+  writeMetaSnapshot,
+} from "@/features/marketplace/catalog-data";
+import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 
-export type CatalogItem = {
-  id: string;
-  name: string;
-  repo?: string;
-  kind: Kind;
-  install: Install;
-  description: string;
-  homepage: string;
-  labs?: boolean;
-};
-
-// Official Exasol / Exasol-Labs repositories only.
-export const CATALOG: CatalogItem[] = [
-  {
-    id: "exasol-personal",
-    name: "Exasol Personal — Local",
-    repo: "exasol/exasol-personal",
-    kind: "database",
-    install: "personal-local",
-    description: "Native Exasol Personal on macOS; Exasol Nano via Docker/Podman on Windows and Linux. Starts automatically.",
-    homepage: "https://github.com/exasol/exasol-personal",
-  },
-  {
-    id: "exapump",
-    name: "ExaPump",
-    repo: "exasol-labs/exapump",
-    kind: "cli",
-    install: "binary",
-    labs: true,
-    description: "CLI to import, export, and run SQL.",
-    homepage: "https://github.com/exasol-labs/exapump",
-  },
-  {
-    id: "semantic-views",
-    name: "Semantic Views",
-    repo: "exasol-labs/exasol-semantic-views",
-    kind: "extension",
-    install: "semantic-views",
-    labs: true,
-    description: "Business-friendly semantic layer on your local database. Optional — install when you want it.",
-    homepage: "https://github.com/exasol-labs/exasol-semantic-views",
-  },
-  {
-    id: "json-tables",
-    name: "JSON Tables",
-    repo: "exasol-labs/exasol-json-tables",
-    kind: "extension",
-    install: "source-build",
-    labs: true,
-    description: "Query JSON data in Exasol.",
-    homepage: "https://github.com/exasol-labs/exasol-json-tables",
-  },
-  {
-    id: "mcp-server",
-    name: "Exasol MCP Server",
-    repo: "exasol/mcp-server",
-    kind: "server",
-    install: "uv-tool",
-    description: "Connect an LLM to your database.",
-    homepage: "https://github.com/exasol/mcp-server",
-  },
-  {
-    id: "pyexasol",
-    name: "PyExasol",
-    repo: "exasol/pyexasol",
-    kind: "driver",
-    install: "uv-pip",
-    description: "Python driver for Exasol.",
-    homepage: "https://github.com/exasol/pyexasol",
-  },
-  {
-    id: "sqlalchemy-exasol",
-    name: "SQLAlchemy Exasol",
-    repo: "exasol/sqlalchemy-exasol",
-    kind: "driver",
-    install: "uv-pip",
-    description: "SQLAlchemy dialect for Exasol.",
-    homepage: "https://github.com/exasol/sqlalchemy-exasol",
-  },
-  {
-    id: "exarrow-rs",
-    name: "exarrow-rs",
-    repo: "exasol-labs/exarrow-rs",
-    kind: "driver",
-    install: "reference",
-    labs: true,
-    description: "Rust Arrow / ADBC driver.",
-    homepage: "https://github.com/exasol-labs/exarrow-rs",
-  },
-  {
-    id: "driver-jdbc",
-    name: "JDBC Driver",
-    kind: "driver",
-    install: "reference",
-    description: "JDBC driver for Java tools.",
-    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
-  },
-  {
-    id: "driver-odbc",
-    name: "ODBC Driver",
-    kind: "driver",
-    install: "reference",
-    description: "ODBC driver for apps and BI tools.",
-    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
-  },
-  {
-    id: "driver-ts",
-    name: "TypeScript / JavaScript Driver",
-    repo: "exasol/exasol-driver-ts",
-    kind: "driver",
-    install: "reference",
-    description: "Node / TypeScript driver.",
-    homepage: "https://github.com/exasol/exasol-driver-ts",
-  },
-  {
-    id: "driver-go",
-    name: "Go SQL Driver",
-    repo: "exasol/exasol-driver-go",
-    kind: "driver",
-    install: "reference",
-    description: "Go SQL driver.",
-    homepage: "https://github.com/exasol/exasol-driver-go",
-  },
-  {
-    id: "driver-adonet",
-    name: "ADO.NET Provider",
-    kind: "driver",
-    install: "reference",
-    description: "ADO.NET provider for .NET.",
-    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/ado.net.htm",
-  },
-  {
-    id: "driver-r",
-    name: "R Integration",
-    kind: "driver",
-    install: "reference",
-    description: "R integration for Exasol.",
-    homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
-  },
-  {
-    id: "driver-websocket",
-    name: "WebSocket API",
-    repo: "exasol/websocket-api",
-    kind: "driver",
-    install: "reference",
-    description: "Native WebSocket protocol.",
-    homepage: "https://github.com/exasol/websocket-api",
-  },
-  {
-    id: "ai-lab",
-    name: "Exasol AI Lab",
-    repo: "exasol/ai-lab",
-    kind: "extension",
-    install: "uv-pip",
-    description: "Data-science environment for in-DB ML.",
-    homepage: "https://github.com/exasol/ai-lab",
-  },
-  {
-    id: "agent-skills",
-    name: "Exasol Agent Skills",
-    repo: "exasol-labs/exasol-agent-skills",
-    kind: "skills",
-    install: "bundled",
-    labs: true,
-    description: "Pinned Exasol skills bundled into the Studio AI agent.",
-    homepage: "https://github.com/exasol-labs/exasol-agent-skills",
-  },
-];
+// The registry lives in catalog-data.ts (one line per addon: id + repo + kind
+// + install); every display field resolves from the official GitHub repo at
+// runtime. Consumers see the RESOLVED shape, so `.name`/`.description` stay
+// plain strings everywhere.
+export type CatalogItem = ResolvedCatalogItem;
 
 const KIND_ICON: Record<Kind, LucideIcon> = {
   database: Database,
@@ -401,6 +244,24 @@ type LogLine = { level: string; text: string };
 export function Marketplace() {
   const [env, setEnv] = useState<MarketEnv | null>(null);
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
+  // Display metadata (name, About, homepage) straight from each item's GitHub
+  // repo: last-known snapshot for instant paint, then the live fetch (Rust
+  // disk-caches it for 24h). While neither exists the repo tail is the name.
+  const [repoMeta, setRepoMeta] = useState(() => readMetaSnapshot());
+  useEffect(() => {
+    ipc.marketRepoMeta(catalogRepos())
+      .then((m) => {
+        if (m && Object.keys(m).length) {
+          setRepoMeta((cur) => {
+            const next = { ...(cur ?? {}), ...m };
+            writeMetaSnapshot(next);
+            return next;
+          });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+  const CATALOG = useMemo(() => resolveCatalog(repoMeta), [repoMeta]);
   const [releases, setReleases] = useState<Record<string, Release>>({});
   const [installed, setInstalled] = useState<InstalledItem[]>([]);
   // Semantic Views installs INTO a database, so the card offers which one.
@@ -559,6 +420,12 @@ export function Marketplace() {
       }).length,
     [installedMap, catalog],
   );
+  // Managed-component updates (reported by IndependentComponents): null while
+  // it is still checking. The badge and the Updates empty state both fold this
+  // in, so an available engine/component update can never hide behind
+  // "everything is up to date".
+  const [managedUpdates, setManagedUpdates] = useState<number | null>(null);
+  const totalUpdates = updatesAvailable + (managedUpdates ?? 0);
 
   // ── Starter-pack queue ──────────────────────────────────────────────────
   // Read the pack chosen during setup once, then run it after releases load
@@ -791,7 +658,9 @@ export function Marketplace() {
   }
 
   const renderCard = (item: CatalogItem, compact = false) => {
-    const Icon = KIND_ICON[item.kind];
+    // Item-specific glyphs win over the kind fallback: MCP surfaces show the
+    // official MCP mark everywhere (rail, tabs, cards), never a generic server.
+    const Icon = item.id === "mcp-server" ? McpMark : KIND_ICON[item.kind];
     const inst = installedMap[item.id];
     const onSystem = detected[item.id] && !inst;
     const isBusy = busy[item.id];
@@ -1058,13 +927,13 @@ export function Marketplace() {
               Install Exasol tools, drivers and extensions — one click, with a live install log.
             </p>
           </div>
-          {updatesAvailable > 0 ? (
+          {totalUpdates > 0 ? (
             <span className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
               </span>
-              {updatesAvailable} update{updatesAvailable > 1 ? "s" : ""} available
+              {totalUpdates} update{totalUpdates > 1 ? "s" : ""} available
             </span>
           ) : null}
           {env ? (
@@ -1103,7 +972,7 @@ export function Marketplace() {
                 : n.key === "installing"
                   ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
                   : n.key === "updates"
-                    ? updatesAvailable
+                    ? totalUpdates
                     : 0;
             return (
               <button
@@ -1204,7 +1073,7 @@ export function Marketplace() {
               </div>
             </div>
 
-            {nav === "updates" ? <IndependentComponents /> : null}
+            {nav === "updates" ? <IndependentComponents onActionable={setManagedUpdates} /> : null}
             {nav === "ai-clients" ? (
               <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
@@ -1270,6 +1139,10 @@ export function Marketplace() {
               </>
             ) : navItems.length ? (
               <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
+            ) : nav === "updates" && !query && managedUpdates !== 0 ? (
+              // Managed components are still checking (null) or ARE listing
+              // updates above — claiming "up to date" here would be a lie.
+              null
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
@@ -1710,9 +1583,29 @@ async function simulate(
  * Studio releases or to each other. A component that failed during setup is
  * retried from its own card.
  */
-function IndependentComponents() {
+/** Managed components needing attention: an official release moved past the
+ *  installed version, setup failed / never ran, or an opaque revision drifted
+ *  from the verified one. Shared by the panel and the Updates view's badge and
+ *  empty state, so they can never disagree. */
+function actionableComponents(comps: ComponentInfo[], upstream: Record<string, string>): ComponentInfo[] {
+  return comps.filter((c) => {
+    const tag = c.opaqueVersion ? null : upstream?.[c.id];
+    return (
+      (tag && isNewerVersion(tag, c.installed)) ||
+      (!c.opaqueVersion && !c.installed) ||
+      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified)
+    );
+  });
+}
+
+function IndependentComponents({ onActionable }: { onActionable?: (n: number | null) => void }) {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
   const [upstream, setUpstream] = useState<Record<string, string> | null>(null);
+  // Report the actionable count up: the Updates view must not claim
+  // "everything is up to date" while this panel is loading or listing updates.
+  useEffect(() => {
+    onActionable?.(comps && upstream !== null ? actionableComponents(comps, upstream).length : null);
+  }, [comps, upstream, onActionable]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   // Live progress for long component operations (the DB engine update backs
@@ -1784,13 +1677,7 @@ function IndependentComponents() {
     const tag = upstream?.[c.id];
     return tag && isNewerVersion(tag, c.installed) ? tag : null;
   };
-  const actionable = comps.filter(
-    (c) =>
-      updateFor(c) ||
-      // Setup recorded a failure (or it was never installed) — offer a retry.
-      (!c.opaqueVersion && !c.installed) ||
-      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified),
-  );
+  const actionable = actionableComponents(comps, upstream);
 
   return (
     <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">

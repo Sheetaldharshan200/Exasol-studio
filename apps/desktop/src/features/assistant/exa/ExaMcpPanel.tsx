@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plug, Plus, RefreshCw, X } from "lucide-react";
+import { Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { McpMark } from "@/components/brand/McpMark";
 import { agent } from "@/lib/agent-client";
 import { MCP_PRESETS } from "@/features/marketplace/mcp-presets";
 import { ConnectorLogo } from "@/features/marketplace/ConnectorLogo";
@@ -56,7 +57,7 @@ export function ExaMcpPanel({ open, onClose }: { open: boolean; onClose: () => v
       <div className="absolute inset-0 z-30 bg-black/30" onClick={onClose} aria-hidden />
       <div className="absolute left-1/2 top-10 z-40 flex max-h-[75%] w-[min(26rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl border border-border bg-popover shadow-xl">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-          <Plug className="size-4 text-muted-foreground" />
+          <McpMark className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">MCP servers</span>
           <span className="text-[11px] text-muted-foreground">tools for the agent</span>
           <div className="ml-auto flex items-center gap-0.5">

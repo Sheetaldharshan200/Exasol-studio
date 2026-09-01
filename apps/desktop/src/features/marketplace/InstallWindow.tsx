@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { CATALOG, InstallConsole } from "@/features/marketplace/Marketplace";
+import { InstallConsole } from "@/features/marketplace/Marketplace";
+import { readMetaSnapshot, resolveCatalog } from "@/features/marketplace/catalog-data";
 import { ipc, type MarketEnv } from "@/lib/ipc";
 import { installParams, INSTALL_DONE } from "@/lib/install-window";
 
 /** Standalone window that runs a single Marketplace install independently. */
 export function InstallWindow() {
   const params = installParams();
-  const item = CATALOG.find((c) => c.id === params?.id) ?? null;
+  // Same dynamic resolution as the marketplace: last-known GitHub metadata
+  // snapshot, repo-tail fallback — this window never blocks on a fetch.
+  const item = resolveCatalog(readMetaSnapshot()).find((c) => c.id === params?.id) ?? null;
   const [env, setEnv] = useState<MarketEnv | null>(null);
 
   useEffect(() => {
