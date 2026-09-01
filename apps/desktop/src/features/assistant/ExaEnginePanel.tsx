@@ -3,7 +3,7 @@ import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
 import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
-import { ipc } from "@/lib/ipc";
+import { ipc, isTauri } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { emptyCatalog } from "@/lib/sql-completion";
@@ -87,6 +87,9 @@ export function ExaEnginePanel({
   onApplySql?: (sql: string) => void;
 } = {}) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
+  // Latest status for effects that must not re-run on every poll tick.
+  const statusRef = useRef<EngineStatus | null>(null);
+  statusRef.current = status;
   const [installing, setInstalling] = useState(false);
   // The official opencode runtime (inside ExaThread) owns messages, busy
   // state, streaming and sessions. The panel keeps the surface state: the
@@ -132,6 +135,31 @@ export function ExaEnginePanel({
       /* private mode */
     }
   };
+  // The shield is ENFORCED engine-side: the database tool reads granted
+  // classes from ~/.config/exa/exa.json per statement (the store `exa ops
+  // grant` writes) — without this sync the tool refuses writes even when the
+  // shield shows them granted. The "shell" tool group follows the grants (so
+  // exapump can load data files, and terminal loads obey the shield too);
+  // tool grants bind at instance build, so dispose after writing.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const granted = (Object.keys(sqlOps) as (keyof SqlOps)[]).filter((k) => sqlOps[k]);
+    void ipc
+      .engineOpsSync(granted)
+      .then(async () => {
+        const port = statusRef.current?.port;
+        if (!port) return;
+        const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+        const f = inTauri ? (await import("@tauri-apps/plugin-http")).fetch : globalThis.fetch.bind(globalThis);
+        await f(`http://127.0.0.1:${port}/instance/dispose`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(3000),
+        } as RequestInit).catch(() => undefined);
+      })
+      .catch(() => undefined);
+  }, [sqlOps]);
   // Presentation persona for the whole chat (persisted; null = adaptive).
   const [persona, setPersonaState] = useState<string | null>(() => {
     try {
@@ -541,14 +569,14 @@ export function ExaEnginePanel({
     ]
       .filter(Boolean)
       .join(", ");
-    const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;
+    const opsDirective = `Allowed SQL operation classes: ${granted}. These grants are ENFORCED by your database tool (synced to its config), so granted classes execute — do not claim a granted class is blocked; if a statement in a granted class fails, report the actual database error. For a class that is not granted, refuse that statement and tell the user to grant it via the shield control next to the mode switcher. Shell commands that change data (exapump upload, IMPORT scripts) follow the SAME classes: never use the terminal to work around an ungranted class.`;
     // Orchestration base: how data files load and how insight/dashboard asks
     // are DELIVERED — the app renders a one-click "Create notebook" card for
     // a \`\`\`notebook fence (see notebook-plan.ts for the contract).
     const dataDirective =
       "Attached data files (CSV/Parquet/…) arrive as SAVED FILE PATHS, never inline — do not read whole data files into the conversation. " +
       "To load one into Exasol: derive columns from the header preview, CREATE the table (CREATE class), then load with IMPORT (IMPORT is in the INSERT class) — " +
-      "e.g. IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1 — or, when the shell tool group is enabled, exapump: exapump upload \"<path>\" --table SCHEMA.TABLE. " +
+      "e.g. IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1 — or with exapump from the shell tool (enabled automatically while write classes are granted): exapump upload \"<path>\" --table SCHEMA.TABLE. " +
       "If CREATE/INSERT are not granted, ask ONCE for the shield grants (name the exact classes), then proceed — never dump file contents as a workaround.";
     const insightDirective =
       "When the user asks for a dashboard, report or insights: run the queries first, then FINISH with a ```notebook fenced block — " +

@@ -635,6 +635,7 @@ export const ipc = {
   gitStashList: () => call<string[]>("git_stash_list"),
   gitStashPush: (message?: string) => call<string>("git_stash_push", { message }),
   gitStashPop: () => call<string>("git_stash_pop"),
+  engineOpsSync: (sqlOps: string[]) => call<null>("engine_ops_sync", { sqlOps }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
