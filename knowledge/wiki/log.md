@@ -129,3 +129,12 @@ PR #94: marketplace catalog moved to catalog-data.ts — entries are {id, repo, 
 PR #94: Updates view no longer claims 'everything is up to date' while IndependentComponents is loading/listing — actionableComponents() shared predicate, onActionable prop, totalUpdates badge.
 PR #95 root cause: history ids were h-<timestamp-millis>; same-millisecond runs collided and duplicate React keys duplicated rows on sort. Fix: atomic sequence suffix + stable original-position render keys for legacy dups. Status/Command headers now value-filter dropdowns (checkbox multi-select + explicit sort items).
 
+
+## [2026-09-01] ingest | PRs #99–#109: shield engine-sync root cause, Tools & Plugins, tab pins + auto-apply, notebook maker
+#105/#107 ROOT CAUSE: Studio spawns the engine with XDG_CONFIG_HOME pinned to <data>/components/exa-agent/config — grants written to ~/.config/exa are invisible. All engine option syncs must go through agent.rs engine_config_path(). Second layer: the seeded agent.exa.permission map denies bash/read/edit/grep/glob/list/todo/task and permission WINS the engine merge — tool grants must flip both options.tools AND permission entries (apply_tool_groups).
+#102/#104/#109 chat pipeline: data files ride as sentinel-hidden path notes (StudioAttachmentAdapter) with pins recovered by extractDataFileNotes; context chips emit [pinned-context] markers recovered by extractContextPins; PinAutoApply writes the reply's final ```sql fence into __exaPinnedTabId (query tab, content replaced) or __exaPinnedCell (notebook cell) once per message id.
+#108 current-tab pill: snapshot.activeTab built by studio/tab-context.ts (query SQL+error, notebook numbered cells capped 30/2KB); @tab provider; notebook gutters show stable position numbers matching what the AI sees; per-cell AgentMark button opens panel then pins (150ms mount delay).
+#106 plugins: exa-engine-plugin@2026.1.85 verified authorable from npm via '@exa/plugin@npm:exa-engine-plugin' + @types/node (strict tsc). Engine docs/plugins.md carries the verified flow; Settings > Tools & Plugins lists config plugin specs.
+#99/#103 executeSql 5th arg is SPLIT not addHistory — every internal call must pass the 6th arg false or it spams SQL History (profiling, catalog loaders, page turns all hit this).
+#100 plan-block.ts: AI explain-plan sends only the heaviest statement's compact table (25 parts, ms).
+

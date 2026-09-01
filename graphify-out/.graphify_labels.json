@@ -1447,5 +1447,17 @@
   "1445": "translate-app.md",
   "1446": "eslint.config.mjs",
   "1447": ".vscode-test.mjs",
-  "1448": "ref.md"
+  "1448": "ref.md",
+  "1449": "@opentui/solid",
+  "1450": "partial-json",
+  "1451": "solid-js",
+  "1452": "tree-sitter-bash",
+  "1453": "tree-sitter-powershell",
+  "1454": "ulid",
+  "1455": "venice-ai-sdk-provider",
+  "1456": "ws",
+  "1457": "xdg-basedir",
+  "1458": "yargs",
+  "1459": "zod",
+  "1460": "studio-vault.test.ts"
 }
