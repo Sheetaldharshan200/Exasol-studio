@@ -7,10 +7,17 @@ description: One app for your Exasol databases — schema, SQL, notebooks with c
 
 ![The Exasol Studio workbench — schema browser, welcome screen, terminal dock](./img/workbench.png)
 
-It is one product with two doors, and this documentation covers both:
+It is **one product with two doors**, and this documentation covers both:
 
-- **Desktop app** — the full experience, including managing a local **Exasol Personal** database on your machine.
-- **`exa web`** — the same Studio served in your browser by the [exa engine](../exa/index.mdx), sharing the same connections. See [Web](../exa/usage/web.mdx).
+- **Desktop app** — install it like any app: grab the build for your platform from the [releases page](https://github.com/Sheetaldharshan200/Exasol-studio/releases) (macOS dmg, Windows setup, Linux AppImage/deb/rpm). The full experience, including managing a local **Exasol Personal** database on your machine.
+- **Local web app** — if you have the [exa engine](../exa/index.mdx) installed (`npm install -g exa-ai`, or the one-line installer), run `exa web` and the same Studio opens in your browser at `127.0.0.1`, protected by your master password and sharing the same connections. See [Getting started](./getting-started.mdx#the-local-web-app).
+
+| | Desktop app | Local web app (`exa web`) |
+| --- | --- | --- |
+| SQL workbench, notebook & charts, assistant, marketplace, docs | ✓ | ✓ |
+| Shared connections & master-password vault | ✓ | ✓ |
+| Install & manage Exasol Personal locally | ✓ | shows what the CLI installed |
+| Native terminals, filesystem, separate windows | ✓ | — |
 
 <Callout type="info" title="Studio and exa are one stack">
 Connections live in a registry both programs share (`~/.exasol/connections.json`, passwords in the OS credential store). Connect a database in either and it appears in both. The agent inside Studio is the exa engine itself.
