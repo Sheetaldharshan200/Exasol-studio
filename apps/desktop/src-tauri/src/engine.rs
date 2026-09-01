@@ -27,7 +27,7 @@ const EXA_REPO: &str = "Sheetaldharshan200/exa-engine";
 /// installs never pin — "latest" resolves against the engine repo's releases,
 /// so the sidecar always speaks the current engine's feature set (providers,
 /// subscription sign-in, database tools).
-pub const ENGINE_BASELINE_TAG: &str = "v2026.1.82";
+pub const ENGINE_BASELINE_TAG: &str = "v2026.1.83";
 
 /// Resolve the tag to install: "latest" asks the release API (digest-verified
 /// helper), anything else is used verbatim. Offline, the bundled baseline tag
