@@ -406,25 +406,31 @@ export function ExasolStudio({
     window.addEventListener("studio:assistant-open", onOpen);
     return () => window.removeEventListener("studio:assistant-open", onOpen);
   }, [activeTab.view]);
-  // Vertical wheel over a horizontal-only scroller scrolls it sideways —
-  // wide result tables and driver lists are unreachable by wheel otherwise.
+  // Wheel policy, app-wide: VERTICAL always wins while any enclosing vertical
+  // scroller still has room in the wheel's direction; only when vertical is
+  // exhausted (or absent) does the nearest horizontal scroller take the wheel.
+  // Two passes on purpose — a horizontal-only element nested INSIDE a vertical
+  // scroller (a wide row in the tables tree) must never steal the wheel from it.
   useEffect(() => {
+    const scrollable = (style: string) => /(auto|scroll)/.test(style);
     const onWheel = (e: WheelEvent) => {
       if (e.deltaX !== 0 || e.deltaY === 0 || e.shiftKey) return;
-      let el = e.target as HTMLElement | null;
-      while (el && el !== document.body) {
-        const canX = el.scrollWidth > el.clientWidth + 1;
-        const canY = el.scrollHeight > el.clientHeight + 1;
-        if (canY) return; // a vertical scroller owns the wheel
-        if (canX) {
-          const style = getComputedStyle(el);
-          if (/(auto|scroll)/.test(style.overflowX)) {
-            el.scrollLeft += e.deltaY;
-            e.preventDefault();
-            return;
-          }
-        }
-        el = el.parentElement;
+      // Pass 1: any vertical scroller with room left? Native scroll handles it.
+      for (let el = e.target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollHeight <= el.clientHeight + 1) continue;
+        if (!scrollable(getComputedStyle(el).overflowY)) continue;
+        const room = e.deltaY > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0;
+        if (room) return;
+      }
+      // Pass 2: vertical is done — hand the wheel to the nearest horizontal scroller.
+      for (let el = e.target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollWidth <= el.clientWidth + 1) continue;
+        if (!scrollable(getComputedStyle(el).overflowX)) continue;
+        const room = e.deltaY > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0;
+        if (!room) continue;
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+        return;
       }
     };
     window.addEventListener("wheel", onWheel, { passive: false });
