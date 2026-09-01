@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { describeTabForContext } from "./tab-context.ts";
 
 const tab = (over: Partial<{ view: string; title: string; sql: string; execError: string | null }>) =>
-  ({ view: "sql", title: "Query 1", sql: "SELECT 1", execError: null, ...over }) as never;
+  ({ id: "tab-1", view: "sql", title: "Query 1", sql: "SELECT 1", execError: null, ...over }) as never;
 
 test("sql tab carries the SQL and the last error", () => {
   const ctx = describeTabForContext(tab({ sql: "SELECT * FROM t", execError: "object T not found" }));

@@ -2603,11 +2603,23 @@ export function ExasolStudio({
   const applySqlToEditor = (sql: string) => {
     // A pinned notebook cell owns Apply while the pin stands: the SQL lands
     // in that cell and runs there.
-    const pinned = (window as unknown as { __exaPinnedCell?: string }).__exaPinnedCell;
+    const pinned = (window as unknown as { __exaPinnedCell?: string | null }).__exaPinnedCell;
     if (pinned) {
       window.dispatchEvent(new CustomEvent("studio:apply-to-cell", { detail: { cellId: pinned, sql } }));
       openNotebook();
       return;
+    }
+    // A pinned QUERY tab (the composer's "current tab" pill) receives the SQL
+    // as its new content — the AI writes INTO the tab, even if the user
+    // switched away meanwhile.
+    const pinnedTab = (window as unknown as { __exaPinnedTabId?: string | null }).__exaPinnedTabId;
+    if (pinnedTab) {
+      const target = tabsFor(connKey).find((t) => t.id === pinnedTab && t.view === "sql");
+      if (target) {
+        patchTab(target.id, { sql: `${sql}\n` });
+        setActiveTabId(target.id);
+        return;
+      }
     }
     if (activeTab.view === "sql") {
       const base = activeTab.sql.trimEnd();

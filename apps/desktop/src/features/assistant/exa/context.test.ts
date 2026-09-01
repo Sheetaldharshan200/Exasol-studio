@@ -124,7 +124,7 @@ describe("resolveContext", () => {
     assert.match(c!.body, /1\. `SELECT 1`/);
   });
   test("tab resolves the active tab's description; absent tab returns null", () => {
-    const withTab = snapshot({ activeTab: { view: "notebook", title: "Sales notebook", body: "Cell 1 (sql): SELECT 1" } });
+    const withTab = snapshot({ activeTab: { id: "tab-1", view: "notebook", title: "Sales notebook", body: "Cell 1 (sql): SELECT 1" } });
     const chip = resolveContext("tab", null, withTab)!;
     assert.equal(chip.label, "Sales notebook");
     assert.ok(chip.body.includes("Cell 1"));

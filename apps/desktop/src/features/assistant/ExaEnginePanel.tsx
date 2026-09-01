@@ -8,7 +8,7 @@ import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { emptyCatalog } from "@/lib/sql-completion";
 import { expandCommand, parseSlash, SLASH_COMMANDS, type LocalCommandId, type SlashCommand } from "./exa/commands";
-import { buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
+import { buildChipMarkers, buildPrompt, neutralizeSentinels, resolveContext, wrapMachineContext, type ContextChip, type ExaSnapshot } from "./exa/context";
 import { ExaThread, SQL_OPS_NONE, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor, engineReachable } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
@@ -604,7 +604,10 @@ export function ExaEnginePanel({
     // block so the UI renders only what the user actually typed — see
     // stripMachineContext in the user-message renderer.
     const chipContext = allChips.length ? buildPrompt("", allChips).trimEnd() : "";
-    const machine = wrapMachineContext([directive, chipContext].filter(Boolean).join("\n\n"));
+    // One marker line per chip: the sent message renders them as pins (like
+    // file pins) — see extractContextPins in the user-message renderer.
+    const chipMarkers = allChips.length ? buildChipMarkers(allChips) : "";
+    const machine = wrapMachineContext([directive, chipMarkers, chipContext].filter(Boolean).join("\n\n"));
     let out = machine ? `${machine}\n\n${engine}` : engine;
     if (quote) out = `${machine ? machine + "\n\n" : ""}Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${engine}`;
     setChips([]);
@@ -711,7 +714,10 @@ export function ExaEnginePanel({
           addChip: (c) => {
             if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
           },
-          removeChip: (id) => setChips((cs) => cs.filter((x) => x.id !== id)),
+          removeChip: (id) => {
+            if (id === "tab") (window as unknown as { __exaPinnedTabId?: string | null }).__exaPinnedTabId = null;
+            setChips((cs) => cs.filter((x) => x.id !== id));
+          },
           pendingCommand,
           setPendingCommand,
           runLocal,

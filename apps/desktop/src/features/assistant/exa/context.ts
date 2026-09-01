@@ -23,7 +23,7 @@ export type ExaSnapshot = {
   history: { sql: string }[];
   /** What's on screen: the active workbench tab, pre-described for the AI
    *  (query SQL, notebook cells, visualizer…) — the "current tab" pin. */
-  activeTab?: { view: string; title: string; body: string };
+  activeTab?: { id: string; view: string; title: string; body: string };
 };
 
 /** "file" chips come from the composer's + (attach) button, not the @ menu. */
@@ -187,6 +187,34 @@ export function buildPrompt(userText: string, chips: ContextChip[]): string {
   // prematurely close the wrapper and corrupt the prompt structure.
   const context = chips.map((c) => c.body).join("\n\n").replace(/<\/(context)>/gi, "&lt;/$1&gt;");
   return `<context>\n${context}\n</context>\n\n${userText}`;
+}
+
+// ── Pinned-context markers ──────────────────────────────────────────────────
+// One line per attached chip rides INSIDE the machine sentinel, so the sent
+// message can render the pins (like file pins) without exposing chip bodies.
+
+const PIN_MARKER = "[pinned-context]";
+
+export function buildChipMarkers(chips: ContextChip[]): string {
+  return chips.map((c) => `${PIN_MARKER} ${c.providerId} | ${c.label.replace(/\n/g, " ")}`).join("\n");
+}
+
+export type ContextPin = { providerId: string; label: string };
+
+/** Recover the pins from a sent message's raw text (markers travel
+ *  sentinel-hidden, so pins survive reloads with no extra metadata). */
+export function extractContextPins(text: string): ContextPin[] {
+  const out: ContextPin[] = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith(PIN_MARKER)) continue;
+    const rest = t.slice(PIN_MARKER.length).trim();
+    const sep = rest.indexOf(" | ");
+    if (sep === -1) continue;
+    const label = rest.slice(sep + 3).trim();
+    if (label) out.push({ providerId: rest.slice(0, sep).trim(), label });
+  }
+  return out;
 }
 
 // ── Machine-context sentinel ────────────────────────────────────────────────

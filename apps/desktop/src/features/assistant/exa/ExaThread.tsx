@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
 import { StudioAttachmentAdapter } from "./StudioAttachmentAdapter";
+import { lastSqlFence } from "./sql-fence";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -980,6 +981,39 @@ export function ExaSendButton() {
   );
 }
 
+/**
+ * Pin auto-apply: while a query tab or notebook cell is pinned, the moment a
+ * reply finishes its FINAL ```sql block is written back into the pinned
+ * target — the AI writes into the tab/cell, no Apply click needed. Claimed
+ * per message id: two mounted threads (dock + full tab) apply exactly once.
+ */
+function PinAutoApply() {
+  const applySql = useExaApplySql();
+  const sig = useAuiState((s) => {
+    if (s.thread.isRunning) return "";
+    const last = [...s.thread.messages].reverse().find((m) => m.role === "assistant");
+    if (!last) return "";
+    const text = last.content.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+    return `${last.id}\u0000${text}`;
+  });
+  useEffect(() => {
+    if (!sig || !applySql) return;
+    const w = window as unknown as { __exaPinnedCell?: string | null; __exaPinnedTabId?: string | null; __exaAutoApplied?: Set<string> };
+    if (!w.__exaPinnedCell && !w.__exaPinnedTabId) return;
+    const [id, text] = [sig.slice(0, sig.indexOf("\u0000")), sig.slice(sig.indexOf("\u0000") + 1)];
+    const sql = lastSqlFence(text);
+    if (!sql) return;
+    w.__exaAutoApplied ??= new Set();
+    if (w.__exaAutoApplied.has(id)) return;
+    w.__exaAutoApplied.add(id);
+    applySql(sql);
+    // One-shot: the pin is consumed by the write-back; pin again to iterate.
+    w.__exaPinnedCell = null;
+    w.__exaPinnedTabId = null;
+  }, [sig, applySql]);
+  return null;
+}
+
 /** Context chips row shown above the registry composer's input. */
 export function ExaComposerChips() {
   const api = useExaComposer();
@@ -1019,7 +1053,15 @@ export function ExaComposerChips() {
         // chip below; removing the chip brings the suggestion back.
         <button
           type="button"
-          onClick={() => api.addChip(resolveContext("tab", null, api.getSnapshot()))}
+          onClick={() => {
+            const snap = api.getSnapshot();
+            api.addChip(resolveContext("tab", null, snap));
+            // A pinned QUERY tab receives the reply's final ```sql block
+            // directly (see the auto-apply watcher below).
+            if (snap.activeTab?.view === "sql") {
+              (window as unknown as { __exaPinnedTabId?: string | null }).__exaPinnedTabId = snap.activeTab.id;
+            }
+          }}
           title={`Attach the ${activeTab.view} tab as context`}
           className="flex h-6 items-center gap-1.5 self-center rounded-lg border border-dashed border-border px-2 text-[11.5px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
         >
@@ -1610,6 +1652,7 @@ export function ExaThread({
         <ExaApplySqlContext.Provider value={onApplySql ?? null}>
           <ExaShareListener />
           <ExaRunWatchdog client={client} runtime={runtime} />
+          <PinAutoApply />
           {/* Neutral accent inside the thread: the example's design is
               monochrome (no green) — scope primary to foreground here so the
               send button, links and chips render neutral while the rest of
