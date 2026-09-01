@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiPersonalization } from "./AiPersonalization";
+import { Icon } from "@/components/ui/icon";
 import { fuzzyRank } from "@/lib/fuzzy";
 import { AppSelect } from "@/components/ui/app-select";
 import { Icon as BxIcon } from "@/components/ui/icon";
@@ -402,7 +403,7 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
     <div className={cn("flex flex-col bg-editor text-foreground", embedded ? "h-full" : "h-screen")}>
       {/* Title bar (draggable) */}
       <div data-tauri-drag-region className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Settings2 className="h-4 w-4 text-primary" />
+        <Icon name="settings" className="h-4 w-4 text-primary" />
         <span className="text-[13px] font-semibold">Settings</span>
         {embedded ? (
           <span className="ml-auto flex items-center gap-0.5">

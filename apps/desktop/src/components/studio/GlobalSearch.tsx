@@ -107,6 +107,7 @@ export function GlobalSearch({ getItems }: { getItems: () => SearchItem[] }) {
         <div className="flex items-center gap-2.5 border-b border-border px-4">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
+            data-bare
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
