@@ -121,3 +121,11 @@ CI (.github/workflows/ci.yml) is now a REQUIRED check on main: js job (tsc, vite
 llama.cpp gotcha: /releases/latest now redirects to a semver marker release (v0.3.0) whose only asset is nightly-tag.txt naming the blessed b#### tag; binaries live on b-tags. fetch-runtime.mjs resolves through the marker (PR #70). v2026.5.0 first failed on ALL 5 targets with 404 llama-v0.3.0-bin-*.
 exa releases now pin STUDIO_REF to a Studio release tag (v2026.5.0) in exa-release.yml and gate asset upload on a web smoke test (shell + hashed asset + /ipc/vault_status + /docs/exa). exa v2026.1.81 shipped 12 assets; only npm publish failed (EOTP — token doesn't bypass npm 2FA; needs a granular/automation token).
 
+
+## [2026-09-01] ingest | Git Log dock tab (GitDesktop port), MCP icon sync, dynamic marketplace metadata, SQL history filter/dup fixes (PRs #94, #95)
+PR #94: GIT LOG dock tab right of SQL HISTORY, ported from Apache-2.0 theBGuy/GitDesktop (attribution: THIRD-PARTY-NOTICES.md + licenses/GitDesktop-Apache-2.0.txt). New Rust commands git_log_rich/git_commit_details/git_commit_files/git_commit_file_diff in git.rs with parser tests. Codex findings fixed: stale-response guards on selection + per-file diff, rename pathspecs (numstat oldPath), search cap labeled.
+PR #94: MCP glyph single-sourced — boxicons 'mcp' now carries the official MCP mark paths; brand/McpMark wraps <Icon name=mcp>; ActivityRail's local duplicate deleted; ExaMcpPanel + marketplace mcp-server card use it.
+PR #94: marketplace catalog moved to catalog-data.ts — entries are {id, repo, kind, install}; name/About/homepage resolve from GitHub via market_repo_meta (24h disk cache in Rust market.rs, localStorage snapshot, repo-tail fallback). Adding an addon = one registry line. Engine web parity: market_repo_meta added to exa studio-ipc.ts (cache ~/.exasol/repo-meta.json).
+PR #94: Updates view no longer claims 'everything is up to date' while IndependentComponents is loading/listing — actionableComponents() shared predicate, onActionable prop, totalUpdates badge.
+PR #95 root cause: history ids were h-<timestamp-millis>; same-millisecond runs collided and duplicate React keys duplicated rows on sort. Fix: atomic sequence suffix + stable original-position render keys for legacy dups. Status/Command headers now value-filter dropdowns (checkbox multi-select + explicit sort items).
+
