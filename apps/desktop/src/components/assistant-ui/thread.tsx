@@ -449,7 +449,9 @@ const MessageError: FC = () => {
 const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({ part, children }) => {
   const running = part.status.type === "running";
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? running;
+  // Collapsed by default — also WHILE running ("Working" pulses instead).
+  // The user expands it on demand; their choice then sticks.
+  const open = userOpen ?? false;
   // Count only the meaningful work (reasoning + tool calls) — the group also
   // swallows step-boundary data markers, which render nothing.
   const steps = useAuiState(

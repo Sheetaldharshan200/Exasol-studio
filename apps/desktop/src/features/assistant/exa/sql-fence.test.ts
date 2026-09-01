@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { lastSqlFence } from "./sql-fence.ts";
+import { lastLocateFence, lastSqlFence } from "./sql-fence.ts";
 import { buildChipMarkers, extractContextPins } from "./context.ts";
 
 test("lastSqlFence returns the LAST non-empty sql block", () => {
@@ -31,4 +31,13 @@ test("extractContextPins ignores unrelated and malformed lines", () => {
   assert.deepEqual(extractContextPins("load this data"), []);
   assert.deepEqual(extractContextPins("[pinned-context] nolabel"), []);
   assert.deepEqual(extractContextPins("[pinned-context] tab |   "), []);
+});
+
+test("lastLocateFence parses the final locate JSON; garbage returns null", () => {
+  const text = 'Found it.\n```locate\n{"schema": "SAMPLE", "table": "PART", "column": "P_PARTKEY"}\n```';
+  assert.deepEqual(lastLocateFence(text), { schema: "SAMPLE", table: "PART", column: "P_PARTKEY" });
+  assert.equal(lastLocateFence("no fence"), null);
+  assert.equal(lastLocateFence("```locate\nnot json\n```"), null);
+  assert.equal(lastLocateFence('```locate\n{"column": "X"}\n```'), null); // table required
+  assert.deepEqual(lastLocateFence('```locate\n{"table": "T", "schema": "  "}\n```'), { table: "T", schema: undefined, column: undefined });
 });

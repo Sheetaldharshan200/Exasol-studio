@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
 import { StudioAttachmentAdapter } from "./StudioAttachmentAdapter";
-import { lastSqlFence } from "./sql-fence";
+import { lastLocateFence, lastSqlFence } from "./sql-fence";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -999,15 +999,23 @@ function PinAutoApply() {
     return `${last.id}\u0000${text}`;
   });
   useEffect(() => {
-    if (!sig || !applySql) return;
+    if (!sig) return;
     const w = window as unknown as { __exaPinnedCell?: string | null; __exaPinnedTabId?: string | null; __exaPinnedTabWrite?: boolean; __exaAutoApplied?: Set<string> };
+    const [id, text] = [sig.slice(0, sig.indexOf("\u0000")), sig.slice(sig.indexOf("\u0000") + 1)];
+    w.__exaAutoApplied ??= new Set();
+    // Locate fences drive the visualizer (highlight + center the named
+    // table/column) — independent of the SQL write-back.
+    const locate = lastLocateFence(text);
+    if (locate && !w.__exaAutoApplied.has(`${id}:locate`)) {
+      w.__exaAutoApplied.add(`${id}:locate`);
+      window.dispatchEvent(new CustomEvent("studio:visualizer-locate", { detail: locate }));
+    }
+    if (!applySql) return;
     if (!w.__exaPinnedCell && !w.__exaPinnedTabId) return;
     // Pencil off = the tab pin is context-only: never write into the tab.
     if (!w.__exaPinnedCell && w.__exaPinnedTabWrite === false) return;
-    const [id, text] = [sig.slice(0, sig.indexOf("\u0000")), sig.slice(sig.indexOf("\u0000") + 1)];
     const sql = lastSqlFence(text);
     if (!sql) return;
-    w.__exaAutoApplied ??= new Set();
     if (w.__exaAutoApplied.has(id)) return;
     w.__exaAutoApplied.add(id);
     applySql(sql);

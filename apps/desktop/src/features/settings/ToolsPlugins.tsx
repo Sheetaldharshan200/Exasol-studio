@@ -188,11 +188,7 @@ export function ToolsPlugins() {
                 your own to npm.
               </p>
               <button
-                onClick={() =>
-                  void ipc
-                    .openExternal("https://github.com/Sheetaldharshan200/exa-engine/blob/main/docs/plugins.md")
-                    .catch(() => window.open("https://github.com/Sheetaldharshan200/exa-engine/blob/main/docs/plugins.md", "_blank"))
-                }
+                onClick={() => window.dispatchEvent(new CustomEvent("studio:open-docs", { detail: { path: "exa/develop/plugins" } }))}
                 className="mt-2.5 flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <Icon name="guides" className="h-3.5 w-3.5" /> How to create &amp; add a plugin

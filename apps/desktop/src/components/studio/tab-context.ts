@@ -67,7 +67,14 @@ export function describeTabForContext(
       };
     }
     case "visualizer":
-      return { ...base, view: "visualizer", title: tab.title, body: `The Schema Visualizer tab "${tab.title}" is open — the user is looking at the schema diagram.` };
+      return {
+        ...base,
+        view: "visualizer",
+        title: tab.title,
+        body: `The Schema Visualizer tab "${tab.title}" is open — the user is looking at the schema diagram.`,
+        mandate:
+          'SHOW IT IN THE DIAGRAM: when your answer identifies a specific table or column, ALSO finish with a ```locate fence containing JSON {"schema": "SCHEMA", "table": "TABLE", "column": "COLUMN"} (column optional) — the app highlights and centers it in the visualizer. Keep the prose answer short; the diagram does the pointing.',
+      };
     case "object":
       return { ...base, view: "object", title: tab.title, body: `The database object tab "${tab.title}" is open — the user is inspecting this object.` };
     case "git":
