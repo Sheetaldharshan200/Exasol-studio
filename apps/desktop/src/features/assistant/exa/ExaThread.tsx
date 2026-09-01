@@ -446,11 +446,11 @@ function ExaPersonaSelector({ persona, onChange }: { persona: string | null; onC
             active ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <UserRoundIcon className="h-3.5 w-3.5" />
-          <span className="hidden @md:inline">{active ? active.label : "Adaptive"}</span>
+          <UserRoundIcon className="h-3.5 w-3.5 shrink-0" />
+          <span className="hidden max-w-[110px] truncate whitespace-nowrap @md:inline">{active ? active.label : "Adaptive"}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
+      <DropdownMenuContent side="top" align="end" collisionPadding={12} className="max-h-96 w-72 overflow-y-auto">
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Answers written for</DropdownMenuLabel>
         <DropdownMenuCheckboxItem
           checked={!persona}
@@ -511,7 +511,7 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
           )}
         >
           <ShieldCheckIcon className="h-3.5 w-3.5" />
-          <span className="hidden @md:inline">{grantedCount ? `Read +${grantedCount}` : "Read-only"}</span>
+          <span className="hidden whitespace-nowrap @md:inline">{grantedCount ? `Read +${grantedCount}` : "Read-only"}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
