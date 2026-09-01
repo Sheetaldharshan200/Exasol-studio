@@ -321,27 +321,37 @@ pub async fn agent_stream(app: AppHandle, session_id: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Persist the shield's SQL operation grants where the ENGINE enforces them:
-/// `~/.config/exa/exa.json` → agent.exa.options.sqlOps (the engine's database
-/// tool reads this file live, per statement — same store `exa ops grant`
-/// writes). The prompt directive alone is advisory; without this file the
-/// tool refuses writes even when the shield shows them granted.
-///
-/// The "shell" tool group is managed alongside: present while any write class
-/// is granted (so exapump can load data files from the terminal), removed when
-/// the shield goes read-only — terminal data loads follow the shield too.
-/// Open ~/.config/exa/exa.json, hand `f` the agent.exa.options object, and
-/// write the file back. Creates the path (dirs, nesting) as needed; every
-/// other config key is preserved untouched.
-fn with_exa_options(
-    f: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
-) -> AppResult<serde_json::Map<String, serde_json::Value>> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| AppError::Storage("Could not resolve home directory.".into()))?;
-    let dir = std::path::PathBuf::from(home).join(".config").join("exa");
+/// The exa.json the RUNNING engine actually reads: Studio spawns the engine
+/// with XDG_CONFIG_HOME pinned to the managed component dir (see
+/// spawn_sidecar's EXA_ENGINE_CONFIG_DIR), so the file lives at
+/// `<data>/components/exa-agent/config/exa/exa.json` — NOT ~/.config/exa.
+fn engine_config_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    let state = app.state::<AppState>();
+    let dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent)
+        .join("config")
+        .join("exa");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join("exa.json");
+    Ok(dir.join("exa.json"))
+}
+
+/// Tool groups → the engine tool names their permission entries gate. The
+/// seeded config denies all of these; grants must flip BOTH options.tools
+/// (the prompt/permission suffix path) AND the permission map (which wins the
+/// engine's Permission.merge).
+const TOOL_PERMS: [(&str, &[&str]); 4] = [
+    ("files", &["read", "edit"]),
+    ("shell", &["bash"]),
+    ("search", &["grep", "glob", "list"]),
+    ("tasks", &["todowrite", "todoread", "task"]),
+];
+
+/// Open the engine's exa.json, hand `f` the whole ROOT object, write back.
+/// Every key not touched by `f` is preserved.
+fn with_engine_config(
+    app: &AppHandle,
+    f: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+) -> AppResult<serde_json::Value> {
+    let path = engine_config_path(app)?;
     let mut root: serde_json::Value = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -349,53 +359,63 @@ fn with_exa_options(
     if !root.is_object() {
         root = serde_json::json!({});
     }
-    let options = root
-        .as_object_mut()
-        .unwrap()
-        .entry("agent")
+    f(root.as_object_mut().unwrap());
+    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap_or_default())?;
+    Ok(root)
+}
+
+/// The `agent.exa` object inside the root, created as needed.
+fn exa_agent_obj<'a>(
+    root: &'a mut serde_json::Map<String, serde_json::Value>,
+) -> &'a mut serde_json::Map<String, serde_json::Value> {
+    root.entry("agent")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent\" is not an object".into()))?
+        .expect("agent object")
         .entry("exa")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa\" is not an object".into()))?
+        .expect("agent.exa object")
+}
+
+/// Apply the granted tool GROUPS to agent.exa: options.tools (what the engine
+/// surfaces in the prompt) and the permission entries (what actually gates the
+/// tools — the seeded permission map denies them all by default).
+fn apply_tool_groups(exa: &mut serde_json::Map<String, serde_json::Value>, groups: &[String]) {
+    let options = exa
         .entry("options")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa.options\" is not an object".into()))?;
-    f(options);
-    let snapshot = options.clone();
-    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap_or_default())?;
-    Ok(snapshot)
+        .expect("options object");
+    options.insert("tools".into(), serde_json::json!(groups));
+    let perm = exa
+        .entry("permission")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .expect("permission object");
+    for (group, tools) in TOOL_PERMS {
+        let on = groups.iter().any(|g| g == group);
+        for t in tools {
+            perm.insert((*t).into(), serde_json::json!(if on { "allow" } else { "deny" }));
+        }
+    }
 }
 
-/// The engine agent's current option store (granted SQL classes + tool
-/// groups) — the Settings "Tools & Plugins" page reads its truth from here.
-#[tauri::command]
-pub fn engine_options_get() -> AppResult<serde_json::Value> {
-    let opts = with_exa_options(|_| {})?;
-    Ok(serde_json::json!({
-        "sqlOps": opts.get("sqlOps").cloned().unwrap_or_else(|| serde_json::json!([])),
-        "tools": opts.get("tools").cloned().unwrap_or_else(|| serde_json::json!([])),
-    }))
+fn current_tools(exa: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    exa.get("options")
+        .and_then(|o| o.get("tools"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect())
+        .unwrap_or_default()
 }
 
-/// Replace the engine agent's tool-group grants (Settings → Tools & Plugins).
-/// Whitelisted names only; the shield's ops sync continues to manage the
-/// "shell" entry alongside on later shield changes.
+/// Persist the shield's SQL operation grants where the ENGINE enforces them
+/// (agent.exa.options.sqlOps — the store `exa ops grant` writes, read live by
+/// the database tool). The "shell" tool group is managed alongside: present
+/// while any write class is granted (so exapump can load data files), removed
+/// when the shield goes read-only — terminal data loads follow the shield too.
 #[tauri::command]
-pub fn engine_tools_sync(tools: Vec<String>) -> AppResult<()> {
-    const GROUPS: [&str; 4] = ["files", "shell", "search", "tasks"];
-    let list: Vec<String> = tools.into_iter().filter(|t| GROUPS.contains(&t.as_str())).collect();
-    with_exa_options(|options| {
-        options.insert("tools".into(), serde_json::json!(list));
-    })?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn engine_ops_sync(sql_ops: Vec<String>) -> AppResult<()> {
+pub fn engine_ops_sync(app: AppHandle, sql_ops: Vec<String>) -> AppResult<()> {
     const CLASSES: [&str; 8] = [
         "insert", "update", "delete", "create", "alter", "drop", "dcl", "admin",
     ];
@@ -403,48 +423,62 @@ pub fn engine_ops_sync(sql_ops: Vec<String>) -> AppResult<()> {
         .into_iter()
         .filter(|o| CLASSES.contains(&o.as_str()))
         .collect();
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| AppError::Storage("Could not resolve home directory.".into()))?;
-    let dir = std::path::PathBuf::from(home).join(".config").join("exa");
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join("exa.json");
-    let mut root: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !root.is_object() {
-        root = serde_json::json!({});
-    }
-    let options = root
-        .as_object_mut()
-        .unwrap()
-        .entry("agent")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent\" is not an object".into()))?
-        .entry("exa")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa\" is not an object".into()))?
-        .entry("options")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa.options\" is not an object".into()))?;
     let writes_granted = !ops.is_empty();
-    options.insert("sqlOps".into(), serde_json::json!(ops));
-    let mut tools: Vec<String> = options
-        .get("tools")
-        .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect())
-        .unwrap_or_default();
-    let has_shell = tools.iter().any(|t| t == "shell");
-    if writes_granted && !has_shell {
-        tools.push("shell".into());
-    } else if !writes_granted && has_shell {
-        tools.retain(|t| t != "shell");
-    }
-    options.insert("tools".into(), serde_json::json!(tools));
-    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap_or_default())?;
+    with_engine_config(&app, |root| {
+        let exa = exa_agent_obj(root);
+        let mut tools = current_tools(exa);
+        let has_shell = tools.iter().any(|t| t == "shell");
+        if writes_granted && !has_shell {
+            tools.push("shell".into());
+        } else if !writes_granted && has_shell {
+            tools.retain(|t| t != "shell");
+        }
+        apply_tool_groups(exa, &tools);
+        let options = exa.get_mut("options").and_then(|o| o.as_object_mut()).expect("options");
+        options.insert("sqlOps".into(), serde_json::json!(ops));
+    })?;
+    Ok(())
+}
+
+/// The engine agent's current grants + configured plugins — the Settings
+/// "Tools & Plugins" page reads its truth from here. Seeds the "tasks" group
+/// ON when no tool preference exists yet (multi-step planning should be a
+/// default, not a discovery).
+#[tauri::command]
+pub fn engine_options_get(app: AppHandle) -> AppResult<serde_json::Value> {
+    let mut seeded = false;
+    let root = with_engine_config(&app, |root| {
+        let exa = exa_agent_obj(root);
+        let missing = exa
+            .get("options")
+            .and_then(|o| o.get("tools"))
+            .is_none();
+        if missing {
+            seeded = true;
+            apply_tool_groups(exa, &["tasks".to_string()]);
+        }
+    })?;
+    let exa = root
+        .get("agent")
+        .and_then(|a| a.get("exa"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let options = exa.get("options").cloned().unwrap_or_else(|| serde_json::json!({}));
+    Ok(serde_json::json!({
+        "sqlOps": options.get("sqlOps").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "tools": options.get("tools").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "plugins": root.get("plugin").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "seeded": seeded,
+    }))
+}
+
+/// Replace the engine agent's tool-group grants (Settings → Tools & Plugins).
+#[tauri::command]
+pub fn engine_tools_sync(app: AppHandle, tools: Vec<String>) -> AppResult<()> {
+    let list: Vec<String> = tools
+        .into_iter()
+        .filter(|t| TOOL_PERMS.iter().any(|(g, _)| g == t))
+        .collect();
+    with_engine_config(&app, |root| apply_tool_groups(exa_agent_obj(root), &list))?;
     Ok(())
 }

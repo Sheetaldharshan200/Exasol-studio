@@ -27,14 +27,27 @@ const TOOL_GROUPS: { id: string; label: string; help: string }[] = [
 
 export function ToolsPlugins() {
   const [tools, setTools] = useState<Set<string> | null>(null);
+  const [plugins, setPlugins] = useState<string[] | null>(null);
   const [mcp, setMcp] = useState<Record<string, { status: string }> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     ipc.engineOptionsGet()
-      .then((o) => setTools(new Set(o.tools)))
-      .catch(() => setTools(new Set()));
+      .then((o) => {
+        setTools(new Set(o.tools));
+        // Plugin specs are npm names ("pkg@1.2.3") or file paths/URLs.
+        setPlugins(
+          (o.plugins ?? []).map((p) => (typeof p === "string" ? p : Array.isArray(p) ? String(p[0]) : String(p))),
+        );
+        // First run seeded the Tasks default — rebuild the engine instance so
+        // it binds without waiting for a manual toggle.
+        if (o.seeded) window.dispatchEvent(new Event("exa:tools-changed"));
+      })
+      .catch(() => {
+        setTools(new Set());
+        setPlugins([]);
+      });
     agent.engine
       .mcp()
       .then((r) => setMcp(r.servers))
@@ -149,6 +162,51 @@ export function ToolsPlugins() {
                 </div>
               );
             })
+          )}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-foreground/80">
+          <Icon name="extension" className="h-3.5 w-3.5" /> Plugins
+        </h3>
+        <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+          Engine plugins extend the assistant with custom hooks and tools — published on npm or dropped in as local files.
+        </p>
+        <div className="mt-3 rounded-xl border border-border">
+          {plugins === null ? (
+            <div className="flex items-center justify-center py-6 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </div>
+          ) : plugins.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-[12px] font-medium text-foreground">No plugins installed yet</p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                A plugin is an npm package (or a single .ts/.js file) exporting engine hooks — install one by adding it
+                to the engine config's <span className="font-mono">plugin</span> list, or drop the file into the
+                engine's <span className="font-mono">plugins/</span> folder. The guide covers both, plus publishing
+                your own to npm.
+              </p>
+              <button
+                onClick={() =>
+                  void ipc
+                    .openExternal("https://github.com/Sheetaldharshan200/exa-engine/blob/main/docs/plugins.md")
+                    .catch(() => window.open("https://github.com/Sheetaldharshan200/exa-engine/blob/main/docs/plugins.md", "_blank"))
+                }
+                className="mt-2.5 flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <Icon name="guides" className="h-3.5 w-3.5" /> How to create &amp; add a plugin
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {plugins.map((p) => (
+                <div key={p} className="flex items-center gap-3 px-3 py-2.5">
+                  <Icon name="extension" className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">{p}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </section>
