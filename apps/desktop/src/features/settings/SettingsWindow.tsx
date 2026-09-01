@@ -16,7 +16,7 @@ import {
   Radio,
   Search,
   Settings2,
-  Sparkles,
+  UserRound,
   Timer,
   Type as TypeIcon,
   Workflow,
@@ -50,7 +50,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "ai",
     key: "personalization",
-    icon: Sparkles,
+    icon: UserRound,
     label: "Personalization",
     desc: "How the assistant answers you — persona, depth, output format, tone, and standing instructions. Applies to the next message and survives restarts.",
     controls: [],
@@ -171,14 +171,6 @@ const CATEGORIES: Category[] = [
       { key: "keepHistory", label: "Keep SQL history", type: "toggle" },
       { key: "historyLimit", label: "History limit", type: "number", min: 10, max: 100000, unit: "entries" },
     ],
-  },
-  {
-    tab: "general",
-    key: "telemetry",
-    icon: Radio,
-    label: "Telemetry",
-    desc: "Anonymous usage statistics.",
-    controls: [{ key: "telemetry", label: "Send anonymous telemetry", type: "toggle" }],
   },
   // ── Database (Exasol) ──────────────────────────────────────────────────
   {
@@ -307,7 +299,6 @@ const DEFAULTS: Record<string, SettingValue> = {
   historyLimit: 1000,
   aiModel: "claude-opus-4-8",
   aiApiKey: "",
-  telemetry: false,
   defaultSchema: "",
   quoteIdentifiers: "asNeeded",
   connectTimeoutMs: 15000,
