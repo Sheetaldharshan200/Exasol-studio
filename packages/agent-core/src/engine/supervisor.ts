@@ -19,6 +19,8 @@ export type SupervisorOptions = {
   binary: string;
   /** Studio-owned config/data dir shared with the exa CLI. */
   configDir: string;
+  /** The user workspace the engine runs in (~/ExasolStudio). */
+  workspaceDir: string;
   config?: SupervisorConfig;
 };
 
@@ -97,8 +99,8 @@ export class EngineSupervisor {
     this.port = port;
     this.applyEvent("start");
 
-    const plan = serveSpawnPlan({ binary: this.opts.binary, port, configDir: this.opts.configDir });
-    this.proc = spawn(plan.command, plan.args, { env: { ...process.env, ...plan.env }, stdio: "ignore" });
+    const plan = serveSpawnPlan({ binary: this.opts.binary, port, configDir: this.opts.configDir, workspaceDir: this.opts.workspaceDir });
+    this.proc = spawn(plan.command, plan.args, { cwd: plan.cwd, env: { ...process.env, ...plan.env }, stdio: "ignore" });
     this.proc.once("exit", () => {
       if (this.stopping) return;
       this.applyEvent("crash");

@@ -11,6 +11,11 @@ export type SpawnPlan = {
   args: string[];
   /** Extra env merged over process.env — isolates config to Studio's dir. */
   env: Record<string, string>;
+  /** Working directory: the user's ~/ExasolStudio workspace. The engine keys
+   *  sessions AND advertises MCP roots from its cwd — inheriting the parent's
+   *  cwd made both depend on how Studio was launched (dev: src-tauri, so the
+   *  filesystem MCP denied every real user path). */
+  cwd: string;
 };
 
 export type SpawnInput = {
@@ -20,6 +25,8 @@ export type SpawnInput = {
   port: number;
   /** Studio-owned config/data directory (never the user's ~/.config/opencode). */
   configDir: string;
+  /** The user workspace the engine runs IN (~/ExasolStudio). */
+  workspaceDir: string;
 };
 
 /**
@@ -38,6 +45,7 @@ export function serveSpawnPlan(input: SpawnInput): SpawnPlan {
       XDG_DATA_HOME: input.configDir,
       XDG_CONFIG_HOME: input.configDir,
     },
+    cwd: input.workspaceDir,
   };
 }
 
