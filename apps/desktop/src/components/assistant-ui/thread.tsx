@@ -22,6 +22,7 @@ import {
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { BrandLoader } from "@/components/brand/BrandLoader";
+import { humanizeEngineError } from "@/features/assistant/exa/humanize-error";
 import { stripMachineContext } from "@/features/assistant/exa/context";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
@@ -400,10 +401,32 @@ const CompactingStatus: FC = () => {
 };
 
 const MessageError: FC = () => {
+  // Raw engine errors ("Token refresh failed: 401") become instructions a
+  // person can act on; anything unmapped shows verbatim. The original text
+  // stays one disclosure away for bug reports.
+  const raw = useAuiState((s) => {
+    const status = s.message.role === "assistant" ? s.message.status : undefined;
+    const err = (status as { error?: unknown } | undefined)?.error;
+    return typeof err === "string" ? err : err instanceof Error ? err.message : undefined;
+  });
+  const friendly = humanizeEngineError(raw);
   return (
     <MessagePrimitive.Error>
       <ErrorPrimitive.Root className="aui-message-error-root border-destructive bg-destructive/10 text-destructive dark:bg-destructive/5 mt-2 rounded-md border p-3 text-sm dark:text-red-200">
-        <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2" />
+        {friendly ? (
+          <div className="space-y-1">
+            <p className="font-medium">{friendly.title}</p>
+            <p className="text-[12.5px] opacity-90">{friendly.action}</p>
+            {raw ? (
+              <details className="text-[11px] opacity-70">
+                <summary className="cursor-pointer select-none">Details</summary>
+                <p className="mt-1 break-words font-mono">{raw}</p>
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2" />
+        )}
       </ErrorPrimitive.Root>
     </MessagePrimitive.Error>
   );
