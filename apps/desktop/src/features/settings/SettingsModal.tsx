@@ -35,7 +35,7 @@ export function SettingsModalHost() {
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50" onMouseDown={() => setOpen(false)}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50" onMouseDown={() => setOpen(false)}>
       <div
         onMouseDown={(e) => e.stopPropagation()}
         className={cn(

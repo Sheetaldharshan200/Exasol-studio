@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiPersonalization } from "./AiPersonalization";
+import { fuzzyRank } from "@/lib/fuzzy";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -360,18 +361,19 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
   }, [values.theme]);
 
-  const q = query.trim().toLowerCase();
-  const cats = useMemo(
-    () =>
-      CATEGORIES.filter((c) => c.tab === tab).filter(
-        (c) =>
-          !q ||
-          c.label.toLowerCase().includes(q) ||
-          c.desc.toLowerCase().includes(q) ||
-          c.controls.some((ct) => ct.label.toLowerCase().includes(q)),
-      ),
-    [tab, q],
-  );
+  const q = query.trim();
+  // Search reaches EVERY tab (fuzzy over label, description, control labels,
+  // help text and option labels); picking a result jumps to its tab.
+  const cats = useMemo(() => {
+    if (!q) return CATEGORIES.filter((c) => c.tab === tab);
+    const text = (c: Category) =>
+      [
+        c.label,
+        c.desc,
+        ...c.controls.flatMap((ct) => [ct.label, "help" in ct ? (ct.help ?? "") : "", ...("options" in ct ? ct.options.map((o) => o.label) : [])]),
+      ].join(" ");
+    return fuzzyRank(q, CATEGORIES, text).map((r) => r.item);
+  }, [tab, q]);
 
   // Keep a valid selection for the active tab.
   useEffect(() => {
@@ -465,7 +467,10 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
             return (
               <button
                 key={c.key}
-                onClick={() => setSelected(c.key)}
+                onClick={() => {
+                  if (c.tab !== tab) setTab(c.tab);
+                  setSelected(c.key);
+                }}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors",
                   selected === c.key ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
