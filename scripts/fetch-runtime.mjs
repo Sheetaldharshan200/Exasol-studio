@@ -40,14 +40,22 @@ const TARGETS = {
 // Resolved at build time from the engine repo's latest release — the bundled
 // baseline is only the offline fallback, so it should be as current as the
 // build that carries it.
-async function latestEngineTag() {
-  const res = await fetch("https://api.github.com/repos/Sheetaldharshan200/exa-engine/releases/latest", {
+/** Newest exa-engine release that actually CARRIES the wanted asset. A tag
+ *  push creates the release entry minutes before its binaries finish
+ *  uploading — resolving blindly to "latest" raced that window and 404'd
+ *  whole release builds (v2026.6.0 and v2026.6.1 both hit it). */
+async function latestEngineTag(assetName) {
+  const res = await fetch("https://api.github.com/repos/Sheetaldharshan200/exa-engine/releases?per_page=5", {
     headers: { accept: "application/vnd.github+json" },
   });
   if (!res.ok) throw new Error(`could not resolve latest exa-engine release: ${res.status}`);
-  const tag = (await res.json()).tag_name;
-  if (!tag) throw new Error("latest exa-engine release has no tag");
-  return tag;
+  const releases = await res.json();
+  for (const rel of releases) {
+    if (!rel.tag_name || rel.draft) continue;
+    if (!assetName || (rel.assets ?? []).some((a) => a.name === assetName)) return rel.tag_name;
+    process.stdout.write(`  … skipping ${rel.tag_name}: ${assetName} not uploaded yet\n`);
+  }
+  throw new Error(`no exa-engine release carries ${assetName ?? "a tag"}`);
 }
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -128,7 +136,7 @@ async function main() {
   extract(llamaArchive, llamaDir);
 
   // ── Exa engine — baseline for offline first run ──
-  const engineTag = await latestEngineTag();
+  const engineTag = await latestEngineTag(spec.exa);
   console.log(`Fetching Exa engine (${engineTag})…`);
   const exaArchive = join(tmp, spec.exa);
   mkdirSync(tmp, { recursive: true });
