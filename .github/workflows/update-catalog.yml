@@ -44,6 +44,11 @@ jobs:
           json-tables|exasol-labs/exasol-json-tables|https://github.com/exasol-labs/exasol-json-tables
           ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
           agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills
+          semantic-views|exasol-labs/exasol-semantic-views|https://github.com/exasol-labs/exasol-semantic-views
+          exarrow-rs|exasol-labs/exarrow-rs|https://github.com/exasol-labs/exarrow-rs
+          driver-ts|exasol/exasol-driver-ts|https://github.com/exasol/exasol-driver-ts
+          driver-go|exasol/exasol-driver-go|https://github.com/exasol/exasol-driver-go
+          driver-websocket|exasol/websocket-api|https://github.com/exasol/websocket-api
           superset|apache/superset|https://github.com/apache/superset
           EOF
           )
@@ -72,10 +77,19 @@ jobs:
               latest=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
                 "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"') || latest="null"
             fi
+            # Repo name + About line, fetched authenticated (the app's own
+            # unauthenticated calls rate-limit at 60/hr, so the catalog is the
+            # reliable source of display metadata for marketplace cards).
+            meta='{"name":null,"description":null}'
+            if [ -n "$repo" ]; then
+              meta=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/$repo" | jq -c '{name: (.name // null), description: (.description // null)}') || meta='{"name":null,"description":null}'
+            fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0
-            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s" }' \
-              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" >> catalog.json
+            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s", "name": %s, "description": %s }' \
+              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" \
+              "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" >> catalog.json
           done <<< "$items"
           echo '' >> catalog.json
           echo '  }' >> catalog.json

@@ -124,6 +124,27 @@ export function resolveCatalog(meta: Record<string, RepoMeta> | null): ResolvedC
   return CATALOG.map((i) => resolveCatalogItem(i, meta));
 }
 
+/**
+ * Repo metadata mined from catalog.json (whose cron fetches GitHub
+ * AUTHENTICATED, so it's immune to the 60/hr unauthenticated rate limit that
+ * silently empties the app's own `market_repo_meta` calls). Used as the base
+ * layer under live metadata.
+ */
+export function metaFromCatalogItems(
+  items: Record<string, { repo?: string; homepage?: string; name?: string | null; description?: string | null }> | null | undefined,
+): Record<string, RepoMeta> {
+  const out: Record<string, RepoMeta> = {};
+  for (const entry of Object.values(items ?? {})) {
+    if (!entry?.repo || !entry.name) continue;
+    out[entry.repo] = {
+      name: entry.name,
+      description: entry.description ?? null,
+      htmlUrl: entry.homepage || `https://github.com/${entry.repo}`,
+    };
+  }
+  return out;
+}
+
 const META_SNAPSHOT_KEY = "exasol-studio-repo-meta";
 
 /** Last-known repo metadata, for instant paint before the IPC answers. */
