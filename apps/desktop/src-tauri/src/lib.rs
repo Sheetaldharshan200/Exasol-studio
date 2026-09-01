@@ -192,6 +192,8 @@ pub fn run() {
             agent::agent_api,
             agent::agent_grant_connection,
             agent::engine_ops_sync,
+            agent::engine_options_get,
+            agent::engine_tools_sync,
             agent::agent_stream,
             local_llm::llm_status,
             local_llm::llm_engine_install,

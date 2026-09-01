@@ -141,25 +141,33 @@ export function ExaEnginePanel({
   // shield shows them granted. The "shell" tool group follows the grants (so
   // exapump can load data files, and terminal loads obey the shield too);
   // tool grants bind at instance build, so dispose after writing.
+  const disposeEngineInstance = useCallback(async () => {
+    const port = statusRef.current?.port;
+    if (!port) return;
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    const f = inTauri ? (await import("@tauri-apps/plugin-http")).fetch : globalThis.fetch.bind(globalThis);
+    await f(`http://127.0.0.1:${port}/instance/dispose`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(3000),
+    } as RequestInit).catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (!isTauri()) return;
     const granted = (Object.keys(sqlOps) as (keyof SqlOps)[]).filter((k) => sqlOps[k]);
     void ipc
       .engineOpsSync(granted)
-      .then(async () => {
-        const port = statusRef.current?.port;
-        if (!port) return;
-        const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-        const f = inTauri ? (await import("@tauri-apps/plugin-http")).fetch : globalThis.fetch.bind(globalThis);
-        await f(`http://127.0.0.1:${port}/instance/dispose`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: "{}",
-          signal: AbortSignal.timeout(3000),
-        } as RequestInit).catch(() => undefined);
-      })
+      .then(() => disposeEngineInstance())
       .catch(() => undefined);
-  }, [sqlOps]);
+  }, [sqlOps, disposeEngineInstance]);
+  // Settings → Tools & Plugins changed the tool grants: rebuild the instance
+  // so the new permissions bind.
+  useEffect(() => {
+    const on = () => void disposeEngineInstance();
+    window.addEventListener("exa:tools-changed", on);
+    return () => window.removeEventListener("exa:tools-changed", on);
+  }, [disposeEngineInstance]);
   // Presentation persona for the whole chat (persisted; null = adaptive).
   const [persona, setPersonaState] = useState<string | null>(() => {
     try {
@@ -575,8 +583,8 @@ export function ExaEnginePanel({
     // a \`\`\`notebook fence (see notebook-plan.ts for the contract).
     const dataDirective =
       "Attached data files (CSV/Parquet/…) arrive as SAVED FILE PATHS, never inline — do not read whole data files into the conversation. " +
-      "To load one into Exasol: derive columns from the header preview, CREATE the table (CREATE class), then load with IMPORT (IMPORT is in the INSERT class) — " +
-      "e.g. IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1 — or with exapump from the shell tool (enabled automatically while write classes are granted): exapump upload \"<path>\" --table SCHEMA.TABLE. " +
+      "To load one into Exasol: derive columns from the header preview, CREATE the table (CREATE class), then load the data with EXAPUMP FIRST — the shell tool is enabled while write classes are granted: exapump upload \"<path>\" --table SCHEMA.TABLE (also the export path: exapump export). " +
+      "Only when exapump/shell is unavailable, fall back to IMPORT (INSERT class): IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1. " +
       "If CREATE/INSERT are not granted, ask ONCE for the shield grants (name the exact classes), then proceed — never dump file contents as a workaround.";
     const insightDirective =
       "When the user asks for a dashboard, report or insights: run the queries first, then FINISH with a ```notebook fenced block — " +
