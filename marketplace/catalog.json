@@ -5,58 +5,115 @@
     "exasol-personal": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.1.0",
-      "homepage": "https://github.com/exasol/exasol-personal"
+      "homepage": "https://github.com/exasol/exasol-personal",
+      "name": "exasol-personal",
+      "description": "The Analytics Database for Agentic AI \u2014 Free for Personal Use"
     },
     "exasol-cloud": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.1.0",
-      "homepage": "https://github.com/exasol/exasol-personal"
+      "homepage": "https://github.com/exasol/exasol-personal",
+      "name": "exasol-personal",
+      "description": "The Analytics Database for Agentic AI \u2014 Free for Personal Use"
     },
     "exapump": {
       "repo": "exasol-labs/exapump",
       "latest": "v0.11.3",
-      "homepage": "https://github.com/exasol-labs/exapump"
+      "homepage": "https://github.com/exasol-labs/exapump",
+      "name": "exapump",
+      "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust \ud83e\udd80"
     },
     "mcp-server": {
       "repo": "exasol/mcp-server",
       "latest": "2.0.0",
-      "homepage": "https://github.com/exasol/mcp-server"
+      "homepage": "https://github.com/exasol/mcp-server",
+      "name": "mcp-server",
+      "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
       "latest": "2.3.0",
-      "homepage": "https://github.com/exasol/pyexasol"
+      "homepage": "https://github.com/exasol/pyexasol",
+      "name": "pyexasol",
+      "description": "Exasol Python driver with low overhead, fast HTTP transport and compression"
     },
     "sqlalchemy-exasol": {
       "repo": "exasol/sqlalchemy-exasol",
       "latest": "7.1.1",
-      "homepage": "https://github.com/exasol/sqlalchemy-exasol"
+      "homepage": "https://github.com/exasol/sqlalchemy-exasol",
+      "name": "sqlalchemy-exasol",
+      "description": "SQLAlchemy dialect for EXASOL"
     },
     "json-tables": {
       "repo": "exasol-labs/exasol-json-tables",
       "latest": null,
-      "homepage": "https://github.com/exasol-labs/exasol-json-tables"
+      "homepage": "https://github.com/exasol-labs/exasol-json-tables",
+      "name": "exasol-json-tables",
+      "description": "Exasol JSON Tables: ingest, query, and reshape JSON-shaped data in Exasol."
     },
     "ai-lab": {
       "repo": "exasol/ai-lab",
       "latest": "6.0.0",
-      "homepage": "https://github.com/exasol/ai-lab"
+      "homepage": "https://github.com/exasol/ai-lab",
+      "name": "ai-lab",
+      "description": "Development environment for data science developers"
     },
     "agent-skills": {
       "repo": "exasol-labs/exasol-agent-skills",
       "latest": "v0.23.0",
-      "homepage": "https://github.com/exasol-labs/exasol-agent-skills"
+      "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
+      "name": "exasol-agent-skills",
+      "description": "Exasol skills for AI agents. Optimized for Claude Code and OpenAI Codex \ud83e\udd16"
     },
     "superset": {
       "repo": "apache/superset",
       "latest": "6.1.0",
-      "homepage": "https://github.com/apache/superset"
+      "homepage": "https://github.com/apache/superset",
+      "name": "superset",
+      "description": "Apache Superset is a Data Visualization and Data Exploration Platform"
     },
     "exa-agent": {
       "repo": "Sheetaldharshan200/exa-engine",
       "latest": "v2026.1.12",
       "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
-      "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa."
+      "note": "Exa engine = opencode (MIT); binary from opencode GitHub Releases, rebranded in-product as Exa.",
+      "name": "exa-engine",
+      "description": "exa \u2014 the Exasol data agent: terminal-native AI for schema-grounded SQL, verified answers and multi-agent data teams"
+    },
+    "semantic-views": {
+      "repo": "exasol-labs/exasol-semantic-views",
+      "latest": "v0.1",
+      "homepage": "https://github.com/exasol-labs/exasol-semantic-views",
+      "name": "exasol-semantic-views",
+      "description": "A database-native semantic layer for Exasol"
+    },
+    "exarrow-rs": {
+      "repo": "exasol-labs/exarrow-rs",
+      "latest": "v0.16.0",
+      "homepage": "https://github.com/exasol-labs/exarrow-rs",
+      "name": "exarrow-rs",
+      "description": "ADBC-compatible driver for Exasol with Apache Arrow data format support. Written in Rust \ud83e\udd80"
+    },
+    "driver-ts": {
+      "repo": "exasol/exasol-driver-ts",
+      "latest": "0.6.0",
+      "homepage": "https://github.com/exasol/exasol-driver-ts",
+      "name": "exasol-driver-ts",
+      "description": "Exasol Typescript / Javascript Driver for Node and the Browser"
+    },
+    "driver-go": {
+      "repo": "exasol/exasol-driver-go",
+      "latest": "v1.1.0",
+      "homepage": "https://github.com/exasol/exasol-driver-go",
+      "name": "exasol-driver-go",
+      "description": "Exasol SQL driver for Golang"
+    },
+    "driver-websocket": {
+      "repo": "exasol/websocket-api",
+      "latest": null,
+      "homepage": "https://github.com/exasol/websocket-api",
+      "name": "websocket-api",
+      "description": "WebSocket API description and implementations for several programming languages"
     }
   }
 }

@@ -323,6 +323,11 @@ export type CatalogEntry = {
   repo: string;
   latest: string | null;
   homepage: string;
+  /** Repo name + About from GitHub, fetched AUTHENTICATED by the catalog cron
+   *  — the reliable metadata source when the app's own unauthenticated GitHub
+   *  calls are rate-limited. */
+  name?: string | null;
+  description?: string | null;
 };
 export type MarketCatalog = {
   generatedAt: string | null;

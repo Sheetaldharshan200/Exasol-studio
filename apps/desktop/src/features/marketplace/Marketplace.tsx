@@ -52,6 +52,7 @@ import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
 import {
   catalogRepos,
+  metaFromCatalogItems,
   readMetaSnapshot,
   resolveCatalog,
   writeMetaSnapshot,
@@ -261,7 +262,13 @@ export function Marketplace() {
       })
       .catch(() => undefined);
   }, []);
-  const CATALOG = useMemo(() => resolveCatalog(repoMeta), [repoMeta]);
+  // Base layer: catalog.json metadata (cron-fetched AUTHENTICATED, so it
+  // survives the 60/hr unauthenticated GitHub rate limit that can empty the
+  // live fetch). Live metadata overlays it when available.
+  const CATALOG = useMemo(
+    () => resolveCatalog({ ...metaFromCatalogItems(catalog?.items), ...(repoMeta ?? {}) }),
+    [catalog, repoMeta],
+  );
   const [releases, setReleases] = useState<Record<string, Release>>({});
   const [installed, setInstalled] = useState<InstalledItem[]>([]);
   // Semantic Views installs INTO a database, so the card offers which one.
@@ -1073,7 +1080,15 @@ export function Marketplace() {
               </div>
             </div>
 
-            {nav === "updates" ? <IndependentComponents onActionable={setManagedUpdates} /> : null}
+            {nav === "updates" ? (
+              <IndependentComponents
+                onActionable={setManagedUpdates}
+                describe={(compId) => {
+                  const catalogId = Object.entries(CATALOG_TO_COMPONENT).find(([, c]) => c === compId)?.[0];
+                  return CATALOG.find((i) => i.id === catalogId)?.description ?? "";
+                }}
+              />
+            ) : null}
             {nav === "ai-clients" ? (
               <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
@@ -1598,7 +1613,14 @@ function actionableComponents(comps: ComponentInfo[], upstream: Record<string, s
   });
 }
 
-function IndependentComponents({ onActionable }: { onActionable?: (n: number | null) => void }) {
+function IndependentComponents({
+  onActionable,
+  describe,
+}: {
+  onActionable?: (n: number | null) => void;
+  /** GitHub About line for a component (resolved via the catalog mapping). */
+  describe?: (compId: string) => string;
+}) {
   const [comps, setComps] = useState<ComponentInfo[] | null>(null);
   const [upstream, setUpstream] = useState<Record<string, string> | null>(null);
   // Report the actionable count up: the Updates view must not claim
@@ -1708,6 +1730,9 @@ function IndependentComponents({ onActionable }: { onActionable?: (n: number | n
             <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
               <div className="min-w-40 flex-1">
                 <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
+                {describe?.(c.id) ? (
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{describe(c.id)}</p>
+                ) : null}
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
                   <span>installed {c.installed ?? "—"}</span>
                   {target ? <span>official {target}</span> : null}

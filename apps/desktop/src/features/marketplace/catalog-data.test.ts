@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   CATALOG,
   catalogRepos,
+  metaFromCatalogItems,
   repoDisplayName,
   resolveCatalogItem,
   type CatalogItem,
@@ -57,6 +58,34 @@ test("catalogRepos lists only items with a repo, no duplicates lost", () => {
   assert.ok(repos.includes("exasol/mcp-server"));
   assert.ok(!repos.some((r) => r === undefined || r === ""));
   assert.equal(repos.length, CATALOG.filter((i) => i.repo).length);
+});
+
+test("metaFromCatalogItems keys by repo, skips entries without repo or name", () => {
+  const meta = metaFromCatalogItems({
+    "exasol-personal": { repo: "exasol/exasol-personal", homepage: "https://github.com/exasol/exasol-personal", name: "exasol-personal", description: "The Analytics Database for Agentic AI" },
+    "old-entry": { repo: "exasol/pyexasol", homepage: "" }, // pre-refresh catalog: no name yet
+    "no-repo": { name: "x", description: "y" },
+  });
+  assert.equal(meta["exasol/exasol-personal"].description, "The Analytics Database for Agentic AI");
+  assert.equal(meta["exasol/exasol-personal"].htmlUrl, "https://github.com/exasol/exasol-personal");
+  assert.ok(!("exasol/pyexasol" in meta));
+  assert.equal(Object.keys(meta).length, 1);
+});
+
+test("metaFromCatalogItems tolerates null/undefined input and fills homepage", () => {
+  assert.deepEqual(metaFromCatalogItems(null), {});
+  assert.deepEqual(metaFromCatalogItems(undefined), {});
+  const meta = metaFromCatalogItems({ a: { repo: "o/r", name: "r", description: null } });
+  assert.equal(meta["o/r"].htmlUrl, "https://github.com/o/r");
+  assert.equal(meta["o/r"].description, null);
+});
+
+test("catalog meta feeds resolveCatalogItem end to end (the About line)", () => {
+  const meta = metaFromCatalogItems({
+    "exasol-personal": { repo: "exasol/exasol-personal", name: "exasol-personal", description: "The Analytics Database for Agentic AI" },
+  });
+  const item = CATALOG.find((i) => i.id === "exasol-personal")!;
+  assert.equal(resolveCatalogItem(item, meta).description, "The Analytics Database for Agentic AI");
 });
 
 test("repoDisplayName handles odd shapes", () => {
