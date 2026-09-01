@@ -283,7 +283,27 @@ export function Marketplace() {
   useEffect(() => {
     ipc
       .listConnectionProfiles()
-      .then((list) => setProfiles(list.map((p) => ({ id: p.id, name: p.name }))))
+      .then((list) => {
+        // "Install into" targets must be DISTINCT databases the user can write
+        // to. Drop the internal AI read-only identity, drop the managed local
+        // profile (the "Local database (managed)" entry IS that database), and
+        // collapse profiles that point at the same host:port to one entry —
+        // otherwise one local DB shows up three times.
+        const norm = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+        const seen = new Set<string>();
+        setProfiles(
+          list
+            .filter((p) => !p.username.startsWith("STUDIO_MCP_"))
+            .filter((p) => !(p.notes ?? "").includes("Managed automatically by Exasol Studio"))
+            .filter((p) => {
+              const key = `${norm(p.host)}:${p.port}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .map((p) => ({ id: p.id, name: p.name })),
+        );
+      })
       .catch(() => undefined);
   }, []);
   // Authoritative install/version for the managed components (single source).

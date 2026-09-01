@@ -2155,9 +2155,9 @@ export function ExasolStudio({
     }
     let planBlock = "";
     try {
-      await ipc.executeSql(conn.profile.id, conn.profile.name, "FLUSH STATISTICS", 1, false).catch(() => null);
+      await ipc.executeSql(conn.profile.id, conn.profile.name, "FLUSH STATISTICS", 1, false, false).catch(() => null);
       const planSql = `SELECT PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = ${tab.profileSession} AND STMT_ID > ${tab.profileBaseStmt} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK') ORDER BY STMT_ID, PART_ID LIMIT 60`;
-      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, planSql, 60, false);
+      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, planSql, 60, false, false);
       const r = res.results[0];
       if (r && r.kind === "resultSet" && r.rows.length) {
         const head = r.columns.map((c) => c.name).join(" | ");
@@ -2284,7 +2284,7 @@ export function ExasolStudio({
     setProfiling(true);
     try {
       // Flush so the just-run profile is queryable immediately (no re-run).
-      await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false).catch(() => null);
+      await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false, false).catch(() => null);
 
       // The run's statements are the first N distinct non-transaction
       // statements after the baseline on that session (N = executed results).
@@ -2311,7 +2311,7 @@ export function ExasolStudio({
       for (let round = 0; round < 8 && rows.length === 0; round++) {
         if (round > 0) await sleep(350);
         for (const attempt of attempts) {
-          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false).catch((e) => {
+          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false, false).catch((e) => {
             lastError = errorMessage(e);
             return null;
           });
@@ -2351,18 +2351,16 @@ export function ExasolStudio({
         rowsByStmt.get(id)!.push(r);
       }
 
-      // Profile views carry no SQL_TEXT — name each statement from the SQL
-      // audit view so the tabs show WHICH statement each plan is for.
+      // Profile views carry no SQL_TEXT, and no audit view is generally
+      // available (EXA_SQL_LAST_DAY has no text; EXA_DBA_AUDIT_SQL needs
+      // auditing + DBA). The app RAN these statements itself, in this exact
+      // order — label each plan from the run's own results, no query at all.
+      const runStatements = (tab.response?.results ?? []).map((r) => r.statement);
       const sqlTexts = new Map<string, string>();
-      if (stmtIds.length > 0) {
-        const res = await ipc
-          .executeSql(cid, cname, `SELECT STMT_ID, SQL_TEXT FROM EXA_STATISTICS.EXA_USER_SQL_LAST_DAY WHERE SESSION_ID = ${sid} AND STMT_ID IN (${stmtIds.join(", ")})`, stmtIds.length + 10, false)
-          .catch(() => null);
-        const set = res?.results.find((r) => r.kind === "resultSet");
-        for (const r of set?.rows ?? []) {
-          if (r[0] !== null && typeof r[1] === "string" && r[1].trim()) sqlTexts.set(String(r[0]), r[1].trim());
-        }
-      }
+      stmtIds.forEach((id, i) => {
+        const text = runStatements[i]?.trim();
+        if (text) sqlTexts.set(id, text);
+      });
 
       const plans: Plan[] = stmtIds.map((id) => {
         const group = rowsByStmt.get(id)!;
@@ -2381,6 +2379,21 @@ export function ExasolStudio({
       }
       patchTab(tab.id, { planData: plans, resultView: "performance", profileNote: undefined });
       loadHistory();
+
+      // Explain plan means EXPLAIN: alongside the Query Performance view, send
+      // the measured rows to the AI so the plan arrives already narrated —
+      // grounded in this exact run, never guessed. Reuses the rows fetched
+      // above; no extra statements hit the database.
+      const PLAN_COLS = [
+        "STMT_ID", "PART_ID", "PART_NAME", "PART_INFO", "OBJECT_SCHEMA", "OBJECT_NAME",
+        "OBJECT_ROWS", "IN_ROWS", "OUT_ROWS", "DURATION", "CPU", "TEMP_DB_RAM_PEAK", "REMARKS",
+      ];
+      const cols = PLAN_COLS.filter((c) => rows.some((r) => r[c] !== undefined));
+      const planLines = rows.slice(0, 60).map((r) => cols.map((c) => (r[c] === null || r[c] === undefined ? "" : String(r[c]))).join(" | "));
+      const planBlock =
+        `\n\nMeasured plan (${source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY"}, this run):\n\n` +
+        `${cols.join(" | ")}\n${cols.map(() => "---").join(" | ")}\n${planLines.join("\n")}`;
+      askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
     } catch (e) {
       patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });
     } finally {

@@ -3,6 +3,7 @@
 import {
   type PropsWithChildren,
   useEffect,
+  useRef,
   useState,
   type FC,
   isValidElement,
@@ -11,9 +12,16 @@ import {
   XIcon,
   PlusIcon,
   FileText,
+  FolderOpen,
   Loader2Icon,
   AlertCircleIcon,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AttachmentPrimitive,
   ComposerPrimitive,
@@ -264,22 +272,78 @@ export const ComposerAttachments: FC = () => {
   );
 };
 
+// A whole folder can be huge; keep the attachment set sane and skip the noise
+// (dotfiles, VCS internals, dependency trees).
+const FOLDER_FILE_CAP = 50;
+const FOLDER_SKIP = /(^|\/)(\.|node_modules\/|target\/|dist\/|__pycache__\/)/;
+
 export const ComposerAddAttachment: FC = () => {
+  const aui = useAui();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+
+  const addAll = (list: FileList | null, fromFolder: boolean) => {
+    let files = Array.from(list ?? []);
+    if (fromFolder) {
+      files = files
+        .filter((f) => !FOLDER_SKIP.test((f as File & { webkitRelativePath?: string }).webkitRelativePath ?? f.name))
+        .slice(0, FOLDER_FILE_CAP);
+    }
+    for (const f of files) {
+      void Promise.resolve(aui.composer().addAttachment(f)).catch(() => {
+        /* adapter rejected the type — the rest still attach */
+      });
+    }
+  };
+
   return (
-    <ComposerPrimitive.AddAttachment
-      render={
-        <TooltipIconButton
-          tooltip="Attach files or photos (multi-select)"
-          side="bottom"
-          variant="ghost"
-          size="icon"
-          className="aui-composer-add-attachment hover:bg-muted size-7 rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:transition-none"
-          aria-label="Attach files or photos"
-        />
-      }
-    >
-      <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
-    </ComposerPrimitive.AddAttachment>
+    <>
+      {/* Hidden pickers: the same composer attachment path as before, plus a
+          webkitdirectory input so a whole folder can be attached at once. */}
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          addAll(e.currentTarget.files, false);
+          e.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={folderRef}
+        type="file"
+        className="hidden"
+        {...({ webkitdirectory: "" } as Record<string, string>)}
+        onChange={(e) => {
+          addAll(e.currentTarget.files, true);
+          e.currentTarget.value = "";
+        }}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <TooltipIconButton
+            tooltip="Attach files, photos or a folder"
+            side="bottom"
+            variant="ghost"
+            size="icon"
+            className="aui-composer-add-attachment hover:bg-muted size-7 rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:transition-none"
+            aria-label="Attach files, photos or a folder"
+          >
+            <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
+          </TooltipIconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuItem onClick={() => fileRef.current?.click()}>
+            <FileText className="size-3.5" /> Files or photos
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => folderRef.current?.click()}>
+            <FolderOpen className="size-3.5" /> Folder
+            <span className="ml-auto text-[10px] text-muted-foreground">up to {FOLDER_FILE_CAP} files</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   );
 };
 

@@ -43,6 +43,7 @@ import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
 import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { GitLogTab } from "./GitLogTab";
+import { filterEntries, keyEntries, sortEntries, verbOf, type LogSortKey } from "@/lib/history-log";
 import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows } from "@/lib/result-stats";
 import { termBusReady } from "@/lib/term-bus";
@@ -304,7 +305,6 @@ export function ResultsGrid({
   );
 }
 
-type LogSortKey = "time" | "status" | "command" | "exec" | "fetch" | "rows" | "message" | "sql";
 
 function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
   const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
@@ -314,36 +314,16 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [commandFilter, setCommandFilter] = useState<Set<string>>(new Set());
 
-  const verb = (e: HistoryEntry) => (e.sql.trim().match(/^[a-zA-Z]+/)?.[0] ?? "SQL").toUpperCase();
-  const sortVal = (e: HistoryEntry, key: LogSortKey): string | number => {
-    switch (key) {
-      case "time": return e.executedAt;
-      case "status": return e.success ? 1 : 0;
-      case "command": return verb(e);
-      case "exec": return e.execMs ?? e.elapsedMs;
-      case "fetch": return e.fetchMs ?? -1;
-      case "rows": return e.rowCount;
-      case "message": return e.error ?? "";
-      case "sql": return e.sql;
-    }
-  };
-  // Stable per-entry render key: entries persisted before ids carried a
-  // sequence number can SHARE an id (same-millisecond runs), and duplicate
-  // React keys duplicate rows once the sort reorders them. The original list
-  // position disambiguates and never changes with the sort.
-  const keyed = entries.map((e, i) => ({ e, k: `${e.id}#${i}` }));
-  const commandOptions = [...new Set(entries.map(verb))].sort();
-  const filtered = keyed.filter(
-    ({ e }) =>
-      (statusFilter.size === 0 || statusFilter.has(e.success ? "Success" : "Failed")) &&
-      (commandFilter.size === 0 || commandFilter.has(verb(e))),
+  // Ordering/filtering is pure, extracted, and unit-tested — see
+  // lib/history-log.ts (numeric time compare, newest-first tie-breaks,
+  // duplicate-id-safe render keys).
+  const verb = verbOf;
+  const commandOptions = [...new Set(entries.map(verbOf))].sort();
+  const sorted = sortEntries(
+    filterEntries(keyEntries(entries), statusFilter, commandFilter),
+    sort.key,
+    sort.dir,
   );
-  const sorted = [...filtered].sort((a, b) => {
-    const va = sortVal(a.e, sort.key);
-    const vb = sortVal(b.e, sort.key);
-    const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
-    return cmp * sort.dir;
-  });
   const flip = (key: LogSortKey) =>
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
   const toggleIn = (set: Set<string>, value: string): Set<string> => {
@@ -571,6 +551,13 @@ export function HistoryDock({
   onRefresh: () => void;
 }) {
   const [mode, setMode] = useState<"terminal" | "history" | "gitlog">("history");
+  // Armed state for the destructive clear-history action; disarms on its own.
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = window.setTimeout(() => setConfirmClear(false), 5000);
+    return () => window.clearTimeout(t);
+  }, [confirmClear]);
   // Drag-resizable like VS Code: panel height (top edge) and terminals-rail
   // width (inner edge), both remembered across restarts.
   const [height, setHeight] = useState(() => Number(localStorage.getItem("studio.dock.h")) || 240);
@@ -689,9 +676,27 @@ export function HistoryDock({
                 <IconButton label="Refresh history" onClick={onRefresh}>
                   <RefreshCcw className="h-3.5 w-3.5" />
                 </IconButton>
-                <IconButton label="Clear history" onClick={onClear}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </IconButton>
+                {/* Destructive and unrecoverable — two-step: arm, then confirm. */}
+                {confirmClear ? (
+                  <span className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setConfirmClear(false);
+                        onClear();
+                      }}
+                      className="flex h-6 items-center gap-1 rounded-md bg-destructive px-2 text-[11px] font-medium text-white hover:bg-destructive/85"
+                    >
+                      <Trash2 className="h-3 w-3" /> Clear {entries.length} entries
+                    </button>
+                    <IconButton label="Keep history" onClick={() => setConfirmClear(false)}>
+                      <X className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </span>
+                ) : (
+                  <IconButton label="Clear history" onClick={() => setConfirmClear(true)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </IconButton>
+                )}
               </>
             ) : mode === "terminal" ? (
               <IconButton label="New terminal" onClick={() => void newTerminal()}>
