@@ -636,7 +636,8 @@ export const ipc = {
   gitStashPush: (message?: string) => call<string>("git_stash_push", { message }),
   gitStashPop: () => call<string>("git_stash_pop"),
   engineOpsSync: (sqlOps: string[]) => call<null>("engine_ops_sync", { sqlOps }),
-  engineOptionsGet: () => call<{ sqlOps: string[]; tools: string[] }>("engine_options_get"),
+  engineOptionsGet: () =>
+    call<{ sqlOps: string[]; tools: string[]; plugins: unknown[]; seeded: boolean }>("engine_options_get"),
   engineToolsSync: (tools: string[]) => call<null>("engine_tools_sync", { tools }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
