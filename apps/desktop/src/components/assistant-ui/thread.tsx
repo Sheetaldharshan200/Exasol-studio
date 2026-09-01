@@ -26,6 +26,7 @@ import { humanizeEngineError } from "@/features/assistant/exa/humanize-error";
 import { stripMachineContext } from "@/features/assistant/exa/context";
 import { extractDataFileNotes } from "@/features/assistant/exa/attachment-routing";
 import { extractContextPins } from "@/features/assistant/exa/context";
+import { workingLabel, workingStatus } from "@/features/assistant/exa/work-label";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
@@ -79,6 +80,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type FC,
@@ -449,9 +451,40 @@ const MessageError: FC = () => {
 const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({ part, children }) => {
   const running = part.status.type === "running";
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  // Collapsed by default — also WHILE running ("Working" pulses instead).
-  // The user expands it on demand; their choice then sticks.
+  // Collapsed by default — also WHILE running (the live status line below
+  // says what's happening). The user expands on demand; their choice sticks.
   const open = userOpen ?? false;
+  // The ACTIVE piece of work (last reasoning/tool part), as a value-compared
+  // string so the selector never thrashes: "type\u0000toolName".
+  const activeSig = useAuiState((s) => {
+    if (part.status.type !== "running") return "";
+    for (let k = part.indices.length - 1; k >= 0; k--) {
+      const p = s.message.content[part.indices[k]];
+      if (!p) continue;
+      if (p.type === "reasoning" || p.type === "tool-call") {
+        return `${p.type}\u0000${(p as { toolName?: string }).toolName ?? ""}`;
+      }
+    }
+    return "";
+  });
+  // Elapsed seconds since this work phase started (Claude-style " · 12s").
+  const startRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!running) {
+      startRef.current = null;
+      setElapsed(0);
+      return;
+    }
+    startRef.current ??= Date.now();
+    const t = window.setInterval(() => setElapsed((Date.now() - (startRef.current ?? Date.now())) / 1000), 1000);
+    return () => window.clearInterval(t);
+  }, [running]);
+  const sep = activeSig.indexOf("\u0000");
+  const liveLabel = workingStatus(
+    workingLabel(sep === -1 ? null : activeSig.slice(0, sep), sep === -1 ? null : activeSig.slice(sep + 1)),
+    elapsed,
+  );
   // Count only the meaningful work (reasoning + tool calls) — the group also
   // swallows step-boundary data markers, which render nothing.
   const steps = useAuiState(
@@ -470,7 +503,7 @@ const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({
         className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-[12.5px] transition-colors"
       >
         <BrainIcon className={cn("size-3.5", running && "animate-pulse")} />
-        <span>{running ? "Working" : `Worked · ${steps} step${steps === 1 ? "" : "s"}`}</span>
+        <span>{running ? liveLabel : `Worked · ${steps} step${steps === 1 ? "" : "s"}`}</span>
         <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} />
       </button>
       {open ? <div className="border-border/60 mt-2 space-y-1 border-s ps-3">{children}</div> : null}
