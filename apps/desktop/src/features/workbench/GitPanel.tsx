@@ -359,29 +359,42 @@ export function GitPanel({ full = false }: { full?: boolean }) {
             </div>
             {notice ? <p className="mt-1.5 truncate text-[11px] text-primary">{notice}</p> : null}
             {needsRemote ? (
-              <div className="mt-1.5 rounded-lg border border-border bg-panel/60 p-2">
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  This workspace isn’t connected to a remote yet. Create an empty repository
-                  (GitHub/GitLab) and paste its URL to enable push, pull and fetch:
-                </p>
-                <div className="mt-1.5 flex gap-1.5">
-                  <input
-                    value={remoteUrl}
-                    onChange={(e) => setRemoteUrl(e.target.value)}
-                    placeholder="https://github.com/you/my-sql-workspace.git"
-                    spellCheck={false}
-                    className="h-7 min-w-0 flex-1 rounded-md border border-border bg-editor px-2 font-mono text-[11px] outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && remoteUrl.trim())
-                        void act(() => ipc.gitSetRemote(remoteUrl.trim()), "Remote connected — push again to upload.");
-                    }}
-                  />
+              <div className="mt-2 rounded-xl border border-border bg-panel/60 p-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <UploadCloud className="h-3.5 w-3.5 text-primary" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium text-foreground">No remote connected</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Push, pull and fetch need a hosted repository. Paste the URL of an empty one:
+                    </p>
+                  </div>
+                </div>
+                <input
+                  value={remoteUrl}
+                  onChange={(e) => setRemoteUrl(e.target.value)}
+                  placeholder="https://github.com/you/my-sql-workspace.git"
+                  spellCheck={false}
+                  className="mt-2 h-8 w-full rounded-md border border-border bg-editor px-2.5 font-mono text-[11px] outline-none focus:border-ring"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && remoteUrl.trim())
+                      void act(() => ipc.gitSetRemote(remoteUrl.trim()), "Remote connected — push again to upload.");
+                  }}
+                />
+                <div className="mt-2 flex gap-1.5">
                   <button
                     onClick={() => void act(() => ipc.gitSetRemote(remoteUrl.trim()), "Remote connected — push again to upload.")}
                     disabled={busy || !remoteUrl.trim()}
-                    className="h-7 shrink-0 rounded-md bg-primary px-2.5 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                    className="flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
                   >
-                    Connect
+                    <UploadCloud className="h-3 w-3" /> Connect remote
+                  </button>
+                  <button
+                    onClick={() => void ipc.openExternal("https://github.com/new").catch(() => window.open("https://github.com/new", "_blank"))}
+                    className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    Create one on GitHub
                   </button>
                 </div>
               </div>

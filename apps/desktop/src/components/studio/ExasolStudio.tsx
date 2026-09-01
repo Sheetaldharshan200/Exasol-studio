@@ -16,6 +16,7 @@ import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
+import { readMetaSnapshot, resolveCatalog } from "@/features/marketplace/catalog-data";
 import { Docs } from "@/features/marketplace/Docs";
 import { ArtifactTab } from "@/features/artifact/ArtifactTab";
 import { artifacts as artifactClient } from "@/lib/agent-client";
@@ -245,6 +246,7 @@ export function ExasolStudio({
         "SELECT COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS') ORDER BY 1, 2 LIMIT 20000",
         20000,
         false,
+        false,
       )
       .then((res) => {
         const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
@@ -262,6 +264,7 @@ export function ExasolStudio({
         conn.profile.name,
         "SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000",
         2000,
+        false,
         false,
       )
       .then((res) => {
@@ -490,6 +493,26 @@ export function ExasolStudio({
       { key: "security", label: "Security" },
     ]) {
       items.push({ id: `docs-${c.key}`, kind: "docs", label: c.label, detail: "Documentation", run: () => openDocsTab(c.key) });
+    }
+    // Marketplace addons (GitHub-resolved names from the metadata snapshot,
+    // instant + offline-safe): picking one opens the marketplace filtered to it.
+    for (const m of resolveCatalog(readMetaSnapshot())) {
+      items.push({
+        id: `market-${m.id}`,
+        kind: "marketplace",
+        label: m.name,
+        detail: m.description || m.kind,
+        keywords: `${m.id} ${m.repo ?? ""} ${m.kind} install addon extension`,
+        run: () => {
+          openMarketplace();
+          // After the marketplace mounts — a fresh mount attaches the listener
+          // on its first effect pass, which this outlives.
+          window.setTimeout(
+            () => window.dispatchEvent(new CustomEvent("studio:marketplace-search", { detail: { query: m.name } })),
+            150,
+          );
+        },
+      });
     }
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2474,7 +2497,9 @@ export function ExasolStudio({
     if (paging) return;
     setPaging(true);
     try {
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false);
+      // Page turns are navigation, not new work — keep the LIMIT/OFFSET
+      // wrappers out of the execution log (the original run is already there).
+      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false, false);
       const cur = pageCache.current.get(activeTab.id);
       if (res.success && cur && cur.sql === base) cur.pages.set(page, res);
       patchTab(activeTab.id, { response: res, execError: res.success ? null : res.results.find((r) => r.error)?.error ?? null, resultPage: page });
