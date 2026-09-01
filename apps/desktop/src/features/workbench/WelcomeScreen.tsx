@@ -31,7 +31,7 @@ export function WelcomeScreen({
     { icon: "querytab", label: "New query", onClick: onNewQuery },
     { icon: "folder-open", label: "Open SQL file…", onClick: onOpenFile },
     { icon: connected ? "database" : "plug", label: connected ? "Add connection…" : "Connect to a database…", onClick: onConnect },
-    { icon: "marketplace", label: "Browse the Marketplace…", onClick: onMarketplace },
+    { icon: "extension", label: "Browse the Marketplace…", onClick: onMarketplace },
   ];
 
   // Each entry deep-links to its page in the in-app Docs tab.

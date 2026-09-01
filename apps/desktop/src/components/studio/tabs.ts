@@ -137,7 +137,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   visualizer: "visualizer",
   filePreview: "table",
   mcpConfig: "plug",
-  marketplace: "marketplace",
+  marketplace: "extension",
   guides: "guides",
   docs: "guides",
   object: "table",

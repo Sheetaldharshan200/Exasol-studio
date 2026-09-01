@@ -36,7 +36,7 @@ export type ActivityId =
 export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
   { id: "databases", label: "Databases", icon: "database" },
   { id: "files", label: "Files", icon: "files" },
-  { id: "marketplace", label: "Marketplace", icon: "marketplace" },
+  { id: "marketplace", label: "Marketplace", icon: "extension" },
   { id: "skills", label: "Skills", icon: "skills" },
   { id: "notebook", label: "Notebook", icon: "notebook" },
   { id: "visualizer", label: "Schema visualizer", icon: "visualizer" },
