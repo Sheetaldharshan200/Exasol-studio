@@ -792,3 +792,136 @@ mod tests {
         assert!(validate_hash("abc;rm -rf").is_err());
     }
 }
+
+// ── Branch management, merge, stash, amend ────────────────────────────────────
+// Rounds out the Source Control tab (workflow modeled on GitDesktop,
+// github.com/theBGuy/GitDesktop, Apache-2.0 — see THIRD-PARTY-NOTICES.md).
+
+/// Refuse names git would parse as flags or that carry shell-hostile chars.
+fn validate_ref_name(name: &str) -> AppResult<()> {
+    let n = name.trim();
+    if n.is_empty()
+        || n.starts_with('-')
+        || n.contains(|c: char| c.is_whitespace() || c.is_control())
+        || n.contains("..")
+    {
+        return Err(AppError::Storage(format!("invalid branch name: {name}")));
+    }
+    Ok(())
+}
+
+/// Amend the last commit — reword when a message is given, otherwise fold the
+/// staged changes in keeping the old message.
+#[tauri::command]
+pub fn git_commit_amend(message: Option<String>) -> AppResult<String> {
+    let msg = message.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    let args: Vec<&str> = match msg {
+        Some(m) => vec!["commit", "--amend", "-m", m],
+        None => vec!["commit", "--amend", "--no-edit"],
+    };
+    let (ok, out, err) = run(&args)?;
+    if !ok {
+        return Err(AppError::Storage(format!("git commit --amend failed: {out}{err}")));
+    }
+    Ok(out.lines().next().unwrap_or("Amended.").to_string())
+}
+
+#[tauri::command]
+pub fn git_branch_delete(name: String, force: Option<bool>) -> AppResult<()> {
+    validate_ref_name(&name)?;
+    let flag = if force.unwrap_or(false) { "-D" } else { "-d" };
+    let (ok, out, err) = run(&["branch", flag, &name])?;
+    if !ok {
+        let combined = format!("{out}{err}");
+        if combined.contains("not fully merged") {
+            return Err(AppError::Storage(format!(
+                "'{name}' has commits that are not merged anywhere else. Delete anyway to drop them."
+            )));
+        }
+        return Err(AppError::Storage(format!("git branch delete failed: {combined}")));
+    }
+    Ok(())
+}
+
+/// Merge `branch` into the current branch. On conflicts the merge is aborted
+/// so the working tree never sits in a half-merged state the UI can't show.
+#[tauri::command]
+pub fn git_merge(branch: String) -> AppResult<String> {
+    validate_ref_name(&branch)?;
+    let (ok, out, err) = run(&["merge", "--no-edit", &branch])?;
+    if !ok {
+        let combined = format!("{out}{err}");
+        if combined.contains("CONFLICT") || combined.contains("Automatic merge failed") {
+            let _ = run(&["merge", "--abort"]);
+            return Err(AppError::Storage(format!(
+                "Merging '{branch}' conflicts with your branch — the merge was aborted, nothing changed. Resolve by committing your work first or merging the other way."
+            )));
+        }
+        return Err(AppError::Storage(format!("git merge failed: {combined}")));
+    }
+    Ok(out.lines().next().unwrap_or("Merged.").to_string())
+}
+
+#[tauri::command]
+pub fn git_stash_list() -> AppResult<Vec<String>> {
+    if resolve_bin("git").is_none() {
+        return Ok(vec![]);
+    }
+    let (ok, out, _) = run(&["stash", "list", "--pretty=format:%gs"])?;
+    if !ok {
+        return Ok(vec![]);
+    }
+    Ok(out.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect())
+}
+
+#[tauri::command]
+pub fn git_stash_push(message: Option<String>) -> AppResult<String> {
+    let msg = message.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    let mut args = vec!["stash", "push", "--include-untracked"];
+    if let Some(m) = msg {
+        args.extend(["-m", m]);
+    }
+    let (ok, out, err) = run(&args)?;
+    if !ok {
+        return Err(AppError::Storage(format!("git stash failed: {out}{err}")));
+    }
+    if out.contains("No local changes") {
+        return Err(AppError::Storage("Nothing to stash — the working tree is clean.".into()));
+    }
+    Ok(out.lines().next().unwrap_or("Stashed.").to_string())
+}
+
+#[tauri::command]
+pub fn git_stash_pop() -> AppResult<String> {
+    let (ok, out, err) = run(&["stash", "pop"])?;
+    if !ok {
+        let combined = format!("{out}{err}");
+        if combined.contains("No stash entries") {
+            return Err(AppError::Storage("No stashed changes to restore.".into()));
+        }
+        if combined.contains("CONFLICT") {
+            return Err(AppError::Storage(
+                "The stash conflicts with your current changes — it was kept. Commit or discard first, then pop again.".into(),
+            ));
+        }
+        return Err(AppError::Storage(format!("git stash pop failed: {combined}")));
+    }
+    Ok("Stash restored.".into())
+}
+
+#[cfg(test)]
+mod ref_tests {
+    use super::*;
+
+    #[test]
+    fn ref_names_reject_flags_and_whitespace() {
+        assert!(validate_ref_name("feature/login").is_ok());
+        assert!(validate_ref_name("v1.2-rc").is_ok());
+        assert!(validate_ref_name("-D").is_err());
+        assert!(validate_ref_name("--force").is_err());
+        assert!(validate_ref_name("a b").is_err());
+        assert!(validate_ref_name("a..b").is_err());
+        assert!(validate_ref_name("").is_err());
+        assert!(validate_ref_name("  ").is_err());
+    }
+}
