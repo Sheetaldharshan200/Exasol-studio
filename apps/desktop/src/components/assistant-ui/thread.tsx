@@ -25,6 +25,7 @@ import { BrandLoader } from "@/components/brand/BrandLoader";
 import { humanizeEngineError } from "@/features/assistant/exa/humanize-error";
 import { stripMachineContext } from "@/features/assistant/exa/context";
 import { extractDataFileNotes } from "@/features/assistant/exa/attachment-routing";
+import { extractContextPins } from "@/features/assistant/exa/context";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
@@ -65,6 +66,8 @@ import {
   CopyIcon,
   DownloadIcon,
   FileTextIcon,
+  AppWindow as AppWindowIcon,
+  Paperclip as PaperclipIcon,
   MicIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -672,11 +675,30 @@ const UserMessageFilePins: FC = () => {
     (s.message.content ?? []).map((p) => (p.type === "text" ? p.text : "")).join("\n"),
   );
   const notes = useMemo(() => extractDataFileNotes(text), [text]);
-  if (notes.length === 0) return null;
+  const pins = useMemo(() => extractContextPins(text), [text]);
+  if (notes.length === 0 && pins.length === 0) return null;
   return (
     // One horizontal row, scrollable when the files outgrow the bubble width —
     // same idiom as the composer's attachment strip, never a stacked pile.
     <div className="col-start-2 flex max-w-full flex-row items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+      {/* Context pins (the tab/@-mentions that were attached) — like files. */}
+      {pins.map((p, i) => (
+        <span
+          key={`${p.providerId}-${i}`}
+          title={`Attached as context (@${p.providerId})`}
+          className="flex max-w-56 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2 py-1"
+        >
+          {p.providerId === "tab" ? (
+            <AppWindowIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+          ) : (
+            <PaperclipIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+          )}
+          <span className="min-w-0">
+            <span className="block truncate text-[11.5px] text-foreground">{p.label}</span>
+            <span className="block text-[10px] text-muted-foreground">@{p.providerId}</span>
+          </span>
+        </span>
+      ))}
       {notes.map((n) => (
         <button
           key={n.path}

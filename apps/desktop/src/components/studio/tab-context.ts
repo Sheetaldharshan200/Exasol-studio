@@ -5,7 +5,7 @@
 
 import type { SqlTab } from "./tabs";
 
-export type TabContext = { view: string; title: string; body: string };
+export type TabContext = { id: string; view: string; title: string; body: string };
 
 type NotebookDocLite = { id: string; title: string; cells: { type: string; src: string; chart?: string }[] };
 
@@ -25,20 +25,24 @@ const CELL_CAP = 30;
 const SRC_CAP = 2_000;
 
 export function describeTabForContext(
-  tab: Pick<SqlTab, "view" | "title" | "sql" | "execError">,
+  tab: Pick<SqlTab, "id" | "view" | "title" | "sql" | "execError">,
   notebook: NotebookDocLite | null = null,
 ): TabContext {
+  const base = { id: tab.id };
   switch (tab.view) {
     case "sql": {
       const err = tab.execError ? `\n\nLast error on this tab:\n${tab.execError}` : "";
       return {
+        ...base,
         view: "sql",
         title: tab.title,
-        body: `SQL in the open editor tab "${tab.title}":\n\n\`\`\`sql\n${tab.sql.trim() || "-- (empty)"}\n\`\`\`${err}`,
+        body:
+          `The user pinned the open query tab "${tab.title}". Current SQL:\n\n\`\`\`sql\n${tab.sql.trim() || "-- (empty)"}\n\`\`\`${err}\n\n` +
+          "WORK ON THIS TAB DIRECTLY: write or fix the SQL (verify with your database tools when you can) and finish with the final SQL in a ```sql code block — the app writes that block INTO this query tab. Do the job; don't just describe it.",
       };
     }
     case "notebook": {
-      if (!notebook) return { view: "notebook", title: tab.title, body: `The Notebook tab is open (no notebook content available).` };
+      if (!notebook) return { ...base, view: "notebook", title: tab.title, body: `The Notebook tab is open (no notebook content available).` };
       const cells = notebook.cells.slice(0, CELL_CAP).map((c, i) => {
         const src = c.src.length > SRC_CAP ? `${c.src.slice(0, SRC_CAP)}\n…(truncated)` : c.src;
         const chart = c.chart ? `, chart: ${c.chart}` : "";
@@ -46,6 +50,7 @@ export function describeTabForContext(
       });
       const more = notebook.cells.length > CELL_CAP ? `\n…and ${notebook.cells.length - CELL_CAP} more cells.` : "";
       return {
+        ...base,
         view: "notebook",
         title: notebook.title,
         body:
@@ -54,12 +59,12 @@ export function describeTabForContext(
       };
     }
     case "visualizer":
-      return { view: "visualizer", title: tab.title, body: `The Schema Visualizer tab "${tab.title}" is open — the user is looking at the schema diagram.` };
+      return { ...base, view: "visualizer", title: tab.title, body: `The Schema Visualizer tab "${tab.title}" is open — the user is looking at the schema diagram.` };
     case "object":
-      return { view: "object", title: tab.title, body: `The database object tab "${tab.title}" is open — the user is inspecting this object.` };
+      return { ...base, view: "object", title: tab.title, body: `The database object tab "${tab.title}" is open — the user is inspecting this object.` };
     case "git":
-      return { view: "git", title: tab.title, body: `The Source Control tab is open — the user is working with the workspace git repository.` };
+      return { ...base, view: "git", title: tab.title, body: `The Source Control tab is open — the user is working with the workspace git repository.` };
     default:
-      return { view: tab.view, title: tab.title, body: `The "${tab.title}" tab (${tab.view}) is open.` };
+      return { ...base, view: tab.view, title: tab.title, body: `The "${tab.title}" tab (${tab.view}) is open.` };
   }
 }
