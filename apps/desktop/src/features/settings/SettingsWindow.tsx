@@ -1,5 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { Maximize2, Minimize2, Search, Settings2, X } from "lucide-react";
+import {
+  Braces,
+  Database,
+  FileClock,
+  Fingerprint,
+  Grid3x3,
+  History as HistoryIcon,
+  KeyRound,
+  ListTree,
+  Maximize2,
+  Minimize2,
+  Palette,
+  Play,
+  Quote,
+  Radio,
+  Search,
+  Settings2,
+  Sparkles,
+  Timer,
+  Type as TypeIcon,
+  Workflow,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { AiPersonalization } from "./AiPersonalization";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -16,20 +40,22 @@ type Ctrl =
   | { key: string; label: string; type: "text" | "password"; help?: string; placeholder?: string }
   | { key: string; label: string; type: "select" | "radio"; options: { value: string; label: string }[]; help?: string };
 
-type Category = { tab: "general" | "database"; key: string; label: string; desc: string; controls: Ctrl[] };
+type Category = { tab: "general" | "database" | "ai"; key: string; label: string; desc: string; icon?: LucideIcon; controls: Ctrl[] };
 
 // Curated, DBVisualizer-informed settings that map to real Exasol Studio behavior.
 const CATEGORIES: Category[] = [
   {
-    tab: "general",
-    key: "ai",
-    label: "AI Assistant (Exa)",
-    desc: "Models, providers, memory, and behavior for the built-in assistant.",
+    tab: "ai",
+    key: "personalization",
+    icon: Sparkles,
+    label: "Personalization",
+    desc: "How the assistant answers you — persona, depth, output format, tone, and standing instructions. Applies to the next message and survives restarts.",
     controls: [],
   },
   {
     tab: "general",
     key: "appearance",
+    icon: Palette,
     label: "Appearance",
     desc: "Theme and interface density.",
     controls: [
@@ -59,6 +85,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "objectsTree",
+    icon: ListTree,
     label: "Database Objects Tree",
     desc: "How schemas and objects are shown in the navigator.",
     controls: [
@@ -69,6 +96,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "metadata",
+    icon: FileClock,
     label: "Metadata",
     desc: "Caching schema/table metadata avoids repeated round-trips. No data is cached — only names and types.",
     controls: [
@@ -88,6 +116,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "sqlEditor",
+    icon: Braces,
     label: "SQL Editor",
     desc: "Editing behavior and syntax colors for the SQL editor.",
     controls: [
@@ -106,6 +135,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "grid",
+    icon: Grid3x3,
     label: "Result Grid",
     desc: "How query results are displayed.",
     controls: [
@@ -118,6 +148,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "execution",
+    icon: Play,
     label: "Execution",
     desc: "Defaults applied when you run SQL.",
     controls: [
@@ -130,6 +161,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "history",
+    icon: HistoryIcon,
     label: "SQL History",
     desc: "Executed statements are kept for quick recall.",
     controls: [
@@ -140,6 +172,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "general",
     key: "telemetry",
+    icon: Radio,
     label: "Telemetry",
     desc: "Anonymous usage statistics.",
     controls: [{ key: "telemetry", label: "Send anonymous telemetry", type: "toggle" }],
@@ -148,6 +181,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "authentication",
+    icon: KeyRound,
     label: "Authentication",
     desc: "Default session context for new connections.",
     controls: [{ key: "defaultSchema", label: "Default schema", type: "text", placeholder: "(none)" }],
@@ -155,6 +189,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "delimitedIdentifiers",
+    icon: Quote,
     label: "Delimited Identifiers",
     desc: "How object names are quoted in generated SQL.",
     controls: [
@@ -173,6 +208,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "physicalConnection",
+    icon: Workflow,
     label: "Physical Connection",
     desc: "Transport, timeouts and encryption for the Exasol WebSocket connection.",
     controls: [
@@ -194,6 +230,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "transaction",
+    icon: Fingerprint,
     label: "Transaction",
     desc: "Transaction handling for the connection.",
     controls: [
@@ -209,6 +246,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "encoding",
+    icon: TypeIcon,
     label: "Encoding",
     desc: "Character set for results.",
     controls: [
@@ -226,6 +264,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "sqlStatements",
+    icon: Database,
     label: "SQL Statements",
     desc: "Fetching behavior for statements.",
     controls: [{ key: "fetchSize", label: "Fetch size", type: "number", min: 100, max: 1000000, unit: "rows" }],
@@ -233,6 +272,7 @@ const CATEGORIES: Category[] = [
   {
     tab: "database",
     key: "queryBuilder",
+    icon: Timer,
     label: "Query Builder",
     desc: "Defaults for the visual query builder.",
     controls: [{ key: "qbDefaultLimit", label: "Default LIMIT", type: "number", min: 0, max: 100000, unit: "rows" }],
@@ -298,7 +338,7 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
   const requested =
     embedded?.category ?? (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("cat") : null);
   const requestedCat = CATEGORIES.find((c) => c.key === requested);
-  const [tab, setTab] = useState<"general" | "database">(requestedCat?.tab ?? "general");
+  const [tab, setTab] = useState<"general" | "database" | "ai">(requestedCat?.tab ?? "general");
   const [query, setQuery] = useState("");
   const [values, setValues] = useState<Record<string, SettingValue>>(DEFAULTS);
   const [selected, setSelected] = useState<string>(requestedCat?.key ?? "appearance");
@@ -402,7 +442,7 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
           />
         </div>
         <div className="mt-2 flex items-center gap-4 text-[13px]">
-          {(["general", "database"] as const).map((t) => (
+          {(["general", "database", "ai"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -411,7 +451,7 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
                 tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              {t === "database" ? "Database (Exasol)" : "General"}
+              {t === "database" ? "Database (Exasol)" : t === "ai" ? "AI" : "General"}
             </button>
           ))}
         </div>
@@ -420,18 +460,22 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
       <div className="flex min-h-0 flex-1">
         {/* Category tree */}
         <div className="w-60 shrink-0 overflow-auto border-r border-border p-2 [scrollbar-width:thin]">
-          {cats.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => setSelected(c.key)}
-              className={cn(
-                "flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors",
-                selected === c.key ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              {c.label}
-            </button>
-          ))}
+          {cats.map((c) => {
+            const RowIcon = c.icon ?? Settings2;
+            return (
+              <button
+                key={c.key}
+                onClick={() => setSelected(c.key)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors",
+                  selected === c.key ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                )}
+              >
+                <RowIcon className={cn("h-4 w-4 shrink-0", selected === c.key ? "text-primary" : "opacity-70")} />
+                {c.label}
+              </button>
+            );
+          })}
           {cats.length === 0 ? <p className="px-2 py-4 text-[12px] text-muted-foreground">No matches.</p> : null}
         </div>
 
@@ -441,10 +485,10 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
             <div className="mx-auto max-w-xl">
               <h2 className="text-[15px] font-bold">{current.label}</h2>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{current.desc}</p>
-              {current.key === "ai" ? (
-                <p className="mt-5 text-[12px] leading-relaxed text-muted-foreground">
-                  AI settings are being rebuilt — model, provider and sandbox controls live in the Exa composer for now.
-                </p>
+              {current.key === "personalization" ? (
+                <div className="mt-4">
+                  <AiPersonalization />
+                </div>
               ) : (
                 <>
                   <div className="mt-5 space-y-5">
