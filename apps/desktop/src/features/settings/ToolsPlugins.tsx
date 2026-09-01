@@ -188,7 +188,22 @@ export function ToolsPlugins() {
                 your own to npm.
               </p>
               <button
-                onClick={() => window.dispatchEvent(new CustomEvent("studio:open-docs", { detail: { path: "exa/develop/plugins" } }))}
+                onClick={() => {
+                  // Settings runs in its OWN WebviewWindow on desktop — a DOM
+                  // event never reaches the main window. Emit app-wide via
+                  // Tauri and bring the main window forward; the DOM dispatch
+                  // covers the web build's in-app settings modal.
+                  window.dispatchEvent(new CustomEvent("studio:open-docs", { detail: { path: "exa/develop/plugins" } }));
+                  if (isTauri()) {
+                    void (async () => {
+                      const { emit } = await import("@tauri-apps/api/event");
+                      await emit("studio:open-docs", { path: "exa/develop/plugins" });
+                      const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+                      const main = (await getAllWebviewWindows()).find((w) => w.label !== "settings");
+                      await main?.setFocus();
+                    })().catch(() => undefined);
+                  }
+                }}
                 className="mt-2.5 flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <Icon name="guides" className="h-3.5 w-3.5" /> How to create &amp; add a plugin

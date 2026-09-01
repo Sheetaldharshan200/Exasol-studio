@@ -526,9 +526,18 @@ export function ExasolStudio({
     const onNotebook = () => openNotebook();
     window.addEventListener("studio:open-docs", onDocs);
     window.addEventListener("studio:open-notebook", onNotebook);
+    // Cross-WINDOW requests (the Settings WebviewWindow can't reach this
+    // window's DOM events) arrive over the Tauri event bus.
+    let unlistenDocs: (() => void) | undefined;
+    if (isTauri()) {
+      void import("@tauri-apps/api/event").then(async ({ listen }) => {
+        unlistenDocs = await listen<{ path?: string }>("studio:open-docs", (e) => openDocsTab(e.payload?.path));
+      });
+    }
     return () => {
       window.removeEventListener("studio:open-docs", onDocs);
       window.removeEventListener("studio:open-notebook", onNotebook);
+      unlistenDocs?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connKey, tabs]);
