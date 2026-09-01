@@ -21,10 +21,13 @@ export type ExaSnapshot = {
   editorSql: string;
   lastResult: StatementResult | null;
   history: { sql: string }[];
+  /** What's on screen: the active workbench tab, pre-described for the AI
+   *  (query SQL, notebook cells, visualizer…) — the "current tab" pin. */
+  activeTab?: { view: string; title: string; body: string };
 };
 
 /** "file" chips come from the composer's + (attach) button, not the @ menu. */
-export type ContextProviderId = "query" | "results" | "table" | "schema" | "connection" | "history" | "file";
+export type ContextProviderId = "query" | "results" | "table" | "schema" | "connection" | "history" | "file" | "tab";
 
 export type ContextProvider = {
   id: ContextProviderId;
@@ -39,6 +42,7 @@ export type ContextProvider = {
 export type ContextChip = { id: string; providerId: ContextProviderId; label: string; body: string };
 
 export const CONTEXT_PROVIDERS: ContextProvider[] = [
+  { id: "tab", title: "tab", description: "The tab you're viewing (query, notebook, visualizer…)", needsArg: null },
   { id: "query", title: "query", description: "The SQL in the active editor tab", needsArg: null },
   { id: "results", title: "results", description: "The most recent query result set", needsArg: null },
   { id: "table", title: "table", description: "A table and its columns", needsArg: "table" },
@@ -104,6 +108,10 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
       const sql = snap.editorSql.trim();
       if (!sql) return null;
       return { id: "query", providerId: id, label: "query", body: "Active editor SQL:\n```sql\n" + sql + "\n```" };
+    }
+    case "tab": {
+      if (!snap.activeTab) return null;
+      return { id: "tab", providerId: id, label: snap.activeTab.title, body: snap.activeTab.body };
     }
     case "results": {
       if (!snap.lastResult) return null;

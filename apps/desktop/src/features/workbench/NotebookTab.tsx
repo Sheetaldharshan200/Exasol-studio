@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { BrandLoader } from "@/components/brand/BrandLoader";
+import { AgentMark } from "@/components/studio/AgentMark";
 import {
   ArrowDown,
   ArrowUp,
@@ -18,7 +19,6 @@ import {
   Plus,
   Share2,
   Sparkles,
-  Pin,
   Table as TableIcon,
   Text as TextIcon,
   Trash2,
@@ -707,15 +707,20 @@ export function NotebookTab({
               activeProfileId={profileId}
               onMove={(d) => move(cell.id, d)}
               onRemove={() => remove(cell.id)}
+              index={i}
               onAsk={() => {
                 if (cell.type === "sql") {
                   // Pin: the assistant gets the cell as a chip and a mandate
                   // to work on it; its final SQL applies back here and runs.
-                  window.dispatchEvent(
-                    new CustomEvent("exa:pin-cell", {
-                      detail: { cellId: cell.id, index: i, sql: cell.src, chart: cell.chart ?? null, connection: cell.connName ?? null },
-                    }),
-                  );
+                  // Open the panel FIRST — a closed panel has no pin listener.
+                  window.dispatchEvent(new Event("studio:assistant-open"));
+                  window.setTimeout(() => {
+                    window.dispatchEvent(
+                      new CustomEvent("exa:pin-cell", {
+                        detail: { cellId: cell.id, index: i, sql: cell.src, chart: cell.chart ?? null, connection: cell.connName ?? null },
+                      }),
+                    );
+                  }, 150);
                 } else {
                   onAsk(cell.src, cell.type, cell.chart);
                 }
@@ -785,10 +790,14 @@ const CellView = memo(function CellView({
   queued,
   dragging,
   onGrip,
+  index,
 }: {
   cell: Cell;
   first: boolean;
   last: boolean;
+  /** Position in the notebook (0-based) — every cell shows index+1, and the
+   *  AI refers to cells by that same number. */
+  index: number;
   editorTheme: string;
   beforeMount: (m: Monaco) => void;
   onChange: (src: string) => void;
@@ -903,13 +912,13 @@ const CellView = memo(function CellView({
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
               ) : (
                 <>
-                  <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">[{cell.count ?? " "}]</span>
+                  <span className="font-mono text-[10px] text-muted-foreground/70 group-hover/run:hidden">[{index + 1}]</span>
                   <Play className="hidden h-3.5 w-3.5 fill-current text-primary group-hover/run:block" />
                 </>
               )}
             </button>
           ) : (
-            <div className="w-10 shrink-0" />
+            <div className="flex w-10 shrink-0 select-none items-center justify-center font-mono text-[10px] text-muted-foreground/70">[{index + 1}]</div>
           )}
           <div className="min-w-0 flex-1">
         {/* Cell header: type dropdown + (Markdown) format toolbar + (Text/Diagram) Preview|Code toggle. */}
@@ -1028,7 +1037,13 @@ const CellView = memo(function CellView({
             )}
           </div>
 
-          <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
+          <div className="flex shrink-0 flex-col items-center gap-0.5 p-1.5">
+            {/* Mention in Exa — always visible: the assistant gets this cell
+                (by its number) as working context and can manipulate it. */}
+            <button onClick={onAsk} title={`Mention cell ${index + 1} in Exa — work on it from the chat`} className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary">
+              <AgentMark className="h-3.5 w-3.5" />
+            </button>
+            <div className="flex flex-col items-center gap-0.5 opacity-0 transition-opacity group-hover/cell:opacity-100">
             <button
               onPointerDown={(e) => { e.preventDefault(); onGrip(); }}
               title="Drag to reorder"
@@ -1036,14 +1051,10 @@ const CellView = memo(function CellView({
             >
               <GripVertical className="h-3.5 w-3.5" />
             </button>
-            {isSql ? (
-              <button onClick={onAsk} title="Pin to Exa — it works on this cell, runs and verifies" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
-                <Pin className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
             <button onClick={() => onMove(-1)} disabled={first} title="Move up" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
             <button onClick={() => onMove(1)} disabled={last} title="Move down" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
             <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
           </div>
         </div>
 

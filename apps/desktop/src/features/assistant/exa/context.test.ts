@@ -43,7 +43,7 @@ function snapshot(over: Partial<ExaSnapshot> = {}): ExaSnapshot {
 
 describe("filterProviders", () => {
   test("returns all providers for empty query", () => {
-    assert.equal(filterProviders("").length, 6);
+    assert.equal(filterProviders("").length, 7); // incl. @tab (the current-tab pin)
   });
   test("matches by title", () => {
     const r = filterProviders("res");
@@ -122,6 +122,13 @@ describe("resolveContext", () => {
   test("history numbers recent statements and collapses whitespace", () => {
     const c = resolveContext("history", null, snapshot({ history: [{ sql: "SELECT\n  1" }] }));
     assert.match(c!.body, /1\. `SELECT 1`/);
+  });
+  test("tab resolves the active tab's description; absent tab returns null", () => {
+    const withTab = snapshot({ activeTab: { view: "notebook", title: "Sales notebook", body: "Cell 1 (sql): SELECT 1" } });
+    const chip = resolveContext("tab", null, withTab)!;
+    assert.equal(chip.label, "Sales notebook");
+    assert.ok(chip.body.includes("Cell 1"));
+    assert.equal(resolveContext("tab", null, snapshot()), null);
   });
   test("history with none returns null", () => {
     assert.equal(resolveContext("history", null, snapshot({ history: [] })), null);

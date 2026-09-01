@@ -53,6 +53,7 @@ import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch"
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
+import { describeTabForContext, readActiveNotebook } from "./tab-context";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
@@ -2585,9 +2586,16 @@ export function ExasolStudio({
       editorSql: activeTab.view === "sql" ? activeTab.sql : "",
       lastResult,
       history: history.slice(0, 20).map((h) => ({ sql: h.sql })),
+      // The Copilot-style "current tab" pin: whatever dev tab is on screen,
+      // pre-described for the assistant (query SQL, notebook cells, …).
+      activeTab: describeTabForContext(activeTab, activeTab.view === "notebook" ? readActiveNotebook() : null),
     }),
     [connection, schema, schemas, activeTab, lastResult, history],
   );
+  // Tell the composer's current-tab pill to refresh when the tab changes.
+  useEffect(() => {
+    window.dispatchEvent(new Event("studio:tab-context-changed"));
+  }, [activeTab.id, activeTab.view, activeTab.title]);
   // Plain function (not memoized): it reads the current connKey/tab closures at
   // call time, so Apply always lands in the active connection's editor — never
   // a stale bucket. It's only invoked from event handlers, so identity churn is
