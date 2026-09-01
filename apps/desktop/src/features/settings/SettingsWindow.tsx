@@ -17,6 +17,7 @@ import {
   Search,
   Settings2,
   UserRound,
+  Wrench,
   Timer,
   Type as TypeIcon,
   Workflow,
@@ -24,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiPersonalization } from "./AiPersonalization";
+import { ToolsPlugins } from "./ToolsPlugins";
 import { Icon } from "@/components/ui/icon";
 import { fuzzyRank } from "@/lib/fuzzy";
 import { AppSelect } from "@/components/ui/app-select";
@@ -53,6 +55,14 @@ const CATEGORIES: Category[] = [
     icon: UserRound,
     label: "Personalization",
     desc: "How the assistant answers you — persona, depth, output format, tone, and standing instructions. Applies to the next message and survives restarts.",
+    controls: [],
+  },
+  {
+    tab: "ai",
+    key: "tools",
+    icon: Wrench,
+    label: "Tools & Plugins",
+    desc: "What the assistant is allowed to use — tool groups (files, terminal, search, tasks) and every connected MCP server, each with its own switch.",
     controls: [],
   },
   {
@@ -486,6 +496,10 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
               {current.key === "personalization" ? (
                 <div className="mt-4">
                   <AiPersonalization />
+                </div>
+              ) : current.key === "tools" ? (
+                <div className="mt-4">
+                  <ToolsPlugins />
                 </div>
               ) : (
                 <>
