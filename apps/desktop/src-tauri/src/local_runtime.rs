@@ -438,15 +438,16 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     }
     std::fs::copy(binary, &target)?;
     make_executable(&target)?;
-    let expected_binary = artifact.executable_sha256.as_ref().ok_or_else(|| {
-        AppError::Storage("The generated Personal lock has no executable checksum.".into())
-    })?;
-    let actual_binary = sha256_file(&target)?;
-    if !actual_binary.eq_ignore_ascii_case(expected_binary) {
-        let _ = std::fs::remove_file(&target);
-        return Err(AppError::Storage(format!(
-            "Exasol Personal executable checksum mismatch: expected {expected_binary}, got {actual_binary}."
-        )));
+    // Same rule as uv: the inner-executable pin exists only in the committed
+    // lock; live releases are archive-digest-verified and carry no inner pin.
+    if let Some(expected_binary) = artifact.executable_sha256.as_ref() {
+        let actual_binary = sha256_file(&target)?;
+        if !actual_binary.eq_ignore_ascii_case(expected_binary) {
+            let _ = std::fs::remove_file(&target);
+            return Err(AppError::Storage(format!(
+                "Exasol Personal executable checksum mismatch: expected {expected_binary}, got {actual_binary}."
+            )));
+        }
     }
     std::fs::write(version_marker, &component.version)?;
     let _ = std::fs::remove_file(archive);

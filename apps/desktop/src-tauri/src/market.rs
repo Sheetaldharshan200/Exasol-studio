@@ -178,7 +178,7 @@ pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
                         && String::from_utf8_lossy(&output.stdout).starts_with(&expected)
                 })
                 .unwrap_or(false);
-            let checksum_valid = artifact.executable_sha256.as_ref().is_some_and(|expected| {
+            let checksum_valid = artifact.executable_sha256.as_ref().map_or(true, |expected| {
                 crate::local_runtime::sha256_file(&path)
                     .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
             });
@@ -226,14 +226,25 @@ pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
     };
     let installed = find_named_file(&staging_dir, name)
         .ok_or_else(|| AppError::Storage(format!("uv archive did not contain {name}.")))?;
-    let expected_binary = artifact.executable_sha256.as_ref().ok_or_else(|| {
-        AppError::Storage("The generated uv lock has no executable checksum.".into())
-    })?;
-    let actual_binary = crate::local_runtime::sha256_file(&installed)?;
-    if !actual_binary.eq_ignore_ascii_case(expected_binary) {
-        return Err(AppError::Storage(format!(
-            "uv executable checksum mismatch: expected {expected_binary}, got {actual_binary}."
-        )));
+    // The inner-executable pin only exists in the committed lock; a
+    // live-resolved release is already verified by GitHub's per-asset digest
+    // on the archive, and no inner pin CAN exist for it — verify when pinned,
+    // never refuse the digest-verified live release.
+    match artifact.executable_sha256.as_ref() {
+        Some(expected_binary) => {
+            let actual_binary = crate::local_runtime::sha256_file(&installed)?;
+            if !actual_binary.eq_ignore_ascii_case(expected_binary) {
+                return Err(AppError::Storage(format!(
+                    "uv executable checksum mismatch: expected {expected_binary}, got {actual_binary}."
+                )));
+            }
+        }
+        None => emit_log(
+            app,
+            id,
+            "Archive verified via GitHub's asset digest (live release — no inner-executable pin).",
+            "info",
+        ),
     }
     #[cfg(unix)]
     {
