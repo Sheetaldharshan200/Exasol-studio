@@ -459,6 +459,8 @@ export async function mockInvoke(
     case "market_doc_save":
     case "market_doc_forget":
       return null;
+    case "market_repo_meta":
+      return {};
 
     case "market_catalog":
       return {

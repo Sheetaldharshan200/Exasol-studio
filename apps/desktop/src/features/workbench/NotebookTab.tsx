@@ -559,7 +559,7 @@ export function NotebookTab({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <span className="text-[11px] text-muted-foreground">Explore data with SQL &amp; Markdown</span>
+        <span className="text-[11px] text-muted-foreground">SQL, Markdown, Mermaid &amp; charts in one canvas</span>
         <div className="ml-auto flex items-center gap-1.5">
           <DropdownMenu onOpenChange={(open) => { if (open) void loadDashList(); }}>
             <DropdownMenuTrigger asChild>

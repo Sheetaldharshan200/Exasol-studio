@@ -503,7 +503,7 @@ function refsBadges(refs: string, headBranch: string | null) {
 
 /** Colorized unified-diff body (shared by the overlay and the full-page pane).
  *  GitHub-style: line numbers per side + red/green line backgrounds. */
-function DiffBody({ text }: { text: string }) {
+export function DiffBody({ text }: { text: string }) {
   if (!text.trim()) return <p className="p-3 text-[12px] text-muted-foreground">No differences.</p>;
   let oldNo = 0;
   let newNo = 0;

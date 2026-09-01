@@ -15,7 +15,6 @@ import {
   ChevronRight,
   ChevronUp,
   CircleSlash2,
-  GitCommitHorizontal,
   History,
   Loader2,
   Pencil,
@@ -32,7 +31,8 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
-import type { ExecuteResponse, GitLogEntry, HistoryEntry, StatementResult } from "@/lib/ipc";
+import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
+import { GitLogTab } from "./GitLogTab";
 import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows } from "@/lib/result-stats";
 import { termBusReady } from "@/lib/term-bus";
@@ -294,57 +294,6 @@ export function ResultsGrid({
   );
 }
 
-/** Recent git commits, shown to the right of SQL history. Refreshes when the
- *  workspace changes (agent auto-commit, manual commit). */
-function GitLogPane() {
-  const [log, setLog] = useState<GitLogEntry[] | null>(null);
-  const [isRepo, setIsRepo] = useState(true);
-  useEffect(() => {
-    const load = () => {
-      ipc.gitStatus()
-        .then((s) => {
-          setIsRepo(s.isRepo);
-          if (s.isRepo) ipc.gitLog(80).then(setLog).catch(() => setLog([]));
-          else setLog([]);
-        })
-        .catch(() => setLog([]));
-    };
-    load();
-    window.addEventListener("studio:git-changed", load);
-    return () => window.removeEventListener("studio:git-changed", load);
-  }, []);
-  return (
-    <div className="flex w-72 shrink-0 flex-col border-l border-border bg-panel/30">
-      <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 px-2.5">
-        <GitCommitHorizontal className="h-3.5 w-3.5 text-primary" />
-        <span className="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase">Git log</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
-        {log === null ? (
-          <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /></div>
-        ) : !isRepo ? (
-          <p className="px-3 py-3 text-[11px] text-muted-foreground">Not a git repo yet — commits appear here once the workspace is versioned.</p>
-        ) : log.length === 0 ? (
-          <p className="px-3 py-3 text-[11px] text-muted-foreground">No commits yet.</p>
-        ) : (
-          <ul className="py-0.5">
-            {log.map((c) => (
-              <li key={c.hash} className="border-b border-border/40 px-2.5 py-1.5 last:border-0">
-                <div className="truncate text-[11.5px] text-foreground" title={c.subject}>{c.subject}</div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span className="font-mono text-primary">{c.hash.slice(0, 7)}</span>
-                  <span className="truncate">{c.author}</span>
-                  <span className="ml-auto shrink-0">{c.relative}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
 type LogSortKey = "time" | "status" | "command" | "exec" | "fetch" | "rows" | "message" | "sql";
 
 function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
@@ -530,7 +479,7 @@ export function HistoryDock({
   onClear: () => void;
   onRefresh: () => void;
 }) {
-  const [mode, setMode] = useState<"terminal" | "history">("history");
+  const [mode, setMode] = useState<"terminal" | "history" | "gitlog">("history");
   // Drag-resizable like VS Code: panel height (top edge) and terminals-rail
   // width (inner edge), both remembered across restarts.
   const [height, setHeight] = useState(() => Number(localStorage.getItem("studio.dock.h")) || 240);
@@ -590,9 +539,10 @@ export function HistoryDock({
   // VS Code-style bottom panel: uppercase tab strip in the header, active tab
   // underlined; actions on the right are contextual to the active tab.
   // Terminals are native PTYs — desktop only; the web build hides the tab.
-  const TABS: { id: "terminal" | "history"; label: string }[] = [
+  const TABS: { id: "terminal" | "history" | "gitlog"; label: string }[] = [
     ...(isTauri() ? [{ id: "terminal", label: "Terminal" } as const] : []),
     { id: "history", label: "SQL History" },
+    ...(isTauri() ? [{ id: "gitlog", label: "Git Log" } as const] : []),
   ];
   return (
     <section
@@ -652,9 +602,16 @@ export function HistoryDock({
                   <Trash2 className="h-3.5 w-3.5" />
                 </IconButton>
               </>
-            ) : (
+            ) : mode === "terminal" ? (
               <IconButton label="New terminal" onClick={() => void newTerminal()}>
                 <Plus className="h-3.5 w-3.5" />
+              </IconButton>
+            ) : (
+              <IconButton
+                label="Refresh git log"
+                onClick={() => window.dispatchEvent(new Event("studio:git-changed"))}
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
               </IconButton>
             )}
           </div>
@@ -710,21 +667,19 @@ export function HistoryDock({
               </div>
             </div>
           </div>
+        ) : mode === "gitlog" ? (
+          <GitLogTab />
         ) : (
-          // SQL history on the left, git commit log on the right.
-          <div className="flex h-full min-h-0">
-            <div className="min-w-0 flex-1 overflow-auto [scrollbar-width:thin]">
-              {entries.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
-              ) : (
-                // Execution log, DB-tool style: every run — success or failure —
-                // in a proper cell grid. Headers sort (tap toggles asc/desc),
-                // the SQL cell opens the statement in a query tab, and every
-                // other cell expands into a detail view with the full value.
-                <LogTable entries={entries} onOpenSql={onPick} />
-              )}
-            </div>
-            <GitLogPane />
+          <div className="h-full min-h-0 overflow-auto [scrollbar-width:thin]">
+            {entries.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
+            ) : (
+              // Execution log, DB-tool style: every run — success or failure —
+              // in a proper cell grid. Headers sort (tap toggles asc/desc),
+              // the SQL cell opens the statement in a query tab, and every
+              // other cell expands into a detail view with the full value.
+              <LogTable entries={entries} onOpenSql={onPick} />
+            )}
           </div>
         )}
       </div>

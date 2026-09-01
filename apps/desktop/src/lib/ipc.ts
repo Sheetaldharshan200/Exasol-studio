@@ -85,6 +85,35 @@ export type GitLogEntry = {
   relative: string;
 };
 
+export type GitCommitInfo = {
+  hash: string;
+  subject: string;
+  author: string;
+  authorEmail: string;
+  /** Committer date, ISO 8601. */
+  date: string;
+  tags: string[];
+  isMerge: boolean;
+};
+
+export type GitCommitDetails = {
+  hash: string;
+  subject: string;
+  body: string;
+  author: string;
+  authorEmail: string;
+  date: string;
+};
+
+export type GitDiffStat = {
+  path: string;
+  /** For renames: the pre-rename path (the diff needs both pathspecs). */
+  oldPath: string | null;
+  added: number;
+  deleted: number;
+  isBinary: boolean;
+};
+
 export type GitBranches = {
   current: string;
   local: string[];
@@ -483,6 +512,11 @@ export const ipc = {
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
+  marketRepoMeta: (repos: string[]) =>
+    call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
+      "market_repo_meta",
+      { repos },
+    ),
   marketDoc: (repo: string) => call<string | null>("market_doc", { repo }),
   marketDocSave: (id: string, content: string) => call<void>("market_doc_save", { id, content }),
   marketDocLoad: (id: string) => call<string | null>("market_doc_load", { id }),
@@ -584,6 +618,12 @@ export const ipc = {
   gitPull: () => call<string>("git_pull"),
   gitPush: () => call<string>("git_push"),
   gitGraph: (limit?: number) => call<GitCommit[]>("git_graph", { limit }),
+  gitLogRich: (limit?: number, skip?: number, search?: string) =>
+    call<GitCommitInfo[]>("git_log_rich", { limit, skip, search }),
+  gitCommitDetails: (hash: string) => call<GitCommitDetails>("git_commit_details", { hash }),
+  gitCommitFiles: (hash: string) => call<GitDiffStat[]>("git_commit_files", { hash }),
+  gitCommitFileDiff: (hash: string, path: string, oldPath?: string | null) =>
+    call<string>("git_commit_file_diff", { hash, path, oldPath }),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),

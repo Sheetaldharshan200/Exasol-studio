@@ -369,6 +369,80 @@ fn docs_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(d)
 }
 
+/// GitHub metadata (repo name, About/description, homepage) for the requested
+/// repos, so marketplace cards render exactly what the official repo shows.
+/// Disk-cached for 24h; on fetch failure the last-known entry is kept, so the
+/// marketplace stays populated offline and under API rate limits.
+#[tauri::command]
+pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<Value> {
+    fn valid_repo(r: &str) -> bool {
+        let mut parts = r.split('/');
+        let ok = |s: &str| {
+            !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        };
+        matches!((parts.next(), parts.next(), parts.next()), (Some(o), Some(n), None) if ok(o) && ok(n))
+    }
+    let cache_path = market_dir(&app)?.join("repo-meta.json");
+    let cached: Value = std::fs::read_to_string(&cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({}));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let fetched_at = cached.get("fetchedAt").and_then(|v| v.as_u64()).unwrap_or(0);
+    let mut entries = cached
+        .get("repos")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let fresh = now.saturating_sub(fetched_at) < 24 * 3600;
+    let wanted: Vec<String> = repos.into_iter().filter(|r| valid_repo(r)).collect();
+    if !(fresh && wanted.iter().all(|r| entries.contains_key(r))) {
+        let client = reqwest::Client::new();
+        let fetches = wanted.iter().map(|repo| {
+            let client = client.clone();
+            let url = format!("https://api.github.com/repos/{repo}");
+            async move {
+                let resp = client
+                    .get(&url)
+                    .header("User-Agent", "exasol-studio")
+                    .header("Accept", "application/vnd.github+json")
+                    .timeout(std::time::Duration::from_secs(6))
+                    .send()
+                    .await
+                    .ok()?;
+                if !resp.status().is_success() {
+                    return None;
+                }
+                let v: Value = resp.json().await.ok()?;
+                Some(json!({
+                    "name": v.get("name"),
+                    "description": v.get("description"),
+                    "htmlUrl": v.get("html_url"),
+                }))
+            }
+        });
+        let results = futures_util::future::join_all(fetches).await;
+        for (repo, meta) in wanted.iter().zip(results) {
+            // Failure keeps the previous cached entry rather than erasing it.
+            if let Some(m) = meta {
+                entries.insert(repo.clone(), m);
+            }
+        }
+        let _ = std::fs::write(
+            &cache_path,
+            serde_json::to_string(&json!({ "fetchedAt": now, "repos": entries })).unwrap_or_default(),
+        );
+    }
+    let out: serde_json::Map<String, Value> = wanted
+        .iter()
+        .filter_map(|r| entries.get(r).map(|m| (r.clone(), m.clone())))
+        .collect();
+    Ok(Value::Object(out))
+}
+
 /// Fetch a repo's README as raw markdown (any filename/branch). Null on error.
 #[tauri::command]
 pub async fn market_doc(repo: String) -> AppResult<Value> {
