@@ -13,6 +13,7 @@ import { type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon, FileInputIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { NotebookPlanBlock } from "@/components/assistant-ui/notebook-plan-card";
 import { useExaApplySql } from "@/features/assistant/exa/ExaThread";
 import { cn } from "@/lib/utils";
 import { looksLikePath, openLinkOrPath } from "@/lib/open-target";
@@ -23,6 +24,14 @@ const MarkdownTextImpl = () => {
       remarkPlugins={[remarkGfm]}
       className="aui-md"
       components={defaultComponents}
+      // ```notebook fences carry a JSON plan; render the one-click
+      // "Create notebook" card instead of a code block.
+      componentsByLanguage={{
+        notebook: {
+          CodeHeader: () => null,
+          SyntaxHighlighter: ({ code }) => <NotebookPlanBlock code={code} />,
+        },
+      }}
       defer
     />
   );

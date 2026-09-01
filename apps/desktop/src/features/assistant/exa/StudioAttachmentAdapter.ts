@@ -2,6 +2,7 @@ import { generateId, type AttachmentAdapter, type CompleteAttachment, type Pendi
 import { OpenCodeAttachmentAdapter } from "@assistant-ui/react-opencode";
 import { ipc } from "@/lib/ipc";
 import { buildDataFileNote, routeAttachment } from "./attachment-routing";
+import { wrapMachineContext } from "./context";
 
 /**
  * The composer's attachment adapter, wrapping the stock OpenCode one:
@@ -39,10 +40,13 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
     const firstLines = textLike
       ? (await attachment.file.slice(0, 4096).text().catch(() => "")).split(/\r?\n/).slice(0, 3)
       : undefined;
+    // Sentinel-wrapped: the model reads the note, the rendered user message
+    // shows only the attachment chip and what the user actually typed.
+    const note = wrapMachineContext(buildDataFileNote(path, attachment.file.name, attachment.file.size, firstLines));
     return {
       ...attachment,
       status: { type: "complete" },
-      content: [{ type: "text", text: buildDataFileNote(path, attachment.file.name, attachment.file.size, firstLines) }],
+      content: [{ type: "text", text: note }],
     };
   }
 

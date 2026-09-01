@@ -542,13 +542,28 @@ export function ExaEnginePanel({
       .filter(Boolean)
       .join(", ");
     const opsDirective = `Allowed SQL operation classes: ${granted}. If a task needs a class that is not allowed, refuse that statement and tell the user to grant it via the shield control next to the mode switcher.`;
+    // Orchestration base: how data files load and how insight/dashboard asks
+    // are DELIVERED — the app renders a one-click "Create notebook" card for
+    // a \`\`\`notebook fence (see notebook-plan.ts for the contract).
+    const dataDirective =
+      "Attached data files (CSV/Parquet/…) arrive as SAVED FILE PATHS, never inline — do not read whole data files into the conversation. " +
+      "To load one into Exasol: derive columns from the header preview, CREATE the table (CREATE class), then load with IMPORT (IMPORT is in the INSERT class) — " +
+      "e.g. IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1 — or, when the shell tool group is enabled, exapump: exapump upload \"<path>\" --table SCHEMA.TABLE. " +
+      "If CREATE/INSERT are not granted, ask ONCE for the shield grants (name the exact classes), then proceed — never dump file contents as a workaround.";
+    const insightDirective =
+      "When the user asks for a dashboard, report or insights: run the queries first, then FINISH with a ```notebook fenced block — " +
+      'JSON {"title": string, "cells": [{"type": "sql"|"markdown"|"mermaid", "src": string, "chart"?: "bar"|"line"|"area"|"pie"|"scatter"}]} — ' +
+      "a markdown intro cell, then one SQL cell per panel (KPI, trend, breakdown) with a chart hint on every visualizable query. " +
+      "The app renders it as a one-click 'Create notebook' card that builds an interactive notebook, so make the cells self-contained and runnable.";
     const netDirective = networkAllowed
       ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
     // Persona + personalization (Settings → AI): read at send time so an edit
     // in Settings shapes the very next message, no reload anywhere.
     const personaDirective = styleDirective(persona, loadAiStyle());
-    const directive = [MODE_DIRECTIVE[mode], opsDirective, netDirective, personaDirective].filter(Boolean).join(" ");
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, netDirective, personaDirective]
+      .filter(Boolean)
+      .join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
     // block so the UI renders only what the user actually typed — see
     // stripMachineContext in the user-message renderer.

@@ -594,23 +594,57 @@ pub fn market_doc_forget(app: AppHandle, id: String) -> AppResult<()> {
 
 /// Latest GitHub release for a repo ("owner/name"); null when none exist.
 #[tauri::command]
-pub async fn market_release(repo: String) -> AppResult<Value> {
+pub async fn market_release(app: AppHandle, repo: String) -> AppResult<Value> {
+    // 1h disk cache per repo: the marketplace asks for ~17 repos per open and
+    // unauthenticated GitHub rate-limits at 60 req/h per IP — without a cache
+    // the live "latest" labels 403 into nothing on any busy machine. A failed
+    // fetch serves the last-known value instead of erasing it.
+    let cache_path = market_dir(&app)?.join("release-cache.json");
+    let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Some(entry) = cache.get(&repo) {
+        let at = entry.get("at").and_then(|v| v.as_u64()).unwrap_or(0);
+        if now.saturating_sub(at) < 3600 {
+            return Ok(entry.get("value").cloned().unwrap_or(Value::Null));
+        }
+    }
+    let cached_value = cache.get(&repo).and_then(|e| e.get("value")).cloned();
+    let store = |cache: &mut serde_json::Map<String, Value>, value: &Value| {
+        cache.insert(repo.clone(), json!({ "at": now, "value": value }));
+        let _ = std::fs::write(&cache_path, serde_json::to_string(cache).unwrap_or_default());
+    };
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
     let client = reqwest::Client::new();
-    let resp = client
+    let resp = match client
         .get(&url)
         .header("User-Agent", "exasol-studio")
         .header("Accept", "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(8))
         .send()
         .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
+    {
+        Ok(r) => r,
+        Err(_) => return Ok(cached_value.unwrap_or(Value::Null)),
+    };
     if !resp.status().is_success() {
-        return Ok(Value::Null);
+        // 404 = repo has no releases (a real answer — cache it as null);
+        // 403 = rate limit (serve the last-known value, don't overwrite).
+        if resp.status().as_u16() == 404 {
+            store(&mut cache, &Value::Null);
+            return Ok(Value::Null);
+        }
+        return Ok(cached_value.unwrap_or(Value::Null));
     }
-    let json: Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let json: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return Ok(cached_value.unwrap_or(Value::Null)),
+    };
     let assets = json
         .get("assets")
         .and_then(|a| a.as_array())
@@ -626,13 +660,15 @@ pub async fn market_release(repo: String) -> AppResult<Value> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    Ok(json!({
+    let value = json!({
         "tag": json.get("tag_name"),
         "name": json.get("name"),
         "publishedAt": json.get("published_at"),
         "htmlUrl": json.get("html_url"),
         "assets": assets,
-    }))
+    });
+    store(&mut cache, &value);
+    Ok(value)
 }
 
 /// Download a release asset into the managed folder and record it.
