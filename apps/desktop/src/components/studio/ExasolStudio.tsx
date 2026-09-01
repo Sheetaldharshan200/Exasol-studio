@@ -50,6 +50,7 @@ import { DesktopOnly } from "@/features/workbench/DesktopOnly";
 import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
@@ -2102,11 +2103,8 @@ export function ExasolStudio({
     "explain-plan": (sql) => ({
       send: true,
       text:
-        `Explain the execution plan of this SQL in plain language.\n\n` +
-        `The REAL measured plan from this exact run is attached below — use it, never guess stages.\n` +
-        `Explain in at most 6 short bullets: what runs first, join order and join types, where most rows/time go, and any full scans or network redistributions.\n` +
-        `Finish with exactly ONE improvement backed by the plan (filter, join order, projection, rewrite) — or state plainly that the plan is already efficient.\n\n` +
-        `Rules: short sentences; define any jargon in brackets; cite real numbers from the plan; no speculation.\n\n\`\`\`sql\n${sql}\n\`\`\``,
+        `Explain this SQL's measured plan (below) — BRIEFLY. Max 4 short bullets: execution order, joins, where rows/time go, any full scans or redistributions. ` +
+        `Cite real numbers; never invent stages. End with ONE plan-backed improvement, or "already efficient".\n\n\`\`\`sql\n${sql}\n\`\`\``,
     }),
     explain: (sql) => ({
       send: true,
@@ -2160,9 +2158,10 @@ export function ExasolStudio({
       const res = await ipc.executeSql(conn.profile.id, conn.profile.name, planSql, 60, false, false);
       const r = res.results[0];
       if (r && r.kind === "resultSet" && r.rows.length) {
-        const head = r.columns.map((c) => c.name).join(" | ");
-        const rows = r.rows.map((row) => row.map((v) => (v === null ? "" : String(v))).join(" | "));
-        planBlock = `\n\nMeasured plan (EXA_USER_PROFILE_LAST_DAY, this run):\n\n${head}\n${r.columns.map(() => "---").join(" | ")}\n${rows.join("\n")}`;
+        // The window covers every statement since the baseline, including
+        // Studio's own internals — scope to the one that did the real work,
+        // and send only the compact table (see lib/plan-block.ts).
+        planBlock = buildPlanBlock(heaviestStatement(resultRecords(r)), "EXA_USER_PROFILE_LAST_DAY");
       }
     } catch {
       /* plan fetch failed — send without it rather than not at all */
@@ -2382,18 +2381,12 @@ export function ExasolStudio({
 
       // Explain plan means EXPLAIN: alongside the Query Performance view, send
       // the measured rows to the AI so the plan arrives already narrated —
-      // grounded in this exact run, never guessed. Reuses the rows fetched
-      // above; no extra statements hit the database.
-      const PLAN_COLS = [
-        "STMT_ID", "PART_ID", "PART_NAME", "PART_INFO", "OBJECT_SCHEMA", "OBJECT_NAME",
-        "OBJECT_ROWS", "IN_ROWS", "OUT_ROWS", "DURATION", "CPU", "TEMP_DB_RAM_PEAK", "REMARKS",
-      ];
-      const cols = PLAN_COLS.filter((c) => rows.some((r) => r[c] !== undefined));
-      const planLines = rows.slice(0, 60).map((r) => cols.map((c) => (r[c] === null || r[c] === undefined ? "" : String(r[c]))).join(" | "));
-      const planBlock =
-        `\n\nMeasured plan (${source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY"}, this run):\n\n` +
-        `${cols.join(" | ")}\n${cols.map(() => "---").join(" | ")}\n${planLines.join("\n")}`;
-      askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
+      // grounded in this exact run, never guessed. Scope to the RUN's own
+      // statements (rowsByStmt — never the window's internal queries), pick
+      // the one that did the real work, and send only the compact table.
+      const aiRows = heaviestStatement(stmtIds.flatMap((id) => rowsByStmt.get(id) ?? []));
+      const planBlock = buildPlanBlock(aiRows, source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY");
+      if (planBlock) askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
     } catch (e) {
       patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });
     } finally {
