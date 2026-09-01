@@ -759,6 +759,33 @@ export function Visualizer({
     [nodes],
   );
 
+  // The AI's schema answers drive the diagram: a locate event highlights and
+  // centers the named table/column instead of leaving the answer text-only.
+  const pendingLocate = useRef<{ table: string; column?: string } | null>(null);
+  useEffect(() => {
+    const onLocate = (e: Event) => {
+      const d = (e as CustomEvent<{ schema?: string; table?: string; column?: string }>).detail;
+      if (!d?.table) return;
+      const table = d.table.toUpperCase();
+      const column = d.column ? d.column.toUpperCase() : undefined;
+      if (d.schema && d.schema.toUpperCase() !== (schema ?? "").toUpperCase()) {
+        // Different schema: switch first, jump once its graph is in.
+        pendingLocate.current = { table, column };
+        setSchema(d.schema.toUpperCase());
+        return;
+      }
+      jumpTo(table, column);
+    };
+    window.addEventListener("studio:visualizer-locate", onLocate);
+    return () => window.removeEventListener("studio:visualizer-locate", onLocate);
+  }, [jumpTo, schema]);
+  useEffect(() => {
+    const pending = pendingLocate.current;
+    if (!pending || !nodes.some((n) => n.id === pending.table)) return;
+    pendingLocate.current = null;
+    jumpTo(pending.table, pending.column);
+  }, [nodes, jumpTo]);
+
   // Reflect selection / mode / picked columns / matches into node & edge data.
   useEffect(() => {
     setNodes((nds) =>

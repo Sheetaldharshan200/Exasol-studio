@@ -14,6 +14,28 @@ import { CheckIcon, CopyIcon, FileInputIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { NotebookPlanBlock } from "@/components/assistant-ui/notebook-plan-card";
+import { lastLocateFence } from "@/features/assistant/exa/sql-fence";
+import { CrosshairIcon } from "lucide-react";
+
+/** The chat face of a ```locate fence: a pointer pill (the real action —
+ *  highlight + center — happened in the visualizer). Click re-fires it. */
+const LocatePill: FC<{ code: string }> = ({ code }) => {
+  const target = lastLocateFence("```locate\n" + code + "\n```");
+  if (!target) return null;
+  const label = [target.schema, target.table, target.column].filter(Boolean).join(".");
+  return (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent("studio:visualizer-locate", { detail: target }))}
+      title="Highlight in the Schema Visualizer"
+      className="mt-2 flex h-7 items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 text-[12px] text-foreground hover:bg-muted"
+    >
+      <CrosshairIcon className="h-3.5 w-3.5 text-primary" />
+      <span className="font-mono">{label}</span>
+      <span className="text-[10.5px] text-muted-foreground">shown in the visualizer</span>
+    </button>
+  );
+};
 import { useExaApplySql } from "@/features/assistant/exa/ExaThread";
 import { cn } from "@/lib/utils";
 import { looksLikePath, openLinkOrPath } from "@/lib/open-target";
@@ -30,6 +52,12 @@ const MarkdownTextImpl = () => {
         notebook: {
           CodeHeader: () => null,
           SyntaxHighlighter: ({ code }) => <NotebookPlanBlock code={code} />,
+        },
+        // ```locate fences drive the visualizer highlight; in the chat they
+        // render as a small pointer pill instead of raw JSON.
+        locate: {
+          CodeHeader: () => null,
+          SyntaxHighlighter: ({ code }) => <LocatePill code={code} />,
         },
       }}
       defer

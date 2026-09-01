@@ -46,7 +46,16 @@ export function DocsTab({ path }: { path?: string }) {
   }, []);
 
   const docsUrl =
-    base === null ? null : `${base}/docs/studio${path ? `/${path.replace(/^\/+/, "")}` : ""}?theme=${dark ? "dark" : "light"}`;
+    base === null
+      ? null
+      : (() => {
+          // Paths under "exa/…" open the ENGINE's docs section (e.g. the
+          // plugin guide at /docs/exa/develop/plugins); everything else stays
+          // under the Studio docs.
+          const p = (path ?? "").replace(/^\/+/, "");
+          const section = p.startsWith("exa/") ? `/docs/${p}` : `/docs/studio${p ? `/${p}` : ""}`;
+          return `${base}${section}?theme=${dark ? "dark" : "light"}`;
+        })();
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
