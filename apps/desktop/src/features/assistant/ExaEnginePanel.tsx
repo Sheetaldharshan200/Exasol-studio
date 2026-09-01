@@ -603,6 +603,11 @@ export function ExaEnginePanel({
     // Machine additions (directives + chip context) ride inside the sentinel
     // block so the UI renders only what the user actually typed — see
     // stripMachineContext in the user-message renderer.
+    // The sticky tab pin re-resolves per send: after an auto-apply rewrote the
+    // tab, the next turn must carry the tab's CURRENT SQL, not the old one.
+    allChips = allChips.map((c) =>
+      c.id === "tab" ? (resolveContext("tab", null, (getSnapshot ?? (() => EMPTY_SNAPSHOT))()) ?? c) : c,
+    );
     const chipContext = allChips.length ? buildPrompt("", allChips).trimEnd() : "";
     // One marker line per chip: the sent message renders them as pins (like
     // file pins) — see extractContextPins in the user-message renderer.
@@ -610,7 +615,7 @@ export function ExaEnginePanel({
     const machine = wrapMachineContext([directive, chipMarkers, chipContext].filter(Boolean).join("\n\n"));
     let out = machine ? `${machine}\n\n${engine}` : engine;
     if (quote) out = `${machine ? machine + "\n\n" : ""}Regarding this excerpt from your earlier reply:\n> ${quote.replace(/\n/g, "\n> ")}\n\n${engine}`;
-    setChips([]);
+    setChips((cs) => cs.filter((c) => c.id === "tab" || c.id.startsWith("nbcell-")));
     setPendingCommand(null);
     return out;
   }
@@ -715,7 +720,11 @@ export function ExaEnginePanel({
             if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
           },
           removeChip: (id) => {
-            if (id === "tab") (window as unknown as { __exaPinnedTabId?: string | null }).__exaPinnedTabId = null;
+            // Pins are sticky until removed HERE — releasing the chip is what
+            // stops the auto-apply targeting.
+            const w = window as unknown as { __exaPinnedTabId?: string | null; __exaPinnedCell?: string | null };
+            if (id === "tab") w.__exaPinnedTabId = null;
+            if (id.startsWith("nbcell-")) w.__exaPinnedCell = null;
             setChips((cs) => cs.filter((x) => x.id !== id));
           },
           pendingCommand,

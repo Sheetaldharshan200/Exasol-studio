@@ -1007,9 +1007,8 @@ function PinAutoApply() {
     if (w.__exaAutoApplied.has(id)) return;
     w.__exaAutoApplied.add(id);
     applySql(sql);
-    // One-shot: the pin is consumed by the write-back; pin again to iterate.
-    w.__exaPinnedCell = null;
-    w.__exaPinnedTabId = null;
+    // The pin is STICKY: it keeps receiving each reply's final SQL until the
+    // user removes the chip (removeChip releases the target).
   }, [sig, applySql]);
   return null;
 }
