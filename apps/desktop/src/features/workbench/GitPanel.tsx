@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { errorMessage, ipc, type GitBranches, type GitCommit, type GitStatus } from "@/lib/ipc";
+import { GitLogTab } from "@/components/studio/GitLogTab";
 import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -50,7 +51,9 @@ export function GitPanel({ full = false }: { full?: boolean }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [branches, setBranches] = useState<GitBranches | null>(null);
   const [graph, setGraph] = useState<GitCommit[]>([]);
-  const [view, setView] = useState<"changes" | "graph">("changes");
+  const [stashes, setStashes] = useState<string[]>([]);
+  const [view, setView] = useState<"changes" | "history" | "branches" | "graph">("changes");
+  const [amend, setAmend] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +72,7 @@ export function GitPanel({ full = false }: { full?: boolean }) {
       if (s.isRepo) {
         setBranches(await ipc.gitBranches().catch(() => null));
         setGraph(await ipc.gitGraph(200).catch(() => []));
+        setStashes(await ipc.gitStashList().catch(() => []));
       }
     } catch (e) {
       setError(errorMessage(e));
@@ -195,9 +199,12 @@ export function GitPanel({ full = false }: { full?: boolean }) {
         </div>
       </div>
 
-      {/* View tabs */}
+      {/* View tabs — the sidebar stays compact (Changes + Graph); the full
+          Source Control tab carries the complete set. */}
       <div className="flex items-center gap-1 border-b border-border px-2 py-1">
         <ViewTab active={view === "changes"} onClick={() => setView("changes")} icon="git-commit" label="Changes" count={status.files.length} />
+        {full ? <ViewTab active={view === "history"} onClick={() => setView("history")} icon="clock-dashed-half" label="History" /> : null}
+        {full ? <ViewTab active={view === "branches"} onClick={() => setView("branches")} icon="git-branch" label="Branches" count={branches?.local.length} /> : null}
         <ViewTab active={view === "graph"} onClick={() => setView("graph")} icon="git-merge" label="Graph" />
         <button onClick={() => void refresh()} className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground" title="Refresh">
           <RefreshCcw className="h-3.5 w-3.5" />
@@ -253,6 +260,31 @@ export function GitPanel({ full = false }: { full?: boolean }) {
             {status.files.length === 0 ? (
               <p className="flex items-center gap-1.5 px-3 py-4 text-[12px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" /> Working tree clean</p>
             ) : null}
+            {/* Stash: park everything (incl. untracked) / restore the latest. */}
+            {status.files.length > 0 || stashes.length > 0 ? (
+              <div className="flex items-center gap-1.5 border-t border-border/60 px-3 py-2">
+                {status.files.length > 0 ? (
+                  <button
+                    onClick={() => void act(() => ipc.gitStashPush(), "Changes stashed.")}
+                    disabled={busy}
+                    className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                  >
+                    <ArrowDown className="h-3 w-3" /> Stash changes
+                  </button>
+                ) : null}
+                {stashes.length > 0 ? (
+                  <button
+                    onClick={() => void act(() => ipc.gitStashPop(), "Stash restored.")}
+                    disabled={busy}
+                    title={stashes[0]}
+                    className="flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                  >
+                    <ArrowUp className="h-3 w-3" /> Pop stash
+                    <span className="rounded-full bg-secondary px-1 font-mono text-[9.5px]">{stashes.length}</span>
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {/* Commit box */}
@@ -264,15 +296,24 @@ export function GitPanel({ full = false }: { full?: boolean }) {
               placeholder={staged.length ? `Commit ${staged.length} staged change${staged.length > 1 ? "s" : ""}…` : "Message (Commit all to stage everything)"}
               className="w-full resize-none rounded-md border border-border bg-editor p-2 text-[12px] text-foreground [scrollbar-width:thin]"
             />
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex items-center gap-2">
               <button
-                onClick={() => void act(async () => { await ipc.gitCommit(message.trim(), staged.length === 0); }, "Committed.").then(() => setMessage(""))}
-                disabled={busy || !message.trim() || status.files.length === 0}
+                onClick={() =>
+                  void act(async () => {
+                    if (amend) await ipc.gitCommitAmend(message.trim() || undefined);
+                    else await ipc.gitCommit(message.trim(), staged.length === 0);
+                  }, amend ? "Amended." : "Committed.").then(() => { setMessage(""); setAmend(false); })
+                }
+                disabled={busy || (amend ? false : !message.trim() || status.files.length === 0)}
                 className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="git-commit" className="h-3.5 w-3.5" />}
-                {staged.length ? "Commit" : "Commit all"}
+                {amend ? "Amend last commit" : staged.length ? "Commit" : "Commit all"}
               </button>
+              <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground" title="Fold staged changes into the last commit; with a message it also rewords it">
+                <input type="checkbox" checked={amend} onChange={(e) => setAmend(e.target.checked)} className="h-3 w-3 accent-[var(--primary)]" />
+                Amend
+              </label>
             </div>
             {notice ? <p className="mt-1.5 truncate text-[11px] text-primary">{notice}</p> : null}
             {needsRemote ? (
@@ -331,12 +372,124 @@ export function GitPanel({ full = false }: { full?: boolean }) {
             </div>
           ) : null}
         </div>
+      ) : view === "history" ? (
+        // The full commit browser (ported from GitDesktop): filterable list,
+        // commit detail, changed files, per-file diffs — same component as the
+        // dock's GIT LOG tab.
+        <div className="min-h-0 flex-1">
+          <GitLogTab />
+        </div>
+      ) : view === "branches" ? (
+        <BranchesView
+          branches={branches}
+          current={status.branch}
+          busy={busy}
+          act={act}
+          onNewBranch={() => setNewBranch(true)}
+        />
       ) : (
         <CommitGraph commits={graph} headBranch={status.branch} />
       )}
 
       {/* Overlay diff only in the narrow sidebar; full mode uses the side pane. */}
       {diff && !full ? <DiffOverlay diff={diff} onClose={() => setDiff(null)} /> : null}
+    </div>
+  );
+}
+
+/** Branch management (full tab only): checkout, merge into current, delete —
+ *  with an explicit force step when git refuses an unmerged delete. Workflow
+ *  modeled on GitDesktop's branches panel, rendered in this app's idiom. */
+function BranchesView({
+  branches,
+  current,
+  busy,
+  act,
+  onNewBranch,
+}: {
+  branches: GitBranches | null;
+  current: string | null;
+  busy: boolean;
+  act: (fn: () => Promise<unknown>, ok?: string) => Promise<void>;
+  onNewBranch: () => void;
+}) {
+  // A refused (unmerged) delete arms a per-branch "Delete anyway" step.
+  const [forceDelete, setForceDelete] = useState<{ name: string; msg: string } | null>(null);
+  const rowBtn = "flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[10.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50";
+  return (
+    <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
+      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Local</span>
+        <button onClick={onNewBranch} className={rowBtn}>
+          <Plus className="h-3 w-3" /> New branch
+        </button>
+      </div>
+      {(branches?.local ?? []).map((b) => (
+        <div key={b} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-secondary/40">
+          <BxIcon name="git-branch" className={cn("h-3.5 w-3.5 shrink-0", b === current ? "text-primary" : "text-muted-foreground")} />
+          <span className={cn("min-w-0 flex-1 truncate text-[12px]", b === current ? "font-medium text-foreground" : "text-foreground/85")}>{b}</span>
+          {b === current ? (
+            <span className="rounded bg-primary/15 px-1.5 py-px text-[9.5px] font-medium text-primary">current</span>
+          ) : forceDelete?.name === b ? (
+            <span className="flex items-center gap-1.5">
+              <span className="max-w-56 truncate text-[10.5px] text-muted-foreground" title={forceDelete.msg}>{forceDelete.msg}</span>
+              <button
+                onClick={() => { setForceDelete(null); void act(() => ipc.gitBranchDelete(b, true), `Deleted ${b}.`); }}
+                disabled={busy}
+                className="flex h-6 items-center gap-1 rounded-md bg-destructive px-2 text-[10.5px] font-medium text-white hover:bg-destructive/85 disabled:opacity-50"
+              >
+                Delete anyway
+              </button>
+              <button onClick={() => setForceDelete(null)} className={rowBtn}>Keep</button>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <button onClick={() => void act(() => ipc.gitCheckout(b), `Switched to ${b}.`)} disabled={busy} className={rowBtn}>
+                Checkout
+              </button>
+              <button
+                onClick={() => void act(() => ipc.gitMerge(b), `Merged ${b} into ${current ?? "the current branch"}.`)}
+                disabled={busy}
+                title={`Merge ${b} into ${current ?? "the current branch"}`}
+                className={rowBtn}
+              >
+                <BxIcon name="git-merge" className="h-3 w-3" /> Merge
+              </button>
+              <button
+                onClick={() =>
+                  void ipc.gitBranchDelete(b, false).then(
+                    () => act(async () => undefined, `Deleted ${b}.`),
+                    (e) => setForceDelete({ name: b, msg: errorMessage(e) }),
+                  )
+                }
+                disabled={busy}
+                title={`Delete ${b}`}
+                className={cn(rowBtn, "hover:border-destructive/50 hover:text-destructive")}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+        </div>
+      ))}
+      {branches?.remote.length ? (
+        <>
+          <p className="px-3 pt-3 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Remote</p>
+          {branches.remote.map((b) => (
+            <div key={b} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-secondary/40">
+              <DownloadCloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{b}</span>
+              <button
+                onClick={() => void act(() => ipc.gitCheckout(b.replace(/^origin\//, "")), `Checked out ${b}.`)}
+                disabled={busy}
+                className={cn(rowBtn, "opacity-0 transition-opacity group-hover:opacity-100")}
+              >
+                Checkout
+              </button>
+            </div>
+          ))}
+        </>
+      ) : null}
     </div>
   );
 }

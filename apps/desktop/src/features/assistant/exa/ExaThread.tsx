@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
-import { OpenCodeAttachmentAdapter, useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
+import { useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
+import { StudioAttachmentAdapter } from "./StudioAttachmentAdapter";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -1320,7 +1321,7 @@ export function ExaThread({
   // projection, tool calls, permissions and reconnect are all handled by it —
   // this replaced our hand-rolled external-store bridge (event mapping,
   // replay hydration, upserts, cross-surface sync).
-  const attachmentAdapter = useMemo(() => new OpenCodeAttachmentAdapter(), []);
+  const attachmentAdapter = useMemo(() => new StudioAttachmentAdapter(), []);
   const runtime = useOpenCodeRuntime({
     client,
     initialSessionId,

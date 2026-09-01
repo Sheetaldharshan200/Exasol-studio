@@ -629,6 +629,12 @@ export const ipc = {
   gitCommitFiles: (hash: string) => call<GitDiffStat[]>("git_commit_files", { hash }),
   gitCommitFileDiff: (hash: string, path: string, oldPath?: string | null) =>
     call<string>("git_commit_file_diff", { hash, path, oldPath }),
+  gitCommitAmend: (message?: string) => call<string>("git_commit_amend", { message }),
+  gitBranchDelete: (name: string, force?: boolean) => call<null>("git_branch_delete", { name, force }),
+  gitMerge: (branch: string) => call<string>("git_merge", { branch }),
+  gitStashList: () => call<string[]>("git_stash_list"),
+  gitStashPush: (message?: string) => call<string>("git_stash_push", { message }),
+  gitStashPop: () => call<string>("git_stash_pop"),
   marketDirPath: () => call<string>("market_dir_path"),
   fsWorkspaceDir: () => call<FsEntry>("fs_workspace_dir"),
   fsHomeRoots: () => call<FsEntry[]>("fs_home_roots"),
