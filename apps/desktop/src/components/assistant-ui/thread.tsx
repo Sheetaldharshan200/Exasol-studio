@@ -24,6 +24,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { humanizeEngineError } from "@/features/assistant/exa/humanize-error";
 import { stripMachineContext } from "@/features/assistant/exa/context";
+import { extractDataFileNotes } from "@/features/assistant/exa/attachment-routing";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import {
@@ -63,6 +64,7 @@ import {
   ChevronRightIcon,
   CopyIcon,
   DownloadIcon,
+  FileTextIcon,
   MicIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -73,6 +75,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ComponentType,
   type FC,
@@ -654,6 +657,45 @@ const UserMessageText: FC = () => {
   );
 };
 
+/**
+ * Pins for disk-routed data files (CSV/Parquet/…): their attachment became a
+ * sentinel-hidden path note in the message text, so the stock attachment row
+ * has nothing to show. Recover the notes from the raw text and render one
+ * clickable pin per file — click opens the saved file in a workspace tab, so
+ * the user can verify exactly what was uploaded. Survives reloads: the notes
+ * live in the message itself.
+ */
+const UserMessageFilePins: FC = () => {
+  // Select a STRING (value-compared), parse in a memo — an array selector
+  // would return a fresh reference per store change and re-render forever.
+  const text = useAuiState((s) =>
+    (s.message.content ?? []).map((p) => (p.type === "text" ? p.text : "")).join("\n"),
+  );
+  const notes = useMemo(() => extractDataFileNotes(text), [text]);
+  if (notes.length === 0) return null;
+  return (
+    // One horizontal row, scrollable when the files outgrow the bubble width —
+    // same idiom as the composer's attachment strip, never a stacked pile.
+    <div className="col-start-2 flex max-w-full flex-row items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+      {notes.map((n) => (
+        <button
+          key={n.path}
+          type="button"
+          onClick={() => openLinkOrPath(n.path)}
+          title={`${n.path} — open in a tab`}
+          className="flex max-w-56 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2 py-1 text-left hover:bg-muted"
+        >
+          <FileTextIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="min-w-0">
+            <span className="block truncate text-[11.5px] text-foreground">{n.name}</span>
+            <span className="block text-[10px] text-muted-foreground">{n.size}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
 const UserMessage: FC = () => {
   // The engine's synthetic post-compaction follow-up ("Continue if you have
   // next steps…") is machine chatter, never something the user typed — hide it.
@@ -670,6 +712,7 @@ const UserMessage: FC = () => {
       data-role="user"
     >
       <UserMessageAttachments />
+      <UserMessageFilePins />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-xl px-4 py-2 wrap-break-word empty:hidden">
