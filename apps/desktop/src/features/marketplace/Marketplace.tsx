@@ -249,7 +249,7 @@ const DRIVER_RUNTIME: Record<string, string> = {
 // per-kind sections.
 const PRIMARY_NAV: { key: string; label: string; icon: IconName }[] = [
   { key: "recommended", label: "Kits", icon: "package" },
-  { key: "all", label: "Catalog", icon: "marketplace" },
+  { key: "all", label: "Catalog", icon: "extension" },
   { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
   { key: "installing", label: "Installing", icon: "loader" },
   { key: "installed", label: "Installed", icon: "check" },
