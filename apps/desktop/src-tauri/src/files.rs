@@ -121,11 +121,15 @@ pub async fn save_attachment(
     name: String,
     base64_data: String,
 ) -> AppResult<String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Storage(e.to_string()))?
-        .join("attachments");
+    // Attachments live INSIDE the user workspace (~/ExasolStudio) — the
+    // engine runs there, so its file tools and the filesystem MCP (whose
+    // allowed roots come from the engine's cwd) can actually read them, and
+    // the files show up in the Files activity for the user to verify.
+    let _ = app; // AppHandle kept for signature stability
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| AppError::Storage("Could not resolve home directory.".into()))?;
+    let dir = std::path::PathBuf::from(home).join("ExasolStudio").join("attachments");
     std::fs::create_dir_all(&dir)?;
     // Keep the real filename (extension drives the preview) but strip
     // anything path-like so an attachment can never escape the directory.

@@ -10,7 +10,8 @@
  * EXA_ENGINE_DATA_ROOT), then the bundled baseline (EXA_ENGINE_BIN). Absent →
  * every op degrades cleanly to "not installed".
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { EngineSupervisor, type EngineStatus } from "./supervisor.ts";
 import type { EngineClient } from "./client.ts";
@@ -64,7 +65,17 @@ export class EngineService {
     }
     if (this.supervisor && this.supervisorBinary === resolved.binary) return this.supervisor;
     // Binary appeared or changed (install/update) — rebuild + drop stale client.
-    this.supervisor = new EngineSupervisor({ binary: resolved.binary, configDir: resolved.configDir });
+    // The engine runs IN the user workspace: sessions and MCP roots key off
+    // its cwd, so a stable ~/ExasolStudio beats whatever dir Studio was
+    // launched from (dev: src-tauri — which made the filesystem MCP deny
+    // every real user path, attachments included).
+    const workspaceDir = join(homedir(), "ExasolStudio");
+    try {
+      mkdirSync(workspaceDir, { recursive: true });
+    } catch {
+      /* exists or unwritable — the spawn falls back to it regardless */
+    }
+    this.supervisor = new EngineSupervisor({ binary: resolved.binary, configDir: resolved.configDir, workspaceDir });
     this.supervisorBinary = resolved.binary;
     this.client = null;
     return this.supervisor;
