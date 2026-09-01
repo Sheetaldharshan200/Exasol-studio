@@ -41,6 +41,7 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { fuzzyRank } from "@/lib/fuzzy";
 import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
@@ -620,18 +621,28 @@ export function Marketplace() {
   const isList = layout === "list";
   const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
 
-  // Query-filtered catalog (the category rail narrows further).
+  // Query-filtered catalog (the category rail narrows further) — real fuzzy
+  // relevance (word boundaries, camelCase, consecutive runs), same scorer as
+  // the global ⌘K search, so "sqla" finds sqlalchemy-exasol and "mcp srv"
+  // finds the MCP server.
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return CATALOG.filter(
-      (item) =>
-        !q ||
-        item.name.toLowerCase().includes(q) ||
-        item.id.includes(q) ||
-        (item.repo ?? "").toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q),
+    const q = query.trim();
+    if (!q) return CATALOG;
+    return fuzzyRank(q, CATALOG, (item) => `${item.name} ${item.id} ${item.repo ?? ""} ${item.kind} ${item.description}`).map(
+      (r) => r.item,
     );
-  }, [query]);
+  }, [query, CATALOG]);
+
+  // Global search (⌘K) deep-link: land on the marketplace with the query set.
+  useEffect(() => {
+    const onSearch = (e: Event) => {
+      const q = (e as CustomEvent<{ query?: string }>).detail?.query ?? "";
+      setNav("all");
+      setQuery(q);
+    };
+    window.addEventListener("studio:marketplace-search", onSearch);
+    return () => window.removeEventListener("studio:marketplace-search", onSearch);
+  }, []);
 
   // Driver runtime state lives above navItems — the memo below reads it.
   const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});

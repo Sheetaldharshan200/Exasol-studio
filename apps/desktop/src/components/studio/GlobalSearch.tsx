@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 export type SearchItem = {
   id: string;
-  kind: "action" | "tab" | "connection" | "table" | "schema" | "setting" | "docs";
+  kind: "action" | "tab" | "connection" | "table" | "schema" | "setting" | "marketplace" | "docs";
   label: string;
   detail?: string;
   keywords?: string;
@@ -19,9 +19,10 @@ const KIND_LABEL: Record<SearchItem["kind"], string> = {
   schema: "Schemas",
   table: "Tables",
   setting: "Settings",
+  marketplace: "Marketplace",
   docs: "Documentation",
 };
-const KIND_ORDER: SearchItem["kind"][] = ["action", "tab", "connection", "schema", "table", "setting", "docs"];
+const KIND_ORDER: SearchItem["kind"][] = ["action", "tab", "connection", "schema", "table", "setting", "marketplace", "docs"];
 
 function Highlight({ text, match }: { text: string; match: FuzzyMatch }) {
   const set = new Set(match.positions);
