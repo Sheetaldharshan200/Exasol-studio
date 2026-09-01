@@ -2424,6 +2424,14 @@ export function ExasolStudio({
   // a stale bucket. It's only invoked from event handlers, so identity churn is
   // harmless.
   const applySqlToEditor = (sql: string) => {
+    // A pinned notebook cell owns Apply while the pin stands: the SQL lands
+    // in that cell and runs there.
+    const pinned = (window as unknown as { __exaPinnedCell?: string }).__exaPinnedCell;
+    if (pinned) {
+      window.dispatchEvent(new CustomEvent("studio:apply-to-cell", { detail: { cellId: pinned, sql } }));
+      openNotebook();
+      return;
+    }
     if (activeTab.view === "sql") {
       const base = activeTab.sql.trimEnd();
       patchTab(activeTab.id, { sql: base ? `${base}\n\n${sql}\n` : `${sql}\n` });
