@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { AiPersonalization } from "./AiPersonalization";
 import { fuzzyRank } from "@/lib/fuzzy";
+import { AppSelect } from "@/components/ui/app-select";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -788,17 +789,7 @@ function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue
             className="h-8 w-52 rounded-md border border-border bg-panel px-2 font-mono text-[12px] outline-none focus:border-primary/50"
           />
         ) : ctrl.type === "select" ? (
-          <select
-            value={String(value)}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-8 w-52 rounded-md border border-border bg-panel px-2 text-[12px] outline-none focus:border-primary/50"
-          >
-            {ctrl.options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <AppSelect value={String(value)} onChange={onChange} options={ctrl.options} className="h-8 w-52" ariaLabel={ctrl.label} />
         ) : ctrl.type === "radio" ? (
           ctrl.options.map((o) => (
             <label key={o.value} className="flex cursor-pointer items-center gap-2 text-[12.5px]">
