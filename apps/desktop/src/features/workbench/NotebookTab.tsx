@@ -18,6 +18,7 @@ import {
   Plus,
   Share2,
   Sparkles,
+  Pin,
   Table as TableIcon,
   Text as TextIcon,
   Trash2,
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -50,7 +52,7 @@ import {
 import { dashboards } from "@/lib/agent-client";
 import { Icon } from "@/components/ui/icon";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { buildNotebookMarkdown, buildNotebookHtml, printNotebookHtml, type ExportCell } from "@/features/workbench/notebook-export";
+import { buildNotebookMarkdown, buildNotebookHtml, printNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
 import { cn } from "@/lib/utils";
 
 type CellType = "sql" | "markdown" | "mermaid";
@@ -353,13 +355,33 @@ export function NotebookTab({
     runningAll.current = false;
   }
 
+  // The assistant's "Apply" targets the pinned cell: write the SQL in, run it.
+  useEffect(() => {
+    const onApply = (e: Event) => {
+      const d = (e as CustomEvent<{ cellId?: string; sql?: string }>).detail;
+      if (!d?.cellId || !d.sql) return;
+      let exists = false;
+      setCells((cs) => {
+        exists = cs.some((c) => c.id === d.cellId);
+        return exists ? cs.map((c) => (c.id === d.cellId ? { ...c, src: d.sql! } : c)) : cs;
+      });
+      if (exists) window.setTimeout(() => void runCell(d.cellId!), 60);
+    };
+    window.addEventListener("studio:apply-to-cell", onApply);
+    return () => window.removeEventListener("studio:apply-to-cell", onApply);
+  }, [runCell]);
+
   const notify = (kind: "success" | "warning", title: string, body: string, go?: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body, go } }));
 
   // Export the whole notebook — notes, SQL + result tables, and diagrams — as
   // one document (Markdown / self-contained HTML / PDF via the print dialog).
+  const [exportInc, setExportInc] = useState<ExportInclude>({ ...EXPORT_ALL });
   async function doExport(kind: "markdown" | "html" | "pdf") {
-    const exportCells: ExportCell[] = cells.map((c) => ({ type: c.type, src: c.src, result: c.result }));
+    const exportCells: ExportCell[] = filterExportCells(
+      cells.map((c) => ({ type: c.type, src: c.src, result: c.result })),
+      exportInc,
+    );
     const title = activeBook.title || "Exasol Notebook";
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "notebook";
     try {
@@ -565,7 +587,7 @@ export function NotebookTab({
           <button onClick={() => setCells((cs) => [...cs, mkCell("sql")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
             <Plus className="h-3.5 w-3.5" /> Cell
           </button>
-          <button onClick={() => void runAll()} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
+          <button onClick={() => void runAll()} className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium leading-none text-primary-foreground hover:bg-primary/85">
             <Play className="h-3.5 w-3.5" /> Run all
           </button>
           <DropdownMenu>
@@ -574,10 +596,30 @@ export function NotebookTab({
                 <Download className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => void doExport("markdown")}>Markdown (.md)</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void doExport("html")}>HTML (.html)</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void doExport("pdf")}>PDF (print…)</DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Include</DropdownMenuLabel>
+              {(
+                [
+                  ["queries", "Queries (SQL)"],
+                  ["results", "Results"],
+                  ["notes", "Markdown notes"],
+                  ["diagrams", "Mermaid diagrams"],
+                ] as const
+              ).map(([key, label]) => (
+                <DropdownMenuCheckboxItem
+                  key={key}
+                  checked={exportInc[key]}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={(v) => setExportInc((inc) => ({ ...inc, [key]: Boolean(v) }))}
+                  className="text-[12px]"
+                >
+                  {label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void doExport("markdown")}>Export Markdown (.md)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void doExport("html")}>Export HTML (.html)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void doExport("pdf")}>Export PDF (print…)</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -647,7 +689,19 @@ export function NotebookTab({
               activeProfileId={profileId}
               onMove={(d) => move(cell.id, d)}
               onRemove={() => remove(cell.id)}
-              onAsk={() => onAsk(cell.src, cell.type, cell.chart)}
+              onAsk={() => {
+                if (cell.type === "sql") {
+                  // Pin: the assistant gets the cell as a chip and a mandate
+                  // to work on it; its final SQL applies back here and runs.
+                  window.dispatchEvent(
+                    new CustomEvent("exa:pin-cell", {
+                      detail: { cellId: cell.id, index: i, sql: cell.src, chart: cell.chart ?? null, connection: cell.connName ?? null },
+                    }),
+                  );
+                } else {
+                  onAsk(cell.src, cell.type, cell.chart);
+                }
+              }}
               queued={runQueue.has(cell.id)}
               dragging={dragId === cell.id}
               onGrip={() => {
@@ -857,8 +911,9 @@ const CellView = memo(function CellView({
               })}
             </SelectContent>
           </Select>
-          {isSql && connections.length > 0 ? (
-            // Which database this cell queries — default follows the active connection.
+          {isSql && (connections.length > 1 || cell.connProfileId) ? (
+            // Which database this cell queries — default follows the active
+            // connection; only alternatives are listed (never a duplicate row).
             <Select
               value={cell.connProfileId ?? "__active__"}
               onValueChange={(v) => onConn(v === "__active__" ? null : { id: v, name: connections.find((c) => c.id === v)?.name ?? v })}
@@ -868,14 +923,14 @@ const CellView = memo(function CellView({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__active__">
-                  <span className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5 text-primary" /> Active ({connections.find((c) => c.id === activeProfileId)?.name ?? "none"})</span>
-                </SelectItem>
-                {connections.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    <span className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" /> {c.name}</span>
-                  </SelectItem>
-                ))}
+                <SelectItem value="__active__">Active ({connections.find((c) => c.id === activeProfileId)?.name ?? "none"})</SelectItem>
+                {connections
+                  .filter((c) => c.id !== activeProfileId)
+                  .map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           ) : null}
@@ -964,8 +1019,8 @@ const CellView = memo(function CellView({
               <GripVertical className="h-3.5 w-3.5" />
             </button>
             {isSql ? (
-              <button onClick={onAsk} title="Ask Exa about this SQL" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
-                <Sparkles className="h-3.5 w-3.5" />
+              <button onClick={onAsk} title="Pin to Exa — it works on this cell, runs and verifies" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
+                <Pin className="h-3.5 w-3.5" />
               </button>
             ) : null}
             <button onClick={() => onMove(-1)} disabled={first} title="Move up" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>

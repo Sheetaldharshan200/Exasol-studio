@@ -1519,6 +1519,35 @@ export function ExaThread({
   // The cross-feature prompt seam: any surface (notebook cells, editor AI
   // actions) dispatches `exa:prompt` with { text } and the message is sent as
   // a normal turn — expanded like a typed message so directives/chips apply.
+  // A pinned notebook cell arrives as a chip plus a mandate to work on it;
+  // the assistant's final ```sql block applies back into that exact cell
+  // (see applySqlToEditor's pin routing) and runs there.
+  useEffect(() => {
+    const onPin = (e: Event) => {
+      const d = (e as CustomEvent<{ cellId?: string; index?: number; sql?: string; chart?: string | null; connection?: string | null; claimed?: boolean }>).detail;
+      if (!d?.cellId || d.claimed) return;
+      d.claimed = true;
+      (window as unknown as { __exaPinnedCell?: string }).__exaPinnedCell = d.cellId;
+      apiWithShell.addChip({
+        id: `nbcell-${d.cellId}`,
+        providerId: "query",
+        label: `cell ${Number(d.index ?? 0) + 1}`,
+        body: [
+          `The user pinned notebook SQL cell ${Number(d.index ?? 0) + 1}${d.connection ? ` (database: ${d.connection})` : ""}${d.chart && d.chart !== "table" ? `, rendered as a ${d.chart} chart` : ""}.`,
+          "Current content:",
+          "```sql",
+          d.sql?.trim() || "-- (empty cell)",
+          "```",
+          "WORK ON THIS CELL DIRECTLY: run and verify with run_sql against the connected database, iterate until the statement is correct, and finish with the final SQL in a ```sql code block — the app applies that block back into the pinned cell and executes it there. Do the job; don't just describe it.",
+        ].join("\n"),
+      });
+      window.dispatchEvent(new CustomEvent("studio:assistant-open"));
+    };
+    window.addEventListener("exa:pin-cell", onPin);
+    return () => window.removeEventListener("exa:pin-cell", onPin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiWithShell]);
+
   useEffect(() => {
     const onPrompt = (e: Event) => {
       // Two ExaThreads can be mounted (side dock + full tab, one agent) —

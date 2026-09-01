@@ -14,6 +14,7 @@ export type ExportCell = {
   src: string;
   result?: StatementResult | null;
 };
+export { EXPORT_ALL, filterExportCells, type ExportInclude } from "./notebook-export-include";
 
 const ROW_CAP = 500;
 
