@@ -3,6 +3,7 @@ import { BookUser, Boxes, ChevronRight, GaugeCircle, HardDrive, KeyRound, Loader
 import { errorMessage, ipc, type DbaOverview, type UserDetails } from "@/lib/ipc";
 import { ALL_SYS_PRIVS, dbaSql, ident, OBJ_PRIVS_SCHEMA, OBJ_PRIVS_TABLE, SYS_PRIVS } from "@/features/workbench/dba-sql";
 import { cn } from "@/lib/utils";
+import { AppSelect } from "@/components/ui/app-select";
 
 type Section = "users" | "roles" | "consumerGroups" | "connections" | "sessions" | "dbSize";
 const TABS: { id: Section; label: string; icon: typeof Users }[] = [
@@ -330,10 +331,7 @@ function PrivilegesDrawer({ profileId, connectionName, grantee, isRole, roles, c
             ))}
             {canGrantRole ? (
               <div className="mt-1.5 flex items-center gap-1.5">
-                <select value={roleToGrant} onChange={(e) => setRoleToGrant(e.target.value)} className={cn(selectCls, "flex-1")}>
-                  <option value="">Grant a role…</option>
-                  {roles.filter((r) => !grantedRoles.includes(r) && r !== grantee).map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <AppSelect value={roleToGrant} onChange={setRoleToGrant} placeholder="Grant a role…" className="min-w-0 flex-1" options={roles.filter((r) => !grantedRoles.includes(r) && r !== grantee).map((r) => ({ value: r, label: r }))} ariaLabel="Role to grant" />
                 <label className="flex items-center gap-1 text-[10.5px] text-muted-foreground" title="Grantee may grant this role onward"><input type="checkbox" checked={adminOption} onChange={(e) => setAdminOption(e.target.checked)} className="h-3 w-3 accent-[color:var(--primary)]" /> admin</label>
                 <button disabled={!roleToGrant} onClick={() => onAsk({ kind: "create", title: `Grant role ${roleToGrant}`, after: `${grantee} gains the ${roleToGrant} role${adminOption ? " and can grant it onward" : ""}.`, recoverable: true, sql: [dbaSql.grantRole(roleToGrant, grantee, adminOption)] })} className="h-7 rounded-md bg-primary px-2 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">Grant</button>
               </div>
@@ -349,10 +347,7 @@ function PrivilegesDrawer({ profileId, connectionName, grantee, isRole, roles, c
             ))}
             {canGrantPriv ? (
               <div className="mt-1.5 flex items-center gap-1.5">
-                <select value={privToGrant} onChange={(e) => setPrivToGrant(e.target.value)} className={cn(selectCls, "flex-1")}>
-                  <option value="">Grant a system privilege…</option>
-                  {SYS_PRIVS.map((g) => <optgroup key={g.group} label={g.group}>{g.privs.filter((p) => !sysPrivs.includes(p)).map((p) => <option key={p} value={p}>{p}</option>)}</optgroup>)}
-                </select>
+                <AppSelect value={privToGrant} onChange={setPrivToGrant} placeholder="Grant a system privilege…" className="min-w-0 flex-1" groups={SYS_PRIVS.map((g) => ({ label: g.group, options: g.privs.filter((p) => !sysPrivs.includes(p)).map((p) => ({ value: p, label: p })) }))} ariaLabel="System privilege to grant" />
                 <button disabled={!privToGrant} onClick={() => onAsk({ kind: "create", title: `Grant ${privToGrant}`, after: `${grantee} can now ${privToGrant.toLowerCase()}.`, recoverable: true, sql: [dbaSql.grantSysPriv(privToGrant, grantee)] })} className="h-7 rounded-md bg-primary px-2 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">Grant</button>
               </div>
             ) : null}
@@ -372,16 +367,11 @@ function PrivilegesDrawer({ profileId, connectionName, grantee, isRole, roles, c
             {canGrantObj ? (
               <div className="mt-1.5 flex flex-col gap-1.5">
                 <div className="flex items-center gap-1.5">
-                  <select value={objSchema} onChange={(e) => setObjSchema(e.target.value)} className={cn(selectCls, "flex-1")}>
-                    <option value="">Schema…</option>
-                    {schemas.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <AppSelect value={objSchema} onChange={setObjSchema} placeholder="Schema…" className="min-w-0 flex-1" options={schemas.map((sc) => ({ value: sc, label: sc }))} ariaLabel="Schema" />
                   <input value={objName} onChange={(e) => setObjName(e.target.value.toUpperCase())} placeholder="table (blank = schema)" spellCheck={false} className={cn(selectCls, "flex-1 font-mono")} />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <select value={objPriv} onChange={(e) => setObjPriv(e.target.value)} className={cn(selectCls, "flex-1")}>
-                    {(objName ? OBJ_PRIVS_TABLE : OBJ_PRIVS_SCHEMA).map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  <AppSelect value={objPriv} onChange={setObjPriv} className="min-w-0 flex-1" options={(objName ? OBJ_PRIVS_TABLE : OBJ_PRIVS_SCHEMA).map((p) => ({ value: p, label: p }))} ariaLabel="Object privilege" />
                   <button disabled={!objSchema} onClick={() => onAsk({ kind: "create", title: `Grant ${objPriv} on ${objSchema}${objName ? `.${objName}` : ""}`, after: `${grantee} can ${objPriv.toLowerCase()} ${objSchema}${objName ? `.${objName}` : " (whole schema)"}.`, recoverable: true, sql: [dbaSql.grantObjPriv(objPriv, objSchema, objName || null, grantee)] })} className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"><ChevronRight className="h-3 w-3" /> Grant</button>
                 </div>
               </div>

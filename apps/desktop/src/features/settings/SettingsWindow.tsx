@@ -24,6 +24,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiPersonalization } from "./AiPersonalization";
+import { fuzzyRank } from "@/lib/fuzzy";
+import { AppSelect } from "@/components/ui/app-select";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { ipc, isTauri } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -360,18 +362,19 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
   }, [values.theme]);
 
-  const q = query.trim().toLowerCase();
-  const cats = useMemo(
-    () =>
-      CATEGORIES.filter((c) => c.tab === tab).filter(
-        (c) =>
-          !q ||
-          c.label.toLowerCase().includes(q) ||
-          c.desc.toLowerCase().includes(q) ||
-          c.controls.some((ct) => ct.label.toLowerCase().includes(q)),
-      ),
-    [tab, q],
-  );
+  const q = query.trim();
+  // Search reaches EVERY tab (fuzzy over label, description, control labels,
+  // help text and option labels); picking a result jumps to its tab.
+  const cats = useMemo(() => {
+    if (!q) return CATEGORIES.filter((c) => c.tab === tab);
+    const text = (c: Category) =>
+      [
+        c.label,
+        c.desc,
+        ...c.controls.flatMap((ct) => [ct.label, "help" in ct ? (ct.help ?? "") : "", ...("options" in ct ? ct.options.map((o) => o.label) : [])]),
+      ].join(" ");
+    return fuzzyRank(q, CATEGORIES, text).map((r) => r.item);
+  }, [tab, q]);
 
   // Keep a valid selection for the active tab.
   useEffect(() => {
@@ -465,7 +468,10 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
             return (
               <button
                 key={c.key}
-                onClick={() => setSelected(c.key)}
+                onClick={() => {
+                  if (c.tab !== tab) setTab(c.tab);
+                  setSelected(c.key);
+                }}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors",
                   selected === c.key ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
@@ -783,17 +789,7 @@ function ControlRow({ ctrl, value, onChange }: { ctrl: Ctrl; value: SettingValue
             className="h-8 w-52 rounded-md border border-border bg-panel px-2 font-mono text-[12px] outline-none focus:border-primary/50"
           />
         ) : ctrl.type === "select" ? (
-          <select
-            value={String(value)}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-8 w-52 rounded-md border border-border bg-panel px-2 text-[12px] outline-none focus:border-primary/50"
-          >
-            {ctrl.options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <AppSelect value={String(value)} onChange={onChange} options={ctrl.options} className="h-8 w-52" ariaLabel={ctrl.label} />
         ) : ctrl.type === "radio" ? (
           ctrl.options.map((o) => (
             <label key={o.value} className="flex cursor-pointer items-center gap-2 text-[12.5px]">

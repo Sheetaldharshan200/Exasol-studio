@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Palette, RotateCcw, X } from "lucide-react";
 import { applyTheme, contrastFg, MONO_FONTS, RADIUS_OPTIONS, SANS_FONTS, storedTheme, THEME_PRESETS, type ThemeCustom } from "@/lib/theme-presets";
 import { cn } from "@/lib/utils";
+import { AppSelect } from "@/components/ui/app-select";
 
 /**
  * tweakcn-style theme customizer: a palette button that opens a popover with
@@ -142,26 +143,20 @@ export function ThemePresetPicker({ onClose }: { onClose?: () => void }) {
         <div className="border-t border-border/60 px-2 pb-1 pt-2">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Fonts</div>
           <div className="flex flex-col gap-1.5">
-            <select
+            <AppSelect
               value={custom.sansId ?? "inter"}
-              onChange={(e) => set({ sansId: e.target.value })}
-              className="h-6 w-full rounded-md border border-border bg-editor px-1.5 text-[11px] outline-none"
-              title="Interface font"
-            >
-              {SANS_FONTS.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-            <select
+              onChange={(v) => set({ sansId: v })}
+              options={SANS_FONTS.map((f) => ({ value: f.id, label: f.name }))}
+              className="h-6 w-full text-[11px]"
+              ariaLabel="Interface font"
+            />
+            <AppSelect
               value={custom.monoId ?? "jetbrains"}
-              onChange={(e) => set({ monoId: e.target.value })}
-              className="h-6 w-full rounded-md border border-border bg-editor px-1.5 text-[11px] outline-none"
-              title="Code font"
-            >
-              {MONO_FONTS.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
+              onChange={(v) => set({ monoId: v })}
+              options={MONO_FONTS.map((f) => ({ value: f.id, label: f.name }))}
+              className="h-6 w-full text-[11px]"
+              ariaLabel="Code font"
+            />
           </div>
         </div>
       </div>

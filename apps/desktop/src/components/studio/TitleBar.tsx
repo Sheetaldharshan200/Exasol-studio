@@ -4,7 +4,7 @@
  *
  * Extracted from ExasolStudio.tsx.
  */
-import { BookOpen, PlugZap, Unplug } from "lucide-react";
+import { BookOpen, PlugZap, Search as SearchIcon, Unplug } from "lucide-react";
 
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -65,6 +65,16 @@ export function TitleBar({
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("studio:global-search"))}
+          title="Search everything (⌘K)"
+          aria-label="Universal search"
+          className="flex h-6 w-44 items-center gap-1.5 rounded-md border border-border/70 bg-background/50 px-2 text-[11px] text-muted-foreground hover:border-border hover:text-foreground"
+        >
+          <SearchIcon className="h-3 w-3" />
+          <span className="flex-1 text-left">Search</span>
+          <kbd className="rounded border border-border/70 px-1 text-[9px]">⌘K</kbd>
+        </button>
         <button
           onClick={openDocs}
           title="Documentation (Exasol Studio & exa)"

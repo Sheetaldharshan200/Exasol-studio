@@ -47,6 +47,7 @@ import { openSettingsWindow } from "@/lib/settings-window";
 import { askExa } from "@/features/assistant/exa/ask-exa";
 import { DocsTab } from "@/features/workbench/DocsTab";
 import { DesktopOnly } from "@/features/workbench/DesktopOnly";
+import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
@@ -405,6 +406,88 @@ export function ExasolStudio({
     window.addEventListener("studio:assistant-open", onOpen);
     return () => window.removeEventListener("studio:assistant-open", onOpen);
   }, [activeTab.view]);
+  // Vertical wheel over a horizontal-only scroller scrolls it sideways —
+  // wide result tables and driver lists are unreachable by wheel otherwise.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaX !== 0 || e.deltaY === 0 || e.shiftKey) return;
+      let el = e.target as HTMLElement | null;
+      while (el && el !== document.body) {
+        const canX = el.scrollWidth > el.clientWidth + 1;
+        const canY = el.scrollHeight > el.clientHeight + 1;
+        if (canY) return; // a vertical scroller owns the wheel
+        if (canX) {
+          const style = getComputedStyle(el);
+          if (/(auto|scroll)/.test(style.overflowX)) {
+            el.scrollLeft += e.deltaY;
+            e.preventDefault();
+            return;
+          }
+        }
+        el = el.parentElement;
+      }
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, []);
+
+  /** Everything the universal search (⌘K) can reach, built fresh on open. */
+  const globalSearchItems = useCallback((): SearchItem[] => {
+    const items: SearchItem[] = [
+      { id: "act-query", kind: "action", label: "New query", keywords: "sql editor", run: () => void openBuiltSql("", false) },
+      { id: "act-connect", kind: "action", label: "Connect a database…", keywords: "add connection", run: () => openConnect() },
+      { id: "act-notebook", kind: "action", label: "Open the Notebook", keywords: "cells charts dashboards artifact", run: () => openNotebook() },
+      { id: "act-market", kind: "action", label: "Open the Marketplace", keywords: "extensions install components", run: () => openMarketplace() },
+      { id: "act-skills", kind: "action", label: "Open Skills", keywords: "agent skills claude codex", run: () => openSkills() },
+      { id: "act-assistant", kind: "action", label: "Toggle the AI assistant", keywords: "exa chat panel", run: () => toggleAi() },
+      { id: "act-settings", kind: "action", label: "Open Settings", keywords: "preferences options", run: () => void openSettingsWindow() },
+      { id: "act-ai-settings", kind: "action", label: "AI Personalization", detail: "Persona, depth, tone, custom instructions", keywords: "persona style settings", run: () => void openSettingsWindow("personalization") },
+    ];
+    for (const t of tabs) {
+      items.push({ id: `tab-${t.id}`, kind: "tab", label: t.title, detail: t.view, run: () => setActiveTabId(t.id) });
+    }
+    for (const prof of profiles) {
+      items.push({
+        id: `conn-${prof.id}`,
+        kind: "connection",
+        label: prof.name,
+        detail: `${prof.username}@${prof.host}:${prof.port}`,
+        run: () => void connectSaved(prof.id),
+      });
+    }
+    const cat = sqlCatalogRef.current;
+    for (const [schema, tables] of cat.schemas) {
+      items.push({
+        id: `schema-${schema}`,
+        kind: "schema",
+        label: schema,
+        run: () => void openBuiltSql(`SELECT TABLE_NAME FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA = '${schema.replace(/'/g, "''")}' ORDER BY 1;`, true),
+      });
+      for (const [table] of tables) {
+        items.push({
+          id: `table-${schema}.${table}`,
+          kind: "table",
+          label: `${schema}.${table}`,
+          run: () => void openBuiltSql(`SELECT * FROM "${schema}"."${table}" LIMIT 100;`, true),
+        });
+      }
+    }
+    for (const c of [
+      { key: "getting-started", label: "Getting started" },
+      { key: "connections", label: "Connections" },
+      { key: "workbench/sql-editor", label: "SQL editor" },
+      { key: "workbench/notebook", label: "Notebook" },
+      { key: "workbench/query-performance", label: "Query performance" },
+      { key: "marketplace", label: "Marketplace" },
+      { key: "assistant", label: "Assistant" },
+      { key: "security", label: "Security" },
+    ]) {
+      items.push({ id: `docs-${c.key}`, kind: "docs", label: c.label, detail: "Documentation", run: () => openDocsTab(c.key) });
+    }
+    return items;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs, profiles]);
+
   // Title bar "Docs" + welcome guides → the in-app docs tab (deep-linkable).
   useEffect(() => {
     const onDocs = (e: Event) => openDocsTab((e as CustomEvent<{ path?: string }>).detail?.path);
@@ -3386,6 +3469,7 @@ export function ExasolStudio({
         </ResizablePanelGroup>
       </div>
 
+      <GlobalSearch getItems={globalSearchItems} />
       <AgentCursor ref={cursorRef} />
       <div className="shrink-0">
         <HistoryDock
