@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ExternalLink, Lightbulb, Loader2 } from "lucide-react";
+import { ChevronDown, ExternalLink, Lightbulb, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -106,8 +106,9 @@ function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label
       return n;
     });
   // Only currently-available destinations count — a stale selection for an
-  // agent that disappeared must never be attempted.
-  const chosen = [...sel].filter((id) => dests.some((d) => d.id === id && d.installed));
+  // agent that disappeared must never be attempted — and already-added ones
+  // are inert rows, so they never re-install.
+  const chosen = [...sel].filter((id) => dests.some((d) => d.id === id && d.installed) && !installedIn(id));
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -120,7 +121,7 @@ function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label
           )}
           disabled={isBusy || busy !== null}
         >
-          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : allActive ? <Check className="h-3 w-3" /> : null}
+          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
           {allActive ? "Added" : label}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </button>
@@ -129,7 +130,16 @@ function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Add to</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {dests.map((d) =>
-          d.installed ? (
+          d.installed && installedIn(d.id) ? (
+            // Already added everywhere this row covers — a plain, inert row.
+            // No checkbox tick: "Added" already says it, and a tick reads as a
+            // pending selection.
+            <DropdownMenuItem key={d.id} disabled className="gap-2 text-[12px]" onSelect={(e) => e.preventDefault()}>
+              {d.logo("h-3.5 w-3.5")}
+              {d.label}
+              <span className="ml-auto text-[10px] font-medium text-primary">Added</span>
+            </DropdownMenuItem>
+          ) : d.installed ? (
             <DropdownMenuCheckboxItem
               key={d.id}
               checked={sel.has(d.id)}
@@ -140,9 +150,6 @@ function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label
             >
               {d.logo("h-3.5 w-3.5")}
               {d.label}
-              {installedIn(d.id) ? (
-                <span className="ml-auto text-[10px] font-medium text-primary">Added</span>
-              ) : null}
             </DropdownMenuCheckboxItem>
           ) : (
             <DropdownMenuItem
