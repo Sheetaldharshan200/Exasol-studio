@@ -605,8 +605,9 @@ export function ExaEnginePanel({
     // stripMachineContext in the user-message renderer.
     // The sticky tab pin re-resolves per send: after an auto-apply rewrote the
     // tab, the next turn must carry the tab's CURRENT SQL, not the old one.
+    const tabWrite = (window as unknown as { __exaPinnedTabWrite?: boolean }).__exaPinnedTabWrite !== false;
     allChips = allChips.map((c) =>
-      c.id === "tab" ? (resolveContext("tab", null, (getSnapshot ?? (() => EMPTY_SNAPSHOT))()) ?? c) : c,
+      c.id === "tab" ? (resolveContext("tab", tabWrite ? null : "readonly", (getSnapshot ?? (() => EMPTY_SNAPSHOT))()) ?? c) : c,
     );
     const chipContext = allChips.length ? buildPrompt("", allChips).trimEnd() : "";
     // One marker line per chip: the sent message renders them as pins (like
@@ -717,7 +718,9 @@ export function ExaEnginePanel({
           setMode,
           chips,
           addChip: (c) => {
-            if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs : [...cs, c]));
+            // Replace by id: re-adding refreshes (the pencil toggle swaps the
+            // tab chip's body between write-mandate and context-only).
+            if (c) setChips((cs) => (cs.some((x) => x.id === c.id) ? cs.map((x) => (x.id === c.id ? c : x)) : [...cs, c]));
           },
           removeChip: (id) => {
             // Pins are sticky until removed HERE — releasing the chip is what

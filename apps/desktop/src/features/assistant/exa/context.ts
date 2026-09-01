@@ -23,7 +23,7 @@ export type ExaSnapshot = {
   history: { sql: string }[];
   /** What's on screen: the active workbench tab, pre-described for the AI
    *  (query SQL, notebook cells, visualizer…) — the "current tab" pin. */
-  activeTab?: { id: string; view: string; title: string; body: string };
+  activeTab?: { id: string; view: string; title: string; body: string; mandate?: string };
 };
 
 /** "file" chips come from the composer's + (attach) button, not the @ menu. */
@@ -111,7 +111,13 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
     }
     case "tab": {
       if (!snap.activeTab) return null;
-      return { id: "tab", providerId: id, label: snap.activeTab.title, body: snap.activeTab.body };
+      // arg "readonly" = the pin's pencil is OFF: reference only, no write-back.
+      const suffix = !snap.activeTab.mandate
+        ? ""
+        : arg === "readonly"
+          ? "\n\nCONTEXT ONLY: the user attached this tab for reference — do NOT rewrite it or expect the app to apply anything; answer in the chat."
+          : `\n\n${snap.activeTab.mandate}`;
+      return { id: "tab", providerId: id, label: snap.activeTab.title, body: snap.activeTab.body + suffix };
     }
     case "results": {
       if (!snap.lastResult) return null;
