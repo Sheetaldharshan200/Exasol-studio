@@ -42,7 +42,7 @@ import {
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { BrandLoader } from "@/components/brand/BrandLoader";
@@ -580,7 +580,39 @@ export function Marketplace() {
     (item: CatalogItem) =>
       new Promise<boolean>((resolve) => {
         if (!isTauri()) {
-          window.setTimeout(() => resolve(true), 800);
+          // Web: the engine installs for real — pip packages finish inline;
+          // the starter-kit stack runs detached, so poll detection until the
+          // component actually shows up (first DB deployment ≈ 2 minutes).
+          void (async () => {
+            try {
+              const res = await ipc.marketInstallEngine(item.id);
+              if (res.note) {
+                window.dispatchEvent(
+                  new CustomEvent("studio:notice", { detail: { kind: "info", title: item.name, body: res.note } }),
+                );
+              }
+              if (res.done) {
+                resolve(true);
+                return;
+              }
+              if (res.started) {
+                for (let i = 0; i < 72; i++) {
+                  await new Promise((r) => window.setTimeout(r, 5000));
+                  const det = await ipc.marketDetect().catch(() => ({}) as Record<string, boolean>);
+                  if (det[item.id]) {
+                    resolve(true);
+                    return;
+                  }
+                }
+              }
+              resolve(false);
+            } catch (e) {
+              window.dispatchEvent(
+                new CustomEvent("studio:notice", { detail: { kind: "warning", title: `${item.name} install`, body: errorMessage(e) } }),
+              );
+              resolve(false);
+            }
+          })();
           return;
         }
         const asset = pickAsset(releases[item.id]?.assets ?? [], env);
@@ -892,20 +924,36 @@ export function Marketplace() {
         ) : (
           <>
             {item.id === "semantic-views" && profiles.length > 0 ? (
-              <select
-                value={semanticTarget}
-                onChange={(e) => setSemanticTarget(e.target.value)}
-                disabled={isInstalling}
-                aria-label="Database to install Semantic Views into"
-                className="h-7 rounded-md border border-border bg-background px-2 text-[12px] text-foreground disabled:opacity-50"
-              >
-                <option value="">Local database (managed)</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    disabled={isInstalling}
+                    aria-label="Database to install Semantic Views into"
+                    className="flex h-7 max-w-[220px] items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[12px] text-foreground hover:bg-secondary disabled:opacity-50"
+                  >
+                    <BxIcon name="database" className="h-3.5 w-3.5 text-primary" />
+                    <span className="truncate">
+                      {profiles.find((p) => p.id === semanticTarget)?.name ?? "Local database (managed)"}
+                    </span>
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuLabel>Install into</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setSemanticTarget("")}>
+                    <BxIcon name="database" className="h-3.5 w-3.5 text-primary" />
+                    <span className="flex-1">Local database (managed)</span>
+                    {semanticTarget === "" ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                  </DropdownMenuItem>
+                  {profiles.map((p) => (
+                    <DropdownMenuItem key={p.id} onClick={() => setSemanticTarget(p.id)}>
+                      <BxIcon name="database" className="h-3.5 w-3.5" />
+                      <span className="flex-1 truncate">{p.name}</span>
+                      {semanticTarget === p.id ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
             <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
@@ -1002,7 +1050,7 @@ export function Marketplace() {
       <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
         <header className="mb-5 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
-            <Store className="h-4 w-4" />
+            <BxIcon name="extension" className="h-4 w-4" />
           </div>
           <div className="flex-1">
             <h2 className="font-heading text-[15px] font-bold text-foreground">Marketplace</h2>

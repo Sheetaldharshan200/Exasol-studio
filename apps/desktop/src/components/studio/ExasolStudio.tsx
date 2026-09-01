@@ -46,6 +46,7 @@ import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 import { askExa } from "@/features/assistant/exa/ask-exa";
 import { DocsTab } from "@/features/workbench/DocsTab";
+import { DesktopOnly } from "@/features/workbench/DesktopOnly";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
 import { IconButton } from "./IconButton";
@@ -3024,7 +3025,14 @@ export function ExasolStudio({
             </div>
           ) : activeTab.view === "exaEngine" ? null : activeTab.view === "git" ? (
             <div className="flex min-h-0 flex-1 flex-col bg-editor">
-              <GitPanel full />
+              {isTauri() ? (
+                <GitPanel full />
+              ) : (
+                <DesktopOnly
+                  feature="Source control"
+                  detail="Git works on this machine's repositories and needs the desktop app's filesystem access. Your SQL, notebooks and connections are unaffected here."
+                />
+              )}
             </div>
           ) : activeTab.view === "plan" ? (
             // A statement's plan visualizer, full-size (its operator sidebar
@@ -3115,11 +3123,19 @@ export function ExasolStudio({
               ) : activeTab.view === "logs" ? (
                 <LogsPanel profileId={connection.profile.id} connectionName={connection.profile.name} />
               ) : activeTab.view === "backups" ? (
-                <BackupsPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
+                isTauri() ? (
+                  <BackupsPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
+                ) : (
+                  <DesktopOnly feature="Backups" detail="Backing up the local database writes archives on this machine, which needs the desktop app." />
+                )
               ) : activeTab.view === "health" ? (
                 <HealthPanel profileId={connection.profile.id} connectionName={connection.profile.name} dbHost={connection.profile.host} />
               ) : activeTab.view === "bucketfs" ? (
-                <BucketFsPanel profile={connection.profile} variant="tab" onClose={() => closeTab(activeTab.id)} />
+                isTauri() ? (
+                  <BucketFsPanel profile={connection.profile} variant="tab" onClose={() => closeTab(activeTab.id)} />
+                ) : (
+                  <DesktopOnly feature="BucketFS" detail="Uploading and downloading BucketFS files moves data through this machine's filesystem, which needs the desktop app." />
+                )
               ) : (
                 // Key by tab id so every Visualizer tab is its OWN independent
                 // instance — a new tab starts fresh and never inherits the

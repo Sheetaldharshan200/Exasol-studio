@@ -140,9 +140,9 @@ function InstallMenu({ rowId, skillIds, allActive, dests, busy, onInstall, label
             >
               {d.logo("h-3.5 w-3.5")}
               {d.label}
-              {/* One tick at a time: the green "already added" mark yields to
-                  the selection checkbox the moment the row is selected. */}
-              {installedIn(d.id) && !sel.has(d.id) ? <Check className="ml-auto h-3 w-3 text-primary" /> : null}
+              {installedIn(d.id) ? (
+                <span className="ml-auto text-[10px] font-medium text-primary">Added</span>
+              ) : null}
             </DropdownMenuCheckboxItem>
           ) : (
             <DropdownMenuItem
