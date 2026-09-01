@@ -189,14 +189,56 @@ export function GitPanel({ full = false }: { full?: boolean }) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {status.ahead > 0 ? <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground"><ArrowUp className="h-3 w-3" />{status.ahead}</span> : null}
-        {status.behind > 0 ? <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground"><ArrowDown className="h-3 w-3" />{status.behind}</span> : null}
-
-        <div className="ml-auto flex items-center gap-0.5">
-          <IconBtn label="Fetch" onClick={() => void act(() => ipc.gitFetch(), "Fetched.")}><RefreshCcw className="h-3.5 w-3.5" /></IconBtn>
-          <IconBtn label="Pull" onClick={() => void act(() => ipc.gitPull(), "Pulled.")}><DownloadCloud className="h-3.5 w-3.5" /></IconBtn>
-          <IconBtn label="Push" onClick={() => void act(() => ipc.gitPush(), "Pushed.")}><UploadCloud className="h-3.5 w-3.5" /></IconBtn>
-        </div>
+        {full ? (
+          // Production header: labeled sync actions with the ahead/behind
+          // counts ON the buttons, so push/pull are unmissable.
+          <div className="ml-auto flex items-center gap-1.5">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+            <button
+              onClick={() => void act(() => ipc.gitFetch(), "Fetched.")}
+              disabled={busy}
+              className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11.5px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              <RefreshCcw className="h-3 w-3" /> Fetch
+            </button>
+            <button
+              onClick={() => void act(() => ipc.gitPull(), "Pulled.")}
+              disabled={busy}
+              className={cn(
+                "flex h-7 items-center gap-1 rounded-md border px-2 text-[11.5px] disabled:opacity-50",
+                status.behind > 0
+                  ? "border-primary/40 bg-primary/10 font-medium text-primary hover:bg-primary/20"
+                  : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <DownloadCloud className="h-3 w-3" /> Pull
+              {status.behind > 0 ? <span className="font-mono text-[10px]">↓{status.behind}</span> : null}
+            </button>
+            <button
+              onClick={() => void act(() => ipc.gitPush(), "Pushed.")}
+              disabled={busy}
+              className={cn(
+                "flex h-7 items-center gap-1 rounded-md border px-2 text-[11.5px] disabled:opacity-50",
+                status.ahead > 0
+                  ? "border-primary/40 bg-primary/10 font-medium text-primary hover:bg-primary/20"
+                  : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <UploadCloud className="h-3 w-3" /> Push
+              {status.ahead > 0 ? <span className="font-mono text-[10px]">↑{status.ahead}</span> : null}
+            </button>
+          </div>
+        ) : (
+          <>
+            {status.ahead > 0 ? <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground"><ArrowUp className="h-3 w-3" />{status.ahead}</span> : null}
+            {status.behind > 0 ? <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground"><ArrowDown className="h-3 w-3" />{status.behind}</span> : null}
+            <div className="ml-auto flex items-center gap-0.5">
+              <IconBtn label="Fetch" onClick={() => void act(() => ipc.gitFetch(), "Fetched.")}><RefreshCcw className="h-3.5 w-3.5" /></IconBtn>
+              <IconBtn label={status.behind > 0 ? `Pull (${status.behind} behind)` : "Pull"} onClick={() => void act(() => ipc.gitPull(), "Pulled.")}><DownloadCloud className="h-3.5 w-3.5" /></IconBtn>
+              <IconBtn label={status.ahead > 0 ? `Push (${status.ahead} ahead)` : "Push"} onClick={() => void act(() => ipc.gitPush(), "Pushed.")}><UploadCloud className="h-3.5 w-3.5" /></IconBtn>
+            </div>
+          </>
+        )}
       </div>
 
       {/* View tabs — the sidebar stays compact (Changes + Graph); the full

@@ -498,8 +498,14 @@ export function ExasolStudio({
   // Title bar "Docs" + welcome guides → the in-app docs tab (deep-linkable).
   useEffect(() => {
     const onDocs = (e: Event) => openDocsTab((e as CustomEvent<{ path?: string }>).detail?.path);
+    // The chat's "Create notebook" card lands the user in the new notebook.
+    const onNotebook = () => openNotebook();
     window.addEventListener("studio:open-docs", onDocs);
-    return () => window.removeEventListener("studio:open-docs", onDocs);
+    window.addEventListener("studio:open-notebook", onNotebook);
+    return () => {
+      window.removeEventListener("studio:open-docs", onDocs);
+      window.removeEventListener("studio:open-notebook", onNotebook);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connKey, tabs]);
   // The Exa tab becoming active closes the dock (the reverse direction).

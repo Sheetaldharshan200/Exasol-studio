@@ -96,9 +96,9 @@ const mkCell = (type: CellType = "sql", src = "", chart?: string): Cell => ({
 
 export type NotebookConn = { id: string; name: string; host: string };
 
-const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
-const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
-const NB_ACTIVE_KEY = "studio.notebooks.active";
+// Persistence keys live in notebook-store.ts so other features (the chat's
+// "Create notebook" card) can add notebooks without mounting this tab.
+import { NB_ACTIVE_KEY, NB_KEY, NBS_KEY } from "./notebook-store";
 
 type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string; viz?: CellViz }[]; updatedAt: number };
 
@@ -159,6 +159,24 @@ export function NotebookTab({
     return b.cells.length ? b.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })) : [mkCell("sql")];
   });
   const [renamingBook, setRenamingBook] = useState<string | null>(null);
+
+  // Another feature created a notebook (the chat's "Create notebook" card):
+  // reload the list and jump straight into the new active one.
+  useEffect(() => {
+    const onChanged = () => {
+      const all = loadNotebooks();
+      setBooks(all);
+      const target = all.find((b) => b.id === localStorage.getItem(NB_ACTIVE_KEY)) ?? all[0];
+      setActiveId(target.id);
+      setCells(
+        target.cells.length
+          ? target.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz }))
+          : [mkCell("sql")],
+      );
+    };
+    window.addEventListener("studio:notebooks-changed", onChanged);
+    return () => window.removeEventListener("studio:notebooks-changed", onChanged);
+  }, []);
 
   // Persist on idle, not on every keystroke — a synchronous JSON.stringify +
   // localStorage write per character is a real typing-jank source.

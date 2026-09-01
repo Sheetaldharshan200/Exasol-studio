@@ -428,13 +428,13 @@ export function Marketplace() {
     return m;
   }, [installed, components, detected]);
 
-  // Studio catalog is the ONLY source of a displayed "latest" version — never a
-  // live per-repo tag. Users see what Studio has published/verified, not raw
-  // upstream. (GitHub releases are still fetched, but only to resolve a binary's
-  // download asset at install time — see installOne — never for display.)
+  // Displayed "latest" is LIVE-first: the repo's actual newest GitHub release
+  // (fetched per repo at mount), falling back to the weekly catalog when the
+  // live fetch is rate-limited/offline. Nothing pinned: what the official repo
+  // shows is what the card shows.
   const latestFor = useCallback(
-    (id: string): string | null => catalog?.items?.[id]?.latest ?? null,
-    [catalog],
+    (id: string): string | null => releases[id]?.tag ?? catalog?.items?.[id]?.latest ?? null,
+    [releases, catalog],
   );
 
   const updatesAvailable = useMemo(
