@@ -320,3 +320,67 @@ pub async fn agent_stream(app: AppHandle, session_id: String) -> AppResult<()> {
 
     Ok(())
 }
+
+/// Persist the shield's SQL operation grants where the ENGINE enforces them:
+/// `~/.config/exa/exa.json` → agent.exa.options.sqlOps (the engine's database
+/// tool reads this file live, per statement — same store `exa ops grant`
+/// writes). The prompt directive alone is advisory; without this file the
+/// tool refuses writes even when the shield shows them granted.
+///
+/// The "shell" tool group is managed alongside: present while any write class
+/// is granted (so exapump can load data files from the terminal), removed when
+/// the shield goes read-only — terminal data loads follow the shield too.
+#[tauri::command]
+pub fn engine_ops_sync(sql_ops: Vec<String>) -> AppResult<()> {
+    const CLASSES: [&str; 8] = [
+        "insert", "update", "delete", "create", "alter", "drop", "dcl", "admin",
+    ];
+    let ops: Vec<String> = sql_ops
+        .into_iter()
+        .filter(|o| CLASSES.contains(&o.as_str()))
+        .collect();
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| AppError::Storage("Could not resolve home directory.".into()))?;
+    let dir = std::path::PathBuf::from(home).join(".config").join("exa");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("exa.json");
+    let mut root: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+    let options = root
+        .as_object_mut()
+        .unwrap()
+        .entry("agent")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| AppError::Storage("exa.json: \"agent\" is not an object".into()))?
+        .entry("exa")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa\" is not an object".into()))?
+        .entry("options")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| AppError::Storage("exa.json: \"agent.exa.options\" is not an object".into()))?;
+    let writes_granted = !ops.is_empty();
+    options.insert("sqlOps".into(), serde_json::json!(ops));
+    let mut tools: Vec<String> = options
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let has_shell = tools.iter().any(|t| t == "shell");
+    if writes_granted && !has_shell {
+        tools.push("shell".into());
+    } else if !writes_granted && has_shell {
+        tools.retain(|t| t != "shell");
+    }
+    options.insert("tools".into(), serde_json::json!(tools));
+    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap_or_default())?;
+    Ok(())
+}

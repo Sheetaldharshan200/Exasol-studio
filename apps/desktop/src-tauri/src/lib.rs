@@ -191,6 +191,7 @@ pub fn run() {
             history::sql_history_clear,
             agent::agent_api,
             agent::agent_grant_connection,
+            agent::engine_ops_sync,
             agent::agent_stream,
             local_llm::llm_status,
             local_llm::llm_engine_install,
