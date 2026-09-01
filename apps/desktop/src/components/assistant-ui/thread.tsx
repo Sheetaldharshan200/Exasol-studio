@@ -357,7 +357,9 @@ const AssistantWorkingIndicator: FC = () => {
         data-slot="aui_assistant-message-indicator"
         className="text-muted-foreground inline-flex items-center gap-2 align-middle"
       >
-        <BrandLoader size={22} aria-hidden />
+        {/* The thread is monochrome (--primary is scoped to foreground), but
+            the brand mark keeps its real colors: Exasol green + ink. */}
+        <BrandLoader size={22} className="text-foreground [--primary:#5fc33b]" />
         <span className="text-sm">{stage.label}</span>
       </span>
     );

@@ -490,6 +490,9 @@ export const ipc = {
   marketRelease: (repo: string) => call<Release>("market_release", { repo }),
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),
+  /** Web build: the engine installs what a local server process can (pip
+   *  packages, the starter-kit stack, docker pulls). */
+  marketInstallEngine: (id: string) => call<{ done: boolean; started?: boolean; note?: string }>("market_install", { id }),
   marketInstall: (id: string, version: string, url: string, filename: string) =>
     call<{ ok: boolean; path: string }>("market_install", { id, version, url, filename }),
   marketInstallRun: (
