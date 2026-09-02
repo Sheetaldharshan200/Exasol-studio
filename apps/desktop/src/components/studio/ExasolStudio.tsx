@@ -46,6 +46,7 @@ import { addFavorite } from "@/lib/favorites";
 import type { TreeNode } from "@/features/workbench/tree-model";
 import { openSettingsWindow } from "@/lib/settings-window";
 import { askExa } from "@/features/assistant/exa/ask-exa";
+import { pinnedPrompt } from "@/features/assistant/exa/context";
 import { DocsTab } from "@/features/workbench/DocsTab";
 import { DesktopOnly } from "@/features/workbench/DesktopOnly";
 import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch";
@@ -2213,7 +2214,13 @@ export function ExasolStudio({
       );
       return;
     }
-    askExa(promptText + planBlock, { send: true });
+    askExa(
+      pinnedPrompt("Explain this query's execution plan.", promptText + planBlock, {
+        providerId: "results",
+        label: "Measured plan",
+      }),
+      { send: true, trusted: true },
+    );
   }
 
   // Inline AI edits (optimize / fix / edit) → a review diff in the editor with
@@ -2428,7 +2435,15 @@ export function ExasolStudio({
       if (opts?.explain) {
         const aiRows = heaviestStatement(stmtIds.flatMap((id) => rowsByStmt.get(id) ?? []));
         const planBlock = buildPlanBlock(aiRows, source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY");
-        if (planBlock) askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
+        if (planBlock)
+          askExa(
+            pinnedPrompt(
+              "Explain this query's execution plan.",
+              AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock,
+              { providerId: "results", label: "Measured plan" },
+            ),
+            { send: true, trusted: true },
+          );
       }
     } catch (e) {
       patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });

@@ -223,6 +223,21 @@ export function extractContextPins(text: string): ContextPin[] {
   return out;
 }
 
+/**
+ * A prompt whose MACHINERY (instructions, SQL, data tables) rides hidden in
+ * the machine sentinel while the sent message shows only `visible` plus a
+ * context pin — app-triggered asks (Explain plan) read like a short user
+ * message with a chip, never a wall of pasted text.
+ */
+export function pinnedPrompt(
+  visible: string,
+  machinery: string,
+  pin: { providerId: ContextProviderId; label: string },
+): string {
+  const marker = buildChipMarkers([{ id: "app", providerId: pin.providerId, label: pin.label, body: "" }]);
+  return `${wrapMachineContext(`${marker}\n\n${machinery}`)}\n\n${visible}`;
+}
+
 // ── Machine-context sentinel ────────────────────────────────────────────────
 // Directives, chips and other machine-added context ride INSIDE the message
 // text (the engine runtime has no hidden-part channel), wrapped in this tag
