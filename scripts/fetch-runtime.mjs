@@ -45,8 +45,13 @@ const TARGETS = {
  *  uploading — resolving blindly to "latest" raced that window and 404'd
  *  whole release builds (v2026.6.0 and v2026.6.1 both hit it). */
 async function latestEngineTag(assetName) {
+  // Authenticate on api.github.com when a token is around: shared Actions
+  // runner IPs exhaust the unauthenticated 60/h limit constantly (v2026.7.0
+  // failed its whole first build on a 403 here). Token goes ONLY to the API
+  // host — never to download URLs, whose S3 redirects reject auth headers.
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   const res = await fetch("https://api.github.com/repos/Sheetaldharshan200/exa-engine/releases?per_page=5", {
-    headers: { accept: "application/vnd.github+json" },
+    headers: { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) throw new Error(`could not resolve latest exa-engine release: ${res.status}`);
   const releases = await res.json();
