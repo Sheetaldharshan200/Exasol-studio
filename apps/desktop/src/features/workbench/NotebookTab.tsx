@@ -179,6 +179,9 @@ export function NotebookTab({
     return b.cells.length ? b.cells.map((c) => ({ ...mkCell(c.type, c.src, c.chart), connProfileId: c.connProfileId, connName: c.connName, viz: c.viz })) : [mkCell("sql")];
   });
   const [renamingBook, setRenamingBook] = useState<string | null>(null);
+  // Always-current cells for async flows (runCell/runAll read between awaits).
+  const cellsRef = useRef<Cell[]>(cells);
+  cellsRef.current = cells;
 
   // Another feature created a notebook (the chat's "Create notebook" card):
   // reload the list and jump straight into the new active one.
@@ -328,11 +331,11 @@ export function NotebookTab({
 
   const runCell = useCallback(
     async (id: string) => {
-      let cell: Cell | undefined;
-      setCells((cs) => {
-        cell = cs.find((c) => c.id === id);
-        return cs;
-      });
+      // Read from the live ref, NEVER via a setCells updater trick: React only
+      // invokes updaters eagerly while its queue is empty, so mid run-all the
+      // lookup stayed undefined and every cell after the first was silently
+      // skipped ("Run all does nothing past cell 1").
+      const cell = cellsRef.current.find((c) => c.id === id);
       if (!cell) return;
       if (cell.type === "markdown" || cell.type === "mermaid") {
         patch(id, { editing: false }); // render the preview
@@ -380,7 +383,7 @@ export function NotebookTab({
     if (runningAll.current) return;
     runningAll.current = true;
     try {
-      const order = cells.map((c) => c.id);
+      const order = cellsRef.current.map((c) => c.id);
       setRunQueue(new Set(order)); // everyone queued…
       for (const id of order) {
         setRunQueue((q) => {
