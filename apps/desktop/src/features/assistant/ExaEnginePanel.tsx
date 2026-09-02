@@ -142,16 +142,11 @@ export function ExaEnginePanel({
   // exapump can load data files, and terminal loads obey the shield too);
   // tool grants bind at instance build, so dispose after writing.
   const disposeEngineInstance = useCallback(async () => {
-    const port = statusRef.current?.port;
-    if (!port) return;
-    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-    const f = inTauri ? (await import("@tauri-apps/plugin-http")).fetch : globalThis.fetch.bind(globalThis);
-    await f(`http://127.0.0.1:${port}/instance/dispose`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-      signal: AbortSignal.timeout(3000),
-    } as RequestInit).catch(() => undefined);
+    // The engine caches its config with an INFINITE TTL — /instance/dispose
+    // does NOT reload exa.json (verified live: shield grants + shell stayed
+    // invisible, bash denied, until a process restart). agent-core restarts
+    // the engine for us so the grants and tool groups actually take effect.
+    await agent.engine.applyConfig().catch(() => undefined);
   }, []);
   useEffect(() => {
     if (!isTauri()) return;
