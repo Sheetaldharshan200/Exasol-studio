@@ -3,10 +3,11 @@ import { Plus, Trash2, X } from "lucide-react";
 import {
   buildUdfSql,
   COMMON_TYPES,
+  DEFAULT_UDF_LANGS,
   DEFAULT_UDF_SPEC,
-  UDF_LANGS,
   type UdfKind,
   type UdfLang,
+  type UdfLangOption,
   type UdfParam,
   type UdfSpec,
 } from "@/features/workbench/udf-builder";
@@ -18,12 +19,19 @@ import { cn } from "@/lib/utils";
  * `--/ … /` preview updates as you go. "Insert" drops the DDL into the editor
  * (optionally running it) instead of hunting for the autocomplete snippet.
  */
-export function UdfBuilder({ onInsert, onRun, onClose }: {
+export function UdfBuilder({ onInsert, onRun, onClose, langs }: {
   onInsert: (sql: string) => void;
   onRun?: (sql: string) => void;
   onClose: () => void;
+  /** Languages actually available on the connected DB (from SCRIPT_LANGUAGES);
+   *  falls back to the standard set when not provided/known. */
+  langs?: UdfLangOption[];
 }) {
-  const [spec, setSpec] = useState<UdfSpec>(DEFAULT_UDF_SPEC);
+  const options = langs && langs.length ? langs : DEFAULT_UDF_LANGS;
+  const [spec, setSpec] = useState<UdfSpec>(() => ({
+    ...DEFAULT_UDF_SPEC,
+    lang: (options.find((o) => o.id === DEFAULT_UDF_SPEC.lang)?.id ?? options[0].id) as UdfLang,
+  }));
   const sql = useMemo(() => buildUdfSql(spec), [spec]);
   const set = <K extends keyof UdfSpec>(k: K, v: UdfSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
   const setParam = (i: number, patch: Partial<UdfParam>) =>
@@ -50,7 +58,7 @@ export function UdfBuilder({ onInsert, onRun, onClose }: {
           <div>
             <div className={label}>Language</div>
             <div className="mt-1 flex gap-1">
-              {UDF_LANGS.map((l) => (
+              {options.map((l) => (
                 <button
                   key={l.id}
                   onClick={() => set("lang", l.id as UdfLang)}

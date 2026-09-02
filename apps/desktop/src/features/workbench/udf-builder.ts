@@ -17,12 +17,37 @@ export type UdfSpec = {
   orReplace: boolean;
 };
 
-export const UDF_LANGS: { id: UdfLang; label: string }[] = [
+export type UdfLangOption = { id: string; label: string };
+
+/** The built-in fallback set (Lua is always available; the rest are the
+ *  usual SLC languages) when the DB's SCRIPT_LANGUAGES can't be read. */
+export const DEFAULT_UDF_LANGS: UdfLangOption[] = [
   { id: "LUA", label: "Lua" },
   { id: "PYTHON3", label: "Python" },
   { id: "JAVA", label: "Java" },
   { id: "R", label: "R" },
 ];
+
+const LANG_LABELS: Record<string, string> = { LUA: "Lua", PYTHON3: "Python", PYTHON: "Python", JAVA: "Java", R: "R" };
+const prettyLang = (alias: string): string => LANG_LABELS[alias.toUpperCase()] ?? alias;
+
+/**
+ * The languages a UDF may use = the aliases configured in the DB's
+ * SCRIPT_LANGUAGES parameter (e.g. "PYTHON3=builtin_python3 JAVA=... R=...")
+ * PLUS Lua, which is always built in. Adding a new language SLC on the server
+ * makes it appear here with no code change — fully dynamic.
+ */
+export function parseScriptLanguages(paramValue: string | null | undefined): UdfLangOption[] {
+  const aliases = new Set<string>(["LUA"]);
+  for (const m of (paramValue ?? "").matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*=/g)) {
+    const a = m[1].toUpperCase();
+    if (a) aliases.add(a);
+  }
+  return [...aliases].map((id) => ({ id, label: prettyLang(id) }));
+}
+
+/** @deprecated kept for tests; UI now uses the dynamic list. */
+export const UDF_LANGS = DEFAULT_UDF_LANGS;
 
 export const COMMON_TYPES = ["DOUBLE", "DECIMAL(18,0)", "VARCHAR(200)", "BOOLEAN", "DATE", "TIMESTAMP"];
 
