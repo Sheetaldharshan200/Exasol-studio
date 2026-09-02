@@ -5,6 +5,9 @@
 export const NB_KEY = "studio.notebook.v1"; // legacy single-notebook key (migrated)
 export const NBS_KEY = "studio.notebooks.v1"; // { id, title, cells, updatedAt }[]
 export const NB_ACTIVE_KEY = "studio.notebooks.active";
+/** Set to a notebook id to have the Notebook tab run all its cells once it
+ *  loads that notebook (the chat's "Create notebook" card sets it). */
+export const NB_PENDING_RUN_KEY = "studio.notebooks.pendingRun";
 
 export type NotebookCellSeed = { type: "sql" | "markdown" | "mermaid"; src: string; chart?: string };
 
@@ -22,6 +25,7 @@ export function addNotebookDoc(title: string, cells: NotebookCellSeed[]): string
   books.push({ id, title, cells, updatedAt: Date.now() });
   localStorage.setItem(NBS_KEY, JSON.stringify(books));
   localStorage.setItem(NB_ACTIVE_KEY, id);
+  localStorage.setItem(NB_PENDING_RUN_KEY, id);
   window.dispatchEvent(new Event("studio:notebooks-changed"));
   return id;
 }

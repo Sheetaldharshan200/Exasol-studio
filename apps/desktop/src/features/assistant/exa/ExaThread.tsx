@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { useOpenCodePermissions, useOpenCodeQuestions, useOpenCodeRuntime, useOpenCodeRuntimeExtras } from "@assistant-ui/react-opencode";
 import { StudioAttachmentAdapter } from "./StudioAttachmentAdapter";
-import { lastLocateFence, lastSqlFence } from "./sql-fence";
+import { lastFence, lastLocateFence } from "./sql-fence";
 import type { createOpencodeClient } from "@assistant-ui/react-opencode";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -1014,7 +1014,9 @@ function PinAutoApply() {
     if (!w.__exaPinnedCell && !w.__exaPinnedTabId) return;
     // Pencil off = the tab pin is context-only: never write into the tab.
     if (!w.__exaPinnedCell && w.__exaPinnedTabWrite === false) return;
-    const sql = lastSqlFence(text);
+    // Pinned markdown/mermaid cells receive THEIR fence type; sql otherwise.
+    const lang = w.__exaPinnedCell ? ((w as { __exaPinnedCellLang?: string }).__exaPinnedCellLang ?? "sql") : "sql";
+    const sql = lastFence(text, lang);
     if (!sql) return;
     if (w.__exaAutoApplied.has(id)) return;
     w.__exaAutoApplied.add(id);
@@ -1630,21 +1632,29 @@ export function ExaThread({
   // (see applySqlToEditor's pin routing) and runs there.
   useEffect(() => {
     const onPin = (e: Event) => {
-      const d = (e as CustomEvent<{ cellId?: string; index?: number; sql?: string; chart?: string | null; connection?: string | null; claimed?: boolean }>).detail;
+      const d = (e as CustomEvent<{ cellId?: string; index?: number; cellType?: string; sql?: string; chart?: string | null; connection?: string | null; claimed?: boolean }>).detail;
       if (!d?.cellId || d.claimed) return;
       d.claimed = true;
-      (window as unknown as { __exaPinnedCell?: string }).__exaPinnedCell = d.cellId;
+      const kind = d.cellType === "markdown" ? "markdown" : d.cellType === "mermaid" ? "mermaid" : "sql";
+      const w = window as unknown as { __exaPinnedCell?: string; __exaPinnedCellLang?: string };
+      w.__exaPinnedCell = d.cellId;
+      w.__exaPinnedCellLang = kind;
+      const n = Number(d.index ?? 0) + 1;
+      const mandate =
+        kind === "sql"
+          ? "WORK ON THIS CELL DIRECTLY: run and verify with run_sql against the connected database, iterate until the statement is correct, and finish with the final SQL in a ```sql code block — the app applies that block back into the pinned cell and executes it there. Do the job; don't just describe it."
+          : `WORK ON THIS ${kind.toUpperCase()} CELL DIRECTLY: edit or improve it as asked and finish with ONE \u0060\u0060\u0060${kind} code block — the app applies that block back into the pinned cell and renders it. Do the job; don't just describe it.`;
       apiWithShell.addChip({
         id: `nbcell-${d.cellId}`,
         providerId: "query",
-        label: `cell ${Number(d.index ?? 0) + 1}`,
+        label: `cell ${n}`,
         body: [
-          `The user pinned notebook SQL cell ${Number(d.index ?? 0) + 1}${d.connection ? ` (database: ${d.connection})` : ""}${d.chart && d.chart !== "table" ? `, rendered as a ${d.chart} chart` : ""}.`,
+          `The user pinned notebook ${kind.toUpperCase()} cell ${n}${d.connection ? ` (database: ${d.connection})` : ""}${d.chart && d.chart !== "table" ? `, rendered as a ${d.chart} chart` : ""}.`,
           "Current content:",
-          "```sql",
-          d.sql?.trim() || "-- (empty cell)",
-          "```",
-          "WORK ON THIS CELL DIRECTLY: run and verify with run_sql against the connected database, iterate until the statement is correct, and finish with the final SQL in a ```sql code block — the app applies that block back into the pinned cell and executes it there. Do the job; don't just describe it.",
+          "\u0060\u0060\u0060" + kind,
+          d.sql?.trim() || (kind === "sql" ? "-- (empty cell)" : "(empty cell)"),
+          "\u0060\u0060\u0060",
+          mandate,
         ].join("\n"),
       });
       window.dispatchEvent(new CustomEvent("studio:assistant-open"));
@@ -1665,9 +1675,16 @@ export function ExaThread({
       if (!text) return;
       void (async () => {
         try {
+          if (detail.send === false) {
+            // Prefill only: keep the RAW text — expansion (directives, chips,
+            // machine context) happens in the composer's own submit path, so
+            // the user never sees the sentinel blob in the input box.
+            runtime.thread.composer.setText(text);
+            return;
+          }
           const expanded = apiWithShell.expandForSend(text);
           runtime.thread.composer.setText(expanded ?? text);
-          if (detail.send !== false) await runtime.thread.composer.send();
+          await runtime.thread.composer.send();
         } catch (err) {
           console.error("[exa] exa:prompt send failed", err);
         }

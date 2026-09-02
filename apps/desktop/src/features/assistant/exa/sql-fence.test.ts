@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { lastLocateFence, lastSqlFence } from "./sql-fence.ts";
+import { lastFence, lastLocateFence, lastSqlFence } from "./sql-fence.ts";
 import { buildChipMarkers, extractContextPins } from "./context.ts";
 
 test("lastSqlFence returns the LAST non-empty sql block", () => {
@@ -40,4 +40,11 @@ test("lastLocateFence parses the final locate JSON; garbage returns null", () =>
   assert.equal(lastLocateFence("```locate\nnot json\n```"), null);
   assert.equal(lastLocateFence('```locate\n{"column": "X"}\n```'), null); // table required
   assert.deepEqual(lastLocateFence('```locate\n{"table": "T", "schema": "  "}\n```'), { table: "T", schema: undefined, column: undefined });
+});
+
+test("lastFence extracts by language — markdown and mermaid cells round-trip", () => {
+  const text = "Here:\n```markdown\n# Better title\nBody.\n```\nand\n```mermaid\ngraph TD; A-->B\n```";
+  assert.equal(lastFence(text, "markdown"), "# Better title\nBody.");
+  assert.equal(lastFence(text, "mermaid"), "graph TD; A-->B");
+  assert.equal(lastFence(text, "sql"), null);
 });
