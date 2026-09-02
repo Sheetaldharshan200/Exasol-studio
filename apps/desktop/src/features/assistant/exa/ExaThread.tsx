@@ -495,7 +495,20 @@ function ExaPersonaSelector({ persona, onChange }: { persona: string | null; onC
  */
 function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: SqlOps) => void }) {
   const [open, setOpen] = useState(false);
+  // Draft state: toggling stages changes; nothing hits the engine until Save.
+  // (Applying restarts the engine to load the grants — too disruptive to do
+  // on every checkbox click, especially mid-conversation.)
+  const [draft, setDraft] = useState<SqlOps>(ops);
+  // Re-seed the draft from the committed grants each time the popover opens.
+  useEffect(() => {
+    if (open) setDraft(ops);
+  }, [open, ops]);
   const grantedCount = Object.values(ops).filter(Boolean).length;
+  const dirty = (Object.keys(draft) as (keyof SqlOps)[]).some((k) => draft[k] !== ops[k]);
+  const save = () => {
+    onChange(draft); // commits → engine restarts with the new grants
+    setOpen(false);
+  };
   useEffect(() => {
     if (open) document.body.dataset.exaMenuOpen = "1";
     else delete document.body.dataset.exaMenuOpen;
@@ -533,9 +546,9 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
             {group.items.map(({ key, label, detail }) => (
               <DropdownMenuCheckboxItem
                 key={key}
-                checked={ops[key]}
+                checked={draft[key]}
                 onSelect={(e) => e.preventDefault()}
-                onCheckedChange={(v) => onChange({ ...ops, [key]: Boolean(v) })}
+                onCheckedChange={(v) => setDraft((d) => ({ ...d, [key]: Boolean(v) }))}
                 className="text-[12px]"
               >
                 <span className="flex min-w-0 flex-col">
@@ -547,9 +560,23 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
           </div>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 pb-1.5 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-          Ungranted classes are refused even if a task seems to need them.
+        <p className="px-2 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+          Ungranted classes are refused even if a task seems to need them. Saving refreshes the AI engine so the change takes effect.
         </p>
+        <div className="px-2 pt-1.5 pb-1">
+          <button
+            type="button"
+            onClick={save}
+            disabled={!dirty}
+            className={cn(
+              "flex h-7 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors",
+              dirty ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
+            )}
+          >
+            <ShieldCheckIcon className="h-3.5 w-3.5" />
+            {dirty ? "Save & refresh engine" : "No changes"}
+          </button>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
