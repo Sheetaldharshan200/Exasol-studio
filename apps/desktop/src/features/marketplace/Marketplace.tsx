@@ -309,9 +309,6 @@ export function Marketplace() {
   }, []);
   // Authoritative install/version for the managed components (single source).
   const [components, setComponents] = useState<ComponentInfo[]>([]);
-  // Latest OFFICIAL release per managed component — the same feed the Updates
-  // panel compares against, so card badges and the panel agree by definition.
-  const [managedUpstream, setManagedUpstream] = useState<Record<string, string> | null>(null);
   const [detected, setDetected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
@@ -357,9 +354,6 @@ export function Marketplace() {
     // Managed-component truth: fetched in the BACKGROUND so it can never stall
     // first paint. Until it lands, cards fall back to the marketplace manifest.
     ipc.listComponents().then(setComponents).catch(() => undefined);
-    ipc.componentsUpstream()
-      .then((list) => setManagedUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      .catch(() => undefined);
   }, []);
 
   // Latest upstream versions (one GitHub call per repo) — slower + network, so
@@ -713,13 +707,6 @@ export function Marketplace() {
     // Managed components update via the Managed Components panel (verify-or-
     // refuse), never the catalog card — so never offer a catalog "update" here.
     const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
-    // …but the CARD must not claim "Up to date" when the panel disagrees:
-    // check the same upstream feed and point at the Updates tab instead.
-    const compId = CATALOG_TO_COMPONENT[item.id];
-    const comp = compId ? components.find((c) => c.id === compId) : undefined;
-    const managedNewer = Boolean(
-      compId && comp && !comp.opaqueVersion && managedUpstream && isNewerVersion(managedUpstream[compId], comp.installed),
-    );
     // The version shown on the card: for managed components it's the AUTHORITATIVE
     // installed version (list_components), never the catalog's "latest" (which can
     // lag or be an upstream tag) — so the card matches the Managed Components panel.
@@ -811,12 +798,6 @@ export function Marketplace() {
             {newer ? (
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                 <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
-              </button>
-            ) : managedNewer ? (
-              // Managed update: apply it in the Updates panel (verify-or-refuse
-              // flow) — the card sends you there instead of lying "Up to date".
-              <button onClick={() => setNav("updates")} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85">
-                <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update available — open Updates
               </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
