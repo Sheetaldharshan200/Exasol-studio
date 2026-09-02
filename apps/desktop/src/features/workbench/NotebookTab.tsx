@@ -359,19 +359,33 @@ export function NotebookTab({
   async function runAll() {
     if (runningAll.current) return;
     runningAll.current = true;
-    const order = cells.map((c) => c.id);
-    setRunQueue(new Set(order)); // everyone queued…
-    for (const id of order) {
-      setRunQueue((q) => {
-        const n = new Set(q);
-        n.delete(id);
-        return n;
-      });
-      await runCell(id); // …executed one by one, in order
+    try {
+      const order = cells.map((c) => c.id);
+      setRunQueue(new Set(order)); // everyone queued…
+      for (const id of order) {
+        setRunQueue((q) => {
+          const n = new Set(q);
+          n.delete(id);
+          return n;
+        });
+        await runCell(id); // …executed one by one, in order
+      }
+    } finally {
+      // A throw mid-run must never wedge the guard shut — that reads as
+      // "the Run all button does nothing" forever after.
+      setRunQueue(new Set());
+      runningAll.current = false;
     }
-    setRunQueue(new Set());
-    runningAll.current = false;
   }
+  // Run-all on request (the chat's "Create notebook" card runs + verifies the
+  // fresh notebook automatically). Ref so the listener sees current cells.
+  const runAllRef = useRef(runAll);
+  runAllRef.current = runAll;
+  useEffect(() => {
+    const on = () => void runAllRef.current();
+    window.addEventListener("studio:notebook-run-all", on);
+    return () => window.removeEventListener("studio:notebook-run-all", on);
+  }, []);
 
   // The assistant's "Apply" targets the pinned cell: write the SQL in, run it.
   useEffect(() => {
@@ -577,7 +591,7 @@ export function NotebookTab({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <span className="text-[11px] text-muted-foreground">SQL, Markdown, Mermaid &amp; charts in one canvas</span>
+        <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground lg:block">SQL, Markdown, Mermaid &amp; charts in one canvas</span>
         <div className="ml-auto flex items-center gap-1.5">
           <DropdownMenu onOpenChange={(open) => { if (open) void loadDashList(); }}>
             <DropdownMenuTrigger asChild>
