@@ -247,13 +247,17 @@ const defaultComponents = memoizeMarkdownComponents({
     />
   ),
   table: ({ className, ...props }) => (
-    <table
-      className={cn(
-        "aui-md-table my-3 w-full border-separate border-spacing-0 overflow-y-auto",
-        className,
-      )}
-      {...props}
-    />
+    // Wide result tables scroll INSIDE their own container — a bare <table>
+    // can't overflow-scroll, so wide answers were simply clipped.
+    <div className="aui-md-table-wrap my-3 max-w-full overflow-x-auto [scrollbar-width:thin]">
+      <table
+        className={cn(
+          "aui-md-table w-full border-separate border-spacing-0",
+          className,
+        )}
+        {...props}
+      />
+    </div>
   ),
   th: ({ className, ...props }) => (
     <th
