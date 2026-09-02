@@ -18,7 +18,6 @@ import {
   Play,
   Plus,
   Share2,
-  Sparkles,
   Table as TableIcon,
   Text as TextIcon,
   Trash2,
@@ -855,7 +854,7 @@ const CellView = memo(function CellView({
             // end — never overlapping the formatting buttons.
             trailing={
               <>
-                <button onClick={onAsk} title="Ask Exa about this note" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+                <button onClick={onAsk} title="Mention this note in Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary"><AgentMark className="h-3.5 w-3.5" /></button>
                 <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
                   <SelectTrigger size="sm" className="h-6 w-[118px] text-[11px]"><SelectValue /></SelectTrigger>
                   <SelectContent align="end">
@@ -870,7 +869,7 @@ const CellView = memo(function CellView({
           {/* Not editing → compact hover controls, top-right (no toolbar to collide with). */}
           {!mdFocused ? (
             <div className="pointer-events-none absolute right-1.5 top-1 z-10 flex items-center gap-0.5 rounded-md bg-editor opacity-0 transition-opacity group-hover/cell:pointer-events-auto group-hover/cell:opacity-100">
-              <button onClick={onAsk} title="Ask Exa about this note" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+              <button onClick={onAsk} title="Mention this note in Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary"><AgentMark className="h-3.5 w-3.5" /></button>
               <Select value={cell.type} onValueChange={(v) => onType(v as CellType)}>
                 <SelectTrigger size="sm" className="h-6 w-[118px] text-[11px]"><SelectValue /></SelectTrigger>
                 <SelectContent align="end">
@@ -899,7 +898,7 @@ const CellView = memo(function CellView({
                 {CELL_TYPES.map((t) => { const I = t.icon; return (<SelectItem key={t.value} value={t.value}><span className="flex items-center gap-1.5"><I className="h-3.5 w-3.5" /> {t.label}</span></SelectItem>); })}
               </SelectContent>
             </Select>
-            <button onClick={onAsk} title="Ask Exa about this diagram" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Sparkles className="h-3.5 w-3.5" /></button>
+            <button onClick={onAsk} title="Mention this diagram in Exa" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary"><AgentMark className="h-3.5 w-3.5" /></button>
             <button onClick={onEdit} title="Edit the diagram code" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
             <button onPointerDown={(e) => { e.preventDefault(); onGrip(); }} title="Drag to reorder" className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground"><GripVertical className="h-3.5 w-3.5" /></button>
             <button onClick={onRemove} title="Delete cell" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
