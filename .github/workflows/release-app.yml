@@ -106,6 +106,8 @@ jobs:
       # in scripts/fetch-runtime.mjs — a new target only needs a matrix entry
       # above plus its row in that script, never any app code.
       - name: Bundle platform runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/fetch-runtime.mjs ${{ matrix.target }}
 
       # linuxdeploy ldd-scans every ELF in the AppDir and ABORTS the whole
