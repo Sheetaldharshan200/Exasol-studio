@@ -34,10 +34,14 @@ export type AgentSettings = {
   /** Commit workspace changes to git after each agent turn (deterministic —
    *  the app does it, not the model). */
   autoCommit: boolean;
+  /** App-control bridge: let the agent drive the app (open views, search,
+   *  install/uninstall/verify components). Default ON. */
+  appControl: boolean;
 };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   defaultSkills: [],
+  appControl: true,
   readPolicy: "allow",
   writePolicy: "ask",
   maxSteps: 12,
@@ -130,6 +134,7 @@ export class ConfigStore {
       defaultSkills: Array.isArray(merged.defaultSkills)
         ? merged.defaultSkills.filter((name): name is string => typeof name === "string")
         : [...DEFAULT_AGENT_SETTINGS.defaultSkills],
+      appControl: typeof merged.appControl === "boolean" ? merged.appControl : DEFAULT_AGENT_SETTINGS.appControl,
     };
   }
 
