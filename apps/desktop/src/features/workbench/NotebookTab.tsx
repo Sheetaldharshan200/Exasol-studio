@@ -836,8 +836,10 @@ const CellView = memo(function CellView({
   const isMd = cell.type === "markdown";
   const isMermaid = cell.type === "mermaid";
   const rendered = isMermaid && !cell.editing; // mermaid preview (md is always WYSIWYG)
-  const lines = Math.min(18, Math.max(3, cell.src.split("\n").length));
-  const editorHeight = lines * 19 + 16;
+  // Fit the editor to the SQL: a 1-line query gets a 2-line box (room to type),
+  // not a 3-line box + fat slack — that read as a blank gap above the result.
+  const lines = Math.min(18, Math.max(2, cell.src.split("\n").length));
+  const editorHeight = lines * 19 + 8;
 
   // Markdown cell: full-width, no gutter — a Word-style WYSIWYG document you
   // edit in place. Type dropdown + drag/delete appear on hover, top-right.
@@ -998,7 +1000,7 @@ const CellView = memo(function CellView({
         {isSql ? (
               // Monaco SQL cell — Exasol autocompletion comes from the app-global
               // completion provider on the shared monaco instance.
-              <div style={{ height: editorHeight }} className="py-1">
+              <div style={{ height: editorHeight }} className="pt-1">
                 <Editor
                   height="100%"
                   defaultLanguage="sql"
