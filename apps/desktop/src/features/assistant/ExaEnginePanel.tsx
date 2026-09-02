@@ -588,13 +588,23 @@ export function ExaEnginePanel({
       'JSON {"title": string, "cells": [{"type": "sql"|"markdown"|"mermaid", "src": string, "chart"?: "bar"|"line"|"area"|"pie"|"scatter"}]} — ' +
       "a markdown intro cell, then one SQL cell per panel (KPI, trend, breakdown) with a chart hint on every visualizable query. " +
       "The app renders it as a one-click 'Create notebook' card that builds an interactive notebook, so make the cells self-contained and runnable.";
+    // Capability awareness: some tasks need a Studio component that may not be
+    // installed (JSON Tables for JSON loads, a specific driver, etc.). Detect
+    // first, then ASK before assuming — never fail blindly.
+    const capabilityDirective =
+      "Before a task that needs an optional component, CHECK it's available rather than assuming. " +
+      "JSON data: exapump/IMPORT cannot shred JSON — it needs the JSON Tables addon; verify by probing for its objects (e.g. query SYS.EXA_ALL_SCRIPTS / the JSON Tables functions) before loading. " +
+      "A specific driver/version: confirm you can actually connect and run against it before reporting a test result. " +
+      "If a required component is NOT installed, do NOT fail silently and do NOT fake a result: use the question tool to ask the user whether to install it (name the exact component, e.g. 'JSON Tables', with Yes/No choices). " +
+      "On Yes, tell them it installs from the Marketplace (Marketplace → the component → Install) and offer to continue the load/test the moment it's installed; on No, explain what you can still do without it. " +
+      "Tailor the depth to the user: an executive gets the outcome and the one decision; a developer gets the component name, version, and the exact SQL/driver detail.";
     const netDirective = networkAllowed
       ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
     // Persona + personalization (Settings → AI): read at send time so an edit
     // in Settings shapes the very next message, no reload anywhere.
     const personaDirective = styleDirective(persona, loadAiStyle());
-    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, netDirective, personaDirective]
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, capabilityDirective, netDirective, personaDirective]
       .filter(Boolean)
       .join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
