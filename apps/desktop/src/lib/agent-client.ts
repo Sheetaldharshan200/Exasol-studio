@@ -104,6 +104,8 @@ export type AgentSettings = {
   allowDestructiveUi: boolean;
   allowFileAccess: boolean;
   autoCommit: boolean;
+  /** App-control bridge (agent drives the app). Default on. */
+  appControl: boolean;
 };
 
 export const agent = {
@@ -118,6 +120,18 @@ export const agent = {
 
   async models(): Promise<{ providers: AgentProviderInfo[]; defaultModel: string | null }> {
     return api("/models");
+  },
+
+  /** App-control bridge: long-poll the next queued action (null on idle). */
+  async actionNext(): Promise<{ id?: string; action?: string; args?: unknown } | null> {
+    try {
+      return await api("/gateway/actions/next");
+    } catch {
+      return null; // 204/no-content parses as an error in api(); treat as idle
+    }
+  },
+  async actionResult(id: string, result: { ok: boolean; data?: unknown; error?: string }): Promise<void> {
+    await api(`/gateway/action/${encodeURIComponent(id)}/result`, "POST", result).catch(() => undefined);
   },
 
   /** One-shot SQL rewrite for the editor's inline diff (no chat session). */

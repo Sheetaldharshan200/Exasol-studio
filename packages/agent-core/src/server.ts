@@ -35,6 +35,20 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
+
+  // ── App-control bridge ────────────────────────────────────────────────────
+  // The agent requests an app action (POST /gateway/action); it's queued and a
+  // waiting webview long-poller picks it up, runs it, and POSTs the result
+  // back, which resolves the original request. In-memory only.
+  type PendingAction = { id: string; action: string; args: unknown; resolve: (r: unknown) => void };
+  const actionQueue: PendingAction[] = [];
+  const pendingById = new Map<string, PendingAction>();
+  let actionWaiter: ((a: PendingAction | null) => void) | null = null;
+  let actionSeq = 0;
+  const takeAction = (): PendingAction | undefined => {
+    const a = actionQueue.shift();
+    return a;
+  };
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
   const engine = new EngineService();
@@ -425,6 +439,47 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
       // service: generates SQL grounded in the database's REAL schema but
       // never executes it (the client inspects, then calls the query route).
+      // POST /gateway/action — the agent asks the app to do something. Queued
+      // for the webview; resolves with its result (or times out if no app).
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "action" && !parts[3]) {
+        if (!config.get().appControl) {
+          return json(res, 200, { ok: false, error: "App control is turned off in AI Settings — ask the user to enable it." });
+        }
+        const body = await readBody<{ action?: string; args?: unknown }>(req);
+        if (!body.action) return json(res, 400, { error: "action required" });
+        const id = `a${++actionSeq}`;
+        const result = await new Promise<unknown>((resolve) => {
+          const item: PendingAction = { id, action: body.action!, args: body.args, resolve };
+          pendingById.set(id, item);
+          if (actionWaiter) { const w = actionWaiter; actionWaiter = null; w(item); }
+          else actionQueue.push(item);
+          setTimeout(() => {
+            if (pendingById.delete(id)) resolve({ ok: false, error: "No Studio window handled this in time — is the app open and focused?" });
+          }, 20_000);
+        });
+        return json(res, 200, result);
+      }
+      // GET /gateway/actions/next — the webview long-polls for the next action.
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "actions" && parts[3] === "next") {
+        const ready = takeAction();
+        if (ready) return json(res, 200, { id: ready.id, action: ready.action, args: ready.args });
+        const item = await new Promise<PendingAction | null>((resolve) => {
+          actionWaiter = resolve;
+          setTimeout(() => { if (actionWaiter === resolve) { actionWaiter = null; resolve(null); } }, 25_000);
+        });
+        if (!item) return json(res, 204, {});
+        return json(res, 200, { id: item.id, action: item.action, args: item.args });
+      }
+      // POST /gateway/action/:id/result — the webview returns the outcome.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "action" && parts[3] && parts[4] === "result") {
+        const item = pendingById.get(parts[3]);
+        if (!item) return json(res, 200, { ok: true }); // already timed out — ignore
+        pendingById.delete(parts[3]);
+        const body = await readBody<{ ok?: boolean; data?: unknown; error?: string }>(req);
+        item.resolve({ ok: body.ok !== false, data: body.data, error: body.error });
+        return json(res, 200, { ok: true });
+      }
+
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "nl2sql") {
         const body = await readBody<{ database?: string; question?: string }>(req);
         const wanted = (body.database ?? "").trim();

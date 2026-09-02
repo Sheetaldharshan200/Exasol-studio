@@ -290,4 +290,22 @@ server.tool(
   },
 );
 
+server.tool(
+  "control_app",
+  "Drive Exasol Studio's UI directly (when app control is enabled): open a view, close the active tab, search, list/check/install/uninstall a marketplace component, or connect/disconnect a database. Prefer this over telling the user to click. `action` is the verb; `args` carries its parameters. Actions: open {target: marketplace|notebook|visualizer|git|skills|mcp|settings|docs|assistant|search, arg?}, close_tab {title?}, search {query}, list_components {}, component_status {id}, install_component {id}, uninstall_component {id}, connect {name?}, disconnect {name?}. For an install, first check with component_status and ASK the user before installing.",
+  {
+    action: z.string().describe("The verb, e.g. open, search, install_component, list_components."),
+    args: z.record(z.any()).optional().describe("Parameters for the action, e.g. { target: \"marketplace\" } or { id: \"json-tables\" }."),
+  },
+  async ({ action, args }) => {
+    try {
+      const r = await studio<{ ok: boolean; data?: unknown; error?: string }>("/gateway/action", { method: "POST", body: { action, args: args ?? {} } });
+      if (!r.ok) return errText(new Error(r.error ?? "action failed"));
+      return text(r.data ?? { ok: true });
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
 void server.connect(new StdioServerTransport());

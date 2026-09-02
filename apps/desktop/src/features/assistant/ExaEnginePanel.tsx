@@ -3,6 +3,7 @@ import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
 import { agent, skills as skillsApi, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
+import { useStudioActionBridge } from "@/features/assistant/useStudioActionBridge";
 import { ipc, isTauri } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
@@ -232,6 +233,17 @@ export function ExaEnginePanel({
   }, []);
   // The SDK client for the runtime — built once the engine reports its port.
   const [engineClient, setEngineClient] = useState<Awaited<ReturnType<typeof engineClientFor>> | null>(null);
+  // App-control bridge on/off (AI Settings). Default on; read from the engine.
+  const [appControlOn, setAppControlOn] = useState(true);
+  useEffect(() => {
+    if (!engineClient) return;
+    agent.getSettings().then((r) => setAppControlOn(r.settings.appControl !== false)).catch(() => undefined);
+    const onChanged = (e: Event) => setAppControlOn((e as CustomEvent<{ on?: boolean }>).detail?.on !== false);
+    window.addEventListener("exa:app-control-changed", onChanged);
+    return () => window.removeEventListener("exa:app-control-changed", onChanged);
+  }, [engineClient]);
+  useStudioActionBridge(Boolean(engineClient) && appControlOn);
+
   // Install ALL skills into the agent by default (once): every bundled skill —
   // including the exasol-ecosystem catalog — becomes an active default skill,
   // so the agent starts with the full Exasol playbook. Idempotent via a flag.

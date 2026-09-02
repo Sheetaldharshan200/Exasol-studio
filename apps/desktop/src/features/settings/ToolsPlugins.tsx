@@ -29,10 +29,12 @@ export function ToolsPlugins() {
   const [tools, setTools] = useState<Set<string> | null>(null);
   const [plugins, setPlugins] = useState<string[] | null>(null);
   const [mcp, setMcp] = useState<Record<string, { status: string }> | null>(null);
+  const [appControl, setAppControl] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
+    agent.getSettings().then((r) => setAppControl(r.settings.appControl !== false)).catch(() => setAppControl(true));
     ipc.engineOptionsGet()
       .then((o) => {
         setTools(new Set(o.tools));
@@ -88,8 +90,31 @@ export function ToolsPlugins() {
     return <p className="text-[12px] text-muted-foreground">Tool and plugin management needs the desktop app.</p>;
   }
 
+  const toggleAppControl = (on: boolean) => {
+    setAppControl(on);
+    setError(null);
+    void agent
+      .setSettings({ appControl: on })
+      .then(() => window.dispatchEvent(new CustomEvent("exa:app-control-changed", { detail: { on } })))
+      .catch((e) => { setAppControl(!on); setError(String(e)); });
+  };
+
   return (
     <div className="space-y-6">
+      <section>
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">App control</h3>
+        <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+          Let the assistant drive Studio directly — open views, search, and install / uninstall / verify components — instead of only telling you what to click.
+        </p>
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-medium text-foreground">Assistant can control the app</p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">On by default. It still asks before installing anything. Turn off to make the assistant advise only.</p>
+          </div>
+          <Switch checked={appControl ?? true} disabled={appControl === null} onCheckedChange={toggleAppControl} aria-label="Assistant app control" />
+        </div>
+      </section>
+
       <section>
         <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">Agent tools</h3>
         <p className="mt-0.5 text-[11.5px] text-muted-foreground">

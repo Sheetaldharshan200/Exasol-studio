@@ -550,6 +550,34 @@ export function ExasolStudio({
     const onNotebook = () => openNotebook();
     window.addEventListener("studio:open-docs", onDocs);
     window.addEventListener("studio:open-notebook", onNotebook);
+    // App-control bridge: the assistant opens views / manages tabs here.
+    const openActivity = (id: ActivityId) => { setActivity(id); setSidebarOpen(true); sidebarPanelRef.current?.expand(); };
+    const onMkt = () => openMarketplace();
+    const onVis = () => { openActivity("visualizer"); openVisualizer(); };
+    const onGit = () => openActivity("git");
+    const onSkills = () => openSkills();
+    const onMcp = () => openActivity("mcp");
+    const onSettings = () => void openSettingsWindow();
+    const onCloseTab = (e: Event) => {
+      const title = (e as CustomEvent<{ title?: string }>).detail?.title;
+      const target = title ? tabsFor(connKey).find((t) => t.title === title) : activeTab;
+      if (target) closeTab(target.id);
+    };
+    const onConnectProfile = (e: Event) => {
+      const name = (e as CustomEvent<{ name?: string }>).detail?.name;
+      const prof = name ? profiles.find((p) => p.name.toLowerCase() === name.toLowerCase()) : profiles[0];
+      if (prof) void connectSaved(prof.id);
+    };
+    const onDisconnectEv = () => onDisconnect(connection?.profile.id);
+    window.addEventListener("studio:open-marketplace", onMkt);
+    window.addEventListener("studio:open-visualizer", onVis);
+    window.addEventListener("studio:open-git", onGit);
+    window.addEventListener("studio:open-skills", onSkills);
+    window.addEventListener("studio:open-mcp", onMcp);
+    window.addEventListener("studio:open-settings", onSettings);
+    window.addEventListener("studio:close-tab", onCloseTab);
+    window.addEventListener("studio:connect-profile", onConnectProfile);
+    window.addEventListener("studio:disconnect", onDisconnectEv);
     // Cross-WINDOW requests (the Settings WebviewWindow can't reach this
     // window's DOM events) arrive over the Tauri event bus.
     let unlistenDocs: (() => void) | undefined;
@@ -561,6 +589,15 @@ export function ExasolStudio({
     return () => {
       window.removeEventListener("studio:open-docs", onDocs);
       window.removeEventListener("studio:open-notebook", onNotebook);
+      window.removeEventListener("studio:open-marketplace", onMkt);
+      window.removeEventListener("studio:open-visualizer", onVis);
+      window.removeEventListener("studio:open-git", onGit);
+      window.removeEventListener("studio:open-skills", onSkills);
+      window.removeEventListener("studio:open-mcp", onMcp);
+      window.removeEventListener("studio:open-settings", onSettings);
+      window.removeEventListener("studio:close-tab", onCloseTab);
+      window.removeEventListener("studio:connect-profile", onConnectProfile);
+      window.removeEventListener("studio:disconnect", onDisconnectEv);
       unlistenDocs?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
