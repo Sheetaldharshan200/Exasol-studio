@@ -23,6 +23,7 @@ import {
   Settings2,
   Shapes,
   Shield,
+  Trash2,
   Unplug,
   Waypoints,
   X,
@@ -73,6 +74,7 @@ function ConnectionSection({
   onOpenObject,
   onRefresh,
   onDisconnect,
+  onRemove,
   onOpenView,
   onNewVs,
   onUploadDriver,
@@ -92,6 +94,7 @@ function ConnectionSection({
   onOpenObject: (schema: string, name: string) => void;
   onRefresh: () => void;
   onDisconnect: () => void;
+  onRemove: () => void;
   onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
@@ -205,8 +208,11 @@ function ConnectionSection({
                 <HardDriveUpload className="h-3.5 w-3.5" /> Upload driver to BucketFS
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDisconnect()} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={() => onDisconnect()}>
                 <Unplug className="h-3.5 w-3.5" /> Disconnect
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRemove()} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-3.5 w-3.5" /> Remove connection
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -331,6 +337,7 @@ export function Sidebar({
   onInstallLocal,
   onFocusConnection,
   onDisconnect,
+  onRemoveConnection,
   onRefreshConnection,
   onOpenView,
   onNewVirtualSchema,
@@ -363,6 +370,7 @@ export function Sidebar({
   onInstallLocal: () => void;
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
+  onRemoveConnection: (profileId: string) => void;
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVirtualSchema: (profileId: string) => void;
@@ -526,11 +534,11 @@ export function Sidebar({
       {disconnected.map((p) => {
         const isLocal = p.host === "127.0.0.1" || p.host === "localhost";
         return (
+          <div key={p.id} className="group relative flex items-center">
           <button
-            key={p.id}
             data-agent-id={`sidebar.saved.${p.id}`}
             onClick={() => onConnectProfile(p.id)}
-            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
             title={`Connect to ${p.name} (${p.host}:${p.port})`}
           >
             <span
@@ -551,6 +559,15 @@ export function Sidebar({
               connect
             </span>
           </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemoveConnection(p.id); }}
+            title={`Remove ${p.name}`}
+            aria-label={`Remove ${p.name}`}
+            className="absolute right-1 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-destructive group-hover:flex"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          </div>
         );
       })}
     </div>
@@ -702,6 +719,7 @@ export function Sidebar({
               onOpenObject={(schema, name) => onOpenObject(conn.profile.id, schema, name)}
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
+              onRemove={() => onRemoveConnection(conn.profile.id)}
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
               onUploadDriver={() => onUploadDriver(conn.profile.id)}
