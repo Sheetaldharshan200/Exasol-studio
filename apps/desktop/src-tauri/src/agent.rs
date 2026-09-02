@@ -126,6 +126,15 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
         cmd.env("EXA_ENGINE_BIN", baseline);
         cmd.env("EXA_ENGINE_CONFIG_DIR", cfg_dir);
     }
+    // exapump (the data-load CLI the agent's shell uses) lives in the managed
+    // component dir, not on the GUI PATH — prepend it so the engine's shell
+    // finds it by name.
+    {
+        let bin_dir = state.data_dir.join("personal-local").join("bin");
+        let base = std::env::var("PATH").unwrap_or_default();
+        let sep = if std::env::consts::OS == "windows" { ";" } else { ":" };
+        cmd.env("PATH", format!("{}{}{}", bin_dir.to_string_lossy(), sep, base));
+    }
 
     let mut child = cmd
         .spawn()
@@ -217,6 +226,41 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         .map_err(|e| AppError::Assistant(format!("agent connection grant failed: {e}")))?;
     if !res.status().is_success() {
         return Err(AppError::Assistant("agent rejected the connection".into()));
+    }
+    // Keep exapump usable for the SAME database: the agent's data loads run
+    // `exapump upload … -p studio`, so provision/refresh that profile with
+    // this connection's credentials (best-effort — exapump may be absent).
+    // validate-certificate=false: the local Personal DB serves a self-signed
+    // cert that would otherwise fail every load.
+    {
+        let state = app.state::<AppState>();
+        let exapump = state.data_dir.join("personal-local").join("bin").join("exapump");
+        if exapump.exists() {
+            // Re-grant refreshes: drop any previous "studio" profile first.
+            let _ = std::process::Command::new(&exapump)
+                .args(["profile", "remove", "studio"])
+                .output();
+            let _ = std::process::Command::new(&exapump)
+                .args([
+                    "profile",
+                    "add",
+                    "studio",
+                    "--host",
+                    &profile.host,
+                    "--port",
+                    &profile.port.to_string(),
+                    "--user",
+                    &profile.username,
+                    "--password",
+                    &profile.password,
+                    "--tls",
+                    if profile.ssl_mode == "disabled" { "false" } else { "true" },
+                    "--validate-certificate",
+                    "false",
+                    "--default",
+                ])
+                .output();
+        }
     }
     Ok(())
 }

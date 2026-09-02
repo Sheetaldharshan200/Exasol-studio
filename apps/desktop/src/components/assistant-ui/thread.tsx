@@ -502,7 +502,7 @@ const ChainOfThoughtGroup: FC<PropsWithChildren<{ part: ThreadGroupPart }>> = ({
         onClick={() => setUserOpen(!open)}
         className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-[12.5px] transition-colors"
       >
-        <BrainIcon className={cn("size-3.5", running && "animate-pulse")} />
+        {running ? <BrandLoader size={14} /> : <BrainIcon className="size-3.5" />}
         <span>{running ? liveLabel : `Worked · ${steps} step${steps === 1 ? "" : "s"}`}</span>
         <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} />
       </button>

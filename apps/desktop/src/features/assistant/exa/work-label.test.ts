@@ -27,8 +27,8 @@ test("workingLabel routes reasoning vs tool vs unknown", () => {
   assert.equal(workingLabel(null), "Working");
 });
 
-test("workingStatus adds elapsed seconds only once meaningful", () => {
-  assert.equal(workingStatus("Thinking", 0), "Thinking…");
-  assert.equal(workingStatus("Thinking", 2.9), "Thinking…");
-  assert.equal(workingStatus("Querying the database", 12.6), "Querying the database… · 12s");
+test("workingStatus adds elapsed seconds only once meaningful — no dots", () => {
+  assert.equal(workingStatus("Thinking", 0), "Thinking");
+  assert.equal(workingStatus("Thinking", 2.9), "Thinking");
+  assert.equal(workingStatus("Querying the database", 12.6), "Querying the database · 12s");
 });

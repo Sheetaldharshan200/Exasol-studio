@@ -24,7 +24,7 @@ export function workingLabel(partType: string | null, toolName?: string | null):
   return "Working";
 }
 
-/** "Thinking… · 12s" — seconds shown once they're meaningful. */
+/** "Thinking · 12s" — plain text, no trailing dots; seconds once meaningful. */
 export function workingStatus(label: string, elapsedSeconds: number): string {
-  return elapsedSeconds >= 3 ? `${label}… · ${Math.floor(elapsedSeconds)}s` : `${label}…`;
+  return elapsedSeconds >= 3 ? `${label} · ${Math.floor(elapsedSeconds)}s` : label;
 }
