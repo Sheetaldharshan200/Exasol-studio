@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Maximize2, Minimize2, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
-import { agent, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
+import { agent, skills as skillsApi, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { ipc, isTauri } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
@@ -232,6 +232,26 @@ export function ExaEnginePanel({
   }, []);
   // The SDK client for the runtime — built once the engine reports its port.
   const [engineClient, setEngineClient] = useState<Awaited<ReturnType<typeof engineClientFor>> | null>(null);
+  // Install ALL skills into the agent by default (once): every bundled skill —
+  // including the exasol-ecosystem catalog — becomes an active default skill,
+  // so the agent starts with the full Exasol playbook. Idempotent via a flag.
+  useEffect(() => {
+    if (!engineClient) return;
+    if (localStorage.getItem("exa.skills.seededAll") === "1") return;
+    void (async () => {
+      try {
+        const all = await skillsApi.list();
+        if (!all.length) return; // skills not bundled yet — retry next mount
+        const names = all.map((sk) => sk.name).filter(Boolean);
+        const { settings } = await agent.getSettings();
+        const merged = [...new Set([...settings.defaultSkills, ...names])];
+        await agent.setSettings({ defaultSkills: merged });
+        localStorage.setItem("exa.skills.seededAll", "1");
+      } catch {
+        /* best-effort — retries on the next mount until it succeeds */
+      }
+    })();
+  }, [engineClient]);
   // Guards loadModels against out-of-order responses (slow first load
   // overwriting a post-key-save refresh).
   const loadSeq = useRef(0);
