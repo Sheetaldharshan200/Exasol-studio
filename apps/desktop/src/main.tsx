@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyWindowControlsInset } from "@/lib/platform";
 import { applyThemePreset } from "@/lib/theme-presets";
 import { installAppLog } from "@/lib/app-log";
+import { AppErrorBoundary } from "@/app/AppErrorBoundary";
 
 installAppLog(); // diagnostics tail FIRST — crashes before this die unrecorded
 applyWindowControlsInset();
@@ -15,11 +16,13 @@ applyThemePreset(); // restore the user's saved color preset + radius
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <TooltipProvider>
-        <App />
-      </TooltipProvider>
-    </ThemeProvider>
+    <AppErrorBoundary>
+      <ThemeProvider>
+        <TooltipProvider>
+          <App />
+        </TooltipProvider>
+      </ThemeProvider>
+    </AppErrorBoundary>
   </React.StrictMode>
 );
 
