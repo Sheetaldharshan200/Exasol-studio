@@ -2298,10 +2298,12 @@ export function ExasolStudio({
     const pos = editor?.getPosition();
     const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
     const sql = pickRunSql("auto", full, selection, cursorOffset);
-    await profileQuery(sql.trim() || full);
+    await profileQuery(sql.trim() || full, { explain: true });
   }
 
-  async function profileQuery(sql: string) {
+  // `explain: true` only from the Explain plan action (⌘⌥⏎): merely opening
+  // the Query Performance tab must never ping the AI.
+  async function profileQuery(sql: string, opts?: { explain?: boolean }) {
     const stmt = sql.trim().replace(/;\s*$/, "");
     if (!connection || profiling) return;
     const cid = connection.profile.id;
@@ -2423,9 +2425,11 @@ export function ExasolStudio({
       // grounded in this exact run, never guessed. Scope to the RUN's own
       // statements (rowsByStmt — never the window's internal queries), pick
       // the one that did the real work, and send only the compact table.
-      const aiRows = heaviestStatement(stmtIds.flatMap((id) => rowsByStmt.get(id) ?? []));
-      const planBlock = buildPlanBlock(aiRows, source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY");
-      if (planBlock) askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
+      if (opts?.explain) {
+        const aiRows = heaviestStatement(stmtIds.flatMap((id) => rowsByStmt.get(id) ?? []));
+        const planBlock = buildPlanBlock(aiRows, source === "DETAILS" ? "$EXA_PROFILE_DETAILS_LAST_DAY" : "EXA_USER_PROFILE_LAST_DAY");
+        if (planBlock) askExa(AI_SQL_PROMPTS["explain-plan"](plans[0]?.queryText || stmt).text + planBlock, { send: true });
+      }
     } catch (e) {
       patchTab(tab.id, { profileNote: `Profiling failed: ${errorMessage(e)}` });
     } finally {
