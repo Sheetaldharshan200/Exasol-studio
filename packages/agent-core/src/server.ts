@@ -152,6 +152,13 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
             return json(res, 502, { error: e instanceof Error ? e.message : "callback failed" });
           }
         }
+        // POST /v1/engine/apply-config — Studio wrote exa.json (shield grants,
+        // tool groups); the engine caches config with an infinite TTL, so a
+        // dispose is NOT enough — restart the running engine to load it.
+        if (req.method === "POST" && parts[2] === "apply-config" && !parts[3]) {
+          await engine.applyExternalConfigChange();
+          return json(res, 200, { ok: true });
+        }
         // GET/POST /v1/engine/network — the Exa agent's internet access
         // (sandboxed off by default; toggled from AI Settings → Guardrails).
         if (parts[2] === "network" && !parts[3]) {

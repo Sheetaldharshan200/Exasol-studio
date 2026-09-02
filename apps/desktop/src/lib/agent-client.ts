@@ -269,6 +269,9 @@ export const agent = {
     /** Flip the sandbox; `verified` false = config set but live enforcement
      * unconfirmed — surface it, never assume. Restarts a running engine. */
     setNetwork: (allow: boolean): Promise<{ ok: boolean; verified: boolean }> => api("/engine/network", "POST", { allow }),
+    /** Studio wrote exa.json (grants/tools) — restart the engine to load it
+     *  (its config cache has an infinite TTL; dispose is not enough). */
+    applyConfig: (): Promise<{ ok: boolean }> => api("/engine/apply-config", "POST"),
     sessions: (): Promise<{ sessions: EngineSessionInfo[] }> => api("/engine/sessions"),
     /** The engine's CONFIGURED providers/models (GET /config/providers). */
     providers: (): Promise<{ providers: EngineProviderInfo[]; defaults: Record<string, string> }> => api("/engine/providers"),
