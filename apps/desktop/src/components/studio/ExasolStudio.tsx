@@ -897,6 +897,24 @@ export function ExasolStudio({
   }
   moveTabRef.current = moveTab;
 
+  // Remove a saved connection entirely (not just disconnect): confirm, drop
+  // any live pool, delete the profile from the vault, and refresh the list.
+  async function removeConnection(profileId: string) {
+    const p = profiles.find((x) => x.id === profileId);
+    const name = p?.name ?? "this connection";
+    if (!window.confirm(`Remove ${name}? The saved connection and its password are deleted. The database itself is not touched.`)) return;
+    if (connections.some((c) => c.profile.id === profileId)) onDisconnect(profileId);
+    try {
+      await ipc.deleteConnectionProfile(profileId);
+    } catch (e) {
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Could not remove connection", body: errorMessage(e) } }),
+      );
+      return;
+    }
+    await onSaved?.();
+  }
+
   // Connect to a saved profile from the Welcome "Recent" list (or fall back to
   // the connect form if it can't connect straight away).
   async function connectSaved(profileId: string) {
@@ -2739,6 +2757,7 @@ export function ExasolStudio({
               onInstallLocal={() => void ipc.personalLocalBootstrap().catch(() => undefined)}
               onFocusConnection={onFocusConnection}
               onDisconnect={onDisconnect}
+              onRemoveConnection={(id) => void removeConnection(id)}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
               onNewVirtualSchema={openVs}
