@@ -55,6 +55,7 @@ import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripS
 import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
 import { describeTabForContext, readActiveNotebook } from "./tab-context";
+import { UdfBuilder } from "@/features/workbench/UdfBuilder";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
@@ -207,6 +208,18 @@ export function ExasolStudio({
   const [autoCommit, setAutoCommit] = useState(true);
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
+  // The visual UDF builder block (opens above the editor).
+  const [udfBuilderOpen, setUdfBuilderOpen] = useState(false);
+  const insertIntoEditor = (text: string) => {
+    const editor = editorRef.current;
+    if (editor) {
+      const sel = editor.getSelection();
+      editor.executeEdits("udf-insert", [{ range: sel ?? editor.getModel()!.getFullModelRange(), text: `${text}\n`, forceMoveMarkers: true }]);
+      editor.focus();
+    } else {
+      patchTab(activeTab.id, { sql: activeTab.sql ? `${activeTab.sql.trimEnd()}\n\n${text}\n` : `${text}\n` });
+    }
+  };
   const [historyIdx, setHistoryIdx] = useState(-1);
   // The editor text the user had typed before stepping into SQL history, so
   // "next" past the newest entry restores it instead of losing it.
@@ -3072,6 +3085,9 @@ export function ExasolStudio({
                 <IconButton label="Show the query builder pane" active={queryBuilderOpen} onClick={() => setQueryBuilderOpen((q) => !q)}>
                   <Blocks className="h-3.5 w-3.5" />
                 </IconButton>
+                <IconButton label="Build a UDF script" active={udfBuilderOpen} onClick={() => setUdfBuilderOpen((v) => !v)}>
+                  <span className="font-mono text-[13px] font-bold leading-none">ƒ</span>
+                </IconButton>
 
                 {/* Execution settings */}
                 <DropdownMenu>
@@ -3406,6 +3422,15 @@ export function ExasolStudio({
                     }}
                     onDecline={() => setInlineDiff(null)}
                   />
+                ) : null}
+                {udfBuilderOpen ? (
+                  <div className="shrink-0 border-b border-border p-2">
+                    <UdfBuilder
+                      onInsert={(sql) => { insertIntoEditor(sql); setUdfBuilderOpen(false); }}
+                      onRun={connected ? (sql) => { insertIntoEditor(sql); setUdfBuilderOpen(false); window.setTimeout(() => void run("buffer"), 60); } : undefined}
+                      onClose={() => setUdfBuilderOpen(false)}
+                    />
+                  </div>
                 ) : null}
                 <div className="min-h-0 flex-1">
                 <Editor
