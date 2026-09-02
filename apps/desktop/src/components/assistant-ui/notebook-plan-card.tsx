@@ -26,6 +26,9 @@ export const NotebookPlanBlock: FC<{ code: string }> = ({ code }) => {
   const create = () => {
     addNotebookDoc(plan.title, plan.cells);
     window.dispatchEvent(new Event("studio:open-notebook"));
+    // Run + verify automatically once the tab has mounted and loaded the new
+    // cells — the user lands on rendered results/charts, not empty editors.
+    window.setTimeout(() => window.dispatchEvent(new Event("studio:notebook-run-all")), 700);
     setCreated(true);
   };
   return (
@@ -58,7 +61,7 @@ export const NotebookPlanBlock: FC<{ code: string }> = ({ code }) => {
         >
           {created ? (
             <>
-              <Check className="h-3.5 w-3.5 text-primary" /> Notebook created — opening
+              <Check className="h-3.5 w-3.5 text-primary" /> Notebook created — opening & running
             </>
           ) : (
             <>
