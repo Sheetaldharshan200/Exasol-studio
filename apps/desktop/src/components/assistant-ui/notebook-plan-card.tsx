@@ -26,9 +26,8 @@ export const NotebookPlanBlock: FC<{ code: string }> = ({ code }) => {
   const create = () => {
     addNotebookDoc(plan.title, plan.cells);
     window.dispatchEvent(new Event("studio:open-notebook"));
-    // Run + verify automatically once the tab has mounted and loaded the new
-    // cells — the user lands on rendered results/charts, not empty editors.
-    window.setTimeout(() => window.dispatchEvent(new Event("studio:notebook-run-all")), 700);
+    // Auto-run rides a persisted flag (set by addNotebookDoc): the Notebook
+    // tab runs all cells once it has actually loaded them — no timing race.
     setCreated(true);
   };
   return (

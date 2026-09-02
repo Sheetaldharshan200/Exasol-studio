@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
+import React, { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { AgentMark } from "@/components/studio/AgentMark";
@@ -95,9 +95,30 @@ const mkCell = (type: CellType = "sql", src = "", chart?: string): Cell => ({
 
 export type NotebookConn = { id: string; name: string; host: string };
 
+/** @monaco-editor/react 4.7 can call setModel on an editor its own StrictMode
+ *  double-invoked effect already disposed (throws "_throwIfDisposed"). One
+ *  keyed retry mounts a fresh instance — invisible; repeated failure shows an
+ *  inline note instead of crashing the app. */
+class MonacoCellBoundary extends React.Component<{ children: React.ReactNode }, { retry: number }> {
+  state = { retry: 0 };
+  static getDerivedStateFromError() {
+    return null;
+  }
+  componentDidCatch(err: Error) {
+    if (this.state.retry < 2) this.setState((s) => ({ retry: s.retry + 1 }));
+    else console.error("[notebook] editor crashed repeatedly", err);
+  }
+  render() {
+    if (this.state.retry >= 2) {
+      return <p className="px-3 py-2 text-[11.5px] text-destructive">The editor crashed — switch the cell type and back to reload it.</p>;
+    }
+    return <React.Fragment key={this.state.retry}>{this.props.children}</React.Fragment>;
+  }
+}
+
 // Persistence keys live in notebook-store.ts so other features (the chat's
 // "Create notebook" card) can add notebooks without mounting this tab.
-import { NB_ACTIVE_KEY, NB_KEY, NBS_KEY } from "./notebook-store";
+import { NB_ACTIVE_KEY, NB_KEY, NB_PENDING_RUN_KEY, NBS_KEY } from "./notebook-store";
 
 type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string; viz?: CellViz }[]; updatedAt: number };
 
@@ -376,8 +397,7 @@ export function NotebookTab({
       runningAll.current = false;
     }
   }
-  // Run-all on request (the chat's "Create notebook" card runs + verifies the
-  // fresh notebook automatically). Ref so the listener sees current cells.
+  // Run-all on request. Ref so the listener sees current cells.
   const runAllRef = useRef(runAll);
   runAllRef.current = runAll;
   useEffect(() => {
@@ -385,6 +405,15 @@ export function NotebookTab({
     window.addEventListener("studio:notebook-run-all", on);
     return () => window.removeEventListener("studio:notebook-run-all", on);
   }, []);
+  // The chat's "Create notebook" card sets a persisted pending-run flag; run
+  // all cells once THIS tab has actually loaded that notebook — flag-based,
+  // so there is no mount-timing race (and a crash-recovery re-render retries).
+  useEffect(() => {
+    if (localStorage.getItem(NB_PENDING_RUN_KEY) !== activeId || cells.length === 0) return;
+    localStorage.removeItem(NB_PENDING_RUN_KEY);
+    const t = window.setTimeout(() => void runAllRef.current(), 250);
+    return () => window.clearTimeout(t);
+  }, [activeId, cells.length]);
 
   // The assistant's "Apply" targets the pinned cell: write the SQL in, run it.
   useEffect(() => {
@@ -722,21 +751,17 @@ export function NotebookTab({
               onRemove={() => remove(cell.id)}
               index={i}
               onAsk={() => {
-                if (cell.type === "sql") {
-                  // Pin: the assistant gets the cell as a chip and a mandate
-                  // to work on it; its final SQL applies back here and runs.
-                  // Open the panel FIRST — a closed panel has no pin listener.
-                  window.dispatchEvent(new Event("studio:assistant-open"));
-                  window.setTimeout(() => {
-                    window.dispatchEvent(
-                      new CustomEvent("exa:pin-cell", {
-                        detail: { cellId: cell.id, index: i, sql: cell.src, chart: cell.chart ?? null, connection: cell.connName ?? null },
-                      }),
-                    );
-                  }, 150);
-                } else {
-                  onAsk(cell.src, cell.type, cell.chart);
-                }
+                // Pin (all cell types): the assistant gets the cell as a chip
+                // and a mandate to work on it; its final fenced block applies
+                // back here. Open the panel FIRST — closed panels don't listen.
+                window.dispatchEvent(new Event("studio:assistant-open"));
+                window.setTimeout(() => {
+                  window.dispatchEvent(
+                    new CustomEvent("exa:pin-cell", {
+                      detail: { cellId: cell.id, index: i, cellType: cell.type, sql: cell.src, chart: cell.chart ?? null, connection: cell.connName ?? null },
+                    }),
+                  );
+                }, 150);
               }}
               queued={runQueue.has(cell.id)}
               dragging={dragId === cell.id}
@@ -1000,6 +1025,7 @@ const CellView = memo(function CellView({
               // Monaco SQL cell — Exasol autocompletion comes from the app-global
               // completion provider on the shared monaco instance.
               <div style={{ height: editorHeight }} className="pt-1">
+                <MonacoCellBoundary>
                 <Editor
                   // Remount on position change: React REORDERS cells by moving
                   // DOM nodes, and Monaco's view dies on a moved node (uncaught
@@ -1036,6 +1062,7 @@ const CellView = memo(function CellView({
                     fixedOverflowWidgets: true,
                   }}
                 />
+                </MonacoCellBoundary>
               </div>
             ) : (
               // Markdown / Mermaid source editor (preview-first: render on run).
