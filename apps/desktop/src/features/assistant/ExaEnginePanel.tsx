@@ -583,7 +583,7 @@ export function ExaEnginePanel({
     // a \`\`\`notebook fence (see notebook-plan.ts for the contract).
     const dataDirective =
       "Attached data files (CSV/Parquet/…) arrive as SAVED FILE PATHS, never inline — do not read whole data files into the conversation. " +
-      "To load one into Exasol: derive columns from the header preview, CREATE the table (CREATE class), then load the data with EXAPUMP FIRST — the shell tool is enabled while write classes are granted. exapump is on PATH and the 'studio' profile is pre-configured for the connected database: exapump upload \"<path>\" --table SCHEMA.TABLE -p studio (exports: exapump export … -p studio). " +
+      "To load one into Exasol, use EXAPUMP FIRST — the shell tool is enabled while write classes are granted, exapump is on PATH and the 'studio' profile is pre-configured for the connected database. exapump INFERS AND CREATES the table itself — never hand-write CREATE TABLE for a load (create only the target SCHEMA if it doesn't exist yet): exapump upload \"<path>\" --table SCHEMA.TABLE -p studio (preview the inferred columns with --dry-run; exports: exapump export … -p studio). " +
       "Only when exapump/shell is unavailable, fall back to IMPORT (INSERT class): IMPORT INTO schema.table FROM LOCAL CSV FILE '<path>' COLUMN SEPARATOR = ',' SKIP = 1. " +
       "If CREATE/INSERT are not granted, ask ONCE for the shield grants (name the exact classes), then proceed — never dump file contents as a workaround.";
     const insightDirective =
