@@ -1001,6 +1001,12 @@ const CellView = memo(function CellView({
               // completion provider on the shared monaco instance.
               <div style={{ height: editorHeight }} className="pt-1">
                 <Editor
+                  // Remount on position change: React REORDERS cells by moving
+                  // DOM nodes, and Monaco's view dies on a moved node (uncaught
+                  // 'this.domNode.setClassName' storms in its rAF runner — the
+                  // drag-reorder black screen). A keyed remount is clean; the
+                  // value is controlled so nothing is lost.
+                  key={`${cell.id}:${index}`}
                   height="100%"
                   defaultLanguage="sql"
                   theme={editorTheme}
