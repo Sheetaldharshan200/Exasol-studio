@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildUdfSql, DEFAULT_UDF_SPEC, type UdfSpec } from "./udf-builder.ts";
+import { buildUdfSql, DEFAULT_UDF_SPEC, parseScriptLanguages, type UdfSpec } from "./udf-builder.ts";
 
 const spec = (over: Partial<UdfSpec> = {}): UdfSpec => ({ ...DEFAULT_UDF_SPEC, ...over });
 
@@ -44,4 +44,18 @@ test("each language produces its own skeleton", () => {
 test("orReplace toggles CREATE vs CREATE OR REPLACE", () => {
   assert.ok(buildUdfSql(spec({ orReplace: false })).includes("\nCREATE PYTHON3"));
   assert.ok(!buildUdfSql(spec({ orReplace: false })).includes("OR REPLACE"));
+});
+
+test("parseScriptLanguages: DB aliases + always Lua; new languages appear", () => {
+  const langs = parseScriptLanguages("PYTHON3=localzmq/... JAVA=builtin_java R=builtin_r");
+  const ids = langs.map((l) => l.id).sort();
+  assert.deepEqual(ids, ["JAVA", "LUA", "PYTHON3", "R"]);
+  // A newly-installed SLC alias flows through with no code change.
+  assert.ok(parseScriptLanguages("PYTHON3=x JULIA=y").some((l) => l.id === "JULIA"));
+  assert.equal(parseScriptLanguages("PYTHON3=x JULIA=y").find((l) => l.id === "PYTHON3")?.label, "Python");
+});
+
+test("parseScriptLanguages: empty/null still yields Lua (always built in)", () => {
+  assert.deepEqual(parseScriptLanguages(null).map((l) => l.id), ["LUA"]);
+  assert.deepEqual(parseScriptLanguages("").map((l) => l.id), ["LUA"]);
 });

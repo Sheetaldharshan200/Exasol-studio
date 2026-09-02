@@ -56,6 +56,7 @@ import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
 import { describeTabForContext, readActiveNotebook } from "./tab-context";
 import { UdfBuilder } from "@/features/workbench/UdfBuilder";
+import { DEFAULT_UDF_LANGS, parseScriptLanguages, type UdfLangOption } from "@/features/workbench/udf-builder";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
@@ -210,6 +211,24 @@ export function ExasolStudio({
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   // The visual UDF builder block (opens above the editor).
   const [udfBuilderOpen, setUdfBuilderOpen] = useState(false);
+  // Languages the connected DB actually offers for UDFs — read live from its
+  // SCRIPT_LANGUAGES parameter so a newly-installed SLC shows up with no code
+  // change (Lua is always included by the parser).
+  const [udfLangs, setUdfLangs] = useState<UdfLangOption[]>(DEFAULT_UDF_LANGS);
+  useEffect(() => {
+    const conn = connectionRef.current;
+    if (!conn) { setUdfLangs(DEFAULT_UDF_LANGS); return; }
+    let alive = true;
+    ipc
+      .executeSql(conn.profile.id, conn.profile.name, "SELECT SYSTEM_VALUE FROM SYS.EXA_PARAMETERS WHERE PARAMETER_NAME = 'SCRIPT_LANGUAGES'", 1, false, false)
+      .then((res) => {
+        if (!alive) return;
+        const row = res.results.find((r) => r.kind === "resultSet")?.rows?.[0];
+        setUdfLangs(parseScriptLanguages(row ? String(row[0] ?? "") : null));
+      })
+      .catch(() => alive && setUdfLangs(DEFAULT_UDF_LANGS));
+    return () => { alive = false; };
+  }, [connection]);
   const insertIntoEditor = (text: string) => {
     const editor = editorRef.current;
     if (editor) {
@@ -251,48 +270,32 @@ export function ExasolStudio({
   const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
   const sqlCatalogRef = useRef<SqlCatalog>(emptyCatalog());
-  const refreshSqlCatalog = useCallback(() => {
+  // Monotonic token so a slow refresh can never overwrite a newer one, and the
+  // two queries build ONE atomic snapshot (the old code let the columns query
+  // clobber freshly-set scripts, or vice-versa). A full rebuild each time means
+  // a DROPed schema simply isn't in the new snapshot — it disappears at once.
+  const catalogReq = useRef(0);
+  const refreshSqlCatalog = useCallback(async () => {
     const conn = connectionRef.current;
     if (!conn) return;
-    ipc
-      .executeSql(
-        conn.profile.id,
-        conn.profile.name,
+    const token = ++catalogReq.current;
+    const rowsOf = async (sql: string, cap: number): Promise<unknown[][]> => {
+      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, sql, cap, false, false).catch(() => null);
+      const t = res?.results.find((r) => r.kind === "resultSet");
+      return (t?.rows as unknown[][]) ?? [];
+    };
+    const [cols, scriptRows] = await Promise.all([
+      rowsOf(
         "SELECT COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS') ORDER BY 1, 2 LIMIT 20000",
         20000,
-        false,
-        false,
-      )
-      .then((res) => {
-        const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
-        if (table?.rows) {
-          const scripts = sqlCatalogRef.current.scripts;
-          sqlCatalogRef.current = buildCatalog(table.rows as unknown[][]);
-          sqlCatalogRef.current.scripts = scripts;
-        }
-      })
-      .catch(() => undefined);
-    // User UDFs / Lua / adapter scripts → suggested like built-in functions.
-    ipc
-      .executeSql(
-        conn.profile.id,
-        conn.profile.name,
-        "SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000",
-        2000,
-        false,
-        false,
-      )
-      .then((res) => {
-        const table = res.results.find((r) => r.kind === "resultSet" && r.rows?.length);
-        if (table?.rows) {
-          sqlCatalogRef.current.scripts = (table.rows as unknown[][]).map((r) => ({
-            schema: String(r[0] ?? ""),
-            name: String(r[1] ?? ""),
-            type: String(r[2] ?? "SCRIPT"),
-          }));
-        }
-      })
-      .catch(() => undefined);
+      ),
+      rowsOf("SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000", 2000),
+    ]);
+    // A newer refresh already started (or won) — drop this stale result.
+    if (token !== catalogReq.current || conn.profile.id !== connectionRef.current?.profile.id) return;
+    const next = buildCatalog(cols);
+    next.scripts = scriptRows.map((r) => ({ schema: String(r[0] ?? ""), name: String(r[1] ?? ""), type: String(r[2] ?? "SCRIPT") }));
+    sqlCatalogRef.current = next;
   }, []);
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
@@ -302,9 +305,16 @@ export function ExasolStudio({
   useEffect(() => {
     sqlCatalogRef.current = emptyCatalog();
     if (!connection) return;
-    refreshSqlCatalog();
+    void refreshSqlCatalog();
+    const onChanged = () => void refreshSqlCatalog();
+    window.addEventListener("studio:catalog-changed", onChanged);
+    window.addEventListener("studio:git-changed", onChanged); // agent commits often follow DDL
     const timer = window.setInterval(refreshSqlCatalog, 45_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("studio:catalog-changed", onChanged);
+      window.removeEventListener("studio:git-changed", onChanged);
+    };
   }, [connection, refreshSqlCatalog]);
   const tabCounter = useRef(1);
   // Imperative handles for the collapsible side panels.
@@ -684,7 +694,7 @@ export function ExasolStudio({
       const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
       window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
       return { ok: true };
     } catch (e) {
@@ -709,7 +719,7 @@ export function ExasolStudio({
         }
       }
       loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
       setTreeKeys((k) => ({ ...k, [conn.profile.id]: (k[conn.profile.id] ?? 0) + 1 }));
       window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: conn.profile.id } }));
       return { ok: true };
@@ -728,7 +738,7 @@ export function ExasolStudio({
       await ipc.executeSql(profileId, conn.profile.name, sql, 1, false);
       setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
       loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
       setObjAction(null);
     } catch (e) {
       patchTab(activeTab.id, { execError: errorMessage(e), resultView: "results" });
@@ -1542,7 +1552,7 @@ export function ExasolStudio({
           ),
         );
         loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
       } catch (e) {
         updateTabs(key, (list) => list.map((t) => (t.id === tab.id ? { ...t, execError: errorMessage(e) } : t)));
       } finally {
@@ -2077,7 +2087,7 @@ export function ExasolStudio({
           });
         }
         loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
       } catch (err) {
         patchTab(activeTab.id, {
           execError: errorMessage(err),
@@ -2605,7 +2615,7 @@ export function ExasolStudio({
     try {
       await ipc.executeSql(connection.profile.id, connection.profile.name, action, maxRows, false);
       loadHistory();
-      refreshSqlCatalog();
+      void refreshSqlCatalog();
     } catch {
       /* ignore */
     }
@@ -3426,6 +3436,7 @@ export function ExasolStudio({
                 {udfBuilderOpen ? (
                   <div className="shrink-0 border-b border-border p-2">
                     <UdfBuilder
+                      langs={udfLangs}
                       onInsert={(sql) => { insertIntoEditor(sql); setUdfBuilderOpen(false); }}
                       onRun={connected ? (sql) => { insertIntoEditor(sql); setUdfBuilderOpen(false); window.setTimeout(() => void run("buffer"), 60); } : undefined}
                       onClose={() => setUdfBuilderOpen(false)}
