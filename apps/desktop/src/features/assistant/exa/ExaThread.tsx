@@ -242,7 +242,7 @@ export type ExaComposerApi = {
    * mode directives, quote injection. Returns the final engine text, or
    * null when the input was a local command it handled itself.
    */
-  expandForSend: (text: string, quote?: string) => string | null;
+  expandForSend: (text: string, quote?: string, opts?: { trusted?: boolean }) => string | null;
   /**
    * `!command` — run a shell command through the engine (the TUI's shell
    * mode). Injected by ExaThread, which owns the client and session.
@@ -1668,7 +1668,7 @@ export function ExaThread({
     const onPrompt = (e: Event) => {
       // Two ExaThreads can be mounted (side dock + full tab, one agent) —
       // the first listener claims the event so the prompt sends exactly once.
-      const detail = (e as CustomEvent<{ text?: string; send?: boolean; claimed?: boolean }>).detail;
+      const detail = (e as CustomEvent<{ text?: string; send?: boolean; trusted?: boolean; claimed?: boolean }>).detail;
       if (!detail || detail.claimed) return;
       detail.claimed = true;
       const text = detail.text?.trim();
@@ -1682,7 +1682,7 @@ export function ExaThread({
             runtime.thread.composer.setText(text);
             return;
           }
-          const expanded = apiWithShell.expandForSend(text);
+          const expanded = apiWithShell.expandForSend(text, undefined, { trusted: detail.trusted === true });
           runtime.thread.composer.setText(expanded ?? text);
           await runtime.thread.composer.send();
         } catch (err) {

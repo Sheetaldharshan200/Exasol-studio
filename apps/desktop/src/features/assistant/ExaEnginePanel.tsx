@@ -547,15 +547,17 @@ export function ExaEnginePanel({
    * manual @-chips, mode directives and quotes — returning the final engine
    * text, or null when the input was a local command handled here.
    */
-  function expandForSend(text: string, quote?: string): string | null {
+  function expandForSend(text: string, quote?: string, opts?: { trusted?: boolean }): string | null {
     const slash = pendingCommand ? { command: pendingCommand, arg: text.trim() } : parseSlash(text);
     if (slash?.command.kind === "local") {
       setPendingCommand(null);
       runLocal(slash.command.id as LocalCommandId);
       return null;
     }
-    // A user typing the literal sentinel tags must not break the stripping.
-    let engine = neutralizeSentinels(text);
+    // A user typing the literal sentinel tags must not break the stripping —
+    // but APP-COMPOSED prompts (Explain plan) legitimately carry a sentinel
+    // block of their own and must keep it.
+    let engine = opts?.trusted ? text : neutralizeSentinels(text);
     let allChips = chips; // manual @-context chips from the composer
     if (slash) {
       const snap = (getSnapshot ?? (() => EMPTY_SNAPSHOT))();
