@@ -404,6 +404,11 @@ export function ExaModelSelector({
     <DropdownMenu
       open={open}
       onOpenChange={(o) => {
+        // Keep the menu OPEN while an OAuth flow is mid-way: opening the browser
+        // blurs the app window, which Radix treats as an outside interaction and
+        // would otherwise dismiss the menu — taking the code-paste box with it,
+        // so the user could never enter the code.
+        if (!o && oauth) return;
         onOpenChange?.(o);
         if (o) fetchCatalog();
         else {
@@ -437,7 +442,16 @@ export function ExaModelSelector({
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5">
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        collisionPadding={12}
+        className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5"
+        onInteractOutside={(e) => oauth && e.preventDefault()}
+        onFocusOutside={(e) => oauth && e.preventDefault()}
+        onPointerDownOutside={(e) => oauth && e.preventDefault()}
+        onEscapeKeyDown={(e) => oauth && e.preventDefault()}
+      >
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -504,6 +518,9 @@ export function ExaModelSelector({
                     className="max-h-80 w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
                     sideOffset={6}
                     collisionPadding={12}
+                    onInteractOutside={(e) => oauth && e.preventDefault()}
+                    onFocusOutside={(e) => oauth && e.preventDefault()}
+                    onEscapeKeyDown={(e) => oauth && e.preventDefault()}
                   >
                     {connectFlow(c)}
                   </DropdownMenuSubContent>
@@ -528,6 +545,9 @@ export function ExaModelSelector({
                         className="max-h-72 w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
                         sideOffset={6}
                         collisionPadding={12}
+                        onInteractOutside={(e) => oauth && e.preventDefault()}
+                        onFocusOutside={(e) => oauth && e.preventDefault()}
+                        onEscapeKeyDown={(e) => oauth && e.preventDefault()}
                       >
                         {needsKey(p) ? (
                           // Unconnected cloud providers get the SAME engine-

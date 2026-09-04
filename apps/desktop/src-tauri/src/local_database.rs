@@ -247,7 +247,7 @@ while time.monotonic() < deadline:
         raise SystemExit(0)
     except Exception as error:
         last_error = error
-        time.sleep(5)
+        time.sleep(3)
     finally:
         if connection is not None:
             try:
@@ -388,9 +388,10 @@ fn query_ready_runtime(
                 "info",
             );
             let fresh = crate::local_runtime::redeploy_managed(app, JOB_ID)?;
-            // A brand-new deploy cold-boots slowly — wait it out generously; if
-            // the credential still mismatches, try the master password.
-            match validate_with_deadline(app, python, &fresh, 180) {
+            // The DB is ready ~15s after a restart, so 60s covers a cold boot.
+            // Waiting longer only stalls a CREDENTIAL mismatch (which never fixes
+            // itself) — on failure, jump straight to the master-password recovery.
+            match validate_with_deadline(app, python, &fresh, 60) {
                 Ok(()) => Ok(fresh),
                 Err(_) => recover_personal_auth(app, python, &fresh),
             }
