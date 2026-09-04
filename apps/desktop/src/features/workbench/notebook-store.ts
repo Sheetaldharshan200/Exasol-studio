@@ -29,3 +29,51 @@ export function addNotebookDoc(title: string, cells: NotebookCellSeed[]): string
   window.dispatchEvent(new Event("studio:notebooks-changed"));
   return id;
 }
+
+/** A stored notebook, read by linked dashboards to sync their content. */
+export type StoredNotebook = {
+  id: string;
+  title: string;
+  cells: Array<{ type: "sql" | "markdown" | "mermaid"; src: string; chart?: string; viz?: { xField?: string; yFields?: string[] } }>;
+  updatedAt: number;
+};
+
+/** Read one notebook by id (or null). */
+export function readNotebook(id: string): StoredNotebook | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NBS_KEY) ?? "[]");
+    if (Array.isArray(raw)) return (raw as StoredNotebook[]).find((b) => b.id === id) ?? null;
+  } catch {
+    /* corrupt store */
+  }
+  return null;
+}
+
+/** Make a notebook active and open/refresh the Notebook tab on it. */
+export function focusNotebook(id: string): void {
+  localStorage.setItem(NB_ACTIVE_KEY, id);
+  window.dispatchEvent(new Event("studio:notebooks-changed"));
+  window.dispatchEvent(new Event("studio:open-notebook"));
+}
+
+/** List saved notebooks (id + title), for the Notebooks rail panel. */
+export function listNotebooks(): Array<{ id: string; title: string; updatedAt: number }> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NBS_KEY) ?? "[]");
+    if (Array.isArray(raw)) return (raw as StoredNotebook[]).map((b) => ({ id: b.id, title: b.title, updatedAt: b.updatedAt ?? 0 }));
+  } catch {
+    /* corrupt store */
+  }
+  return [];
+}
+
+/** Delete a notebook and tell mounted notebook views to reload. */
+export function deleteNotebook(id: string): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NBS_KEY) ?? "[]");
+    if (Array.isArray(raw)) localStorage.setItem(NBS_KEY, JSON.stringify(raw.filter((b: StoredNotebook) => b.id !== id)));
+  } catch {
+    /* nothing to delete */
+  }
+  window.dispatchEvent(new Event("studio:notebooks-changed"));
+}

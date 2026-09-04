@@ -463,3 +463,13 @@ export function buildCatalog(rows: unknown[][]): SqlCatalog {
   }
   return cat;
 }
+
+// A process-wide shared catalog so surfaces beyond the main editor (e.g. the
+// dashboard's widget query editor) get the same Exasol completions. The app's
+// catalog refresh writes here; any Monaco editor can register completion against
+// getSharedCatalog without threading the ref through the tree.
+let sharedCatalog: SqlCatalog = emptyCatalog();
+export const getSharedCatalog = (): SqlCatalog => sharedCatalog;
+export const setSharedCatalog = (cat: SqlCatalog): void => {
+  sharedCatalog = cat;
+};

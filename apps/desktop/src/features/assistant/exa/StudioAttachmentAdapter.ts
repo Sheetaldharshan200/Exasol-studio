@@ -1,7 +1,8 @@
 import { generateId, type AttachmentAdapter, type CompleteAttachment, type PendingAttachment } from "@assistant-ui/react";
 import { OpenCodeAttachmentAdapter } from "@assistant-ui/react-opencode";
 import { ipc } from "@/lib/ipc";
-import { buildDataFileNote, routeAttachment } from "./attachment-routing";
+import { buildDataFileNote, buildFolderNote, routeAttachment } from "./attachment-routing";
+import { FOLDER_MIME, folderFiles, isFolderAttachment, readFolderManifest, releaseFolder } from "./folder-attachment";
 import { wrapMachineContext } from "./context";
 
 /**
@@ -17,11 +18,25 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
   accept = `${this.base.accept},.parquet,.xlsx,.xls,.jsonl,.ndjson`;
 
   async add(state: { file: File }): Promise<PendingAttachment> {
-    if (routeAttachment(state.file.name, state.file.size) === "disk") {
+    // A whole folder rides as one synthetic attachment → one chip.
+    if (isFolderAttachment(state.file)) {
       return {
         id: generateId(),
         type: "file",
         name: state.file.name,
+        contentType: FOLDER_MIME,
+        file: state.file,
+        status: { type: "requires-action", reason: "composer-send" },
+      };
+    }
+    if (routeAttachment(state.file.name, state.file.size) === "disk") {
+      return {
+        id: generateId(),
+        type: "file",
+        // Keep the folder-relative path (from the folder picker) as the name so
+        // the chip and the note show WHICH subfolder a file came from, and two
+        // same-named CSVs in different subfolders don't collide on disk.
+        name: relName(state.file),
         contentType: state.file.type || "application/octet-stream",
         file: state.file,
         status: { type: "requires-action", reason: "composer-send" },
@@ -31,10 +46,32 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
   }
 
   async send(attachment: PendingAttachment): Promise<CompleteAttachment> {
+    // Folder attachment: save every file in the group to disk (keeping the
+    // subfolder in the name so nothing collides) and emit ONE note listing them.
+    if (isFolderAttachment(attachment.file)) {
+      const manifest = await readFolderManifest(attachment.file);
+      const files = manifest ? folderFiles(manifest.groupId) : [];
+      const items: { name: string; size: number; path: string }[] = [];
+      try {
+        for (const f of files) {
+          const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+          const path = await ipc.saveAttachment(rel, await fileToBase64(f));
+          items.push({ name: rel, size: f.size, path });
+        }
+      } finally {
+        // Always drop the in-memory File[] — even if a save failed partway — so
+        // large folder picks can't accumulate in memory.
+        if (manifest) releaseFolder(manifest.groupId);
+      }
+      const folder = manifest?.folder ?? attachment.name;
+      const note = wrapMachineContext(buildFolderNote(folder, items));
+      return { ...attachment, status: { type: "complete" }, content: [{ type: "text", text: note }] };
+    }
     if (routeAttachment(attachment.file.name, attachment.file.size) !== "disk") {
       return this.base.send(attachment);
     }
-    const path = await ipc.saveAttachment(attachment.file.name, await fileToBase64(attachment.file));
+    const logicalName = relName(attachment.file);
+    const path = await ipc.saveAttachment(logicalName, await fileToBase64(attachment.file));
     // Header preview only for text-like data — binary formats get path+size.
     const textLike = /\.(csv|tsv|jsonl|ndjson)$/i.test(attachment.file.name);
     const firstLines = textLike
@@ -42,7 +79,7 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
       : undefined;
     // Sentinel-wrapped: the model reads the note, the rendered user message
     // shows only the attachment chip and what the user actually typed.
-    const note = wrapMachineContext(buildDataFileNote(path, attachment.file.name, attachment.file.size, firstLines));
+    const note = wrapMachineContext(buildDataFileNote(path, logicalName, attachment.file.size, firstLines));
     return {
       ...attachment,
       status: { type: "complete" },
@@ -51,6 +88,15 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
   }
 
   async remove(): Promise<void> {}
+}
+
+/** The folder-relative path when a file came from the folder picker
+ *  (webkitRelativePath, e.g. "datasets/sales/2024.csv"), else the bare name.
+ *  This is the logical name — it preserves subfolder structure so the model can
+ *  group a dataset and map each subfolder to its own schema. */
+function relName(file: File): string {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+  return rel && rel.trim() ? rel : file.name;
 }
 
 /** File → raw base64 via FileReader (data-URL, prefix stripped) — the same

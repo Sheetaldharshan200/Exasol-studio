@@ -211,6 +211,9 @@ const SUGGESTION_GROUPS: SuggestionGroup[] = [
 export type ExaComposerApi = {
   providers: AgentProviderInfo[];
   model: PickedModel | null;
+  /** Whether the selected model's provider is connected and has models — send is
+   *  blocked when false so a message never hangs against a disconnected model. */
+  modelReady: boolean;
   onPickModel: (m: PickedModel) => void;
   onSaveKey: (providerId: string, key: string) => Promise<void>;
   getSnapshot: () => ExaSnapshot;
@@ -231,6 +234,8 @@ export type ExaComposerApi = {
   /** Which SQL operation classes the agent may use (read is always on). */
   sqlOps: SqlOps;
   setSqlOps: (ops: SqlOps) => void;
+  /** The grant sync + engine restart is in flight (shield shows applying). */
+  sqlOpsApplying?: boolean;
   /** Presentation persona for the whole chat (null = adaptive). */
   persona: string | null;
   setPersona: (name: string | null) => void;
@@ -493,7 +498,7 @@ function ExaPersonaSelector({ persona, onChange }: { persona: string | null; onC
  * turns into a hard directive (and the guardrail prompt already refuses
  * destructive SQL that was never requested).
  */
-function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: SqlOps) => void }) {
+function ExaSqlOpsSelector({ ops, onChange, applying }: { ops: SqlOps; onChange: (ops: SqlOps) => void; applying?: boolean }) {
   const [open, setOpen] = useState(false);
   // Draft state: toggling stages changes; nothing hits the engine until Save.
   // (Applying restarts the engine to load the grants — too disruptive to do
@@ -505,10 +510,12 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
   }, [open, ops]);
   const grantedCount = Object.values(ops).filter(Boolean).length;
   const dirty = (Object.keys(draft) as (keyof SqlOps)[]).some((k) => draft[k] !== ops[k]);
-  const save = () => {
-    onChange(draft); // commits → engine restarts with the new grants
-    setOpen(false);
+  // Closing the shield commits any staged toggles — ticking and then dismissing
+  // is treated as Save, so a change is never silently lost.
+  const commit = () => {
+    if (dirty) onChange(draft); // commits → engine restarts with the new grants
   };
+  const save = () => setOpen(false); // triggers commit via onOpenChange
   useEffect(() => {
     if (open) document.body.dataset.exaMenuOpen = "1";
     else delete document.body.dataset.exaMenuOpen;
@@ -517,7 +524,7 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
     };
   }, [open]);
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={(o) => { if (!o) commit(); setOpen(o); }}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -527,12 +534,27 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
             grantedCount ? "text-syntax-function" : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <ShieldCheckIcon className="h-3.5 w-3.5" />
-          <span className="hidden whitespace-nowrap @md:inline">{grantedCount ? `Read +${grantedCount}` : "Read-only"}</span>
+          {applying ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheckIcon className="h-3.5 w-3.5" />}
+          <span className="hidden whitespace-nowrap @md:inline">{applying ? "Applying…" : grantedCount ? `Read +${grantedCount}` : "Read-only"}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
-        <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</DropdownMenuLabel>
+        <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 flex items-center justify-between border-b border-border bg-popover px-3 py-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</span>
+          <button
+            type="button"
+            onClick={save}
+            disabled={(!dirty && !applying) || applying}
+            title={applying ? "Applying grants & refreshing the engine…" : dirty ? "Save & refresh the AI engine" : "No changes"}
+            className={cn(
+              "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
+              dirty && !applying ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
+            )}
+          >
+            {applying ? <Loader2Icon className="h-3 w-3 animate-spin" /> : <ShieldCheckIcon className="h-3 w-3" />}
+            {applying ? "Applying…" : "Save"}
+          </button>
+        </div>
         <DropdownMenuCheckboxItem checked disabled className="text-[12px]">
           <span className="flex min-w-0 flex-col">
             <span>Read — always allowed</span>
@@ -560,23 +582,9 @@ function ExaSqlOpsSelector({ ops, onChange }: { ops: SqlOps; onChange: (ops: Sql
           </div>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-          Ungranted classes are refused even if a task seems to need them. Saving refreshes the AI engine so the change takes effect.
+        <p className="px-2 pb-1 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+          Ungranted classes are refused even if a task seems to need them. Saving (or closing the shield after a change) refreshes the AI engine so it takes effect.
         </p>
-        <div className="px-2 pt-1.5 pb-1">
-          <button
-            type="button"
-            onClick={save}
-            disabled={!dirty}
-            className={cn(
-              "flex h-7 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors",
-              dirty ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
-            )}
-          >
-            <ShieldCheckIcon className="h-3.5 w-3.5" />
-            {dirty ? "Save & refresh engine" : "No changes"}
-          </button>
-        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -893,6 +901,7 @@ export function ExaComposerControls() {
       <ExaModelSelector
         providers={api.providers}
         model={api.model}
+        notReady={!api.modelReady}
         onPick={api.onPickModel}
         onSaveKey={api.onSaveKey}
         onConnected={api.onConnected}
@@ -909,7 +918,7 @@ export function ExaComposerControls() {
         <ModeIcon className="h-3.5 w-3.5" />
         <span className="hidden @md:inline">{modeInfo.label}</span>
       </button>
-      <ExaSqlOpsSelector ops={api.sqlOps} onChange={api.setSqlOps} />
+      <ExaSqlOpsSelector ops={api.sqlOps} onChange={api.setSqlOps} applying={api.sqlOpsApplying} />
       <ExaPersonaSelector persona={api.persona} onChange={api.setPersona} />
       <ExaNetworkToggle network={api.network} onToggle={api.setNetwork} />
     </div>
@@ -934,6 +943,17 @@ export function ExaSendButton() {
     const raw = (text ?? "").trim();
     if (!api || isRunning) return;
     if (!raw && !hasAttachments) return;
+    // No usable model (provider disconnected / no key) → don't send into a hang.
+    // Keep the text, open the provider menu, and tell the user why.
+    if (!api.modelReady) {
+      window.dispatchEvent(new CustomEvent("exa:open-providers"));
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: { kind: "warning", title: "No AI model connected", body: "Connect or reconnect an AI provider, then send your message." },
+        }),
+      );
+      return;
+    }
     // `!command` — shell mode, exactly like the TUI: the engine runs the
     // command in this session and the output arrives as a normal turn.
     if (raw.startsWith("!") && raw.length > 1 && api.runShell) {

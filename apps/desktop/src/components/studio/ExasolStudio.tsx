@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { registerExasolCompletion, buildCatalog, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
+import { registerExasolCompletion, buildCatalog, emptyCatalog, setSharedCatalog, type SqlCatalog } from "@/lib/sql-completion";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
 import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, GitCommitHorizontal, Info, MoreHorizontal, Loader2, PanelRight, Pin, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X } from "lucide-react";
 import { RunScriptIcon, RunCurrentIcon, RunExplainIcon, RunBufferIcon } from "./run-icons";
@@ -40,6 +40,7 @@ import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/feat
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import { GitPanel } from "@/features/workbench/GitPanel";
 import { NotebookTab } from "@/features/workbench/NotebookTab";
+import { DashboardTab } from "@/features/dashboard/DashboardTab";
 import { Icon } from "@/components/ui/icon";
 import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite } from "@/lib/favorites";
@@ -296,6 +297,7 @@ export function ExasolStudio({
     const next = buildCatalog(cols);
     next.scripts = scriptRows.map((r) => ({ schema: String(r[0] ?? ""), name: String(r[1] ?? ""), type: String(r[2] ?? "SCRIPT") }));
     sqlCatalogRef.current = next;
+    setSharedCatalog(next); // expose to the dashboard widget query editor
   }, []);
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
@@ -304,6 +306,7 @@ export function ExasolStudio({
   // immediately instead of only after reconnecting.
   useEffect(() => {
     sqlCatalogRef.current = emptyCatalog();
+    setSharedCatalog(emptyCatalog());
     if (!connection) return;
     void refreshSqlCatalog();
     const onChanged = () => void refreshSqlCatalog();
@@ -472,6 +475,7 @@ export function ExasolStudio({
       { id: "act-query", kind: "action", label: "New query", keywords: "sql editor", run: () => void openBuiltSql("", false) },
       { id: "act-connect", kind: "action", label: "Connect a database…", keywords: "add connection", run: () => openConnect() },
       { id: "act-notebook", kind: "action", label: "Open the Notebook", keywords: "cells charts dashboards artifact", run: () => openNotebook() },
+      { id: "act-dashboard", kind: "action", label: "Open a Dashboard", keywords: "dashboard canvas widgets charts kpi tiles visualize", run: () => openDashboard() },
       { id: "act-market", kind: "action", label: "Open the Marketplace", keywords: "extensions install components", run: () => openMarketplace() },
       { id: "act-skills", kind: "action", label: "Open Skills", keywords: "agent skills claude codex", run: () => openSkills() },
       { id: "act-assistant", kind: "action", label: "Toggle the AI assistant", keywords: "exa chat panel", run: () => toggleAi() },
@@ -548,8 +552,13 @@ export function ExasolStudio({
     const onDocs = (e: Event) => openDocsTab((e as CustomEvent<{ path?: string }>).detail?.path);
     // The chat's "Create notebook" card lands the user in the new notebook.
     const onNotebook = () => openNotebook();
+    const onDashboard = (e: Event) => {
+      const d = (e as CustomEvent<{ id?: string; title?: string }>).detail;
+      openDashboard(d?.id ?? "default", d?.title ?? "Dashboard");
+    };
     window.addEventListener("studio:open-docs", onDocs);
     window.addEventListener("studio:open-notebook", onNotebook);
+    window.addEventListener("studio:open-dashboard", onDashboard);
     // App-control bridge: the assistant opens views / manages tabs here.
     const openActivity = (id: ActivityId) => { setActivity(id); setSidebarOpen(true); sidebarPanelRef.current?.expand(); };
     const onMkt = () => openMarketplace();
@@ -589,6 +598,7 @@ export function ExasolStudio({
     return () => {
       window.removeEventListener("studio:open-docs", onDocs);
       window.removeEventListener("studio:open-notebook", onNotebook);
+      window.removeEventListener("studio:open-dashboard", onDashboard);
       window.removeEventListener("studio:open-marketplace", onMkt);
       window.removeEventListener("studio:open-visualizer", onVis);
       window.removeEventListener("studio:open-git", onGit);
@@ -1854,7 +1864,7 @@ export function ExasolStudio({
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills" | "dashboard", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -1875,6 +1885,27 @@ export function ExasolStudio({
   }
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
+  /** Open (or focus) a dashboard tab for a specific saved dashboard id. */
+  function openDashboard(id = "default", title = "Dashboard") {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "dashboard" && (t.dashboardId ?? "default") === id);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-dash-${Date.now()}-${tabCounter.current}`,
+      title,
+      view: "dashboard",
+      dashboardId: id,
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
 
 
 
@@ -2767,15 +2798,16 @@ export function ExasolStudio({
               openGuides();
               return;
             }
-            if (id === "git" || id === "notebook" || id === "skills") {
-              // Full-page tabs (Source Control, Notebook, Skills).
+            if (id === "git" || id === "skills") {
+              // Full-page tabs (Source Control, Skills).
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
               if (id === "git") openGit();
-              else if (id === "notebook") openNotebook();
               else openSkills();
               return;
             }
+            // Notebooks / Dashboards are LIST panels in the sidebar (fall through
+            // to the panel branch below); clicking a list item opens the tab.
             if (id === activity && sidebarOpen) {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -3352,6 +3384,15 @@ export function ExasolStudio({
                   This plan tab has no data — profile a query from its Query Performance view.
                 </div>
               )}
+            </div>
+          ) : activeTab.view === "dashboard" ? (
+            <div className="min-h-0 flex-1">
+              <DashboardTab
+                key={activeTab.dashboardId ?? "default"}
+                dashboardId={activeTab.dashboardId ?? "default"}
+                profileId={connection?.profile.id ?? null}
+                connectionName={connection?.profile.name ?? ""}
+              />
             </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">

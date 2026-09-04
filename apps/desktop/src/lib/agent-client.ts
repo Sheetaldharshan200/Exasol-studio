@@ -134,6 +134,20 @@ export const agent = {
     await api(`/gateway/action/${encodeURIComponent(id)}/result`, "POST", result).catch(() => undefined);
   },
 
+  // Dashboard live-share control (served by the isolated share server, not this gateway).
+  async shareStart(id: string, html: string, host?: string): Promise<{ ok: boolean; port: number; token: string }> {
+    return await api("/gateway/share/start", "POST", { id, html, host });
+  },
+  async sharePublish(id: string, html: string): Promise<void> {
+    await api("/gateway/share/publish", "POST", { id, html }).catch(() => undefined);
+  },
+  async shareRotate(id: string): Promise<{ ok: boolean; token?: string }> {
+    return await api("/gateway/share/rotate", "POST", { id });
+  },
+  async shareStop(id: string): Promise<void> {
+    await api("/gateway/share/stop", "POST", { id }).catch(() => undefined);
+  },
+
   /** One-shot SQL rewrite for the editor's inline diff (no chat session). */
   async rewriteSql(
     sql: string,

@@ -30,6 +30,7 @@ export type TabView =
   | "mcpConfig"
   | "git"
   | "notebook"
+  | "dashboard"
   | "skills"
   | "connProps"
   | "plan"
@@ -50,6 +51,8 @@ export type SqlTab = {
   view: TabView;
   /** For "docs" tabs — deep link below /docs/studio (e.g. "connections/drivers"). */
   docsPath?: string;
+  /** For "dashboard" tabs — which saved dashboard this tab shows (default "default"). */
+  dashboardId?: string;
   /** Result panel sub-view (defaults to "results" when unset). */
   resultView?: ResultView;
   /** For "connect" tabs — pre-fill the new-connection form (e.g. the bundled
@@ -146,6 +149,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   artifact: "file",
   git: "git",
   notebook: "notebook",
+  dashboard: "dashboard-grid",
   skills: "skills",
   plan: "clock-dashed-half",
   logs: "list",

@@ -17,6 +17,8 @@ mod skills_market;
 mod verified_lock;
 mod driver_exec;
 mod drivers;
+mod cloudflared;
+mod dashboards;
 mod error;
 mod exapump;
 mod files;
@@ -60,6 +62,7 @@ pub fn run() {
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::terminal::TermRegistry::default());
+            app.manage(crate::cloudflared::CloudflaredProc::default());
             crate::updates::start(app.handle().clone());
             crate::verified_lock::start(app.handle().clone());
             app.manage(crate::local_database::LocalBootstrap::default());
@@ -121,6 +124,13 @@ pub fn run() {
             files::save_attachment,
             files::install_cli,
             files::append_app_log,
+            dashboards::dashboard_read,
+            dashboards::dashboard_write,
+            dashboards::dashboard_delete,
+            dashboards::dashboard_list,
+            cloudflared::cloudflared_ensure,
+            cloudflared::cloudflared_start,
+            cloudflared::cloudflared_stop,
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,

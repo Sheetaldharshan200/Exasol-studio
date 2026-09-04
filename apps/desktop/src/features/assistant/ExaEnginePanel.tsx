@@ -110,6 +110,12 @@ export function ExaEnginePanel({
       /* private mode */
     }
   };
+  // Is the SELECTED model actually usable right now? The pick persists across
+  // restarts, so a provider can disconnect (key cleared / OAuth expired) while
+  // its model stays selected. When it's not ready we block send (no silent
+  // hang) and flag the model pill to reconnect.
+  const selectedProvider = model ? providers.find((p) => p.id === model.providerID) : undefined;
+  const modelReady = Boolean(model && selectedProvider && selectedProvider.configured !== false && (selectedProvider.models?.length ?? 0) > 0);
   // Composer state — the registry composer inside ExaThread reads/writes it
   // through the ExaComposerContext api object below.
   const [mode, setMode] = useState<ChatMode>("agent");
@@ -149,13 +155,39 @@ export function ExaEnginePanel({
     // the engine for us so the grants and tool groups actually take effect.
     await agent.engine.applyConfig().catch(() => undefined);
   }, []);
+  // Applying feedback + error surfacing (the sandbox toggle does the same). The
+  // grant sync + engine restart takes a moment; without this the shield's Save
+  // looked like it did nothing, and a failed sync was swallowed silently.
+  const [sqlOpsApplying, setSqlOpsApplying] = useState(false);
+  const sqlOpsFirstRun = useRef(true);
   useEffect(() => {
     if (!isTauri()) return;
     const granted = (Object.keys(sqlOps) as (keyof SqlOps)[]).filter((k) => sqlOps[k]);
+    setSqlOpsApplying(true);
     void ipc
       .engineOpsSync(granted)
       .then(() => disposeEngineInstance())
-      .catch(() => undefined);
+      .then(() => {
+        // Announce only user-initiated changes, not the initial mount sync.
+        if (!sqlOpsFirstRun.current) {
+          window.dispatchEvent(
+            new CustomEvent("studio:notice", {
+              detail: { kind: "info", title: "SQL grants updated", body: granted.length ? `The agent may now run: ${granted.join(", ").toUpperCase()}.` : "The agent is read-only again." },
+            }),
+          );
+        }
+      })
+      .catch((e) =>
+        window.dispatchEvent(
+          new CustomEvent("studio:notice", {
+            detail: { kind: "warning", title: "Couldn't apply SQL grants", body: `${e instanceof Error ? e.message : String(e)} — the shield change did not take effect. Try again.` },
+          }),
+        ),
+      )
+      .finally(() => {
+        sqlOpsFirstRun.current = false;
+        setSqlOpsApplying(false);
+      });
   }, [sqlOps, disposeEngineInstance]);
   // Settings → Tools & Plugins changed the tool grants: rebuild the instance
   // so the new permissions bind.
@@ -630,13 +662,19 @@ export function ExaEnginePanel({
       "If a required component is NOT installed, do NOT fail silently and do NOT fake a result: use the question tool to ask the user whether to install it (name the exact component, e.g. 'JSON Tables', with Yes/No choices). " +
       "On Yes, tell them it installs from the Marketplace (Marketplace → the component → Install) and offer to continue the load/test the moment it's installed; on No, explain what you can still do without it. " +
       "Tailor the depth to the user: an executive gets the outcome and the one decision; a developer gets the component name, version, and the exact SQL/driver detail.";
+    // Dashboard authoring via the app-control bridge (only when it's enabled).
+    // A request to CREATE A DASHBOARD must build a freeform canvas, not a
+    // linear notebook — the assistant composes it by op through control_app.
+    const dashboardDirective = appControlOn
+      ? "CREATE A DASHBOARD (the user asks for a dashboard, BI view, or a visual report OF data — not a plain notebook): build a freeform CANVAS with the control_app tool, never a linear notebook. Steps: call control_app{action:'dashboard_open'} once, then one control_app{action:'dashboard_add_widget', args:{...}} per widget. Widget types: 'markdown' (args.props.text — a title + one-line framing), 'kpi' (args.query returning one headline number), 'chart' (args.query + args.props.kind one of bar/line/area/pie/donut/scatter), 'table' (args.query for detail), 'filter'/'search' (args.props.param — writes a dashboard parameter). Compose a real dashboard: a markdown title, 2–4 KPI tiles for headline numbers, 1–3 charts for trends/breakdowns, optionally a table. Give each widget an args.layout {x,y,w,h} on a 12-column grid (KPIs w:3 h:2 across the top row; charts w:6 h:4 below). For interactivity add a 'filter' or 'search' widget whose args.props.param names a parameter, and reference it as :param in the other widgets' queries. A bad op returns an error and leaves the dashboard unchanged — read it and fix the op, don't retry blindly."
+      : "";
     const netDirective = networkAllowed
       ? "Internet access is ENABLED: webfetch and websearch are in your tool list. When the user asks about web content — fetching or summarizing a page, looking something up — use them and help directly (still as Exa); that is IN scope while internet access is on."
       : "You are SANDBOXED with no internet access: the webfetch/websearch tools are denied engine-side and absent from your tool list. Never claim you can browse, search the web, or fetch URLs; if asked, say internet access is off and can be enabled with the globe control next to the mode switcher.";
     // Persona + personalization (Settings → AI): read at send time so an edit
     // in Settings shapes the very next message, no reload anywhere.
     const personaDirective = styleDirective(persona, loadAiStyle());
-    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, capabilityDirective, netDirective, personaDirective]
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, capabilityDirective, dashboardDirective, netDirective, personaDirective]
       .filter(Boolean)
       .join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel
@@ -750,6 +788,7 @@ export function ExaEnginePanel({
         composerApi={{
           providers,
           model,
+          modelReady,
           onPickModel: pickModel,
           onSaveKey: saveKey,
           getSnapshot: getSnapshot ?? (() => EMPTY_SNAPSHOT),
@@ -780,6 +819,7 @@ export function ExaEnginePanel({
           expandForSend,
           sqlOps,
           setSqlOps,
+          sqlOpsApplying,
           persona,
           setPersona,
           network: { allowed: networkAllowed, applying: networkApplying },

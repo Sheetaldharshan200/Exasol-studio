@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildDataFileNote, extractDataFileNotes, fileExt, fmtBytes, INLINE_LIMIT_BYTES, routeAttachment } from "./attachment-routing.ts";
+import { buildDataFileNote, buildFolderNote, extractDataFileNotes, fileExt, fmtBytes, INLINE_LIMIT_BYTES, routeAttachment } from "./attachment-routing.ts";
 
 test("data extensions go to disk regardless of size", () => {
   assert.equal(routeAttachment("orders.csv", 10), "disk");
@@ -41,6 +41,35 @@ test("extractDataFileNotes round-trips what buildDataFileNote emits", () => {
   assert.deepEqual(notes[0], { name: "customer.csv", size: "478 KB", path: "/tmp/att/customer.csv" });
   assert.equal(notes[1].name, "line item.csv");
   assert.equal(notes[1].path, "/tmp/att/line item.csv");
+});
+
+test("a folder-relative name adds the subfolder→schema hint; a bare name does not", () => {
+  const folder = buildDataFileNote("/tmp/att/datasets_sales_2024.csv", "datasets/sales/2024.csv", 100, ["a,b"]);
+  assert.ok(folder.includes("part of an attached folder"));
+  assert.ok(folder.includes("immediate parent folder as its Exasol schema"));
+  const flat = buildDataFileNote("/tmp/att/orders.csv", "orders.csv", 100, ["a,b"]);
+  assert.ok(!flat.includes("part of an attached folder"));
+});
+
+test("extractDataFileNotes recovers a folder-relative name (slashes in the name)", () => {
+  const note = buildDataFileNote("/tmp/att/datasets_sales_2024.csv", "datasets/sales/2024.csv", 100);
+  const [got] = extractDataFileNotes(note);
+  assert.equal(got.name, "datasets/sales/2024.csv");
+  assert.equal(got.path, "/tmp/att/datasets_sales_2024.csv");
+});
+
+test("buildFolderNote lists every file and its pins extract", () => {
+  const note = buildFolderNote("datasets", [
+    { name: "datasets/sales/2023.csv", size: 2048, path: "/att/datasets_sales_2023.csv" },
+    { name: "datasets/sales/2024.csv", size: 1024, path: "/att/datasets_sales_2024.csv" },
+    { name: "datasets/customers/list.csv", size: 512, path: "/att/datasets_customers_list.csv" },
+  ]);
+  assert.ok(note.includes('Attached folder "datasets" with 3 file(s)'));
+  assert.ok(note.includes("immediate parent subfolder as the Exasol schema"));
+  const pins = extractDataFileNotes(note);
+  assert.equal(pins.length, 3);
+  assert.equal(pins[0].name, "datasets/sales/2023.csv");
+  assert.equal(pins[2].path, "/att/datasets_customers_list.csv");
 });
 
 test("extractDataFileNotes ignores unrelated text", () => {

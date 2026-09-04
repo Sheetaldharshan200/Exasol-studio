@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, Unplug, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ExternalLink, KeyRound, Loader2, Search, Settings2, Unplug, X } from "lucide-react";
 import { agent, type AgentProviderInfo, type EngineAuthMethod, type EngineCatalogProvider, type EngineOAuthAuthorization } from "@/lib/agent-client";
 import { ProviderMark, ModelBadges } from "@/features/assistant/provider-marks";
 import {
@@ -34,9 +34,12 @@ export function ExaModelSelector({
   loadCatalog,
   open,
   onOpenChange,
+  notReady,
 }: {
   providers: AgentProviderInfo[];
   model: PickedModel | null;
+  /** The picked model's provider is disconnected — flag the trigger to reconnect. */
+  notReady?: boolean;
   onPick: (m: PickedModel) => void;
   onSaveKey: (providerId: string, key: string) => Promise<void>;
   /** Called after an OAuth connect succeeds (refresh providers/models). */
@@ -402,10 +405,17 @@ export function ExaModelSelector({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title="Provider & models"
-          className="hover:bg-muted focus-visible:bg-muted flex h-7 min-w-0 max-w-[170px] items-center gap-1.5 rounded-full px-2.5 text-[12px] text-foreground/80 outline-none transition-colors @md:max-w-[260px]"
+          title={notReady ? "This model's provider is disconnected — click to reconnect" : "Provider & models"}
+          className={cn(
+            "hover:bg-muted focus-visible:bg-muted flex h-7 min-w-0 max-w-[170px] items-center gap-1.5 rounded-full px-2.5 text-[12px] outline-none transition-colors @md:max-w-[260px]",
+            notReady ? "text-amber-600 ring-1 ring-amber-500/40 dark:text-amber-400" : "text-foreground/80",
+          )}
         >
-          {model ? <ProviderMark providerId={model.providerID} className="h-3.5 w-3.5 shrink-0" /> : null}
+          {notReady ? (
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          ) : model ? (
+            <ProviderMark providerId={model.providerID} className="h-3.5 w-3.5 shrink-0" />
+          ) : null}
           <span className="truncate">
             {model
               ? providers.find((p) => p.id === model.providerID)?.models.find((m) => m.id === model.modelID)?.name ?? model.modelID

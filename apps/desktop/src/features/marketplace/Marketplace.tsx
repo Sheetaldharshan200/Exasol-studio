@@ -59,6 +59,7 @@ import {
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
 import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -164,36 +165,11 @@ function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset 
   return byOsArch ?? byOs ?? assets[0];
 }
 
-/** True only when `remote` is a STRICTLY newer version than `local` (numeric
- * segment compare; mirrors the Rust is_newer). Equal, older, or non-numeric
- * versions return false — so an install that's rolled back or ahead of Studio's
- * catalog is never offered a "downgrade" disguised as an update. */
-function isNewerVersion(remote: string | null | undefined, local: string | null | undefined): boolean {
-  if (!remote || !local) return false;
-  const seg = (v: string) => v.replace(/^v/i, "").trim().split(/[.\-+]/).map((p) => (/^\d+$/.test(p) ? parseInt(p, 10) : NaN));
-  const a = seg(remote);
-  const b = seg(local);
-  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
-  const width = Math.max(a.length, b.length);
-  for (let i = 0; i < width; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x !== y) return x > y;
-  }
-  return false;
-}
 
 /** Catalog items that ARE managed components. Their installed state + version
  * is the AUTHORITATIVE `list_components` value (single source of truth), not the
  * marketplace manifest or a presence heuristic — and updating them lives in the
  * Managed Components panel (verify-or-refuse), not the catalog card. */
-const CATALOG_TO_COMPONENT: Record<string, string> = {
-  "exasol-personal": "personal",
-  exapump: "exapump",
-  "mcp-server": "mcp-server",
-  "semantic-views": "semantic-views",
-};
-
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
@@ -374,6 +350,15 @@ export function Marketplace() {
 
   useEffect(() => {
     refresh();
+    // Keep an OPEN Marketplace in sync with the catalog source in the background
+    // (the catalog.json mirror updates on its own cadence); light local reads +
+    // one catalog fetch, so it never disrupts the user.
+    const iv = window.setInterval(() => {
+      refresh();
+      refreshReleases();
+    }, 10 * 60 * 1000);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   // Kick the release fetch once the page is ready (painted) — never before, so
@@ -1675,9 +1660,22 @@ function IndependentComponents({
     void ipc
       .componentsUpstream()
       .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      .catch(() => setUpstream({}));
+      // On failure keep the last-known tags (or {} on the very first attempt) so
+      // a transient rate-limit doesn't hide a real update behind "up to date".
+      .catch(() => setUpstream((prev) => prev ?? {}));
   }, []);
   useEffect(() => refreshUpstream(), [refreshUpstream]);
+  // Re-check the installed list + upstream tags periodically so an OPEN Updates
+  // tab converges with the background poller — otherwise a slow/rate-limited
+  // first upstream fetch could latch "all up to date" while the badge (which
+  // polled successfully) says an update is available.
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      void refresh();
+      refreshUpstream();
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(iv);
+  }, [refresh, refreshUpstream]);
   const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
   useEffect(() => {
     if (!anyBusy) return;
