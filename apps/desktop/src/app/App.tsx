@@ -3,6 +3,7 @@ import { ExasolStudio } from "@/components/studio/ExasolStudio";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { SetupPacks, PENDING_PACK_KEY } from "@/features/onboarding/SetupPacks";
 import { UpdateBanner } from "@/features/onboarding/UpdateBanner";
+import { useMarketplaceUpdateBadge } from "@/features/marketplace/use-update-badge";
 import { Tour, STUDIO_TOUR } from "@/features/onboarding/Tour";
 import { ConnectRunWindow } from "@/features/connection/ConnectRunWindow";
 import { VirtualSchemaWindow } from "@/features/connection/VirtualSchemaWindow";
@@ -223,7 +224,15 @@ function MainApp() {
       />
       {showTour ? <Tour steps={STUDIO_TOUR} onClose={endTour} /> : null}
       <UpdateBanner />
+      <MarketplaceUpdateWatcher />
       <LocalSetupFloating />
     </>
   );
+}
+
+/** Runs the background Marketplace-update poller only in the main window (after
+ *  App's sub-window early returns), so it never fires in the tiny helper windows. */
+function MarketplaceUpdateWatcher() {
+  useMarketplaceUpdateBadge();
+  return null;
 }

@@ -18,6 +18,7 @@ import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 import { EngineService } from "./engine/engine-service.ts";
 import { localBaseURL } from "./providers.ts";
+import { startShare, publishShare, stopShare, rotateShare, shareStatus } from "./share-server.ts";
 
 // Minimal localhost HTTP + SSE server. No framework by design: six routes,
 // token auth, and Server-Sent Events — node:http covers all of it.
@@ -442,7 +443,11 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       // POST /gateway/action — the agent asks the app to do something. Queued
       // for the webview; resolves with its result (or times out if no app).
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "action" && !parts[3]) {
-        if (!config.get().appControl) {
+        // appControl lives under config.agent (AgentSettings), read via settings()
+        // — NOT as a top-level AgentConfig field. Reading config.get().appControl
+        // was always undefined, so this gate rejected every action even with the
+        // toggle ON.
+        if (!config.settings().appControl) {
           return json(res, 200, { ok: false, error: "App control is turned off in AI Settings — ask the user to enable it." });
         }
         const body = await readBody<{ action?: string; args?: unknown }>(req);
@@ -478,6 +483,36 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const body = await readBody<{ ok?: boolean; data?: unknown; error?: string }>(req);
         item.resolve({ ok: body.ok !== false, data: body.data, error: body.error });
         return json(res, 200, { ok: true });
+      }
+
+      // Dashboard live-share control (webview-driven; the shared page is served
+      // by the SEPARATE isolated share server, never this gateway port).
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "start") {
+        const body = await readBody<{ id?: string; html?: string; host?: string }>(req);
+        if (!body.id || typeof body.html !== "string") return json(res, 400, { error: "id and html required" });
+        const { port, token } = await startShare(body.id, body.html, body.host);
+        return json(res, 200, { ok: true, port, token });
+      }
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "publish") {
+        const body = await readBody<{ id?: string; html?: string }>(req);
+        if (!body.id || typeof body.html !== "string") return json(res, 400, { error: "id and html required" });
+        return json(res, 200, { ok: publishShare(body.id, body.html) });
+      }
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "rotate") {
+        const body = await readBody<{ id?: string }>(req);
+        if (!body.id) return json(res, 400, { error: "id required" });
+        const token = rotateShare(body.id);
+        return json(res, 200, { ok: Boolean(token), token });
+      }
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "stop") {
+        const body = await readBody<{ id?: string }>(req);
+        if (!body.id) return json(res, 400, { error: "id required" });
+        stopShare(body.id);
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "status") {
+        const id = new URL(req.url ?? "/", "http://x").searchParams.get("id") ?? "";
+        return json(res, 200, shareStatus(id));
       }
 
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "nl2sql") {

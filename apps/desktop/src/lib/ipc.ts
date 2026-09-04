@@ -685,6 +685,16 @@ export const ipc = {
     call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
+  // ── Dashboards: one JSON file per dashboard under <data>/dashboards. The
+  //    document shape lives in features/dashboard/store.ts; Rust only does I/O.
+  dashboardRead: (id: string) => call<string | null>("dashboard_read", { id }),
+  dashboardWrite: (id: string, json: string) => call<void>("dashboard_write", { id, json }),
+  dashboardDelete: (id: string) => call<void>("dashboard_delete", { id }),
+  dashboardList: () => call<Array<{ id: string; title: string }>>("dashboard_list"),
+  // Public sharing tunnel (cloudflared quick tunnel in front of the share server).
+  cloudflaredEnsure: () => call<string>("cloudflared_ensure"),
+  cloudflaredStart: (port: number) => call<string>("cloudflared_start", { port }),
+  cloudflaredStop: () => call<void>("cloudflared_stop"),
   /** Logical backup (DDL + per-table CSV) of every user schema; progress via
    *  the `backup-progress:<profileId>` event. */
   backupNow: (profileId: string, connectionName: string) =>

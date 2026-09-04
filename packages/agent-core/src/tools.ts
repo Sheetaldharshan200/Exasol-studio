@@ -14,9 +14,9 @@ import type { Skill } from "./skills.ts";
 import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
 import { TaskManager } from "./a2a.ts";
 import { exapumpLoad, findExapump } from "./exapump.ts";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename, resolve, sep } from "node:path";
 import type { TurnBoard, Finding } from "./board.ts";
 import { parquetReadObjects } from "hyparquet";
 import uiMap from "../data/ui-map.json" with { type: "json" };
@@ -693,14 +693,16 @@ export function buildTools(ctx: {
           import_csv: tool({
             description:
               "Load an attached data file (CSV, TSV, other delimited text, or Parquet) into a REAL Exasol table. This is the correct way to 'add', 'load', 'import', or 'pump' an uploaded data file into the database — never write IMPORT/EXA_PUMP SQL by hand. " +
-              "It auto-detects the format and delimiter, infers column names and types (tolerating messy rows), creates the schema and table if needed, and bulk-inserts the rows (one approval covers the whole load). Repeat per file to load several into the same schema.",
+              "Accepts EITHER an in-chat docId OR a saved file `path` (data files and whole folders travel as 'saved to: <path>' notes — use `path` for those). " +
+              "It auto-detects the format and delimiter, infers column names and types (tolerating messy rows), creates the schema and table if needed, and bulk-inserts the rows (one approval covers the whole load). Repeat per file to load several. For a folder attachment, call it once per file, using each file's immediate parent subfolder as its schema.",
             inputSchema: z.object({
-              docId: z.string().describe("The attached file's id (from the attachment note or search_documents)"),
-              schema: z.string().describe("Target schema, e.g. 'TPCH' (created if missing)"),
+              docId: z.string().optional().describe("The attached file's id (from the attachment note or search_documents)"),
+              path: z.string().optional().describe("Absolute path of a saved data file, taken from an 'Attached data file \"…\" saved to: <path>' note. Use this for folder attachments and any data file that was saved to disk. Provide docId OR path."),
+              schema: z.string().describe("Target schema, e.g. 'TPCH' (created if missing). For a folder attachment, use each file's immediate parent subfolder as its schema."),
               table: z.string().optional().describe("Target table; defaults to the file name without extension"),
               replace: z.boolean().optional().describe("Drop and recreate the table first (default: create if missing, then append)"),
             }),
-            execute: async ({ docId, schema, table, replace }) => {
+            execute: async ({ docId, path: filePath, schema, table, replace }) => {
               const id = requireConn();
               if (ctx.readOnly) {
                 return { denied: true, message: "This researcher context is read-only; it cannot load data." };
@@ -708,10 +710,33 @@ export function buildTools(ctx: {
               if (ctx.settings?.writePolicy === "deny") {
                 return { denied: true, message: "Writes are disabled in this workspace's AI guardrails, so files can't be loaded." };
               }
-              const file = ctx.documents!.raw(session.id, docId);
-              if (!file) {
-                const docs = ctx.documents!.list(session.id);
-                return { error: `No attached file with id "${docId}". Attached: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ") || "none"}.` };
+              // Resolve the source file from EITHER a saved disk path (folder /
+              // data-file attachments travel as a path note) or an in-memory docId.
+              let file: { name: string; text: string; mime: string; binary?: boolean } | null = null;
+              if (filePath) {
+                // Containment: only load files Studio itself saved (the chat
+                // attachment folder). Never read an arbitrary model-supplied path.
+                const attachDir = join(homedir(), "ExasolStudio", "attachments");
+                const resolved = resolve(filePath);
+                if (resolved !== attachDir && !resolved.startsWith(attachDir + sep)) {
+                  return { error: "import_csv only loads files saved under the Studio attachments folder. Attach the file (or folder) in chat first, then load it by its saved path." };
+                }
+                try {
+                  const buf = await readFile(resolved);
+                  const base = basename(resolved) || "attachment";
+                  const isPq = /\.parquet$/i.test(base);
+                  file = { name: base, mime: isPq ? "application/vnd.apache.parquet" : "text/csv", binary: isPq, text: isPq ? buf.toString("base64") : buf.toString("utf8") };
+                } catch (e) {
+                  return { error: `Could not read the data file at "${filePath}": ${e instanceof Error ? e.message : String(e)}.` };
+                }
+              } else if (docId) {
+                file = ctx.documents!.raw(session.id, docId) ?? null;
+                if (!file) {
+                  const docs = ctx.documents!.list(session.id);
+                  return { error: `No attached file with id "${docId}". Attached: ${docs.map((d) => `${d.name} (id ${d.id})`).join(", ") || "none"}.` };
+                }
+              } else {
+                return { error: "Provide either docId (an in-chat attachment) or path (a saved data file's path from its note)." };
               }
               const isParquet = file.binary || /\.parquet$/i.test(file.name) || /parquet/i.test(file.mime);
               let csv: CsvTable;

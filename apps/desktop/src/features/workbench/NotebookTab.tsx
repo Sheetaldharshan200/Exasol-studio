@@ -52,6 +52,8 @@ import { dashboards } from "@/lib/agent-client";
 import { Icon } from "@/components/ui/icon";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { buildNotebookMarkdown, buildNotebookHtml, printNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
+import { dashboardDocFromCells } from "@/features/dashboard/notebook-to-dashboard";
+import { newFile, serialize } from "@/features/dashboard/store";
 import { cn } from "@/lib/utils";
 
 type CellType = "sql" | "markdown" | "mermaid";
@@ -440,6 +442,26 @@ export function NotebookTab({
   // Export the whole notebook — notes, SQL + result tables, and diagrams — as
   // one document (Markdown / self-contained HTML / PDF via the print dialog).
   const [exportInc, setExportInc] = useState<ExportInclude>({ ...EXPORT_ALL });
+  // Open the current notebook's cells as a NEW linked dashboard: SQL cells become
+  // chart/kpi/table widgets, markdown → text. The notebook is left untouched.
+  async function openAsDashboard() {
+    // Stable id per notebook so re-opening syncs the SAME dashboard, and the
+    // dashboard is a synced child (sourceNotebook = this notebook).
+    const id = `nbdash-${activeBook.id}`;
+    const title = activeBook.title || "Dashboard";
+    const doc = dashboardDocFromCells(id, title, cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, viz: c.viz })), activeBook.id);
+    if (!doc.widgets.length) {
+      notify("warning", "Nothing to convert", "Add some SQL or text cells first, then open as a dashboard.");
+      return;
+    }
+    try {
+      await ipc.dashboardWrite(id, serialize(newFile(doc)));
+    } catch {
+      /* persistence may be unavailable (web) — the tab still opens from memory */
+    }
+    window.dispatchEvent(new CustomEvent("studio:open-dashboard", { detail: { id, title } }));
+  }
+
   async function doExport(kind: "markdown" | "html" | "pdf") {
     const exportCells: ExportCell[] = filterExportCells(
       cells.map((c) => ({ type: c.type, src: c.src, result: c.result })),
@@ -624,6 +646,13 @@ export function NotebookTab({
         )}
         <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground lg:block">SQL, Markdown, Mermaid &amp; charts in one canvas</span>
         <div className="ml-auto flex items-center gap-1.5">
+          <button
+            title="Open these cells as a linked dashboard"
+            onClick={() => void openAsDashboard()}
+            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <Icon name="dashboard-grid" className="h-3.5 w-3.5" /> Open as dashboard
+          </button>
           <DropdownMenu onOpenChange={(open) => { if (open) void loadDashList(); }}>
             <DropdownMenuTrigger asChild>
               <button title="Import dashboard panels as cells" className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">

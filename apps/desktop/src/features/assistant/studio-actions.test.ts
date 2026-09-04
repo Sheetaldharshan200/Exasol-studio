@@ -16,3 +16,10 @@ test("the action set covers the requested verbs", () => {
     assert.ok(STUDIO_ACTIONS.includes(v as (typeof STUDIO_ACTIONS)[number]), `missing ${v}`);
   }
 });
+
+test("the dashboard authoring actions are on the allow-list", () => {
+  for (const v of ["dashboard_open", "dashboard_get", "dashboard_add_widget", "dashboard_update_widget", "dashboard_set_layout", "dashboard_remove_widget", "dashboard_set_param", "dashboard_restyle"]) {
+    assert.ok(isStudioAction(v), `missing ${v}`);
+  }
+  assert.ok(!isStudioAction("dashboard_drop_everything"));
+});

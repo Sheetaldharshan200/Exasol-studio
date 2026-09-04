@@ -617,8 +617,11 @@ fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
-        // Only ours: the executable must live under our managed runtime dir.
-        if cmd.contains(&marker) {
+        // Only ours: the EXECUTABLE (argv[0], the first token) must live under our
+        // managed runtime dir — not merely appear somewhere in the arguments, so a
+        // foreign process that happens to reference our path can't be killed.
+        let exe = cmd.split_whitespace().next().unwrap_or("");
+        if exe.contains(&marker) {
             emit_log(
                 app,
                 id,
@@ -1290,6 +1293,44 @@ pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection>
         ensure_nano(app, id)
     }
 }
+
+/// Force a fresh MANAGED deployment, bypassing adoption of any already-running
+/// instance. Used to self-heal when a reused/adopted local database turns out to
+/// be stale — it opened its port but isn't query-ready. `ensure_personal`
+/// reclaims the port from an orphaned Studio daemon first, so a leftover process
+/// from a previous run can't block the fresh deploy.
+pub fn redeploy_managed(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
+    if std::env::consts::OS == "macos" {
+        // Force a CLEAN restart: stop any existing managed deployment and free
+        // the port first, so a dead/stuck daemon (port open but not query-ready)
+        // is actually replaced instead of reused because "the port answers".
+        force_stop_personal(app, id);
+        ensure_personal(app, id)
+    } else {
+        ensure_nano(app, id)
+    }
+}
+
+/// Best-effort teardown of the managed Personal deployment before a fresh
+/// (re)deploy: stop the deployment via the CLI, reclaim the port from any
+/// orphaned Studio daemon, and wait for the port to close. All steps are
+/// best-effort — a missing deployment or already-free port is fine.
+#[cfg(unix)]
+fn force_stop_personal(app: &AppHandle, id: &str) {
+    if let (Ok(cli), Ok(dir)) = (exasol_cli(app), personal_deployment_dir(app)) {
+        if dir.join("deployment.json").is_file() {
+            let ddir = dir.to_string_lossy().to_string();
+            let _ = run_streamed(app, id, &cli.to_string_lossy(), &["stop", "--deployment-dir", &ddir]);
+        }
+    }
+    if port_ready(STUDIO_DB_PORT) {
+        let _ = reclaim_orphaned_port(app, id, STUDIO_DB_PORT);
+    }
+    let _ = wait_for_port_closed(STUDIO_DB_PORT, Duration::from_secs(10));
+}
+
+#[cfg(not(unix))]
+fn force_stop_personal(_app: &AppHandle, _id: &str) {}
 
 pub fn runtime_installed(app: &AppHandle) -> bool {
     if std::env::consts::OS == "macos" {

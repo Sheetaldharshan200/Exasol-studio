@@ -34,6 +34,7 @@ export function MarkdownEditor({
   onChange,
   onFocusChange,
   trailing,
+  placeholder = "Write, or use markdown — # heading, **bold**, - list, images…",
 }: {
   value: string;
   onChange: (markdown: string) => void;
@@ -41,6 +42,9 @@ export function MarkdownEditor({
   /** Cell controls (type / drag / delete) rendered at the toolbar's right end
    *  while editing — so they never overlap the formatting buttons. */
   trailing?: React.ReactNode;
+  /** Empty-state hint. Defaults to the notebook cell's markdown hint; the
+   *  dashboard text block passes a plain one (no raw markdown syntax shown). */
+  placeholder?: string;
 }) {
   const lastEmitted = useRef(value);
   const [focused, setFocused] = useState(false);
@@ -70,7 +74,7 @@ export function MarkdownEditor({
       TableKit.configure({ table: { resizable: false } }),
       TextStyleKit,
       Markdown.configure({ html: true, transformPastedText: true, transformCopiedText: true, linkify: true }),
-      Placeholder.configure({ placeholder: "Write, or use markdown — # heading, **bold**, - list, images…" }),
+      Placeholder.configure({ placeholder }),
     ],
     content: value,
     editorProps: {

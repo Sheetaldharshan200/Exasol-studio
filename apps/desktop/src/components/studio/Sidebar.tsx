@@ -44,6 +44,8 @@ import { DatabaseTree } from "@/features/workbench/DatabaseTree";
 import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
 import { GitPanel } from "@/features/workbench/GitPanel";
+import { NotebooksPanel } from "@/features/workbench/NotebooksPanel";
+import { DashboardsPanel } from "@/features/dashboard/DashboardsPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { buildConnectionNodes, type TreeNode } from "@/features/workbench/tree-model";
@@ -475,11 +477,28 @@ export function Sidebar({
   // Personal deployment runs on its own port, e.g. 8565; Nano uses 8563). The
   // permanent card represents that endpoint, so fold any duplicate profile
   // (e.g. a hand-made "sys@localhost") into it instead of listing it twice.
-  const localProfile = local?.profileId ? profiles.find((p) => p.id === local.profileId) : undefined;
+  // Find the managed local profile ROBUSTLY: prefer the status link, but fall
+  // back to matching by name + local host. After a failed/partial setup the
+  // status→profile link can be missing while the profile still exists — without
+  // this fallback LOCAL_ENDPOINT defaults to the wrong port and the same DB
+  // shows twice (the card AND a duplicate "sys@127.0.0.1:8565" row).
+  const localProfile =
+    (local?.profileId ? profiles.find((p) => p.id === local.profileId) : undefined) ??
+    // Studio's managed Personal profile is specifically "Exasol Personal (local)"
+    // on the local host with the SYS user — match all three so an unrelated
+    // hand-made local profile is never mistaken for it (and never auto-connected).
+    profiles.find(
+      (p) => /^Exasol Personal \(local\)/i.test(p.name) && normHost(p.host) === "127.0.0.1" && p.username.toUpperCase() === "SYS",
+    );
   const LOCAL_ENDPOINT = localProfile
     ? `${normHost(localProfile.host)}:${localProfile.port}:${localProfile.username.toUpperCase()}`
     : "127.0.0.1:8563:SYS";
   const localReady = local?.state === "ready" || local?.localReady;
+  // The managed DB is usable if setup says ready OR a matching local profile's
+  // endpoint actually answers — so the single card offers "connect" instead of
+  // wrongly saying "not installed" when the DB is up.
+  const localConnectId = local?.profileId ?? localProfile?.id;
+  const localUp = Boolean(localReady || (localProfile && reachable[localProfile.id]));
   // Connected under the managed profile OR any profile at the local endpoint —
   // either way the card is redundant (the live connection is in the tree).
   const localConnected =
@@ -502,7 +521,7 @@ export function Sidebar({
       <div className="border-b border-border/60 px-2 py-2">
         <button
           onClick={() => {
-            if (localReady && local?.profileId) onConnectProfile(local.profileId);
+            if (localUp && localConnectId) onConnectProfile(localConnectId);
             else onInstallLocal();
           }}
           disabled={local?.state === "installing"}
@@ -517,13 +536,13 @@ export function Sidebar({
                 ? local.message || "Setting up…"
                 : local?.state === "failed"
                   ? "Setup failed — tap to retry"
-                  : localReady
+                  : localUp
                     ? `${localProfile ? `${localProfile.host}:${localProfile.port}` : "127.0.0.1"} · ready`
                     : "Not installed — tap to set up"}
             </div>
           </div>
           <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground">
-            {local?.state === "installing" ? "…" : local?.state === "failed" ? "retry" : localReady ? "connect" : "install"}
+            {local?.state === "installing" ? "…" : local?.state === "failed" ? "retry" : localUp ? "connect" : "install"}
           </span>
         </button>
       </div>
@@ -555,7 +574,10 @@ export function Sidebar({
                 {p.username}@{p.host}:{p.port}
               </div>
             </div>
-            <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground">
+            {/* Neutral hint when idle; hidden on hover so the trash owns the right
+                edge (they used to stack on top of each other). Clicking the row
+                still connects — the pill is only a cue. */}
+            <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:invisible">
               connect
             </span>
           </button>
@@ -563,7 +585,7 @@ export function Sidebar({
             onClick={(e) => { e.stopPropagation(); onRemoveConnection(p.id); }}
             title={`Remove ${p.name}`}
             aria-label={`Remove ${p.name}`}
-            className="absolute right-1 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-destructive group-hover:flex"
+            className="absolute right-1.5 hidden h-6 w-6 items-center justify-center rounded-md bg-panel text-muted-foreground/70 hover:bg-secondary hover:text-destructive group-hover:flex"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -582,7 +604,11 @@ export function Sidebar({
           ? "Schema visualizer"
           : activity === "mcp"
             ? "MCP Servers"
-            : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
+            : activity === "notebook"
+              ? "Notebooks"
+              : activity === "dashboard"
+                ? "Dashboards"
+                : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
 
   if (activity !== "databases") {
     return (
@@ -603,6 +629,10 @@ export function Sidebar({
           <FavoritesPanel profileId={activeProfileId} onOpen={(fav) => onOpenFavorite?.(fav)} />
         ) : activity === "git" ? (
           <GitPanel />
+        ) : activity === "notebook" ? (
+          <NotebooksPanel />
+        ) : activity === "dashboard" ? (
+          <DashboardsPanel />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}

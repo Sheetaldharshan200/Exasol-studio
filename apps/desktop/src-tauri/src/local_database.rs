@@ -213,8 +213,24 @@ fn validate_pyexasol_connection(
     python: &Path,
     runtime: &RuntimeConnection,
 ) -> AppResult<()> {
-    const SCRIPT: &str = r#"import os, ssl, time, pyexasol
-deadline = time.monotonic() + 60
+    // Default patience. A freshly-DEPLOYED database cold-boots slowly (the port
+    // opens well before it accepts authenticated TLS), so callers on the
+    // redeploy path pass a longer deadline via validate_with_deadline.
+    validate_with_deadline(app, python, runtime, 90)
+}
+
+/// Validate that the runtime accepts an authenticated query, retrying until
+/// `deadline_secs` elapses. Short deadlines fast-fail a stale ADOPTED daemon (so
+/// self-heal kicks in quickly); long deadlines wait out a fresh cold boot.
+fn validate_with_deadline(
+    app: &AppHandle,
+    python: &Path,
+    runtime: &RuntimeConnection,
+    deadline_secs: u32,
+) -> AppResult<()> {
+    let script = format!(
+        r#"import os, ssl, time, pyexasol
+deadline = time.monotonic() + {deadline_secs}
 last_error = None
 while time.monotonic() < deadline:
     connection = None
@@ -224,7 +240,7 @@ while time.monotonic() < deadline:
             user=os.environ["EXA_USER"],
             password=os.environ["EXA_PASSWORD"],
             encryption=True,
-            websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+            websocket_sslopt={{"cert_reqs": ssl.CERT_NONE}},
         )
         connection.execute("SELECT 1")
         print("Authenticated PyExasol connection verified")
@@ -238,15 +254,16 @@ while time.monotonic() < deadline:
                 connection.close()
             except Exception:
                 pass
-raise RuntimeError(f"Exasol did not accept an authenticated query before the readiness deadline: {last_error}")
-"#;
+raise RuntimeError(f"Exasol did not accept an authenticated query before the readiness deadline: {{last_error}}")
+"#
+    );
     let owned = runtime_env(runtime);
     let envs: Vec<(&str, &str)> = owned
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
     let python_s = python.to_string_lossy().to_string();
-    if run_streamed_env(app, JOB_ID, &python_s, &["-c", SCRIPT], &envs)? != 0 {
+    if run_streamed_env(app, JOB_ID, &python_s, &["-c", &script], &envs)? != 0 {
         return Err(AppError::Storage(
             "The managed runtime opened its port but did not become query-ready with its generated database credential."
                 .into(),
@@ -322,7 +339,10 @@ fn query_ready_runtime(
     python: &Path,
     runtime: &RuntimeConnection,
 ) -> AppResult<RuntimeConnection> {
-    match validate_pyexasol_connection(app, python, runtime) {
+    // Fast-fail a REUSED (adopted) daemon so self-heal kicks in quickly; be
+    // patient with our OWN (personal) deploy, which cold-boots slowly.
+    let initial_deadline = if runtime.kind == "adopted" { 30 } else { 150 };
+    match validate_with_deadline(app, python, runtime, initial_deadline) {
         Ok(()) => Ok(runtime.clone()),
         Err(first_error) if runtime.kind == "personal" => {
             emit_log(
@@ -344,6 +364,26 @@ fn query_ready_runtime(
                 Ok(()) => Ok(recovered),
                 Err(_) => recover_personal_auth(app, python, &recovered),
             }
+        }
+        Err(first_error) if runtime.kind == "adopted" => {
+            // A REUSED (adopted) database that opened its port but isn't
+            // query-ready is almost always a stale daemon left over from a
+            // previous run. Self-heal: deploy Studio's OWN managed database
+            // (reclaiming the port from an orphaned Studio daemon) and validate
+            // that instead of failing the whole setup.
+            emit_log(
+                app,
+                JOB_ID,
+                format!(
+                    "The reused local Exasol on {}:{} isn't query-ready ({first_error}); it looks stale — deploying Studio's own managed database…",
+                    runtime.host, runtime.port
+                ),
+                "info",
+            );
+            let fresh = crate::local_runtime::redeploy_managed(app, JOB_ID)?;
+            // A brand-new deploy cold-boots slowly — wait it out generously.
+            validate_with_deadline(app, python, &fresh, 180)?;
+            Ok(fresh)
         }
         Err(error) => Err(error),
     }
@@ -1282,9 +1322,44 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     status.message =
         "Provisioning a read-only identity and validating the Exasol MCP server…".into();
     write_status(&app, &data_dir, status.clone())?;
-    match provision_mcp_identity(&app, &python, &runtime)
-        .and_then(|(mcp_runtime, mcp_profile)| validate_and_configure_mcp(&app, &data_dir, &python, &mcp_runtime, &mcp_profile.id))
-    {
+    let provision = |app: &AppHandle, runtime: &RuntimeConnection| {
+        provision_mcp_identity(app, &python, runtime)
+            .and_then(|(mcp_runtime, mcp_profile)| validate_and_configure_mcp(app, &data_dir, &python, &mcp_runtime, &mcp_profile.id))
+    };
+    let mut mcp_result = provision(&app, &runtime);
+    // A stale ADOPTED database can pass the SYS probe yet reset a freshly-created
+    // MCP user ("connection reset by peer"). That's the same stale-daemon
+    // symptom — self-heal once: deploy Studio's own managed database, rebind the
+    // built-in connection to it, and retry MCP provisioning against the fresh DB.
+    if mcp_result.is_err() && runtime.kind == "adopted" {
+        emit_log(
+            &app,
+            JOB_ID,
+            format!(
+                "MCP provisioning failed on the reused local database ({}); it looks stale — deploying Studio's own managed database and retrying…",
+                mcp_result.as_ref().err().map(|e| e.to_string()).unwrap_or_default()
+            ),
+            "info",
+        );
+        match crate::local_runtime::redeploy_managed(&app, JOB_ID)
+            .and_then(|fresh| query_ready_runtime(&app, &python, &fresh))
+        {
+            Ok(fresh) => {
+                runtime = fresh;
+                let reprofile = profiles::ensure_personal_local_profile(
+                    &app.state::<AppState>(),
+                    &runtime.host,
+                    runtime.port,
+                    &runtime.user,
+                    &runtime.password,
+                )?;
+                status.profile_id = Some(reprofile.id);
+                mcp_result = provision(&app, &runtime);
+            }
+            Err(redeploy_err) => mcp_result = Err(redeploy_err),
+        }
+    }
+    match mcp_result {
         Ok(()) => set_component(
             &mut status,
             "mcp-server",

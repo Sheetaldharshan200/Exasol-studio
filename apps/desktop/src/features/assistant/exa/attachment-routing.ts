@@ -44,6 +44,16 @@ export function extractDataFileNotes(text: string): DataFileNote[] {
   return out;
 }
 
+/** One note for a whole attached folder: a header + the folder→schema loading
+ *  rule, then one regex-compatible "saved to" line per file (so pins still
+ *  extract). Each `name` is the file's folder-relative path. */
+export function buildFolderNote(folder: string, items: { name: string; size: number; path: string }[]): string {
+  const head =
+    `Attached folder "${folder}" with ${items.length} file(s). Load EVERY data file below: for each, use its immediate parent subfolder as the Exasol schema (created if missing) and the file name without extension as the table. Load each with import_csv using its saved path.`;
+  const lines = items.map((it) => `Attached data file "${it.name}" (${fmtBytes(it.size)}) saved to: ${it.path}`);
+  return [head, ...lines].join("\n");
+}
+
 /** The text part sent in place of the file body. `firstLines` (for text-like
  *  data) gives the model the header/shape without the payload. */
 export function buildDataFileNote(path: string, name: string, size: number, firstLines?: string[]): string {
@@ -53,8 +63,15 @@ export function buildDataFileNote(path: string, name: string, size: number, firs
         .map((l) => (l.length > 200 ? `${l.slice(0, 200)}…` : l))
         .join("\n")}`
     : "";
+  // When the name carries a folder path (from the folder picker), tell the model
+  // it's part of a dataset folder so it loads ALL of them and maps each
+  // immediate subfolder to its own schema (folder → dataset, subfolder → schema,
+  // file → table). Without this the paths read as unrelated files.
+  const folderHint = name.includes("/")
+    ? `\nThis file is part of an attached folder — load EVERY attached folder file, using each file's immediate parent folder as its Exasol schema and the file name (no extension) as the table.`
+    : "";
   return (
     `Attached data file "${name}" (${fmtBytes(size)}) saved to: ${path}\n` +
-    `The contents are NOT inlined — read or load the file from that path (for tables: exapump upload / IMPORT).${preview}`
+    `The contents are NOT inlined — read or load the file from that path (for tables: exapump upload / IMPORT).${folderHint}${preview}`
   );
 }

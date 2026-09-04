@@ -99,6 +99,12 @@ export function ShadcnChartPanel({
   }
 
   const axis = { tickLine: false as const, axisLine: false as const, tickMargin: 8, fontSize: 10 };
+  // Compact the numeric axis labels (25,000,000,000 → 25B) so wide numbers fit
+  // the axis gutter instead of overflowing under the chart.
+  const compactNum = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n) : String(v);
+  };
 
   /** Interactive legend — click a series to isolate it. Only shown for
    *  multi-series charts, where "highlight one, dim the others" is meaningful. */
@@ -197,7 +203,7 @@ export function ShadcnChartPanel({
           <LineChart accessibilityLayer data={data} margin={{ left: 8, right: 12, top: 8 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey={catKey} {...axis} />
-            <YAxis {...axis} width={40} />
+            <YAxis {...axis} width={50} tickFormatter={compactNum} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
               <Line key={k} dataKey={k} type="natural" stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={activeIfPresent === k ? 3 : 2} dot={false} activeDot={{ r: 4, style: clickCursor, onClick: () => toggle(k) }} style={clickCursor} onClick={() => toggle(k)} {...anim} />
@@ -223,7 +229,7 @@ export function ShadcnChartPanel({
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey={catKey} {...axis} />
-            <YAxis {...axis} width={40} />
+            <YAxis {...axis} width={50} tickFormatter={compactNum} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
             {series.map((k) => (
               <Area key={k} dataKey={k} type="natural" fill={`url(#fill-${uid}-${k})`} fillOpacity={fillOpacity(k)} stroke={`var(--color-${k})`} strokeOpacity={lineOpacity(k)} strokeWidth={2} stackId={undefined} style={clickCursor} onClick={() => toggle(k)} {...anim} />
@@ -249,7 +255,7 @@ export function ShadcnChartPanel({
           ) : (
             <>
               <XAxis dataKey={catKey} {...axis} />
-              <YAxis {...axis} width={40} />
+              <YAxis {...axis} width={50} tickFormatter={compactNum} />
             </>
           )}
           <ChartTooltip cursor={false} content={<ChartTooltipContent />} />

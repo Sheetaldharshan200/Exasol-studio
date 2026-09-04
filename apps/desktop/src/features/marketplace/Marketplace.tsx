@@ -59,6 +59,7 @@ import {
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
 import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -164,36 +165,11 @@ function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset 
   return byOsArch ?? byOs ?? assets[0];
 }
 
-/** True only when `remote` is a STRICTLY newer version than `local` (numeric
- * segment compare; mirrors the Rust is_newer). Equal, older, or non-numeric
- * versions return false — so an install that's rolled back or ahead of Studio's
- * catalog is never offered a "downgrade" disguised as an update. */
-function isNewerVersion(remote: string | null | undefined, local: string | null | undefined): boolean {
-  if (!remote || !local) return false;
-  const seg = (v: string) => v.replace(/^v/i, "").trim().split(/[.\-+]/).map((p) => (/^\d+$/.test(p) ? parseInt(p, 10) : NaN));
-  const a = seg(remote);
-  const b = seg(local);
-  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
-  const width = Math.max(a.length, b.length);
-  for (let i = 0; i < width; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x !== y) return x > y;
-  }
-  return false;
-}
 
 /** Catalog items that ARE managed components. Their installed state + version
  * is the AUTHORITATIVE `list_components` value (single source of truth), not the
  * marketplace manifest or a presence heuristic — and updating them lives in the
  * Managed Components panel (verify-or-refuse), not the catalog card. */
-const CATALOG_TO_COMPONENT: Record<string, string> = {
-  "exasol-personal": "personal",
-  exapump: "exapump",
-  "mcp-server": "mcp-server",
-  "semantic-views": "semantic-views",
-};
-
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
@@ -281,23 +257,26 @@ export function Marketplace() {
   useEffect(() => {
     semanticTargetRef.current = semanticTarget;
   }, [semanticTarget]);
-  useEffect(() => {
-    ipc
+  // "Install into" targets are the user's DISTINCT writable databases — read
+  // LIVE from the connection profiles, refreshed when they change and when the
+  // picker opens (event-driven, not a busy timer).
+  const refreshTargets = useCallback(() => {
+    void ipc
       .listConnectionProfiles()
       .then((list) => {
-        // "Install into" targets must be DISTINCT databases the user can write
-        // to. Drop the internal AI read-only identity, drop the managed local
-        // profile (the "Local database (managed)" entry IS that database), and
-        // collapse profiles that point at the same host:port to one entry —
-        // otherwise one local DB shows up three times.
         const norm = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+        // The managed local database is ALREADY represented by the fixed
+        // "Local database (managed)" entry — never list it again as a profile.
+        const isManaged = (p: (typeof list)[number]) =>
+          (p.notes ?? "").includes("Managed automatically by Exasol Studio") ||
+          (/^Exasol Personal \(local\)/i.test(p.name) && norm(p.host) === "127.0.0.1" && p.username.toUpperCase() === "SYS");
         const seen = new Set<string>();
         setProfiles(
           list
-            .filter((p) => !p.username.startsWith("STUDIO_MCP_"))
-            .filter((p) => !(p.notes ?? "").includes("Managed automatically by Exasol Studio"))
+            .filter((p) => !p.username.startsWith("STUDIO_MCP_")) // internal AI identity
+            .filter((p) => !isManaged(p)) // the managed local DB
             .filter((p) => {
-              const key = `${norm(p.host)}:${p.port}`;
+              const key = `${norm(p.host)}:${p.port}`; // collapse same-endpoint dupes
               if (seen.has(key)) return false;
               seen.add(key);
               return true;
@@ -307,8 +286,28 @@ export function Marketplace() {
       })
       .catch(() => undefined);
   }, []);
+  useEffect(() => {
+    refreshTargets();
+    // Live: refresh when a connection is added/removed/reconfigured or the DB's
+    // state changes — mirrors the Connections tab without polling GitHub or the DB.
+    const onChange = () => refreshTargets();
+    window.addEventListener("studio:conn-settings-changed", onChange);
+    window.addEventListener("studio:connect-profile", onChange);
+    window.addEventListener("studio:disconnect", onChange);
+    let un: UnlistenFn | undefined;
+    if (isTauri()) listen("personal-local:status", onChange).then((u) => (un = u)).catch(() => undefined);
+    return () => {
+      window.removeEventListener("studio:conn-settings-changed", onChange);
+      window.removeEventListener("studio:connect-profile", onChange);
+      window.removeEventListener("studio:disconnect", onChange);
+      un?.();
+    };
+  }, [refreshTargets]);
   // Authoritative install/version for the managed components (single source).
   const [components, setComponents] = useState<ComponentInfo[]>([]);
+  // Live upstream tags for managed components — the SAME source the Updates tab
+  // uses, so a managed component's card can't disagree with the Updates tab.
+  const [componentUpstream, setComponentUpstream] = useState<Record<string, string>>({});
   const [detected, setDetected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [loadingReleases, setLoadingReleases] = useState(true);
@@ -354,6 +353,12 @@ export function Marketplace() {
     // Managed-component truth: fetched in the BACKGROUND so it can never stall
     // first paint. Until it lands, cards fall back to the marketplace manifest.
     ipc.listComponents().then(setComponents).catch(() => undefined);
+    // Live upstream tags (same call the Updates tab uses) — keep last-known on
+    // failure so a managed card never falsely reads "up to date".
+    ipc
+      .componentsUpstream()
+      .then((list) => setComponentUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
+      .catch(() => undefined);
   }, []);
 
   // Latest upstream versions (one GitHub call per repo) — slower + network, so
@@ -374,6 +379,21 @@ export function Marketplace() {
 
   useEffect(() => {
     refresh();
+    // Keep an OPEN Marketplace in sync with the catalog source in the background
+    // (the catalog.json mirror updates on its own cadence); light local reads +
+    // one catalog fetch, so it never disrupts the user.
+    // IMPORTANT: the periodic sync uses ONLY the rate-limit-free catalog.json
+    // mirror (raw.githubusercontent) + local reads — NEVER the per-repo GitHub
+    // API (marketRelease / componentsUpstream), which is unauthenticated and
+    // capped at 60/hr. Re-firing those on a timer exhausts the quota and makes
+    // the Updates tab go blank. Live release fetches stay mount-only.
+    const iv = window.setInterval(() => {
+      ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+      ipc.marketInstalled().then(setInstalled).catch(() => undefined);
+      ipc.listComponents().then(setComponents).catch(() => undefined);
+    }, 10 * 60 * 1000);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   // Kick the release fetch once the page is ready (painted) — never before, so
@@ -704,9 +724,14 @@ export function Marketplace() {
     const isBusy = busy[item.id];
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
-    // Managed components update via the Managed Components panel (verify-or-
-    // refuse), never the catalog card — so never offer a catalog "update" here.
+    // Non-managed catalog items update in place from the card.
     const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
+    // Managed components update via the Updates tab (verify-or-refuse), but the
+    // card must still SHOW an available update — using the SAME live upstream the
+    // Updates tab uses — instead of falsely reading "up to date".
+    const managedCompId = CATALOG_TO_COMPONENT[item.id];
+    const managedTag = managedCompId ? componentUpstream[managedCompId] : undefined;
+    const managedUpdate = Boolean(inst && managedTag && isNewerVersion(managedTag, inst?.version));
     // The version shown on the card: for managed components it's the AUTHORITATIVE
     // installed version (list_components), never the catalog's "latest" (which can
     // lag or be an upstream tag) — so the card matches the Managed Components panel.
@@ -799,6 +824,12 @@ export function Marketplace() {
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                 <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
               </button>
+            ) : managedUpdate ? (
+              // Managed component: the actual verify-or-refuse update lives in the
+              // Updates tab — send the user there, but SHOW the update here.
+              <button onClick={() => setNav("updates")} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50" title={`Update to ${managedTag} in the Updates tab`}>
+                <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {managedTag}
+              </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
                 <Check className="h-3.5 w-3.5 text-primary" /> Up to date
@@ -831,7 +862,7 @@ export function Marketplace() {
         ) : (
           <>
             {item.id === "semantic-views" && profiles.length > 0 ? (
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={(o) => o && refreshTargets()}>
                 <DropdownMenuTrigger asChild>
                   <button
                     disabled={isInstalling}
@@ -1675,9 +1706,19 @@ function IndependentComponents({
     void ipc
       .componentsUpstream()
       .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      .catch(() => setUpstream({}));
+      // On failure keep the last-known tags (or {} on the very first attempt) so
+      // a transient rate-limit doesn't hide a real update behind "up to date".
+      .catch(() => setUpstream((prev) => prev ?? {}));
   }, []);
   useEffect(() => refreshUpstream(), [refreshUpstream]);
+  // Periodically re-read the LOCAL installed list only. Do NOT re-fire
+  // componentsUpstream on a timer — it's an unauthenticated GitHub API call
+  // (60/hr) and re-firing it exhausts the quota, blanking the Updates tab. The
+  // upstream tags are fetched once on mount; a manual Refresh re-checks them.
+  useEffect(() => {
+    const iv = window.setInterval(() => void refresh(), 5 * 60 * 1000);
+    return () => window.clearInterval(iv);
+  }, [refresh]);
   const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
   useEffect(() => {
     if (!anyBusy) return;

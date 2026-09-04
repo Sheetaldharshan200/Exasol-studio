@@ -10,7 +10,7 @@
         "name": "exasol-personal_macOS_arm64.tar.gz",
         "url": "https://github.com/exasol/exasol-personal/releases/download/v2.2.0/exasol-personal_macOS_arm64.tar.gz",
         "sha256": "9cc2f58768f9a8adb604602adaf207b27fe6cd6ec3611f4318066429c4e140f5",
-        "executableSha256": "fa6e07c5bb7610268131cbb665c82b07e6ef2dc8cb975a024afbec4f32ce8e54"
+        "executableSha256": "5f96f3cdbbb1da376a3096b36328fda1778f06f07d83a1d6cc460db4d85757a3"
       },
       "macos-x86_64": {
         "name": "exasol-personal_macOS_x86_64.tar.gz",

@@ -13,9 +13,13 @@ import {
   PlusIcon,
   FileText,
   FolderOpen,
+  Folder,
+  ChevronRight,
   Loader2Icon,
   AlertCircleIcon,
 } from "lucide-react";
+import { FOLDER_MIME, isFolderAttachment, makeFolderAttachment, readFolderManifest, type FolderEntry } from "@/features/assistant/exa/folder-attachment";
+import { extractDataFileNotes } from "@/features/assistant/exa/attachment-routing";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -151,6 +155,13 @@ const AttachmentUI: FC = () => {
     const part = s.attachment.content?.find((c) => c.type === "file");
     return part && "data" in part ? (part.data as string) : undefined;
   });
+  // Folder detection survives send: the runtime File is gone in a sent message,
+  // but contentType (and the note text) remain.
+  const contentType = useAuiState((s) => s.attachment.contentType);
+  const noteText = useAuiState((s) => {
+    const part = s.attachment.content?.find((c) => c.type === "text");
+    return part && "text" in part ? (part.text as string) : undefined;
+  });
 
   // Clicking a FILE card opens its content as a workspace tab (images keep
   // the zoom dialog instead).
@@ -196,6 +207,11 @@ const AttachmentUI: FC = () => {
         : ext && ext !== name?.toUpperCase()
           ? `${ext} · ${typeLabel}`
           : typeLabel;
+
+  // A whole folder shows as one collapsible chip (folder icon + file count) —
+  // in the composer (File present) AND in the sent message (contentType/note).
+  const isFolder = isFolderAttachment(file) || contentType === FOLDER_MIME || (!!noteText && noteText.includes('Attached folder "'));
+  if (isFolder) return <FolderChip name={name} file={isFolderAttachment(file) ? file : undefined} noteText={noteText} isComposer={isComposer} />;
 
   return (
     <AttachmentPrimitive.Root
@@ -252,6 +268,64 @@ const AttachmentUI: FC = () => {
   );
 };
 
+/** One chip for a whole attached folder: a folder icon, the folder name, the
+ *  file count, and a chevron that expands the list of files inside. Removing it
+ *  removes the whole folder. */
+const FolderChip: FC<{ name?: string; file?: File; noteText?: string; isComposer: boolean }> = ({ name, file, noteText, isComposer }) => {
+  const [open, setOpen] = useState(false);
+  const [entries, setEntries] = useState<FolderEntry[] | null>(null);
+  useEffect(() => {
+    // Composer: read the manifest from the synthetic File. Sent message: the File
+    // is gone, so rebuild the list from the note's per-file "saved to" lines.
+    if (file) {
+      let alive = true;
+      void readFolderManifest(file).then((m) => alive && setEntries(m?.entries ?? []));
+      return () => {
+        alive = false;
+      };
+    }
+    const notes = noteText ? extractDataFileNotes(noteText) : [];
+    setEntries(notes.map((n) => ({ path: n.name, size: 0 })));
+  }, [file, noteText]);
+  const count = entries?.length ?? 0;
+
+  return (
+    <AttachmentPrimitive.Root
+      className={cn("aui-attachment-root", isComposer && "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none")}
+    >
+      <div className="flex max-w-64 flex-col rounded-lg border border-border bg-muted/40 px-2 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" title={open ? "Hide files" : "Show files"}>
+            <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+            {open ? <FolderOpen className="size-4 shrink-0 text-primary" /> : <Folder className="size-4 shrink-0 text-primary" />}
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-foreground">{name}</div>
+              <div className="text-[11px] text-muted-foreground">{entries == null ? "Folder" : `${count} file${count === 1 ? "" : "s"}`}</div>
+            </div>
+          </button>
+          {isComposer ? (
+            <AttachmentActions>
+              <AttachmentPrimitive.Remove render={<AttachmentAction aria-label={`Remove ${name ?? "folder"}`} />}>
+                <XIcon />
+              </AttachmentPrimitive.Remove>
+            </AttachmentActions>
+          ) : null}
+        </div>
+        {open && entries?.length ? (
+          <ul className="mt-1 max-h-40 overflow-auto border-t border-border/60 pt-1">
+            {entries.map((e) => (
+              <li key={e.path} className="flex items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground">
+                <FileText className="size-3 shrink-0 opacity-70" />
+                <span className="truncate" title={e.path}>{e.path}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </AttachmentPrimitive.Root>
+  );
+};
+
 export const UserMessageAttachments: FC = () => {
   return (
     <div className="aui-user-message-attachments-end col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -274,7 +348,7 @@ export const ComposerAttachments: FC = () => {
 
 // A whole folder can be huge; keep the attachment set sane and skip the noise
 // (dotfiles, VCS internals, dependency trees).
-const FOLDER_FILE_CAP = 50;
+const FOLDER_FILE_CAP = 200;
 const FOLDER_SKIP = /(^|\/)(\.|node_modules\/|target\/|dist\/|__pycache__\/)/;
 
 export const ComposerAddAttachment: FC = () => {
@@ -288,6 +362,10 @@ export const ComposerAddAttachment: FC = () => {
       files = files
         .filter((f) => !FOLDER_SKIP.test((f as File & { webkitRelativePath?: string }).webkitRelativePath ?? f.name))
         .slice(0, FOLDER_FILE_CAP);
+      if (!files.length) return;
+      // A whole folder → ONE attachment (one chip). The files are saved on send.
+      void Promise.resolve(aui.composer().addAttachment(makeFolderAttachment(files))).catch(() => {});
+      return;
     }
     for (const f of files) {
       void Promise.resolve(aui.composer().addAttachment(f)).catch(() => {
