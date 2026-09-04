@@ -362,9 +362,15 @@ export function Marketplace() {
     // Keep an OPEN Marketplace in sync with the catalog source in the background
     // (the catalog.json mirror updates on its own cadence); light local reads +
     // one catalog fetch, so it never disrupts the user.
+    // IMPORTANT: the periodic sync uses ONLY the rate-limit-free catalog.json
+    // mirror (raw.githubusercontent) + local reads — NEVER the per-repo GitHub
+    // API (marketRelease / componentsUpstream), which is unauthenticated and
+    // capped at 60/hr. Re-firing those on a timer exhausts the quota and makes
+    // the Updates tab go blank. Live release fetches stay mount-only.
     const iv = window.setInterval(() => {
-      refresh();
-      refreshReleases();
+      ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+      ipc.marketInstalled().then(setInstalled).catch(() => undefined);
+      ipc.listComponents().then(setComponents).catch(() => undefined);
     }, 10 * 60 * 1000);
     return () => window.clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1685,17 +1691,14 @@ function IndependentComponents({
       .catch(() => setUpstream((prev) => prev ?? {}));
   }, []);
   useEffect(() => refreshUpstream(), [refreshUpstream]);
-  // Re-check the installed list + upstream tags periodically so an OPEN Updates
-  // tab converges with the background poller — otherwise a slow/rate-limited
-  // first upstream fetch could latch "all up to date" while the badge (which
-  // polled successfully) says an update is available.
+  // Periodically re-read the LOCAL installed list only. Do NOT re-fire
+  // componentsUpstream on a timer — it's an unauthenticated GitHub API call
+  // (60/hr) and re-firing it exhausts the quota, blanking the Updates tab. The
+  // upstream tags are fetched once on mount; a manual Refresh re-checks them.
   useEffect(() => {
-    const iv = window.setInterval(() => {
-      void refresh();
-      refreshUpstream();
-    }, 5 * 60 * 1000);
+    const iv = window.setInterval(() => void refresh(), 5 * 60 * 1000);
     return () => window.clearInterval(iv);
-  }, [refresh, refreshUpstream]);
+  }, [refresh]);
   const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
   useEffect(() => {
     if (!anyBusy) return;
