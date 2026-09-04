@@ -257,23 +257,26 @@ export function Marketplace() {
   useEffect(() => {
     semanticTargetRef.current = semanticTarget;
   }, [semanticTarget]);
-  useEffect(() => {
-    ipc
+  // "Install into" targets are the user's DISTINCT writable databases — read
+  // LIVE from the connection profiles, refreshed when they change and when the
+  // picker opens (event-driven, not a busy timer).
+  const refreshTargets = useCallback(() => {
+    void ipc
       .listConnectionProfiles()
       .then((list) => {
-        // "Install into" targets must be DISTINCT databases the user can write
-        // to. Drop the internal AI read-only identity, drop the managed local
-        // profile (the "Local database (managed)" entry IS that database), and
-        // collapse profiles that point at the same host:port to one entry —
-        // otherwise one local DB shows up three times.
         const norm = (h: string) => (h === "localhost" ? "127.0.0.1" : h);
+        // The managed local database is ALREADY represented by the fixed
+        // "Local database (managed)" entry — never list it again as a profile.
+        const isManaged = (p: (typeof list)[number]) =>
+          (p.notes ?? "").includes("Managed automatically by Exasol Studio") ||
+          (/^Exasol Personal \(local\)/i.test(p.name) && norm(p.host) === "127.0.0.1" && p.username.toUpperCase() === "SYS");
         const seen = new Set<string>();
         setProfiles(
           list
-            .filter((p) => !p.username.startsWith("STUDIO_MCP_"))
-            .filter((p) => !(p.notes ?? "").includes("Managed automatically by Exasol Studio"))
+            .filter((p) => !p.username.startsWith("STUDIO_MCP_")) // internal AI identity
+            .filter((p) => !isManaged(p)) // the managed local DB
             .filter((p) => {
-              const key = `${norm(p.host)}:${p.port}`;
+              const key = `${norm(p.host)}:${p.port}`; // collapse same-endpoint dupes
               if (seen.has(key)) return false;
               seen.add(key);
               return true;
@@ -283,6 +286,23 @@ export function Marketplace() {
       })
       .catch(() => undefined);
   }, []);
+  useEffect(() => {
+    refreshTargets();
+    // Live: refresh when a connection is added/removed/reconfigured or the DB's
+    // state changes — mirrors the Connections tab without polling GitHub or the DB.
+    const onChange = () => refreshTargets();
+    window.addEventListener("studio:conn-settings-changed", onChange);
+    window.addEventListener("studio:connect-profile", onChange);
+    window.addEventListener("studio:disconnect", onChange);
+    let un: UnlistenFn | undefined;
+    if (isTauri()) listen("personal-local:status", onChange).then((u) => (un = u)).catch(() => undefined);
+    return () => {
+      window.removeEventListener("studio:conn-settings-changed", onChange);
+      window.removeEventListener("studio:connect-profile", onChange);
+      window.removeEventListener("studio:disconnect", onChange);
+      un?.();
+    };
+  }, [refreshTargets]);
   // Authoritative install/version for the managed components (single source).
   const [components, setComponents] = useState<ComponentInfo[]>([]);
   // Live upstream tags for managed components — the SAME source the Updates tab
@@ -842,7 +862,7 @@ export function Marketplace() {
         ) : (
           <>
             {item.id === "semantic-views" && profiles.length > 0 ? (
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={(o) => o && refreshTargets()}>
                 <DropdownMenuTrigger asChild>
                   <button
                     disabled={isInstalling}
