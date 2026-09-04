@@ -1277,7 +1277,17 @@ fn port_answers(host: &str, port: u16) -> bool {
 }
 
 pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
-    // Reuse a running, already-registered local database before deploying one.
+    // OUR OWN managed deployment wins outright: its secrets.json is the on-disk
+    // source of truth for the credential (kept in sync after every ALTER USER),
+    // and ensure_personal reuses the running database without a restart. Never
+    // "adopt" it through the shared registry — that path carries a REGISTRY
+    // credential that drifts (stale sys / old MCP identity), which failed the
+    // readiness probe and dragged setup through the stop/start recovery ladder.
+    if std::env::consts::OS == "macos" && personal_deployment_exists(app) {
+        return ensure_personal(app, id);
+    }
+    // Reuse a running, already-registered FOREIGN local database before
+    // deploying one (the exa CLI's or the starter kit's own deployment).
     if let Some(adopted) = adopt_shared_local() {
         emit_log(
             app,
