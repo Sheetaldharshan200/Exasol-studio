@@ -164,6 +164,8 @@ export function ExaEnginePanel({
     if (!isTauri()) return;
     const granted = (Object.keys(sqlOps) as (keyof SqlOps)[]).filter((k) => sqlOps[k]);
     setSqlOpsApplying(true);
+    // Safety: never let the "Applying…" indicator stick if the engine call hangs.
+    const safety = window.setTimeout(() => setSqlOpsApplying(false), 25_000);
     void ipc
       .engineOpsSync(granted)
       .then(() => disposeEngineInstance())
@@ -185,9 +187,11 @@ export function ExaEnginePanel({
         ),
       )
       .finally(() => {
+        window.clearTimeout(safety);
         sqlOpsFirstRun.current = false;
         setSqlOpsApplying(false);
       });
+    return () => window.clearTimeout(safety);
   }, [sqlOps, disposeEngineInstance]);
   // Settings → Tools & Plugins changed the tool grants: rebuild the instance
   // so the new permissions bind.

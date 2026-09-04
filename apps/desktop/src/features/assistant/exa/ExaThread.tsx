@@ -544,15 +544,14 @@ function ExaSqlOpsSelector({ ops, onChange, applying }: { ops: SqlOps; onChange:
           <button
             type="button"
             onClick={save}
-            disabled={(!dirty && !applying) || applying}
-            title={applying ? "Applying grants & refreshing the engine…" : dirty ? "Save & refresh the AI engine" : "No changes"}
+            disabled={!dirty}
+            title={dirty ? "Save & refresh the AI engine" : "No changes"}
             className={cn(
               "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
-              dirty && !applying ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
+              dirty ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
             )}
           >
-            {applying ? <Loader2Icon className="h-3 w-3 animate-spin" /> : <ShieldCheckIcon className="h-3 w-3" />}
-            {applying ? "Applying…" : "Save"}
+            <ShieldCheckIcon className="h-3 w-3" /> Save
           </button>
         </div>
         <DropdownMenuCheckboxItem checked disabled className="text-[12px]">
