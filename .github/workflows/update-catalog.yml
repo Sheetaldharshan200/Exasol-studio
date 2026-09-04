@@ -120,11 +120,21 @@ jobs:
           # Plain --force: the branch is bot-owned scratch state, and a fresh clone
           # has no remote-tracking ref for --force-with-lease to verify against.
           git push --force --set-upstream origin "$branch"
-          if ! gh pr view "$branch" >/dev/null 2>&1; then
-            gh pr create \
+          # Only an OPEN PR counts. `gh pr view <branch>` also matches CLOSED/MERGED
+          # PRs from previous runs, which made this skip creating a new one and
+          # silently leave the refresh unproposed. Check open PRs explicitly.
+          pr=$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            pr=$(gh pr create \
               --base main \
               --head "$branch" \
               --title "chore: refresh marketplace catalog" \
-              --body "Automated catalog refresh — \"latest\" for lock-pinned components derives from the validated runtime-components lock. Approve to land (auto-merge)."
+              --body "Automated catalog refresh — \"latest\" for lock-pinned components derives from the validated runtime-components lock. Approve to land (auto-merge)." \
+              | grep -oE '[0-9]+$' | tail -1)
           fi
-          gh pr merge "$branch" --auto --squash || echo "auto-merge not available — the PR awaits review."
+          if [ -z "$pr" ]; then
+            echo "::error::Could not open a catalog PR. Check that 'Allow GitHub Actions to create and approve pull requests' is enabled (Settings → Actions → General)."
+            exit 1
+          fi
+          echo "Catalog refresh proposed in PR #$pr."
+          gh pr merge "$pr" --auto --squash || echo "::warning::auto-merge not enabled — PR #$pr awaits review/merge."
