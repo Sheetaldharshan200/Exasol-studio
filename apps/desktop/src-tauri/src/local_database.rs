@@ -366,24 +366,34 @@ fn query_ready_runtime(
             }
         }
         Err(first_error) if runtime.kind == "adopted" => {
-            // A REUSED (adopted) database that opened its port but isn't
-            // query-ready is almost always a stale daemon left over from a
-            // previous run. Self-heal: deploy Studio's OWN managed database
-            // (reclaiming the port from an orphaned Studio daemon) and validate
-            // that instead of failing the whole setup.
+            // A REUSED (adopted) database that opened its port but rejected the
+            // stored credential is USUALLY fine — the unified-credential model
+            // changed SYS to the master password on an earlier run, so the
+            // adopted (deploy-time) credential no longer matches. Try the master
+            // FIRST: cheap, no slow redeploy, and it fixes the common case.
+            if crate::local_runtime::personal_db_running(app) {
+                if let Ok(recovered) = recover_personal_auth(app, python, runtime) {
+                    return Ok(recovered);
+                }
+            }
+            // The master didn't work either → it really is stale. Deploy Studio's
+            // OWN managed database (reclaiming the port from an orphaned daemon).
             emit_log(
                 app,
                 JOB_ID,
                 format!(
-                    "The reused local Exasol on {}:{} isn't query-ready ({first_error}); it looks stale — deploying Studio's own managed database…",
+                    "The reused local Exasol on {}:{} isn't query-ready ({first_error}); redeploying Studio's own managed database…",
                     runtime.host, runtime.port
                 ),
                 "info",
             );
             let fresh = crate::local_runtime::redeploy_managed(app, JOB_ID)?;
-            // A brand-new deploy cold-boots slowly — wait it out generously.
-            validate_with_deadline(app, python, &fresh, 180)?;
-            Ok(fresh)
+            // A brand-new deploy cold-boots slowly — wait it out generously; if
+            // the credential still mismatches, try the master password.
+            match validate_with_deadline(app, python, &fresh, 180) {
+                Ok(()) => Ok(fresh),
+                Err(_) => recover_personal_auth(app, python, &fresh),
+            }
         }
         Err(error) => Err(error),
     }
