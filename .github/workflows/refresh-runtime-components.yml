@@ -37,10 +37,13 @@ jobs:
         id: changes
         shell: bash
         run: |
+          # NOTE: exasol-semantic-views is no longer vendored here — it is
+          # fetched fresh from its repo at install time (upstream::fetch_source_tree),
+          # so the refresh script stopped generating it and adding the stale
+          # pathspec made every run fail with exit 128.
           git add \
             apps/desktop/src-tauri/resources/runtime-components.lock.json \
             apps/desktop/src-tauri/resources/python-stack \
-            apps/desktop/src-tauri/resources/exasol-semantic-views \
             packages/agent-core/skills
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -193,11 +196,15 @@ jobs:
           raise SystemExit(f"Nano was not SQL-ready within ten minutes: {last}")
           PY
           export EXASOL_HOST=127.0.0.1 EXASOL_PORT=8563 EXASOL_USER=sys EXASOL_PASSWORD='StudioCiOnly-9mW2zK7q'
+          # Semantic Views is no longer vendored — the app fetches it from its
+          # repo at install time, so validate against the same fresh source.
+          semantic_dir="${RUNNER_TEMP}/exasol-semantic-views"
+          git clone --depth 1 https://github.com/exasol-labs/exasol-semantic-views "$semantic_dir"
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack \
-            python apps/desktop/src-tauri/resources/exasol-semantic-views/tools/install.py --skip-package --example
+            python "$semantic_dir/tools/install.py" --skip-package --example
           # probe_ready.py is optional: install.py already confirms readiness
           # ("Sales model published"), and newer semantic-views drops the file.
-          probe=apps/desktop/src-tauri/resources/exasol-semantic-views/tools/probe_ready.py
+          probe="$semantic_dir/tools/probe_ready.py"
           if [ -f "$probe" ]; then
             uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python "$probe"
           fi
@@ -286,7 +293,6 @@ jobs:
           git add \
             apps/desktop/src-tauri/resources/runtime-components.lock.json \
             apps/desktop/src-tauri/resources/python-stack \
-            apps/desktop/src-tauri/resources/exasol-semantic-views \
             packages/agent-core/skills
           git commit -m "chore(runtime): refresh bundled components"
           git push --force-with-lease --set-upstream origin "$branch"

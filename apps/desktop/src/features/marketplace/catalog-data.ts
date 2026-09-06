@@ -18,6 +18,7 @@ export type Install =
   | "semantic-views"
   | "bundled"
   | "community-docker"
+  | "maven"
   | "reference";
 
 export type CatalogItem = {
@@ -68,7 +69,7 @@ export const CATALOG: CatalogItem[] = [
   {
     id: "driver-jdbc",
     kind: "driver",
-    install: "reference",
+    install: "maven",
     name: "JDBC Driver",
     description: "JDBC driver for Java tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
@@ -102,13 +103,13 @@ export const CATALOG: CatalogItem[] = [
   { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "reference" },
   { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip" },
   { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip" },
-  { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "reference", labs: true },
+  { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "binary", labs: true },
   { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "reference", labs: true },
-  { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "reference", labs: true },
-  { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "reference" },
+  { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "binary", labs: true },
+  { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "reference", labs: true },
-  { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "reference", labs: true },
-  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "reference", labs: true },
+  { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
+  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "binary", labs: true },
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "reference", labs: true },
   { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "uv-pip" },
   { id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", kind: "skills", install: "bundled", labs: true },

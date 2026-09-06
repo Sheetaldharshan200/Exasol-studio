@@ -339,9 +339,17 @@ fn query_ready_runtime(
     python: &Path,
     runtime: &RuntimeConnection,
 ) -> AppResult<RuntimeConnection> {
-    // Fast-fail a REUSED (adopted) daemon so self-heal kicks in quickly; be
-    // patient with our OWN (personal) deploy, which cold-boots slowly.
-    let initial_deadline = if runtime.kind == "adopted" { 30 } else { 150 };
+    // Fast-fail so self-heal kicks in quickly. Our OWN (personal) deploy needs
+    // little extra patience: the `exasol` launcher only returns once the DB
+    // reports "ready to accept connections", so by probe time a healthy DB
+    // authenticates within seconds. A daemon that keeps RESETTING connections
+    // (wedged from an unclean previous shutdown) never fixes itself by waiting
+    // — the 150s patience this used to carry only postponed the restart that
+    // actually heals it. Trade-off accepted: if a slow machine genuinely needs
+    // more than 45s from "ready" to first authenticated query, the cost is ONE
+    // redundant restart followed by the 90s validate — bounded and
+    // self-correcting, vs. minutes of guaranteed stall on every wedged daemon.
+    let initial_deadline = if runtime.kind == "adopted" { 30 } else { 45 };
     match validate_with_deadline(app, python, runtime, initial_deadline) {
         Ok(()) => Ok(runtime.clone()),
         Err(first_error) if runtime.kind == "personal" => {

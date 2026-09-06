@@ -1122,6 +1122,49 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
+/// The `<latest>` version from a Maven Central maven-metadata.xml. Pure so the
+/// parsing rules are unit-tested — a full XML parser is overkill for one tag.
+fn maven_latest_version(xml: &str) -> Option<String> {
+    let start = xml.find("<latest>")? + "<latest>".len();
+    let end = xml[start..].find("</latest>")? + start;
+    let v = xml[start..end].trim();
+    // A sane version only — digits/dots/dashes/alnum, nothing path-like.
+    if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return None;
+    }
+    Some(v.to_string())
+}
+
+/// The official Exasol JDBC driver ships on Maven Central (com.exasol:exasol-jdbc),
+/// not GitHub releases: resolve `<latest>` live, download the jar into the
+/// managed marketplace folder, ready to point Java tools (DBeaver, DataGrip…) at.
+/// Returns (resolved version, note) so the manifest records the REAL version —
+/// the repo-less catalog card passes none, and "latest" would break update
+/// detection forever.
+async fn install_jdbc_from_maven(app: &AppHandle, id: &str) -> AppResult<(String, String)> {
+    const META: &str = "https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml";
+    emit_log(app, id, "Resolving the latest exasol-jdbc from Maven Central…", "info");
+    let xml = reqwest::Client::new()
+        .get(META)
+        .header("User-Agent", "exasol-studio")
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .error_for_status()
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let v = maven_latest_version(&xml).ok_or_else(|| {
+        AppError::Storage("Could not read the latest exasol-jdbc version from Maven Central.".into())
+    })?;
+    let jar = format!("exasol-jdbc-{v}.jar");
+    let url = format!("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/{v}/{jar}");
+    let path = download_and_place(app, id, &url, &jar).await?;
+    let note = format!("Exasol JDBC driver {v} downloaded to {path}. Point your Java tool's driver path at this jar.");
+    Ok((v, note))
+}
+
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
 #[tauri::command]
@@ -1139,6 +1182,9 @@ pub async fn market_install_run(
     let stack = &crate::component_lock::components().python_stack;
     let mcp_package = format!("exasol-mcp-server=={}", stack.mcp_server_version);
     let pyexasol_package = format!("pyexasol=={}", stack.pyexasol_version);
+    // Installers that resolve the real version themselves (Maven) report it
+    // here so the manifest never records a meaningless "latest".
+    let mut resolved_version: Option<String> = None;
     let result: AppResult<String> = match id.as_str() {
         "mcp-server" => install_uv_tool(&app, &id, &mcp_package),
         "agent-skills" => {
@@ -1152,6 +1198,10 @@ pub async fn market_install_run(
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
+        "driver-jdbc" => install_jdbc_from_maven(&app, &id).await.map(|(v, note)| {
+            resolved_version = Some(v);
+            note
+        }),
         "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
             .await
             .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
@@ -1169,7 +1219,7 @@ pub async fn market_install_run(
             items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
             items.push(json!({
                 "id": id,
-                "version": version.unwrap_or_else(|| "latest".into()),
+                "version": resolved_version.or(version).unwrap_or_else(|| "latest".into()),
                 "note": note,
             }));
             write_manifest(&app, &items)?;
@@ -1395,4 +1445,41 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
 #[tauri::command]
 pub fn market_dir_path(app: AppHandle) -> AppResult<String> {
     Ok(market_dir(&app)?.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::maven_latest_version;
+
+    #[test]
+    fn maven_latest_parses_real_metadata_layout() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.exasol</groupId>
+  <artifactId>exasol-jdbc</artifactId>
+  <versioning>
+    <latest>26.2.9</latest>
+    <release>26.2.9</release>
+    <versions><version>7.1.20</version><version>26.2.9</version></versions>
+  </versioning>
+</metadata>"#;
+        assert_eq!(maven_latest_version(xml).as_deref(), Some("26.2.9"));
+    }
+
+    #[test]
+    fn maven_latest_rejects_missing_empty_or_unsafe_values() {
+        assert_eq!(maven_latest_version("<metadata></metadata>"), None);
+        assert_eq!(maven_latest_version("<latest>  </latest>"), None);
+        // A hostile value must never become part of a download path.
+        assert_eq!(maven_latest_version("<latest>../../evil</latest>"), None);
+        assert_eq!(maven_latest_version("<latest>1.0/x</latest>"), None);
+    }
+
+    #[test]
+    fn maven_latest_tolerates_whitespace_and_prerelease_tags() {
+        assert_eq!(
+            maven_latest_version("<latest>\n  26.3.0-RC1\n</latest>"),
+            Some("26.3.0-RC1".into())
+        );
+    }
 }

@@ -1,9 +1,9 @@
-// Background Marketplace-update poller. Independent of whether the Marketplace
-// panel is open: it periodically reads the SAME catalog source the Updates tab
-// uses (the catalog.json mirror + per-repo upstream tags) and raises a
-// studio:notice badge when the number of available updates goes UP — so the
-// user learns about updates without opening the tab. Notifies only on a rise
-// (persisted "seen" count), so it never nags.
+// App-open Marketplace-update check. Runs ONCE shortly after launch (no
+// background polling — user rule: updates are fetched only on app open and on
+// clicking the Updates/catalog tabs). Reads the SAME catalog source the
+// Updates tab uses (the catalog.json mirror + per-repo upstream tags) and
+// raises a studio:notice badge when the number of available updates went UP
+// since last seen — so the user learns about updates without opening the tab.
 
 import { useEffect } from "react";
 import { ipc } from "@/lib/ipc";
@@ -12,7 +12,6 @@ import { countCatalogUpdates, countManagedUpdates } from "@/features/marketplace
 
 const SEEN_KEY = "exa.market.updatesSeen";
 const FIRST_DELAY_MS = 8_000; // shortly after launch, once the app has settled
-const INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
 async function currentUpdateCount(): Promise<number> {
   const [catalog, installed, comps, upstreamList] = await Promise.all([
@@ -54,11 +53,9 @@ export function useMarketplaceUpdateBadge(): void {
       }
     };
     const first = window.setTimeout(() => void check(), FIRST_DELAY_MS);
-    const iv = window.setInterval(() => void check(), INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearTimeout(first);
-      window.clearInterval(iv);
     };
   }, []);
 }

@@ -138,3 +138,11 @@ PR #95 root cause: history ids were h-<timestamp-millis>; same-millisecond runs 
 #99/#103 executeSql 5th arg is SPLIT not addHistory — every internal call must pass the 6th arg false or it spams SQL History (profiling, catalog loaders, page turns all hit this).
 #100 plan-block.ts: AI explain-plan sends only the heaviest statement's compact table (25 parts, ms).
 
+
+## [2026-09-06] fix | Catalog latest/verified split, updates fetch-on-demand, real driver installs, faster Personal self-heal
+Root causes fixed today: (1) catalog.json published the LOCK pin as `latest`, hiding MCP Server 2.2.0 behind 2.0.0 across the whole app — latest is now the real upstream tag, the pin moved to a new `verified` field (PR #144); Rust components_upstream falls back to the mirror when the unauthenticated GitHub API is rate-limited.
+(2) 'Refresh bundled runtime components' failed daily since Sep 4 with exit 128: it still `git add`ed apps/desktop/src-tauri/resources/exasol-semantic-views, removed when Semantic Views moved to fetch-at-install; validation now clones the repo fresh (PR #145).
+(3) Personal setup stall: a wedged DB daemon accepts TCP then resets the TLS handshake ('Connection reset by peer') and never recovers by waiting; the 150s initial readiness deadline only postponed the restart that heals it — cut to 45s (the exasol launcher already waits for DB-ready before returning).
+(4) Update-state polling removed everywhere (user rule): fetch only at app open and on Updates/catalog tab clicks — Marketplace 10-min interval, IndependentComponents 5-min interval, badge 6h interval, and the Rust updates.rs 6h loop are all gone.
+Also: pickAsset extracted pure to marketplace/assets.ts (metadata filter + platform-null, 5 tests); driver-jdbc installs from Maven Central via tested <latest> parser; binary items with no build for the host show an honest 'No macOS build yet' instead of a doomed Install; card actions pinned to card bottom; multi-select install (cards) and multi-select update (components) added.
+

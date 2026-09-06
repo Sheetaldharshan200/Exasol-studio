@@ -131,9 +131,44 @@ pub struct UpstreamInfo {
     pub tag: String,
 }
 
-/// Latest official release tag per managed component (best-effort — a repo
-/// that can't be reached is simply omitted). The Marketplace calls this after
-/// rendering so a slow network never blocks the Updates panel.
+/// Managed-component id → its id in the CI-generated catalog.json mirror.
+const MIRROR_IDS: [(&str, &str); 3] = [
+    ("personal", "exasol-personal"),
+    ("exapump", "exapump"),
+    ("mcp-server", "mcp-server"),
+];
+
+/// Upstream tags mined from the catalog.json mirror (whose CI fetches GitHub
+/// AUTHENTICATED). Pure so the mapping is unit-tested. Only fills the ids in
+/// `missing` — live GitHub answers always win.
+fn mirror_upstream(catalog: &Value, missing: &[&str]) -> Vec<UpstreamInfo> {
+    missing
+        .iter()
+        .filter_map(|id| {
+            let catalog_id = MIRROR_IDS.iter().find(|(c, _)| c == id)?.1;
+            let tag = catalog.get("items")?.get(catalog_id)?.get("latest")?.as_str()?;
+            Some(UpstreamInfo { id: (*id).into(), tag: tag.into() })
+        })
+        .collect()
+}
+
+fn fetch_mirror_catalog() -> Option<Value> {
+    reqwest::blocking::Client::new()
+        .get("https://raw.githubusercontent.com/Sheetaldharshan200/Exasol-studio/main/marketplace/catalog.json")
+        .header("User-Agent", "exasol-studio")
+        .timeout(Duration::from_secs(6))
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .ok()
+}
+
+/// Latest official release tag per managed component. Live GitHub first; any
+/// repo the (unauthenticated, 60/hr rate-limited) API couldn't answer falls
+/// back to the CI-generated catalog mirror — so the Updates panel never hides
+/// an official release just because the API rate limit is exhausted.
 #[tauri::command]
 pub async fn components_upstream() -> AppResult<Vec<UpstreamInfo>> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -143,10 +178,20 @@ pub async fn components_upstream() -> AppResult<Vec<UpstreamInfo>> {
             ("exapump", lock.exapump.repository.clone()),
             ("mcp-server", "exasol/mcp-server".to_string()),
         ];
-        watched
-            .into_iter()
-            .filter_map(|(id, repo)| latest(&repo).map(|r| UpstreamInfo { id: id.into(), tag: r.tag }))
-            .collect()
+        let mut out: Vec<UpstreamInfo> = Vec::new();
+        let mut missing: Vec<&str> = Vec::new();
+        for (id, repo) in &watched {
+            match latest(repo) {
+                Some(release) => out.push(UpstreamInfo { id: (*id).into(), tag: release.tag }),
+                None => missing.push(id),
+            }
+        }
+        if !missing.is_empty() {
+            if let Some(catalog) = fetch_mirror_catalog() {
+                out.extend(mirror_upstream(&catalog, &missing));
+            }
+        }
+        out
     })
     .await
     .map_err(|e| AppError::Storage(e.to_string()))
@@ -275,6 +320,34 @@ mod tests {
         assert!(artifact_from(&asset("x", Some("sha256:abcd"))).is_none());
         let bad_hex = format!("sha256:{}", "z".repeat(64));
         assert!(artifact_from(&asset("x", Some(&bad_hex))).is_none());
+    }
+
+    #[test]
+    fn mirror_upstream_fills_only_missing_ids_and_maps_catalog_names() {
+        let catalog: Value = serde_json::json!({
+            "items": {
+                "exasol-personal": { "latest": "v2.3.0" },
+                "exapump": { "latest": "v0.13.0" },
+                "mcp-server": { "latest": "2.2.0" }
+            }
+        });
+        // Only mcp-server was rate-limited → only it comes from the mirror.
+        let filled = mirror_upstream(&catalog, &["mcp-server"]);
+        assert_eq!(filled.len(), 1);
+        assert_eq!(filled[0].id, "mcp-server");
+        assert_eq!(filled[0].tag, "2.2.0");
+        // "personal" maps to the catalog's "exasol-personal" entry.
+        let filled = mirror_upstream(&catalog, &["personal", "exapump"]);
+        assert_eq!(filled.iter().map(|u| u.tag.as_str()).collect::<Vec<_>>(), ["v2.3.0", "v0.13.0"]);
+    }
+
+    #[test]
+    fn mirror_upstream_tolerates_null_and_absent_entries() {
+        let catalog: Value = serde_json::json!({ "items": { "mcp-server": { "latest": null } } });
+        assert!(mirror_upstream(&catalog, &["mcp-server", "personal"]).is_empty());
+        assert!(mirror_upstream(&serde_json::json!({}), &["mcp-server"]).is_empty());
+        // Unknown component ids are simply skipped, never invented.
+        assert!(mirror_upstream(&catalog, &["nope"]).is_empty());
     }
 
     #[test]

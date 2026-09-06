@@ -61,6 +61,7 @@ import {
 import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
 import { CommunityDbActions } from "@/features/marketplace/CommunityDbActions";
+import { pickAsset } from "@/features/marketplace/assets";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -147,25 +148,6 @@ function openExternal(url: string) {
   }
 }
 
-/** Pick the release asset that best matches the host platform. */
-function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset | null {
-  if (!assets.length) return null;
-  if (!env) return assets[0];
-  const osTokens =
-    env.os === "macos"
-      ? ["darwin", "macos", "apple", "osx"]
-      : env.os === "windows"
-        ? ["windows", "win", ".exe", ".msi"]
-        : ["linux"];
-  const archTokens = env.arch === "aarch64" ? ["arm64", "aarch64"] : ["x86_64", "amd64", "x64"];
-  const byOsArch = assets.find((a) => {
-    const n = a.name.toLowerCase();
-    return osTokens.some((t) => n.includes(t)) && archTokens.some((t) => n.includes(t));
-  });
-  const byOs = assets.find((a) => osTokens.some((t) => a.name.toLowerCase().includes(t)));
-  return byOsArch ?? byOs ?? assets[0];
-}
-
 
 /** Catalog items that ARE managed components. Their installed state + version
  * is the AUTHORITATIVE `list_components` value (single source of truth), not the
@@ -208,6 +190,11 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Pull the chosen exasol/docker-db version from Docker Hub",
         "Run it privileged with data persisted in a named volume (DB on 127.0.0.1:8574, BucketFS on 2581)",
         "Register the sys connection in Studio once the database answers",
+      ];
+    case "maven":
+      return [
+        "Resolve the latest exasol-jdbc version from Maven Central (live)",
+        "Download the driver jar into Studio's marketplace folder for your Java tools",
       ];
     case "reference":
       return ["Opens the official download / documentation page"];
@@ -386,21 +373,6 @@ export function Marketplace() {
 
   useEffect(() => {
     refresh();
-    // Keep an OPEN Marketplace in sync with the catalog source in the background
-    // (the catalog.json mirror updates on its own cadence); light local reads +
-    // one catalog fetch, so it never disrupts the user.
-    // IMPORTANT: the periodic sync uses ONLY the rate-limit-free catalog.json
-    // mirror (raw.githubusercontent) + local reads — NEVER the per-repo GitHub
-    // API (marketRelease / componentsUpstream), which is unauthenticated and
-    // capped at 60/hr. Re-firing those on a timer exhausts the quota and makes
-    // the Updates tab go blank. Live release fetches stay mount-only.
-    const iv = window.setInterval(() => {
-      ipc.marketCatalog().then(setCatalog).catch(() => undefined);
-      ipc.marketInstalled().then(setInstalled).catch(() => undefined);
-      ipc.listComponents().then(setComponents).catch(() => undefined);
-    }, 10 * 60 * 1000);
-    return () => window.clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   // Kick the release fetch once the page is ready (painted) — never before, so
@@ -567,23 +539,26 @@ export function Marketplace() {
     [releases, env, latestFor],
   );
 
+  // Ids with an installer ACTUALLY running. A ref (not derived queue state) so
+  // two enqueues in the same tick — a double-click, a stale multi-select — can
+  // never start a second installer for the same id.
+  const activeInstallsRef = useRef<Set<string>>(new Set());
+
   // Queue items and install them all IN PARALLEL — one install never blocks
   // another, and each reports its own status independently.
   const enqueue = useCallback(
     (items: CatalogItem[]) => {
-      const fresh = items.filter((i) => i.install !== "reference");
+      const fresh = items.filter((i) => i.install !== "reference" && !activeInstallsRef.current.has(i.id));
       if (!fresh.length) return;
+      for (const item of fresh) activeInstallsRef.current.add(item.id);
       setQueue((q) => {
-        const seen = new Set(q.filter((x) => x.status === "installing" || x.status === "pending").map((x) => x.id));
-        const add = fresh
-          .filter((i) => !seen.has(i.id))
-          .map((i) => ({ id: i.id, name: i.name, status: "installing" as const }));
         // drop any prior finished entry for these ids, then add fresh
         const kept = q.filter((x) => !fresh.some((f) => f.id === x.id));
-        return [...kept, ...add];
+        return [...kept, ...fresh.map((i) => ({ id: i.id, name: i.name, status: "installing" as const }))];
       });
       for (const item of fresh) {
         void installOne(item).then((ok) => {
+          activeInstallsRef.current.delete(item.id);
           setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
           refreshInstalled();
         });
@@ -642,6 +617,23 @@ export function Marketplace() {
 
   const [query, setQuery] = useState("");
   const [nav, setNav] = useState<string>("recommended");
+
+  // Fetch-on-demand ONLY (user rule): update state re-syncs when the app opens
+  // (mount) and when a tab is clicked — never on a background timer. Uses the
+  // rate-limit-free catalog.json mirror + local reads; componentsUpstream (the
+  // unauthenticated 60/hr GitHub API, now with a mirror fallback) re-fires only
+  // for the Updates tab, where its answer is what the user came to see.
+  useEffect(() => {
+    ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+    ipc.marketInstalled().then(setInstalled).catch(() => undefined);
+    ipc.listComponents().then(setComponents).catch(() => undefined);
+    if (nav === "updates") {
+      ipc
+        .componentsUpstream()
+        .then((list) => setComponentUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
+        .catch(() => undefined);
+    }
+  }, [nav]);
   // Kit "template" modal (Image-45 style): shows a kit's tools + install action.
   const [kitModal, setKitModal] = useState<Pack | null>(null);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
@@ -722,6 +714,32 @@ export function Marketplace() {
     }
   }
 
+  // Multi-select install: checked cards batch into ONE "Install selected"
+  // action (the existing parallel queue) instead of one click per card.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // One eligibility check shared by the card checkbox AND the batch action, so
+  // a selection made before state moved on (item got installed, release info
+  // arrived and revealed no host build) is re-validated at install time.
+  const canBatchInstall = (item: CatalogItem): boolean => {
+    if (item.install === "reference" || item.install === "community-docker") return false;
+    if (installedMap[item.id] || detected[item.id] || DRIVER_RUNTIME[item.id]) return false;
+    if (installingIds.has(item.id)) return false;
+    const assets = releases[item.id]?.assets ?? [];
+    return !(item.install === "binary" && assets.length > 0 && pickAsset(assets, env) === null);
+  };
+  function installSelected() {
+    const items = CATALOG.filter((c) => selected.has(c.id) && canBatchInstall(c));
+    setSelected(new Set());
+    enqueue(items);
+  }
+
   const renderCard = (item: CatalogItem, compact = false) => {
     // Item-specific glyphs win over the kind fallback: MCP surfaces show the
     // official MCP mark everywhere (rail, tabs, cards), never a generic server.
@@ -748,6 +766,40 @@ export function Marketplace() {
 
     // The DB is a running service, not just a file — show live state.
     const dbRunning = item.id === "exasol-personal" && detected["exasol-personal:running"] === true;
+
+    // A binary release that ships builds — but none for THIS host (e.g. the
+    // linux-only exa-postgres-interface on macOS) — gets an honest state
+    // instead of an Install button that can only fail.
+    const noHostBuild =
+      item.install === "binary" &&
+      !inst &&
+      !onSystem &&
+      !did &&
+      (releases[item.id]?.assets?.length ?? 0) > 0 &&
+      pickAsset(releases[item.id]?.assets ?? [], env) === null;
+
+    // Only items with a real one-click install that isn't already done can
+    // join a multi-select batch (same check the batch re-runs at install time).
+    const selectable = canBatchInstall(item);
+    const isChecked = selected.has(item.id);
+    const selectBox = selectable ? (
+      <button
+        role="checkbox"
+        aria-checked={isChecked}
+        aria-label={`Select ${item.name} to install together`}
+        title="Select to install together"
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleSelected(item.id);
+        }}
+        className={cn(
+          "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+          isChecked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent hover:border-primary/60",
+        )}
+      >
+        <Check className="h-3 w-3" />
+      </button>
+    ) : null;
 
     const badges = (
       <>
@@ -861,6 +913,18 @@ export function Marketplace() {
           <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
             Get <ExternalLink className="h-3.5 w-3.5" />
           </button>
+        ) : noHostBuild ? (
+          <>
+            <span
+              title="The upstream release ships platform-specific builds, but none for this machine."
+              className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground"
+            >
+              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> No {env?.os === "macos" ? "macOS" : (env?.os ?? "this-platform")} build yet
+            </span>
+            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
+              Get <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          </>
         ) : (
           <>
             {item.id === "semantic-views" && profiles.length > 0 ? (
@@ -927,6 +991,7 @@ export function Marketplace() {
     if (compact) {
       return (
         <div key={item.id} className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3 py-2">
+          {selectBox}
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -961,8 +1026,11 @@ export function Marketplace() {
               </button>
             </div>
           </div>
+          {selectBox}
         </div>
-        <div className="mt-3">{actions}</div>
+        {/* mt-auto pins the action row to the card bottom so buttons line up
+            across a grid row regardless of description length. */}
+        <div className="mt-auto pt-3">{actions}</div>
         {item.install === "personal-local" && env && env.os !== "macos" && !env.docker && !env.podman ? (
           <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
             <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
@@ -1238,6 +1306,26 @@ export function Marketplace() {
       </div>
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
+
+      {selected.size > 0 ? (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border bg-popover px-3 py-2 shadow-2xl">
+          <span className="text-[12px] font-medium text-foreground">
+            {selected.size} selected
+          </span>
+          <button
+            onClick={installSelected}
+            className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+          >
+            <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" /> Install selected
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       {queue.length ? (
         <div className="fixed bottom-4 right-4 z-50 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
@@ -1692,6 +1780,8 @@ function IndependentComponents({
   }, [comps, upstream, onActionable]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Rows ticked for a multi-select "Update selected" batch.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   // Live progress for long component operations (the DB engine update backs
   // up, stops, swaps and restarts the database — minutes, not seconds).
   // Rust streams every step over market:log with the bootstrap job id.
@@ -1710,15 +1800,10 @@ function IndependentComponents({
       // a transient rate-limit doesn't hide a real update behind "up to date".
       .catch(() => setUpstream((prev) => prev ?? {}));
   }, []);
+  // Mount = the Updates tab being opened (this component only renders there),
+  // so mount-time refresh + refreshUpstream IS the fetch-on-tab-click rule.
+  // No background timers (user rule: fetch only on app open and tab clicks).
   useEffect(() => refreshUpstream(), [refreshUpstream]);
-  // Periodically re-read the LOCAL installed list only. Do NOT re-fire
-  // componentsUpstream on a timer — it's an unauthenticated GitHub API call
-  // (60/hr) and re-firing it exhausts the quota, blanking the Updates tab. The
-  // upstream tags are fetched once on mount; a manual Refresh re-checks them.
-  useEffect(() => {
-    const iv = window.setInterval(() => void refresh(), 5 * 60 * 1000);
-    return () => window.clearInterval(iv);
-  }, [refresh]);
   const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
   useEffect(() => {
     if (!anyBusy) return;
@@ -1772,12 +1857,52 @@ function IndependentComponents({
     return tag && isNewerVersion(tag, c.installed) ? tag : null;
   };
   const actionable = actionableComponents(comps, upstream);
+  // Ticks that still point at an actionable row — a row that resolved itself
+  // (updated elsewhere, no longer actionable) must not inflate the count or
+  // enable a no-op batch.
+  const pickedActionable = actionable.filter((c) => picked.has(c.id));
+
+  // The version a row's own Update/Install button would use — shared with the
+  // multi-select batch so both paths install exactly the same thing.
+  const versionFor = (c: ComponentInfo): string | undefined =>
+    updateFor(c) ?? (!c.opaqueVersion && !c.installed ? (upstream?.[c.id] ?? undefined) : undefined);
+
+  // Multi-select: update several components in ONE go. Sequential on purpose —
+  // the DB engine update takes a maintenance lock and must never race others.
+  async function runPicked() {
+    const chosen = pickedActionable;
+    setPicked(new Set());
+    for (const c of chosen) {
+      // run() reports each failure in the note and never throws, so one
+      // failed component doesn't abandon the rest of the batch.
+      const version = versionFor(c);
+      await run(c.id, () => ipc.updateComponent(c.id, version), `${c.name} updated${version ? ` to ${version}` : ""}.`);
+    }
+  }
 
   return (
     <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
       <div className="mb-1 flex items-center gap-2">
         <ShieldCheck className="h-4 w-4 text-primary" />
-        <h3 className="text-[12.5px] font-semibold text-foreground">Components</h3>
+        <h3 className="flex-1 text-[12.5px] font-semibold text-foreground">Components</h3>
+        {actionable.length > 1 ? (
+          <>
+            <button
+              onClick={() => setPicked((p) => (p.size === actionable.length ? new Set() : new Set(actionable.map((c) => c.id))))}
+              disabled={anyBusy}
+              className="flex h-6 items-center rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              {picked.size === actionable.length ? "Select none" : "Select all"}
+            </button>
+            <button
+              onClick={() => void runPicked()}
+              disabled={anyBusy || pickedActionable.length === 0}
+              className="flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+            >
+              <Download className="h-3 w-3" /> Update selected{pickedActionable.length > 0 ? ` (${pickedActionable.length})` : ""}
+            </button>
+          </>
+        ) : null}
       </div>
 
       {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
@@ -1798,8 +1923,29 @@ function IndependentComponents({
           const isBusy = busy === c.id || c.busy;
           const target = updateFor(c);
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
+          const rowChecked = picked.has(c.id);
           return (
             <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+              <button
+                role="checkbox"
+                aria-checked={rowChecked}
+                aria-label={`Select ${c.name} for the update batch`}
+                disabled={anyBusy}
+                onClick={() =>
+                  setPicked((p) => {
+                    const next = new Set(p);
+                    if (next.has(c.id)) next.delete(c.id);
+                    else next.add(c.id);
+                    return next;
+                  })
+                }
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-40",
+                  rowChecked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent hover:border-primary/60",
+                )}
+              >
+                <Check className="h-3 w-3" />
+              </button>
               <div className="min-w-40 flex-1">
                 <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
                 {describe?.(c.id) ? (

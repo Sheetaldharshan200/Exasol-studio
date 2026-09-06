@@ -321,7 +321,11 @@ export type InstalledItem = { id: string; version: string; path: string; filenam
 
 export type CatalogEntry = {
   repo: string;
+  /** The REAL upstream release tag — never masked by the verified pin. */
   latest: string | null;
+  /** The validated lock pin for managed components (Personal, ExaPump, MCP
+   *  Server) — the baseline Revert returns to. Null for everything else. */
+  verified?: string | null;
   homepage: string;
   /** Repo name + About from GitHub, fetched AUTHENTICATED by the catalog cron
    *  — the reliable metadata source when the app's own unauthenticated GitHub
