@@ -329,6 +329,22 @@ export type CatalogEntry = {
   name?: string | null;
   description?: string | null;
 };
+/** Live state of the Exasol Community (docker-db) card. */
+export type CommunityStatus = {
+  dockerInstalled: boolean;
+  engineRunning: boolean;
+  os: string;
+  arch: string;
+  /** amd64 host → native; otherwise the image runs emulated (experimental). */
+  native: boolean;
+  containerExists: boolean;
+  running: boolean;
+  tag: string | null;
+  dbPort: number;
+  bucketfsPort: number;
+  user: string;
+};
+
 export type MarketCatalog = {
   generatedAt: string | null;
   mirrorRepo: string;
@@ -517,6 +533,11 @@ export const ipc = {
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
+  // Exasol Community database (full exasol/docker-db in Docker).
+  communityStatus: () => call<CommunityStatus>("community_status"),
+  communityVersions: () => call<string[]>("community_versions"),
+  communityInstall: (tag: string) => call<CommunityStatus>("community_install", { tag }),
+  communityControl: (action: "start" | "stop" | "remove" | "destroy") => call<CommunityStatus>("community_control", { action }),
   marketRepoMeta: (repos: string[]) =>
     call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
       "market_repo_meta",

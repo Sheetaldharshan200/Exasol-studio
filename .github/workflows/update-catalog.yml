@@ -37,6 +37,17 @@ jobs:
           items=$(cat <<'EOF'
           exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
           exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exasol-community|exasol/docker-db|https://github.com/exasol/docker-db
+          notebook-connector|exasol/notebook-connector|https://github.com/exasol/notebook-connector
+          dbt-exasol|exasol/dbt-exasol|https://github.com/exasol/dbt-exasol
+          exasol-scheduler|exasol-labs/exasol-scheduler|https://github.com/exasol-labs/exasol-scheduler
+          dash-server|exasol-labs/dash-server|https://github.com/exasol-labs/dash-server
+          grafana-datasource|exasol-labs/grafana-datasource|https://github.com/exasol-labs/grafana-datasource
+          tableau-connector|exasol/tableau-connector|https://github.com/exasol/tableau-connector
+          terraform-provider|exasol-labs/terraform-provider-exasol|https://github.com/exasol-labs/terraform-provider-exasol
+          postgres-interface|exasol-labs/exa-postgres-interface|https://github.com/exasol-labs/exa-postgres-interface
+          mongodb-vs|exasol-labs/exasol-mongodb-vs|https://github.com/exasol-labs/exasol-mongodb-vs
+          more-functions|exasol-labs/more-functions|https://github.com/exasol-labs/more-functions
           exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
           mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
           pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol

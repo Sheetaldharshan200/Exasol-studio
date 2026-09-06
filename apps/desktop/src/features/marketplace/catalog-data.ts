@@ -17,6 +17,7 @@ export type Install =
   | "source-build"
   | "semantic-views"
   | "bundled"
+  | "community-docker"
   | "reference";
 
 export type CatalogItem = {
@@ -44,6 +45,10 @@ export type RepoMeta = { name: string; description: string | null; htmlUrl: stri
 // Official Exasol / Exasol-Labs repositories only.
 export const CATALOG: CatalogItem[] = [
   { id: "exasol-personal", repo: "exasol/exasol-personal", kind: "database", install: "personal-local" },
+  // Full Exasol 8 in Docker (BucketFS, virtual schemas, extensions; ≤10 GiB).
+  // Lifecycle is managed by the community_db Rust commands: Docker checks,
+  // live version tags from Docker Hub, pull/run, start/stop/remove.
+  { id: "exasol-community", repo: "exasol/docker-db", kind: "database", install: "community-docker" },
   { id: "exapump", repo: "exasol-labs/exapump", kind: "cli", install: "binary", labs: true },
   { id: "semantic-views", repo: "exasol-labs/exasol-semantic-views", kind: "extension", install: "semantic-views", labs: true },
   { id: "json-tables", repo: "exasol-labs/exasol-json-tables", kind: "extension", install: "source-build", labs: true },
@@ -86,6 +91,16 @@ export const CATALOG: CatalogItem[] = [
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
   { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "reference" },
+  { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip" },
+  { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip" },
+  { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "reference", labs: true },
+  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "reference", labs: true },
+  { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "reference", labs: true },
+  { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "reference" },
+  { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "reference", labs: true },
+  { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "reference", labs: true },
+  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "reference", labs: true },
+  { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "reference", labs: true },
   { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "uv-pip" },
   { id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", kind: "skills", install: "bundled", labs: true },
 ];

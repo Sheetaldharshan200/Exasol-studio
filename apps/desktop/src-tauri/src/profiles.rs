@@ -295,15 +295,29 @@ pub fn ensure_personal_local_profile(
     username: &str,
     password: &str,
 ) -> AppResult<ConnectionProfile> {
+    // Match the sidebar card + onboarding wording so the connection shows the
+    // same name everywhere.
+    ensure_local_profile(state, "Exasol Personal (local)", host, port, username, password)
+}
+
+/// Upsert a Studio-managed LOCAL connection profile (Personal, Community
+/// docker-db, …): reconcile the password on an existing host/port/user match,
+/// create it otherwise. Loopback connections force compression off — it buys
+/// nothing locally and just adds CPU.
+pub fn ensure_local_profile(
+    state: &AppState,
+    name: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+) -> AppResult<ConnectionProfile> {
     if let Some(mut existing) = load_profiles(state)?.into_iter().find(|p| {
         p.host.trim().eq_ignore_ascii_case(host.trim())
             && p.port == port
             && p.username.eq_ignore_ascii_case(username)
     }) {
         existing.password = password.into();
-        // Loopback connection — compression buys nothing and just adds CPU.
-        // Force it off so an older managed profile that was created with
-        // compression on is reconciled off, too.
         existing.compression = false;
         return save_profile(state, existing);
     }
@@ -312,9 +326,7 @@ pub fn ensure_personal_local_profile(
         state,
         ConnectionProfile {
             id: String::new(),
-            // Match the sidebar card + onboarding wording so the connection
-            // shows the same name everywhere.
-            name: "Exasol Personal (local)".into(),
+            name: name.into(),
             host: host.into(),
             port,
             username: username.into(),
@@ -322,7 +334,6 @@ pub fn ensure_personal_local_profile(
             schema: None,
             notes: Some("Managed automatically by Exasol Studio".into()),
             ssl_mode: "preferred".into(),
-            // Off by default — loopback gains nothing from compression.
             compression: false,
             driver_id: default_driver(),
             created_at: None,

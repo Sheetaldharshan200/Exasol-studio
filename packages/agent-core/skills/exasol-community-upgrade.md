@@ -34,13 +34,18 @@ Tell the user in one line what you'll install and why, get their yes, then:
 - Linux/WSL: the distro's docker package; Windows: Docker Desktop (link them).
 Verify with `docker info` before moving on.
 
-## 4 — Deploy Exasol Community Edition (ASK first)
-**exasol-labs/exasol-labs-community-edition** is full Exasol v8 WITH BucketFS,
-running locally in Docker — everything blocked on Personal works there.
-Confirm with the user ("install Community Edition alongside your Personal DB —
-your Personal data stays untouched"), then follow that repo's README for the
-current run command (fetch/read it rather than reciting from memory — the
-image and flags evolve). Use NON-conflicting ports (Personal owns 8563/8565).
+## 4 — Deploy the Exasol Community database (ASK first)
+The Marketplace has an **"Exasol Community" card** (the full `exasol/docker-db`
+image: Exasol 8 WITH BucketFS, up to 10 GiB) — it does the Docker checks,
+lists LIVE versions from Docker Hub, pulls, runs privileged with a persistent
+volume, and registers the connection (127.0.0.1:8574, sys/exasol; BucketFS on
+2581). Drive it via `studio_control` (open marketplace) or tell the user which
+card to click; installing is one button.
+Platform truth, stated plainly: the image is linux/amd64 and upstream supports
+Docker on Linux — native on Linux/WSL2 hosts; on Apple Silicon it runs
+EMULATED (experimental, slower — the card says so). Intel desktops can instead
+use the Community Edition OVA (exasol-labs/exasol-labs-community-edition — a
+VirtualBox/VMware VM image, Intel-only on Mac).
 
 ## 5 — Wire it into Studio and finish the task
 - Add it as a NEW connection (its own host:port + credentials) — never touch

@@ -60,6 +60,7 @@ import {
 } from "@/features/marketplace/catalog-data";
 import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
+import { CommunityDbActions } from "@/features/marketplace/CommunityDbActions";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -202,6 +203,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       ];
     case "bundled":
       return ["Verify the pinned skills shipped inside Exasol Studio", "Make them available to the AI agent immediately"];
+    case "community-docker":
+      return [
+        "Pull the chosen exasol/docker-db version from Docker Hub",
+        "Run it privileged with data persisted in a named volume (DB on 127.0.0.1:8574, BucketFS on 2581)",
+        "Register the sys connection in Studio once the database answers",
+      ];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
@@ -781,7 +788,12 @@ export function Marketplace() {
       </>
     );
 
-    const actions = (
+    // The Community database manages its own docker lifecycle — dedicated card
+    // actions (Docker checks, live versions, install/start/stop) instead of the
+    // generic install button.
+    const actions = item.install === "community-docker" ? (
+      <CommunityDbActions />
+    ) : (
       <div className="flex flex-wrap items-center gap-2">
         {did ? (
           runtimeReady ? (
