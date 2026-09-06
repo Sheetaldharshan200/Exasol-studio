@@ -745,7 +745,6 @@ export function Marketplace() {
     const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : latest;
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
-    const comingSoon = !did && item.install === "reference";
 
     // The DB is a running service, not just a file — show live state.
     const dbRunning = item.id === "exasol-personal" && detected["exasol-personal:running"] === true;
@@ -782,8 +781,6 @@ export function Marketplace() {
           <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
             <Check className="h-2.5 w-2.5" /> detected
           </span>
-        ) : comingSoon ? (
-          <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">coming soon</span>
         ) : null}
       </>
     );
@@ -823,13 +820,6 @@ export function Marketplace() {
               {driverBusy[did] ? "Installing…" : "Install & use here"}
             </button>
           )
-        ) : comingSoon ? (
-          <>
-            <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">Coming soon to Exasol Studio</span>
-            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
-              Docs <ExternalLink className="h-3.5 w-3.5" />
-            </button>
-          </>
         ) : inst ? (
           <>
             {newer ? (
@@ -915,7 +905,7 @@ export function Marketplace() {
             </button>
           </>
         )}
-        {item.homepage && !comingSoon && item.install !== "reference" ? (
+        {item.homepage && item.install !== "reference" ? (
           <button
             onClick={() => openExternal(item.homepage)}
             title={`Docs — ${item.homepage}`}
@@ -962,8 +952,6 @@ export function Marketplace() {
             </div>
             {did ? (
               <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-primary"><Check className="h-3 w-3" /> Runs inside Exasol Studio</p>
-            ) : comingSoon ? (
-              <p className="mt-0.5 text-[10px] text-muted-foreground">Supported by Exasol — not yet runnable in Exasol Studio</p>
             ) : null}
             <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
             <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">

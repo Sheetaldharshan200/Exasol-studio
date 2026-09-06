@@ -48,7 +48,16 @@ export const CATALOG: CatalogItem[] = [
   // Full Exasol 8 in Docker (BucketFS, virtual schemas, extensions; ≤10 GiB).
   // Lifecycle is managed by the community_db Rust commands: Docker checks,
   // live version tags from Docker Hub, pull/run, start/stop/remove.
-  { id: "exasol-community", repo: "exasol/docker-db", kind: "database", install: "community-docker" },
+  {
+    id: "exasol-community",
+    repo: "exasol/docker-db",
+    kind: "database",
+    install: "community-docker",
+    // Override: the repo's About line reads "Documentation for the Docker
+    // version…", which mislabels a full database as documentation.
+    name: "Exasol Community",
+    description: "Full Exasol 8 database running in Docker — BucketFS, virtual schemas and extensions, up to 10 GiB of data. Free for evaluation and development.",
+  },
   { id: "exapump", repo: "exasol-labs/exapump", kind: "cli", install: "binary", labs: true },
   { id: "semantic-views", repo: "exasol-labs/exasol-semantic-views", kind: "extension", install: "semantic-views", labs: true },
   { id: "json-tables", repo: "exasol-labs/exasol-json-tables", kind: "extension", install: "source-build", labs: true },
@@ -118,9 +127,10 @@ export function repoDisplayName(repo: string): string {
 }
 
 /**
- * Fill an item's display fields: GitHub metadata first (the exact repo name
- * and About line), the item's own fields for repo-less entries, safe
- * fallbacks while metadata is loading or unavailable.
+ * Fill an item's display fields. Explicit `name`/`description` on the entry are
+ * deliberate OVERRIDES and win (a repo's About line is not always a product
+ * description — exasol/docker-db's says "Documentation for…"); GitHub metadata
+ * fills everything not overridden; safe fallbacks cover loading/offline.
  */
 export function resolveCatalogItem(
   item: CatalogItem,
@@ -129,9 +139,9 @@ export function resolveCatalogItem(
   const m = item.repo ? meta?.[item.repo] : undefined;
   return {
     ...item,
-    name: m?.name || item.name || (item.repo ? repoDisplayName(item.repo) : item.id),
-    description: (m ? m.description : null) ?? item.description ?? "",
-    homepage: m?.htmlUrl || item.homepage || (item.repo ? `https://github.com/${item.repo}` : ""),
+    name: item.name || m?.name || (item.repo ? repoDisplayName(item.repo) : item.id),
+    description: item.description ?? (m ? m.description : null) ?? "",
+    homepage: item.homepage || m?.htmlUrl || (item.repo ? `https://github.com/${item.repo}` : ""),
   };
 }
 

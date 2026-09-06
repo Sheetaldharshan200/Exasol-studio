@@ -1263,6 +1263,21 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         None,
     );
 
+    // Save the built-in connection the moment the database is query-ready —
+    // BEFORE the ExaPump / agent-skills downloads — so the user can connect and
+    // work while the remaining components install in the background.
+    status.step = "connection-profile".into();
+    status.message = "Saving the built-in local connection in the Studio vault…".into();
+    write_status(&app, &data_dir, status.clone())?;
+    let profile = profiles::ensure_personal_local_profile(
+        &app.state::<AppState>(),
+        &runtime.host,
+        runtime.port,
+        &runtime.user,
+        &runtime.password,
+    )?;
+    status.profile_id = Some(profile.id.clone());
+
     // Components are INDEPENDENT: the bootstrap installs the database plus
     // ExaPump and the MCP server, and a component that fails to install must
     // never block the rest — notify, mark it failed, continue. Each can be
@@ -1317,17 +1332,6 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         ),
     }
 
-    status.step = "connection-profile".into();
-    status.message = "Saving the built-in local connection in the Studio vault…".into();
-    write_status(&app, &data_dir, status.clone())?;
-    let profile = profiles::ensure_personal_local_profile(
-        &app.state::<AppState>(),
-        &runtime.host,
-        runtime.port,
-        &runtime.user,
-        &runtime.password,
-    )?;
-    status.profile_id = Some(profile.id.clone());
 
     status.step = "mcp-server".into();
     status.message =

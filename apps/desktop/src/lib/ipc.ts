@@ -538,6 +538,7 @@ export const ipc = {
   communityVersions: () => call<string[]>("community_versions"),
   communityInstall: (tag: string) => call<CommunityStatus>("community_install", { tag }),
   communityControl: (action: "start" | "stop" | "remove" | "destroy") => call<CommunityStatus>("community_control", { action }),
+  communitySetup: (action: "start-docker" | "install-docker") => call<CommunityStatus>("community_setup", { action }),
   marketRepoMeta: (repos: string[]) =>
     call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
       "market_repo_meta",

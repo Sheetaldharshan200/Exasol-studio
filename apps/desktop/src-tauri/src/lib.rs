@@ -145,6 +145,7 @@ pub fn run() {
             community_db::community_versions,
             community_db::community_install,
             community_db::community_control,
+            community_db::community_setup,
             market::market_doc,
             market::market_doc_save,
             market::market_doc_load,

@@ -96,21 +96,29 @@ export function CommunityDbActions() {
       <div className="flex flex-wrap items-center gap-2">
         {!status.dockerInstalled ? (
           <>
-            <span className="text-[12px] text-muted-foreground">
-              Needs Docker — macOS: <code className="rounded bg-muted px-1">brew install colima docker && colima start</code>
-            </span>
+            <button className={cn(primary, "cta-glow")} disabled={Boolean(busy)} onClick={() => void run("docker", () => ipc.communitySetup("install-docker"))}>
+              {busy === "docker" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {busy === "docker" ? "Installing Docker…" : "Install Docker"}
+            </button>
             <button className={quiet} onClick={refresh}>
               <RefreshCcw className="h-3.5 w-3.5" /> Re-check
             </button>
+            <span className="text-[11px] text-muted-foreground">
+              Runs <code className="rounded bg-muted px-1">brew install colima docker && colima start</code> — headless, no admin.
+            </span>
           </>
         ) : !status.engineRunning ? (
           <>
-            <span className="text-[12px] text-muted-foreground">
-              Docker is installed but not running — start it (<code className="rounded bg-muted px-1">colima start</code> or Docker Desktop).
-            </span>
+            <button className={primary} disabled={Boolean(busy)} onClick={() => void run("docker", () => ipc.communitySetup("start-docker"))}>
+              {busy === "docker" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              {busy === "docker" ? "Starting Docker…" : "Start Docker"}
+            </button>
             <button className={quiet} onClick={refresh}>
               <RefreshCcw className="h-3.5 w-3.5" /> Re-check
             </button>
+            <span className="text-[11px] text-muted-foreground">
+              Runs <code className="rounded bg-muted px-1">colima start</code> (or launches Docker Desktop).
+            </span>
           </>
         ) : !status.containerExists ? (
           <>

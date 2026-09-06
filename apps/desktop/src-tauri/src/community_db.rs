@@ -251,6 +251,70 @@ pub fn community_install(app: AppHandle, tag: String) -> AppResult<CommunityStat
     Ok(status_now())
 }
 
+/// Fix the Docker prerequisite FOR the user instead of quoting commands at
+/// them: "start-docker" starts the engine (Colima, or launches Docker Desktop),
+/// "install-docker" installs the headless Colima + docker CLI via Homebrew and
+/// starts it. Progress streams over market:log; the card confirms with a
+/// fresh status.
+#[tauri::command]
+pub fn community_setup(app: AppHandle, action: String) -> AppResult<CommunityStatus> {
+    match action.as_str() {
+        "start-docker" => {
+            let Some(bin) = docker() else {
+                return Err(AppError::Storage("Docker is not installed yet — use Install Docker first.".into()));
+            };
+            if let Some(colima) = resolve_bin("colima") {
+                let colima = colima.to_string_lossy().to_string();
+                if run_streamed(&app, JOB_ID, &colima, &["start"])? != 0 {
+                    return Err(AppError::Storage("`colima start` failed — its log above has the reason.".into()));
+                }
+            } else if std::env::consts::OS == "macos" {
+                // Docker Desktop: launch the app, then wait for the engine below.
+                let _ = Command::new("open").args(["-a", "Docker"]).output();
+                emit_log(&app, JOB_ID, "Launching Docker Desktop — waiting for the engine…", "info");
+            } else {
+                return Err(AppError::Storage(
+                    "Start the Docker service for your platform (e.g. `sudo systemctl start docker`), then Re-check.".into(),
+                ));
+            }
+            let started = std::time::Instant::now();
+            while started.elapsed() < Duration::from_secs(90) {
+                if docker_ok(&bin, &["info"]) {
+                    return Ok(status_now());
+                }
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            Err(AppError::Storage("Docker did not become ready within 90s — check its own UI/log, then Re-check.".into()))
+        }
+        "install-docker" => {
+            if std::env::consts::OS != "macos" {
+                return Err(AppError::Storage(
+                    "Automatic install is macOS-only (Homebrew + Colima). Install Docker for your platform, then Re-check.".into(),
+                ));
+            }
+            let Some(brew) = resolve_bin("brew") else {
+                return Err(AppError::Storage(
+                    "Homebrew is not installed — install it from https://brew.sh, or install Docker Desktop, then Re-check.".into(),
+                ));
+            };
+            let brew = brew.to_string_lossy().to_string();
+            emit_log(&app, JOB_ID, "Installing Colima + the docker CLI via Homebrew (headless — no admin rights, no Docker Desktop)…", "info");
+            if run_streamed(&app, JOB_ID, &brew, &["install", "colima", "docker"])? != 0 {
+                return Err(AppError::Storage("`brew install colima docker` failed — the log above has the reason.".into()));
+            }
+            let Some(colima) = resolve_bin("colima") else {
+                return Err(AppError::Storage("Colima installed but not found on PATH — open a new terminal or Re-check.".into()));
+            };
+            let colima = colima.to_string_lossy().to_string();
+            if run_streamed(&app, JOB_ID, &colima, &["start"])? != 0 {
+                return Err(AppError::Storage("`colima start` failed — its log above has the reason.".into()));
+            }
+            Ok(status_now())
+        }
+        other => Err(AppError::Storage(format!("Unsupported setup action: {other}"))),
+    }
+}
+
 /// start | stop | remove (container kept-volume) | destroy (container + data).
 #[tauri::command]
 pub fn community_control(app: AppHandle, action: String) -> AppResult<CommunityStatus> {
