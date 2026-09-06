@@ -1,10 +1,11 @@
 {
-  "generatedAt": "2026-09-04T06:48:07Z",
+  "generatedAt": "2026-09-06T17:38:14Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.2.0",
+      "verified": "v2.2.0",
       "homepage": "https://github.com/exasol/exasol-personal",
       "name": "exasol-personal",
       "description": "The Analytics Database for Agentic AI — Free for Personal Use"
@@ -12,20 +13,111 @@
     "exasol-cloud": {
       "repo": "exasol/exasol-personal",
       "latest": "v2.2.0",
+      "verified": "v2.2.0",
       "homepage": "https://github.com/exasol/exasol-personal",
       "name": "exasol-personal",
       "description": "The Analytics Database for Agentic AI — Free for Personal Use"
     },
+    "exasol-community": {
+      "repo": "exasol/docker-db",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/docker-db",
+      "name": "docker-db",
+      "description": "Documentation for the Docker version of Exasol"
+    },
+    "notebook-connector": {
+      "repo": "exasol/notebook-connector",
+      "latest": "3.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/notebook-connector",
+      "name": "notebook-connector",
+      "description": "Connection configuration management and additional tools for Jupyter notebooks."
+    },
+    "dbt-exasol": {
+      "repo": "exasol/dbt-exasol",
+      "latest": "v1.12.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/dbt-exasol",
+      "name": "dbt-exasol",
+      "description": "Data Build Tool adapter for Exasol"
+    },
+    "exasol-scheduler": {
+      "repo": "exasol-labs/exasol-scheduler",
+      "latest": "v0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-scheduler",
+      "name": "exasol-scheduler",
+      "description": "Lightweight table-driven SQL job scheduling for Exasol"
+    },
+    "dash-server": {
+      "repo": "exasol-labs/dash-server",
+      "latest": "v0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/dash-server",
+      "name": "dash-server",
+      "description": "Agent-operated Dash hosting for live analytical apps"
+    },
+    "grafana-datasource": {
+      "repo": "exasol-labs/grafana-datasource",
+      "latest": "v1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/grafana-datasource",
+      "name": "grafana-datasource",
+      "description": "Exasol Datasource Plugin for Grafana"
+    },
+    "tableau-connector": {
+      "repo": "exasol/tableau-connector",
+      "latest": "1.0.12",
+      "verified": null,
+      "homepage": "https://github.com/exasol/tableau-connector",
+      "name": "tableau-connector",
+      "description": "Tableau plug-in for Exasol database connection"
+    },
+    "terraform-provider": {
+      "repo": "exasol-labs/terraform-provider-exasol",
+      "latest": "v0.2.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/terraform-provider-exasol",
+      "name": "terraform-provider-exasol",
+      "description": "Manage Exasol database resources (users, roles, schemas, connections, and privileges) with Terraform."
+    },
+    "postgres-interface": {
+      "repo": "exasol-labs/exa-postgres-interface",
+      "latest": "v0.2.12",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exa-postgres-interface",
+      "name": "exa-postgres-interface",
+      "description": "A Postgres-compatible Gateway for Exasol"
+    },
+    "mongodb-vs": {
+      "repo": "exasol-labs/exasol-mongodb-vs",
+      "latest": "v0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-mongodb-vs",
+      "name": "exasol-mongodb-vs",
+      "description": "Query MongoDB collections from Exasol through a Rust Virtual Schema connector"
+    },
+    "more-functions": {
+      "repo": "exasol-labs/more-functions",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/more-functions",
+      "name": "more-functions",
+      "description": "Project that provides popular SQL functions that are not built-in directly into Exasol."
+    },
     "exapump": {
       "repo": "exasol-labs/exapump",
       "latest": "v0.12.0",
+      "verified": "v0.12.0",
       "homepage": "https://github.com/exasol-labs/exapump",
       "name": "exapump",
       "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust 🦀"
     },
     "mcp-server": {
       "repo": "exasol/mcp-server",
-      "latest": "2.0.0",
+      "latest": "2.2.0",
+      "verified": "2.0.0",
       "homepage": "https://github.com/exasol/mcp-server",
       "name": "mcp-server",
       "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
@@ -33,6 +125,7 @@
     "pyexasol": {
       "repo": "exasol/pyexasol",
       "latest": "2.3.2",
+      "verified": null,
       "homepage": "https://github.com/exasol/pyexasol",
       "name": "pyexasol",
       "description": "Exasol Python driver with low overhead, fast HTTP transport and compression"
@@ -40,6 +133,7 @@
     "sqlalchemy-exasol": {
       "repo": "exasol/sqlalchemy-exasol",
       "latest": "7.1.3",
+      "verified": null,
       "homepage": "https://github.com/exasol/sqlalchemy-exasol",
       "name": "sqlalchemy-exasol",
       "description": "SQLAlchemy dialect for EXASOL"
@@ -47,6 +141,7 @@
     "json-tables": {
       "repo": "exasol-labs/exasol-json-tables",
       "latest": "v0.3",
+      "verified": null,
       "homepage": "https://github.com/exasol-labs/exasol-json-tables",
       "name": "exasol-json-tables",
       "description": "Exasol JSON Tables: ingest, query, and reshape JSON-shaped data in Exasol."
@@ -54,6 +149,7 @@
     "ai-lab": {
       "repo": "exasol/ai-lab",
       "latest": "6.0.0",
+      "verified": null,
       "homepage": "https://github.com/exasol/ai-lab",
       "name": "ai-lab",
       "description": "Development environment for data science developers"
@@ -61,6 +157,7 @@
     "agent-skills": {
       "repo": "exasol-labs/exasol-agent-skills",
       "latest": "v0.24.1",
+      "verified": null,
       "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
       "name": "exasol-agent-skills",
       "description": "Exasol skills for AI agents. Optimized for Claude Code and OpenAI Codex 🤖"
@@ -68,6 +165,7 @@
     "semantic-views": {
       "repo": "exasol-labs/exasol-semantic-views",
       "latest": "v0.2",
+      "verified": null,
       "homepage": "https://github.com/exasol-labs/exasol-semantic-views",
       "name": "exasol-semantic-views",
       "description": "A database-native semantic layer for Exasol"
@@ -75,13 +173,15 @@
     "exarrow-rs": {
       "repo": "exasol-labs/exarrow-rs",
       "latest": "v0.16.0",
+      "verified": null,
       "homepage": "https://github.com/exasol-labs/exarrow-rs",
       "name": "exarrow-rs",
       "description": "ADBC-compatible driver for Exasol with Apache Arrow data format support. Written in Rust 🦀"
     },
     "driver-ts": {
       "repo": "exasol/exasol-driver-ts",
-      "latest": "0.6.0",
+      "latest": "0.7.0",
+      "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-ts",
       "name": "exasol-driver-ts",
       "description": "Exasol Typescript / Javascript Driver for Node and the Browser"
@@ -89,6 +189,7 @@
     "driver-go": {
       "repo": "exasol/exasol-driver-go",
       "latest": "v1.1.0",
+      "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-go",
       "name": "exasol-driver-go",
       "description": "Exasol SQL driver for Golang"
@@ -96,6 +197,7 @@
     "driver-websocket": {
       "repo": "exasol/websocket-api",
       "latest": null,
+      "verified": null,
       "homepage": "https://github.com/exasol/websocket-api",
       "name": "websocket-api",
       "description": "WebSocket API description and implementations for several programming languages"
@@ -103,6 +205,7 @@
     "superset": {
       "repo": "apache/superset",
       "latest": "6.1.0",
+      "verified": null,
       "homepage": "https://github.com/apache/superset",
       "name": "superset",
       "description": "Apache Superset is a Data Visualization and Data Exploration Platform"

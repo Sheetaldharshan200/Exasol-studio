@@ -2,10 +2,13 @@ name: Update marketplace catalog
 
 # Produces marketplace/catalog.json — the single source of truth the app reads
 # for the latest version of every item and whether an update is available.
-# Trust model: components pinned in the VALIDATED runtime-components.lock.json
-# (Exasol Personal, ExaPump, MCP Server) take their "latest" from that lock —
-# the version the cross-platform compatibility matrix approved — never a raw
-# upstream release tag. Other items track their upstream latest.
+# Trust model: "latest" is ALWAYS the real upstream release tag — the app must
+# never show a stale version while an official release exists (that hid MCP
+# Server 2.2.0 behind the 2.0.0 pin). For components pinned in the VALIDATED
+# runtime-components.lock.json (Exasol Personal, ExaPump, MCP Server) the lock
+# version is published separately as "verified" — the baseline the compatibility
+# matrix approved and the one Revert returns to; installs of anything newer stay
+# digest-verified in the app (verify-or-refuse).
 # One cheap ubuntu job; commits only when the catalog actually changed. Runs
 # after the weekly package builds (Wed) and on demand.
 
@@ -37,6 +40,17 @@ jobs:
           items=$(cat <<'EOF'
           exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
           exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
+          exasol-community|exasol/docker-db|https://github.com/exasol/docker-db
+          notebook-connector|exasol/notebook-connector|https://github.com/exasol/notebook-connector
+          dbt-exasol|exasol/dbt-exasol|https://github.com/exasol/dbt-exasol
+          exasol-scheduler|exasol-labs/exasol-scheduler|https://github.com/exasol-labs/exasol-scheduler
+          dash-server|exasol-labs/dash-server|https://github.com/exasol-labs/dash-server
+          grafana-datasource|exasol-labs/grafana-datasource|https://github.com/exasol-labs/grafana-datasource
+          tableau-connector|exasol/tableau-connector|https://github.com/exasol/tableau-connector
+          terraform-provider|exasol-labs/terraform-provider-exasol|https://github.com/exasol-labs/terraform-provider-exasol
+          postgres-interface|exasol-labs/exa-postgres-interface|https://github.com/exasol-labs/exa-postgres-interface
+          mongodb-vs|exasol-labs/exasol-mongodb-vs|https://github.com/exasol-labs/exasol-mongodb-vs
+          more-functions|exasol-labs/more-functions|https://github.com/exasol-labs/more-functions
           exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
           mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
           pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
@@ -59,23 +73,25 @@ jobs:
           first=1
           while IFS='|' read -r id repo homepage; do
             [ -z "$id" ] && continue
-            latest="null"
-            # Studio-verified only: for components pinned in the VALIDATED lock,
-            # the catalog "latest" IS the lock version (what the cross-platform
-            # compatibility matrix approved) — never a raw upstream release tag.
-            # Non-lock items still track their upstream latest.
-            locked=$(jq -r --arg id "$id" '
+            # "verified" = the validated lock pin (managed components only) —
+            # the baseline Revert returns to. It never masks "latest".
+            verified=$(jq -r --arg id "$id" '
               if $id=="exasol-personal" or $id=="exasol-cloud" then .personal.version
               elif $id=="exapump" then .exapump.version
               elif $id=="mcp-server" then .pythonStack.mcpServerVersion
               else empty end' apps/desktop/src-tauri/resources/runtime-components.lock.json 2>/dev/null || true)
-            if [ -n "$locked" ] && [ "$locked" != "null" ]; then
-              latest="$locked"
-            elif [ -n "$repo" ]; then
+            # "latest" = the REAL upstream release tag, for every item — the app
+            # decides what to offer; the catalog never hides a newer release.
+            latest="null"
+            if [ -n "$repo" ]; then
               # No -f: a repo with no published release returns 404 with a JSON
               # body; jq then yields "null". Guard the whole pipe so set -e is happy.
               latest=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
                 "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // "null"') || latest="null"
+            fi
+            # A repo with no releases still surfaces its verified pin as latest.
+            if [ "$latest" = "null" ] && [ -n "$verified" ] && [ "$verified" != "null" ]; then
+              latest="$verified"
             fi
             # Repo name + About line, fetched authenticated (the app's own
             # unauthenticated calls rate-limit at 60/hr, so the catalog is the
@@ -87,8 +103,9 @@ jobs:
             fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0
-            printf '    "%s": { "repo": "%s", "latest": %s, "homepage": "%s", "name": %s, "description": %s }' \
-              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" "$homepage" \
+            printf '    "%s": { "repo": "%s", "latest": %s, "verified": %s, "homepage": "%s", "name": %s, "description": %s }' \
+              "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" \
+              "$(jq -Rn --arg v "$verified" 'if $v=="" or $v=="null" then null else $v end')" "$homepage" \
               "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" >> catalog.json
           done <<< "$items"
           echo '' >> catalog.json
@@ -129,7 +146,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore: refresh marketplace catalog" \
-              --body "Automated catalog refresh — \"latest\" for lock-pinned components derives from the validated runtime-components lock. Approve to land (auto-merge)." \
+              --body "Automated catalog refresh — \"latest\" is the real upstream release per item; \"verified\" carries the validated lock pin for managed components. Approve to land (auto-merge)." \
               | grep -oE '[0-9]+$' | tail -1)
           fi
           if [ -z "$pr" ]; then
