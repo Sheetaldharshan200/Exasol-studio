@@ -285,7 +285,10 @@ export function ExaEnginePanel({
   // so the agent starts with the full Exasol playbook. Idempotent via a flag.
   useEffect(() => {
     if (!engineClient) return;
-    if (localStorage.getItem("exa.skills.seededAll") === "1") return;
+    // v2: reseed once more so the scenario-router master skillset (federation,
+    // scheduling, dbt, ETL, community-upgrade) becomes default-active on
+    // existing installs too. The merge below is a union — always safe to re-run.
+    if (localStorage.getItem("exa.skills.seededAll2") === "1") return;
     void (async () => {
       try {
         const all = await skillsApi.list();
@@ -294,7 +297,7 @@ export function ExaEnginePanel({
         const { settings } = await agent.getSettings();
         const merged = [...new Set([...settings.defaultSkills, ...names])];
         await agent.setSettings({ defaultSkills: merged });
-        localStorage.setItem("exa.skills.seededAll", "1");
+        localStorage.setItem("exa.skills.seededAll2", "1");
       } catch {
         /* best-effort — retries on the next mount until it succeeds */
       }
