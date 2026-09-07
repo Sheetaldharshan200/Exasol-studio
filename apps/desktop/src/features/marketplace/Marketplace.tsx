@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   BarChart3,
@@ -708,7 +708,18 @@ export function Marketplace() {
   const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
-  const [nav, setNav] = useState<string>("recommended");
+  const [nav, setNavState] = useState<string>("recommended");
+  // Tab switches render a LOT of cards at once. A transition lets the clicked
+  // tab highlight paint immediately and time-slices the heavy grid render, so
+  // Kits → Catalog never feels stuck; navPending dims the content meanwhile.
+  const [navPending, startNavTransition] = useTransition();
+  const setNav = useCallback((key: string) => startNavTransition(() => setNavState(key)), []);
+  // A light fade on every switch WITHOUT remounting the subtree (a key= remount
+  // re-created every card and made switching slower, not smoother).
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    contentRef.current?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
+  }, [nav]);
 
   // Fetch-on-demand ONLY (user rule): update state re-syncs when the app opens
   // (mount) and when a tab is clicked — never on a background timer. Uses the
@@ -1568,10 +1579,10 @@ export function Marketplace() {
               </div>
             </div>
 
-            {/* Keyed on the tab so each switch fades in instead of snapping —
-                the "hanging" feel came from main-thread probes (now async);
-                this keeps the transition visibly smooth on top. */}
-            <div key={nav} className="animate-in fade-in duration-200">
+            {/* No key= remount here (that re-created every card per switch):
+                the fade runs imperatively on the ref, and navPending dims the
+                content while React time-slices the heavy grid render. */}
+            <div ref={contentRef} className={cn("transition-opacity duration-150", navPending && "opacity-50")}>
             {/* Updates tab: Studio's own card, then the SAME cards as
                 everywhere else filtered to those with an update — managed
                 components update in place on their cards, no separate panel. */}
