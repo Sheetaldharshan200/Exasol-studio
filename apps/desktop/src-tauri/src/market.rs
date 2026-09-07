@@ -1151,7 +1151,10 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
 pub(crate) fn valid_version_tag(v: &str) -> bool {
     !v.is_empty()
         && v.len() <= 100
+        // Never option-like, and never dot-segment-like: a bare "." or ".."
+        // used as a URL path segment normalizes OUT of the intended endpoint.
         && !v.starts_with('-')
+        && !v.starts_with('.')
         && v.chars().all(|c| c.is_ascii_alphanumeric() || ".-_+".contains(c))
 }
 
@@ -1389,6 +1392,99 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
                 .unwrap_or_default();
             sort_versions_desc(versions)
         }
+        "npm" => {
+            // Scoped names ("@exasol/pkg") — validate, then encode the slash.
+            if reference.is_empty()
+                || !reference.chars().all(|c| c.is_ascii_alphanumeric() || "@/._-".contains(c))
+            {
+                return Err(AppError::Storage("Invalid npm package name.".into()));
+            }
+            let encoded = reference.replace('/', "%2F");
+            let body: Value = client
+                .get(format!("https://registry.npmjs.org/{encoded}"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("npm: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("versions")
+                .and_then(Value::as_object)
+                .ok_or_else(|| AppError::Storage("npm returned an unexpected package listing.".into()))?
+                .keys()
+                .filter(|v| valid_version_tag(v))
+                .cloned()
+                .collect();
+            sort_versions_desc(versions)
+        }
+        "goproxy" => {
+            if reference.is_empty()
+                || !reference.chars().all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c))
+            {
+                return Err(AppError::Storage("Invalid Go module path.".into()));
+            }
+            let text = client
+                .get(format!("https://proxy.golang.org/{reference}/@v/list"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("Go proxy: {e}")))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            sort_versions_desc(
+                text.lines().map(str::trim).filter(|v| valid_version_tag(v)).map(str::to_string).collect(),
+            )
+        }
+        "crates" => {
+            if !ok_segment(&reference) {
+                return Err(AppError::Storage("Invalid crate name.".into()));
+            }
+            let body: Value = client
+                .get(format!("https://crates.io/api/v1/crates/{reference}"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("crates.io: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("versions")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::Storage("crates.io returned an unexpected listing.".into()))?
+                .iter()
+                .filter(|v| !v.get("yanked").and_then(Value::as_bool).unwrap_or(false))
+                .filter_map(|v| v.get("num").and_then(Value::as_str))
+                .filter(|v| valid_version_tag(v))
+                .map(str::to_string)
+                .collect();
+            sort_versions_desc(versions)
+        }
+        "exasol-downloads" => {
+            // The official Exasol downloads portal index — versions for THIS
+            // platform only (offering a Linux-only build on macOS would be a
+            // guaranteed-failing install).
+            if !matches!(reference.as_str(), "ODBC" | "ADO.NET") {
+                return Err(AppError::Storage("Unknown Exasol downloads artifact.".into()));
+            }
+            let index = exasol_downloads_index().await?;
+            portal_artifacts(&index, &reference, std::env::consts::OS, std::env::consts::ARCH)
+                .into_iter()
+                .map(|a| a.version)
+                .collect()
+        }
         "maven-exasol-jdbc" => {
             let xml = client
                 .get("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml")
@@ -1445,6 +1541,243 @@ async fn install_jdbc_from_maven(app: &AppHandle, id: &str, requested: Option<&s
     Ok((v, note))
 }
 
+/// One artifact choice from Exasol's official downloads index.
+struct PortalArtifact {
+    version: String,
+    url: String,
+    filename: String,
+    sha256: Option<String>,
+}
+
+/// Parse Exasol's machine-readable downloads index
+/// (x-up.s3.amazonaws.com/7.x/packages.json — the same data the downloads
+/// portal renders) into the artifact list for one driver on one platform,
+/// newest first. Pure so the platform mapping is unit-tested.
+fn portal_artifacts(index: &Value, artifact: &str, host_os: &str, host_arch: &str) -> Vec<PortalArtifact> {
+    let portal_os = match host_os {
+        "macos" => "MacOS",
+        "windows" => "Windows",
+        _ => "Linux",
+    };
+    // ADO.NET ships Windows-only; everything else matches the host.
+    let (want_os, want_arch) = if artifact == "ADO.NET" {
+        ("Windows", "noarch")
+    } else {
+        (portal_os, host_arch)
+    };
+    let Some(oses) = index
+        .get("artefacts")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|e| e.get("name").and_then(Value::as_str) == Some(artifact)))
+        .and_then(|e| e.get("operatingSystems"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let Some(arches) = oses
+        .iter()
+        .find(|o| o.get("operatingSystem").and_then(Value::as_str) == Some(want_os))
+        .and_then(|o| o.get("architectures"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    // Exact architecture first; "universal"/"noarch" builds cover every host.
+    let arch_entry = arches
+        .iter()
+        .find(|a| a.get("architecture").and_then(Value::as_str) == Some(want_arch))
+        .or_else(|| {
+            arches.iter().find(|a| {
+                matches!(a.get("architecture").and_then(Value::as_str), Some("universal") | Some("noarch"))
+            })
+        });
+    let Some(versions) = arch_entry.and_then(|a| a.get("versions")).and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut list: Vec<PortalArtifact> = versions
+        .iter()
+        .filter_map(|v| {
+            let version = v.get("version")?.as_str()?.to_string();
+            let file = v.get("packageFile")?;
+            Some(PortalArtifact {
+                url: file.get("url")?.as_str()?.to_string(),
+                filename: file.get("filename")?.as_str()?.to_string(),
+                sha256: file.get("sha256").and_then(Value::as_str).map(str::to_string),
+                version,
+            })
+        })
+        .filter(|a| valid_version_tag(&a.version) && a.url.starts_with("https://"))
+        .collect();
+    // Same ordering rule as every other version list: newest first.
+    let order = sort_versions_desc(list.iter().map(|a| a.version.clone()).collect());
+    list.sort_by_key(|a| order.iter().position(|v| *v == a.version).unwrap_or(usize::MAX));
+    list
+}
+
+async fn exasol_downloads_index() -> AppResult<Value> {
+    reqwest::Client::new()
+        .get("https://x-up.s3.amazonaws.com/7.x/packages.json")
+        .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .error_for_status()
+        .map_err(|e| AppError::Storage(format!("Exasol downloads: {e}")))?
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))
+}
+
+/// One small JSON GET with the standard headers.
+async fn fetch_json(url: &str) -> AppResult<Value> {
+    reqwest::Client::new()
+        .get(url)
+        .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .error_for_status()
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))
+}
+
+/// Download a driver package from its NATIVE registry (npm / Go proxy /
+/// crates.io / GitHub tags) into the managed marketplace folder — independent
+/// of any Studio-pinned runtime, at the requested version or the registry's
+/// latest. Returns (resolved version, note).
+async fn install_registry_package(
+    app: &AppHandle,
+    id: &str,
+    requested: Option<&str>,
+) -> AppResult<(String, String)> {
+    let (version, url, filename, hint) = match id {
+        "driver-ts" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => fetch_json("https://registry.npmjs.org/@exasol%2Fexasol-driver-ts/latest")
+                    .await?
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::Storage("npm returned no latest version.".into()))?
+                    .to_string(),
+            };
+            (
+                v.clone(),
+                format!("https://registry.npmjs.org/@exasol/exasol-driver-ts/-/exasol-driver-ts-{v}.tgz"),
+                format!("exasol-driver-ts-{v}.tgz"),
+                "npm package tarball — or add it to a project with `npm install @exasol/exasol-driver-ts`",
+            )
+        }
+        "driver-go" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => fetch_json("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@latest")
+                    .await?
+                    .get("Version")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::Storage("The Go proxy returned no latest version.".into()))?
+                    .to_string(),
+            };
+            (
+                v.clone(),
+                format!("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@v/{v}.zip"),
+                format!("exasol-driver-go-{v}.zip"),
+                "Go module zip — or add it to a project with `go get github.com/exasol/exasol-driver-go`",
+            )
+        }
+        "exarrow-rs" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => {
+                    let body = fetch_json("https://crates.io/api/v1/crates/exarrow-rs").await?;
+                    body.get("crate")
+                        .and_then(|c| c.get("max_stable_version").or_else(|| c.get("max_version")))
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| AppError::Storage("crates.io returned no latest version.".into()))?
+                        .to_string()
+                }
+            };
+            (
+                v.clone(),
+                format!("https://crates.io/api/v1/crates/exarrow-rs/{v}/download"),
+                format!("exarrow-rs-{v}.crate"),
+                "crates.io package — or add it to a project with `cargo add exarrow-rs`",
+            )
+        }
+        "driver-r" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => crate::upstream::latest("exasol/r-exasol")
+                    .map(|r| r.tag)
+                    .ok_or_else(|| AppError::Storage("Could not resolve the latest r-exasol release.".into()))?,
+            };
+            (
+                v.clone(),
+                format!("https://codeload.github.com/exasol/r-exasol/tar.gz/refs/tags/{v}"),
+                format!("r-exasol-{v}.tar.gz"),
+                "R package source — or install in R with `remotes::install_github(\"exasol/r-exasol\")`",
+            )
+        }
+        "driver-odbc" | "driver-adonet" => {
+            let artifact_name = if id == "driver-odbc" { "ODBC" } else { "ADO.NET" };
+            let index = exasol_downloads_index().await?;
+            let artifacts = portal_artifacts(&index, artifact_name, std::env::consts::OS, std::env::consts::ARCH);
+            let chosen = match requested {
+                Some(v) => artifacts.into_iter().find(|a| a.version == v).ok_or_else(|| {
+                    AppError::Storage(format!("{artifact_name} {v} is not published for this platform."))
+                })?,
+                None => artifacts.into_iter().next().ok_or_else(|| {
+                    AppError::Storage(format!("{artifact_name} has no build for this platform on the Exasol downloads portal."))
+                })?,
+            };
+            let path = download_and_place(app, id, &chosen.url, &chosen.filename).await?;
+            // The portal publishes a sha256 per file — verify-or-refuse.
+            if let Some(expected) = &chosen.sha256 {
+                let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
+                if !actual.eq_ignore_ascii_case(expected) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(AppError::Storage(format!(
+                        "{} failed checksum verification — the download was discarded.",
+                        chosen.filename
+                    )));
+                }
+                emit_log(app, id, "Checksum verified against the Exasol downloads portal.", "info");
+            }
+            let hint = if id == "driver-odbc" {
+                "Unpack it and install the driver on your OS — Studio's ODBC runtime detects it automatically"
+            } else {
+                "Windows driver package for your .NET projects"
+            };
+            return Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)));
+        }
+        "driver-websocket" => {
+            // A living protocol spec (no releases): download the current
+            // snapshot — the API description plus client implementations.
+            let path = download_and_place(
+                app,
+                id,
+                "https://api.github.com/repos/exasol/websocket-api/tarball",
+                "websocket-api-snapshot.tar.gz",
+            )
+            .await?;
+            return Ok((
+                "snapshot".into(),
+                format!("Current WebSocket API spec snapshot downloaded to {path} — the protocol description plus client implementations."),
+            ));
+        }
+        other => return Err(AppError::Storage(format!("{other} has no registry package install."))),
+    };
+    if !valid_version_tag(&version) {
+        return Err(AppError::Storage(format!("Invalid package version: {version}")));
+    }
+    let path = download_and_place(app, id, &url, &filename).await?;
+    Ok((version.clone(), format!("Version {version} downloaded to {path}. {hint}.")))
+}
+
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
 #[tauri::command]
@@ -1496,6 +1829,12 @@ pub async fn market_install_run(
             resolved_version = Some(v);
             note
         }),
+        "driver-ts" | "driver-go" | "exarrow-rs" | "driver-r" | "driver-odbc" | "driver-adonet" | "driver-websocket" => {
+            install_registry_package(&app, &id, requested.as_deref()).await.map(|(v, note)| {
+                resolved_version = Some(v);
+                note
+            })
+        }
         "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
             .await
             .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
@@ -1605,6 +1944,16 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
 #[tauri::command]
 pub fn market_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let dir = market_dir(&app)?.join(&id);
+    // A JDBC override pointing INTO the directory being deleted would leave
+    // the Drivers UI showing a custom jar that no longer exists (the runtime
+    // itself falls back safely, but the display would lie). Clear it first.
+    if id == "driver-jdbc" {
+        if let Some(current) = crate::driver_exec::driver_override(&app, "jdbc") {
+            if std::path::Path::new(&current).starts_with(&dir) {
+                let _ = crate::driver_exec::driver_override_set(app.clone(), "jdbc".into(), None);
+            }
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
     let mut items = read_manifest(&app);
     items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
@@ -1747,9 +2096,80 @@ pub fn market_dir_path(app: AppHandle) -> AppResult<String> {
     Ok(market_dir(&app)?.to_string_lossy().to_string())
 }
 
+/// Point the SQL editor's driver runtime at an INDEPENDENTLY downloaded driver
+/// file — downloads stay unmanaged and unpinned, but one click makes Studio use
+/// one. Today: the JDBC jar (sets the same override as Drivers → "Use custom
+/// JAR", so it survives runtime reinstalls and is cleared the same way).
+#[tauri::command]
+pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> AppResult<Value> {
+    if !valid_version_tag(&version) {
+        return Err(AppError::Storage(format!("Invalid version: {version}")));
+    }
+    match id.as_str() {
+        "driver-jdbc" => {
+            let jar = market_dir(&app)?.join(&id).join(format!("exasol-jdbc-{version}.jar"));
+            if !jar.is_file() {
+                return Err(AppError::Storage(format!(
+                    "exasol-jdbc-{version}.jar isn't downloaded yet — install that version first."
+                )));
+            }
+            crate::driver_exec::driver_override_set(app, "jdbc".into(), Some(jar.to_string_lossy().to_string()))
+        }
+        other => Err(AppError::Storage(format!(
+            "{other} runs outside Studio — download any version here and use it from your own tools."
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
+
+    #[test]
+    fn portal_artifacts_match_the_host_platform() {
+        use super::portal_artifacts;
+        let index = serde_json::json!({
+            "artefacts": [{
+                "name": "ODBC",
+                "operatingSystems": [
+                    { "operatingSystem": "Linux", "architectures": [
+                        { "architecture": "x86_64", "versions": [
+                            { "version": "25.2.5", "packageFile": { "filename": "Exasol_ODBC-25.2.5-Linux-x86_64.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/25.2.5/l.tar.gz", "sha256": "aa" } }
+                        ]}
+                    ]},
+                    { "operatingSystem": "MacOS", "architectures": [
+                        { "architecture": "universal", "versions": [
+                            { "version": "25.2.4", "packageFile": { "filename": "old.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/25.2.4/m.tar.gz", "sha256": "bb" } },
+                            { "version": "26.2.6", "packageFile": { "filename": "Exasol_ODBC-26.2.6-macOS.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/26.2.6/m.tar.gz", "sha256": "cc" } }
+                        ]}
+                    ]}
+                ]
+            }, {
+                "name": "ADO.NET",
+                "operatingSystems": [
+                    { "operatingSystem": "Windows", "architectures": [
+                        { "architecture": "noarch", "versions": [
+                            { "version": "25.2.2", "packageFile": { "filename": "ado.zip", "url": "https://x-up.s3.amazonaws.com/7.x/ado.zip" } }
+                        ]}
+                    ]}
+                ]
+            }]
+        });
+        // macOS aarch64 → the universal MacOS build, newest first.
+        let mac = portal_artifacts(&index, "ODBC", "macos", "aarch64");
+        assert_eq!(mac.iter().map(|a| a.version.as_str()).collect::<Vec<_>>(), ["26.2.6", "25.2.4"]);
+        assert_eq!(mac[0].sha256.as_deref(), Some("cc"));
+        // Linux x86_64 → the exact-arch build.
+        let linux = portal_artifacts(&index, "ODBC", "linux", "x86_64");
+        assert_eq!(linux[0].version, "25.2.5");
+        // ADO.NET is Windows-only BY DESIGN and must resolve from any host.
+        let ado = portal_artifacts(&index, "ADO.NET", "macos", "aarch64");
+        assert_eq!(ado[0].version, "25.2.2");
+        assert!(ado[0].sha256.is_none());
+        // Unknown artifact or platform → empty, never a wrong-platform pick.
+        assert!(portal_artifacts(&index, "JDBC", "macos", "aarch64").is_empty());
+        assert!(portal_artifacts(&serde_json::json!({}), "ODBC", "macos", "aarch64").is_empty());
+    }
 
     #[test]
     fn docker_tags_follow_dockers_grammar() {
@@ -1772,6 +2192,9 @@ mod tests {
         assert!(!valid_version_tag(""));
         assert!(!valid_version_tag("../../evil"));
         assert!(!valid_version_tag("1.0/x"));
+        assert!(!valid_version_tag(".")); // URL dot segments normalize away
+        assert!(!valid_version_tag(".."));
+        assert!(!valid_version_tag(".hidden"));
         assert!(!valid_version_tag("--upgrade")); // never an option
         assert!(!valid_version_tag(&"9".repeat(101))); // absurd length
     }

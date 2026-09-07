@@ -152,6 +152,7 @@ pub fn run() {
             market::market_doc_forget,
             market::market_release,
             market::market_versions,
+            market::market_use_downloaded,
             market::market_installed,
             market::market_detect,
             market::market_install,

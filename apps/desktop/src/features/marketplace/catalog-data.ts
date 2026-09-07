@@ -19,6 +19,10 @@ export type Install =
   | "bundled"
   | "community-docker"
   | "maven"
+  /** Downloaded from the driver's NATIVE registry (npm / Go proxy / crates.io /
+   *  GitHub tags) at any version — independent of Studio, usable by your own
+   *  tools (see versions.ts PACKAGE_SOURCE + Rust install_registry_package). */
+  | "package"
   | "reference";
 
 export type CatalogItem = {
@@ -65,7 +69,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool" },
   { id: "pyexasol", repo: "exasol/pyexasol", kind: "driver", install: "uv-pip" },
   { id: "sqlalchemy-exasol", repo: "exasol/sqlalchemy-exasol", kind: "driver", install: "uv-pip" },
-  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "reference", labs: true },
+  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "package", labs: true },
   {
     id: "driver-jdbc",
     kind: "driver",
@@ -77,30 +81,31 @@ export const CATALOG: CatalogItem[] = [
   {
     id: "driver-odbc",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "ODBC Driver",
     description: "ODBC driver for apps and BI tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
   },
-  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "reference" },
-  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "reference" },
+  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "package" },
+  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "package" },
   {
     id: "driver-adonet",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "ADO.NET Provider",
-    description: "ADO.NET provider for .NET.",
+    description: "ADO.NET provider for .NET (Windows driver package).",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/ado.net.htm",
   },
   {
     id: "driver-r",
+    repo: "exasol/r-exasol",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "R Integration",
     description: "R integration for Exasol.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
-  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "reference" },
+  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "package" },
   { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip" },
   { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip" },
   { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "binary", labs: true },

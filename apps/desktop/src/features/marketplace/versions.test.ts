@@ -28,6 +28,29 @@ test("binary items list GitHub release tags; maven lists Maven Central", () => {
   assert.equal(versionSource({ id: "driver-jdbc", install: "maven" })?.source, "maven-exasol-jdbc");
 });
 
+test("package drivers list their NATIVE registry", () => {
+  assert.deepEqual(versionSource({ id: "driver-ts", repo: "exasol/exasol-driver-ts", install: "package" }), {
+    source: "npm",
+    reference: "@exasol/exasol-driver-ts",
+  });
+  assert.deepEqual(versionSource({ id: "driver-go", repo: "exasol/exasol-driver-go", install: "package" }), {
+    source: "goproxy",
+    reference: "github.com/exasol/exasol-driver-go",
+  });
+  assert.equal(versionSource({ id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", install: "package" })?.source, "crates");
+  assert.equal(versionSource({ id: "driver-r", repo: "exasol/r-exasol", install: "package" })?.source, "github");
+  // ODBC and ADO.NET list the official Exasol downloads portal.
+  assert.deepEqual(versionSource({ id: "driver-odbc", install: "package" }), {
+    source: "exasol-downloads",
+    reference: "ODBC",
+  });
+  assert.equal(versionSource({ id: "driver-adonet", install: "package" })?.reference, "ADO.NET");
+  // The websocket spec has no releases — snapshot install, no version list.
+  assert.equal(versionSource({ id: "driver-websocket", repo: "exasol/websocket-api", install: "package" }), null);
+  // A package id with no registry mapping must not guess.
+  assert.equal(versionSource({ id: "unknown-pkg", install: "package" }), null);
+});
+
 test("items without a version-addressable install have no source", () => {
   assert.equal(versionSource({ id: "driver-odbc", install: "reference" }), null);
   assert.equal(versionSource({ id: "exasol-community", repo: "exasol/docker-db", install: "community-docker" }), null);

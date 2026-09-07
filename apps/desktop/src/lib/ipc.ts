@@ -557,6 +557,9 @@ export const ipc = {
    *  "github" (reference = owner/repo), "pypi" (reference = package) or
    *  "maven-exasol-jdbc". */
   marketVersions: (source: string, reference: string) => call<string[]>("market_versions", { source, reference }),
+  /** Point Studio's SQL-editor driver runtime at an independently downloaded
+   *  driver file (today: the JDBC jar — same override as "Use custom JAR"). */
+  marketUseDownloaded: (id: string, version: string) => call<Record<string, string>>("market_use_downloaded", { id, version }),
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),
   /** Web build: the engine installs what a local server process can (pip

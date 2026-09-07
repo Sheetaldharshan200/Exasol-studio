@@ -206,6 +206,11 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Resolve the latest exasol-jdbc version from Maven Central (live)",
         "Download the driver jar into Studio's marketplace folder for your Java tools",
       ];
+    case "package":
+      return [
+        "Resolve the chosen version from the driver's native registry (npm / Go proxy / crates.io / GitHub)",
+        "Download the package into Studio's marketplace folder — independent, unpinned, ready for your own tools",
+      ];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
@@ -943,6 +948,36 @@ export function Marketplace() {
       </button>
     ) : null;
 
+    // Independent-but-usable: a DOWNLOADED JDBC jar can be wired into Studio's
+    // SQL editor with one click (the same override as Drivers → "Use custom
+    // JAR"). The download itself stays unpinned and unmanaged.
+    const useDownloaded =
+      item.id === "driver-jdbc" && inst?.version && inst.version !== "latest" ? (
+        <button
+          onClick={() =>
+            void ipc
+              .marketUseDownloaded(item.id, inst.version)
+              .then(() => {
+                refreshDrivers();
+                window.dispatchEvent(
+                  new CustomEvent("studio:notice", {
+                    detail: { kind: "info", title: "JDBC driver", body: `Studio's SQL editor now uses exasol-jdbc ${inst.version}. Clear it under Drivers → Use custom JAR.` },
+                  }),
+                );
+              })
+              .catch((e) =>
+                window.dispatchEvent(
+                  new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Could not switch the JDBC jar", body: errorMessage(e) } }),
+                ),
+              )
+          }
+          title={`Point Studio's SQL editor at the downloaded exasol-jdbc ${inst.version}`}
+          className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          Use {inst.version} in Studio
+        </button>
+      ) : null;
+
     // The Community database manages its own docker lifecycle — dedicated card
     // actions (Docker checks, live versions, install/start/stop) instead of the
     // generic install button.
@@ -955,6 +990,7 @@ export function Marketplace() {
             <>
               {versionMenu}
               {pickedDownload}
+              {useDownloaded}
               {newer ? (
                 <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                   <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
@@ -982,6 +1018,7 @@ export function Marketplace() {
                 {driverBusy[did] ? "Installing…" : "Install & use here"}
               </button>
               {pickedDownload}
+              {useDownloaded}
             </>
           )
         ) : inst ? (
