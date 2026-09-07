@@ -301,12 +301,22 @@ jobs:
             packages/agent-core/skills
           git commit -m "chore(runtime): refresh bundled components"
           git push --force-with-lease --set-upstream origin "$branch"
-          if gh pr view "$branch" >/dev/null 2>&1; then
-            gh pr edit "$branch" --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging."
+          # Only an OPEN PR counts. `gh pr view <branch>` also matches CLOSED/
+          # MERGED PRs from previous runs (the #142 bug), which silently left
+          # the refresh pushed but unproposed. Check open PRs explicitly.
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging."
           else
-            gh pr create \
+            pr=$(gh pr create \
               --base "$GITHUB_REF_NAME" \
               --head "$branch" \
               --title "chore(runtime): refresh bundled components" \
-              --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging."
+              --body "Automated, cross-platform-validated runtime component refresh. Review the upstream revisions and generated lock before merging." \
+              | grep -oE '[0-9]+$' | tail -1)
           fi
+          if [ -z "$pr" ]; then
+            echo "::error::Could not open the runtime-components PR. Check that 'Allow GitHub Actions to create and approve pull requests' is enabled (Settings → Actions → General)."
+            exit 1
+          fi
+          echo "Component refresh proposed in PR #$pr."
