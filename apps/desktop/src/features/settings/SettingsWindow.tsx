@@ -134,6 +134,23 @@ const CATEGORIES: Category[] = [
     desc: "Editing behavior and syntax colors for the SQL editor.",
     controls: [
       { key: "editorFontSize", label: "Editor font size", type: "number", min: 11, max: 22, unit: "px" },
+      {
+        key: "editorFontFamily",
+        label: "Editor font",
+        type: "select",
+        options: [
+          { value: "JetBrains Mono", label: "JetBrains Mono" },
+          { value: "SF Mono", label: "SF Mono" },
+          { value: "Menlo", label: "Menlo" },
+          { value: "Monaco", label: "Monaco" },
+          { value: "Fira Code", label: "Fira Code" },
+          { value: "Cascadia Code", label: "Cascadia Code" },
+          { value: "Source Code Pro", label: "Source Code Pro" },
+          { value: "IBM Plex Mono", label: "IBM Plex Mono" },
+          { value: "Courier New", label: "Courier New" },
+        ],
+        help: "Fonts not installed on this machine fall back to JetBrains Mono.",
+      },
       { key: "wordWrap", label: "Word wrap", type: "toggle" },
       {
         key: "stmtNumbers",
@@ -293,6 +310,7 @@ const DEFAULTS: Record<string, SettingValue> = {
   metadataCache: "persistent",
   metadataStaleDays: 60,
   editorFontSize: 13,
+  editorFontFamily: "JetBrains Mono",
   wordWrap: false,
   stmtNumbers: true,
   autoComplete: true,

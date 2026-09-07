@@ -400,6 +400,7 @@ export function ExasolStudio({
   const { theme, setTheme } = useTheme();
   const editorTheme = theme === "dark" ? "exasol-dark" : "exasol-light";
   const [editorFontSize, setEditorFontSize] = useState(13);
+  const [editorFontFamily, setEditorFontFamily] = useState("JetBrains Mono");
   const [editorWordWrap, setEditorWordWrap] = useState(false);
   const [gridFontSize, setGridFontSize] = useState(12);
   const [gridZebra, setGridZebra] = useState(true);
@@ -662,6 +663,7 @@ export function ExasolStudio({
       // dropdown always reflects a real default (never a blank/invalid value).
       if (typeof s.maxRows === "number" && MAX_ROWS_OPTIONS.includes(s.maxRows)) setMaxRows(s.maxRows);
       if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
+      if (typeof s.editorFontFamily === "string" && s.editorFontFamily) setEditorFontFamily(s.editorFontFamily);
       if (typeof s.wordWrap === "boolean") setEditorWordWrap(s.wordWrap);
       if (typeof s.gridFontSize === "number") setGridFontSize(s.gridFontSize);
       if (typeof s.zebraStripes === "boolean") setGridZebra(s.zebraStripes);
@@ -3672,7 +3674,8 @@ export function ExasolStudio({
                     // Default 10px + the folding zone left a wide gap between
                     // the line number and the first character.
                     lineDecorationsWidth: 0,
-                    fontFamily: "JetBrains Mono",
+                    // The Settings pick first; missing fonts fall back cleanly.
+                    fontFamily: `"${editorFontFamily}", "JetBrains Mono", Menlo, monospace`,
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",
                     minimap: { enabled: false },
