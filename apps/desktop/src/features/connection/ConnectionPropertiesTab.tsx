@@ -18,7 +18,8 @@ import {
   Type,
   Unplug,
 } from "lucide-react";
-import { errorMessage, ipc, type ConnectionProfile, type DriverInfo, type ServerInfo } from "@/lib/ipc";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
@@ -357,6 +358,36 @@ export function ConnectionPropertiesTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedTick, setSavedTick] = useState(false);
+
+  // Keep the driver dropdown IN SYNC with installs happening elsewhere: a
+  // Marketplace install (market:done) or a runtime setup (studio:drivers-
+  // changed) re-checks readiness so the new driver appears without a remount.
+  useEffect(() => {
+    if (!drivers.length) return;
+    const refresh = () => {
+      void (async () => {
+        const next: Record<string, DriverReadiness> = {};
+        await Promise.all(
+          drivers.map(async (dr) => {
+            next[dr.id] = await ipc
+              .driverStatus(dr.id)
+              .then((st) => ({ ready: st.ready, supported: st.supported, hint: st.hint }))
+              .catch(() => ({ ready: false, supported: false, hint: "" }));
+          }),
+        );
+        setDriverReady(next);
+      })();
+    };
+    window.addEventListener("studio:drivers-changed", refresh);
+    let un: UnlistenFn | undefined;
+    if (isTauri()) {
+      void listen("market:done", refresh).then((u) => (un = u)).catch(() => undefined);
+    }
+    return () => {
+      window.removeEventListener("studio:drivers-changed", refresh);
+      un?.();
+    };
+  }, [drivers]);
 
   const [cat, setCat] = useState<CategoryId>("authentication");
   const [query, setQuery] = useState("");

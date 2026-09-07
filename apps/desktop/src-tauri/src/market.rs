@@ -738,6 +738,16 @@ async fn download_and_place(
     url: &str,
     filename: &str,
 ) -> AppResult<String> {
+    download_and_place_inner(app, id, url, filename, true).await
+}
+
+async fn download_and_place_inner(
+    app: &AppHandle,
+    id: &str,
+    url: &str,
+    filename: &str,
+    auto_extract: bool,
+) -> AppResult<String> {
     use futures_util::StreamExt;
     use std::io::Write;
 
@@ -802,7 +812,208 @@ async fn download_and_place(
             let _ = std::fs::set_permissions(&file, perm);
         }
     }
+    // ZERO-manual-step rule: a saved archive is not "usable" — extract it here
+    // and put extracted CLI binaries on Studio's PATH. Files external tools
+    // consume as-is (.taco, .jar, .whl) are deliberately kept untouched.
+    // Callers that must checksum-verify FIRST (the Exasol downloads portal)
+    // use download_only + call auto_extract_and_link after the verify.
+    if auto_extract {
+        auto_extract_and_link(app, id, &file);
+    }
     Ok(file.to_string_lossy().to_string())
+}
+
+/// download_and_place without the auto-extract step — for artifacts that must
+/// be checksum-verified before anything derived from them exists.
+async fn download_only(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<String> {
+    download_and_place_inner(app, id, url, filename, false).await
+}
+
+/// Which archives get auto-extracted; pure so the routing is unit-tested.
+/// None = keep the file as-is (either not an archive, or a file an external
+/// tool consumes whole).
+fn archive_kind(filename: &str) -> Option<&'static str> {
+    let name = filename.to_ascii_lowercase();
+    if [".taco", ".jar", ".whl", ".nupkg"].iter().any(|s| name.ends_with(s)) {
+        return None;
+    }
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") || name.ends_with(".crate") {
+        Some("tar")
+    } else if name.ends_with(".zip") {
+        Some("zip")
+    } else {
+        None
+    }
+}
+
+/// File extensions that are never CLI entry points — they stay in the
+/// unpacked tree but are not linked onto the PATH.
+fn non_binary_extension(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        ".sh", ".bat", ".ps1", ".so", ".dylib", ".dll", ".a", ".h", ".c", ".py", ".txt", ".md",
+        ".json", ".yml", ".yaml", ".toml", ".html", ".css", ".js", ".ts", ".go", ".rs", ".r",
+        ".sql", ".mod", ".sum", ".gz", ".zip", ".sig", ".pem", ".crt", ".plist", ".conf",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
+}
+
+fn extract_tar_gz(archive: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let decoder = flate2::read::GzDecoder::new(std::fs::File::open(archive)?);
+    tar::Archive::new(decoder)
+        .unpack(dest)
+        .map_err(|e| AppError::Storage(format!("extract: {e}")))
+}
+
+/// Structure-preserving zip extraction (engine.rs's extractor flattens on
+/// purpose — wrong for source trees). Entry paths are sanitized via
+/// enclosed_name; unix modes are preserved.
+fn extract_zip_tree(archive: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let file = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| AppError::Storage(format!("zip open: {e}")))?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| AppError::Storage(format!("zip entry: {e}")))?;
+        let Some(rel) = entry.enclosed_name().map(|p| p.to_path_buf()) else { continue };
+        let target = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = std::fs::File::create(&target)?;
+        std::io::copy(&mut entry, &mut out)?;
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode));
+        }
+    }
+    Ok(())
+}
+
+/// Names an extracted binary must NEVER take on the PATH: personal-local/bin
+/// is PREPENDED for the terminal and the AI agent, so these would shadow the
+/// user's real tools.
+fn shadowable_tool_name(name: &str) -> bool {
+    [
+        "sh", "bash", "zsh", "env", "sudo", "git", "docker", "podman", "colima", "python",
+        "python3", "pip", "pip3", "node", "npm", "npx", "uv", "uvx", "brew", "cargo", "rustc",
+        "go", "java", "terraform", "exasol", "exapump", "ls", "cat", "rm", "cp", "mv", "curl",
+        "wget", "make", "cc", "gcc", "clang",
+    ]
+    .contains(&name.to_ascii_lowercase().as_str())
+}
+
+#[cfg(unix)]
+fn link_executables(dir: &std::path::Path, root: &std::path::Path, bin_dir: &std::path::Path, depth: u8, linked: &mut Vec<String>) {
+    use std::os::unix::fs::PermissionsExt;
+    if depth > 4 || linked.len() >= 5 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(root_canonical) = root.canonicalize() else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // NEVER follow symlinks — a tar entry can symlink outside the unpack
+        // dir, and following it would walk (and link!) foreign files.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            link_executables(&path, root, bin_dir, depth + 1, linked);
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+        if non_binary_extension(name) || shadowable_tool_name(name) {
+            continue;
+        }
+        let executable = meta.is_file() && meta.permissions().mode() & 0o111 != 0 && meta.len() > 0;
+        if !executable {
+            continue;
+        }
+        // Belt and suspenders: the real file must live under the unpack dir.
+        if !path.canonicalize().map(|p| p.starts_with(&root_canonical)).unwrap_or(false) {
+            continue;
+        }
+        let link = bin_dir.join(name);
+        // Replace only prior symlinks — a REAL file here is a managed binary
+        // (exapump lives in this dir) and must never be shadowed.
+        match std::fs::symlink_metadata(&link) {
+            Ok(link_meta) if !link_meta.file_type().is_symlink() => continue,
+            Ok(_) => {
+                let _ = std::fs::remove_file(&link);
+            }
+            Err(_) => {}
+        }
+        if std::os::unix::fs::symlink(&path, &link).is_ok() {
+            linked.push(name.to_string());
+            if linked.len() >= 5 {
+                return;
+            }
+        }
+    }
+}
+
+/// First file under `dir` (depth-limited) whose name matches.
+fn find_file(dir: &std::path::Path, depth: u8, matches: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    if depth > 4 {
+        return None;
+    }
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_file(&path, depth + 1, matches) {
+                return Some(found);
+            }
+        } else if path.file_name().and_then(|s| s.to_str()).is_some_and(matches) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+pub(crate) fn auto_extract_and_link(app: &AppHandle, id: &str, archive: &std::path::Path) {
+    let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let Some(kind) = archive_kind(name) else { return };
+    let Some(dir) = archive.parent().map(|p| p.join("unpacked")) else { return };
+    let _ = std::fs::remove_dir_all(&dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let extracted = match kind {
+        "tar" => extract_tar_gz(archive, &dir),
+        _ => extract_zip_tree(archive, &dir),
+    };
+    if let Err(e) = extracted {
+        emit_log(app, id, format!("Could not extract the archive ({e}) — the download is kept as-is."), "err");
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
+    emit_log(app, id, format!("Extracted to {}.", dir.display()), "info");
+    #[cfg(unix)]
+    {
+        let bin_dir = app
+            .state::<crate::state::AppState>()
+            .data_dir
+            .join("personal-local")
+            .join("bin");
+        if std::fs::create_dir_all(&bin_dir).is_ok() {
+            let mut linked: Vec<String> = Vec::new();
+            link_executables(&dir, &dir, &bin_dir, 0, &mut linked);
+            if !linked.is_empty() {
+                emit_log(
+                    app,
+                    id,
+                    format!("Ready on Studio's PATH (terminal + AI agent): {}.", linked.join(", ")),
+                    "info",
+                );
+            }
+        }
+    }
 }
 
 /// AI Lab is NOT a PyPI package (the old `uv pip install exasol-ai-lab`
@@ -810,12 +1021,15 @@ async fn download_and_place(
 /// image (JupyterLab on port 49494). Pull the requested tag (default latest)
 /// with whichever engine exists.
 fn install_ai_lab(app: &AppHandle, id: &str, tag: Option<&str>) -> AppResult<String> {
-    let engine = ["docker", "podman"]
-        .iter()
-        .find_map(|name| resolve_bin(name).map(|p| p.to_string_lossy().to_string()))
-        .ok_or_else(|| AppError::Storage(
-            "Exasol AI Lab ships as a Docker image (exasol/ai-lab). Install Docker Desktop or Podman first, then retry.".into(),
-        ))?;
+    // Zero prerequisites: bring a container engine up ourselves (start a
+    // stopped one, or install Colima headlessly on macOS) — never dead-end on
+    // "install Docker first". Podman is honored when it's what the user runs.
+    let engine = match crate::community_db::ensure_engine_ready(app, id) {
+        Ok(bin) => bin,
+        Err(engine_error) => resolve_bin("podman")
+            .map(|p| p.to_string_lossy().to_string())
+            .ok_or(engine_error)?,
+    };
     let tag = tag.unwrap_or("latest");
     // Docker's tag grammar is stricter than the generic version validation.
     if !valid_docker_tag(tag) {
@@ -1734,8 +1948,9 @@ async fn install_registry_package(
                     AppError::Storage(format!("{artifact_name} has no build for this platform on the Exasol downloads portal."))
                 })?,
             };
-            let path = download_and_place(app, id, &chosen.url, &chosen.filename).await?;
-            // The portal publishes a sha256 per file — verify-or-refuse.
+            // Verify BEFORE extracting/linking — nothing derived from an
+            // unverified file may ever exist (not even a dangling symlink).
+            let path = download_only(app, id, &chosen.url, &chosen.filename).await?;
             if let Some(expected) = &chosen.sha256 {
                 let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
                 if !actual.eq_ignore_ascii_case(expected) {
@@ -1747,11 +1962,33 @@ async fn install_registry_package(
                 }
                 emit_log(app, id, "Checksum verified against the Exasol downloads portal.", "info");
             }
-            let hint = if id == "driver-odbc" {
-                "Unpack it and install the driver on your OS — Studio's ODBC runtime detects it automatically"
+            auto_extract_and_link(app, id, std::path::Path::new(&path));
+            let mut hint = if id == "driver-odbc" {
+                "ODBC driver files extracted".to_string()
             } else {
-                "Windows driver package for your .NET projects"
+                "Windows driver package for your .NET projects".to_string()
             };
+            // One install = usable: wire the extracted ODBC library straight
+            // into Studio's connection runtime (pyodbc takes a driver PATH, so
+            // no OS-level registration is needed) and ensure the runtime venv.
+            if id == "driver-odbc" {
+                let unpacked = market_dir(app)?.join(id).join("unpacked");
+                if let Some(lib) = find_file(&unpacked, 0, &|name: &str| {
+                    let lower = name.to_ascii_lowercase();
+                    lower.contains("exaodbc")
+                        && (lower.ends_with(".dylib") || lower.ends_with(".so") || lower.ends_with(".dll"))
+                }) {
+                    // Propagate: claiming "wired into Studio" on a failed
+                    // override write would be a lie.
+                    crate::driver_exec::driver_override_set(
+                        app.clone(),
+                        "odbc".into(),
+                        Some(lib.to_string_lossy().to_string()),
+                    )?;
+                    crate::driver_exec::driver_setup(app.clone(), "odbc".into()).await?;
+                    hint = "wired into Studio's connections — pick the ODBC driver on any connection and it just works".to_string();
+                }
+            }
             return Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)));
         }
         "dash-server" => {
@@ -1852,7 +2089,16 @@ pub async fn market_install_run(
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
         "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
         "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),
-        "ai-lab" => install_ai_lab(&app, &id, requested.as_deref()),
+        "ai-lab" => {
+            // Engine provisioning can take minutes (brew install, colima boot,
+            // image pull) — keep it off the async runtime's worker threads.
+            let app2 = app.clone();
+            let id2 = id.clone();
+            let req2 = requested.clone();
+            tauri::async_runtime::spawn_blocking(move || install_ai_lab(&app2, &id2, req2.as_deref()))
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+        }
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
@@ -2156,6 +2402,20 @@ pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> App
 #[cfg(test)]
 mod tests {
     use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
+
+    #[test]
+    fn archives_extract_except_files_tools_consume_whole() {
+        use super::archive_kind;
+        assert_eq!(archive_kind("exasol_scheduler-v0.2-macos-arm64.tar.gz"), Some("tar"));
+        assert_eq!(archive_kind("exasol-driver-ts-0.7.0.tgz"), Some("tar"));
+        assert_eq!(archive_kind("exarrow-rs-0.16.0.crate"), Some("tar"));
+        assert_eq!(archive_kind("grafana-datasource.zip"), Some("zip"));
+        // Consumed whole by their tools — never unpacked.
+        assert_eq!(archive_kind("exasol_jdbc.taco"), None);
+        assert_eq!(archive_kind("exasol-jdbc-26.2.9.jar"), None);
+        assert_eq!(archive_kind("exasol_json_tables.whl"), None);
+        assert_eq!(archive_kind("plain-binary"), None);
+    }
 
     #[test]
     fn portal_artifacts_match_the_host_platform() {

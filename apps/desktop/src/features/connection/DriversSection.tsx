@@ -13,7 +13,8 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { errorMessage, ipc, type DriverInfo } from "@/lib/ipc";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { errorMessage, ipc, isTauri, type DriverInfo } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 /** One glyph per driver family (Boxicons/Lucide only — never emoji). */
@@ -79,6 +80,26 @@ export function DriversSection({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live sync with installs from the Marketplace (market:done) and runtime
+  // setups elsewhere (studio:drivers-changed) — no remount needed.
+  useEffect(() => {
+    if (!drivers.length) return;
+    const refresh = () => {
+      void refreshStatus(drivers);
+      void ipc.driverOverridesGet().then(setOverrides).catch(() => undefined);
+    };
+    window.addEventListener("studio:drivers-changed", refresh);
+    let un: UnlistenFn | undefined;
+    if (isTauri()) {
+      void listen("market:done", refresh).then((u) => (un = u)).catch(() => undefined);
+    }
+    return () => {
+      window.removeEventListener("studio:drivers-changed", refresh);
+      un?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drivers]);
 
   async function install(driverId: string) {
     setInstalling(driverId);

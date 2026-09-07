@@ -202,7 +202,7 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
         }
         "odbc" => {
             let ok = odbc_ready(&app);
-            (ok, true, if ok { String::new() } else { "Install the ODBC runtime, then install Exasol’s ODBC driver on your OS (from Exasol Downloads) — it’s detected automatically.".into() })
+            (ok, true, if ok { String::new() } else { "Install the ODBC Driver from the Marketplace — one click sets up the runtime and wires the official Exasol driver, no OS install needed.".into() })
         }
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
@@ -286,7 +286,7 @@ async fn setup_odbc(app: &AppHandle, id: &str) -> AppResult<()> {
     crate::market::emit_log(
         app,
         id,
-        "Note: install Exasol’s ODBC driver on your OS (Exasol Downloads) — it will be detected automatically.",
+        "Note: the Marketplace ODBC Driver install wires the official Exasol driver automatically; an OS-registered driver also works.",
         "info",
     );
     Ok(())
@@ -424,6 +424,11 @@ fn execute_python(
     let tls = profile.ssl_mode != "disabled";
     let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
     let jar = jdbc_jar(app)?.to_string_lossy().to_string();
+    // A Marketplace-installed ODBC library is used by PATH (pyodbc accepts a
+    // driver file path), so no OS-level driver registration is ever required.
+    let odbc_lib = driver_override(app, "odbc")
+        .filter(|p| std::path::Path::new(p).is_file())
+        .unwrap_or_default();
     let req = json!({
         "driver": profile.driver_id,
         "host": profile.host,
@@ -435,6 +440,7 @@ fn execute_python(
         "verify": verify,
         "maxRows": max_rows,
         "jarPath": jar,
+        "driverPath": odbc_lib,
         "statements": statements,
     });
 
@@ -584,10 +590,16 @@ def run_jdbc(req):
 
 def run_odbc(req):
     import pyodbc
-    exa = [d for d in pyodbc.drivers() if "exa" in d.lower()]
-    if not exa:
-        raise Exception("No Exasol ODBC driver is registered on this system. Install it from Exasol Downloads.")
-    cs = "DRIVER={%s};EXAHOST=%s:%s;EXAUID=%s;EXAPWD=%s" % (exa[0], req["host"], req["port"], req["user"], req["password"])
+    # A driver LIBRARY PATH (Marketplace install) needs no OS registration;
+    # a system-registered driver is the fallback.
+    drv = req.get("driverPath") or ""
+    if not drv:
+        exa = [d for d in pyodbc.drivers() if "exa" in d.lower()]
+        if not exa:
+            raise Exception("No Exasol ODBC driver found. Install the ODBC Driver from the Marketplace, then retry.")
+        drv = exa[0]
+    # ODBC braced-value escaping: a literal } doubles, or it ends the value.
+    cs = "DRIVER={%s};EXAHOST=%s:%s;EXAUID=%s;EXAPWD=%s" % (drv.replace("}", "}}"), req["host"], req["port"], req["user"], req["password"])
     if req.get("tls", True) and not req.get("verify"):
         cs += ";SSLCERTIFICATE=SSL_VERIFY_NONE"
     if req.get("schema"):

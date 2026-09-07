@@ -160,7 +160,11 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
   switch (item.install) {
     case "binary":
       return asset
-        ? ["Download the official release build for this platform", "Make it executable in Exasol Studio's managed folder", "Mark it as installed"]
+        ? [
+            "Download the official release build for this platform",
+            "Extract it and put CLI binaries on Studio's PATH (terminal + AI agent) — usable immediately",
+            "Mark it as installed",
+          ]
         : ["No prebuilt asset was found for this platform"];
     case "uv-tool":
       return [
@@ -208,8 +212,8 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       ];
     case "package":
       return [
-        "Resolve the chosen version from the driver's native registry (npm / Go proxy / crates.io / GitHub)",
-        "Download the package into Studio's marketplace folder — independent, unpinned, ready for your own tools",
+        "Resolve the chosen version from the official source (registry or Exasol downloads portal)",
+        "Download and extract it — usable immediately, no manual steps (the ODBC driver is wired straight into Studio's connections)",
       ];
     case "reference":
       return ["Opens the official download / documentation page"];
@@ -757,6 +761,9 @@ export function Marketplace() {
       await ipc.driverSetup(did);
       const s = await ipc.driverStatus(did);
       setDriverReady((r) => ({ ...r, [did]: s.ready }));
+      // Connection forms filter their driver dropdown by readiness — tell
+      // them a driver just became available.
+      window.dispatchEvent(new CustomEvent("studio:drivers-changed"));
     } catch {
       /* surfaced when they try to use it */
     } finally {
@@ -860,7 +867,9 @@ export function Marketplace() {
     // The version shown on the card: for managed components it's the AUTHORITATIVE
     // installed version (list_components), never the catalog's "latest" (which can
     // lag or be an upstream tag) — so the card matches the Managed Components panel.
-    const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : latest;
+    // Repo-less items (portal drivers) have no catalog "latest" — the
+    // installed version is still worth showing on the card.
+    const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : (latest ?? inst?.version ?? null);
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
 
@@ -1038,7 +1047,15 @@ export function Marketplace() {
           </>
         ) : inst ? (
           <>
-            {newer ? (
+            {versionMenu}
+            {verPick[item.id] && verPick[item.id] !== inst.version ? (
+              // Switching versions is a first-class action, not a reinstall
+              // trick: pick any version and this replaces the installed one.
+              <button onClick={() => startInstall(item)} disabled={isInstalling || isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+                {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isInstalling ? "Switching…" : `Switch to ${verPick[item.id]}`}
+              </button>
+            ) : newer ? (
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                 <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
               </button>
@@ -1050,7 +1067,14 @@ export function Marketplace() {
               </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                <Check className="h-3.5 w-3.5 text-primary" /> Up to date
+                <Check className="h-3.5 w-3.5 text-primary" />
+                {/* Claim "up to date" only when a known latest CONFIRMS it —
+                    otherwise state what is installed, honestly. */}
+                {latest
+                  ? "Up to date"
+                  : inst.version && inst.version !== "latest"
+                    ? `Installed · ${inst.version}`
+                    : "Installed"}
               </span>
             )}
             <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
