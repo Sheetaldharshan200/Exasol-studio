@@ -15,11 +15,15 @@ export const PYPI_PACKAGE: Record<string, string> = {
   "notebook-connector": "exasol-notebook-connector",
 };
 
-export type VersionSource = { source: "github" | "pypi" | "maven-exasol-jdbc"; reference: string };
+export type VersionSource = { source: "github" | "pypi" | "dockerhub" | "maven-exasol-jdbc"; reference: string };
 
 /** How to list an item's versions — null when the item has no version-addressable
- *  install (reference links, docker lifecycles, bundled skills, source builds). */
+ *  install (reference links, the Community docker lifecycle card, bundled
+ *  skills, source builds reconciled to a revision). */
 export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install">): VersionSource | null {
+  // AI Lab installs as a Docker image, not a pip package — its versions are
+  // Docker Hub tags (must mirror the Rust install_ai_lab dispatch).
+  if (item.id === "ai-lab") return { source: "dockerhub", reference: "exasol/ai-lab" };
   if (item.install === "maven") return { source: "maven-exasol-jdbc", reference: "exasol-jdbc" };
   if ((item.install === "uv-pip" || item.install === "uv-tool") && PYPI_PACKAGE[item.id]) {
     return { source: "pypi", reference: PYPI_PACKAGE[item.id] };

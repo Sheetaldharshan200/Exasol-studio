@@ -807,25 +807,32 @@ async fn download_and_place(
 
 /// AI Lab is NOT a PyPI package (the old `uv pip install exasol-ai-lab`
 /// failed forever — no such package). It ships as the exasol/ai-lab Docker
-/// image (JupyterLab on port 49494). Pull it with whichever engine exists.
-fn install_ai_lab(app: &AppHandle, id: &str) -> AppResult<String> {
+/// image (JupyterLab on port 49494). Pull the requested tag (default latest)
+/// with whichever engine exists.
+fn install_ai_lab(app: &AppHandle, id: &str, tag: Option<&str>) -> AppResult<String> {
     let engine = ["docker", "podman"]
         .iter()
         .find_map(|name| resolve_bin(name).map(|p| p.to_string_lossy().to_string()))
         .ok_or_else(|| AppError::Storage(
             "Exasol AI Lab ships as a Docker image (exasol/ai-lab). Install Docker Desktop or Podman first, then retry.".into(),
         ))?;
-    emit_log(app, id, "Pulling docker.io/exasol/ai-lab:latest…", "info");
-    if run_streamed(app, id, &engine, &["pull", "docker.io/exasol/ai-lab:latest"])? != 0 {
-        return Err(AppError::Storage("Could not pull the exasol/ai-lab image.".into()));
+    let tag = tag.unwrap_or("latest");
+    // Docker's tag grammar is stricter than the generic version validation.
+    if !valid_docker_tag(tag) {
+        return Err(AppError::Storage(format!("Invalid AI Lab image tag: {tag}")));
+    }
+    let image = format!("docker.io/exasol/ai-lab:{tag}");
+    emit_log(app, id, format!("Pulling {image}…"), "info");
+    if run_streamed(app, id, &engine, &["pull", &image])? != 0 {
+        return Err(AppError::Storage(format!("Could not pull the exasol/ai-lab:{tag} image.")));
     }
     emit_log(
         app,
         id,
-        "AI Lab image ready. Start it with: docker run --detach --name exasol-ai-lab -p 127.0.0.1:49494:49494 exasol/ai-lab:latest — then open http://localhost:49494 (JupyterLab).",
+        format!("AI Lab image ready. Start it with: docker run --detach --name exasol-ai-lab -p 127.0.0.1:49494:49494 exasol/ai-lab:{tag} — then open http://localhost:49494 (JupyterLab)."),
         "info",
     );
-    Ok("exasol/ai-lab image pulled".into())
+    Ok(format!("exasol/ai-lab:{tag} image pulled"))
 }
 
 fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String> {
@@ -1199,41 +1206,104 @@ fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
     versions
 }
 
+/// Merge one entry into the versions cache under a process-wide lock, writing
+/// via temp file + rename — concurrent version fetches (several dropdowns
+/// opened quickly) must not lose each other's entries or expose a torn file.
+fn merge_versions_cache(cache_path: &std::path::Path, key: &str, entry: Value) {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    cache.insert(key.into(), entry);
+    let tmp = cache_path.with_extension("json.partial");
+    if std::fs::write(&tmp, serde_json::to_string(&cache).unwrap_or_default()).is_ok() {
+        let _ = std::fs::rename(&tmp, cache_path);
+    }
+}
+
+/// A Docker image tag per Docker's own grammar — stricter than
+/// `valid_version_tag` (no `+`, must not start with `.` or `-`).
+fn valid_docker_tag(v: &str) -> bool {
+    let mut chars = v.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
+        && v.len() <= 128
+        && chars.all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
+}
+
 /// Live version list for an item, so ANY version can be installed — not just
-/// the newest. `source` is "github" (release tags of `reference` = owner/repo),
-/// "pypi" (release versions of `reference` = package name), or
-/// "maven-exasol-jdbc" (Maven Central; `reference` ignored). Newest first.
+/// the newest. `source` is "github" (release tags of `reference` = owner/repo,
+/// disk-cached 1h — the unauthenticated API rate-limits at 60/hr), "pypi"
+/// (release versions of `reference` = package name), "dockerhub" (image tags
+/// of `reference` = org/repo), or "maven-exasol-jdbc" (Maven Central;
+/// `reference` ignored). Newest first.
 #[tauri::command]
-pub async fn market_versions(source: String, reference: String) -> AppResult<Vec<String>> {
+pub async fn market_versions(app: AppHandle, source: String, reference: String) -> AppResult<Vec<String>> {
     fn ok_segment(s: &str) -> bool {
         !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    }
+    fn ok_repo(reference: &str) -> bool {
+        let mut parts = reference.split('/');
+        matches!(
+            (parts.next(), parts.next(), parts.next()),
+            (Some(o), Some(n), None) if ok_segment(o) && ok_segment(n)
+        )
     }
     let client = reqwest::Client::new();
     let timeout = std::time::Duration::from_secs(8);
     let list: Vec<String> = match source.as_str() {
         "github" => {
-            let mut parts = reference.split('/');
-            if !matches!(
-                (parts.next(), parts.next(), parts.next()),
-                (Some(o), Some(n), None) if ok_segment(o) && ok_segment(n)
-            ) {
+            if !ok_repo(&reference) {
                 return Err(AppError::Storage("Invalid repository.".into()));
             }
-            let body: Value = client
+            // 1h disk cache; a failed fetch (rate limit, offline) serves the
+            // last-known list rather than pretending "no versions exist".
+            let cache_path = market_dir(&app)?.join("versions-cache.json");
+            let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let cached: Option<Vec<String>> = cache.get(&reference).and_then(|e| {
+                let list = e.get("list")?.as_array()?;
+                Some((
+                    e.get("at").and_then(Value::as_u64).unwrap_or(0),
+                    list.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>(),
+                ))
+            }).and_then(|(at, list)| {
+                // A future timestamp (clock rollback, corrupted entry) is not
+                // "fresh forever" — only a real past-hour entry counts.
+                if at <= now && now - at < 3600 { Some(list) } else { None }
+            });
+            if let Some(list) = cached {
+                return Ok(list);
+            }
+            let fetched = client
                 .get(format!("https://api.github.com/repos/{reference}/releases?per_page=30"))
                 .header("User-Agent", "exasol-studio")
                 .header("Accept", "application/vnd.github+json")
                 .timeout(timeout)
                 .send()
                 .await
-                .map_err(|e| AppError::Storage(e.to_string()))?
-                .error_for_status()
-                .map_err(|e| AppError::Storage(format!("GitHub: {e}")))?
-                .json()
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))?;
+                .map_err(|e| AppError::Storage(e.to_string()))
+                .and_then(|r| r.error_for_status().map_err(|e| AppError::Storage(format!("GitHub: {e}"))));
+            let body: Value = match fetched {
+                Ok(response) => response.json().await.map_err(|e| AppError::Storage(e.to_string()))?,
+                Err(e) => {
+                    // Serve the STALE cache over an error — old truth beats none.
+                    if let Some(entry) = cache.get(&reference).and_then(|e| e.get("list")).and_then(Value::as_array) {
+                        return Ok(entry.iter().filter_map(Value::as_str).map(str::to_string).collect());
+                    }
+                    return Err(e);
+                }
+            };
             // GitHub already lists newest first.
-            body.as_array()
+            let list: Vec<String> = body
+                .as_array()
                 .map(|arr| {
                     arr.iter()
                         .filter(|r| !r.get("draft").and_then(Value::as_bool).unwrap_or(false))
@@ -1242,7 +1312,44 @@ pub async fn market_versions(source: String, reference: String) -> AppResult<Vec
                         .map(str::to_string)
                         .collect()
                 })
-                .unwrap_or_default()
+                .unwrap_or_default();
+            merge_versions_cache(&cache_path, &reference, json!({ "at": now, "list": list }));
+            list
+        }
+        "dockerhub" => {
+            if !ok_repo(&reference) {
+                return Err(AppError::Storage("Invalid image repository.".into()));
+            }
+            // Follow pagination (bounded) — releases past the first page must
+            // not silently vanish from the dropdown.
+            let mut names: Vec<String> = Vec::new();
+            let mut url = format!("https://hub.docker.com/v2/repositories/{reference}/tags?page_size=100");
+            for _ in 0..4 {
+                let body: Value = client
+                    .get(&url)
+                    .header("User-Agent", "exasol-studio")
+                    .timeout(timeout)
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Storage(e.to_string()))?
+                    .error_for_status()
+                    .map_err(|e| AppError::Storage(format!("Docker Hub: {e}")))?
+                    .json()
+                    .await
+                    .map_err(|e| AppError::Storage(e.to_string()))?;
+                // A 200 without `results` is a schema surprise, not "no tags".
+                let page = body
+                    .get("results")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| AppError::Storage("Docker Hub returned an unexpected tag listing.".into()))?;
+                names.extend(page.iter().filter_map(|t| t.get("name").and_then(Value::as_str)).map(str::to_string));
+                match body.get("next").and_then(Value::as_str) {
+                    // Only follow Docker Hub's own pagination links.
+                    Some(next) if next.starts_with("https://hub.docker.com/") => url = next.to_string(),
+                    _ => break,
+                }
+            }
+            crate::community_db::version_tags(names)
         }
         "pypi" => {
             if !ok_segment(&reference) {
@@ -1381,7 +1488,7 @@ pub async fn market_install_run(
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
         "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
         "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),
-        "ai-lab" => install_ai_lab(&app, &id),
+        "ai-lab" => install_ai_lab(&app, &id, requested.as_deref()),
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
@@ -1643,6 +1750,19 @@ pub fn market_dir_path(app: AppHandle) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
+
+    #[test]
+    fn docker_tags_follow_dockers_grammar() {
+        use super::valid_docker_tag;
+        assert!(valid_docker_tag("latest"));
+        assert!(valid_docker_tag("6.0.0"));
+        assert!(valid_docker_tag("v8.29.1"));
+        assert!(!valid_docker_tag("")); // empty
+        assert!(!valid_docker_tag(".hidden")); // must not start with separator
+        assert!(!valid_docker_tag("-flag"));
+        assert!(!valid_docker_tag("1.0+build")); // `+` is version-legal, tag-illegal
+        assert!(!valid_docker_tag(&"a".repeat(129)));
+    }
 
     #[test]
     fn version_tags_reject_anything_path_or_option_like() {

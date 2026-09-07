@@ -168,10 +168,18 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         `Install ${item.id === "mcp-server" ? "exasol-mcp-server" : "exasol-agent-skills"} as a uv tool`,
       ];
     case "uv-pip":
+      // AI Lab is a Docker image, not a pip package — say what actually runs.
+      if (item.id === "ai-lab") {
+        return [
+          "Detect a running Docker or Podman engine",
+          "Pull the exasol/ai-lab image (the chosen version)",
+          "Show the run command (JupyterLab on port 49494)",
+        ];
+      }
       return [
         "Ensure the uv Python package manager (install it if missing)",
         "Create a managed Python environment",
-        `Install ${item.id === "pyexasol" ? "pyexasol" : "exasol-ai-lab"} into it`,
+        "Install the package (the chosen version, else the verified one) into it",
       ];
     case "source-build":
       return [
@@ -560,15 +568,17 @@ export function Marketplace() {
   useEffect(() => {
     verPickRef.current = verPick;
   }, [verPick]);
-  const [verLists, setVerLists] = useState<Record<string, string[] | null | undefined>>({});
+  // undefined = not fetched, null = loading, "error" = fetch failed (rate
+  // limit / offline — NOT the same as "this project has no versions").
+  const [verLists, setVerLists] = useState<Record<string, string[] | null | "error" | undefined>>({});
   const loadVersions = (item: CatalogItem) => {
     const src = versionSource(item);
-    if (!src || item.id in verLists) return;
+    if (!src || (item.id in verLists && verLists[item.id] !== "error")) return;
     setVerLists((m) => ({ ...m, [item.id]: null }));
     ipc
       .marketVersions(src.source, src.reference)
       .then((v) => setVerLists((m) => ({ ...m, [item.id]: v })))
-      .catch(() => setVerLists((m) => ({ ...m, [item.id]: [] })));
+      .catch(() => setVerLists((m) => ({ ...m, [item.id]: "error" })));
   };
 
   // Ids with an installer ACTUALLY running. A ref (not derived queue state) so
@@ -872,6 +882,67 @@ export function Marketplace() {
       </>
     );
 
+    // Live any-version picker: list fetched on first open (GitHub tags / PyPI
+    // versions / Docker Hub tags / Maven Central), newest first. Shared by the
+    // plain Install branch AND the runs-inside-Studio driver branch, so every
+    // installable item lists its versions.
+    const versionMenu = versionSource(item) ? (
+      <DropdownMenu onOpenChange={(o) => o && loadVersions(item)}>
+        <DropdownMenuTrigger asChild>
+          <button
+            disabled={isInstalling}
+            aria-label={`${item.name} version to install`}
+            className="flex h-7 max-w-[150px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+          >
+            <span className="truncate">{verPick[item.id] ?? "latest"}</span>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+          <DropdownMenuItem
+            onClick={() => setVerPick(({ [item.id]: _drop, ...rest }) => rest)}
+            className="font-mono text-[12px]"
+          >
+            latest
+            {!verPick[item.id] ? <Check className="ml-auto h-3 w-3" /> : null}
+          </DropdownMenuItem>
+          {verLists[item.id] === null ? (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+            </div>
+          ) : verLists[item.id] === "error" ? (
+            <div className="max-w-56 px-2 py-1.5 text-[11px] text-muted-foreground">
+              Couldn't load the version list (offline or rate-limited) — reopen to retry.
+            </div>
+          ) : (
+            (verLists[item.id] as string[] | undefined ?? []).map((v) => (
+              <DropdownMenuItem key={v} onClick={() => setVerPick((m) => ({ ...m, [item.id]: v }))} className="font-mono text-[12px]">
+                {v}
+                {verPick[item.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
+              </DropdownMenuItem>
+            ))
+          )}
+          {Array.isArray(verLists[item.id]) && (verLists[item.id] as string[]).length === 0 ? (
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null;
+    // A picked version on a runs-inside-Studio driver card downloads THAT
+    // version into the managed marketplace folder — the pinned runtime the SQL
+    // editor uses stays verified ("Use custom JAR" in Drivers overrides it).
+    const pickedDownload = did && verPick[item.id] ? (
+      <button
+        onClick={() => startInstall(item)}
+        disabled={isInstalling}
+        title={`Download ${item.name} ${verPick[item.id]} into Studio's marketplace folder`}
+        className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary disabled:opacity-50"
+      >
+        {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+        Download {verPick[item.id]}
+      </button>
+    ) : null;
+
     // The Community database manages its own docker lifecycle — dedicated card
     // actions (Docker checks, live versions, install/start/stop) instead of the
     // generic install button.
@@ -882,6 +953,8 @@ export function Marketplace() {
         {did ? (
           runtimeReady ? (
             <>
+              {versionMenu}
+              {pickedDownload}
               {newer ? (
                 <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                   <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
@@ -902,10 +975,14 @@ export function Marketplace() {
               </button>
             </>
           ) : (
-            <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-              {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
-              {driverBusy[did] ? "Installing…" : "Install & use here"}
-            </button>
+            <>
+              {versionMenu}
+              <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+                {driverBusy[did] ? "Installing…" : "Install & use here"}
+              </button>
+              {pickedDownload}
+            </>
           )
         ) : inst ? (
           <>
@@ -994,46 +1071,7 @@ export function Marketplace() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            {versionSource(item) ? (
-              // Live any-version picker: list fetched on first open (GitHub
-              // tags / PyPI versions / Maven Central), newest first.
-              <DropdownMenu onOpenChange={(o) => o && loadVersions(item)}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    disabled={isInstalling}
-                    aria-label={`${item.name} version to install`}
-                    className="flex h-7 max-w-[150px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
-                  >
-                    <span className="truncate">{verPick[item.id] ?? "latest"}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                  <DropdownMenuItem
-                    onClick={() => setVerPick(({ [item.id]: _drop, ...rest }) => rest)}
-                    className="font-mono text-[12px]"
-                  >
-                    latest
-                    {!verPick[item.id] ? <Check className="ml-auto h-3 w-3" /> : null}
-                  </DropdownMenuItem>
-                  {verLists[item.id] === null ? (
-                    <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
-                    </div>
-                  ) : (
-                    (verLists[item.id] ?? []).map((v) => (
-                      <DropdownMenuItem key={v} onClick={() => setVerPick((m) => ({ ...m, [item.id]: v }))} className="font-mono text-[12px]">
-                        {v}
-                        {verPick[item.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                  {Array.isArray(verLists[item.id]) && verLists[item.id]?.length === 0 ? (
-                    <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
+            {versionMenu}
             <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {isInstalling
@@ -1863,15 +1901,16 @@ function IndependentComponents({
   // Any-version updates: per-row chosen tag + lazily fetched live version
   // lists (first dropdown open only — never a timer).
   const [rowPick, setRowPick] = useState<Record<string, string>>({});
-  const [rowVers, setRowVers] = useState<Record<string, string[] | null | undefined>>({});
+  // undefined = not fetched, null = loading, "error" = fetch failed.
+  const [rowVers, setRowVers] = useState<Record<string, string[] | null | "error" | undefined>>({});
   const loadRowVersions = (id: string, repo?: string | null) => {
     const src = componentVersionSource(id, repo);
-    if (!src || id in rowVers) return;
+    if (!src || (id in rowVers && rowVers[id] !== "error")) return;
     setRowVers((m) => ({ ...m, [id]: null }));
     ipc
       .marketVersions(src.source, src.reference)
       .then((v) => setRowVers((m) => ({ ...m, [id]: v })))
-      .catch(() => setRowVers((m) => ({ ...m, [id]: [] })));
+      .catch(() => setRowVers((m) => ({ ...m, [id]: "error" })));
   };
   // Live progress for long component operations (the DB engine update backs
   // up, stops, swaps and restarts the database — minutes, not seconds).
@@ -2081,15 +2120,19 @@ function IndependentComponents({
                         <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
                           <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
                         </div>
+                      ) : rowVers[c.id] === "error" ? (
+                        <div className="max-w-56 px-2 py-1.5 text-[11px] text-muted-foreground">
+                          Couldn't load the version list (offline or rate-limited) — reopen to retry.
+                        </div>
                       ) : (
-                        (rowVers[c.id] ?? []).map((v) => (
+                        (rowVers[c.id] as string[] | undefined ?? []).map((v) => (
                           <DropdownMenuItem key={v} onClick={() => setRowPick((m) => ({ ...m, [c.id]: v }))} className="font-mono text-[12px]">
                             {v}
                             {rowPick[c.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
                           </DropdownMenuItem>
                         ))
                       )}
-                      {Array.isArray(rowVers[c.id]) && rowVers[c.id]?.length === 0 ? (
+                      {Array.isArray(rowVers[c.id]) && (rowVers[c.id] as string[]).length === 0 ? (
                         <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
                       ) : null}
                     </DropdownMenuContent>

@@ -13,6 +13,13 @@ test("pip items resolve to their real PyPI package", () => {
   });
 });
 
+test("ai-lab lists Docker Hub tags — it is an image, not a pip package", () => {
+  assert.deepEqual(versionSource({ id: "ai-lab", repo: "exasol/ai-lab", install: "uv-pip" }), {
+    source: "dockerhub",
+    reference: "exasol/ai-lab",
+  });
+});
+
 test("binary items list GitHub release tags; maven lists Maven Central", () => {
   assert.deepEqual(versionSource({ id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", install: "binary" }), {
     source: "github",
