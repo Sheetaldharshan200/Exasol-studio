@@ -12,6 +12,10 @@ import { isTauri } from "@/lib/ipc";
 export function DocsTab({ path }: { path?: string }) {
   const [base, setBase] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // An iframe paints WHITE until the page inside applies its CSS — a hard
+  // flash in dark mode. Keep it invisible until onLoad, then fade it in over
+  // the theme-matched background.
+  const [frameReady, setFrameReady] = useState(false);
   // Follow the APP's theme, live: the docs run in an iframe (cross-origin in
   // the desktop shell), so the theme travels as a query param and a toggle
   // reloads the frame with the other one.
@@ -57,6 +61,10 @@ export function DocsTab({ path }: { path?: string }) {
           return `${base}${section}?theme=${dark ? "dark" : "light"}`;
         })();
 
+  // A new URL (path change, theme toggle) mounts a fresh iframe — hide it
+  // again until ITS load fires, or the flash returns on every toggle.
+  useEffect(() => setFrameReady(false), [docsUrl]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
       <div className="min-h-0 flex-1">
@@ -69,7 +77,20 @@ export function DocsTab({ path }: { path?: string }) {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <iframe key={docsUrl} src={docsUrl} title="Exasol Studio documentation" className="h-full w-full border-0 bg-editor" />
+          <div className="relative h-full">
+            {!frameReady ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-editor">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : null}
+            <iframe
+              key={docsUrl}
+              src={docsUrl}
+              onLoad={() => setFrameReady(true)}
+              title="Exasol Studio documentation"
+              className={`h-full w-full border-0 transition-opacity duration-200 ${frameReady ? "opacity-100" : "opacity-0"}`}
+            />
+          </div>
         )}
       </div>
     </div>
