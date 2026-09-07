@@ -720,6 +720,19 @@ export function Marketplace() {
   useEffect(() => {
     contentRef.current?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
   }, [nav]);
+  // Progressive card reveal: React transitions time-slice RENDERS but the
+  // COMMIT of ~29 cards is still one block — mount the first chunk instantly
+  // and the rest a beat later, so no single commit is big enough to hang.
+  const REVEAL_STEP = 12;
+  const [revealCount, setRevealCount] = useState(REVEAL_STEP);
+  useEffect(() => {
+    setRevealCount(REVEAL_STEP);
+  }, [nav, query]);
+  useEffect(() => {
+    if (revealCount >= CATALOG.length) return;
+    const t = window.setTimeout(() => setRevealCount((n) => n + REVEAL_STEP), 40);
+    return () => window.clearTimeout(t);
+  }, [revealCount, nav, query]);
 
   // Fetch-on-demand ONLY (user rule): update state re-syncs when the app opens
   // (mount) and when a tab is clicked — never on a background timer. Uses the
@@ -1635,23 +1648,31 @@ export function Marketplace() {
               </div>
             ) : nav === "all" && !query ? (
               <>
-                {SECTION_META.map((sec) => {
-                  const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
-                  if (!items.length) return null;
-                  return (
-                    <section key={sec.key} className="mb-6">
-                      <div className="mb-2.5 flex items-baseline gap-2">
-                        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
-                        <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
-                        <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
-                      </div>
-                      <div className={gridClass}>{items.map((i) => renderCard(i, isList))}</div>
-                    </section>
-                  );
-                })}
+                {(() => {
+                  // Progressive reveal across sections: only `revealCount`
+                  // cards mount per frame batch (see the reveal effect above).
+                  let used = 0;
+                  return SECTION_META.map((sec) => {
+                    const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
+                    if (!items.length) return null;
+                    const shown = items.slice(0, Math.max(0, revealCount - used));
+                    used += items.length;
+                    if (!shown.length) return null;
+                    return (
+                      <section key={sec.key} className="mb-6">
+                        <div className="mb-2.5 flex items-baseline gap-2">
+                          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
+                          <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
+                          <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
+                        </div>
+                        <div className={gridClass}>{shown.map((i) => renderCard(i, isList))}</div>
+                      </section>
+                    );
+                  });
+                })()}
               </>
             ) : navItems.length ? (
-              <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
+              <div className={gridClass}>{navItems.slice(0, revealCount).map((i) => renderCard(i, isList))}</div>
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
