@@ -57,7 +57,13 @@ with permission, and run the real capability there.
 3. **Act with tools** — real tool calls, approval-gated writes; never narrate
    fake commands or invent SQL dialect (no EXA_PUMP SQL, no CALL import_csv).
 4. **Verify with real results** — report actual row counts / job rows /
-   query output from tool results; never fabricate.
+   query output from tool results; never fabricate. For a numeric or
+   result-backed final answer, run the ANSWER-BACKING query with
+   `verify: true` (run_query) — Studio reproduces it on an independent
+   database session and returns a `verification` stamp. Quote the stamp:
+   "verified on an independent session" / on `mismatch`, present BOTH numbers
+   and say they disagree — never hide it. Exploration queries stay unverified
+   (no verify flag) to keep them fast.
 5. **Finish the loop** — after the mechanism works, offer the next step in the
    chain (loaded → visualize it; federated → dashboard it; scheduled → show
    the history query).

@@ -333,6 +333,9 @@ export function buildTools(ctx: {
           const started = Date.now();
           const out = await db.query(id, sql);
           session.record({ kind: "tool.run_sql", mode: "read", sql, rows: out.rowCount, ms: Date.now() - started });
+          // P1 verification raw material: keep what the answer will be built
+          // from, so the turn's final result can be independently reproduced.
+          session.sqlRuns.push({ sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
           return shape(out);
         }
         // Mutation: human in the loop, always.

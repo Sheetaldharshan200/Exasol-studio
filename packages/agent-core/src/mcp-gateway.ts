@@ -75,8 +75,8 @@ type QueryOut = {
   truncated: boolean;
 };
 
-function runQuery(database: string, sql: string): Promise<QueryOut> {
-  return studio<QueryOut>("/gateway/query", { method: "POST", body: { database, sql } });
+function runQuery(database: string, sql: string, verify?: boolean): Promise<QueryOut> {
+  return studio<QueryOut>("/gateway/query", { method: "POST", body: { database, sql, verify } });
 }
 
 /** Single-quote string literal for interpolating user args into canned SQL. */
@@ -279,11 +279,19 @@ server.tool(
 
 server.tool(
   "run_query",
-  "Run a read-only SQL statement (SELECT / WITH / DESCRIBE — one statement per call) against one connected database. Results are capped; add LIMIT for big tables. Exasol folds unquoted identifiers to UPPERCASE — double-quote identifiers to keep case.",
-  { database: DB_ARG, sql: z.string().describe("The SQL statement to run.") },
-  async ({ database, sql }) => {
+  "Run a read-only SQL statement (SELECT / WITH / DESCRIBE — one statement per call) against one connected database. Results are capped; add LIMIT for big tables. Exasol folds unquoted identifiers to UPPERCASE — double-quote identifiers to keep case. " +
+    "Set verify:true on the query whose result you are about to present as your final answer: Studio re-runs it on an INDEPENDENT database session and returns a `verification` stamp (verified / mismatch / unverified) — quote that stamp with your answer. Leave verify off for exploration.",
+  {
+    database: DB_ARG,
+    sql: z.string().describe("The SQL statement to run."),
+    verify: z
+      .boolean()
+      .optional()
+      .describe("true = independently reproduce this result and stamp it (use on the final answer-backing query only)."),
+  },
+  async ({ database, sql, verify }) => {
     try {
-      return text(await runQuery(database, sql));
+      return text(await runQuery(database, sql, verify));
     } catch (e) {
       return errText(e);
     }

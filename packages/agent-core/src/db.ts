@@ -141,6 +141,31 @@ export class DbRegistry {
     };
   }
 
+  /**
+   * P1 verification re-execution: a DEDICATED, throwaway session — never the
+   * shared driver, so the reproduction is genuinely independent of whatever
+   * session state the original run had. Closed either way.
+   */
+  async verifyQuery(id: string, sql: string): Promise<QueryOutput> {
+    const info = this.conns.get(id);
+    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const driver = this.makeDriver(info);
+    await driver.connect();
+    try {
+      const result = await driver.query(sql);
+      const columns = result.getColumns().map((c) => c.name);
+      const all = result.getRows();
+      return {
+        columns,
+        rows: all.slice(0, MODEL_ROW_CAP).map((r) => columns.map((c) => r[c] ?? null)),
+        rowCount: all.length,
+        truncated: all.length > MODEL_ROW_CAP || all.length === FETCH_ROW_CAP,
+      };
+    } finally {
+      void driver.close().catch(() => undefined);
+    }
+  }
+
   /** Full-result query for internal consumers (KB crawler) — no model cap. */
   async queryAll(id: string, sql: string): Promise<QueryOutput> {
     const d = await this.driver(id);

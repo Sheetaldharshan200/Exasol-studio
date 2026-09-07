@@ -21,6 +21,17 @@ export type AgentEvent =
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
   | { type: "error"; message: string }
+  | {
+      /** P1: the answer's final SQL result re-run on an INDEPENDENT session. */
+      type: "verification";
+      messageId: string;
+      status: "verified" | "mismatch" | "unverified";
+      detail: string;
+      expectedRows?: number;
+      actualRows?: number;
+      elapsedMs?: number;
+      sql?: string;
+    }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
 /** A render-ready conversation item, rebuilt from the transcript. */
@@ -49,6 +60,9 @@ export class Session {
   abort: AbortController | null = null;
   /** Connection granted to this session's tools (set per message). */
   connectionId: string | null = null;
+  /** Read queries the CURRENT turn ran (cleared at turn start) — the raw
+   *  material P1 verification plans from. Shape matches verify.ts SqlRun. */
+  sqlRuns: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean }[] = [];
   private listeners = new Set<(e: AgentEvent) => void>();
   private pendingPermissions = new Map<string, (allow: boolean) => void>();
   private pendingUi = new Map<string, (r: { ok: boolean; detail?: string }) => void>();

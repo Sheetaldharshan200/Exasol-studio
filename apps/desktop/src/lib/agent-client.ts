@@ -55,6 +55,17 @@ export type AgentEvent =
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
   | { type: "error"; message: string }
+  | {
+      /** P1: the answer's final SQL result re-run on an INDEPENDENT session. */
+      type: "verification";
+      messageId: string;
+      status: "verified" | "mismatch" | "unverified";
+      detail: string;
+      expectedRows?: number;
+      actualRows?: number;
+      elapsedMs?: number;
+      sql?: string;
+    }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
 export type SessionMeta = {

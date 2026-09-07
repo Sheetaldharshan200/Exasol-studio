@@ -23,6 +23,7 @@ export type Attachment = {
 import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
+import { compareResults, planVerification } from "./verify.ts";
 import { extractMemories } from "./memory-extract.ts";
 import { extractTextToolCalls, resolveToolName, repairArgs, zodSchemaish } from "./tool-repair.ts";
 import { TurnBoard } from "./board.ts";
@@ -334,6 +335,7 @@ export async function runTurn(opts: {
 
   session.running = true;
   session.abort = new AbortController();
+  session.sqlRuns = []; // fresh turn — P1 verification only covers THIS turn's reads
   session.emit({ type: "status", state: "thinking" });
 
   // Fold older turns into a summary if we're nearing the context window.
@@ -829,6 +831,60 @@ export async function runTurn(opts: {
         messageId: currentTextId ?? fallbackId,
         usage: s.usage,
       });
+      // P1 verification: reproduce the answer's final SQL result on an
+      // INDEPENDENT database session, bounded to 5s. Read-only by
+      // construction (planVerification refuses writes), never blocks the
+      // answer (it already streamed), and always reports honestly.
+      if (session.connectionId && session.sqlRuns.length > 0) {
+        const plan = planVerification(session.sqlRuns);
+        const messageId = currentTextId ?? fallbackId;
+        if (plan) {
+          const startedVerify = Date.now();
+          try {
+            const timeout = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("verification timed out (5s)")), 5000),
+            );
+            const actual = await Promise.race([db.verifyQuery(session.connectionId, plan.sql), timeout]);
+            const outcome = compareResults(plan, {
+              sql: plan.sql,
+              columns: actual.columns,
+              rows: actual.rows,
+              rowCount: actual.rowCount,
+              truncated: actual.truncated,
+            });
+            const event = {
+              type: "verification" as const,
+              messageId,
+              status: outcome.status,
+              detail: outcome.detail,
+              expectedRows: plan.expected.rowCount,
+              actualRows: actual.rowCount,
+              elapsedMs: Date.now() - startedVerify,
+              sql: plan.sql,
+            };
+            session.emit(event);
+            session.record({ kind: "verification", ...event });
+          } catch (e) {
+            const event = {
+              type: "verification" as const,
+              messageId,
+              status: "unverified" as const,
+              detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
+              elapsedMs: Date.now() - startedVerify,
+              sql: plan.sql,
+            };
+            session.emit(event);
+            session.record({ kind: "verification", ...event });
+          }
+        } else {
+          session.emit({
+            type: "verification",
+            messageId,
+            status: "unverified",
+            detail: "Nothing verifiable this turn (write statements or non-deterministic SQL).",
+          });
+        }
+      }
       // Verified researcher findings outlive the turn: tested SQL with a
       // stated purpose is exactly the kind of fact future sessions should know.
       if (settings.enableInsights && session.connectionId) {

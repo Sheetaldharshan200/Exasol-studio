@@ -6,6 +6,7 @@ import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./
 import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
+import { compareResults, planVerification } from "./verify.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
@@ -402,7 +403,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "query") {
-        const body = await readBody<{ database?: string; sql?: string }>(req);
+        const body = await readBody<{ database?: string; sql?: string; verify?: boolean }>(req);
         const wanted = (body.database ?? "").trim();
         const sql = (body.sql ?? "").trim().replace(/;\s*$/, "");
         if (!wanted || !sql) return json(res, 400, { error: "database and sql are required" });
@@ -435,6 +436,49 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           return json(res, 403, { error: "One statement per call — remove the extra ';'." });
         }
         const out = await db.query(target.id, sql);
+        // P1 verification (opt-in per query — the model sets verify:true on
+        // the statement whose result backs its final answer): reproduce the
+        // result on an INDEPENDENT session and stamp the response honestly.
+        if (body.verify === true) {
+          const run = { sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated };
+          const plan = planVerification([run]);
+          if (!plan) {
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: { status: "unverified", detail: "Not verifiable (non-deterministic SQL)." },
+            });
+          }
+          const startedVerify = Date.now();
+          try {
+            const timeout = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("verification timed out (5s)")), 5000),
+            );
+            const actual = await Promise.race([db.verifyQuery(target.id, plan.sql), timeout]);
+            const outcome = compareResults(plan, { sql: plan.sql, ...actual });
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: {
+                status: outcome.status,
+                detail: outcome.detail,
+                expectedRows: run.rowCount,
+                actualRows: actual.rowCount,
+                elapsedMs: Date.now() - startedVerify,
+              },
+            });
+          } catch (e) {
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: {
+                status: "unverified",
+                detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
+                elapsedMs: Date.now() - startedVerify,
+              },
+            });
+          }
+        }
         return json(res, 200, { database: target.name, ...out });
       }
       // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
