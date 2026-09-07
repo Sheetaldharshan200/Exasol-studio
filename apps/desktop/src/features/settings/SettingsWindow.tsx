@@ -372,6 +372,21 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
       .catch(() => undefined);
   }, []);
 
+  // Stay in sync the OTHER way too: a change saved elsewhere (the main
+  // window's own toggles, another settings surface) lands here live, so this
+  // window never shows stale values while open.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<Record<string, SettingValue>>("settings:changed", (e) => {
+        setValues((v) => ({ ...v, ...e.payload }));
+      });
+    })();
+    return () => unlisten?.();
+  }, []);
+
   // Apply the chosen theme to THIS (settings) window live, so the appearance
   // updates the moment you pick it — not only after closing and reopening.
   useEffect(() => {

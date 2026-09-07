@@ -689,7 +689,15 @@ export function ExasolStudio({
       const { listen } = await import("@tauri-apps/api/event");
       unlisten = await listen<Record<string, unknown>>("settings:changed", (e) => apply(e.payload));
     })();
-    return () => unlisten?.();
+    // Belt and suspenders against a missed/raced event: coming back from the
+    // Settings window focuses this one — re-read and re-apply, so the main app
+    // can never stay stale behind a saved change.
+    const onFocus = () => void ipc.getAppSettings().then(apply).catch(() => undefined);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("focus", onFocus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

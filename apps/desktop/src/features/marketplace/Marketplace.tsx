@@ -1593,9 +1593,15 @@ export function Marketplace() {
             </div>
 
             {/* No key= remount here (that re-created every card per switch):
-                the fade runs imperatively on the ref, and navPending dims the
-                content while React time-slices the heavy grid render. */}
-            <div ref={contentRef} className={cn("transition-opacity duration-150", navPending && "opacity-50")}>
+                the fade runs imperatively on the ref. While the transition is
+                pending the THEMED brand loader overlays the dimmed content —
+                never a frozen-looking screen. */}
+            <div ref={contentRef} className={cn("relative transition-opacity duration-150", navPending && "opacity-40")}>
+              {navPending ? (
+                <div className="absolute inset-x-0 top-16 z-10 flex justify-center">
+                  <BrandLoader size={40} label="Loading" />
+                </div>
+              ) : null}
             {/* Updates tab: Studio's own card, then the SAME cards as
                 everywhere else filtered to those with an update — managed
                 components update in place on their cards, no separate panel. */}
