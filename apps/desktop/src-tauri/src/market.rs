@@ -1140,7 +1140,8 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
 
 /// A version/tag string safe to embed in a URL path segment or a `pkg==v`
 /// spec — never anything path- or option-like. Pure so it's unit-tested.
-fn valid_version_tag(v: &str) -> bool {
+/// Shared with update_component, which embeds versions the same two ways.
+pub(crate) fn valid_version_tag(v: &str) -> bool {
     !v.is_empty()
         && v.len() <= 100
         && !v.starts_with('-')
@@ -1178,16 +1179,21 @@ fn maven_all_versions(xml: &str) -> Vec<String> {
 }
 
 /// Sort version strings newest first by numeric segments ("2.0.10" above
-/// "2.0.9"); anything after the first non-numeric segment breaks ties by
-/// plain string order. Pure so it's unit-tested.
+/// "2.0.9"). A version with trailing non-numeric content ("1.0.dev1",
+/// "2.0-rc1") sorts BELOW the plain release with the same numeric prefix —
+/// the pre-release convention — with plain string order as the last resort.
+/// Pure so it's unit-tested.
 fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
-    fn key(v: &str) -> (Vec<u64>, String) {
-        let numeric: Vec<u64> = v
+    fn key(v: &str) -> (Vec<u64>, bool, String) {
+        let segments: Vec<&str> = v
             .trim_start_matches(['v', 'V'])
             .split(|c: char| c == '.' || c == '-' || c == '+')
-            .map_while(|p| p.parse::<u64>().ok())
             .collect();
-        (numeric, v.to_string())
+        let numeric: Vec<u64> = segments.iter().map_while(|p| p.parse::<u64>().ok()).collect();
+        // true = a final release (every segment numeric) — ranks above a
+        // pre-release with the same numeric prefix when sorted descending.
+        let is_final = numeric.len() == segments.len();
+        (numeric, is_final, v.to_string())
     }
     versions.sort_by(|a, b| key(b).cmp(&key(a)));
     versions
@@ -1260,9 +1266,16 @@ pub async fn market_versions(source: String, reference: String) -> AppResult<Vec
                 .map(|releases| {
                     releases
                         .iter()
-                        // A version whose file list is empty was yanked/never
-                        // uploaded — offering it would only fail the install.
-                        .filter(|(v, files)| valid_version_tag(v) && files.as_array().is_some_and(|f| !f.is_empty()))
+                        // Skip versions with no files (never uploaded) and
+                        // versions whose EVERY file is yanked — pip would
+                        // refuse or warn on those, so offering them only
+                        // fails the install.
+                        .filter(|(v, files)| {
+                            valid_version_tag(v)
+                                && files.as_array().is_some_and(|f| {
+                                    f.iter().any(|file| !file.get("yanked").and_then(Value::as_bool).unwrap_or(false))
+                                })
+                        })
                         .map(|(v, _)| v.clone())
                         .collect()
                 })
@@ -1337,12 +1350,15 @@ pub async fn market_install_run(
     // Which database an in-database add-on (Semantic Views) installs into.
     // Absent means the managed local runtime; other items ignore it.
     profile_id: Option<String>,
+    // An EXPLICIT user pick from the card's version dropdown — distinct from
+    // `version` (the display/manifest value, usually the catalog latest),
+    // which must never silently override a verified pip pin.
+    requested: Option<String>,
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
     let stack = &crate::component_lock::components().python_stack;
-    // A user-chosen version from the card's version dropdown ("install any
-    // version, live"). Validated before it can reach a package spec or URL.
-    let requested = version.clone().filter(|v| valid_version_tag(v));
+    // Validated before it can reach a package spec or URL.
+    let requested = requested.filter(|v| valid_version_tag(v));
     // The pip spec for a PyPI-backed item: the requested version, else the
     // verified pin where one exists, else the package's latest.
     let pip_spec = |package: &str, pin: Option<&str>| -> String {
@@ -1390,7 +1406,13 @@ pub async fn market_install_run(
             items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
             items.push(json!({
                 "id": id,
-                "version": resolved_version.or(version).unwrap_or_else(|| "latest".into()),
+                // Record only what was actually installed: installer-resolved
+                // first, then the validated pick, then the display version IF
+                // it passes validation — never a raw value execution ignored.
+                "version": resolved_version
+                    .or(requested)
+                    .or(version.filter(|v| valid_version_tag(v)))
+                    .unwrap_or_else(|| "latest".into()),
                 "note": note,
             }));
             write_manifest(&app, &items)?;
@@ -1657,6 +1679,17 @@ mod tests {
             "v2.1.0".into(),
         ]);
         assert_eq!(sorted, ["v2.1.0", "2.0.10", "2.0.9", "0.9.0"]);
+    }
+
+    #[test]
+    fn sort_versions_desc_ranks_prereleases_below_their_final() {
+        let sorted = sort_versions_desc(vec![
+            "1.0.dev1".into(),
+            "1.0".into(),
+            "2.0-rc1".into(),
+            "2.0".into(),
+        ]);
+        assert_eq!(sorted, ["2.0", "2.0-rc1", "1.0", "1.0.dev1"]);
     }
 
     #[test]

@@ -132,10 +132,11 @@ pub struct UpstreamInfo {
 }
 
 /// Managed-component id → its id in the CI-generated catalog.json mirror.
-const MIRROR_IDS: [(&str, &str); 3] = [
+const MIRROR_IDS: [(&str, &str); 4] = [
     ("personal", "exasol-personal"),
     ("exapump", "exapump"),
     ("mcp-server", "mcp-server"),
+    ("exa-agent", "exa-agent"),
 ];
 
 /// Upstream tags mined from the catalog.json mirror (whose CI fetches GitHub

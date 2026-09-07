@@ -540,6 +540,9 @@ export function Marketplace() {
               asset?.url,
               asset?.name,
               item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
+              // Only the explicit dropdown pick may override a verified pip
+              // pin — the display version above never does.
+              chosen,
             );
           } catch {
             finish(false);
@@ -588,6 +591,9 @@ export function Marketplace() {
       for (const item of fresh) {
         void installOne(item).then((ok) => {
           activeInstallsRef.current.delete(item.id);
+          // A finished install consumes its dropdown pick — a stale hidden
+          // pick must never redirect a later "Update to latest" click.
+          setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
           setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
           refreshInstalled();
         });
@@ -1916,6 +1922,8 @@ function IndependentComponents({
       // A fresh Exa engine must not leave the old binary serving the panel —
       // bounce the sidecar. Sessions are on disk; the fresh one reloads them.
       if (id === "exa-agent") await ipc.agentRestart().catch(() => undefined);
+      // The finished update consumes the row's dropdown pick.
+      setRowPick(({ [id]: _consumed, ...rest }) => rest);
       setNote(ok);
       // Refresh IN PLACE: rows update from fresh data without unmounting the
       // section (no loader flash — comps/upstream stay non-null throughout).

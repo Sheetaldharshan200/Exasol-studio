@@ -570,7 +570,11 @@ export const ipc = {
     url?: string,
     filename?: string,
     profileId?: string,
-  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename, profileId }),
+    // ONLY an explicit user pick from the version dropdown. `version` is the
+    // display/manifest value (often the catalog latest) and must never
+    // override a verified pip pin — `requested` is what does that, on purpose.
+    requested?: string,
+  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename, profileId, requested }),
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
   personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),

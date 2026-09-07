@@ -1926,6 +1926,13 @@ fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
 pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
     let component = ComponentId::from_slug(&id)
         .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
+    // The version becomes a pip spec or a GitHub release-tag URL segment —
+    // refuse anything path- or option-like before it reaches either.
+    if let Some(v) = &version {
+        if !crate::market::valid_version_tag(v) {
+            return Err(AppError::InvalidSettings(format!("Invalid version: {v}")));
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let data_dir = app.state::<AppState>().data_dir.clone();
         match component {
