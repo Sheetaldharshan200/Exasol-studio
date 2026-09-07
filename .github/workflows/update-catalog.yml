@@ -52,6 +52,7 @@ jobs:
           mongodb-vs|exasol-labs/exasol-mongodb-vs|https://github.com/exasol-labs/exasol-mongodb-vs
           more-functions|exasol-labs/more-functions|https://github.com/exasol-labs/more-functions
           exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
+          exa-agent|Sheetaldharshan200/exa-engine|https://github.com/Sheetaldharshan200/exa-engine
           mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
           pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
           sqlalchemy-exasol|exasol/sqlalchemy-exasol|https://github.com/exasol/sqlalchemy-exasol
