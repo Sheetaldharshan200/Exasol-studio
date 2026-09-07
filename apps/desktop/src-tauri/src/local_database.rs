@@ -1681,9 +1681,10 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
         ComponentId::SemanticViews => "exasol-labs/exasol-semantic-views".to_string(),
-        // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
-        // (the source of truth), rebranded in-product as Exa.
-        ComponentId::ExaAgent => "Sheetaldharshan200/exa".to_string(),
+        // Exa engine = opencode (MIT); binary from the exa-engine GitHub
+        // Releases (engine.rs EXA_REPO — the repo installs actually pull from),
+        // rebranded in-product as Exa.
+        ComponentId::ExaAgent => "Sheetaldharshan200/exa-engine".to_string(),
     }
 }
 
@@ -1755,6 +1756,10 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
         ComponentId::ExaPump,
         ComponentId::McpServer,
         ComponentId::SemanticViews,
+        // The Exa AI engine updates like any other component (its own dir +
+        // manifest); the running sidecar resolves the installed copy lazily,
+        // and the Updates row restarts the sidecar after a successful update.
+        ComponentId::ExaAgent,
     ];
     Ok(ids
         .iter()

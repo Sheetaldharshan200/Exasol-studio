@@ -173,10 +173,12 @@ fn fetch_mirror_catalog() -> Option<Value> {
 pub async fn components_upstream() -> AppResult<Vec<UpstreamInfo>> {
     tauri::async_runtime::spawn_blocking(|| {
         let lock = crate::component_lock::components();
-        let watched: [(&str, String); 3] = [
+        let watched: [(&str, String); 4] = [
             ("personal", lock.personal.repository.clone()),
             ("exapump", lock.exapump.repository.clone()),
             ("mcp-server", "exasol/mcp-server".to_string()),
+            // The Exa AI engine — the same repo engine.rs installs from.
+            ("exa-agent", "Sheetaldharshan200/exa-engine".to_string()),
         ];
         let mut out: Vec<UpstreamInfo> = Vec::new();
         let mut missing: Vec<&str> = Vec::new();

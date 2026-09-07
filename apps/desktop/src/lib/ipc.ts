@@ -552,7 +552,11 @@ export const ipc = {
   marketDocSave: (id: string, content: string) => call<void>("market_doc_save", { id, content }),
   marketDocLoad: (id: string) => call<string | null>("market_doc_load", { id }),
   marketDocForget: (id: string) => call<void>("market_doc_forget", { id }),
-  marketRelease: (repo: string) => call<Release>("market_release", { repo }),
+  marketRelease: (repo: string, tag?: string) => call<Release>("market_release", { repo, tag }),
+  /** Live version list for a marketplace item (newest first) — source is
+   *  "github" (reference = owner/repo), "pypi" (reference = package) or
+   *  "maven-exasol-jdbc". */
+  marketVersions: (source: string, reference: string) => call<string[]>("market_versions", { source, reference }),
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),
   /** Web build: the engine installs what a local server process can (pip
@@ -575,6 +579,9 @@ export const ipc = {
   /** Latest OFFICIAL release tag per managed component (best-effort). */
   componentsUpstream: () => call<{ id: string; tag: string }[]>("components_upstream"),
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
+  /** Bounce the AI sidecar so the next panel call respawns it on the freshly
+   *  installed engine. Sessions live on disk and are reloaded. */
+  agentRestart: () => call<void>("agent_restart"),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
   backupLocalDatabase: () => call<string>("backup_local_database"),
   skillsListTargets: () => call<SkillTarget[]>("skills_list_targets"),

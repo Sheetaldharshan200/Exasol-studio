@@ -62,6 +62,8 @@ import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-d
 import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
 import { CommunityDbActions } from "@/features/marketplace/CommunityDbActions";
 import { pickAsset } from "@/features/marketplace/assets";
+import { componentVersionSource, versionSource } from "@/features/marketplace/versions";
+import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -509,8 +511,6 @@ export function Marketplace() {
           })();
           return;
         }
-        const asset = pickAsset(releases[item.id]?.assets ?? [], env);
-        const version = latestFor(item.id) ?? undefined;
         let un: UnlistenFn | undefined;
         let settled = false;
         const finish = (v: boolean) => {
@@ -519,25 +519,54 @@ export function Marketplace() {
           un?.();
           resolve(v);
         };
-        listen<{ id: string; ok: boolean }>("market:done", (e) => {
-          if (e.payload.id === item.id) finish(e.payload.ok);
-        })
-          .then((u) => {
-            un = u;
-            ipc
-              .marketInstallRun(
-                item.id,
-                version,
-                asset?.url,
-                asset?.name,
-                item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
-              )
-              .catch(() => finish(false));
-          })
-          .catch(() => finish(false));
+        void (async () => {
+          try {
+            // The card's version dropdown wins over "latest". A chosen tag on a
+            // GitHub-release item resolves THAT release's assets, so the
+            // download matches exactly the version the user asked for.
+            const chosen = verPickRef.current[item.id];
+            let release = releases[item.id] ?? null;
+            if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
+              release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
+            }
+            const asset = pickAsset(release?.assets ?? [], env);
+            const version = chosen ?? latestFor(item.id) ?? undefined;
+            un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
+              if (e.payload.id === item.id) finish(e.payload.ok);
+            });
+            await ipc.marketInstallRun(
+              item.id,
+              version,
+              asset?.url,
+              asset?.name,
+              item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
+            );
+          } catch {
+            finish(false);
+          }
+        })();
       }),
     [releases, env, latestFor],
   );
+
+  // Any-version installs: per-item chosen version + lazily fetched live lists
+  // (fetched the first time a card's version dropdown opens — never on a
+  // timer). undefined = not fetched, null = loading, [] = none found.
+  const [verPick, setVerPick] = useState<Record<string, string>>({});
+  const verPickRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    verPickRef.current = verPick;
+  }, [verPick]);
+  const [verLists, setVerLists] = useState<Record<string, string[] | null | undefined>>({});
+  const loadVersions = (item: CatalogItem) => {
+    const src = versionSource(item);
+    if (!src || item.id in verLists) return;
+    setVerLists((m) => ({ ...m, [item.id]: null }));
+    ipc
+      .marketVersions(src.source, src.reference)
+      .then((v) => setVerLists((m) => ({ ...m, [item.id]: v })))
+      .catch(() => setVerLists((m) => ({ ...m, [item.id]: [] })));
+  };
 
   // Ids with an installer ACTUALLY running. A ref (not derived queue state) so
   // two enqueues in the same tick — a double-click, a stale multi-select — can
@@ -959,13 +988,55 @@ export function Marketplace() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
+            {versionSource(item) ? (
+              // Live any-version picker: list fetched on first open (GitHub
+              // tags / PyPI versions / Maven Central), newest first.
+              <DropdownMenu onOpenChange={(o) => o && loadVersions(item)}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    disabled={isInstalling}
+                    aria-label={`${item.name} version to install`}
+                    className="flex h-7 max-w-[150px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+                  >
+                    <span className="truncate">{verPick[item.id] ?? "latest"}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  <DropdownMenuItem
+                    onClick={() => setVerPick(({ [item.id]: _drop, ...rest }) => rest)}
+                    className="font-mono text-[12px]"
+                  >
+                    latest
+                    {!verPick[item.id] ? <Check className="ml-auto h-3 w-3" /> : null}
+                  </DropdownMenuItem>
+                  {verLists[item.id] === null ? (
+                    <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+                    </div>
+                  ) : (
+                    (verLists[item.id] ?? []).map((v) => (
+                      <DropdownMenuItem key={v} onClick={() => setVerPick((m) => ({ ...m, [item.id]: v }))} className="font-mono text-[12px]">
+                        {v}
+                        {verPick[item.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                  {Array.isArray(verLists[item.id]) && verLists[item.id]?.length === 0 ? (
+                    <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {isInstalling
                 ? "Installing…"
                 : item.id === "semantic-views"
                   ? `Install in ${semanticTarget ? (profiles.find((p) => p.id === semanticTarget)?.name ?? "database") : "local database"}`
-                  : "Install"}
+                  : verPick[item.id]
+                    ? `Install ${verPick[item.id]}`
+                    : "Install"}
             </button>
           </>
         )}
@@ -1210,6 +1281,7 @@ export function Marketplace() {
               </div>
             </div>
 
+            {nav === "updates" ? <StudioUpdateCard /> : null}
             {nav === "updates" ? (
               <IndependentComponents
                 onActionable={setManagedUpdates}
@@ -1782,6 +1854,19 @@ function IndependentComponents({
   const [note, setNote] = useState<string | null>(null);
   // Rows ticked for a multi-select "Update selected" batch.
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Any-version updates: per-row chosen tag + lazily fetched live version
+  // lists (first dropdown open only — never a timer).
+  const [rowPick, setRowPick] = useState<Record<string, string>>({});
+  const [rowVers, setRowVers] = useState<Record<string, string[] | null | undefined>>({});
+  const loadRowVersions = (id: string, repo?: string | null) => {
+    const src = componentVersionSource(id, repo);
+    if (!src || id in rowVers) return;
+    setRowVers((m) => ({ ...m, [id]: null }));
+    ipc
+      .marketVersions(src.source, src.reference)
+      .then((v) => setRowVers((m) => ({ ...m, [id]: v })))
+      .catch(() => setRowVers((m) => ({ ...m, [id]: [] })));
+  };
   // Live progress for long component operations (the DB engine update backs
   // up, stops, swaps and restarts the database — minutes, not seconds).
   // Rust streams every step over market:log with the bootstrap job id.
@@ -1828,6 +1913,9 @@ function IndependentComponents({
     setBusy(id); setNote(null);
     try {
       await action();
+      // A fresh Exa engine must not leave the old binary serving the panel —
+      // bounce the sidecar. Sessions are on disk; the fresh one reloads them.
+      if (id === "exa-agent") await ipc.agentRestart().catch(() => undefined);
       setNote(ok);
       // Refresh IN PLACE: rows update from fresh data without unmounting the
       // section (no loader flash — comps/upstream stay non-null throughout).
@@ -1863,9 +1951,10 @@ function IndependentComponents({
   const pickedActionable = actionable.filter((c) => picked.has(c.id));
 
   // The version a row's own Update/Install button would use — shared with the
-  // multi-select batch so both paths install exactly the same thing.
+  // multi-select batch so both paths install exactly the same thing. A version
+  // picked in the row's dropdown always wins.
   const versionFor = (c: ComponentInfo): string | undefined =>
-    updateFor(c) ?? (!c.opaqueVersion && !c.installed ? (upstream?.[c.id] ?? undefined) : undefined);
+    rowPick[c.id] ?? updateFor(c) ?? (!c.opaqueVersion && !c.installed ? (upstream?.[c.id] ?? undefined) : undefined);
 
   // Multi-select: update several components in ONE go. Sequential on purpose —
   // the DB engine update takes a maintenance lock and must never race others.
@@ -1922,6 +2011,9 @@ function IndependentComponents({
         {actionable.map((c) => {
           const isBusy = busy === c.id || c.busy;
           const target = updateFor(c);
+          // The row's dropdown pick beats the auto-detected newest official tag.
+          const effective = rowPick[c.id] ?? target;
+          const rowSource = componentVersionSource(c.id, c.repo);
           const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
           const rowChecked = picked.has(c.id);
           return (
@@ -1958,6 +2050,43 @@ function IndependentComponents({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
+                {rowSource ? (
+                  // Live any-version picker for this managed component (GitHub
+                  // tags for binaries, PyPI versions for the MCP server).
+                  <DropdownMenu onOpenChange={(o) => o && loadRowVersions(c.id, c.repo)}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        disabled={isBusy}
+                        aria-label={`${c.name} version to install`}
+                        className="flex h-7 max-w-[130px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[10.5px] text-foreground hover:bg-secondary disabled:opacity-50"
+                      >
+                        <span className="truncate">{rowPick[c.id] ?? "official latest"}</span>
+                        <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+                      <DropdownMenuItem onClick={() => setRowPick(({ [c.id]: _drop, ...rest }) => rest)} className="font-mono text-[12px]">
+                        official latest
+                        {!rowPick[c.id] ? <Check className="ml-auto h-3 w-3" /> : null}
+                      </DropdownMenuItem>
+                      {rowVers[c.id] === null ? (
+                        <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+                        </div>
+                      ) : (
+                        (rowVers[c.id] ?? []).map((v) => (
+                          <DropdownMenuItem key={v} onClick={() => setRowPick((m) => ({ ...m, [c.id]: v }))} className="font-mono text-[12px]">
+                            {v}
+                            {rowPick[c.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
+                          </DropdownMenuItem>
+                        ))
+                      )}
+                      {Array.isArray(rowVers[c.id]) && rowVers[c.id]?.length === 0 ? (
+                        <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
                 {c.id === "personal" ? (
                   // The DB engine carries data — back up any time; its update
                   // is backup-first with automatic rollback.
@@ -1970,33 +2099,33 @@ function IndependentComponents({
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
                   </button>
                 ) : null}
-                {target ? (
+                {effective ? (
                   <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, target), `${c.name} updated to ${target}.`)}
+                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, effective), `${c.name} updated to ${effective}.`)}
                     disabled={isBusy}
                     title={
                       c.id === "personal"
-                        ? `Install the official ${target} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
-                        : `Install the official ${target} release (digest-verified).`
+                        ? `Install the official ${effective} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
+                        : `Install the official ${effective} release (digest-verified).`
                     }
                     className={upBtn}
                   >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {target}
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {effective}
                   </button>
                 ) : c.opaqueVersion && c.installed ? (
                   <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled.`)} disabled={isBusy} className={upBtn}>
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
                   </button>
                 ) : !c.opaqueVersion && !c.installed ? (
-                  // Fresh/failed install: resolve to the LATEST official
-                  // release (digest-verified); the pin is only the fallback
-                  // when the release can't be resolved.
+                  // Fresh/failed install: the dropdown pick, else the LATEST
+                  // official release (digest-verified); the pin is only the
+                  // fallback when neither can be resolved.
                   <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, upstream[c.id] ?? undefined), `${c.name} installed${upstream[c.id] ? ` (${upstream[c.id]})` : ""}.`)}
+                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, versionFor(c)), `${c.name} installed${versionFor(c) ? ` (${versionFor(c)})` : ""}.`)}
                     disabled={isBusy}
                     className={upBtn}
                   >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install{upstream[c.id] ? ` ${upstream[c.id]}` : ""}
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install{versionFor(c) ? ` ${versionFor(c)}` : ""}
                   </button>
                 ) : null}
               </div>

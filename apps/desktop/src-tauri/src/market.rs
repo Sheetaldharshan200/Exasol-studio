@@ -592,13 +592,26 @@ pub fn market_doc_forget(app: AppHandle, id: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Latest GitHub release for a repo ("owner/name"); null when none exist.
+/// Latest GitHub release for a repo ("owner/name") — or, with `tag`, that
+/// specific release (so any version can be installed, not just the newest);
+/// null when none exist.
 #[tauri::command]
-pub async fn market_release(app: AppHandle, repo: String) -> AppResult<Value> {
+pub async fn market_release(app: AppHandle, repo: String, tag: Option<String>) -> AppResult<Value> {
+    // The tag becomes a URL path segment — refuse anything path-like.
+    if let Some(t) = &tag {
+        if !valid_version_tag(t) {
+            return Err(AppError::Storage(format!("Invalid release tag: {t}")));
+        }
+    }
     // 1h disk cache per repo: the marketplace asks for ~17 repos per open and
     // unauthenticated GitHub rate-limits at 60 req/h per IP — without a cache
     // the live "latest" labels 403 into nothing on any busy machine. A failed
-    // fetch serves the last-known value instead of erasing it.
+    // fetch serves the last-known value instead of erasing it. Tagged releases
+    // are immutable, so their cache entries never really go stale.
+    let cache_key = match &tag {
+        Some(t) => format!("{repo}@{t}"),
+        None => repo.clone(),
+    };
     let cache_path = market_dir(&app)?.join("release-cache.json");
     let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
         .ok()
@@ -608,18 +621,21 @@ pub async fn market_release(app: AppHandle, repo: String) -> AppResult<Value> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if let Some(entry) = cache.get(&repo) {
+    if let Some(entry) = cache.get(&cache_key) {
         let at = entry.get("at").and_then(|v| v.as_u64()).unwrap_or(0);
         if now.saturating_sub(at) < 3600 {
             return Ok(entry.get("value").cloned().unwrap_or(Value::Null));
         }
     }
-    let cached_value = cache.get(&repo).and_then(|e| e.get("value")).cloned();
+    let cached_value = cache.get(&cache_key).and_then(|e| e.get("value")).cloned();
     let store = |cache: &mut serde_json::Map<String, Value>, value: &Value| {
-        cache.insert(repo.clone(), json!({ "at": now, "value": value }));
+        cache.insert(cache_key.clone(), json!({ "at": now, "value": value }));
         let _ = std::fs::write(&cache_path, serde_json::to_string(cache).unwrap_or_default());
     };
-    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let url = match &tag {
+        Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
+        None => format!("https://api.github.com/repos/{repo}/releases/latest"),
+    };
     let client = reqwest::Client::new();
     let resp = match client
         .get(&url)
@@ -1122,42 +1138,186 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
+/// A version/tag string safe to embed in a URL path segment or a `pkg==v`
+/// spec — never anything path- or option-like. Pure so it's unit-tested.
+fn valid_version_tag(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 100
+        && !v.starts_with('-')
+        && v.chars().all(|c| c.is_ascii_alphanumeric() || ".-_+".contains(c))
+}
+
 /// The `<latest>` version from a Maven Central maven-metadata.xml. Pure so the
 /// parsing rules are unit-tested — a full XML parser is overkill for one tag.
 fn maven_latest_version(xml: &str) -> Option<String> {
     let start = xml.find("<latest>")? + "<latest>".len();
     let end = xml[start..].find("</latest>")? + start;
     let v = xml[start..end].trim();
-    // A sane version only — digits/dots/dashes/alnum, nothing path-like.
-    if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+    if !valid_version_tag(v) {
         return None;
     }
     Some(v.to_string())
 }
 
+/// Every `<version>` from a Maven Central maven-metadata.xml — the file lists
+/// oldest first, returned newest first. Pure so it's unit-tested.
+fn maven_all_versions(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find("<version>") {
+        rest = &rest[start + "<version>".len()..];
+        let Some(end) = rest.find("</version>") else { break };
+        let v = rest[..end].trim();
+        if valid_version_tag(v) {
+            out.push(v.to_string());
+        }
+        rest = &rest[end..];
+    }
+    out.reverse();
+    out
+}
+
+/// Sort version strings newest first by numeric segments ("2.0.10" above
+/// "2.0.9"); anything after the first non-numeric segment breaks ties by
+/// plain string order. Pure so it's unit-tested.
+fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
+    fn key(v: &str) -> (Vec<u64>, String) {
+        let numeric: Vec<u64> = v
+            .trim_start_matches(['v', 'V'])
+            .split(|c: char| c == '.' || c == '-' || c == '+')
+            .map_while(|p| p.parse::<u64>().ok())
+            .collect();
+        (numeric, v.to_string())
+    }
+    versions.sort_by(|a, b| key(b).cmp(&key(a)));
+    versions
+}
+
+/// Live version list for an item, so ANY version can be installed — not just
+/// the newest. `source` is "github" (release tags of `reference` = owner/repo),
+/// "pypi" (release versions of `reference` = package name), or
+/// "maven-exasol-jdbc" (Maven Central; `reference` ignored). Newest first.
+#[tauri::command]
+pub async fn market_versions(source: String, reference: String) -> AppResult<Vec<String>> {
+    fn ok_segment(s: &str) -> bool {
+        !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    }
+    let client = reqwest::Client::new();
+    let timeout = std::time::Duration::from_secs(8);
+    let list: Vec<String> = match source.as_str() {
+        "github" => {
+            let mut parts = reference.split('/');
+            if !matches!(
+                (parts.next(), parts.next(), parts.next()),
+                (Some(o), Some(n), None) if ok_segment(o) && ok_segment(n)
+            ) {
+                return Err(AppError::Storage("Invalid repository.".into()));
+            }
+            let body: Value = client
+                .get(format!("https://api.github.com/repos/{reference}/releases?per_page=30"))
+                .header("User-Agent", "exasol-studio")
+                .header("Accept", "application/vnd.github+json")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("GitHub: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            // GitHub already lists newest first.
+            body.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|r| !r.get("draft").and_then(Value::as_bool).unwrap_or(false))
+                        .filter_map(|r| r.get("tag_name").and_then(Value::as_str))
+                        .filter(|t| valid_version_tag(t))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        "pypi" => {
+            if !ok_segment(&reference) {
+                return Err(AppError::Storage("Invalid package name.".into()));
+            }
+            let body: Value = client
+                .get(format!("https://pypi.org/pypi/{reference}/json"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("PyPI: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("releases")
+                .and_then(Value::as_object)
+                .map(|releases| {
+                    releases
+                        .iter()
+                        // A version whose file list is empty was yanked/never
+                        // uploaded — offering it would only fail the install.
+                        .filter(|(v, files)| valid_version_tag(v) && files.as_array().is_some_and(|f| !f.is_empty()))
+                        .map(|(v, _)| v.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            sort_versions_desc(versions)
+        }
+        "maven-exasol-jdbc" => {
+            let xml = client
+                .get("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml")
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("Maven Central: {e}")))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            maven_all_versions(&xml)
+        }
+        _ => return Err(AppError::Storage(format!("Unknown version source: {source}"))),
+    };
+    Ok(list.into_iter().take(30).collect())
+}
+
 /// The official Exasol JDBC driver ships on Maven Central (com.exasol:exasol-jdbc),
-/// not GitHub releases: resolve `<latest>` live, download the jar into the
-/// managed marketplace folder, ready to point Java tools (DBeaver, DataGrip…) at.
-/// Returns (resolved version, note) so the manifest records the REAL version —
-/// the repo-less catalog card passes none, and "latest" would break update
-/// detection forever.
-async fn install_jdbc_from_maven(app: &AppHandle, id: &str) -> AppResult<(String, String)> {
+/// not GitHub releases: install the requested version, or resolve `<latest>`
+/// live, and download the jar into the managed marketplace folder, ready to
+/// point Java tools (DBeaver, DataGrip…) at. Returns (resolved version, note)
+/// so the manifest records the REAL version — the repo-less catalog card may
+/// pass none, and "latest" would break update detection forever.
+async fn install_jdbc_from_maven(app: &AppHandle, id: &str, requested: Option<&str>) -> AppResult<(String, String)> {
     const META: &str = "https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml";
-    emit_log(app, id, "Resolving the latest exasol-jdbc from Maven Central…", "info");
-    let xml = reqwest::Client::new()
-        .get(META)
-        .header("User-Agent", "exasol-studio")
-        .send()
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?
-        .error_for_status()
-        .map_err(|e| AppError::Storage(e.to_string()))?
-        .text()
-        .await
-        .map_err(|e| AppError::Storage(e.to_string()))?;
-    let v = maven_latest_version(&xml).ok_or_else(|| {
-        AppError::Storage("Could not read the latest exasol-jdbc version from Maven Central.".into())
-    })?;
+    let v = match requested {
+        Some(v) if valid_version_tag(v) => v.to_string(),
+        Some(v) => return Err(AppError::Storage(format!("Invalid JDBC driver version: {v}"))),
+        None => {
+            emit_log(app, id, "Resolving the latest exasol-jdbc from Maven Central…", "info");
+            let xml = reqwest::Client::new()
+                .get(META)
+                .header("User-Agent", "exasol-studio")
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            maven_latest_version(&xml).ok_or_else(|| {
+                AppError::Storage("Could not read the latest exasol-jdbc version from Maven Central.".into())
+            })?
+        }
+    };
     let jar = format!("exasol-jdbc-{v}.jar");
     let url = format!("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/{v}/{jar}");
     let path = download_and_place(app, id, &url, &jar).await?;
@@ -1180,25 +1340,36 @@ pub async fn market_install_run(
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
     let stack = &crate::component_lock::components().python_stack;
-    let mcp_package = format!("exasol-mcp-server=={}", stack.mcp_server_version);
-    let pyexasol_package = format!("pyexasol=={}", stack.pyexasol_version);
+    // A user-chosen version from the card's version dropdown ("install any
+    // version, live"). Validated before it can reach a package spec or URL.
+    let requested = version.clone().filter(|v| valid_version_tag(v));
+    // The pip spec for a PyPI-backed item: the requested version, else the
+    // verified pin where one exists, else the package's latest.
+    let pip_spec = |package: &str, pin: Option<&str>| -> String {
+        match requested.as_deref().or(pin) {
+            Some(v) => format!("{package}=={}", v.trim_start_matches(['v', 'V'])),
+            None => package.to_string(),
+        }
+    };
     // Installers that resolve the real version themselves (Maven) report it
     // here so the manifest never records a meaningless "latest".
     let mut resolved_version: Option<String> = None;
     let result: AppResult<String> = match id.as_str() {
-        "mcp-server" => install_uv_tool(&app, &id, &mcp_package),
+        "mcp-server" => install_uv_tool(&app, &id, &pip_spec("exasol-mcp-server", Some(&stack.mcp_server_version))),
         "agent-skills" => {
             let dir = app.state::<crate::state::AppState>().data_dir.clone();
             crate::local_database::ensure_agent_skills(&app, &dir)
                 .map(|revision| format!("Exasol agent skills synced from exasol-labs ({revision})."))
         }
-        "pyexasol" => install_uv_pip(&app, &id, &pyexasol_package),
-        "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
+        "pyexasol" => install_uv_pip(&app, &id, &pip_spec("pyexasol", Some(&stack.pyexasol_version))),
+        "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
+        "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
+        "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),
         "ai-lab" => install_ai_lab(&app, &id),
         "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
-        "driver-jdbc" => install_jdbc_from_maven(&app, &id).await.map(|(v, note)| {
+        "driver-jdbc" => install_jdbc_from_maven(&app, &id, requested.as_deref()).await.map(|(v, note)| {
             resolved_version = Some(v);
             note
         }),
@@ -1449,7 +1620,44 @@ pub fn market_dir_path(app: AppHandle) -> AppResult<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::maven_latest_version;
+    use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
+
+    #[test]
+    fn version_tags_reject_anything_path_or_option_like() {
+        assert!(valid_version_tag("26.2.9"));
+        assert!(valid_version_tag("v2.2.0"));
+        assert!(valid_version_tag("2.3.0-RC1+build_7"));
+        assert!(!valid_version_tag(""));
+        assert!(!valid_version_tag("../../evil"));
+        assert!(!valid_version_tag("1.0/x"));
+        assert!(!valid_version_tag("--upgrade")); // never an option
+        assert!(!valid_version_tag(&"9".repeat(101))); // absurd length
+    }
+
+    #[test]
+    fn maven_all_versions_lists_newest_first_and_skips_junk() {
+        let xml = r#"<metadata><versioning>
+  <versions>
+    <version>7.1.20</version>
+    <version>../nope</version>
+    <version>25.2.4</version>
+    <version>26.2.9</version>
+  </versions>
+</versioning></metadata>"#;
+        assert_eq!(maven_all_versions(xml), ["26.2.9", "25.2.4", "7.1.20"]);
+        assert!(maven_all_versions("<metadata/>").is_empty());
+    }
+
+    #[test]
+    fn sort_versions_desc_orders_numerically_not_lexically() {
+        let sorted = sort_versions_desc(vec![
+            "2.0.9".into(),
+            "2.0.10".into(),
+            "0.9.0".into(),
+            "v2.1.0".into(),
+        ]);
+        assert_eq!(sorted, ["v2.1.0", "2.0.10", "2.0.9", "0.9.0"]);
+    }
 
     #[test]
     fn maven_latest_parses_real_metadata_layout() {
