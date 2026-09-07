@@ -330,6 +330,18 @@ export class Session {
             content: "_Recovered an interrupted turn — the steps above completed before the app closed, and their results are preserved._",
           });
           break;
+        case "verification":
+          // P1 stamps survive reload — shown as a compact tool-style item.
+          items.push({
+            kind: "tool",
+            id: `v${n}`,
+            name: "verification",
+            args: { sql: e.sql },
+            done: true,
+            ok: e.status === "verified",
+            summary: `${String(e.status)} — ${String(e.detail ?? "")}`.slice(0, 160),
+          });
+          break;
         case "tool.call":
           items.push({ kind: "tool", id: `t${n}`, name: String(e.name ?? "tool"), args: e.args, done: true, ok: true });
           break;

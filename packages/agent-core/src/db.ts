@@ -146,13 +146,23 @@ export class DbRegistry {
    * shared driver, so the reproduction is genuinely independent of whatever
    * session state the original run had. Closed either way.
    */
-  async verifyQuery(id: string, sql: string): Promise<QueryOutput> {
+  async verifyQuery(id: string, sql: string, timeoutMs = 5000): Promise<QueryOutput> {
     const info = this.conns.get(id);
     if (!info) throw new Error(`No connection "${id}" registered with the agent`);
     const driver = this.makeDriver(info);
-    await driver.connect();
+    // The timeout CANCELS the work, not just the wait: closing the throwaway
+    // driver tears down its session, so a slow verification query never keeps
+    // running (or holding a connection) after we stopped caring.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        void driver.close().catch(() => undefined);
+        reject(new Error(`verification timed out (${Math.round(timeoutMs / 1000)}s)`));
+      }, timeoutMs);
+    });
     try {
-      const result = await driver.query(sql);
+      await Promise.race([driver.connect(), deadline]);
+      const result = await Promise.race([driver.query(sql), deadline]);
       const columns = result.getColumns().map((c) => c.name);
       const all = result.getRows();
       return {
@@ -162,6 +172,7 @@ export class DbRegistry {
         truncated: all.length > MODEL_ROW_CAP || all.length === FETCH_ROW_CAP,
       };
     } finally {
+      clearTimeout(timer);
       void driver.close().catch(() => undefined);
     }
   }

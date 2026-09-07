@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
 import { agent, skills as skillsApi, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { useStudioActionBridge } from "@/features/assistant/useStudioActionBridge";
+import { PlanCard } from "@/features/assistant/PlanCard";
 import { ipc, isTauri } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
@@ -278,7 +279,10 @@ export function ExaEnginePanel({
     window.addEventListener("exa:app-control-changed", onChanged);
     return () => window.removeEventListener("exa:app-control-changed", onChanged);
   }, [engineClient]);
-  useStudioActionBridge(Boolean(engineClient) && appControlOn);
+  // Always poll while the engine runs: CONTROL actions are gated server-side
+  // at enqueue time (app-control toggle), while informational pushes (P2 plan
+  // cards) must arrive regardless of that toggle.
+  useStudioActionBridge(Boolean(engineClient));
 
   // Install ALL skills into the agent by default (once): every bundled skill —
   // including the exasol-ecosystem catalog — becomes an active default skill,
@@ -769,6 +773,8 @@ export function ExaEnginePanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
+      {/* P2: the agent's explicit plan, live above the thread. */}
+      {engineClient ? <PlanCard /> : null}
       {engineClient ? (
       <ExaErrorBoundary>
       <ExaThread

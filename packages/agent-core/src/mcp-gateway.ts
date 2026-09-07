@@ -298,6 +298,65 @@ server.tool(
   },
 );
 
+// ── P2: explicit plans (docs/agentic-architecture-spec.md) ──────────────────
+server.tool(
+  "propose_plan",
+  "For MULTI-STEP work (loading files then querying, building something across several tools, any task with 3+ dependent actions): propose an explicit plan FIRST. The plan renders live in Exasol Studio with per-step status. Steps may name the tool and/or the SQL they intend to run; `dependsOn` lists step ids that must finish first. Plans containing write steps (imports, DDL/DML, installs) require the USER's explicit go-ahead — present the plan, wait for their yes, then call approve_plan. Skip plans entirely for single-step questions.",
+  {
+    goal: z.string().describe("One line: what the whole plan achieves."),
+    steps: z
+      .array(
+        z.object({
+          id: z.string().optional().describe("Short id (s1, s2, …) — auto-assigned when omitted."),
+          title: z.string().describe("What this step does, user-readable."),
+          tool: z.string().optional().describe("Tool the step will use (e.g. run_query, import via Studio)."),
+          sql: z.string().optional().describe("SQL the step will run, when known."),
+          dependsOn: z.array(z.string()).optional().describe("Step ids that must be done first."),
+        }),
+      )
+      .min(1)
+      .max(12),
+  },
+  async ({ goal, steps }) => {
+    try {
+      return text(await studio("/gateway/plan", { method: "POST", body: { goal, steps } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "approve_plan",
+  "Mark the current plan approved — call ONLY after the user explicitly said yes to a plan with write steps. Never approve on their behalf.",
+  { planId: z.string().optional().describe("Defaults to the current plan.") },
+  async ({ planId }) => {
+    try {
+      return text(await studio("/gateway/plan/approve", { method: "POST", body: { planId } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "update_plan_step",
+  "Advance a plan step as you work: running when you start it, done/failed (with a short note) when it settles. Keep the plan truthful — the user watches it live. Transitions are enforced (a step cannot start before its dependencies are done; write plans must be approved first).",
+  {
+    planId: z.string().optional().describe("Defaults to the current plan."),
+    stepId: z.string(),
+    status: z.enum(["running", "done", "failed", "skipped"]),
+    note: z.string().optional().describe("Short outcome note (row counts, error reason)."),
+  },
+  async ({ planId, stepId, status, note }) => {
+    try {
+      return text(await studio("/gateway/plan/step", { method: "POST", body: { planId, stepId, status, note } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
 server.tool(
   "control_app",
   "Drive Exasol Studio's UI directly (when app control is enabled): open a view, close the active tab, search, list/check/install/uninstall a marketplace component, or connect/disconnect a database. Prefer this over telling the user to click. `action` is the verb; `args` carries its parameters. Actions: open {target: marketplace|notebook|visualizer|git|skills|mcp|settings|docs|assistant|search, arg?}, close_tab {title?}, search {query}, list_components {}, component_status {id}, install_component {id}, uninstall_component {id}, connect {name?}, disconnect {name?}. For an install, first check with component_status and ASK the user before installing.",

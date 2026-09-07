@@ -39,6 +39,19 @@ const READ_KEYWORDS = new Set(["SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "VA
  * CONTENTS can neither fake nor hide a keyword or semicolon; an unterminated
  * literal is left visible, which errs toward "write".
  */
+/** P1: bounded per-turn record of read runs (verification raw material) —
+ *  a long tool-heavy turn must not accumulate unbounded result payloads. */
+const SQL_RUNS_CAP = 20;
+function pushSqlRun(
+  session: { sqlRuns: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean }[] },
+  run: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean },
+) {
+  session.sqlRuns.push(run);
+  if (session.sqlRuns.length > SQL_RUNS_CAP) {
+    session.sqlRuns.splice(0, session.sqlRuns.length - SQL_RUNS_CAP);
+  }
+}
+
 export function classifySql(sql: string): "read" | "write" {
   const blinded = sql
     .replace(/--[^\n]*\n/g, "\n")
@@ -335,7 +348,7 @@ export function buildTools(ctx: {
           session.record({ kind: "tool.run_sql", mode: "read", sql, rows: out.rowCount, ms: Date.now() - started });
           // P1 verification raw material: keep what the answer will be built
           // from, so the turn's final result can be independently reproduced.
-          session.sqlRuns.push({ sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
+          pushSqlRun(session, { sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
           return shape(out);
         }
         // Mutation: human in the loop, always.
@@ -1171,7 +1184,12 @@ export function buildTools(ctx: {
         }
         const manager = new TaskManager();
         for (const s of statements) {
-          manager.submit(s.purpose, async () => shape(await db.query(id, s.sql)));
+          manager.submit(s.purpose, async () => {
+            const out = await db.query(id, s.sql);
+            // Batch reads back answers too — they must be verifiable (P1).
+            pushSqlRun(session, { sql: s.sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
+            return shape(out);
+          });
         }
         const emitted = new Set<string>();
         const results = await manager.drain(4, (t) => {

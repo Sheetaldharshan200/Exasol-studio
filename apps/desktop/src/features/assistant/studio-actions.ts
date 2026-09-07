@@ -55,6 +55,12 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
   const args = (rawArgs ?? {}) as Record<string, unknown>;
   try {
     switch (name) {
+      case "plan_updated": {
+        // P2: the agent proposed or advanced an explicit plan — render it live
+        // (informational; no app control involved).
+        window.dispatchEvent(new CustomEvent("studio:plan-updated", { detail: args.plan }));
+        return { ok: true };
+      }
       case "open": {
         const spec = OPEN_EVENTS[str(args.target).toLowerCase()];
         if (!spec) return { ok: false, error: `Unknown view "${str(args.target)}". One of: ${Object.keys(OPEN_EVENTS).join(", ")}.` };

@@ -32,9 +32,11 @@ export type VerificationOutcome = {
   sql?: string;
 };
 
-/** SQL whose re-execution can legitimately differ — never verify these. */
+/** SQL whose re-execution can legitimately differ — never verify these.
+ *  Conservative on purpose: a false positive only downgrades to "unverified",
+ *  a false negative would stamp a lie. */
 const NON_DETERMINISTIC =
-  /\b(RANDOM|RAND|CURRENT_TIMESTAMP|CURRENT_DATE|LOCALTIMESTAMP|SYSTIMESTAMP|SYSDATE|NOW|CURRENT_SESSION|CURRENT_STATEMENT|POSIX_TIME)\b\s*(\(|,|\)|$|\s)/i;
+  /\b(RANDOM|RAND|CURRENT_TIMESTAMP|CURRENT_DATE|LOCALTIMESTAMP|SYSTIMESTAMP|SYSDATE|NOW|GETDATE|CURRENT_SESSION|CURRENT_STATEMENT|CURRENT_USER|SESSION_USER|CURRENT_SCHEMA|POSIX_TIME|UUID|SYS_GUID|ROWNUM|ROWID|NEXTVAL|SCOPE_USER)\b\s*(\(|,|\)|$|\s|\.)/i;
 
 /**
  * Pick what to verify from a turn's read runs: the LAST result-bearing read —
@@ -54,22 +56,42 @@ export function planVerification(runs: SqlRun[]): VerificationPlan | null {
   return null;
 }
 
-/** Numbers within 1e-9 relative tolerance count as equal (float aggregates). */
-function normalizeCell(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value.toPrecision(10).replace(/\.?0+(e|$)/i, "$1");
+/**
+ * Cell normalization for comparison. Both runs use the same driver and the
+ * same statement, so TYPES are stable across runs — no cross-type coercion
+ * (a VARCHAR "1" must never verify equal to numeric 1: that would mask
+ * result drift).
+ * - JS numbers: 10-significant-digit precision (float aggregates differ in
+ *   the last bits legitimately). NaN/Infinity normalize to distinct tokens.
+ * - Numeric-looking STRINGS (DECIMAL from the driver): canonicalized
+ *   TEXTUALLY (sign, leading zeros, trailing fraction zeros) — lossless for
+ *   values beyond 2^53, no float round-trip.
+ * - Everything else compares as-is. Ambiguity is prevented by JSON row
+ *   serialization, not by sentinel tokens.
+ */
+function normalizeCell(value: unknown): string | boolean | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return `num:${String(value)}`;
+    return `num:${value.toPrecision(10).replace(/\.?0+(e|$)/i, "$1")}`;
   }
-  if (typeof value === "string" && value !== "" && !Number.isNaN(Number(value))) {
-    // Drivers sometimes return DECIMAL as strings — compare numerically.
-    return normalizeCell(Number(value));
+  if (typeof value === "string" && /^[+-]?\d+(\.\d+)?$/.test(value)) {
+    const negative = value.startsWith("-");
+    const digits = value.replace(/^[+-]/, "");
+    const [intRaw, fracRaw = ""] = digits.split(".");
+    const int = intRaw.replace(/^0+(?=\d)/, "");
+    const frac = fracRaw.replace(/0+$/, "");
+    const canonical = frac ? `${int}.${frac}` : int;
+    return `dec:${negative && canonical !== "0" ? "-" : ""}${canonical}`;
   }
-  if (value === null || value === undefined) return "␀null";
+  if (value === undefined || value === null) return null;
+  if (typeof value === "boolean") return value;
   return String(value);
 }
 
-/** Order-insensitive row multiset serialization (ORDER BY must not matter). */
+/** Order-insensitive row multiset (ORDER BY must not matter). JSON per row —
+ *  no delimiter or sentinel collisions possible. */
 function multiset(rows: unknown[][]): string[] {
-  return rows.map((r) => r.map(normalizeCell).join("")).sort();
+  return rows.map((r) => JSON.stringify(r.map(normalizeCell))).sort();
 }
 
 /**
@@ -103,7 +125,7 @@ export function compareResults(
     if (a[i] !== b[i]) {
       return {
         status: "mismatch",
-        detail: `Values differ between the answer's result and the independent re-run (first differing row after sorting: ${a[i].split("").join(" | ")} vs ${b[i].split("").join(" | ")}).`,
+        detail: `Values differ between the answer's result and the independent re-run (first differing row after sorting: ${a[i]} vs ${b[i]}).`,
       };
     }
   }

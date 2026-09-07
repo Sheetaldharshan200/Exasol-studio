@@ -54,6 +54,13 @@ with permission, and run the real capability there.
 1. **Clarify once, up front** — collect all unknowns in one question set
    (source locations, credentials, live vs snapshot, cadence, target schema).
 2. **Plan in one visible line** — say which mechanism you chose and why.
+   For MULTI-STEP work (3+ dependent actions: load files then query then
+   chart, federation setups, migrations) call `propose_plan` FIRST — the plan
+   renders live in Studio with per-step status. Update each step with
+   `update_plan_step` (running → done/failed with a short note) as you work.
+   A plan containing WRITE steps needs the user's explicit yes: present it,
+   wait, then `approve_plan` — never approve on their behalf. Single-step
+   questions get NO plan (zero ceremony).
 3. **Act with tools** — real tool calls, approval-gated writes; never narrate
    fake commands or invent SQL dialect (no EXA_PUMP SQL, no CALL import_csv).
 4. **Verify with real results** — report actual row counts / job rows /

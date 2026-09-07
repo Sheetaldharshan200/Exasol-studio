@@ -7,6 +7,8 @@ import { ProviderRegistry } from "./providers.ts";
 import { SessionStore } from "./session.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { compareResults, planVerification } from "./verify.ts";
+import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
+import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
@@ -51,6 +53,27 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
     const a = actionQueue.shift();
     return a;
   };
+  // Fire-and-forget UI push (plan cards): enqueued server-side, so it never
+  // re-enters HTTP and never depends on the app-control toggle — it renders
+  // information, it does not drive the UI.
+  const pushUiAction = (action: string, args: unknown) => {
+    const id = `a${++actionSeq}`;
+    const item: PendingAction = { id, action, args, resolve: () => undefined };
+    pendingById.set(id, item);
+    if (actionWaiter) {
+      const w = actionWaiter;
+      actionWaiter = null;
+      w(item);
+    } else {
+      actionQueue.push(item);
+    }
+    // Nothing awaits it — clean up if no webview ever picks it up.
+    setTimeout(() => pendingById.delete(id), 30_000);
+  };
+
+  // ── P2: explicit plans (docs/agentic-architecture-spec.md) ────────────────
+  const plans = new PlanStore(config.dataDir);
+  const pushPlan = (plan: Plan) => pushUiAction("plan_updated", { plan });
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
   const engine = new EngineService();
@@ -451,10 +474,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           }
           const startedVerify = Date.now();
           try {
-            const timeout = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("verification timed out (5s)")), 5000),
-            );
-            const actual = await Promise.race([db.verifyQuery(target.id, plan.sql), timeout]);
+            // Self-limiting (5s): on timeout the throwaway session is CLOSED,
+            // so no duplicate query keeps running in the background.
+            const actual = await db.verifyQuery(target.id, plan.sql);
             const outcome = compareResults(plan, { sql: plan.sql, ...actual });
             return json(res, 200, {
               database: target.name,
@@ -480,6 +502,50 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           }
         }
         return json(res, 200, { database: target.name, ...out });
+      }
+      // ── P2 plans: propose / update step / read current ──────────────────
+      // POST /v1/gateway/plan {goal, steps} → validated Plan (becomes current,
+      // pushed live to the panel). Validation + approval rules are pure
+      // (plan.ts, tested); this route is only transport.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && !parts[3]) {
+        const body = await readBody<{ goal?: string; steps?: PlanStepInput[] }>(req);
+        const out = buildPlan(body.goal ?? "", body.steps ?? []);
+        if ("error" in out) return json(res, 400, { error: out.error });
+        plans.save(out.plan);
+        pushPlan(out.plan);
+        return json(res, 200, {
+          plan: out.plan,
+          hint: out.plan.requiresApproval
+            ? "This plan contains write steps: present it to the user and WAIT for their explicit go-ahead, then call approve_plan. Do not start write steps before that."
+            : "Read-only plan — proceed, updating each step's status as you go.",
+        });
+      }
+      // POST /v1/gateway/plan/approve {planId}
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "approve") {
+        const body = await readBody<{ planId?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan." });
+        const approved: Plan = { ...plan, approved: true, updatedAt: Date.now() };
+        plans.save(approved);
+        pushPlan(approved);
+        return json(res, 200, { plan: approved });
+      }
+      // POST /v1/gateway/plan/step {planId?, stepId, status, note?}
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "step") {
+        const body = await readBody<{ planId?: string; stepId?: string; status?: StepStatus; note?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan — propose one first." });
+        if (!body.stepId || !body.status) return json(res, 400, { error: "stepId and status are required" });
+        const out = applyStepUpdate(plan, body.stepId, body.status, body.note);
+        if ("error" in out) return json(res, 400, { error: out.error });
+        plans.save(out.plan);
+        pushPlan(out.plan);
+        return json(res, 200, { plan: out.plan, progress: planProgress(out.plan) });
+      }
+      // GET /v1/gateway/plan/current
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "current") {
+        const plan = plans.current();
+        return json(res, 200, plan ? { plan, progress: planProgress(plan) } : { plan: null });
       }
       // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
       // service: generates SQL grounded in the database's REAL schema but

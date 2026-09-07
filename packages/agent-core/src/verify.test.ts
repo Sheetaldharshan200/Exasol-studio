@@ -58,16 +58,33 @@ test("value compare is order-insensitive and float-tolerant", () => {
     }),
   ]);
   assert.ok(plan);
-  // Same rows, different order, float within tolerance, DECIMAL as string.
+  // Same rows, different order, float within tolerance.
   const actual = run("…", {
     columns: ["REGION", "S"],
     rows: [
-      ["south", "2"],
+      ["south", 2],
       ["north", 1.0000000002],
     ],
     rowCount: 2,
   });
   assert.equal(compareResults(plan, actual).status, "verified");
+});
+
+test("DECIMAL strings canonicalize losslessly; types never cross-coerce", () => {
+  // Driver-returned DECIMAL strings: "2.50" and "2.5" are the same value,
+  // "007" and "7" too — canonicalized textually, no float round-trip.
+  const plan = planVerification([run("SELECT D FROM S.T", { rows: [["2.50"], ["007"]], rowCount: 2 })]);
+  assert.ok(plan);
+  assert.equal(compareResults(plan, run("…", { rows: [["2.5"], ["7"]], rowCount: 2 })).status, "verified");
+  // Values beyond 2^53 must not lose precision.
+  const big = planVerification([run("SELECT B FROM S.T", { rows: [["9007199254740993"]] })]);
+  assert.ok(big);
+  assert.equal(compareResults(big, run("…", { rows: [["9007199254740993"]] })).status, "verified");
+  assert.equal(compareResults(big, run("…", { rows: [["9007199254740992"]] })).status, "mismatch");
+  // Type drift IS a mismatch: VARCHAR "1" never equals numeric 1.
+  const typed = planVerification([run("SELECT X FROM S.T", { rows: [["1"]] })]);
+  assert.ok(typed);
+  assert.equal(compareResults(typed, run("…", { rows: [[1]] })).status, "mismatch");
 });
 
 test("real differences are mismatches with honest detail", () => {

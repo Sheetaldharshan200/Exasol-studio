@@ -835,16 +835,17 @@ export async function runTurn(opts: {
       // INDEPENDENT database session, bounded to 5s. Read-only by
       // construction (planVerification refuses writes), never blocks the
       // answer (it already streamed), and always reports honestly.
+      // (A pure-chat turn — no SQL at all — gets NO verification event on
+      // purpose: a stamp on prose would be noise, not honesty.)
       if (session.connectionId && session.sqlRuns.length > 0) {
-        const plan = planVerification(session.sqlRuns);
         const messageId = currentTextId ?? fallbackId;
-        if (plan) {
-          const startedVerify = Date.now();
-          try {
-            const timeout = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("verification timed out (5s)")), 5000),
-            );
-            const actual = await Promise.race([db.verifyQuery(session.connectionId, plan.sql), timeout]);
+        const startedVerify = Date.now();
+        try {
+          const plan = planVerification(session.sqlRuns);
+          if (plan) {
+            // db.verifyQuery self-limits (5s) and CLOSES its throwaway session
+            // on timeout — nothing keeps running in the background.
+            const actual = await db.verifyQuery(session.connectionId, plan.sql);
             const outcome = compareResults(plan, {
               sql: plan.sql,
               columns: actual.columns,
@@ -864,25 +865,27 @@ export async function runTurn(opts: {
             };
             session.emit(event);
             session.record({ kind: "verification", ...event });
-          } catch (e) {
+          } else {
             const event = {
               type: "verification" as const,
               messageId,
               status: "unverified" as const,
-              detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
-              elapsedMs: Date.now() - startedVerify,
-              sql: plan.sql,
+              detail: "Nothing verifiable this turn (write statements or non-deterministic SQL).",
             };
             session.emit(event);
             session.record({ kind: "verification", ...event });
           }
-        } else {
-          session.emit({
-            type: "verification",
+        } catch (e) {
+          // Verification must NEVER break finalize — the answer already streamed.
+          const event = {
+            type: "verification" as const,
             messageId,
-            status: "unverified",
-            detail: "Nothing verifiable this turn (write statements or non-deterministic SQL).",
-          });
+            status: "unverified" as const,
+            detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
+            elapsedMs: Date.now() - startedVerify,
+          };
+          session.emit(event);
+          session.record({ kind: "verification", ...event });
         }
       }
       // Verified researcher findings outlive the turn: tested SQL with a
