@@ -1423,6 +1423,16 @@ fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
     versions
 }
 
+/// The last-known latest release tag for a repo, from market_release's disk
+/// cache — enough to keep a version dropdown useful (one entry: the newest)
+/// when the API is rate-limited before any full list was ever fetched.
+fn latest_tag_from_release_cache(app: &AppHandle, repo: &str) -> Option<String> {
+    let path = market_dir(app).ok()?.join("release-cache.json");
+    let cache: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let tag = cache.get(repo)?.get("value")?.get("tag")?.as_str()?;
+    if valid_version_tag(tag) { Some(tag.to_string()) } else { None }
+}
+
 /// Merge one entry into the versions cache under a process-wide lock, writing
 /// via temp file + rename — concurrent version fetches (several dropdowns
 /// opened quickly) must not lose each other's entries or expose a torn file.
@@ -1474,10 +1484,17 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
             if !ok_repo(&reference) {
                 return Err(AppError::Storage("Invalid repository.".into()));
             }
-            // 1h disk cache; a failed fetch (rate limit, offline) serves the
-            // last-known list rather than pretending "no versions exist".
+            // Industry-standard rate-limit handling, in order:
+            //   1. fresh disk cache (1h) — no request at all;
+            //   2. ETag revalidation — a 304 answer does NOT count against
+            //      GitHub's unauthenticated 60/hr limit, so refreshes are free
+            //      once a list has been fetched once;
+            //   3. stale cache over any error — old truth beats none;
+            //   4. the release cache's known latest tag as a one-entry list —
+            //      the dropdown still offers the newest version;
+            //   5. only then an error.
             let cache_path = market_dir(&app)?.join("versions-cache.json");
-            let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
+            let cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
@@ -1485,39 +1502,65 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let cached: Option<Vec<String>> = cache.get(&reference).and_then(|e| {
-                let list = e.get("list")?.as_array()?;
-                Some((
-                    e.get("at").and_then(Value::as_u64).unwrap_or(0),
-                    list.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>(),
-                ))
-            }).and_then(|(at, list)| {
-                // A future timestamp (clock rollback, corrupted entry) is not
-                // "fresh forever" — only a real past-hour entry counts.
-                if at <= now && now - at < 3600 { Some(list) } else { None }
+            let entry = cache.get(&reference);
+            let cached_list = entry.and_then(|e| e.get("list")).and_then(Value::as_array).map(|list| {
+                list.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()
             });
-            if let Some(list) = cached {
-                return Ok(list);
+            let cached_at = entry.and_then(|e| e.get("at")).and_then(Value::as_u64).unwrap_or(0);
+            let cached_etag = entry.and_then(|e| e.get("etag")).and_then(Value::as_str).map(str::to_string);
+            // A future timestamp (clock rollback, corrupted entry) is not
+            // "fresh forever" — only a real past-hour entry counts.
+            if let Some(list) = &cached_list {
+                if cached_at <= now && now - cached_at < 3600 {
+                    return Ok(list.clone());
+                }
             }
-            let fetched = client
+            let mut request = client
                 .get(format!("https://api.github.com/repos/{reference}/releases?per_page=30"))
                 .header("User-Agent", "exasol-studio")
                 .header("Accept", "application/vnd.github+json")
-                .timeout(timeout)
-                .send()
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))
-                .and_then(|r| r.error_for_status().map_err(|e| AppError::Storage(format!("GitHub: {e}"))));
-            let body: Value = match fetched {
-                Ok(response) => response.json().await.map_err(|e| AppError::Storage(e.to_string()))?,
+                .timeout(timeout);
+            if let (Some(etag), Some(_)) = (&cached_etag, &cached_list) {
+                request = request.header("If-None-Match", etag.as_str());
+            }
+            let fetched = request.send().await.map_err(|e| AppError::Storage(e.to_string()));
+            let response = match fetched {
+                Ok(r) if r.status() == reqwest::StatusCode::NOT_MODIFIED => {
+                    // Unchanged upstream: re-stamp freshness, serve the cache.
+                    if let Some(list) = cached_list {
+                        merge_versions_cache(
+                            &cache_path,
+                            &reference,
+                            json!({ "at": now, "etag": cached_etag, "list": list.clone() }),
+                        );
+                        return Ok(list);
+                    }
+                    return Err(AppError::Storage("GitHub answered 304 with no local cache.".into()));
+                }
+                Ok(r) => r.error_for_status().map_err(|e| AppError::Storage(format!("GitHub: {e}"))),
+                Err(e) => Err(e),
+            };
+            let response = match response {
+                Ok(r) => r,
                 Err(e) => {
-                    // Serve the STALE cache over an error — old truth beats none.
-                    if let Some(entry) = cache.get(&reference).and_then(|e| e.get("list")).and_then(Value::as_array) {
-                        return Ok(entry.iter().filter_map(Value::as_str).map(str::to_string).collect());
+                    if let Some(list) = cached_list {
+                        return Ok(list); // stale cache over an error
+                    }
+                    // Never fetched before AND rate-limited/offline: the
+                    // release cache usually knows the latest tag — a one-entry
+                    // list beats an error message.
+                    if let Some(tag) = latest_tag_from_release_cache(&app, &reference) {
+                        return Ok(vec![tag]);
                     }
                     return Err(e);
                 }
             };
+            let etag = response
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let body: Value = response.json().await.map_err(|e| AppError::Storage(e.to_string()))?;
             // GitHub already lists newest first.
             let list: Vec<String> = body
                 .as_array()
@@ -1530,7 +1573,7 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
                         .collect()
                 })
                 .unwrap_or_default();
-            merge_versions_cache(&cache_path, &reference, json!({ "at": now, "list": list }));
+            merge_versions_cache(&cache_path, &reference, json!({ "at": now, "etag": etag, "list": list }));
             list
         }
         "dockerhub" => {

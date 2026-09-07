@@ -880,7 +880,11 @@ export function Marketplace() {
   // arrived and revealed no host build) is re-validated at install time.
   const canBatchInstall = (item: CatalogItem): boolean => {
     if (item.install === "reference" || item.install === "community-docker") return false;
-    if (installedMap[item.id] || detected[item.id] || DRIVER_RUNTIME[item.id]) return false;
+    // Runs-inside-Studio drivers join the batch too — their batch action is
+    // the runtime setup (installDriverRuntime), skipped once ready.
+    const did = DRIVER_RUNTIME[item.id];
+    if (did) return !driverReady[did] && !driverBusy[did];
+    if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
     const assets = releases[item.id]?.assets ?? [];
     return !(item.install === "binary" && assets.length > 0 && pickAsset(assets, env) === null);
@@ -902,7 +906,16 @@ export function Marketplace() {
   async function installSelected() {
     const chosen = CATALOG.filter((c) => selected.has(c.id));
     setSelected(new Set());
-    enqueue(chosen.filter((c) => !CATALOG_TO_COMPONENT[c.id] && (canBatchInstall(c) || batchUpdateTarget(c) !== null)));
+    enqueue(
+      chosen.filter(
+        (c) => !CATALOG_TO_COMPONENT[c.id] && !DRIVER_RUNTIME[c.id] && (canBatchInstall(c) || batchUpdateTarget(c) !== null),
+      ),
+    );
+    // Runs-inside-Studio drivers batch through their runtime setup (parallel).
+    for (const c of chosen) {
+      const did = DRIVER_RUNTIME[c.id];
+      if (did && canBatchInstall(c)) void installDriverAndUse(c, did);
+    }
     // Managed updates run sequentially — the DB engine takes a maintenance lock.
     for (const c of chosen) {
       const target = CATALOG_TO_COMPONENT[c.id] ? batchUpdateTarget(c) : null;
