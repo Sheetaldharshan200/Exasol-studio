@@ -1754,6 +1754,37 @@ async fn install_registry_package(
             };
             return Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)));
         }
+        "dash-server" => {
+            // Not on PyPI — pip-install straight from the GitHub tag tarball
+            // into its own managed environment, so it runs from Studio.
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => crate::upstream::latest("exasol-labs/dash-server")
+                    .map(|r| r.tag)
+                    .ok_or_else(|| AppError::Storage("Could not resolve the latest dash-server release.".into()))?,
+            };
+            if !valid_version_tag(&v) {
+                return Err(AppError::Storage(format!("Invalid dash-server version: {v}")));
+            }
+            let spec = format!("https://github.com/exasol-labs/dash-server/archive/refs/tags/{v}.tar.gz");
+            let note = install_uv_pip(app, id, &spec)?;
+            return Ok((v.clone(), format!("dash-server {v} installed into a managed environment. {note}")));
+        }
+        "more-functions" => {
+            // A SQL function library with no releases: download the current
+            // scripts snapshot, ready to run in the SQL editor.
+            let path = download_and_place(
+                app,
+                id,
+                "https://api.github.com/repos/exasol-labs/more-functions/tarball",
+                "more-functions-snapshot.tar.gz",
+            )
+            .await?;
+            return Ok((
+                "snapshot".into(),
+                format!("SQL function library downloaded to {path} — unpack it and run the scripts in the SQL editor against your database."),
+            ));
+        }
         "driver-websocket" => {
             // A living protocol spec (no releases): download the current
             // snapshot — the API description plus client implementations.
@@ -1829,7 +1860,8 @@ pub async fn market_install_run(
             resolved_version = Some(v);
             note
         }),
-        "driver-ts" | "driver-go" | "exarrow-rs" | "driver-r" | "driver-odbc" | "driver-adonet" | "driver-websocket" => {
+        "driver-ts" | "driver-go" | "exarrow-rs" | "driver-r" | "driver-odbc" | "driver-adonet" | "driver-websocket"
+        | "dash-server" | "more-functions" => {
             install_registry_package(&app, &id, requested.as_deref()).await.map(|(v, note)| {
                 resolved_version = Some(v);
                 note

@@ -764,6 +764,56 @@ export function Marketplace() {
     }
   }
 
+  // ONE seamless action for the runs-inside-Studio drivers: download the
+  // picked version (when one is chosen), wire it into Studio where supported
+  // (the JDBC jar becomes the SQL editor's driver), and set up the runtime —
+  // never separate Download / Install / Use buttons. Busy for the WHOLE flow
+  // and deduped via activeInstallsRef, so a double-click during the download
+  // phase (before installDriverRuntime's own busy flag) can't start twice.
+  async function installDriverAndUse(item: CatalogItem, did: string) {
+    // Synchronous re-entry guard for the WHOLE flow (React state commits too
+    // late to stop a fast double-click, even on the runtime-only path).
+    const flowKey = `driver-flow:${did}`;
+    if (activeInstallsRef.current.has(flowKey) || activeInstallsRef.current.has(item.id)) return;
+    activeInstallsRef.current.add(flowKey);
+    setDriverBusy((b) => ({ ...b, [did]: true }));
+    try {
+      const chosen = verPickRef.current[item.id];
+      if (chosen) {
+        activeInstallsRef.current.add(item.id);
+        let ok = false;
+        try {
+          ok = await installOne(item);
+        } finally {
+          activeInstallsRef.current.delete(item.id);
+        }
+        refreshInstalled();
+        if (!ok) {
+          // The chosen version did NOT arrive — keep the pick and stop here,
+          // never run the runtime setup as if "Install {v} & use here" worked.
+          window.dispatchEvent(
+            new CustomEvent("studio:notice", {
+              detail: { kind: "warning", title: `${item.name} ${chosen}`, body: "The download failed — nothing was changed. Check the install log and try again." },
+            }),
+          );
+          return;
+        }
+        setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
+        if (item.id === "driver-jdbc") {
+          await ipc.marketUseDownloaded(item.id, chosen).catch((e) =>
+            window.dispatchEvent(
+              new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Could not switch the JDBC jar", body: errorMessage(e) } }),
+            ),
+          );
+        }
+      }
+      await installDriverRuntime(did);
+    } finally {
+      activeInstallsRef.current.delete(flowKey);
+      setDriverBusy((b) => ({ ...b, [did]: false }));
+    }
+  }
+
   // Multi-select install: checked cards batch into ONE "Install selected"
   // action (the existing parallel queue) instead of one click per card.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -891,11 +941,15 @@ export function Marketplace() {
     // versions / Docker Hub tags / Maven Central), newest first. Shared by the
     // plain Install branch AND the runs-inside-Studio driver branch, so every
     // installable item lists its versions.
+    // Direct driver flows bypass the install queue, so the menu must also
+    // freeze on driverBusy — changing the pick mid-install would desync the
+    // label from what actually ran.
+    const versionMenuBusy = isInstalling || (did ? driverBusy[did] : false);
     const versionMenu = versionSource(item) ? (
       <DropdownMenu onOpenChange={(o) => o && loadVersions(item)}>
         <DropdownMenuTrigger asChild>
           <button
-            disabled={isInstalling}
+            disabled={versionMenuBusy}
             aria-label={`${item.name} version to install`}
             className="flex h-7 max-w-[150px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
           >
@@ -933,51 +987,6 @@ export function Marketplace() {
         </DropdownMenuContent>
       </DropdownMenu>
     ) : null;
-    // A picked version on a runs-inside-Studio driver card downloads THAT
-    // version into the managed marketplace folder — the pinned runtime the SQL
-    // editor uses stays verified ("Use custom JAR" in Drivers overrides it).
-    const pickedDownload = did && verPick[item.id] ? (
-      <button
-        onClick={() => startInstall(item)}
-        disabled={isInstalling}
-        title={`Download ${item.name} ${verPick[item.id]} into Studio's marketplace folder`}
-        className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary disabled:opacity-50"
-      >
-        {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
-        Download {verPick[item.id]}
-      </button>
-    ) : null;
-
-    // Independent-but-usable: a DOWNLOADED JDBC jar can be wired into Studio's
-    // SQL editor with one click (the same override as Drivers → "Use custom
-    // JAR"). The download itself stays unpinned and unmanaged.
-    const useDownloaded =
-      item.id === "driver-jdbc" && inst?.version && inst.version !== "latest" ? (
-        <button
-          onClick={() =>
-            void ipc
-              .marketUseDownloaded(item.id, inst.version)
-              .then(() => {
-                refreshDrivers();
-                window.dispatchEvent(
-                  new CustomEvent("studio:notice", {
-                    detail: { kind: "info", title: "JDBC driver", body: `Studio's SQL editor now uses exasol-jdbc ${inst.version}. Clear it under Drivers → Use custom JAR.` },
-                  }),
-                );
-              })
-              .catch((e) =>
-                window.dispatchEvent(
-                  new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Could not switch the JDBC jar", body: errorMessage(e) } }),
-                ),
-              )
-          }
-          title={`Point Studio's SQL editor at the downloaded exasol-jdbc ${inst.version}`}
-          className="flex h-7 items-center gap-1 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-        >
-          Use {inst.version} in Studio
-        </button>
-      ) : null;
-
     // The Community database manages its own docker lifecycle — dedicated card
     // actions (Docker checks, live versions, install/start/stop) instead of the
     // generic install button.
@@ -986,41 +995,47 @@ export function Marketplace() {
     ) : (
       <div className="flex flex-wrap items-center gap-2">
         {did ? (
-          runtimeReady ? (
-            <>
-              {versionMenu}
-              {pickedDownload}
-              {useDownloaded}
-              {newer ? (
-                <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                  <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
-                </button>
-              ) : (
-                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                  <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
-                </span>
-              )}
+          // ONE button end to end: picking a version makes the same button
+          // download that version, wire it in where supported (the JDBC jar
+          // becomes the SQL editor's driver) and set up the runtime.
+          <>
+            {versionMenu}
+            {verPick[item.id] || !runtimeReady ? (
               <button
-                onClick={() => void installDriverRuntime(did)}
-                disabled={driverBusy[did]}
-                title="Reinstall"
-                aria-label={`Reinstall ${item.name}`}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                onClick={() => void installDriverAndUse(item, did)}
+                disabled={driverBusy[did] || isInstalling}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
               >
-                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+                {driverBusy[did] || isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+                {driverBusy[did] || isInstalling
+                  ? "Installing…"
+                  : verPick[item.id]
+                    ? `Install ${verPick[item.id]} & use here`
+                    : "Install & use here"}
               </button>
-            </>
-          ) : (
-            <>
-              {versionMenu}
-              <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
-                {driverBusy[did] ? "Installing…" : "Install & use here"}
-              </button>
-              {pickedDownload}
-              {useDownloaded}
-            </>
-          )
+            ) : (
+              <>
+                {newer ? (
+                  <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+                    <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
+                  </button>
+                ) : (
+                  <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                    <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
+                  </span>
+                )}
+                <button
+                  onClick={() => void installDriverRuntime(did)}
+                  disabled={driverBusy[did]}
+                  title="Reinstall"
+                  aria-label={`Reinstall ${item.name}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+                </button>
+              </>
+            )}
+          </>
         ) : inst ? (
           <>
             {newer ? (

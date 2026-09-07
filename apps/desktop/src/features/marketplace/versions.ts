@@ -34,6 +34,9 @@ export const PACKAGE_SOURCE: Record<string, VersionSource> = {
   // sha256-verified installs) — versions listed for the host platform only.
   "driver-odbc": { source: "exasol-downloads", reference: "ODBC" },
   "driver-adonet": { source: "exasol-downloads", reference: "ADO.NET" },
+  // Not on PyPI — pip-installed from the GitHub tag tarball.
+  "dash-server": { source: "github", reference: "exasol-labs/dash-server" },
+  // more-functions is deliberately absent: no releases — snapshot install.
 };
 
 /** How to list an item's versions — null when the item has no version-addressable
