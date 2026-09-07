@@ -352,6 +352,28 @@ pub async fn delete_connection_profile(
         pool.close().await;
     }
     let mut profiles = load_profiles(&state)?;
+    // Unpublish from the shared registry too — every list re-imports registry
+    // entries that are "missing locally", so a delete that only touched
+    // Studio's own file was resurrected on the next refresh. Best-effort: an
+    // unwritable registry must not block removing the local profile.
+    if let Some(gone) = profiles.iter().find(|p| p.id == profile_id) {
+        let shared_id =
+            crate::shared_registry::connection_id(&gone.host, gone.port, &gone.username);
+        // Two local profiles can share one derived id (save_profile de-dupes
+        // by host+port+user+driver, the shared id ignores the driver and
+        // case): only unpublish when NO surviving profile still uses it —
+        // otherwise the survivor's registry entry and shared secret would be
+        // deleted out from under it.
+        let still_used = profiles.iter().any(|p| {
+            p.id != profile_id
+                && crate::shared_registry::connection_id(&p.host, p.port, &p.username) == shared_id
+        });
+        if !still_used {
+            if let Err(err) = crate::shared_registry::remove(&shared_id) {
+                eprintln!("could not unpublish {shared_id} from the shared registry: {err}");
+            }
+        }
+    }
     profiles.retain(|p| p.id != profile_id);
     write_json(&profiles_path(&state), &profiles)
 }

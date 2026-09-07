@@ -50,11 +50,16 @@ pub struct SharedConnection {
 pub struct SharedRegistry {
     pub version: u8,
     pub connections: Vec<SharedConnection>,
+    /// The CLI's selected default connection. Studio never sets it, but every
+    /// read-merge-write here MUST carry it through — dropping the field on a
+    /// rewrite silently un-defaults the user's CLI connection.
+    #[serde(rename = "defaultId", default, skip_serializing_if = "Option::is_none")]
+    pub default_id: Option<String>,
 }
 
 impl Default for SharedRegistry {
     fn default() -> Self {
-        Self { version: 1, connections: Vec::new() }
+        Self { version: 1, connections: Vec::new(), default_id: None }
     }
 }
 
@@ -133,6 +138,42 @@ pub fn publish(entry: SharedConnection, password: Option<&str>) -> AppResult<()>
     Ok(())
 }
 
+/// Drop a connection from a registry by id (pure core, unit-tested). The CLI's
+/// default marker is cleared only when it pointed at the removed entry.
+pub fn without(mut registry: SharedRegistry, id: &str) -> SharedRegistry {
+    registry.connections.retain(|c| c.id != id);
+    if registry.default_id.as_deref() == Some(id) {
+        registry.default_id = None;
+    }
+    registry.version = 1;
+    registry
+}
+
+/// Remove a connection outward: the registry entry, the credential-store
+/// secret and the legacy 0600 file. Without this, deleting a profile in
+/// Studio was undone on the very next list — `import_shared_connections`
+/// saw the registry entry as "missing locally" and re-imported it forever.
+/// Read-merge-write like `publish`; the secret side is best-effort.
+pub fn remove(id: &str) -> AppResult<()> {
+    if let Some(path) = registry_path() {
+        if path.exists() {
+            let next = without(read_registry(), id);
+            std::fs::write(&path, serde_json::to_string_pretty(&next)? + "\n")?;
+        }
+    }
+    if let Some(cmd) = secret_delete_command(id) {
+        let _ = std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
+    }
+    if let Some(cred) = credential_path(id) {
+        let _ = std::fs::remove_file(cred);
+    }
+    Ok(())
+}
+
 /// The shared service name. Must match the CLI's `SERVICE` constant, or the
 /// two programs address different items and neither sees the other's secrets.
 pub const SERVICE: &str = "exa";
@@ -148,6 +189,23 @@ fn secret_read_command(id: &str) -> Option<Vec<String>> {
             "-Command".into(),
             format!(
                 "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];(New-Object Windows.Security.Credentials.PasswordVault).Retrieve('{SERVICE}','{id}').Password"
+            ),
+        ]),
+        _ => None,
+    }
+}
+
+fn secret_delete_command(id: &str) -> Option<Vec<String>> {
+    let own = |parts: &[&str]| Some(parts.iter().map(|s| s.to_string()).collect());
+    match std::env::consts::OS {
+        "macos" => own(&["security", "delete-generic-password", "-a", id, "-s", SERVICE]),
+        "linux" => own(&["secret-tool", "clear", "service", SERVICE, "account", id]),
+        "windows" => Some(vec![
+            "powershell".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            format!(
+                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Remove($v.Retrieve('{SERVICE}','{id}'))"
             ),
         ]),
         _ => None,
@@ -272,6 +330,44 @@ mod tests {
         assert!(parse_registry("not json").connections.is_empty());
         assert!(parse_registry("").connections.is_empty());
         assert!(parse_registry("{}").connections.is_empty());
+    }
+
+    #[test]
+    fn without_drops_only_the_matching_id() {
+        let registry = upsert(SharedRegistry::default(), entry("a", "one"));
+        let registry = upsert(registry, entry("b", "two"));
+        let registry = without(registry, "a");
+        assert_eq!(registry.connections.len(), 1);
+        assert!(registry.connections.iter().all(|c| c.id == "b"));
+        // Removing an id that isn't there changes nothing (idempotent delete).
+        let registry = without(registry, "a");
+        assert_eq!(registry.connections.len(), 1);
+    }
+
+    #[test]
+    fn without_keeps_the_cli_default_unless_it_was_the_removed_entry() {
+        let mut registry = upsert(SharedRegistry::default(), entry("a", "one"));
+        registry = upsert(registry, entry("b", "two"));
+        registry.default_id = Some("b".into());
+        // Removing a DIFFERENT entry must not touch the CLI's default.
+        let registry = without(registry, "a");
+        assert_eq!(registry.default_id.as_deref(), Some("b"));
+        // Removing the default entry clears the marker instead of leaving it
+        // dangling at a connection that no longer exists.
+        let registry = without(registry, "b");
+        assert_eq!(registry.default_id, None);
+    }
+
+    #[test]
+    fn default_id_round_trips_through_parse_and_serialize() {
+        let registry = parse_registry(r#"{"version":1,"connections":[],"defaultId":"x"}"#);
+        assert_eq!(registry.default_id.as_deref(), Some("x"));
+        let out = serde_json::to_string(&registry).unwrap();
+        assert!(out.contains("\"defaultId\":\"x\""));
+        // Absent in the file → absent in the rewrite (never serialize null).
+        let registry = parse_registry(r#"{"version":1,"connections":[]}"#);
+        assert_eq!(registry.default_id, None);
+        assert!(!serde_json::to_string(&registry).unwrap().contains("defaultId"));
     }
 
     #[test]
