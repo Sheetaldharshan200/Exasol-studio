@@ -576,7 +576,7 @@ export async function runTurn(opts: {
             case "tool-input-start": {
               // The model has STARTED producing a tool call (e.g. a big
               // artifact HTML) — show activity now so it never looks stuck.
-              session.emit({ type: "tool-start", callId: part.id, name: part.toolName, args: {} });
+              session.emit({ type: "tool-start", callId: part.id, name: part.toolName, args: {}, provisional: true });
               break;
             }
             case "tool-call": {
@@ -888,6 +888,19 @@ export async function runTurn(opts: {
           session.record({ kind: "verification", ...event });
         }
       }
+      // P3: one turn-level span — duration, tokens, provider — lands in the
+      // trace store (the tool spans came from tool-start/tool-end already).
+      session.traceSpan({
+        kind: "turn",
+        name: modelRef,
+        model: modelRef,
+        provider: turnProviderId,
+        startedAt: started,
+        durationMs: Date.now() - started,
+        ok: true,
+        tokens: { input: s.usage?.inputTokens, output: s.usage?.outputTokens },
+        meta: { steps: s.toolCalls ?? 0 },
+      });
       // Verified researcher findings outlive the turn: tested SQL with a
       // stated purpose is exactly the kind of fact future sessions should know.
       if (settings.enableInsights && session.connectionId) {
@@ -943,6 +956,18 @@ export async function runTurn(opts: {
     }
     if (!aborted) message = humanizeProviderError(turnProviderId, message);
     session.record({ kind: aborted ? "aborted" : "error", model: modelRef, error: message });
+    // P3: failed and aborted turns count too — observability that only sees
+    // successes overstates reliability.
+    session.traceSpan({
+      kind: "turn",
+      name: modelRef,
+      model: modelRef,
+      provider: turnProviderId,
+      startedAt: started,
+      durationMs: Date.now() - started,
+      ok: false,
+      meta: { outcome: aborted ? "aborted" : "error" },
+    });
     if (!aborted) log.error("turn failed", { model: modelRef, error: message });
     session.emit(
       aborted

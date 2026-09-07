@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
-import { SessionStore } from "./session.ts";
+import { Session, SessionStore } from "./session.ts";
+import { TraceStore } from "./trace-store.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { compareResults, planVerification } from "./verify.ts";
 import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
@@ -74,6 +75,12 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   // ── P2: explicit plans (docs/agentic-architecture-spec.md) ────────────────
   const plans = new PlanStore(config.dataDir);
   const pushPlan = (plan: Plan) => pushUiAction("plan_updated", { plan });
+
+  // ── P3: run observability — every session's spans land here ──────────────
+  const traces = new TraceStore(config.dataDir);
+  Session.traceSink = (span) => traces.append(span);
+  const traceGateway = (name: string, startedAt: number, ok: boolean, meta?: Record<string, string | number | boolean>) =>
+    traces.append({ kind: "gateway", name, startedAt, durationMs: Date.now() - startedAt, ok, ...(meta ? { meta } : {}) });
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
   const engine = new EngineService();
@@ -458,7 +465,21 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (sql.replace(/'(?:[^']|'')*'/g, "''").includes(";")) {
           return json(res, 403, { error: "One statement per call — remove the extra ';'." });
         }
-        const out = await db.query(target.id, sql);
+        const gatewayStarted = Date.now();
+        let out;
+        try {
+          out = await db.query(target.id, sql);
+        } catch (e) {
+          // Failed queries are gateway activity too — trace, then rethrow to
+          // the normal error response path.
+          traceGateway("run_query", gatewayStarted, false, { database: target.name });
+          throw e;
+        }
+        traceGateway("run_query", gatewayStarted, true, {
+          database: target.name,
+          rowCount: out.rowCount,
+          verified: body.verify === true,
+        });
         // P1 verification (opt-in per query — the model sets verify:true on
         // the statement whose result backs its final answer): reproduce the
         // result on an INDEPENDENT session and stamp the response honestly.
@@ -502,6 +523,15 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           }
         }
         return json(res, 200, { database: target.name, ...out });
+      }
+      // ── P3 traces: usage summary + recent activity ───────────────────────
+      if (req.method === "GET" && parts[1] === "traces" && parts[2] === "summary") {
+        const days = Math.min(30, Math.max(1, Number(url.searchParams.get("days")) || 7));
+        return json(res, 200, traces.summary(days));
+      }
+      if (req.method === "GET" && parts[1] === "traces" && parts[2] === "recent") {
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+        return json(res, 200, { spans: traces.recent(limit) });
       }
       // ── P2 plans: propose / update step / read current ──────────────────
       // POST /v1/gateway/plan {goal, steps} → validated Plan (becomes current,

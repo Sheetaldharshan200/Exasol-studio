@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   Braces,
   Database,
   FileClock,
@@ -24,6 +25,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { AgentUsage } from "./AgentUsage";
 import { AiPersonalization } from "./AiPersonalization";
 import { ToolsPlugins } from "./ToolsPlugins";
 import { Icon } from "@/components/ui/icon";
@@ -63,6 +65,14 @@ const CATEGORIES: Category[] = [
     icon: Wrench,
     label: "Tools & Plugins",
     desc: "What the assistant is allowed to use — tool groups (files, terminal, search, tasks) and every connected MCP server, each with its own switch.",
+    controls: [],
+  },
+  {
+    tab: "ai",
+    key: "usage",
+    icon: Activity,
+    label: "Agent usage",
+    desc: "What the assistant actually did — turns, tool calls, token usage by provider and day, and the recent run activity, recorded locally.",
     controls: [],
   },
   {
@@ -534,6 +544,8 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
                 <div className="mt-4">
                   <ToolsPlugins />
                 </div>
+              ) : current.key === "usage" ? (
+                <AgentUsage />
               ) : (
                 <>
                   <div className="mt-5 space-y-5">

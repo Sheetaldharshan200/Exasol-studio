@@ -43,7 +43,7 @@ export type AgentEvent =
   | { type: "reasoning-delta"; messageId: string; delta: string }
   | { type: "message-start"; messageId: string; role: "assistant" }
   | { type: "message-done"; messageId: string; usage?: { inputTokens?: number; outputTokens?: number } }
-  | { type: "tool-start"; callId: string; name: string; args: unknown }
+  | { type: "tool-start"; callId: string; name: string; args: unknown; provisional?: boolean }
   | { type: "tool-end"; callId: string; name: string; ok: boolean; summary?: string }
   | { type: "permission-ask"; id: string; tool: string; summary: string; detail: string }
   | { type: "permission-result"; id: string; allow: boolean }
@@ -119,6 +119,32 @@ export type AgentSettings = {
   appControl: boolean;
 };
 
+/** P3 span/summary shapes (mirror agent-core trace.ts). */
+export type TraceSpanInfo = {
+  kind: "turn" | "tool" | "gateway" | "verification";
+  name: string;
+  sessionId?: string;
+  startedAt: number;
+  durationMs: number;
+  ok: boolean;
+  tokens?: { input?: number; output?: number };
+  provider?: string;
+  model?: string;
+  meta?: Record<string, string | number | boolean>;
+};
+export type TraceSummary = {
+  days: number;
+  turns: number;
+  toolCalls: number;
+  gatewayCalls: number;
+  failures: number;
+  tokensIn: number;
+  tokensOut: number;
+  avgToolMs: number;
+  byProvider: Record<string, { turns: number; tokensIn: number; tokensOut: number }>;
+  byDay: Record<string, { turns: number; toolCalls: number; tokensIn: number; tokensOut: number }>;
+};
+
 export const agent = {
   async getSettings(): Promise<{ settings: AgentSettings; defaults: AgentSettings }> {
     return api("/settings");
@@ -131,6 +157,14 @@ export const agent = {
 
   async models(): Promise<{ providers: AgentProviderInfo[]; defaultModel: string | null }> {
     return api("/models");
+  },
+
+  /** P3 run observability: usage totals + recent agent activity. */
+  async tracesSummary(days = 7): Promise<TraceSummary> {
+    return api(`/traces/summary?days=${days}`);
+  },
+  async tracesRecent(limit = 50): Promise<{ spans: TraceSpanInfo[] }> {
+    return api(`/traces/recent?limit=${limit}`);
   },
 
   /** App-control bridge: long-poll the next queued action (null on idle). */
