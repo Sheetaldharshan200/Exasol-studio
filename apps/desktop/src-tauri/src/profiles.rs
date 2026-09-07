@@ -95,8 +95,106 @@ pub fn touch_profile(state: &AppState, profile_id: &str) -> AppResult<()> {
     write_json(&profiles_path(state), &profiles)
 }
 
+/// The AI panel's read-only database identity — a Studio-internal login, not a
+/// user connection. Only the ACTIVE one (referenced by agent/mcp-identity.json)
+/// may exist locally, and none belong in the shared registry.
+const MCP_IDENTITY_PREFIX: &str = "STUDIO_MCP_";
+
+fn is_mcp_identity(username: &str) -> bool {
+    username.to_ascii_uppercase().starts_with(MCP_IDENTITY_PREFIX)
+}
+
+/// Ok(None) = no marker file, so every identity is an orphan (prunable).
+/// Err = the marker exists but couldn't be read/parsed — treat as UNKNOWN and
+/// prune nothing, or a transient failure would delete the active identity.
+fn mcp_identity_profile_id(state: &AppState) -> Result<Option<String>, ()> {
+    let marker = state.data_dir.join("agent/mcp-identity.json");
+    if !marker.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&marker).map_err(|_| ())?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|_| ())?;
+    Ok(value.get("profileId").and_then(|v| v.as_str()).map(str::to_string))
+}
+
+/// Drop stale internal MCP identities (recreated identities from earlier
+/// setups, or copies the registry import resurrected) — they rendered as
+/// identical "Local Exasol (AI read-only)" rows the user could never get rid
+/// of. Their registry entries and shared secrets go with them.
+fn prune_internal_identities(state: &AppState) -> AppResult<()> {
+    // Prune ONLY what is provably stale. No marker, or an unreadable one,
+    // means UNKNOWN — pruning then could delete the ACTIVE identity (the MCP
+    // config in agent/mcp-server.json references it independently). Do nothing.
+    let keep = match mcp_identity_profile_id(state) {
+        Ok(Some(id)) => id,
+        _ => return Ok(()),
+    };
+    // Provisioning saves the identity profile BEFORE it rewrites the marker —
+    // a freshly created identity must never be pruned inside that window.
+    let fresh = |p: &ConnectionProfile| -> bool {
+        p.created_at
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .is_some_and(|t| {
+                chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc))
+                    < chrono::Duration::minutes(10)
+            })
+    };
+    let mut profiles = load_profiles(state)?;
+    let stale: Vec<ConnectionProfile> = profiles
+        .iter()
+        .filter(|p| is_mcp_identity(&p.username) && p.id != keep && !fresh(p))
+        .cloned()
+        .collect();
+    if stale.is_empty() {
+        return Ok(());
+    }
+    profiles.retain(|p| !stale.iter().any(|s| s.id == p.id));
+    write_json(&profiles_path(state), &profiles)?;
+    for gone in &stale {
+        let shared_id =
+            crate::shared_registry::connection_id(&gone.host, gone.port, &gone.username);
+        let _ = crate::shared_registry::remove(&shared_id);
+    }
+    Ok(())
+}
+
+/// Self-heal the managed local connection: while the managed database is
+/// installed, its profile must exist — a deleted profile only stays gone until
+/// the next listing. Cheap (two file reads) and write-free unless it is
+/// actually missing.
+fn ensure_managed_profile_present(app: &tauri::AppHandle, state: &AppState) -> AppResult<()> {
+    if !crate::local_runtime::runtime_installed(app) {
+        return Ok(());
+    }
+    let Ok(conn) = crate::local_runtime::current_personal_connection(app) else {
+        return Ok(()); // container runtimes ensure their profile elsewhere
+    };
+    let missing = !load_profiles(state)?.iter().any(|p| {
+        p.host.trim().eq_ignore_ascii_case(conn.host.trim())
+            && p.port == conn.port
+            && p.username.eq_ignore_ascii_case(&conn.user)
+    });
+    if missing {
+        let profile =
+            ensure_personal_local_profile(state, &conn.host, conn.port, &conn.user, &conn.password)?;
+        // The recreated profile has a NEW id — repoint the bootstrap status or
+        // the permanent local card keeps referencing the deleted one.
+        crate::local_database::record_profile_id(app, &profile.id);
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<ConnectionProfile>> {
+pub fn list_connection_profiles(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ConnectionProfile>> {
+    // Internal identities first: stale duplicates must neither list nor be
+    // re-published below.
+    if let Err(err) = prune_internal_identities(&state) {
+        eprintln!("could not prune internal identities: {err}");
+    }
     // Pick up databases connected from the `exa` CLI before listing, so the
     // two programs show the same set. Failures here are ignored on purpose:
     // the user's own connections must still list if sharing has a problem.
@@ -105,6 +203,9 @@ pub fn list_connection_profiles(state: State<'_, AppState>) -> AppResult<Vec<Con
     }
     if let Err(err) = import_shared_connections(&state) {
         eprintln!("could not import shared connections: {err}");
+    }
+    if let Err(err) = ensure_managed_profile_present(&app, &state) {
+        eprintln!("could not reconcile the managed local connection: {err}");
     }
     // Never hand stored passwords (encrypted or not) to the frontend — the UI
     // doesn't need them; reconnects decrypt server-side in `find_profile`.
@@ -187,6 +288,11 @@ pub fn save_profile(
 
     // Publish outward so the `exa` CLI sees this database too. Best effort:
     // a shared-registry problem must never fail saving a connection here.
+    // Internal AI identities never publish — not even transiently on create.
+    if is_mcp_identity(&profile.username) {
+        profile.password = String::new();
+        return Ok(profile);
+    }
     let plaintext = security::decrypt_secret(key.as_ref(), &profile.password).unwrap_or_default();
     let shared = crate::shared_registry::SharedConnection {
         id: crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username),
@@ -224,6 +330,15 @@ pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
     for profile in load_profiles(state)? {
         let id = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
         let known = registry.connections.iter().any(|c| c.id == id);
+        // Internal AI identities never belong in the shared registry — and any
+        // that reached it earlier get cleaned out here instead of multiplying
+        // through import on every machine that reads the registry.
+        if is_mcp_identity(&profile.username) {
+            if known {
+                let _ = crate::shared_registry::remove(&id);
+            }
+            continue;
+        }
         let credential_present = crate::shared_registry::read_credential(&id).is_some();
         // Nothing to do when it is already listed and its secret is shared.
         if known && credential_present {
@@ -262,6 +377,11 @@ pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
     let missing = crate::shared_registry::missing_locally(&registry, &known);
     let mut imported = 0usize;
     for entry in missing {
+        // Never import an internal AI identity — that is how the identical
+        // "Local Exasol (AI read-only)" duplicates were born.
+        if is_mcp_identity(&entry.user) {
+            continue;
+        }
         let password = crate::shared_registry::read_credential(&entry.id).unwrap_or_default();
         let profile = ConnectionProfile {
             id: String::new(),

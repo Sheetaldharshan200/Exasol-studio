@@ -972,7 +972,20 @@ export function ExasolStudio({
   async function removeConnection(profileId: string) {
     const p = profiles.find((x) => x.id === profileId);
     const name = p?.name ?? "this connection";
-    if (!window.confirm(`Remove ${name}? The saved connection and its password are deleted. The database itself is not touched.`)) return;
+    // The managed local connection belongs to the managed database: while that
+    // database is installed, Studio re-creates the profile automatically — say
+    // so instead of pretending the removal will stick. The backend recreates by
+    // endpoint (not by notes), so also match the managed names — an edited or
+    // re-imported profile without the notes marker is still temporary.
+    const managed = Boolean(
+      p &&
+        (p.notes?.includes("Managed automatically by Exasol Studio") ||
+          /^Exasol (Personal \(local\)|Community \(Docker\))$/i.test(p.name)),
+    );
+    const message = managed
+      ? `${name} is managed by Exasol Studio and will be re-created automatically while the local database is installed. To remove it permanently, uninstall the local database from the Marketplace. Remove it for now anyway?`
+      : `Remove ${name}? The saved connection and its password are deleted. The database itself is not touched.`;
+    if (!window.confirm(message)) return;
     if (connections.some((c) => c.profile.id === profileId)) onDisconnect(profileId);
     try {
       await ipc.deleteConnectionProfile(profileId);

@@ -101,6 +101,20 @@ fn capabilities_path(data_dir: &Path) -> PathBuf {
     data_dir.join("agent/capabilities.json")
 }
 
+/// Point the persisted bootstrap status at a (re)created managed profile.
+/// Without this, the permanent local card keeps referencing the DELETED
+/// profile id after a delete + self-heal, and clicking it opens the blank
+/// connect form instead of the restored connection.
+pub(crate) fn record_profile_id(app: &AppHandle, profile_id: &str) {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let status = read_status(&data_dir);
+    if status.profile_id.as_deref() != Some(profile_id) {
+        let mut next = status;
+        next.profile_id = Some(profile_id.into());
+        let _ = write_status(app, &data_dir, next);
+    }
+}
+
 fn read_status(data_dir: &Path) -> BootstrapStatus {
     std::fs::read_to_string(status_path(data_dir))
         .ok()
