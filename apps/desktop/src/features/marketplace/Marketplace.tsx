@@ -470,8 +470,10 @@ export function Marketplace() {
   // it is still checking. The badge and the Updates empty state both fold this
   // in, so an available engine/component update can never hide behind
   // "everything is up to date".
-  const [managedUpdates, setManagedUpdates] = useState<number | null>(null);
-  const totalUpdates = updatesAvailable + (managedUpdates ?? 0);
+  // Computed straight from components + live upstream — the separate
+  // "Managed Components" panel is gone; cards carry their own updates.
+  const managedUpdates = useMemo(() => countManagedUpdates(components, componentUpstream), [components, componentUpstream]);
+  const totalUpdates = updatesAvailable + managedUpdates;
 
   // ── Starter-pack queue ──────────────────────────────────────────────────
   // Read the pack chosen during setup once, then run it after releases load
@@ -657,6 +659,42 @@ export function Marketplace() {
     enqueue(items);
   }
 
+  // Managed components (Personal, ExaPump, MCP Server, Exa Agent) never swap
+  // via a plain marketplace download — they go through the managed
+  // verify-or-refuse path (digest-verified official release; the DB engine is
+  // backup-first with automatic rollback; the AI engine restarts its sidecar).
+  async function switchManaged(item: CatalogItem, version?: string) {
+    const compId = CATALOG_TO_COMPONENT[item.id];
+    if (!compId) return;
+    setBusy((b) => ({ ...b, [item.id]: true }));
+    try {
+      await ipc.updateComponent(compId, version);
+      if (compId === "exa-agent") await ipc.agentRestart().catch(() => undefined);
+      setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: {
+            kind: "info",
+            title: item.name,
+            body:
+              compId === "personal"
+                ? `Database engine switched to ${version ?? "the verified build"} (your data was backed up first).`
+                : `${item.name} updated${version ? ` to ${version}` : ""}.`,
+          },
+        }),
+      );
+    } catch (e) {
+      // e.g. "already on X; there's nothing newer to install" — honest refusal.
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", { detail: { kind: "warning", title: item.name, body: errorMessage(e) } }),
+      );
+    } finally {
+      setBusy((b) => ({ ...b, [item.id]: false }));
+      refreshInstalled();
+      ipc.listComponents().then(setComponents).catch(() => undefined);
+    }
+  }
+
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
     try {
@@ -734,7 +772,13 @@ export function Marketplace() {
       );
     if (nav === "updates")
       return visible.filter((i) => {
-        if (CATALOG_TO_COMPONENT[i.id]) return false; // managed → Managed Components panel
+        const compId = CATALOG_TO_COMPONENT[i.id];
+        if (compId) {
+          // Managed components update in place on their cards.
+          const comp = components.find((c) => c.id === compId);
+          const tag = componentUpstream[compId];
+          return Boolean(comp?.installed && tag && isNewerVersion(tag, comp.installed));
+        }
         const inst = installedMap[i.id];
         const l = catalog?.items?.[i.id]?.latest ?? null;
         return isNewerVersion(l, inst?.version);
@@ -742,7 +786,7 @@ export function Marketplace() {
     if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
       return visible.filter((i) => sectionOf(i.kind) === nav);
     return visible;
-  }, [nav, visible, installedMap, detected, queue, catalog, driverBusy]);
+  }, [nav, visible, installedMap, detected, queue, catalog, driverBusy, components, componentUpstream]);
 
   const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
@@ -841,27 +885,54 @@ export function Marketplace() {
     const assets = releases[item.id]?.assets ?? [];
     return !(item.install === "binary" && assets.length > 0 && pickAsset(assets, env) === null);
   };
-  function installSelected() {
-    const items = CATALOG.filter((c) => selected.has(c.id) && canBatchInstall(c));
+  // A card is also batch-selectable when it has an UPDATE available — installs
+  // and updates are the same gesture ("everything is same"): managed
+  // components update via update_component, addons via their install path.
+  const batchUpdateTarget = (item: CatalogItem): string | null => {
+    const compId = CATALOG_TO_COMPONENT[item.id];
+    if (compId) {
+      const comp = components.find((c) => c.id === compId);
+      const tag = componentUpstream[compId];
+      return comp?.installed && tag && isNewerVersion(tag, comp.installed) ? tag : null;
+    }
+    const instVersion = installedMap[item.id]?.version;
+    const l = latestFor(item.id);
+    return instVersion && l && isNewerVersion(l, instVersion) ? l : null;
+  };
+  async function installSelected() {
+    const chosen = CATALOG.filter((c) => selected.has(c.id));
     setSelected(new Set());
-    enqueue(items);
+    enqueue(chosen.filter((c) => !CATALOG_TO_COMPONENT[c.id] && (canBatchInstall(c) || batchUpdateTarget(c) !== null)));
+    // Managed updates run sequentially — the DB engine takes a maintenance lock.
+    for (const c of chosen) {
+      const target = CATALOG_TO_COMPONENT[c.id] ? batchUpdateTarget(c) : null;
+      if (target) await switchManaged(c, target);
+    }
   }
 
   const renderCard = (item: CatalogItem, compact = false) => {
     // Item-specific glyphs win over the kind fallback: MCP surfaces show the
     // official MCP mark everywhere (rail, tabs, cards), never a generic server.
     const Icon = item.id === "mcp-server" ? McpMark : KIND_ICON[item.kind];
-    const inst = installedMap[item.id];
+    const managedCompId = CATALOG_TO_COMPONENT[item.id];
+    const managedComp = managedCompId ? components.find((c) => c.id === managedCompId) : undefined;
+    // Managed components (Personal, ExaPump, MCP, Exa Agent) are installed the
+    // moment list_components says so — the market manifest is only for addons.
+    // Everything renders through the SAME card states; no separate panel.
+    const inst =
+      installedMap[item.id] ??
+      (managedComp?.installed
+        ? { id: item.id, version: managedComp.installed, path: "", filename: "" }
+        : undefined);
     const onSystem = detected[item.id] && !inst;
     const isBusy = busy[item.id];
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
     // Non-managed catalog items update in place from the card.
     const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
-    // Managed components update via the Updates tab (verify-or-refuse), but the
-    // card must still SHOW an available update — using the SAME live upstream the
-    // Updates tab uses — instead of falsely reading "up to date".
-    const managedCompId = CATALOG_TO_COMPONENT[item.id];
+    // Managed components update IN PLACE from the card too (verify-or-refuse
+    // via update_component) — the available tag comes from the same live
+    // upstream the badge counts.
     const managedTag = managedCompId ? componentUpstream[managedCompId] : undefined;
     const managedUpdate = Boolean(inst && managedTag && isNewerVersion(managedTag, inst?.version));
     // The version shown on the card: for managed components it's the AUTHORITATIVE
@@ -887,9 +958,9 @@ export function Marketplace() {
       (releases[item.id]?.assets?.length ?? 0) > 0 &&
       pickAsset(releases[item.id]?.assets ?? [], env) === null;
 
-    // Only items with a real one-click install that isn't already done can
-    // join a multi-select batch (same check the batch re-runs at install time).
-    const selectable = canBatchInstall(item);
+    // Installable OR updatable — both join the multi-select batch (the batch
+    // re-checks eligibility at run time).
+    const selectable = canBatchInstall(item) || batchUpdateTarget(item) !== null;
     const isChecked = selected.has(item.id);
     const selectBox = selectable ? (
       <button
@@ -1051,19 +1122,30 @@ export function Marketplace() {
             {verPick[item.id] && verPick[item.id] !== inst.version ? (
               // Switching versions is a first-class action, not a reinstall
               // trick: pick any version and this replaces the installed one.
-              <button onClick={() => startInstall(item)} disabled={isInstalling || isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
-                {isInstalling ? "Switching…" : `Switch to ${verPick[item.id]}`}
+              // The DB engine routes through the managed backup-first path.
+              <button
+                onClick={() => (managedCompId ? void switchManaged(item, verPick[item.id]) : startInstall(item))}
+                disabled={isInstalling || isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                {isInstalling || isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isInstalling || isBusy ? "Switching…" : `Switch to ${verPick[item.id]}`}
               </button>
             ) : newer ? (
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                 <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
               </button>
             ) : managedUpdate ? (
-              // Managed component: the actual verify-or-refuse update lives in the
-              // Updates tab — send the user there, but SHOW the update here.
-              <button onClick={() => setNav("updates")} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50" title={`Update to ${managedTag} in the Updates tab`}>
-                <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {managedTag}
+              // Managed component: the verify-or-refuse update runs RIGHT HERE
+              // (digest-verified; DB engine backs up first) — no separate panel.
+              <button
+                onClick={() => void switchManaged(item, managedTag)}
+                disabled={isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                title={`Install the official ${managedTag} release (digest-verified)`}
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isBusy ? "Updating…" : `Update to ${managedTag}`}
               </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
@@ -1077,12 +1159,28 @@ export function Marketplace() {
                     : "Installed"}
               </span>
             )}
-            <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
-              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
-            </button>
+            {/* Managed components have their own lifecycle (the DB's Manage
+                panel, the engine's baseline) — a marketplace-folder uninstall
+                would be meaningless there. */}
+            {!managedCompId ? (
+              <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
+              </button>
+            ) : null}
           </>
         ) : onSystem ? (
           <>
+            {versionMenu}
+            {managedCompId && verPick[item.id] ? (
+              <button
+                onClick={() => void switchManaged(item, verPick[item.id])}
+                disabled={isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isBusy ? "Switching…" : `Switch to ${verPick[item.id]}`}
+              </button>
+            ) : null}
             <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
               <Check className="h-3.5 w-3.5" /> Already on your system
             </span>
@@ -1171,8 +1269,64 @@ export function Marketplace() {
           </button>
         ) : null}
         {item.install === "personal-local" && (inst || onSystem) ? (
-          <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
-            <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+          <>
+            <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
+              <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+            </button>
+            {/* The DB carries data — back up any time, right from the card
+                (this used to live in the removed Components panel). */}
+            <button
+              onClick={() =>
+                void (async () => {
+                  setBusy((b) => ({ ...b, [item.id]: true }));
+                  try {
+                    await ipc.backupLocalDatabase();
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "info", title: "Exasol Personal", body: "Local database backed up (see personal-local/backups)." } }),
+                    );
+                  } catch (e) {
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Backup failed", body: errorMessage(e) } }),
+                    );
+                  } finally {
+                    setBusy((b) => ({ ...b, [item.id]: false }));
+                  }
+                })()
+              }
+              disabled={isBusy}
+              title="Stop the database, copy config + data to a timestamped backup, then restart"
+              className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
+            </button>
+          </>
+        ) : null}
+        {item.id === "driver-jdbc" ? (
+          // Pin your OWN jar — the same override the Drivers tab offers, so
+          // the marketplace card is the one-stop surface for JDBC.
+          <button
+            onClick={() =>
+              void (async () => {
+                try {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const path = await open({ multiple: false, filters: [{ name: "Java archive", extensions: ["jar"] }], title: "Choose the driver JAR" });
+                  if (typeof path === "string" && path) {
+                    await ipc.driverOverrideSet("jdbc", path);
+                    window.dispatchEvent(new CustomEvent("studio:drivers-changed"));
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "info", title: "JDBC driver", body: "Studio's SQL editor now uses your custom JAR." } }),
+                    );
+                  }
+                } catch (e) {
+                  window.dispatchEvent(
+                    new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Custom JAR", body: errorMessage(e) } }),
+                  );
+                }
+              })()
+            }
+            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Custom JAR
           </button>
         ) : null}
       </div>
@@ -1401,16 +1555,14 @@ export function Marketplace() {
               </div>
             </div>
 
+            {/* Keyed on the tab so each switch fades in instead of snapping —
+                the "hanging" feel came from main-thread probes (now async);
+                this keeps the transition visibly smooth on top. */}
+            <div key={nav} className="animate-in fade-in duration-200">
+            {/* Updates tab: Studio's own card, then the SAME cards as
+                everywhere else filtered to those with an update — managed
+                components update in place on their cards, no separate panel. */}
             {nav === "updates" ? <StudioUpdateCard /> : null}
-            {nav === "updates" ? (
-              <IndependentComponents
-                onActionable={setManagedUpdates}
-                describe={(compId) => {
-                  const catalogId = Object.entries(CATALOG_TO_COMPONENT).find(([, c]) => c === compId)?.[0];
-                  return CATALOG.find((i) => i.id === catalogId)?.description ?? "";
-                }}
-              />
-            ) : null}
             {nav === "ai-clients" ? (
               <AiClientsTab layout={layout} />
             ) : nav === "recommended" ? (
@@ -1476,10 +1628,6 @@ export function Marketplace() {
               </>
             ) : navItems.length ? (
               <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
-            ) : nav === "updates" && !query && managedUpdates !== 0 ? (
-              // Managed components are still checking (null) or ARE listing
-              // updates above — claiming "up to date" here would be a lie.
-              null
             ) : (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                 {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
@@ -1494,6 +1642,7 @@ export function Marketplace() {
                 </p>
               </div>
             )}
+            </div>
           </div>
       </div>
 
@@ -1505,10 +1654,10 @@ export function Marketplace() {
             {selected.size} selected
           </span>
           <button
-            onClick={installSelected}
+            onClick={() => void installSelected()}
             className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
           >
-            <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" /> Install selected
+            <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" /> Install / update selected
           </button>
           <button
             onClick={() => setSelected(new Set())}
@@ -1933,333 +2082,3 @@ async function simulate(
   push("success", `${item.name} installed.`);
 }
 
-/**
- * Components — installed once at setup (local database, ExaPump, MCP server),
- * then fully INDEPENDENT: each updates straight from its own official
- * releases (digest-verified), on its own schedule, with no coupling to
- * Studio releases or to each other. A component that failed during setup is
- * retried from its own card.
- */
-/** Managed components needing attention: an official release moved past the
- *  installed version, setup failed / never ran, or an opaque revision drifted
- *  from the verified one. Shared by the panel and the Updates view's badge and
- *  empty state, so they can never disagree. */
-function actionableComponents(comps: ComponentInfo[], upstream: Record<string, string>): ComponentInfo[] {
-  return comps.filter((c) => {
-    const tag = c.opaqueVersion ? null : upstream?.[c.id];
-    return (
-      (tag && isNewerVersion(tag, c.installed)) ||
-      (!c.opaqueVersion && !c.installed) ||
-      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified)
-    );
-  });
-}
-
-function IndependentComponents({
-  onActionable,
-  describe,
-}: {
-  onActionable?: (n: number | null) => void;
-  /** GitHub About line for a component (resolved via the catalog mapping). */
-  describe?: (compId: string) => string;
-}) {
-  const [comps, setComps] = useState<ComponentInfo[] | null>(null);
-  const [upstream, setUpstream] = useState<Record<string, string> | null>(null);
-  // Report the actionable count up: the Updates view must not claim
-  // "everything is up to date" while this panel is loading or listing updates.
-  useEffect(() => {
-    onActionable?.(comps && upstream !== null ? actionableComponents(comps, upstream).length : null);
-  }, [comps, upstream, onActionable]);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Rows ticked for a multi-select "Update selected" batch.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  // Any-version updates: per-row chosen tag + lazily fetched live version
-  // lists (first dropdown open only — never a timer).
-  const [rowPick, setRowPick] = useState<Record<string, string>>({});
-  // undefined = not fetched, null = loading, "error" = fetch failed.
-  const [rowVers, setRowVers] = useState<Record<string, string[] | null | "error" | undefined>>({});
-  const loadRowVersions = (id: string, repo?: string | null) => {
-    const src = componentVersionSource(id, repo);
-    if (!src || (id in rowVers && rowVers[id] !== "error")) return;
-    setRowVers((m) => ({ ...m, [id]: null }));
-    ipc
-      .marketVersions(src.source, src.reference)
-      .then((v) => setRowVers((m) => ({ ...m, [id]: v })))
-      .catch(() => setRowVers((m) => ({ ...m, [id]: "error" })));
-  };
-  // Live progress for long component operations (the DB engine update backs
-  // up, stops, swaps and restarts the database — minutes, not seconds).
-  // Rust streams every step over market:log with the bootstrap job id.
-  const [live, setLive] = useState<string[]>([]);
-
-  const refresh = useCallback(async () => {
-    const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
-    setComps(list);
-  }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  const refreshUpstream = useCallback(() => {
-    void ipc
-      .componentsUpstream()
-      .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      // On failure keep the last-known tags (or {} on the very first attempt) so
-      // a transient rate-limit doesn't hide a real update behind "up to date".
-      .catch(() => setUpstream((prev) => prev ?? {}));
-  }, []);
-  // Mount = the Updates tab being opened (this component only renders there),
-  // so mount-time refresh + refreshUpstream IS the fetch-on-tab-click rule.
-  // No background timers (user rule: fetch only on app open and tab clicks).
-  useEffect(() => refreshUpstream(), [refreshUpstream]);
-  const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
-  useEffect(() => {
-    if (!anyBusy) return;
-    let unlisten: (() => void) | undefined;
-    void listen<{ id: string; line: string; level: string }>("market:log", (e) => {
-      if (e.payload.id !== "personal-local-bootstrap") return;
-      setLive((prev) => [...prev.slice(-5), e.payload.line]);
-    }).then((u) => {
-      unlisten = u;
-    });
-    // While busy, keep the row states fresh (the op may have started in a
-    // previous mount — the busy flag comes from Rust, not this component).
-    const t = window.setInterval(() => void refresh(), 5000);
-    return () => {
-      unlisten?.();
-      window.clearInterval(t);
-      setLive([]);
-    };
-  }, [anyBusy, refresh]);
-
-  async function run(id: string, action: () => Promise<void>, ok: string) {
-    setBusy(id); setNote(null);
-    try {
-      await action();
-      // A fresh Exa engine must not leave the old binary serving the panel —
-      // bounce the sidecar. Sessions are on disk; the fresh one reloads them.
-      if (id === "exa-agent") await ipc.agentRestart().catch(() => undefined);
-      // The finished update consumes the row's dropdown pick.
-      setRowPick(({ [id]: _consumed, ...rest }) => rest);
-      setNote(ok);
-      // Refresh IN PLACE: rows update from fresh data without unmounting the
-      // section (no loader flash — comps/upstream stay non-null throughout).
-      await refresh();
-      refreshUpstream();
-    }
-    catch (e) { setNote(errorMessage(e)); }
-    finally { setBusy(null); }
-  }
-
-  // Loader until BOTH facts exist: what's installed AND what the latest
-  // official releases are — otherwise "all up to date" flashes first and the
-  // update buttons pop in seconds later.
-  if (!comps || upstream === null) {
-    return (
-      <section className="mb-6 flex items-center justify-center rounded-xl border border-border bg-panel/40 p-8">
-        <BrandLoader size={44} label="Checking components…" />
-      </section>
-    );
-  }
-
-  // A component is actionable when its own official releases moved past what
-  // is installed. Opaque revisions (Semantic Views) reconcile by difference.
-  const updateFor = (c: ComponentInfo): string | null => {
-    if (c.opaqueVersion) return null;
-    const tag = upstream?.[c.id];
-    return tag && isNewerVersion(tag, c.installed) ? tag : null;
-  };
-  const actionable = actionableComponents(comps, upstream);
-  // Ticks that still point at an actionable row — a row that resolved itself
-  // (updated elsewhere, no longer actionable) must not inflate the count or
-  // enable a no-op batch.
-  const pickedActionable = actionable.filter((c) => picked.has(c.id));
-
-  // The version a row's own Update/Install button would use — shared with the
-  // multi-select batch so both paths install exactly the same thing. A version
-  // picked in the row's dropdown always wins.
-  const versionFor = (c: ComponentInfo): string | undefined =>
-    rowPick[c.id] ?? updateFor(c) ?? (!c.opaqueVersion && !c.installed ? (upstream?.[c.id] ?? undefined) : undefined);
-
-  // Multi-select: update several components in ONE go. Sequential on purpose —
-  // the DB engine update takes a maintenance lock and must never race others.
-  async function runPicked() {
-    const chosen = pickedActionable;
-    setPicked(new Set());
-    for (const c of chosen) {
-      // run() reports each failure in the note and never throws, so one
-      // failed component doesn't abandon the rest of the batch.
-      const version = versionFor(c);
-      await run(c.id, () => ipc.updateComponent(c.id, version), `${c.name} updated${version ? ` to ${version}` : ""}.`);
-    }
-  }
-
-  return (
-    <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-primary" />
-        <h3 className="flex-1 text-[12.5px] font-semibold text-foreground">Components</h3>
-        {actionable.length > 1 ? (
-          <>
-            <button
-              onClick={() => setPicked((p) => (p.size === actionable.length ? new Set() : new Set(actionable.map((c) => c.id))))}
-              disabled={anyBusy}
-              className="flex h-6 items-center rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
-            >
-              {picked.size === actionable.length ? "Select none" : "Select all"}
-            </button>
-            <button
-              onClick={() => void runPicked()}
-              disabled={anyBusy || pickedActionable.length === 0}
-              className="flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-            >
-              <Download className="h-3 w-3" /> Update selected{pickedActionable.length > 0 ? ` (${pickedActionable.length})` : ""}
-            </button>
-          </>
-        ) : null}
-      </div>
-
-      {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
-      {anyBusy && live.length > 0 ? (
-        <div className="mb-2 rounded-md border border-border bg-panel px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
-          {live.map((l, i) => (
-            <p key={i} className={cn("truncate", i === live.length - 1 && "text-foreground")}>{l}</p>
-          ))}
-        </div>
-      ) : null}
-      {actionable.length === 0 ? (
-        <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-primary" /> All installed components are up to date.
-        </p>
-      ) : null}
-      <div className="divide-y divide-border/60">
-        {actionable.map((c) => {
-          const isBusy = busy === c.id || c.busy;
-          const target = updateFor(c);
-          // The row's dropdown pick beats the auto-detected newest official tag.
-          const effective = rowPick[c.id] ?? target;
-          const rowSource = componentVersionSource(c.id, c.repo);
-          const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
-          const rowChecked = picked.has(c.id);
-          return (
-            <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
-              <button
-                role="checkbox"
-                aria-checked={rowChecked}
-                aria-label={`Select ${c.name} for the update batch`}
-                disabled={anyBusy}
-                onClick={() =>
-                  setPicked((p) => {
-                    const next = new Set(p);
-                    if (next.has(c.id)) next.delete(c.id);
-                    else next.add(c.id);
-                    return next;
-                  })
-                }
-                className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-40",
-                  rowChecked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent hover:border-primary/60",
-                )}
-              >
-                <Check className="h-3 w-3" />
-              </button>
-              <div className="min-w-40 flex-1">
-                <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
-                {describe?.(c.id) ? (
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{describe(c.id)}</p>
-                ) : null}
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
-                  <span>installed {c.installed ?? "—"}</span>
-                  {target ? <span>official {target}</span> : null}
-                  {c.busy ? <span className="text-syntax-function">working — live log above</span> : null}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {rowSource ? (
-                  // Live any-version picker for this managed component (GitHub
-                  // tags for binaries, PyPI versions for the MCP server).
-                  <DropdownMenu onOpenChange={(o) => o && loadRowVersions(c.id, c.repo)}>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        disabled={isBusy}
-                        aria-label={`${c.name} version to install`}
-                        className="flex h-7 max-w-[130px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[10.5px] text-foreground hover:bg-secondary disabled:opacity-50"
-                      >
-                        <span className="truncate">{rowPick[c.id] ?? "official latest"}</span>
-                        <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
-                      <DropdownMenuItem onClick={() => setRowPick(({ [c.id]: _drop, ...rest }) => rest)} className="font-mono text-[12px]">
-                        official latest
-                        {!rowPick[c.id] ? <Check className="ml-auto h-3 w-3" /> : null}
-                      </DropdownMenuItem>
-                      {rowVers[c.id] === null ? (
-                        <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
-                        </div>
-                      ) : rowVers[c.id] === "error" ? (
-                        <div className="max-w-56 px-2 py-1.5 text-[11px] text-muted-foreground">
-                          Couldn't load the version list (offline or rate-limited) — reopen to retry.
-                        </div>
-                      ) : (
-                        (rowVers[c.id] as string[] | undefined ?? []).map((v) => (
-                          <DropdownMenuItem key={v} onClick={() => setRowPick((m) => ({ ...m, [c.id]: v }))} className="font-mono text-[12px]">
-                            {v}
-                            {rowPick[c.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
-                          </DropdownMenuItem>
-                        ))
-                      )}
-                      {Array.isArray(rowVers[c.id]) && (rowVers[c.id] as string[]).length === 0 ? (
-                        <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-                {c.id === "personal" ? (
-                  // The DB engine carries data — back up any time; its update
-                  // is backup-first with automatic rollback.
-                  <button
-                    onClick={() => void run(c.id, async () => { await ipc.backupLocalDatabase(); }, "Local database backed up (see personal-local/backups).")}
-                    disabled={isBusy}
-                    title="Stop the database, copy config + data to a timestamped backup, then restart"
-                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
-                  </button>
-                ) : null}
-                {effective ? (
-                  <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, effective), `${c.name} updated to ${effective}.`)}
-                    disabled={isBusy}
-                    title={
-                      c.id === "personal"
-                        ? `Install the official ${effective} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
-                        : `Install the official ${effective} release (digest-verified).`
-                    }
-                    className={upBtn}
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {effective}
-                  </button>
-                ) : c.opaqueVersion && c.installed ? (
-                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled.`)} disabled={isBusy} className={upBtn}>
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
-                  </button>
-                ) : !c.opaqueVersion && !c.installed ? (
-                  // Fresh/failed install: the dropdown pick, else the LATEST
-                  // official release (digest-verified); the pin is only the
-                  // fallback when neither can be resolved.
-                  <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, versionFor(c)), `${c.name} installed${versionFor(c) ? ` (${versionFor(c)})` : ""}.`)}
-                    disabled={isBusy}
-                    className={upBtn}
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install{versionFor(c) ? ` ${versionFor(c)}` : ""}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}

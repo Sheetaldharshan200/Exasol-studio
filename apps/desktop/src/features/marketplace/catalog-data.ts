@@ -118,6 +118,17 @@ export const CATALOG: CatalogItem[] = [
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
   { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "uv-pip" },
   { id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", kind: "skills", install: "bundled", labs: true },
+  // The AI panel's engine — a managed component (updates via update_component,
+  // digest-verified; the sidecar restarts after a switch). Shown as a card so
+  // ALL components live in one place, no separate panel.
+  {
+    id: "exa-agent",
+    repo: "Sheetaldharshan200/exa-engine",
+    kind: "server",
+    install: "bundled",
+    name: "Exa Agent Engine",
+    description: "The engine behind Studio's AI panel. Updates independently of Studio releases; sessions are kept across engine switches.",
+  },
 ];
 
 /** The repos whose metadata the marketplace needs. */

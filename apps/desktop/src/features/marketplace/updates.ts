@@ -13,6 +13,7 @@ export const CATALOG_TO_COMPONENT: Record<string, string> = {
   exapump: "exapump",
   "mcp-server": "mcp-server",
   "semantic-views": "semantic-views",
+  "exa-agent": "exa-agent",
 };
 
 /** True only when `remote` is a STRICTLY newer version than `local` (numeric

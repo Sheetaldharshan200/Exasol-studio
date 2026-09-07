@@ -96,7 +96,15 @@ fn status_now() -> CommunityStatus {
 }
 
 #[tauri::command]
-pub fn community_status() -> AppResult<CommunityStatus> {
+pub async fn community_status() -> AppResult<CommunityStatus> {
+    // Docker probes spawn processes — keep them off the main thread (a sync
+    // command would freeze the window while `docker ps` answers).
+    tauri::async_runtime::spawn_blocking(status_result)
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+fn status_result() -> AppResult<CommunityStatus> {
     Ok(status_now())
 }
 

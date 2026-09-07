@@ -13,9 +13,22 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { errorMessage, ipc, isTauri, type DriverInfo } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CATALOG } from "@/features/marketplace/catalog-data";
+import { versionSource } from "@/features/marketplace/versions";
+
+/** Driver runtime id → its Marketplace catalog item, so this tab offers the
+ *  SAME any-version installs the Marketplace does — one system, two doors. */
+const DRIVER_TO_CATALOG: Record<string, string> = {
+  jdbc: "driver-jdbc",
+  odbc: "driver-odbc",
+  pyexasol: "pyexasol",
+  sqlalchemy: "sqlalchemy-exasol",
+};
 
 /** One glyph per driver family (Boxicons/Lucide only — never emoji). */
 export const DRIVER_ICON: Record<string, LucideIcon> = {
@@ -101,11 +114,41 @@ export function DriversSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drivers]);
 
+  // Any-version installs, exactly like the Marketplace: undefined = not
+  // fetched, null = loading, "error" = fetch failed.
+  const [vers, setVers] = useState<Record<string, string[] | null | "error" | undefined>>({});
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const loadVers = (driverId: string) => {
+    const item = CATALOG.find((c) => c.id === DRIVER_TO_CATALOG[driverId]);
+    const src = item ? versionSource(item) : null;
+    if (!src || (driverId in vers && vers[driverId] !== "error")) return;
+    setVers((m) => ({ ...m, [driverId]: null }));
+    ipc
+      .marketVersions(src.source, src.reference)
+      .then((v) => setVers((m) => ({ ...m, [driverId]: v })))
+      .catch(() => setVers((m) => ({ ...m, [driverId]: "error" })));
+  };
+
   async function install(driverId: string) {
     setInstalling(driverId);
     setError(null);
     try {
+      // A picked version downloads through the Marketplace path first (the
+      // JDBC jar gets wired in by that flow), then the runtime is ensured.
+      const catalogId = DRIVER_TO_CATALOG[driverId];
+      const chosen = pick[driverId];
+      if (catalogId && chosen) {
+        await ipc.marketInstallRun(catalogId, chosen, undefined, undefined, undefined, chosen);
+        if (catalogId === "driver-jdbc") {
+          // Same seamless behavior as the Marketplace card: the picked jar
+          // becomes the SQL editor's driver.
+          await ipc.marketUseDownloaded("driver-jdbc", chosen).catch(() => undefined);
+          setOverrides(await ipc.driverOverridesGet().catch(() => ({})));
+        }
+        setPick(({ [driverId]: _consumed, ...rest }) => rest);
+      }
       await ipc.driverSetup(driverId);
+      window.dispatchEvent(new CustomEvent("studio:drivers-changed"));
       await refreshStatus(drivers);
     } catch (e) {
       setError(errorMessage(e));
@@ -191,23 +234,71 @@ export function DriversSection({
                   </td>
                   <td className="border-b border-border/60 px-3 py-2 font-mono text-[11px] text-muted-foreground">{d.protocol}</td>
                   <td className="border-b border-border/60 px-3 py-2 whitespace-nowrap">
-                    {st?.ready ? (
-                      <span className="flex w-fit items-center gap-1 rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">
-                        <Check className="h-2.5 w-2.5" /> Installed
-                      </span>
-                    ) : st?.supported ? (
-                      <button
-                        onClick={() => void install(d.id)}
-                        disabled={installing !== null}
-                        title={st.hint || `Install the ${d.name} runtime`}
-                        className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
-                      >
-                        {installing === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                        {installing === d.id ? "Installing…" : "Install"}
-                      </button>
-                    ) : (
-                      <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] font-medium text-muted-foreground">Not supported yet</span>
-                    )}
+                    <span className="flex items-center gap-1.5">
+                      {DRIVER_TO_CATALOG[d.id] ? (
+                        // Same any-version picker as the Marketplace card.
+                        <DropdownMenu onOpenChange={(o) => o && loadVers(d.id)}>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              disabled={installing !== null}
+                              aria-label={`${d.name} version to install`}
+                              className="flex h-6 max-w-[120px] items-center gap-1 rounded-md border border-border bg-background px-1.5 font-mono text-[10.5px] text-foreground hover:bg-secondary disabled:opacity-50"
+                            >
+                              <span className="truncate">{pick[d.id] ?? "latest"}</span>
+                              <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                            <DropdownMenuItem onClick={() => setPick(({ [d.id]: _drop, ...rest }) => rest)} className="font-mono text-[12px]">
+                              latest
+                              {!pick[d.id] ? <Check className="ml-auto h-3 w-3" /> : null}
+                            </DropdownMenuItem>
+                            {vers[d.id] === null ? (
+                              <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+                              </div>
+                            ) : vers[d.id] === "error" ? (
+                              <div className="max-w-56 px-2 py-1.5 text-[11px] text-muted-foreground">
+                                Couldn't load the version list (offline or rate-limited) — reopen to retry.
+                              </div>
+                            ) : (
+                              ((vers[d.id] as string[] | undefined) ?? []).map((v) => (
+                                <DropdownMenuItem key={v} onClick={() => setPick((m) => ({ ...m, [d.id]: v }))} className="font-mono text-[12px]">
+                                  {v}
+                                  {pick[d.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
+                                </DropdownMenuItem>
+                              ))
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                      {pick[d.id] ? (
+                        <button
+                          onClick={() => void install(d.id)}
+                          disabled={installing !== null}
+                          className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                        >
+                          {installing === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                          {installing === d.id ? "Installing…" : `Install ${pick[d.id]}`}
+                        </button>
+                      ) : st?.ready ? (
+                        <span className="flex w-fit items-center gap-1 rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">
+                          <Check className="h-2.5 w-2.5" /> Installed
+                        </span>
+                      ) : st?.supported ? (
+                        <button
+                          onClick={() => void install(d.id)}
+                          disabled={installing !== null}
+                          title={st.hint || `Install the ${d.name} runtime`}
+                          className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                        >
+                          {installing === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                          {installing === d.id ? "Installing…" : "Install"}
+                        </button>
+                      ) : (
+                        <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] font-medium text-muted-foreground">Not supported yet</span>
+                      )}
+                    </span>
                   </td>
                   <td className="border-b border-border/60 px-3 py-2">
                     {d.id === "jdbc" ? (

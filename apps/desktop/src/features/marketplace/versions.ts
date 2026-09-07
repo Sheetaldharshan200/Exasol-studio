@@ -46,6 +46,11 @@ export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install">
   // AI Lab installs as a Docker image, not a pip package — its versions are
   // Docker Hub tags (must mirror the Rust install_ai_lab dispatch).
   if (item.id === "ai-lab") return { source: "dockerhub", reference: "exasol/ai-lab" };
+  // The AI engine is bundled but updates from its release repo.
+  if (item.id === "exa-agent" && item.repo) return { source: "github", reference: item.repo };
+  // Exasol Personal: official engine releases — a pick on the card switches
+  // the managed engine via the verify-or-refuse update path (backup-first).
+  if (item.install === "personal-local" && item.repo) return { source: "github", reference: item.repo };
   if (item.install === "package") return PACKAGE_SOURCE[item.id] ?? null;
   if (item.install === "maven") return { source: "maven-exasol-jdbc", reference: "exasol-jdbc" };
   if ((item.install === "uv-pip" || item.install === "uv-tool") && PYPI_PACKAGE[item.id]) {

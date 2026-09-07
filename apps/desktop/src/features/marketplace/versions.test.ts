@@ -51,6 +51,22 @@ test("package drivers list their NATIVE registry", () => {
   assert.equal(versionSource({ id: "unknown-pkg", install: "package" }), null);
 });
 
+test("the bundled Exa Agent engine lists its release repo", () => {
+  assert.deepEqual(versionSource({ id: "exa-agent", repo: "Sheetaldharshan200/exa-engine", install: "bundled" }), {
+    source: "github",
+    reference: "Sheetaldharshan200/exa-engine",
+  });
+  // Other bundled items (agent skills) still have no version list.
+  assert.equal(versionSource({ id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", install: "bundled" }), null);
+});
+
+test("Exasol Personal lists its official engine releases", () => {
+  assert.deepEqual(versionSource({ id: "exasol-personal", repo: "exasol/exasol-personal", install: "personal-local" }), {
+    source: "github",
+    reference: "exasol/exasol-personal",
+  });
+});
+
 test("items without a version-addressable install have no source", () => {
   assert.equal(versionSource({ id: "driver-odbc", install: "reference" }), null);
   assert.equal(versionSource({ id: "exasol-community", repo: "exasol/docker-db", install: "community-docker" }), null);

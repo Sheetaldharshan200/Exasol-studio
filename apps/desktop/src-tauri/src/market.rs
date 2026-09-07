@@ -2284,7 +2284,17 @@ fn data_file_exists(app: &AppHandle, rel: &str) -> bool {
 /// guesses — so the badges always match what setup actually did. Returns
 /// id → bool, plus `exasol-personal:running` for the DB's live state.
 #[tauri::command]
-pub fn market_detect(app: AppHandle) -> AppResult<Value> {
+pub async fn market_detect(app: AppHandle) -> AppResult<Value> {
+    // Every probe here spawns processes (python imports, docker inspect,
+    // launcher status) — seconds of work. A SYNC Tauri command runs on the
+    // MAIN thread, which froze the whole window when the Marketplace opened;
+    // spawn_blocking keeps the UI fluid while the probes run.
+    tauri::async_runtime::spawn_blocking(move || market_detect_blocking(app))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
     use crate::local_database as db;
     let mut map = serde_json::Map::new();
 
