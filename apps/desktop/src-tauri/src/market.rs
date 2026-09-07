@@ -1423,6 +1423,29 @@ fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
     versions
 }
 
+/// Release tags from a GitHub releases.atom feed — the entry ids end in the
+/// tag ("tag:github.com,2008:Repository/123/v2.2.0"). The atom feed is a plain
+/// web endpoint with NO API rate limit, which matters on shared/corporate IPs
+/// where the unauthenticated API 403s permanently. Pure so it's unit-tested.
+fn atom_release_tags(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find("<entry>") {
+        rest = &rest[start..];
+        let Some(id_start) = rest.find("<id>") else { break };
+        let after = &rest[id_start + "<id>".len()..];
+        let Some(id_end) = after.find("</id>") else { break };
+        let id = after[..id_end].trim();
+        if let Some(tag) = id.rsplit('/').next() {
+            if valid_version_tag(tag) && !out.iter().any(|t| t == tag) {
+                out.push(tag.to_string());
+            }
+        }
+        rest = &after[id_end..];
+    }
+    out
+}
+
 /// The last-known latest release tag for a repo, from market_release's disk
 /// cache — enough to keep a version dropdown useful (one entry: the newest)
 /// when the API is rate-limited before any full list was ever fetched.
@@ -1543,12 +1566,31 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
             let response = match response {
                 Ok(r) => r,
                 Err(e) => {
+                    // The API is rate-limited or unreachable. The releases.atom
+                    // feed is a plain web page with NO API rate limit — on
+                    // shared/corporate IPs (permanent 403s) it is the reliable
+                    // live source, so try it before any stale data.
+                    if let Ok(feed) = client
+                        .get(format!("https://github.com/{reference}/releases.atom"))
+                        .header("User-Agent", "exasol-studio")
+                        .timeout(timeout)
+                        .send()
+                        .await
+                        .and_then(|r| r.error_for_status())
+                    {
+                        if let Ok(xml) = feed.text().await {
+                            let tags = atom_release_tags(&xml);
+                            if !tags.is_empty() {
+                                merge_versions_cache(&cache_path, &reference, json!({ "at": now, "list": tags.clone() }));
+                                return Ok(tags);
+                            }
+                        }
+                    }
                     if let Some(list) = cached_list {
                         return Ok(list); // stale cache over an error
                     }
-                    // Never fetched before AND rate-limited/offline: the
-                    // release cache usually knows the latest tag — a one-entry
-                    // list beats an error message.
+                    // Last resort: the release cache usually knows the latest
+                    // tag — a one-entry list beats an error message.
                     if let Some(tag) = latest_tag_from_release_cache(&app, &reference) {
                         return Ok(vec![tag]);
                     }
@@ -2514,6 +2556,32 @@ mod tests {
         // Unknown artifact or platform → empty, never a wrong-platform pick.
         assert!(portal_artifacts(&index, "JDBC", "macos", "aarch64").is_empty());
         assert!(portal_artifacts(&serde_json::json!({}), "ODBC", "macos", "aarch64").is_empty());
+    }
+
+    #[test]
+    fn atom_feed_tags_parse_from_entry_ids() {
+        use super::atom_release_tags;
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>tag:github.com,2008:https://github.com/exasol/exasol-personal/releases</id>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.3.0-rc2</id>
+    <title>v2.3.0-rc2</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.2.0</id>
+    <title>v2.2.0</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.2.0</id>
+    <title>duplicate entries are ignored</title>
+  </entry>
+</feed>"#;
+        assert_eq!(atom_release_tags(xml), ["v2.3.0-rc2", "v2.2.0"]);
+        assert!(atom_release_tags("<feed></feed>").is_empty());
+        // Dot-segment or empty tails are rejected by the tag validation.
+        assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/..</id></entry>").is_empty());
+        assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/</id></entry>").is_empty());
     }
 
     #[test]
