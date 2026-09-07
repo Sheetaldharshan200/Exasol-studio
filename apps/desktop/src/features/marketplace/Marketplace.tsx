@@ -1010,8 +1010,8 @@ export function Marketplace() {
                 {driverBusy[did] || isInstalling
                   ? "Installing…"
                   : verPick[item.id]
-                    ? `Install ${verPick[item.id]} & use here`
-                    : "Install & use here"}
+                    ? `Install ${verPick[item.id]}`
+                    : "Install"}
               </button>
             ) : (
               <>
