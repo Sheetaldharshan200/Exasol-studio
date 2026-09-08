@@ -11,6 +11,7 @@ import { compareResults, planVerification } from "./verify.ts";
 import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
 import { executePlan } from "./dag-executor.ts";
 import { classifySql } from "./tools.ts";
+import { SemanticSync } from "./semantic-sync.ts";
 import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
@@ -83,6 +84,42 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   Session.traceSink = (span) => traces.append(span);
   const traceGateway = (name: string, startedAt: number, ok: boolean, meta?: Record<string, string | number | boolean>) =>
     traces.append({ kind: "gateway", name, startedAt, durationMs: Date.now() - startedAt, ok, ...(meta ? { meta } : {}) });
+
+  // Semantic-layer upkeep: every write on any connection (from any surface —
+  // run_sql, batches, imports, DAG plan steps) marks that connection dirty;
+  // a debounced pass revalidates the Semantic Views models and, after schema
+  // changes, regenerates their published metadata surfaces. Results land as
+  // a trace span and a UI notice. No-op on databases without the framework.
+  const semanticSync = new SemanticSync(
+    { queryIsolated: (id, sql) => db.queryIsolated(id, sql) },
+    (result) => {
+      traces.append({
+        kind: "verification",
+        name: "semantic_revalidate",
+        startedAt: Date.now() - result.elapsedMs,
+        durationMs: result.elapsedMs,
+        ok: result.issueCount === 0 && result.models.every((m) => m.validated && m.refreshed !== false),
+        meta: { connection: result.connectionId, impact: result.impact, models: result.models.length, issues: result.issueCount },
+      });
+      const failed = result.models.filter((m) => !m.validated || m.refreshed === false);
+      pushUiAction("semantic_validation", {
+        connectionId: result.connectionId,
+        impact: result.impact,
+        issueCount: result.issueCount,
+        issues: result.issues,
+        refreshed: result.models.filter((m) => m.refreshed).map((m) => m.name),
+        failed: failed.map((m) => `${m.name}: ${m.error ?? "validation failed"}`),
+      });
+      log.info("semantic models synced", {
+        connection: result.connectionId,
+        impact: result.impact,
+        models: result.models.length,
+        issues: result.issueCount,
+        ms: result.elapsedMs,
+      });
+    },
+  );
+  db.onWrite = (id, sql) => semanticSync.noteWrite(id, sql);
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
   const engine = new EngineService();
@@ -386,6 +423,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         setTimeout(() => {
           kb.refresh(info.id, db).catch((e) => log.warn("kb crawl failed", { error: String(e) }));
         }, 50);
+        // Changes made OUTSIDE the agent (exapump, other SQL clients) since
+        // the last session get caught by a connect-time semantic pass.
+        semanticSync.noteConnect(info.id);
         return json(res, 200, { ok: true });
       }
 

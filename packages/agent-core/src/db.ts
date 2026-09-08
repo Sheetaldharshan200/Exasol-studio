@@ -34,6 +34,22 @@ export class DbRegistry {
   private conns = new Map<string, DbConnectionInfo>();
   private drivers = new Map<string, ExasolDriver>();
 
+  /**
+   * Fired after every SUCCESSFUL state-changing statement, from every write
+   * path (execute, executeIsolated, bulkLoad) — the single choke point the
+   * semantic-layer sync hooks so no surface can change the database without
+   * the semantic models hearing about it. Must never throw into the write.
+   */
+  onWrite: ((id: string, sql: string) => void) | null = null;
+
+  private notifyWrite(id: string, sql: string): void {
+    try {
+      this.onWrite?.(id, sql);
+    } catch {
+      /* observability must never break the write it observed */
+    }
+  }
+
   register(info: DbConnectionInfo) {
     this.conns.set(info.id, info);
     // Drop any cached driver for this id so new credentials take effect.
@@ -86,10 +102,18 @@ export class DbRegistry {
     if (!info) throw new Error(`No connection "${id}" registered with the agent`);
     const driver = this.makeDriver(info, { autocommit: false });
     await driver.connect();
-    const execute = (sql: string): Promise<number> => driver.execute(sql);
+    // Write notifications are held until COMMIT: observers must never see
+    // (or act on) statements from a transaction that can still roll back.
+    const staged: string[] = [];
+    const execute = async (sql: string): Promise<number> => {
+      const affected = await driver.execute(sql);
+      staged.push(sql);
+      return affected;
+    };
     try {
       const out = await work(execute);
       await driver.execute("COMMIT");
+      for (const sql of staged) this.notifyWrite(id, sql);
       return out;
     } catch (e) {
       await driver.execute("ROLLBACK").catch(() => undefined);
@@ -179,7 +203,9 @@ export class DbRegistry {
     const driver = this.makeDriver(info);
     try {
       await driver.connect();
-      return await driver.execute(sql);
+      const affected = await driver.execute(sql);
+      this.notifyWrite(id, sql);
+      return affected;
     } finally {
       void driver.close().catch(() => undefined);
     }
@@ -232,17 +258,21 @@ export class DbRegistry {
 
   /** Run DDL/DML; returns affected row count. */
   async execute(id: string, sql: string): Promise<number> {
+    let affected: number;
     try {
       const d = await this.driver(id);
-      return await d.execute(sql);
+      affected = await d.execute(sql);
     } catch (e) {
       if (isConnectionError(e)) {
         this.dropDriver(id);
         const d = await this.driver(id);
-        return d.execute(sql);
+        affected = await d.execute(sql);
+      } else {
+        throw e;
       }
-      throw e;
     }
+    this.notifyWrite(id, sql);
+    return affected;
   }
 
   /**

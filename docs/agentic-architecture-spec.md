@@ -41,7 +41,7 @@ User → Router → Planner ┼─ Execution DAG
 | Router | PARTIAL | `loop.ts` turn heuristics (tested), 3-tier skill activation (`skills.ts` recall), `scenario-router` skill (plan/execute/offload discipline) |
 | Planner | SOLID | Explicit plan objects (`plan.ts`, tested) via propose/approve/update tools + live PlanCard; LLM still authors the steps |
 | Metadata | SOLID | MCP find/describe tools; Studio catalog (`catalog.rs`, `metadata.rs`, EXA_ALL_* search, schema graph) |
-| Semantic layer | PARTIAL | Semantic Views (installable, skill-mediated); local KB + embeddings (`kb.ts`, `embed.ts`) |
+| Semantic layer | SOLID | Semantic Views (installable) with AUTOMATIC upkeep: every write from every surface (run_sql/batch/import/DAG steps, via the `DbRegistry.onWrite` choke point) marks the connection dirty and a debounced pass runs `VALIDATE_MODEL` + `REFRESH_SEMANTIC_SURFACE` for published models (`semantic.ts` pure + `semantic-sync.ts`); connect-time pass catches outside changes; Rust query path does the same for Studio-editor DDL/bulk loads (`semantic_sync.rs`); `semantic_models` tool for discovery; local KB + embeddings (`kb.ts`, `embed.ts`) |
 | Tool registry | SOLID | `tools.ts` flat registry (~40 tools, each small), `capabilities.ts`, MCP gateway to all connected DBs |
 | Execution DAG | SOLID | `dag.ts` (pure, tested) + `dag-executor.ts`: parallel isolated sessions, retry/backoff, skip cascade, onFailure compensation, durable resume; in-DB offload via skill-guided SQL |
 | Policy engine | PARTIAL | Real gates (`classifySql`, plan approval, writePolicy deny beats approval, DB-enforced read-only MCP user, app-control, grants, share-gate, audit consent) — code, not config (declarative engine deliberately deferred) |

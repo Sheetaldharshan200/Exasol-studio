@@ -602,15 +602,20 @@ pub async fn execute_sql(
     // model bound to it. Revalidate in the background — never on the query's
     // own latency — and only for statements that actually succeeded: failed
     // DDL changed nothing.
-    if results
+    let schema_changed = results
         .iter()
-        .any(|r| r.error.is_none() && crate::semantic_sync::is_schema_change(&r.statement))
-    {
+        .any(|r| r.error.is_none() && crate::semantic_sync::is_schema_change(&r.statement));
+    let data_changed = results
+        .iter()
+        .any(|r| r.error.is_none() && crate::semantic_sync::is_bulk_data_change(&r.statement));
+    if schema_changed || data_changed {
         if let Ok(pool) = require_pool(&state, &profile_id).await {
             let app_handle = app.clone();
             let pid = profile_id.clone();
             tauri::async_runtime::spawn(async move {
-                crate::semantic_sync::revalidate(&app_handle, &pool, &pid).await;
+                // Surfaces are republished only for schema changes; data loads
+                // get a validate-only pass.
+                crate::semantic_sync::revalidate(&app_handle, &pool, &pid, schema_changed).await;
             });
         }
     }

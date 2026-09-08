@@ -385,6 +385,35 @@ export function buildTools(ctx: {
 
     ...(ctx.semanticViewsReady
       ? {
+          semantic_models: tool({
+            description:
+              "List the Semantic Views models on the active connection — name, status (PUBLISHED models are queryable), published schema, and any CURRENT validation issues. " +
+              "Call this FIRST when the database has Semantic Views: prefer published measures/dimensions over ad-hoc SQL, and surface open issues to the user instead of querying around them.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const models = await db.query(
+                id,
+                "SELECT MODEL_NAME, STATUS, PUBLISHED_SCHEMA, DESCRIPTION FROM SYS_SEMANTIC.MODELS WHERE ACTIVE_VERSION_ID IS NOT NULL ORDER BY MODEL_NAME",
+              );
+              let issues: unknown = [];
+              try {
+                const rows = await db.query(
+                  id,
+                  "SELECT MODEL_NAME, SEVERITY, RULE_CODE, MESSAGE FROM SEMANTIC_CATALOG.CURRENT_VALIDATION_ISSUES ORDER BY CREATED_AT DESC LIMIT 20",
+                );
+                issues = rows.rows.map((r) => ({ model: r[0], severity: r[1], rule: r[2], message: r[3] }));
+              } catch {
+                /* issues view unavailable on older framework revisions */
+              }
+              session.record({ kind: "tool.semantic_models", models: models.rowCount });
+              return { models: shape(models), issues };
+            },
+          }),
+
           semantic_compile_request: tool({
             description:
               "Compile a structured analytics request through Exasol Semantic Views. " +

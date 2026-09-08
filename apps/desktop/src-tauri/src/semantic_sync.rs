@@ -30,6 +30,16 @@ pub fn is_schema_change(statement: &str) -> bool {
         .any(|prefix| upper.starts_with(prefix))
 }
 
+/// Bulk data movements: bindings survive them (published views are live SQL),
+/// but a revalidation pass afterwards keeps the model's health current instead
+/// of leaving staleness to be discovered inside someone's query.
+pub fn is_bulk_data_change(statement: &str) -> bool {
+    let upper = statement.trim_start().to_ascii_uppercase();
+    ["IMPORT ", "MERGE ", "TRUNCATE "]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix))
+}
+
 async fn scalar_i64(pool: &ExaPool, sql: &str) -> i64 {
     match sqlx_exasol::query(AssertSqlSafe(sql.to_string())).fetch_one(pool).await {
         Ok(row) => row.try_get::<i64, _>(0).unwrap_or(0),
@@ -50,8 +60,10 @@ async fn string_column(pool: &ExaPool, sql: &str) -> Vec<String> {
 
 /// Revalidate every active model on this connection, if the framework is
 /// installed there. Returns quietly when it is not — most databases will not
-/// have it, and this runs after ordinary DDL.
-pub async fn revalidate(app: &AppHandle, pool: &ExaPool, profile_id: &str) {
+/// have it, and this runs after ordinary DDL. `refresh_surfaces` is true only
+/// for SCHEMA changes: bulk data loads validate but never republish (the
+/// published views are live SQL — there is nothing stale to regenerate).
+pub async fn revalidate(app: &AppHandle, pool: &ExaPool, profile_id: &str, refresh_surfaces: bool) {
     let installed = scalar_i64(
         pool,
         "SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES \
@@ -71,6 +83,15 @@ pub async fn revalidate(app: &AppHandle, pool: &ExaPool, profile_id: &str) {
     if models.is_empty() {
         return;
     }
+    // Only PUBLISHED models have a metadata surface to regenerate —
+    // REFRESH_SEMANTIC_SURFACE wraps PUBLISH_MODEL, and publishing a draft
+    // is an admin decision this safety net must never make.
+    let published = string_column(
+        pool,
+        "SELECT MODEL_NAME FROM SYS_SEMANTIC.MODELS \
+         WHERE ACTIVE_VERSION_ID IS NOT NULL AND STATUS = 'PUBLISHED' ORDER BY MODEL_NAME",
+    )
+    .await;
 
     let mut validated = Vec::new();
     for model in &models {
@@ -78,9 +99,27 @@ pub async fn revalidate(app: &AppHandle, pool: &ExaPool, profile_id: &str) {
         let sql = format!("EXECUTE SCRIPT SEMANTIC_ADMIN.VALIDATE_MODEL('{escaped}')");
         // A failed validation RUN is itself a finding — record and continue,
         // so one broken model does not hide the state of the others.
-        match sqlx_exasol::query(AssertSqlSafe(sql)).execute(pool).await {
-            Ok(_) => validated.push(json!({ "model": model, "ran": true })),
-            Err(e) => validated.push(json!({ "model": model, "ran": false, "error": e.to_string() })),
+        let ran = match sqlx_exasol::query(AssertSqlSafe(sql)).execute(pool).await {
+            Ok(_) => true,
+            Err(e) => {
+                validated.push(json!({ "model": model, "ran": false, "error": e.to_string() }));
+                false
+            }
+        };
+        if !ran {
+            continue;
+        }
+        // The schema changed and the model still validates: regenerate its
+        // published metadata surface so agents and viewers read CURRENT
+        // metadata, not the pre-DDL snapshot.
+        if refresh_surfaces && published.iter().any(|m| m == model) {
+            let refresh = format!("EXECUTE SCRIPT SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE('{escaped}')");
+            match sqlx_exasol::query(AssertSqlSafe(refresh)).execute(pool).await {
+                Ok(_) => validated.push(json!({ "model": model, "ran": true, "refreshed": true })),
+                Err(e) => validated.push(json!({ "model": model, "ran": true, "refreshed": false, "error": e.to_string() })),
+            }
+        } else {
+            validated.push(json!({ "model": model, "ran": true }));
         }
     }
 

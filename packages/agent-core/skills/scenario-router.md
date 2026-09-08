@@ -21,7 +21,7 @@ once), then act without further hand-holding.
 | Model / transform with dbt, "dbt project", incremental models | `load_skill('exasol-dbt')` — the official dbt-exasol adapter |
 | A pipeline: stage → transform → schedule → monitor (ETL/ELT) | `load_skill('exasol-etl-orchestration')` |
 | A chart / dashboard / "visualize this" / live report | `load_skill('dashboard-builder')` — Studio's dashboard ops on this doc |
-| A semantic layer / governed metrics / "define revenue once" | `load_skill('exasol-semantic-analyst')` (Marketplace component `semantic-views`) |
+| A semantic layer / governed metrics / "define revenue once" | `load_skill('exasol-semantic-analyst')` (Marketplace component `semantic-views`) — when installed, call `semantic_models` FIRST and prefer published measures/dimensions over ad-hoc SQL; the models are revalidated (and their surfaces refreshed) automatically after every schema change or data load you make, so surface open validation issues to the user instead of querying around them |
 | Export data out (files, another system) | `load_skill('exasol-export')` / `export_tables` tool |
 | Plain SQL work: query, schema design, profiling, tuning | `load_skill('exasol-database')` |
 | ML / embeddings / text AI | `load_skill('exasol-distributed-ml')` or `exasol-text-ai` — mind the Personal limits below |
