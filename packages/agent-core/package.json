@@ -15,6 +15,7 @@
     "evals": "node --experimental-strip-types evals/run.ts",
     "evals:live": "node --experimental-strip-types evals/live.ts",
     "evals:golden": "node --experimental-strip-types evals/golden.ts",
+    "smoke:gateway": "node --experimental-strip-types evals/integration.ts",
     "test": "node --test",
     "test:watch": "node --test --watch",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='src/tool-repair.ts' --test-coverage-include='src/csv-import.ts'",

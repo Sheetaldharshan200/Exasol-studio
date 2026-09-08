@@ -1454,10 +1454,5 @@
   "1452": "tree-sitter-bash",
   "1453": "tree-sitter-powershell",
   "1454": "ulid",
-  "1455": "venice-ai-sdk-provider",
-  "1456": "ws",
-  "1457": "xdg-basedir",
-  "1458": "yargs",
-  "1459": "zod",
-  "1460": "studio-vault.test.ts"
+  "1455": "venice-ai-sdk-provider"
 }

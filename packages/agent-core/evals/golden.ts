@@ -19,8 +19,9 @@
  */
 
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dbTargets, type DbTarget } from "./local-db.ts";
 import { randomUUID } from "node:crypto";
 import { ConfigStore, defaultDataDir } from "../src/config.ts";
 import { initLog } from "../src/log.ts";
@@ -38,60 +39,6 @@ import { parseSuite, scoreCase, scorecard, type CaseResult, type EvalCase, type 
 
 const TIMEOUT_MS = 180_000;
 const DB_ID = "eval";
-
-function parseDbUrl(raw: string): { host: string; port: number; user: string; password: string } {
-  // Never echo the raw DSN — it carries a password and errors get printed.
-  const redacted = raw.replace(/:\/\/([^:@/]+):[^@]*@/, "://$1:***@");
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    throw new Error(`EXA_EVAL_DSN must be exa://user:pass@host:port, got "${redacted}"`);
-  }
-  if (u.protocol !== "exa:") throw new Error(`EXA_EVAL_DSN must be exa://user:pass@host:port, got "${redacted}"`);
-  return {
-    host: u.hostname || "127.0.0.1",
-    port: u.port ? Number(u.port) : 8563,
-    user: decodeURIComponent(u.username || "sys"),
-    password: decodeURIComponent(u.password || ""),
-  };
-}
-
-type DbTarget = { label: string; host: string; port: number; user: string; password: string };
-
-/**
- * Zero-config discovery: local Exasol Personal deployments keep their
- * connection facts in deployment.json + secrets.json. Both the standalone
- * (~/.exasol/personal) and the Studio-managed deployment are candidates —
- * the first one that answers SELECT 1 wins.
- */
-function discoverLocalTargets(): DbTarget[] {
-  const roots = [
-    { label: "personal (~/.exasol)", dir: join(homedir(), ".exasol", "personal", "deployments", "default") },
-    { label: "Studio personal-local", dir: join(homedir(), "Library", "Application Support", "com.exasol.studio", "personal-local", "deployment") },
-  ];
-  const out: DbTarget[] = [];
-  for (const r of roots) {
-    try {
-      const dep = JSON.parse(readFileSync(join(r.dir, "deployment.json"), "utf8")) as {
-        connection?: { host?: string; dbPort?: number; username?: string };
-      };
-      const sec = JSON.parse(readFileSync(join(r.dir, "secrets.json"), "utf8")) as { dbPassword?: string };
-      if (dep.connection?.dbPort && sec.dbPassword) {
-        out.push({
-          label: r.label,
-          host: dep.connection.host ?? "127.0.0.1",
-          port: dep.connection.dbPort,
-          user: dep.connection.username ?? "sys",
-          password: sec.dbPassword,
-        });
-      }
-    } catch {
-      /* deployment not present — skip */
-    }
-  }
-  return out;
-}
 
 function loadSuites(dir: string, onlyCase?: string): EvalCase[] {
   const cases: EvalCase[] = [];
@@ -145,10 +92,7 @@ async function main() {
     process.exit(2);
   }
 
-  const dsn = flags.get("dsn") ?? process.env.EXA_EVAL_DSN;
-  const targets: DbTarget[] = dsn
-    ? [{ label: "EXA_EVAL_DSN", ...parseDbUrl(dsn) }]
-    : [...discoverLocalTargets(), { label: "default", host: "127.0.0.1", port: 8563, user: "sys", password: "exasol" }];
+  const targets: DbTarget[] = dbTargets(flags.get("dsn") ?? process.env.EXA_EVAL_DSN);
   const db = new DbRegistry();
   let connected: DbTarget | null = null;
   const attempts: string[] = [];

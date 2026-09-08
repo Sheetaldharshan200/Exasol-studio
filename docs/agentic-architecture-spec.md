@@ -1,9 +1,21 @@
 # Agentic Architecture Spec — Gaps and the Plan to Close Them
 
-Status: PROPOSED (assessed 2026-09-07 against the real code)
+Status: SHIPPED — all five phases landed 2026-09-08 (P1 verification,
+P2 explicit plans, P3 run observability, P4 evaluation, P5 execution DAG);
+per-phase checklists below carry the honest deferrals.
 Owner: Exasol Studio agent (`packages/agent-core` + `apps/desktop/src-tauri`)
 Scope: the AI answer pipeline — everything between a user message in the Exa
 panel and the answer it produces.
+
+## How to verify the whole stack (from `packages/agent-core`)
+
+| Tier | Command | Needs | What it proves |
+|---|---|---|---|
+| Unit | `npm test` | nothing | every pure rule (307 tests): verify/plan/dag/evals/trace cores |
+| Deterministic evals | `pnpm evals` | nothing (runs in CI) | recovery-layer regressions, model-free |
+| Integration | `pnpm smoke:gateway` | local Exasol | REAL server end-to-end: P1 verified query, P2 approval gate, P5 parallel DAG + retry + compensation + resume, writePolicy guardrail, P3 spans |
+| Live model | `pnpm evals:live` | local model | instruction-following, tool invocation, doc grounding |
+| Golden | `pnpm evals:golden` | local Exasol + a model | answer quality on seeded data, scorecard into `STUDIO_EVALS`, pass-rate gate |
 
 The reference architecture this spec measures against:
 
@@ -22,20 +34,20 @@ User → Router → Planner ┼─ Execution DAG
 
 ---
 
-## 0. Honest current state (one table)
+## 0. Honest current state (one table — updated 2026-09-08, post P1–P5)
 
 | Layer | Status | Where it lives today |
 |---|---|---|
-| Router | PARTIAL | `loop.ts` turn heuristics (tested), 3-tier skill activation (`skills.ts` recall), `scenario-router` skill |
-| Planner | PARTIAL | Implicit LLM planning inside the turn loop; skills prescribe workflows; `compact.ts` |
+| Router | PARTIAL | `loop.ts` turn heuristics (tested), 3-tier skill activation (`skills.ts` recall), `scenario-router` skill (plan/execute/offload discipline) |
+| Planner | SOLID | Explicit plan objects (`plan.ts`, tested) via propose/approve/update tools + live PlanCard; LLM still authors the steps |
 | Metadata | SOLID | MCP find/describe tools; Studio catalog (`catalog.rs`, `metadata.rs`, EXA_ALL_* search, schema graph) |
 | Semantic layer | PARTIAL | Semantic Views (installable, skill-mediated); local KB + embeddings (`kb.ts`, `embed.ts`) |
 | Tool registry | SOLID | `tools.ts` flat registry (~40 tools, each small), `capabilities.ts`, MCP gateway to all connected DBs |
-| Execution DAG | MISSING | Sequential tool calls only; exasol-scheduler does time-chains in-DB, not agent DAGs |
-| Policy engine | PARTIAL | Real gates (`classifySql`, DB-enforced read-only MCP user, app-control, grants, share-gate, audit consent) — code, not config |
-| Verification | PARTIAL | Verify-or-refuse installs, SQL classification, `tool-repair.ts`; independent validation exists only as SKILL GUIDANCE |
-| Observability | PARTIAL | `audit.ts` (every tool call), session store, live event stream; no run metrics/traces surface |
-| Evaluation | MISSING | Unit tests cover pure logic only; zero agent-quality evaluation |
+| Execution DAG | SOLID | `dag.ts` (pure, tested) + `dag-executor.ts`: parallel isolated sessions, retry/backoff, skip cascade, onFailure compensation, durable resume; in-DB offload via skill-guided SQL |
+| Policy engine | PARTIAL | Real gates (`classifySql`, plan approval, writePolicy deny beats approval, DB-enforced read-only MCP user, app-control, grants, share-gate, audit consent) — code, not config (declarative engine deliberately deferred) |
+| Verification | SOLID | `verify.ts` (pure comparator, tested) + `db.verifyQuery` independent session; loop finalize stamp + gateway `verify:true`; installs stay verify-or-refuse |
+| Observability | SOLID | `trace.ts`/`trace-store.ts`: turn/tool/gateway spans (failures included), 30-day JSONL, `/v1/traces/*`, Settings → Agent usage panel; `audit.ts` unchanged underneath |
+| Evaluation | SOLID | Three tiers: deterministic (`evals/run.ts`, CI-gated), live model (`evals/live.ts`), golden suites (`evals/golden.ts` + `src/evals.ts`, `STUDIO_EVALS` trend + dashboard + pass gate); plus `evals/integration.ts` end-to-end smoke |
 
 Priority order (trust gained per unit of effort):
 **P1 Verification → P2 Explicit plan object → P3 Run observability → P4 Evaluation → P5 Execution DAG.**
