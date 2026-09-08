@@ -67,4 +67,32 @@ export function dbSizeDashboard(): Dashboard {
   };
 }
 
-export const SYSTEM_DASHBOARDS = [queryPerfDashboard, sessionsDashboard, dbSizeDashboard];
+/** System dashboard: agent eval trends (P4) — reads the STUDIO_EVALS schema
+ * that `pnpm --filter @exasol-studio/agent-core evals:golden` writes, so
+ * answer-quality regressions are visible without leaving Studio. Until the
+ * first recorded run creates STUDIO_EVALS, the data panels report a
+ * missing-object error — the About panel says how to fix that. */
+export function evalTrendsDashboard(): Dashboard {
+  const RUNS = "STUDIO_EVALS.RUNS";
+  const RESULTS = "STUDIO_EVALS.RESULTS";
+  return {
+    version: 1,
+    id: "",
+    title: "Agent evals",
+    description: "Golden-suite pass rates and flaky cases over time (STUDIO_EVALS)",
+    group: "System",
+    refreshMs: 300_000,
+    panels: [
+      { id: "ev-note", title: "About", grid: { x: 0, y: 0, w: 12, h: 2 }, viz: { type: "markdown", content: "**Agent eval trends** — every `evals:golden` run banks its scorecard in `STUDIO_EVALS`. If the panels below report a missing object, no run has been recorded yet — the first `pnpm --filter @exasol-studio/agent-core evals:golden` creates the schema and fills them." } },
+      { id: "ev-rate", title: "Latest pass rate", grid: { x: 0, y: 2, w: 4, h: 4 }, query: { sql: `SELECT ROUND(100 * PASS_RATE, 1) AS PASS_PCT FROM ${RUNS} ORDER BY RUN_TS DESC LIMIT 1` }, viz: { type: "kpi", unit: "%" } },
+      { id: "ev-runs", title: "Runs recorded", grid: { x: 4, y: 2, w: 4, h: 4 }, query: { sql: `SELECT COUNT(*) AS RUNS FROM ${RUNS}` }, viz: { type: "kpi" } },
+      { id: "ev-cases", title: "Cases in latest run", grid: { x: 8, y: 2, w: 4, h: 4 }, query: { sql: `SELECT CASES FROM ${RUNS} ORDER BY RUN_TS DESC LIMIT 1` }, viz: { type: "kpi" } },
+      { id: "ev-trend", title: "Pass rate over time", grid: { x: 0, y: 6, w: 7, h: 7 }, query: { sql: `SELECT TO_CHAR(RUN_TS, 'MM-DD HH24:MI') AS RUN_AT, ROUND(100 * PASS_RATE, 1) AS PASS_PCT FROM ${RUNS} ORDER BY RUN_TS` }, viz: { type: "echarts", chart: "line" } },
+      { id: "ev-flaky", title: "Cases by failure count", grid: { x: 7, y: 6, w: 5, h: 7 }, query: { sql: `SELECT CASE_ID, SUM(CASE WHEN PASSED THEN 0 ELSE 1 END) AS FAILURES FROM ${RESULTS} GROUP BY CASE_ID HAVING SUM(CASE WHEN PASSED THEN 0 ELSE 1 END) > 0 ORDER BY 2 DESC LIMIT 12` }, viz: { type: "echarts", chart: "hbar" } },
+      { id: "ev-recent", title: "Recent runs", grid: { x: 0, y: 13, w: 12, h: 6 }, query: { sql: `SELECT TO_CHAR(RUN_TS, 'YYYY-MM-DD HH24:MI') AS RUN_AT, MODEL, SUITE, CASES, PASSED, ROUND(100 * PASS_RATE, 1) AS PASS_PCT, ROUND(DURATION_MS / 1000, 0) AS SECONDS FROM ${RUNS} ORDER BY RUN_TS DESC LIMIT 50` }, viz: { type: "table" } },
+      { id: "ev-failures", title: "Failures in the latest run", grid: { x: 0, y: 19, w: 12, h: 6 }, query: { sql: `SELECT CASE_ID, DETAIL, ROUND(DURATION_MS / 1000, 1) AS SECONDS FROM ${RESULTS} WHERE RUN_ID = (SELECT RUN_ID FROM ${RUNS} ORDER BY RUN_TS DESC LIMIT 1) AND NOT PASSED` }, viz: { type: "table" } },
+    ],
+  };
+}
+
+export const SYSTEM_DASHBOARDS = [queryPerfDashboard, sessionsDashboard, dbSizeDashboard, evalTrendsDashboard];

@@ -219,12 +219,24 @@ second; results trend over time.
    suite nightly on a dev machine; a UDF can host custom scorers later.
 
 ### Steps
-- [ ] Eval schema + 10 seed questions (metadata Q&A, single-table agg, join,
-      import→query, refusal case, federation clarify case)
-- [ ] Runner against seeded Nano; scores from traces
-- [ ] `STUDIO_EVALS` result tables + a starter dashboard
-- [ ] CI job (deterministic subset)
-- [ ] Threshold gate: a PR-triggerable "evals didn't regress" check
+- [x] Eval schema + 10 seed questions — `evals/suites/core.eval.json`
+      (metadata Q&A, describe, counts, aggregation, group-by, join, filter,
+      rowcount, refusal, tool-check); parsing + scoring is pure and tested
+      (`src/evals.ts` / `src/evals.test.ts`)
+- [x] Runner: `evals/golden.ts` (`pnpm evals:golden`) — real turns through
+      `runTurn` against a discovered local Exasol Personal (or `EXA_EVAL_DSN`),
+      scored from the turn evidence (answer text, tool calls, executed SQL,
+      P1 `sqlRuns`); CI-against-Nano seeding stays open (needs a model in CI)
+- [x] `STUDIO_EVALS.RUNS`/`RESULTS` tables (written by the runner) + the
+      "Agent evals" System dashboard (`system-dashboards.ts`)
+- [x] CI job: the deterministic tier (`evals/run.ts`, model-free) now gates
+      every PR in `ci.yml`; golden tier runs locally where a model exists
+- [x] Threshold gate: `evals:golden --min-pass=<rate>` (default 0.8) exits
+      non-zero below the gate; deterministic tier is red/green per case
+
+Import→query and federation-clarify seed cases are deferred: the first needs
+attachment plumbing in the runner, the second an expectation kind for
+clarifying questions — both belong to the next suite iteration.
 
 ### Acceptance
 `pnpm evals` answers all seed questions against a fresh seeded DB and prints

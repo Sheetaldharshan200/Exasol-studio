@@ -44,6 +44,11 @@ jobs:
       - name: Agent-core tests
         run: pnpm run test:agent-core
 
+      # P4 deterministic eval tier: model-free regression suite over the
+      # recovery layer — a red case here means an agent behavior regressed.
+      - name: Agent evals (deterministic tier)
+        run: pnpm --filter @exasol-studio/agent-core evals
+
       - name: SQL parser tests
         run: pnpm run test:parser
 
