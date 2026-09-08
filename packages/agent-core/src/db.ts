@@ -146,6 +146,45 @@ export class DbRegistry {
    * shared driver, so the reproduction is genuinely independent of whatever
    * session state the original run had. Closed either way.
    */
+  /**
+   * P5: run ONE statement on its own throwaway session and close it. The
+   * pooled driver is a single websocket and the Exasol protocol is strictly
+   * request-response per session — concurrent DAG steps sharing it would
+   * interleave frames and hang, so every parallel step gets its own session.
+   */
+  async queryIsolated(id: string, sql: string): Promise<QueryOutput> {
+    const info = this.conns.get(id);
+    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const driver = this.makeDriver(info);
+    try {
+      await driver.connect();
+      const result = await driver.query(sql);
+      const columns = result.getColumns().map((c) => c.name);
+      const all = result.getRows();
+      return {
+        columns,
+        rows: all.slice(0, MODEL_ROW_CAP).map((r) => columns.map((c) => r[c] ?? null)),
+        rowCount: all.length,
+        truncated: all.length > MODEL_ROW_CAP || all.length === FETCH_ROW_CAP,
+      };
+    } finally {
+      void driver.close().catch(() => undefined);
+    }
+  }
+
+  /** P5 companion to queryIsolated for statements that modify state. */
+  async executeIsolated(id: string, sql: string): Promise<number> {
+    const info = this.conns.get(id);
+    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const driver = this.makeDriver(info);
+    try {
+      await driver.connect();
+      return await driver.execute(sql);
+    } finally {
+      void driver.close().catch(() => undefined);
+    }
+  }
+
   async verifyQuery(id: string, sql: string, timeoutMs = 5000): Promise<QueryOutput> {
     const info = this.conns.get(id);
     if (!info) throw new Error(`No connection "${id}" registered with the agent`);

@@ -617,7 +617,12 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         const started = Date.now();
         const out = await executePlan({
           plan,
-          db,
+          // Parallel steps must NOT share the pooled websocket (strictly
+          // request-response per session) — each runs on its own session.
+          db: {
+            query: (id, sql) => db.queryIsolated(id, sql),
+            execute: (id, sql) => db.executeIsolated(id, sql),
+          },
           connectionId: target.id,
           save: (p) => {
             plans.save(p);
