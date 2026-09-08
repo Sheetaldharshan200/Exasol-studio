@@ -60,7 +60,15 @@ with permission, and run the real capability there.
    `update_plan_step` (running → done/failed with a short note) as you work.
    A plan containing WRITE steps needs the user's explicit yes: present it,
    wait, then `approve_plan` — never approve on their behalf. Single-step
-   questions get NO plan (zero ceremony).
+   questions get NO plan (zero ceremony). When every remaining step carries
+   SQL and 2+ are independent, run them with `execute_plan` (parallel, retry,
+   skip-on-failure, `onFailure` compensation) instead of one-by-one — and
+   give a risky step an `onFailure` compensation step (drop the staging
+   table) when there is state to clean up. When one step can fan out INSIDE
+   the database, prefer that: bulk transforms via `DISTRIBUTE BY` + SET UDFs,
+   iterative chains via a Lua script with `pquery`, time-based follow-ups via
+   the exasol-scheduler's AFTER chains — the database is the better engine
+   for its own graph.
 3. **Act with tools** — real tool calls, approval-gated writes; never narrate
    fake commands or invent SQL dialect (no EXA_PUMP SQL, no CALL import_csv).
 4. **Verify with real results** — report actual row counts / job rows /

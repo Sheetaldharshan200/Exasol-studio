@@ -18,6 +18,11 @@ export type PlanStep = {
   dependsOn: string[];
   status: StepStatus;
   note?: string;
+  /** P5: id of a compensation step to run if THIS step fails hard. The
+   *  referenced step is excluded from normal scheduling. */
+  onFailure?: string;
+  /** P5: how many times this step has been started (durable, drives retry). */
+  attempts?: number;
 };
 
 export type Plan = {
@@ -38,6 +43,7 @@ export type PlanStepInput = {
   tool?: string;
   sql?: string;
   dependsOn?: string[];
+  onFailure?: string;
 };
 
 const MAX_STEPS = 12;
@@ -88,6 +94,7 @@ export function buildPlan(goal: string, stepsInput: PlanStepInput[]): { plan: Pl
     sql: s.sql?.trim() || undefined,
     dependsOn: (s.dependsOn ?? []).map((d) => d.trim()).filter(Boolean),
     status: "pending" as const,
+    onFailure: s.onFailure?.trim() || undefined,
   }));
 
   if (steps.some((s) => !s.id || !s.title)) return { error: "Every step needs an id and a title." };
@@ -99,6 +106,24 @@ export function buildPlan(goal: string, stepsInput: PlanStepInput[]): { plan: Pl
       if (!ids.has(d)) return { error: `Step "${s.id}" depends on unknown step "${d}".` };
     }
   }
+  // P5 compensation hooks: the target must exist, differ from its owner, and
+  // stay OUT of the normal flow (nothing may depend on a compensation step —
+  // it only runs when its owner fails hard).
+  const compTargets = new Set(steps.map((s) => s.onFailure).filter(Boolean) as string[]);
+  for (const s of steps) {
+    if (!s.onFailure) continue;
+    if (s.onFailure === s.id) return { error: `Step "${s.id}" cannot be its own onFailure step.` };
+    if (!ids.has(s.onFailure)) return { error: `Step "${s.id}" names unknown onFailure step "${s.onFailure}".` };
+  }
+  for (const s of steps) {
+    const dep = s.dependsOn.find((d) => compTargets.has(d));
+    if (dep) return { error: `Step "${s.id}" depends on "${dep}", which is a compensation step and only runs on failure.` };
+    if (compTargets.has(s.id) && s.onFailure) return { error: `Compensation step "${s.id}" cannot have its own onFailure hook.` };
+    // A compensation step fires when its owner FAILED — dependencies could
+    // never be satisfied at that point, so they are rejected outright.
+    if (compTargets.has(s.id) && s.dependsOn.length) return { error: `Compensation step "${s.id}" cannot have dependencies — it runs when its owner fails.` };
+  }
+
   if (!acyclic(steps)) return { error: "The step dependencies contain a cycle." };
 
   const requiresApproval = stepsInput.some(stepNeedsApproval);
@@ -149,14 +174,29 @@ export function applyStepUpdate(
     plan: {
       ...plan,
       updatedAt: Date.now(),
-      steps: plan.steps.map((s) => (s.id === stepId ? { ...s, status, note: note?.trim() || s.note } : s)),
+      steps: plan.steps.map((s) =>
+        s.id === stepId
+          ? {
+              ...s,
+              status,
+              note: note?.trim() || s.note,
+              // Every start consumes an attempt — durable, so retry budgets
+              // survive a crash (P5).
+              attempts: status === "running" ? (s.attempts ?? 0) + 1 : s.attempts,
+            }
+          : s,
+      ),
     },
   };
 }
 
 export function planProgress(plan: Plan): { done: number; failed: number; total: number; finished: boolean } {
-  const done = plan.steps.filter((s) => s.status === "done").length;
-  const failed = plan.steps.filter((s) => s.status === "failed").length;
-  const settled = plan.steps.every((s) => s.status === "done" || s.status === "skipped" || s.status === "failed");
-  return { done, failed, total: plan.steps.length, finished: settled };
+  // Compensation steps count only once triggered — an untriggered one stays
+  // pending forever by design and must not hold the plan open.
+  const comps = new Set(plan.steps.map((s) => s.onFailure).filter(Boolean) as string[]);
+  const counted = plan.steps.filter((s) => !comps.has(s.id) || s.status !== "pending");
+  const done = counted.filter((s) => s.status === "done").length;
+  const failed = counted.filter((s) => s.status === "failed").length;
+  const settled = counted.every((s) => s.status === "done" || s.status === "skipped" || s.status === "failed");
+  return { done, failed, total: counted.length, finished: settled };
 }

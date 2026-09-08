@@ -9,6 +9,8 @@ import { TraceStore } from "./trace-store.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
 import { compareResults, planVerification } from "./verify.ts";
 import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
+import { executePlan } from "./dag-executor.ts";
+import { classifySql } from "./tools.ts";
 import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
@@ -576,6 +578,55 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
       if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "current") {
         const plan = plans.current();
         return json(res, 200, plan ? { plan, progress: planProgress(plan) } : { plan: null });
+      }
+      // POST /v1/gateway/plan/execute {planId?, database} — P5: run the
+      // approved plan's SQL steps as a DAG (parallel independent steps,
+      // retry/backoff, skip-on-failure, onFailure compensation). Every
+      // transition persists + pushes live, so the run survives a crash and
+      // resumes by calling this again. Approval is enforced in the DAG core.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "execute") {
+        const body = await readBody<{ planId?: string; database?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan — propose one first." });
+        const wanted = (body.database ?? "").trim();
+        if (!wanted) return json(res, 400, { error: "database is required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ??
+          conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        const exposure = config.get().gatewayExposure ?? {};
+        if (!target) return json(res, 404, { error: `No connected database named "${wanted}".` });
+        if (exposure[target.id] === false) {
+          return json(res, 403, { error: `"${target.name}" is connected, but its MCP exposure is turned OFF.` });
+        }
+        if ((config.get().gatewayCaps ?? {})[target.id]?.sql === false) {
+          return json(res, 403, { error: `The SQL service is turned off for "${target.name}" on the Studio gateway.` });
+        }
+        // The same write guardrail run_sql honors: an approved plan authorizes
+        // writes under policy "ask", but "deny" is absolute — no path around it.
+        if (config.settings().writePolicy === "deny") {
+          const writes = plan.steps.filter(
+            (s) => s.sql && (s.status === "pending" || s.status === "running" || s.status === "failed") && classifySql(s.sql) !== "read",
+          );
+          if (writes.length) {
+            return json(res, 403, {
+              error: `Write statements are disabled in this workspace's AI guardrails — the plan's write step(s) ${writes.map((s) => `"${s.id}"`).join(", ")} cannot run. Provide the SQL for the user to run manually instead.`,
+            });
+          }
+        }
+        const started = Date.now();
+        const out = await executePlan({
+          plan,
+          db,
+          connectionId: target.id,
+          save: (p) => {
+            plans.save(p);
+            pushPlan(p);
+          },
+        });
+        if ("error" in out) return json(res, 400, { error: out.error });
+        traceGateway("execute_plan", started, out.ok, { database: target.name, done: out.done, failed: out.failed });
+        return json(res, 200, { ok: out.ok, plan: out.plan, progress: planProgress(out.plan), notes: out.notes });
       }
       // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
       // service: generates SQL grounded in the database's REAL schema but

@@ -312,6 +312,7 @@ server.tool(
           tool: z.string().optional().describe("Tool the step will use (e.g. run_query, import via Studio)."),
           sql: z.string().optional().describe("SQL the step will run, when known."),
           dependsOn: z.array(z.string()).optional().describe("Step ids that must be done first."),
+          onFailure: z.string().optional().describe("Id of a compensation step (e.g. drop the staging table) to run only if THIS step fails hard. The referenced step is excluded from normal execution."),
         }),
       )
       .min(1)
@@ -351,6 +352,22 @@ server.tool(
   async ({ planId, stepId, status, note }) => {
     try {
       return text(await studio("/gateway/plan/step", { method: "POST", body: { planId, stepId, status, note } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "execute_plan",
+  "Execute the current plan's SQL steps as a dependency DAG: independent steps run IN PARALLEL, transient failures retry once with backoff, a hard failure skips its dependents and runs the step's onFailure compensation, and every transition persists (a crash resumes by calling this again). Requirements: every unfinished step must carry `sql` (finish tool-shaped steps yourself via update_plan_step first), and a plan with write steps must be approved (approve_plan after the user's yes). Steps update live in Studio while it runs. Prefer this over running the steps one-by-one whenever the plan has 2+ independent SQL steps; when a step's own SQL can fan out inside the database (DISTRIBUTE BY + SET UDFs, Lua pquery scripts, scheduler AFTER chains), write the step's SQL that way and let the database do the heavy graph.",
+  {
+    database: z.string().describe("Connected database to run against (name or id from list_databases)."),
+    planId: z.string().optional().describe("Defaults to the current plan."),
+  },
+  async ({ database, planId }) => {
+    try {
+      return text(await studio("/gateway/plan/execute", { method: "POST", body: { database, planId } }));
     } catch (e) {
       return errText(e);
     }

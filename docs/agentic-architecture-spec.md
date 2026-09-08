@@ -276,13 +276,24 @@ engine.
    require the approved plan; verification still runs on the final result.
 
 ### Steps
-- [ ] `dag.ts` pure core + exhaustive tests (cycles, diamond deps, retry
-      exhaustion, compensation, resume-from-partial)
-- [ ] Executor wiring in the loop (plan → dag when >1 independent step)
-- [ ] Durable step transitions + resume path
-- [ ] `engine: "exasol"` offload for the three substrates (each behind its
-      existing skill)
-- [ ] Panel: live DAG status on the plan card
+- [x] `dag.ts` pure core + tests (diamond deps, concurrency cap, retry
+      exhaustion + backoff, skip cascade, compensation triggering, approval
+      block, crash normalization); cycles stay rejected at buildPlan
+- [x] Executor: `dag-executor.ts` (tested against a scriptable stub DB) +
+      `POST /gateway/plan/execute` + the `execute_plan` MCP tool — plans are
+      a gateway-surface feature (P2 kept them there), so the executor lands
+      on the gateway rather than inside the CLI loop
+- [x] Durable transitions + resume: every transition write-throughs to the
+      PlanStore (and pushes live); `attempts` persists per step; re-calling
+      execute_plan after a crash fails interrupted steps and recomputes the
+      ready set (done work is never redone)
+- [x] In-DB offload as skill guidance (scenario-router + execute_plan tool
+      description): fan-out via DISTRIBUTE BY + SET UDFs, iterative chains
+      via Lua pquery, time chains via exasol-scheduler AFTER — the model
+      writes the step's SQL that way and the executor runs it as one step;
+      no client-side compiler (KISS: the SQL IS the offload)
+- [x] Panel: PlanCard shows "N in parallel", per-step "after <deps>" hints,
+      and dimmed on-failure compensation steps
 
 ### Acceptance
 A 6-step plan with two independent import branches runs both branches
