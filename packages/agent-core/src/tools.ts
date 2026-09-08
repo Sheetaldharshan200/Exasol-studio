@@ -2,6 +2,7 @@ import { generateText, tool, type ToolSet } from "./llm.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
+import { uncoveredSchemas } from "./semantic.ts";
 import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { MemoryStore } from "./memory.ts";
@@ -410,7 +411,103 @@ export function buildTools(ctx: {
                 /* issues view unavailable on older framework revisions */
               }
               session.record({ kind: "tool.semantic_models", models: models.rowCount });
-              return { models: shape(models), issues };
+              // Coverage: datasets no model binds — candidates for a draft.
+              let uncovered: string[] = [];
+              try {
+                // Bound source schemas plus every model's PUBLISHED schema
+                // (generated views, not user data) are excluded from coverage.
+                const bound = await db.query(
+                  id,
+                  "SELECT DISTINCT e.SOURCE_SCHEMA FROM SYS_SEMANTIC.ENTITIES e JOIN SYS_SEMANTIC.MODELS m ON e.MODEL_ID = m.MODEL_ID AND e.VERSION_ID = m.ACTIVE_VERSION_ID " +
+                    "UNION SELECT DISTINCT PUBLISHED_SCHEMA FROM SYS_SEMANTIC.MODELS WHERE PUBLISHED_SCHEMA IS NOT NULL",
+                );
+                const withTables = await db.query(
+                  id,
+                  "SELECT DISTINCT TABLE_SCHEMA FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA NOT IN ('SYS', 'EXA_STATISTICS')",
+                );
+                uncovered = uncoveredSchemas(
+                  withTables.rows.map((r) => String(r[0] ?? "")),
+                  bound.rows.map((r) => String(r[0] ?? "")),
+                );
+              } catch {
+                /* coverage is best-effort */
+              }
+              return { models: shape(models), issues, schemasWithoutModel: uncovered };
+            },
+          }),
+
+          semantic_admin: tool({
+            description:
+              "Run ONE Semantic Views admin script by name through SEMANTIC_ADMIN.CALL_ADMIN_JSON — the governed way to CREATE and evolve semantic models (CREATE_MODEL, ADD_ENTITY, ADD_FACT_WITH_BINDINGS, ADD_DIMENSION_WITH_BINDINGS, ADD_METRIC, ADD_RELATIONSHIP, DROP_MODEL, …) and to read the catalog (DESCRIBE_*, SEARCH_*, GET_*, EXPLAIN_*, SUGGEST_*). " +
+              "Read-only scripts run immediately; anything that changes the catalog asks the user first. Draft models for a NEW dataset this way when the user agrees — but NEVER call PUBLISH_MODEL unless the user explicitly asked to publish (drafts are reviewable; published models are a governed contract).",
+            inputSchema: z.object({
+              script: z.string().regex(/^[A-Za-z0-9_]+$/).describe("Script name inside SEMANTIC_ADMIN, e.g. CREATE_MODEL, ADD_ENTITY, DESCRIBE_SEMANTIC_OBJECT"),
+              args: z.record(z.unknown()).describe("Named parameters as documented; omit optional ones entirely (never pass null)"),
+            }),
+            execute: async ({ script, args }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const name = script.toUpperCase();
+              // Audited allowlist of scripts KNOWN to be read-only (framework
+              // 0.2) — naming-convention prefixes are not a security boundary.
+              const READ_ONLY_SCRIPTS = new Set([
+                "COMPILE_REQUEST_JSON", "COMPILE_SQL", "COMPILE_SQL_DEBUG",
+                "DESCRIBE_SEMANTIC_OBJECT", "DESCRIBE_SEMANTIC_METRIC",
+                "SEARCH_SEMANTIC_OBJECTS", "GET_BUSINESS_GLOSSARY", "GET_CUSTOM_EXTENSIONS",
+                "EXPLAIN_COMPILED_SQL", "EXPLAIN_SEMANTIC_METRIC",
+                "EXPORT_SEMANTIC_DEFINITION", "EXPORT_FUSION_DECLARATION",
+                "SUGGEST_GRAIN_METADATA", "VALIDATE_MODEL",
+              ]);
+              if (!READ_ONLY_SCRIPTS.has(name)) {
+                // The user must see EXACTLY what will run — never a truncated
+                // preview of content that executes in full.
+                const allowed = await session.askPermission({
+                  tool: "semantic_admin",
+                  summary: `Semantic catalog change: ${name}`,
+                  detail: `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('${name}', …)\n${JSON.stringify(args, null, 2)}`,
+                });
+                if (!allowed) return { denied: true, message: "The user declined this semantic catalog change." };
+              }
+              const out = await db.query(
+                id,
+                `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON(${lit(name)}, ${lit(JSON.stringify(args))})`,
+              );
+              session.record({ kind: "tool.semantic_admin", script: name, rows: out.rowCount });
+              return shape(out);
+            },
+          }),
+
+          semantic_apply_definition: tool({
+            description:
+              "Apply a declarative Semantic SQL definition (ALTER SEMANTIC VIEW … with REPLACE FACTS/METRICS/DIMENSIONS blocks) through SEMANTIC_ADMIN.APPLY_SEMANTIC_DEFINITION. " +
+              "ALWAYS dry-run first (default): it snapshots, simulates, validates, and rolls back — check STATUS in the result (DRY_RUN means it would validate; ERROR names the blocking rule). Set commit:true only after a clean dry run; committing asks the user. New models are bootstrapped with semantic_admin scripts first — CREATE SEMANTIC VIEW is refused by design.",
+            inputSchema: z.object({
+              definition: z.string().min(1).describe("The full ALTER SEMANTIC VIEW statement (Semantic SQL)"),
+              commit: z.boolean().optional().describe("false/omitted = dry run (safe); true = apply for real (asks the user)"),
+            }),
+            execute: async ({ definition, commit }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              if (commit) {
+                // Full definition in the ask — approving truncated content
+                // would let material changes hide past the preview.
+                const allowed = await session.askPermission({
+                  tool: "semantic_apply_definition",
+                  summary: "Apply a semantic model definition (commit)",
+                  detail: definition,
+                });
+                if (!allowed) return { denied: true, message: "The user declined this semantic definition." };
+              }
+              const out = await db.query(
+                id,
+                `EXECUTE SCRIPT SEMANTIC_ADMIN.APPLY_SEMANTIC_DEFINITION(${lit(definition)}, ${commit ? "FALSE" : "TRUE"})`,
+              );
+              session.record({ kind: "tool.semantic_apply_definition", commit: Boolean(commit), rows: out.rowCount });
+              return shape(out);
             },
           }),
 

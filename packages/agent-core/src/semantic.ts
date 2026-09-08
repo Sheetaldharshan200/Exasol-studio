@@ -24,6 +24,13 @@ export type SemanticImpact = "schema" | "data" | "none";
 
 const SCHEMA_RE = /^(CREATE|ALTER|DROP|RENAME)\b/i;
 const DATA_RE = /^(INSERT|UPDATE|DELETE|MERGE|IMPORT|TRUNCATE)\b/i;
+// A script can do ANYTHING (Lua pquery may run DDL — the in-DB offload path),
+// so scripts are conservatively schema-impacting. The ONLY exceptions are the
+// two calls the sync itself issues — anything else, including other
+// SEMANTIC_ADMIN scripts (drafting a model SHOULD trigger a validation pass),
+// re-marks the connection.
+const SCRIPT_RE = /^EXECUTE\s+SCRIPT\b/i;
+const OWN_SYNC_RE = /^EXECUTE\s+SCRIPT\s+SEMANTIC_ADMIN\s*\.\s*(VALIDATE_MODEL|REFRESH_SEMANTIC_SURFACE)\s*\(/i;
 
 /** Leading whitespace and comments hide the verb — strip before matching. */
 function firstStatementToken(sql: string): string {
@@ -37,7 +44,8 @@ function firstStatementToken(sql: string): string {
 
 export function classifySemanticImpact(sql: string): SemanticImpact {
   const s = firstStatementToken(sql);
-  if (SCHEMA_RE.test(s)) return "schema";
+  if (OWN_SYNC_RE.test(s)) return "none";
+  if (SCHEMA_RE.test(s) || SCRIPT_RE.test(s)) return "schema";
   if (DATA_RE.test(s)) return "data";
   return "none";
 }
@@ -51,6 +59,8 @@ export type SemanticSyncResult = {
   models: { name: string; validated: boolean; refreshed?: boolean; error?: string }[];
   issueCount: number;
   issues: string[];
+  /** User schemas with tables that NO model binds — new datasets land here. */
+  uncoveredSchemas: string[];
   elapsedMs: number;
 };
 
@@ -68,4 +78,34 @@ export function mergeImpact(a: SemanticImpact, b: SemanticImpact): SemanticImpac
   if (a === "schema" || b === "schema") return "schema";
   if (a === "data" || b === "data") return "data";
   return "none";
+}
+
+/**
+ * Schemas that must never be reported as "missing a semantic model":
+ * Exasol system schemas, the framework's own schemas (by their literal
+ * names — models' PUBLISHED schemas are excluded dynamically by the caller,
+ * not by prefix), and Studio's internal fixtures (evals, DAG smoke tests,
+ * integration runs).
+ */
+export const INTERNAL_SCHEMA_RE = /^(SYS$|EXA_|SYS_SEMANTIC$|SEMANTIC_ADMIN$|SEMANTIC_CATALOG$|SEMANTIC_AGENT$|STUDIO_EVALS$|EVAL_FIXTURE$|DAG_SMOKE|ITEST_)/i;
+
+/**
+ * Coverage gap: user schemas that hold tables but are bound by NO semantic
+ * model — a freshly loaded dataset shows up here, so the agent can offer to
+ * draft a model for it instead of leaving it semantically invisible.
+ * Matching is case-insensitive (unquoted Exasol identifiers fold to upper),
+ * but the RETURNED names keep the catalog's exact casing so quoted
+ * case-sensitive schemas stay addressable.
+ */
+export function uncoveredSchemas(schemasWithTables: string[], boundSchemas: string[]): string[] {
+  const bound = new Set(boundSchemas.map((s) => s.toUpperCase()));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of schemasWithTables) {
+    const key = s.toUpperCase();
+    if (!s || bound.has(key) || INTERNAL_SCHEMA_RE.test(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out.sort();
 }

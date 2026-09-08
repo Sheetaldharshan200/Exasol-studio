@@ -7,14 +7,14 @@ type Row = unknown[];
 const out = (rows: Row[]) => ({ columns: [], rows, rowCount: rows.length, truncated: false });
 
 /** Scriptable framework: models + per-script failures, records every call. */
-function fakeDb(opts: { installed?: boolean; models?: [string, string][]; failValidate?: string[]; issues?: Row[] } = {}) {
+function fakeDb(opts: { installed?: boolean; models?: [string, string][]; failValidate?: string[]; issues?: Row[]; bound?: string[]; schemas?: string[] } = {}) {
   const calls: string[] = [];
   return {
     calls,
     db: {
       queryIsolated: async (_id: string, sql: string) => {
         calls.push(sql);
-        if (sql.includes("EXA_ALL_TABLES")) return out([[opts.installed === false ? 0 : 1]]);
+        if (sql.includes("EXA_ALL_TABLES WHERE TABLE_SCHEMA = 'SYS_SEMANTIC'")) return out([[opts.installed === false ? 0 : 1]]);
         if (sql.includes("FROM SYS_SEMANTIC.MODELS")) return out(opts.models ?? []);
         if (sql.includes("VALIDATE_MODEL")) {
           const failing = (opts.failValidate ?? []).find((m) => sql.includes(`'${m}'`));
@@ -23,6 +23,8 @@ function fakeDb(opts: { installed?: boolean; models?: [string, string][]; failVa
         }
         if (sql.includes("REFRESH_SEMANTIC_SURFACE")) return out([["PUBLISHED"]]);
         if (sql.includes("CURRENT_VALIDATION_ISSUES")) return out(opts.issues ?? []);
+        if (sql.includes("SYS_SEMANTIC.ENTITIES")) return out((opts.bound ?? []).map((s) => [s]));
+        if (sql.includes("DISTINCT TABLE_SCHEMA FROM SYS.EXA_ALL_TABLES")) return out((opts.schemas ?? []).map((s) => [s]));
         throw new Error(`unexpected sql: ${sql}`);
       },
     },
@@ -129,6 +131,15 @@ test("connect-time pass is VALIDATE-ONLY — no republish without a proven schem
   assert.equal(results[0].impact, "data");
   assert.equal(calls.filter((c) => c.includes("REFRESH_SEMANTIC_SURFACE")).length, 0);
   assert.equal(calls.filter((c) => c.includes("VALIDATE_MODEL")).length, 1);
+});
+
+test("a newly loaded dataset is reported as uncovered; bound schemas are not", async () => {
+  const { db } = fakeDb({ models: [["sales", "PUBLISHED"]], bound: ["MART"], schemas: ["MART", "NEWDATA"] });
+  const { results, onResult } = collect();
+  const sync = new SemanticSync(db, onResult, { debounceMs: 20 });
+  sync.noteWrite("c1", "CREATE TABLE NEWDATA.ORDERS (X INT)");
+  await wait(100);
+  assert.deepEqual(results[0].uncoveredSchemas, ["NEWDATA"]);
 });
 
 test("connections are independent: each gets its own pass", async () => {

@@ -115,7 +115,12 @@ async function runDag(opts: {
         const step = plan.steps.find((s) => s.id === stepId);
         if (!step || step.status !== "running" || !step.sql) {
           outcome = { status: "failed", note: "step changed underneath the executor — not run" };
-        } else if (classifySql(step.sql) === "read") {
+        } else if (classifySql(step.sql) === "read" || /^\s*EXECUTE\s+SCRIPT\b/i.test(step.sql)) {
+          // EXECUTE SCRIPT returns a result TABLE — the driver's execute()
+          // path throws on it AFTER the script's side effects committed,
+          // which would fail the step and double-run it on retry. Scripts go
+          // through the query path (still approval-gated: classifySql marks
+          // EXECUTE as write, so the plan needed approval to get here).
           const out = await db.query(connectionId, step.sql);
           outcome = { status: "done", note: `${out.rowCount} row${out.rowCount === 1 ? "" : "s"}` };
         } else {

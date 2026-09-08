@@ -6,7 +6,7 @@
 // and a no-op on databases without the framework. Classification is pure
 // (semantic.ts, tested); this file is I/O glue on isolated sessions.
 
-import { classifySemanticImpact, formatIssues, mergeImpact, type SemanticImpact, type SemanticSyncResult } from "./semantic.ts";
+import { classifySemanticImpact, formatIssues, mergeImpact, uncoveredSchemas, type SemanticImpact, type SemanticSyncResult } from "./semantic.ts";
 import type { DbRegistry } from "./db.ts";
 import { log } from "./log.ts";
 
@@ -97,8 +97,11 @@ export class SemanticSync {
 
     const modelRows = await this.db.queryIsolated(
       connectionId,
-      "SELECT MODEL_NAME, STATUS FROM SYS_SEMANTIC.MODELS WHERE ACTIVE_VERSION_ID IS NOT NULL ORDER BY MODEL_NAME",
+      "SELECT MODEL_NAME, STATUS, PUBLISHED_SCHEMA FROM SYS_SEMANTIC.MODELS WHERE ACTIVE_VERSION_ID IS NOT NULL ORDER BY MODEL_NAME",
     );
+    // Published schemas hold generated views, not user data — they are
+    // excluded from coverage dynamically (by name, not by prefix guess).
+    const publishedSchemas = modelRows.rows.map((r) => String(r[2] ?? "")).filter(Boolean);
     const models: SemanticSyncResult["models"] = [];
     for (const row of modelRows.rows) {
       const name = String(row[0] ?? "");
@@ -147,6 +150,26 @@ export class SemanticSync {
       /* issues view unavailable — report the validation runs alone */
     }
 
-    return { connectionId, impact, models, issueCount, issues, elapsedMs: Date.now() - started };
+    // Coverage: a NEW dataset (schema with tables, bound by no active model)
+    // is semantically invisible — report it so the agent can offer a draft.
+    let uncovered: string[] = [];
+    try {
+      const bound = await this.db.queryIsolated(
+        connectionId,
+        "SELECT DISTINCT e.SOURCE_SCHEMA FROM SYS_SEMANTIC.ENTITIES e JOIN SYS_SEMANTIC.MODELS m ON e.MODEL_ID = m.MODEL_ID AND e.VERSION_ID = m.ACTIVE_VERSION_ID",
+      );
+      const withTables = await this.db.queryIsolated(
+        connectionId,
+        "SELECT DISTINCT TABLE_SCHEMA FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA NOT IN ('SYS', 'EXA_STATISTICS')",
+      );
+      uncovered = uncoveredSchemas(
+        withTables.rows.map((r) => String(r[0] ?? "")),
+        [...bound.rows.map((r) => String(r[0] ?? "")), ...publishedSchemas],
+      );
+    } catch {
+      /* coverage is best-effort — validation results still stand */
+    }
+
+    return { connectionId, impact, models, issueCount, issues, uncoveredSchemas: uncovered, elapsedMs: Date.now() - started };
   }
 }

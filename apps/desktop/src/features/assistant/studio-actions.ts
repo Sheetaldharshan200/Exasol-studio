@@ -67,6 +67,7 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
         const issueCount = Number(args.issueCount ?? 0);
         const issues = Array.isArray(args.issues) ? (args.issues as string[]) : [];
         const failed = Array.isArray(args.failed) ? (args.failed as string[]) : [];
+        const uncovered = Array.isArray(args.uncoveredSchemas) ? (args.uncoveredSchemas as string[]) : [];
         window.dispatchEvent(
           new CustomEvent("studio:notice", {
             detail:
@@ -76,11 +77,17 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
                     title: `Semantic Views: ${issueCount || failed.length} issue${(issueCount || failed.length) === 1 ? "" : "s"} after ${args.impact === "schema" ? "a schema change" : "data changes"}`,
                     body: [...issues, ...failed].slice(0, 3).join("\n"),
                   }
-                : {
-                    kind: "success",
-                    title: args.impact === "schema" ? "Semantic Views refreshed" : "Semantic Views revalidated",
-                    body: "All models are consistent with the database.",
-                  },
+                : uncovered.length
+                  ? {
+                      kind: "info",
+                      title: `Dataset${uncovered.length === 1 ? "" : "s"} without a semantic model: ${uncovered.slice(0, 4).join(", ")}`,
+                      body: "Ask the assistant to draft a semantic model for it — governed metrics beat ad-hoc SQL.",
+                    }
+                  : {
+                      kind: "success",
+                      title: args.impact === "schema" ? "Semantic Views refreshed" : "Semantic Views revalidated",
+                      body: "All models are consistent with the database.",
+                    },
           }),
         );
         return { ok: true };

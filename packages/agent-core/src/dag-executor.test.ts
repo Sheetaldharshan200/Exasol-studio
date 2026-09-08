@@ -162,6 +162,28 @@ test("a save() that throws never re-classifies SQL that already ran", async () =
   assert.equal(out.plan.steps[0].status, "done");
 });
 
+test("EXECUTE SCRIPT steps route through the QUERY path (scripts return tables)", async () => {
+  const script = "EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('CREATE_MODEL', '{}')";
+  const plan = approvedPlan([{ id: "a", title: "bootstrap model", sql: script }]);
+  const queried: string[] = [];
+  const executed: string[] = [];
+  const db: StepDb = {
+    query: async (_id, sql) => {
+      queried.push(sql);
+      return { columns: ["STATUS"], rows: [["OK"]], rowCount: 1, truncated: false };
+    },
+    execute: async (_id, sql) => {
+      executed.push(sql);
+      return 0;
+    },
+  };
+  const out = await executePlan({ plan, db, connectionId: "c", save: () => undefined, retry: fastRetry });
+  if ("error" in out) throw new Error(out.error);
+  assert.equal(out.ok, true);
+  assert.deepEqual(queried, [script]);
+  assert.deepEqual(executed, []);
+});
+
 test("semicolons inside string literals are not multi-statement", async () => {
   const plan = approvedPlan([{ id: "a", title: "a", sql: "SELECT 'a;b' FROM DUAL" }]);
   const { db } = stubDb();

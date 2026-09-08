@@ -99,7 +99,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         startedAt: Date.now() - result.elapsedMs,
         durationMs: result.elapsedMs,
         ok: result.issueCount === 0 && result.models.every((m) => m.validated && m.refreshed !== false),
-        meta: { connection: result.connectionId, impact: result.impact, models: result.models.length, issues: result.issueCount },
+        meta: { connection: result.connectionId, impact: result.impact, models: result.models.length, issues: result.issueCount, uncovered: result.uncoveredSchemas.length },
       });
       const failed = result.models.filter((m) => !m.validated || m.refreshed === false);
       pushUiAction("semantic_validation", {
@@ -109,6 +109,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         issues: result.issues,
         refreshed: result.models.filter((m) => m.refreshed).map((m) => m.name),
         failed: failed.map((m) => `${m.name}: ${m.error ?? "validation failed"}`),
+        uncoveredSchemas: result.uncoveredSchemas,
       });
       log.info("semantic models synced", {
         connection: result.connectionId,
@@ -659,8 +660,16 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           plan,
           // Parallel steps must NOT share the pooled websocket (strictly
           // request-response per session) — each runs on its own session.
+          // Script steps route through query (they return tables), so the
+          // semantic sync is notified here — a Lua script can run DDL (the
+          // in-DB offload path) and must not change the schema invisibly;
+          // classifySemanticImpact ignores everything non-mutating.
           db: {
-            query: (id, sql) => db.queryIsolated(id, sql),
+            query: async (id, sql) => {
+              const out = await db.queryIsolated(id, sql);
+              semanticSync.noteWrite(id, sql);
+              return out;
+            },
             execute: (id, sql) => db.executeIsolated(id, sql),
           },
           connectionId: target.id,

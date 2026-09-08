@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifySemanticImpact, formatIssues, mergeImpact } from "./semantic.ts";
+import { classifySemanticImpact, formatIssues, mergeImpact, uncoveredSchemas } from "./semantic.ts";
 
 test("schema-impact statements: DDL that can break bindings", () => {
   assert.equal(classifySemanticImpact("CREATE TABLE S.T (X INT)"), "schema");
@@ -18,12 +18,18 @@ test("data-impact statements: loads and mutations", () => {
   assert.equal(classifySemanticImpact("DELETE FROM S.T"), "data");
 });
 
-test("no impact: reads and the framework's own script calls (no self-trigger)", () => {
+test("no impact: reads and the sync's OWN script calls (no self-trigger)", () => {
   assert.equal(classifySemanticImpact("SELECT * FROM S.T"), "none");
   assert.equal(classifySemanticImpact("WITH x AS (SELECT 1) SELECT * FROM x"), "none");
   assert.equal(classifySemanticImpact("EXECUTE SCRIPT SEMANTIC_ADMIN.VALIDATE_MODEL('m')"), "none");
   assert.equal(classifySemanticImpact("EXECUTE SCRIPT SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE('m')"), "none");
   assert.equal(classifySemanticImpact("DESCRIBE S.T"), "none");
+});
+
+test("OTHER scripts are schema-impacting: Lua can run DDL, and drafting a model should trigger a pass", () => {
+  assert.equal(classifySemanticImpact("EXECUTE SCRIPT MY_SCHEMA.LOAD_EVERYTHING('x')"), "schema");
+  assert.equal(classifySemanticImpact("EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('CREATE_MODEL', '{}')"), "schema");
+  assert.equal(classifySemanticImpact("execute script semantic_admin.validate_model('m')"), "none");
 });
 
 test("a CREATE inside a string does not classify (prefix match only)", () => {
@@ -42,6 +48,25 @@ test("mergeImpact: schema dominates, data beats none", () => {
   assert.equal(mergeImpact("data", "schema"), "schema");
   assert.equal(mergeImpact("schema", "data"), "schema");
   assert.equal(mergeImpact("none", "none"), "none");
+});
+
+test("uncoveredSchemas: new datasets surface, bound and internal schemas never do", () => {
+  const all = ["MART", "TPCH", "newdata", "SYS_SEMANTIC", "SEMANTIC_ADMIN", "EXA_STATISTICS", "STUDIO_EVALS", "EVAL_FIXTURE", "DAG_SMOKE", "ITEST_DAG", "SYS"];
+  // bound includes the model's published schema (excluded by NAME, not prefix)
+  const bound = ["mart"];
+  assert.deepEqual(uncoveredSchemas(all, bound), ["TPCH", "newdata"]);
+  assert.deepEqual(uncoveredSchemas([], []), []);
+  assert.deepEqual(uncoveredSchemas(["MART"], ["MART"]), []);
+  // a user schema merely STARTING with SYS is not internal
+  assert.deepEqual(uncoveredSchemas(["SYSTEM_DATA"], []), ["SYSTEM_DATA"]);
+  // quoted case-sensitive schemas keep their exact catalog casing
+  assert.deepEqual(uncoveredSchemas(["myData"], []), ["myData"]);
+  // ...and match bindings case-insensitively (unquoted identifiers fold)
+  assert.deepEqual(uncoveredSchemas(["MYDATA"], ["mydata"]), []);
+  // a published schema named SEMANTIC_SALES is excluded via the bound list
+  assert.deepEqual(uncoveredSchemas(["SEMANTIC_SALES"], ["SEMANTIC_SALES"]), []);
+  // but a user dataset that HAPPENS to start with SEMANTIC_ still surfaces
+  assert.deepEqual(uncoveredSchemas(["SEMANTIC_NOTES"], []), ["SEMANTIC_NOTES"]);
 });
 
 test("formatIssues caps, ranks errors first, truncates long messages", () => {
