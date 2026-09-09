@@ -187,6 +187,19 @@ describe("machine-context sentinel", () => {
     assert.equal(stripMachineContext("<exa_context>secret directive\nhello"), "");
     assert.equal(stripMachineContext("hi <exa_context>partial"), "hi");
   });
+
+  test("the engine's synthetic tool echo (and everything after) is hidden", () => {
+    const leaked =
+      'load this data' +
+      'Called the Read tool with the following input: {"filePath":"tpch-sales-overview.html"}' +
+      "<!doctype html><html><head><title>TPCH Sales Overview</title></head><body>huge file body</body></html>";
+    assert.equal(stripMachineContext(leaked), "load this data");
+    // with a machine block in front too
+    const both = `${wrapMachineContext("directive")}\n\nload this data\nCalled the Write tool with the following input: {"x":1}payload`;
+    assert.equal(stripMachineContext(both), "load this data");
+    // plain text that merely mentions a tool is untouched
+    assert.equal(stripMachineContext("I called the read tool yesterday"), "I called the read tool yesterday");
+  });
 });
 
 describe("neutralizeSentinels", () => {

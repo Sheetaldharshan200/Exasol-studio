@@ -264,6 +264,13 @@ export function neutralizeSentinels(text: string): string {
 }
 
 /** The user-visible remainder of a message (machine context removed). */
+/** The engine appends SYNTHETIC parts to a user message when its tools read
+ *  files ("Called the Read tool with the following input: {…}" followed by
+ *  the whole file body) — model-only context that must never render as the
+ *  user's words. Synthetic parts always TRAIL the typed text, so everything
+ *  from the first echo marker on is machine content by construction. */
+const SYNTHETIC_ECHO_RE = /Called the \w+ tool with the following input:/;
+
 export function stripMachineContext(text: string): string {
   let out = text;
   for (;;) {
@@ -277,5 +284,7 @@ export function stripMachineContext(text: string): string {
     }
     out = out.slice(0, start) + out.slice(end + CTX_CLOSE.length);
   }
+  const echo = SYNTHETIC_ECHO_RE.exec(out);
+  if (echo) out = out.slice(0, echo.index);
   return out.replace(/^\s+/, "").replace(/\s+$/, "");
 }

@@ -55,6 +55,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   type ToolCallMessagePartComponent,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -897,6 +898,18 @@ const UserActionBar: FC = () => {
 };
 
 const EditComposer: FC = () => {
+  // The runtime seeds the edit box with the message's RAW text parts —
+  // including the engine's machine context and synthetic tool echoes (file
+  // bodies). Rewrite the seed once on mount so the user edits only what
+  // they actually typed.
+  const aui = useAui();
+  useEffect(() => {
+    const composer = aui.message().composer();
+    const raw = composer.getState().text;
+    const clean = stripMachineContext(raw);
+    if (clean !== raw) composer.setText(clean);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <MessagePrimitive.Root
       data-slot="aui_edit-composer-wrapper"
