@@ -1098,13 +1098,36 @@ fn install_semantic_views(
         .ok()
         .is_some_and(|version| version.trim() == semantic_revision);
     let installer = bundle.join("tools/install.py");
-    let probe = installer
-        .parent()
-        .expect("installer has tools directory")
-        .join("probe_ready.py");
     let python_s = python.to_string_lossy().to_string();
     let installer_s = installer.to_string_lossy().to_string();
-    let probe_s = probe.to_string_lossy().to_string();
+    // The readiness probe is STUDIO'S contract, embedded here — it used to be
+    // upstream's tools/probe_ready.py, which the repo no longer ships (a
+    // missing script made python exit 2 and failed every install). Exit
+    // codes: 0 = framework + complete example, 1 = framework missing,
+    // 3 = framework only (clean — the state Studio's own install produces),
+    // 4 = SALES/MART objects exist but are incomplete or user-owned.
+    const SEMANTIC_PROBE: &str = r#"import os, ssl, sys, pyexasol
+c = pyexasol.connect(
+    dsn=f"{os.environ['EXASOL_HOST']}:{os.environ['EXASOL_PORT']}",
+    user=os.environ["EXASOL_USER"],
+    password=os.environ["EXASOL_PASSWORD"],
+    encryption=True,
+    websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+)
+def one(q):
+    return c.execute(q).fetchone()[0]
+framework = one("SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA='SYS_SEMANTIC' AND TABLE_NAME='MODELS'")
+admin = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='SEMANTIC_ADMIN'")
+if not framework or not admin:
+    sys.exit(1)
+mart = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='MART'")
+demo = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='SEMANTIC_SALES'")
+if not mart and not demo:
+    sys.exit(3)
+sales = one("SELECT COUNT(*) FROM SYS_SEMANTIC.MODELS WHERE MODEL_NAME='sales'")
+tables = one("SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA='MART' AND TABLE_NAME IN ('CUSTOMERS','PRODUCTS','ORDERS','ORDER_LINES')")
+sys.exit(0 if (sales and tables == 4) else 4)
+"#;
     let port = runtime.port.to_string();
     let envs = [
         ("EXASOL_HOST", runtime.host.as_str()),
@@ -1117,8 +1140,10 @@ fn install_semantic_views(
         database: format!("{} ({}:{})", runtime.kind, runtime.host, runtime.port),
     };
     if previously_ready {
-        match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
-            0 => {
+        match run_streamed_env(app, JOB_ID, &python_s, &["-c", SEMANTIC_PROBE], &envs)? {
+            // 3 (framework, no example) is READY too — Studio's own install is
+            // clean by design; accepting only 0 here would reinstall forever.
+            0 | 3 => {
                 record_installed()?;
                 return Ok(summary);
             }
@@ -1138,7 +1163,7 @@ fn install_semantic_views(
             "Semantic Views framework installation failed.".into(),
         ));
     }
-    match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
+    match run_streamed_env(app, JOB_ID, &python_s, &["-c", SEMANTIC_PROBE], &envs)? {
         0 => {}
         // Framework installed but no semantic model / demo data present. We do
         // NOT seed the MART example — a fresh database stays clean and the user
