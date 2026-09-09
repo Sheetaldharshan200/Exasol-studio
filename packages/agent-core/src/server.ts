@@ -11,7 +11,8 @@ import { compareResults, planVerification } from "./verify.ts";
 import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
 import { executePlan } from "./dag-executor.ts";
 import { classifySql } from "./tools.ts";
-import { SemanticSync } from "./semantic-sync.ts";
+import { SemanticSync, semanticOverview } from "./semantic-sync.ts";
+import { SEMANTIC_READONLY_SCRIPTS } from "./semantic.ts";
 import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
@@ -121,6 +122,22 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
     },
   );
   db.onWrite = (id, sql) => semanticSync.noteWrite(id, sql);
+
+  /** Gateway database resolution: name/id lookup + exposure + SQL-cap gates
+   *  (the same checks run_query applies, shared by the semantic routes). */
+  const resolveGatewayDb = (wanted: string): { id: string; name: string } | { error: string; status: number } => {
+    if (!wanted) return { error: "database is required", status: 400 };
+    const conns = db.list();
+    const target = conns.find((c) => c.id === wanted) ?? conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+    if (!target) return { error: `No connected database named "${wanted}".`, status: 404 };
+    if ((config.get().gatewayExposure ?? {})[target.id] === false) {
+      return { error: `"${target.name}" is connected, but its MCP exposure is turned OFF.`, status: 403 };
+    }
+    if ((config.get().gatewayCaps ?? {})[target.id]?.sql === false) {
+      return { error: `The SQL service is turned off for "${target.name}" on the Studio gateway.`, status: 403 };
+    }
+    return { id: target.id, name: target.name };
+  };
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
   const engine = new EngineService();
@@ -566,6 +583,53 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           }
         }
         return json(res, 200, { database: target.name, ...out });
+      }
+      // ── Semantic layer on the gateway (the visible panel's surface) ──────
+      // GET /v1/gateway/semantic/models?database= → models, open validation
+      // issues, and datasets no model covers — the discovery snapshot.
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "semantic" && parts[3] === "models") {
+        const wanted = (url.searchParams.get("database") ?? "").trim();
+        const target = resolveGatewayDb(wanted);
+        if ("error" in target) return json(res, target.status, { error: target.error });
+        const started = Date.now();
+        try {
+          const overview = await semanticOverview((id, sql) => db.queryIsolated(id, sql), target.id);
+          traceGateway("semantic_models", started, true, { database: target.name, models: overview.models.length });
+          return json(res, 200, overview);
+        } catch (e) {
+          traceGateway("semantic_models", started, false, { database: target.name });
+          return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      // POST /v1/gateway/semantic {database, script, args} — run ONE
+      // read-only SEMANTIC_ADMIN script (audited allowlist: compile,
+      // describe, search, explain, suggest, validate …). Catalog MUTATIONS
+      // never pass here — they go through an approved plan's EXECUTE SCRIPT
+      // steps, keeping the gateway's write gate singular.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "semantic" && !parts[3]) {
+        const body = await readBody<{ database?: string; script?: string; args?: Record<string, unknown> }>(req);
+        const script = (body.script ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9_]+$/.test(script)) return json(res, 400, { error: "script must be a SEMANTIC_ADMIN script name" });
+        if (!SEMANTIC_READONLY_SCRIPTS.has(script)) {
+          return json(res, 403, {
+            error: `"${script}" changes the semantic catalog — run it as an EXECUTE SCRIPT step in an approved plan (propose_plan → approve_plan → execute_plan) instead.`,
+          });
+        }
+        const target = resolveGatewayDb((body.database ?? "").trim());
+        if ("error" in target) return json(res, target.status, { error: target.error });
+        const started = Date.now();
+        try {
+          const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
+          const out = await db.queryIsolated(
+            target.id,
+            `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON(${lit(script)}, ${lit(JSON.stringify(body.args ?? {}))})`,
+          );
+          traceGateway("semantic_call", started, true, { database: target.name, script });
+          return json(res, 200, { columns: out.columns, rows: out.rows, rowCount: out.rowCount });
+        } catch (e) {
+          traceGateway("semantic_call", started, false, { database: target.name, script });
+          return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        }
       }
       // ── P3 traces: usage summary + recent activity ───────────────────────
       if (req.method === "GET" && parts[1] === "traces" && parts[2] === "summary") {

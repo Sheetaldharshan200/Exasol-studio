@@ -359,6 +359,36 @@ server.tool(
 );
 
 server.tool(
+  "semantic_models",
+  "Snapshot of the Semantic Views layer on a connected database: models (name, DRAFT/PUBLISHED status, published schema), open validation issues, and `schemasWithoutModel` — datasets no model covers yet. Call this FIRST on databases with Semantic Views and prefer published measures/dimensions over ad-hoc SQL. When a freshly loaded dataset appears under schemasWithoutModel, OFFER to draft a model for it (bootstrap via CALL_ADMIN_JSON steps in an approved plan; it stays a DRAFT until the user says publish).",
+  { database: z.string().describe("Connected database (name or id from list_databases).") },
+  async ({ database }) => {
+    try {
+      return text(await studio(`/gateway/semantic/models?database=${encodeURIComponent(database)}`, { method: "GET" }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "semantic_call",
+  "Run ONE read-only SEMANTIC_ADMIN script by name (audited list: COMPILE_REQUEST_JSON, COMPILE_SQL, DESCRIBE_SEMANTIC_OBJECT/METRIC, SEARCH_SEMANTIC_OBJECTS, GET_BUSINESS_GLOSSARY, EXPLAIN_*, EXPORT_*, SUGGEST_GRAIN_METADATA). Compile semantic requests here, then execute ONLY the returned GENERATED_SQL with run_query. Anything that WRITES to the catalog — including VALIDATE_MODEL (it records validation runs; the automatic sync validates for you) and all CREATE/ADD/… scripts — is refused on this tool: run those as EXECUTE SCRIPT steps in an approved plan instead.",
+  {
+    database: z.string().describe("Connected database (name or id)."),
+    script: z.string().describe("SEMANTIC_ADMIN script name, e.g. COMPILE_SQL"),
+    args: z.record(z.any()).optional().describe("Named parameters; omit optional ones entirely (never pass null)."),
+  },
+  async ({ database, script, args }) => {
+    try {
+      return text(await studio("/gateway/semantic", { method: "POST", body: { database, script, args: args ?? {} } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
   "execute_plan",
   "Execute the current plan's SQL steps as a dependency DAG: independent steps run IN PARALLEL, transient failures retry once with backoff, a hard failure skips its dependents and runs the step's onFailure compensation, and every transition persists (a crash resumes by calling this again). Requirements: every unfinished step must carry `sql` (finish tool-shaped steps yourself via update_plan_step first), and a plan with write steps must be approved (approve_plan after the user's yes). Steps update live in Studio while it runs. Prefer this over running the steps one-by-one whenever the plan has 2+ independent SQL steps; when a step's own SQL can fan out inside the database (DISTRIBUTE BY + SET UDFs, Lua pquery scripts, scheduler AFTER chains), write the step's SQL that way and let the database do the heavy graph.",
   {

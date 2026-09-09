@@ -85,6 +85,13 @@
     ]
   },
   {
+    "id": "semantic-first",
+    "question": "Does this database have a semantic layer? Use your semantic tools to check which models are available, then name them.",
+    "expect": [
+      { "kind": "tool-used", "tool": "semantic_models" }
+    ]
+  },
+  {
     "id": "connection-check",
     "question": "Do you currently have a working database connection? Check with your tool, then answer yes or no.",
     "expect": [

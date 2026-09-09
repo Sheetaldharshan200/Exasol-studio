@@ -50,6 +50,24 @@ export function classifySemanticImpact(sql: string): SemanticImpact {
   return "none";
 }
 
+/**
+ * SEMANTIC_ADMIN scripts AUDITED as read-only (framework 0.2). This is the
+ * single source both surfaces gate on — naming-convention prefixes are not a
+ * security boundary. Everything else mutates the catalog and needs approval
+ * (loop: permission ask; gateway: an approved plan).
+ */
+export const SEMANTIC_READONLY_SCRIPTS: ReadonlySet<string> = new Set([
+  "COMPILE_REQUEST_JSON", "COMPILE_SQL", "COMPILE_SQL_DEBUG",
+  "DESCRIBE_SEMANTIC_OBJECT", "DESCRIBE_SEMANTIC_METRIC",
+  "SEARCH_SEMANTIC_OBJECTS", "GET_BUSINESS_GLOSSARY", "GET_CUSTOM_EXTENSIONS",
+  "EXPLAIN_COMPILED_SQL", "EXPLAIN_SEMANTIC_METRIC",
+  "EXPORT_SEMANTIC_DEFINITION", "EXPORT_FUSION_DECLARATION",
+  "SUGGEST_GRAIN_METADATA",
+  // VALIDATE_MODEL is deliberately NOT here: it records validation runs
+  // (a catalog write) and the sync is the validation authority — manual
+  // validation goes through the approval paths like other mutations.
+]);
+
 export type SemanticIssueRow = { model: string; severity: string; rule: string; message: string };
 
 export type SemanticSyncResult = {

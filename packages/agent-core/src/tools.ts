@@ -2,7 +2,8 @@ import { generateText, tool, type ToolSet } from "./llm.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
-import { uncoveredSchemas } from "./semantic.ts";
+import { SEMANTIC_READONLY_SCRIPTS } from "./semantic.ts";
+import { semanticOverview } from "./semantic-sync.ts";
 import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { MemoryStore } from "./memory.ts";
@@ -396,43 +397,9 @@ export function buildTools(ctx: {
               if (id !== ctx.semanticViewsConnectionId) {
                 return { error: "Semantic Views is not ready for the active connection." };
               }
-              const models = await db.query(
-                id,
-                "SELECT MODEL_NAME, STATUS, PUBLISHED_SCHEMA, DESCRIPTION FROM SYS_SEMANTIC.MODELS WHERE ACTIVE_VERSION_ID IS NOT NULL ORDER BY MODEL_NAME",
-              );
-              let issues: unknown = [];
-              try {
-                const rows = await db.query(
-                  id,
-                  "SELECT MODEL_NAME, SEVERITY, RULE_CODE, MESSAGE FROM SEMANTIC_CATALOG.CURRENT_VALIDATION_ISSUES ORDER BY CREATED_AT DESC LIMIT 20",
-                );
-                issues = rows.rows.map((r) => ({ model: r[0], severity: r[1], rule: r[2], message: r[3] }));
-              } catch {
-                /* issues view unavailable on older framework revisions */
-              }
-              session.record({ kind: "tool.semantic_models", models: models.rowCount });
-              // Coverage: datasets no model binds — candidates for a draft.
-              let uncovered: string[] = [];
-              try {
-                // Bound source schemas plus every model's PUBLISHED schema
-                // (generated views, not user data) are excluded from coverage.
-                const bound = await db.query(
-                  id,
-                  "SELECT DISTINCT e.SOURCE_SCHEMA FROM SYS_SEMANTIC.ENTITIES e JOIN SYS_SEMANTIC.MODELS m ON e.MODEL_ID = m.MODEL_ID AND e.VERSION_ID = m.ACTIVE_VERSION_ID " +
-                    "UNION SELECT DISTINCT PUBLISHED_SCHEMA FROM SYS_SEMANTIC.MODELS WHERE PUBLISHED_SCHEMA IS NOT NULL",
-                );
-                const withTables = await db.query(
-                  id,
-                  "SELECT DISTINCT TABLE_SCHEMA FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA NOT IN ('SYS', 'EXA_STATISTICS')",
-                );
-                uncovered = uncoveredSchemas(
-                  withTables.rows.map((r) => String(r[0] ?? "")),
-                  bound.rows.map((r) => String(r[0] ?? "")),
-                );
-              } catch {
-                /* coverage is best-effort */
-              }
-              return { models: shape(models), issues, schemasWithoutModel: uncovered };
+              const overview = await semanticOverview((cid, sql) => db.query(cid, sql), id);
+              session.record({ kind: "tool.semantic_models", models: overview.models.length });
+              return overview;
             },
           }),
 
@@ -450,17 +417,7 @@ export function buildTools(ctx: {
                 return { error: "Semantic Views is not ready for the active connection." };
               }
               const name = script.toUpperCase();
-              // Audited allowlist of scripts KNOWN to be read-only (framework
-              // 0.2) — naming-convention prefixes are not a security boundary.
-              const READ_ONLY_SCRIPTS = new Set([
-                "COMPILE_REQUEST_JSON", "COMPILE_SQL", "COMPILE_SQL_DEBUG",
-                "DESCRIBE_SEMANTIC_OBJECT", "DESCRIBE_SEMANTIC_METRIC",
-                "SEARCH_SEMANTIC_OBJECTS", "GET_BUSINESS_GLOSSARY", "GET_CUSTOM_EXTENSIONS",
-                "EXPLAIN_COMPILED_SQL", "EXPLAIN_SEMANTIC_METRIC",
-                "EXPORT_SEMANTIC_DEFINITION", "EXPORT_FUSION_DECLARATION",
-                "SUGGEST_GRAIN_METADATA", "VALIDATE_MODEL",
-              ]);
-              if (!READ_ONLY_SCRIPTS.has(name)) {
+              if (!SEMANTIC_READONLY_SCRIPTS.has(name)) {
                 // The user must see EXACTLY what will run — never a truncated
                 // preview of content that executes in full.
                 const allowed = await session.askPermission({

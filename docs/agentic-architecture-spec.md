@@ -324,11 +324,16 @@ Not separate phases — each lands inside the phase that needs it:
   Metadata-aware routing: before planning, a cheap catalog probe (existing
   MCP find tools) grounds table/schema references so plans never name
   objects that don't exist.
-- **Semantic layer** (with P1/P4): when Semantic Views are installed, the
-  planner PREFERS measures/dimensions from them over ad-hoc SQL (skill
-  instruction + a `list_semantic_views` tool); evals include a "used the
-  semantic layer when available" expectation. Text AI / Transformers
-  extensions remain optional enrichment, explicitly out of scope here.
+- **Semantic layer** (with P1/P4) — SHIPPED: when Semantic Views are
+  installed, the planner PREFERS measures/dimensions over ad-hoc SQL
+  (scenario-router + the loop's `semantic_models`/`semantic_admin`/
+  `semantic_apply_definition` tools and the gateway's `semantic_models`/
+  `semantic_call` tools — both surfaces share one audited read-only script
+  allowlist); the golden suite includes the "used the semantic layer when
+  available" case (`semantic-first`, skipped where the framework is absent);
+  the layer self-maintains (validate + surface refresh on every change) and
+  reports datasets without a model. Text AI / Transformers extensions remain
+  optional enrichment, explicitly out of scope here.
 
 ---
 

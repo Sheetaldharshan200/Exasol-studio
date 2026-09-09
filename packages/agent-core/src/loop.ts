@@ -1084,8 +1084,10 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   want(/\bexport\b|download.*(table|schema|csv)|backup/, "export_tables");
   add("load_skill");
   // Semantic-view tools only exist in `all` when the layer is ready; when they
-  // do, they're the source of truth for analytics, so always surface them.
-  add("semantic_compile_request", "semantic_compile_sql");
+  // do, they're the source of truth for analytics, so always surface them —
+  // discovery (semantic_models) and authoring included, or the model cannot
+  // check coverage or draft models for new datasets without request_tools.
+  add("semantic_models", "semantic_compile_request", "semantic_compile_sql", "semantic_admin", "semantic_apply_definition");
   // Bridged MCP tools (mcp_*): the user explicitly connected those servers —
   // always expose them (each call is approval-gated anyway).
   for (const n of Object.keys(all)) if (n.startsWith("mcp_")) keep.add(n);

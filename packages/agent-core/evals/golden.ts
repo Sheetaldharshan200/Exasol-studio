@@ -18,7 +18,7 @@
  * --case=<id> (run one case).
  */
 
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbTargets, type DbTarget } from "./local-db.ts";
@@ -114,7 +114,33 @@ async function main() {
     process.exit(2);
   }
 
-  const cases = loadSuites(join(import.meta.dirname, "suites"), flags.get("case"));
+  // Semantic-layer cases (ids prefixed "semantic-") run only where the
+  // framework is installed; elsewhere they are skipped, not failed. When it
+  // IS present, the capability marker unlocks the loop's semantic tools the
+  // same way the desktop does.
+  let semanticReady = false;
+  try {
+    const probe = await db.query(DB_ID, "SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA = 'SYS_SEMANTIC' AND TABLE_NAME = 'MODELS'");
+    semanticReady = Number(probe.rows[0]?.[0] ?? 0) > 0;
+  } catch {
+    /* stays false */
+  }
+  if (semanticReady) {
+    writeFileSync(join(tmp, "capabilities.json"), JSON.stringify({ localReady: true, semanticViews: { state: "ready", connectionId: DB_ID } }));
+  }
+
+  let cases = loadSuites(join(import.meta.dirname, "suites"), flags.get("case"));
+  if (!semanticReady) {
+    const skipped = cases.filter((c) => c.id.startsWith("semantic-"));
+    if (skipped.length) console.log(`skipping ${skipped.length} semantic case(s) — Semantic Views is not installed on this database`);
+    cases = cases.filter((c) => !c.id.startsWith("semantic-"));
+    if (!cases.length && skipped.length) {
+      // The user asked for a semantic case specifically — a skip is not a
+      // configuration failure, so say so and exit clean.
+      console.log("nothing to run: the requested case(s) need Semantic Views on the target database");
+      process.exit(0);
+    }
+  }
   if (!cases.length) {
     console.error("no eval cases found");
     process.exit(2);
