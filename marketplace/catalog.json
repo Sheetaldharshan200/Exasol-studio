@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T17:38:14Z",
+  "generatedAt": "2026-09-09T12:48:02Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
@@ -114,17 +114,25 @@
       "name": "exapump",
       "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust 🦀"
     },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.85",
+      "verified": null,
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
+      "name": "exa-engine",
+      "description": "exa — the Exasol data agent: terminal-native AI for schema-grounded SQL, verified answers and multi-agent data teams"
+    },
     "mcp-server": {
       "repo": "exasol/mcp-server",
       "latest": "2.2.0",
-      "verified": "2.0.0",
+      "verified": "2.2.0",
       "homepage": "https://github.com/exasol/mcp-server",
       "name": "mcp-server",
       "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
-      "latest": "2.3.2",
+      "latest": "2.4.0",
       "verified": null,
       "homepage": "https://github.com/exasol/pyexasol",
       "name": "pyexasol",
