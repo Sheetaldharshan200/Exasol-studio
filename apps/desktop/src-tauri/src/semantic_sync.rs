@@ -42,15 +42,24 @@ pub fn is_bulk_data_change(statement: &str) -> bool {
 
 /// Scripts can do anything (Lua `pquery` may run DDL, and SEMANTIC_ADMIN
 /// scripts change the semantic catalog itself), so an editor-run script
-/// triggers revalidation — except the two calls the sync issues, which must
-/// never re-trigger it.
+/// triggers revalidation — except DIRECT calls to the two scripts the sync
+/// itself issues, which must never re-trigger it. Direct means the call
+/// target IS one of them — a wrapper script that merely mentions the name
+/// (in an argument string, say) still triggers.
 pub fn is_semantic_impacting_script(statement: &str) -> bool {
-    let upper = statement.trim_start().to_ascii_uppercase();
-    if !upper.starts_with("EXECUTE SCRIPT") {
+    let body = crate::query::strip_leading_comments(statement);
+    let upper = body.to_ascii_uppercase();
+    let Some(rest) = upper.strip_prefix("EXECUTE") else {
         return false;
-    }
-    let own = ["SEMANTIC_ADMIN.VALIDATE_MODEL", "SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE"];
-    !own.iter().any(|call| upper.contains(call))
+    };
+    let rest = rest.trim_start();
+    let Some(target) = rest.strip_prefix("SCRIPT") else {
+        return false;
+    };
+    let target = target.trim_start();
+    !["SEMANTIC_ADMIN.VALIDATE_MODEL", "SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE"]
+        .iter()
+        .any(|own| target.strip_prefix(own).is_some_and(|after| after.trim_start().starts_with('(')))
 }
 
 async fn scalar_i64(pool: &ExaPool, sql: &str) -> i64 {
