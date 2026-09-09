@@ -287,9 +287,13 @@ fn is_result_set_statement(statement: &str) -> bool {
     } else {
         first_word
     };
+    // EXECUTE SCRIPT can RETURN a TABLE — routing it down the rowcount path
+    // silently discards the rows ("0 rows affected" for a script whose whole
+    // point is its output). The fetch path is safe for BOTH script shapes:
+    // the driver streams a plain script's rowcount result as zero rows.
     matches!(
         effective.as_str(),
-        "SELECT" | "WITH" | "VALUES" | "DESCRIBE" | "DESC" | "EXPLAIN"
+        "SELECT" | "WITH" | "VALUES" | "DESCRIBE" | "DESC" | "EXPLAIN" | "EXECUTE"
     )
 }
 
@@ -602,9 +606,11 @@ pub async fn execute_sql(
     // model bound to it. Revalidate in the background — never on the query's
     // own latency — and only for statements that actually succeeded: failed
     // DDL changed nothing.
-    let schema_changed = results
-        .iter()
-        .any(|r| r.error.is_none() && crate::semantic_sync::is_schema_change(&r.statement));
+    let schema_changed = results.iter().any(|r| {
+        r.error.is_none()
+            && (crate::semantic_sync::is_schema_change(&r.statement)
+                || crate::semantic_sync::is_semantic_impacting_script(&r.statement))
+    });
     let data_changed = results
         .iter()
         .any(|r| r.error.is_none() && crate::semantic_sync::is_bulk_data_change(&r.statement));
@@ -666,6 +672,33 @@ pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
+
+    #[test]
+    fn execute_script_is_a_result_set_statement() {
+        // A script's RETURNS TABLE output must reach the results grid — the
+        // rowcount path silently discarded it ("0 rows affected").
+        assert!(is_result_set_statement(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.DESCRIBE_SEMANTIC_OBJECT('tpch', 'SALES')"
+        ));
+        assert!(is_result_set_statement("  execute script my.s()"));
+        assert!(!is_result_set_statement("INSERT INTO T VALUES (1)"));
+    }
+
+    #[test]
+    fn semantic_scripts_trigger_revalidation_except_the_syncs_own_calls() {
+        use crate::semantic_sync::is_semantic_impacting_script;
+        assert!(is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('CREATE_MODEL', '{}')"
+        ));
+        assert!(is_semantic_impacting_script("execute script etl.load_everything()"));
+        assert!(!is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.VALIDATE_MODEL('tpch')"
+        ));
+        assert!(!is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE('tpch')"
+        ));
+        assert!(!is_semantic_impacting_script("SELECT 1"));
+    }
 
     #[test]
     fn parses_simple_percent() {

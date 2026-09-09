@@ -40,6 +40,19 @@ pub fn is_bulk_data_change(statement: &str) -> bool {
         .any(|prefix| upper.starts_with(prefix))
 }
 
+/// Scripts can do anything (Lua `pquery` may run DDL, and SEMANTIC_ADMIN
+/// scripts change the semantic catalog itself), so an editor-run script
+/// triggers revalidation — except the two calls the sync issues, which must
+/// never re-trigger it.
+pub fn is_semantic_impacting_script(statement: &str) -> bool {
+    let upper = statement.trim_start().to_ascii_uppercase();
+    if !upper.starts_with("EXECUTE SCRIPT") {
+        return false;
+    }
+    let own = ["SEMANTIC_ADMIN.VALIDATE_MODEL", "SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE"];
+    !own.iter().any(|call| upper.contains(call))
+}
+
 async fn scalar_i64(pool: &ExaPool, sql: &str) -> i64 {
     match sqlx_exasol::query(AssertSqlSafe(sql.to_string())).fetch_one(pool).await {
         Ok(row) => row.try_get::<i64, _>(0).unwrap_or(0),
