@@ -1598,8 +1598,11 @@ export function Marketplace() {
                 never a frozen-looking screen. */}
             <div ref={contentRef} className={cn("relative transition-opacity duration-150", navPending && "opacity-40")}>
               {navPending ? (
-                <div className="absolute inset-x-0 top-16 z-10 flex justify-center">
-                  <BrandLoader size={40} label="Loading" />
+                <div className="absolute inset-x-0 top-24 z-10 flex justify-center">
+                  {/* instant: a short tab switch must show the BRAND mark from
+                      the first frame — the slow draw-from-zero loop left only
+                      the label visible, which read as plain loading text. */}
+                  <BrandLoader size={56} instant />
                 </div>
               ) : null}
             {/* Updates tab: Studio's own card, then the SAME cards as
