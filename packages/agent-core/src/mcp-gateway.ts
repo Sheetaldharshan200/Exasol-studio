@@ -360,7 +360,7 @@ server.tool(
 
 server.tool(
   "semantic_models",
-  "Snapshot of the Semantic Views layer on a connected database: models (name, DRAFT/PUBLISHED status, published schema), open validation issues, and `schemasWithoutModel` — datasets no model covers yet. Call this FIRST on databases with Semantic Views and prefer published measures/dimensions over ad-hoc SQL. When a freshly loaded dataset appears under schemasWithoutModel, OFFER to draft a model for it (bootstrap via CALL_ADMIN_JSON steps in an approved plan; it stays a DRAFT until the user says publish).",
+  "Snapshot of the Semantic Views layer on a connected database: models (name, DRAFT/PUBLISHED status, published schema), open validation issues, and `schemasWithoutModel` — datasets no model covers yet. Call this FIRST on databases with Semantic Views and prefer published measures/dimensions over ad-hoc SQL. When a freshly loaded dataset appears under schemasWithoutModel, OFFER to draft a model for it. DRAFTING RECIPE (never guess syntax — every admin script's exact parameter names and call template are one query away: SELECT SCRIPT_NAME, PARAMETER_NAME, CALL_TEMPLATE FROM SEMANTIC_CATALOG.ADMIN_SCRIPT_PARAMETERS via run_query): propose ONE plan whose steps are each `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('<SCRIPT>', '<json args>')` — CREATE_MODEL, ADD_ENTITY per table (with grain + primary_key_expr), ADD_RELATIONSHIP + ADD_UNIQUE_KEY_WITH_COLUMNS + ADD_RELATIONSHIP_KEY_MAPPING per join, ADD_SEMANTIC_OBJECT, ADD_DIMENSION per attribute, APPLY_SEMANTIC_DEFINITION for facts/metrics, then VALIDATE_MODEL — get the user's approval, execute_plan. The model stays a DRAFT until the user says publish.",
   { database: z.string().describe("Connected database (name or id from list_databases).") },
   async ({ database }) => {
     try {
@@ -382,6 +382,19 @@ server.tool(
   async ({ database, script, args }) => {
     try {
       return text(await studio("/gateway/semantic", { method: "POST", body: { database, script, args: args ?? {} } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "current_plan",
+  "The CURRENT plan and its per-step status — check this FIRST when the user says 'continue', 'do it', 'finish the todo list', or refers to pending work: the open plan IS the todo list. Resume by finishing its pending steps (update_plan_step / execute_plan for SQL steps), or propose a corrected plan if the existing one is malformed (proposing supersedes it as current).",
+  {},
+  async () => {
+    try {
+      return text(await studio("/gateway/plan/current", { method: "GET" }));
     } catch (e) {
       return errText(e);
     }

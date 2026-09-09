@@ -405,7 +405,7 @@ export function buildTools(ctx: {
 
           semantic_admin: tool({
             description:
-              "Run ONE Semantic Views admin script by name through SEMANTIC_ADMIN.CALL_ADMIN_JSON — the governed way to CREATE and evolve semantic models (CREATE_MODEL, ADD_ENTITY, ADD_FACT_WITH_BINDINGS, ADD_DIMENSION_WITH_BINDINGS, ADD_METRIC, ADD_RELATIONSHIP, DROP_MODEL, …) and to read the catalog (DESCRIBE_*, SEARCH_*, GET_*, EXPLAIN_*, SUGGEST_*). " +
+              "Run ONE Semantic Views admin script by name through SEMANTIC_ADMIN.CALL_ADMIN_JSON — the governed way to CREATE and evolve semantic models (CREATE_MODEL, ADD_ENTITY, ADD_RELATIONSHIP, ADD_UNIQUE_KEY_WITH_COLUMNS, ADD_RELATIONSHIP_KEY_MAPPING, ADD_SEMANTIC_OBJECT, ADD_DIMENSION, ADD_METRIC, DROP_MODEL, …) and to read the catalog (DESCRIBE_*, SEARCH_*, GET_*, EXPLAIN_*, SUGGEST_*). Never guess parameter names — SELECT SCRIPT_NAME, PARAMETER_NAME, CALL_TEMPLATE FROM SEMANTIC_CATALOG.ADMIN_SCRIPT_PARAMETERS lists every script's exact signature. " +
               "Read-only scripts run immediately; anything that changes the catalog asks the user first. Draft models for a NEW dataset this way when the user agrees — but NEVER call PUBLISH_MODEL unless the user explicitly asked to publish (drafts are reviewable; published models are a governed contract).",
             inputSchema: z.object({
               script: z.string().regex(/^[A-Za-z0-9_]+$/).describe("Script name inside SEMANTIC_ADMIN, e.g. CREATE_MODEL, ADD_ENTITY, DESCRIBE_SEMANTIC_OBJECT"),
