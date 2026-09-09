@@ -213,17 +213,7 @@ pub async fn components_upstream() -> AppResult<Vec<UpstreamInfo>> {
 /// commit in the tarball's root directory name (`owner-repo-<sha>`), so the
 /// revision recorded in install manifests is the real one, not "latest".
 pub fn fetch_source_tree(repo: &str, destination: &std::path::Path) -> AppResult<(std::path::PathBuf, String)> {
-    let response = reqwest::blocking::Client::new()
-        .get(format!("https://api.github.com/repos/{repo}/tarball"))
-        .header("User-Agent", "exasol-studio")
-        .header("Accept", "application/vnd.github+json")
-        .timeout(Duration::from_secs(120))
-        .send()
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| AppError::Storage(format!("could not fetch {repo}: {e}")))?;
-    let bytes = response
-        .bytes()
-        .map_err(|e| AppError::Storage(format!("could not read {repo} archive: {e}")))?;
+    let bytes = fetch_source_tarball(repo)?;
 
     let _ = std::fs::remove_dir_all(destination);
     std::fs::create_dir_all(destination)?;
@@ -238,18 +228,83 @@ pub fn fetch_source_tree(repo: &str, destination: &std::path::Path) -> AppResult
         .map(|entry| entry.path())
         .find(|path| path.is_dir())
         .ok_or_else(|| AppError::Storage(format!("{repo} archive was empty")))?;
-    let revision = root
+    // Normalized to the short form so the API path (7-char sha in the root
+    // name) and the codeload path (full sha) record the same revision for
+    // the same commit — otherwise readiness markers would churn.
+    let revision: String = root
         .file_name()
         .and_then(|name| name.to_str())
         .and_then(|name| name.rsplit('-').next())
         .unwrap_or("unknown")
-        .to_string();
+        .chars()
+        .take(7)
+        .collect();
     Ok((root, revision))
+}
+
+/// Download the repo tarball. The GitHub API endpoint counts against the
+/// unauthenticated per-IP rate limit — permanently exhausted on shared
+/// corporate NATs — so on failure fall back to codeload.github.com (not
+/// rate-limited), resolving the default branch's commit from the repo's
+/// commits atom feed (also not rate-limited).
+fn fetch_source_tarball(repo: &str) -> AppResult<Vec<u8>> {
+    let client = reqwest::blocking::Client::new();
+    let api = client
+        .get(format!("https://api.github.com/repos/{repo}/tarball"))
+        .header("User-Agent", "exasol-studio")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(120))
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.bytes());
+    let api_err = match api {
+        Ok(bytes) => return Ok(bytes.to_vec()),
+        Err(e) => e,
+    };
+
+    let atom = client
+        .get(format!("https://github.com/{repo}/commits/HEAD.atom"))
+        .header("User-Agent", "exasol-studio")
+        .timeout(Duration::from_secs(60))
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.text())
+        .map_err(|e| AppError::Storage(format!("could not fetch {repo}: {api_err}; commits feed also failed: {e}")))?;
+    let reference = sha_from_commits_atom(&atom).unwrap_or_else(|| "refs/heads/main".to_string());
+
+    client
+        .get(format!("https://codeload.github.com/{repo}/tar.gz/{reference}"))
+        .header("User-Agent", "exasol-studio")
+        .timeout(Duration::from_secs(120))
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.bytes())
+        .map(|b| b.to_vec())
+        .map_err(|e| AppError::Storage(format!("could not fetch {repo}: {api_err}; codeload fallback also failed: {e}")))
+}
+
+/// First commit sha in a GitHub commits atom feed (`…/commit/<40 hex>`).
+pub(crate) fn sha_from_commits_atom(atom: &str) -> Option<String> {
+    let marker = "/commit/";
+    let start = atom.find(marker)? + marker.len();
+    let sha: String = atom[start..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+    if sha.len() == 40 { Some(sha) } else { None }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commits_atom_sha_extraction() {
+        let atom = r#"<feed><entry><id>tag:github.com,2008:Grit::Commit/85b87ce49dbc0deadbeef0123456789abcdef012</id><link href="https://github.com/o/r/commit/85b87ce49dbc0deadbeef0123456789abcdef012"/></entry></feed>"#;
+        assert_eq!(
+            sha_from_commits_atom(atom).as_deref(),
+            Some("85b87ce49dbc0deadbeef0123456789abcdef012")
+        );
+        assert_eq!(sha_from_commits_atom("<feed></feed>"), None);
+        assert_eq!(sha_from_commits_atom("/commit/1234"), None); // too short
+    }
 
     fn asset(name: &str, digest: Option<&str>) -> UpstreamAsset {
         UpstreamAsset {
