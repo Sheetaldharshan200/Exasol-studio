@@ -669,7 +669,7 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
             app,
             id,
             &cli,
-            &["install", "local", "--deployment-dir", &ddir, "--ports", &ports],
+            &host_prep_args(&cli, &["install", "local", "--deployment-dir", &ddir, "--ports", &ports]),
         )? != 0
         {
             return Err(AppError::Storage("`exasol install local` failed.".into()));
@@ -677,7 +677,7 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     } else {
         let port = expected_db_port(app);
         if !port_ready(port)
-            && run_streamed(app, id, &cli, &["start", "--deployment-dir", &ddir])? != 0
+            && run_streamed(app, id, &cli, &host_prep_args(&cli, &["start", "--deployment-dir", &ddir]))? != 0
         {
             return Err(AppError::Storage("`exasol start` failed.".into()));
         }
@@ -809,7 +809,7 @@ pub(crate) fn backup_personal_deployment(app: &AppHandle, id: &str) -> AppResult
     // Always bring the database back up, whether or not the copy succeeded.
     if was_running {
         emit_log(app, id, "Restarting the local database…", "info");
-        let _ = run_streamed(app, id, &cli_s, &["start", "--deployment-dir", &ddir]);
+        let _ = run_streamed(app, id, &cli_s, &host_prep_args(&cli_s, &["start", "--deployment-dir", &ddir]));
         let _ = wait_for_port(app, id, port, Duration::from_secs(150));
     }
 
@@ -899,7 +899,7 @@ pub(crate) fn update_personal_engine(
         };
         let new_cli_s = new_cli.to_string_lossy().to_string();
         emit_log(app, id, "Starting the updated engine…", "info");
-        if run_streamed(app, id, &new_cli_s, &["start", "--deployment-dir", &ddir])? != 0 {
+        if run_streamed(app, id, &new_cli_s, &host_prep_args(&new_cli_s, &["start", "--deployment-dir", &ddir]))? != 0 {
             return Err(AppError::Storage("The updated engine failed to start.".into()));
         }
         wait_for_port(app, id, port, Duration::from_secs(150))?;
@@ -998,7 +998,7 @@ pub(crate) fn update_personal_engine(
                 let _ = std::fs::remove_dir_all(&aside);
             }
             // Bring the old engine back up.
-            let _ = run_streamed(app, id, &launcher_s, &["start", "--deployment-dir", &ddir]);
+            let _ = run_streamed(app, id, &launcher_s, &host_prep_args(&launcher_s, &["start", "--deployment-dir", &ddir]));
             let _ = wait_for_port(app, id, port, Duration::from_secs(150));
             Err(AppError::Storage(format!(
                 "Engine update failed and was rolled back to the previous engine + data: {e}"
@@ -1360,6 +1360,40 @@ pub fn start_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> 
     ensure_runtime(app, id)
 }
 
+/// Exasol Personal 2.3 makes local runtime host preparation FAIL when it
+/// cannot prompt (it installs/prepares Podman there), and Studio always drives
+/// the launcher non-interactively — so every install and start must approve it
+/// or local setup breaks outright. The flag does not exist before 2.3, where
+/// passing an unknown flag is itself an error, so ask the launcher what it
+/// accepts instead of assuming a version (the same `--help` probe used to
+/// validate a launcher binary above).
+fn approves_host_prep(cli: &str) -> bool {
+    Command::new(cli)
+        .args(["install", "--help"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .is_some_and(|out| help_advertises_auto_approve(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// The decision, split from the subprocess so it is unit-testable.
+pub(crate) fn help_advertises_auto_approve(help: &str) -> bool {
+    help.contains("--auto-approve")
+}
+
+/// `base` plus `--auto-approve` when this launcher understands it.
+pub(crate) fn host_prep_args_with<'a>(supported: bool, base: &[&'a str]) -> Vec<&'a str> {
+    let mut args = base.to_vec();
+    if supported {
+        args.push("--auto-approve");
+    }
+    args
+}
+
+fn host_prep_args<'a>(cli: &str, base: &[&'a str]) -> Vec<&'a str> {
+    host_prep_args_with(approves_host_prep(cli), base)
+}
+
 pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     if std::env::consts::OS != "macos" {
         return Err(AppError::Storage(
@@ -1379,7 +1413,7 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
             "Could not stop Exasol Personal during query-readiness recovery.".into(),
         ));
     }
-    if run_streamed(app, id, &cli, &["start", "--deployment-dir", &deployment])? != 0 {
+    if run_streamed(app, id, &cli, &host_prep_args(&cli, &["start", "--deployment-dir", &deployment]))? != 0 {
         return Err(AppError::Storage(
             "Could not restart Exasol Personal during query-readiness recovery.".into(),
         ));
@@ -1543,5 +1577,31 @@ mod tests {
             b"leaf"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod host_prep_tests {
+    use super::{help_advertises_auto_approve, host_prep_args_with};
+
+    #[test]
+    fn detects_the_flag_only_where_the_launcher_advertises_it() {
+        // Exasol Personal 2.3 (rc2 added it to install/deploy/start).
+        let help_23 = "Flags:\n  --auto-approve   approve confirmation prompts\n  --log-level string";
+        assert!(help_advertises_auto_approve(help_23));
+        // 2.2 has no such flag — passing it there is an unknown-flag error.
+        let help_22 = "Flags:\n  --deployment-dir string\n  --ports string\n  --log-level string";
+        assert!(!help_advertises_auto_approve(help_22));
+        assert!(!help_advertises_auto_approve(""));
+    }
+
+    #[test]
+    fn appends_only_when_supported_and_keeps_the_base_order() {
+        let base = ["install", "local", "--deployment-dir", "/d"];
+        assert_eq!(
+            host_prep_args_with(true, &base),
+            vec!["install", "local", "--deployment-dir", "/d", "--auto-approve"]
+        );
+        assert_eq!(host_prep_args_with(false, &base), base.to_vec());
     }
 }

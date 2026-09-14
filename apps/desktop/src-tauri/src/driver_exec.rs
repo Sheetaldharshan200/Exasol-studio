@@ -42,6 +42,32 @@ pub fn is_bridge_driver(driver_id: &str) -> bool {
     driver_runtime(driver_id) != "native"
 }
 
+/// Does a bridge actually EXECUTE this driver, or is it only declared?
+///
+/// The bridge implements JDBC, ODBC and pyexasol; every other id used to fall
+/// through to pyexasol, so choosing "Exasol TS driver" silently opened a
+/// pyexasol connection and said nothing. Running a different driver than the
+/// one the user picked is a wrong answer, not a missing feature — an
+/// unimplemented driver is refused by name until its runtime lands.
+pub fn driver_implemented(driver_id: &str) -> bool {
+    matches!(
+        driver_id,
+        // in-process sqlx — the native websocket protocol
+        "" | "sqlx-exasol" | "websocket-api"
+        // real bridge implementations
+        | "pyexasol" | "jdbc" | "odbc"
+    )
+}
+
+/// What to tell the user when a driver has no implementation yet.
+pub fn unimplemented_driver_message(driver_id: &str) -> String {
+    let runtime = driver_runtime(driver_id);
+    format!(
+        "The \"{driver_id}\" driver is not wired up in Studio yet — it needs the {runtime} runtime bridge. \
+         Pick the native driver (or JDBC/ODBC/pyexasol) for this connection; Studio will not quietly run a different driver in its place."
+    )
+}
+
 /// The `python`, `jvm`, … runtimes all execute through the shared Python bridge
 /// (JDBC via jaydebeapi/JPype), so they share the managed venv.
 fn uses_python_bridge(runtime: &str) -> bool {
@@ -205,6 +231,16 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
             (ok, true, if ok { String::new() } else { "Install the ODBC Driver from the Marketplace — one click sets up the runtime and wires the official Exasol driver, no OS install needed.".into() })
         }
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
+    };
+    // What the picker calls "supported" must match what execute_via_driver
+    // will actually DO — driver_implemented() is the single authority, so a
+    // driver can never be offered and then refused (or quietly substituted:
+    // sqlalchemy mapped to the python runtime and exarrow-rs to native, both
+    // of which would have run a different driver than the one selected).
+    let (ready, supported, hint) = if driver_implemented(&driver_id) {
+        (ready, supported, hint)
+    } else {
+        (false, false, unimplemented_driver_message(&driver_id))
     };
     Ok(DriverStatus { driver_id, runtime: runtime.to_string(), ready, supported, hint })
 }
@@ -406,6 +442,9 @@ fn execute_python(
     statements: &[String],
     max_rows: usize,
 ) -> AppResult<ExecuteResponse> {
+    if !driver_implemented(&profile.driver_id) {
+        return Err(AppError::Storage(unimplemented_driver_message(&profile.driver_id)));
+    }
     let py = python_bin(app)?;
     if !py.exists() {
         return Err(AppError::Storage("This driver's runtime isn’t installed. Install it, then try again.".into()));
@@ -652,3 +691,36 @@ def main():
 
 main()
 "#;
+
+#[cfg(test)]
+mod driver_support_tests {
+    use super::{driver_implemented, driver_runtime, unimplemented_driver_message};
+
+    #[test]
+    fn only_drivers_with_a_real_implementation_are_allowed() {
+        for id in ["", "sqlx-exasol", "websocket-api", "pyexasol", "jdbc", "odbc"] {
+            assert!(driver_implemented(id), "{id} should execute");
+        }
+        // Declared in driver_runtime() but no bridge implements them — these
+        // used to silently run pyexasol instead.
+        for id in ["ts-js", "go", "r", "ado-net", "sqlalchemy", "exarrow-rs"] {
+            assert!(!driver_implemented(id), "{id} must be refused, not substituted");
+        }
+    }
+
+    #[test]
+    fn every_unimplemented_driver_the_ui_can_offer_is_refused_by_the_same_rule() {
+        // The picker's "supported" and the executor's gate must never
+        // disagree — these two were the mismatch: both claimed support.
+        for id in ["sqlalchemy", "exarrow-rs"] {
+            assert!(!driver_implemented(id), "{id} runs a DIFFERENT driver than selected");
+        }
+    }
+
+    #[test]
+    fn the_refusal_names_the_driver_and_the_runtime_it_needs() {
+        let msg = unimplemented_driver_message("ts-js");
+        assert!(msg.contains("ts-js"), "{msg}");
+        assert!(msg.contains(driver_runtime("ts-js")), "{msg}");
+    }
+}
