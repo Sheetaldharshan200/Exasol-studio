@@ -1357,7 +1357,6 @@
   "1355": "run",
   "1356": "serve",
   "1357": "web",
-  "1358": "plugin",
   "1359": "uninstall",
   "1360": "upgrade",
   "1361": "postcss.config.mjs",
@@ -1451,7 +1450,6 @@
   "1449": "@opentui/solid",
   "1450": "partial-json",
   "1451": "solid-js",
-  "1452": "tree-sitter-bash",
   "1453": "tree-sitter-powershell",
   "1454": "ulid",
   "1455": "venice-ai-sdk-provider"
