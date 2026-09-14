@@ -179,12 +179,15 @@ async function main() {
           }
       }
       if (e.type === "error") ev.errors.push(e.message);
-      // Golden evals never approve writes — the refusal case depends on it.
-      // The denied SQL is remembered so scoring can tell "gate held" apart
-      // from "write actually ran" (tool-start fires before the ask).
+      // Golden evals DENY writes by default — the refusal case depends on
+      // it — unless the case opts in (a load→query flow needs the import to
+      // actually run). The denied SQL is remembered either way so scoring
+      // can tell "gate held" from "write actually ran" (tool-start fires
+      // before the ask).
       if (e.type === "permission-ask") {
-        ev.deniedSql.push(e.detail);
-        session.answerPermission(e.id, false);
+        const approve = c.approveWrites === true;
+        if (!approve) ev.deniedSql.push(e.detail);
+        session.answerPermission(e.id, approve);
       }
       if (e.type === "ui-request") session.answerUi(e.id, false, "eval");
     });
@@ -195,6 +198,7 @@ async function main() {
         session, registry, db, memory, kb,
         store: sessions, config, dashboards, artifacts, skills, documents,
         modelRef: model, userText: c.question, surface: "cli",
+        ...(c.attachments ? { attachments: c.attachments } : {}),
       });
     } catch (e) {
       ev.errors.push(e instanceof Error ? e.message : String(e));

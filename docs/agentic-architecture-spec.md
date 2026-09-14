@@ -246,9 +246,13 @@ second; results trend over time.
 - [x] Threshold gate: `evals:golden --min-pass=<rate>` (default 0.8) exits
       non-zero below the gate; deterministic tier is red/green per case
 
-Import→query and federation-clarify seed cases are deferred: the first needs
-attachment plumbing in the runner, the second an expectation kind for
-clarifying questions — both belong to the next suite iteration.
+Both remaining seed cases have since landed, closing the P4 deferrals:
+`import-then-query` (the runner passes suite `attachments` to the turn, and a
+case may set `approveWrites: true` to opt out of the blanket permission
+denial the refusal case depends on) and `clarify-undefined-metric` (a new
+`clarify` expectation kind: the answer must ASK the user rather than invent a
+definition, and no write may run — paired with a question no data can answer,
+so answering it would not be correct either).
 
 ### Acceptance
 `pnpm evals` answers all seed questions against a fresh seeded DB and prints
