@@ -84,13 +84,16 @@ for (i in seq_along(statements)) {
             rowCount = 0L, truncated = FALSE, elapsedMs = 0L, error = NULL)
   wants_rows <- i <= length(expect_rows) && isTRUE(expect_rows[[i]])
 
+  # Everything goes through dbSendQuery: r-exasol implements dbSendQuery and
+  # dbGetRowsAffected but NOT dbExecute/dbSendStatement, so DBI's dbExecute
+  # would dispatch to a method that does not exist and fail on every write.
+  res <- NULL
   out <- tryCatch({
+    res <- DBI::dbSendQuery(conn, stmt)
     if (wants_rows) {
-      res <- DBI::dbSendQuery(conn, stmt)
-      on.exit(try(DBI::dbClearResult(res), silent = TRUE), add = TRUE)
       # One row over the limit tells truncation from "exactly max_rows rows",
       # which is a complete result and must not be flagged.
-      df <- DBI::dbFetch(res, n = max_rows + 1L)
+      df <- DBI::dbFetch(res, n = max_rows + 1)
       e$kind <- "resultSet"
       e$columns <- lapply(names(df), function(n) {
         list(name = n, typeName = toupper(class(df[[n]])[1]))
@@ -104,12 +107,15 @@ for (i in seq_along(statements)) {
       })
       e$rowCount <- nrow(df)
     } else {
-      affected <- DBI::dbExecute(conn, stmt)
+      affected <- DBI::dbGetRowsAffected(res)
       # DDL reports nothing; that is a legitimate 0, not a failure.
       e$rowCount <- if (is.numeric(affected) && !is.na(affected)) as.integer(affected) else 0L
     }
     NULL
   }, error = function(err) conditionMessage(err))
+  # Released per statement, not at script exit: `on.exit` inside this loop would
+  # register on the global frame and hold every result handle open.
+  if (!is.null(res)) try(DBI::dbClearResult(res), silent = TRUE)
 
   if (!is.null(out)) e$error <- out
   e$elapsedMs <- as.integer(as.numeric(difftime(Sys.time(), started, units = "secs")) * 1000)
