@@ -66,19 +66,22 @@ or (b) is refused with a specific, actionable reason. No third outcome.
    a per-runtime bridge script, same shape as the Python bridge.
 4. **`sqlalchemy`, `websocket-api`, `exarrow-rs`.** `sqlalchemy` is a
    pyexasol-backed dialect — legitimately the Python bridge, but it must
-   *say* it is SQLAlchemy and use the dialect. `websocket-api` and
-   `exarrow-rs` map to `native` today: confirm that is intended (the native
-   driver IS the websocket protocol) and document it, or split them.
+   *say* it is SQLAlchemy and use the dialect. **Decided:** `websocket-api`
+   stays an alias of the native driver (the native driver *is* the Exasol
+   WebSocket protocol, so running it as sqlx is not a substitution);
+   `exarrow-rs` is a genuinely different driver and got its own in-process
+   path (`exarrow_exec.rs`) rather than the alias, because its whole point is
+   returning Apache Arrow batches.
 
 ### Tasks
 - [x] A1 `driver_implemented()` + refusal in `execute_via_driver`; no silent fallback (tested)
 - [x] A2 `driver_status` now derives `supported`/`hint` from the SAME authority, so the picker can never offer what execution refuses (the UI already consumes both)
 - [x] A3 TS driver runs on the BUNDLED Node runtime via `driver-bridge.cjs` (the driver is bundled into it) — live-proven against a real database: typed result sets, real affected-row counts, truncation, and real DB errors
-- [ ] A4 Go bridge + runtime detection + Marketplace install path
-- [ ] A5 R bridge (`r-exasol`) + runtime detection
-- [ ] A6 ADO.NET bridge (`dotnet`) + runtime detection
+- [x] A4 Go driver runs NATIVELY: a prebuilt `exasol-bridge-go` binary ships as an app resource (built by `scripts/build-driver-bridges.sh`, in release CI per target) — live-proven against a real database: typed result sets, exact DECIMALs, real NULLs, real DB errors, batch stops at the first failure
+- [x] A5 R bridge (`bridge.R`, the official `exasol` package) + `Rscript` detection + a managed R library Studio installs into. R itself is NOT bundled and cannot be: it is a large runtime that hard-codes its own install paths, and `exasol` is compiled from source against the Exasol ODBC driver. Studio detects R, installs the package into its own library, and refuses clearly when R is absent
+- [x] A6 ADO.NET: **closed as not-possible-off-Windows, with the reason recorded.** Exasol publishes the ADO.NET provider only as a Windows `.msi` (the downloads index lists `operatingSystems: [Windows]`, noarch) and there is no NuGet package — verified against `https://x-up.s3.amazonaws.com/7.x/packages.json` and nuget.org (0 hits). `ado-net` therefore stays REFUSED, and the refusal now names the real reason instead of implying a backlog item
 - [x] A7 SQLAlchemy runs through its own dialect (`exa+websocket`, AUTOCOMMIT, `exec_driver_sql`) in the managed venv, not raw pyexasol
-- [ ] A8 Decide + document `websocket-api` / `exarrow-rs` mapping
+- [x] A8 `websocket-api` documented as a native alias; `exarrow-rs` split out into its own in-process driver (`exarrow_exec.rs`, compiled in, zero install) with the Arrow→grid conversion unit-tested
 - [ ] A9 One integration case per working driver: connect → `SELECT 1` → a real result set
 
 ### Acceptance

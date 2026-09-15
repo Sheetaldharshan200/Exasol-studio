@@ -552,12 +552,25 @@ export async function mockInvoke(
       const jvm = id === "jdbc";
       const odbc = id === "odbc";
       const native = ["sqlx-exasol", "websocket-api", "exarrow-rs", ""].includes(id);
+      // Shipped with the app, so ready without any install — same as native.
+      const bundled = id === "ts-js" || id === "go";
+      const r = id === "r";
       return {
         driverId: id,
         runtime: native ? "native" : python ? "python" : jvm ? "jvm" : odbc ? "odbc" : id,
-        ready: native,
-        supported: native || python || jvm || odbc,
-        hint: native ? "" : python ? "Install the Python driver runtime." : jvm ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)." : odbc ? "Install the ODBC runtime, then Exasol’s OS ODBC driver." : "This driver runtime is coming soon.",
+        ready: native || bundled,
+        supported: native || bundled || python || jvm || odbc || r,
+        hint: native || bundled
+          ? ""
+          : python
+            ? "Install the Python driver runtime."
+            : jvm
+              ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)."
+              : odbc
+                ? "Install the ODBC runtime, then Exasol’s OS ODBC driver."
+                : r
+                  ? "Install R on this machine, then install the R driver runtime here."
+                  : "Exasol publishes this driver for Windows only.",
       };
     }
     case "driver_setup":

@@ -60,6 +60,13 @@ pub fn driver_implemented(driver_id: &str) -> bool {
         | "ts-js"
         // SQLAlchemy dialect, in the managed Python venv (installed with pyexasol)
         | "sqlalchemy"
+        // Arrow-native driver, compiled into Studio — nothing to install
+        | "exarrow-rs"
+        // Go driver: a prebuilt bridge binary shipped with the app
+        | "go"
+        // R: the official `exasol` package in a managed R library (R itself is
+        // the user's — it is far too large and too path-bound to bundle)
+        | "r"
     )
 }
 
@@ -81,8 +88,84 @@ fn ts_bridge_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
     ))
 }
 
+/// The prebuilt Go bridge binary: release resource first, then the local build
+/// (`scripts/build-driver-bridges.sh`) for `tauri dev`.
+fn go_bridge_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    let name = if std::env::consts::OS == "windows" { "exasol-bridge-go.exe" } else { "exasol-bridge-go" };
+    let packaged = format!("bridges/{name}");
+    if let Ok(p) = app.path().resolve(&packaged, tauri::path::BaseDirectory::Resource) {
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/bridges").join(name);
+    if dev.exists() {
+        return Ok(dev.canonicalize().unwrap_or(dev));
+    }
+    Err(AppError::Storage(
+        "The Go driver bridge is missing — run `./scripts/build-driver-bridges.sh`.".into(),
+    ))
+}
+
+/// Which statements return rows, decided by the SAME classifier the native path
+/// uses. A bridge that guessed — or ran a statement twice to find out — would
+/// double its side effects, so the answer is computed once, here.
+///
+/// The coupling is deliberate and is the point: when the classifier learns a
+/// new output-producing keyword, every driver learns it at once. It is also the
+/// only failure mode — a statement the classifier calls DML runs exactly once,
+/// but its rows are discarded and reported as a row count, on the native path
+/// and on every bridge alike.
+pub(crate) fn expect_rows(statements: &[String]) -> Vec<bool> {
+    statements.iter().map(|s| crate::query::is_result_set_statement(s)).collect()
+}
+
+/// The R bridge script: release resource first, then the workspace copy.
+fn r_bridge_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    if let Ok(p) = app.path().resolve("bridge.R", tauri::path::BaseDirectory::Resource) {
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/driver-bridges/r/bridge.R");
+    if dev.exists() {
+        return Ok(dev.canonicalize().unwrap_or(dev));
+    }
+    Err(AppError::Storage("The R driver bridge script is missing — reinstall Exasol Studio.".into()))
+}
+
+/// `Rscript` on the user's machine. R is not bundled: it is a large runtime
+/// that hard-codes its own install paths, so it cannot travel with the app.
+fn rscript_bin() -> Option<std::path::PathBuf> {
+    resolve_bin("Rscript")
+}
+
+/// Studio's managed R library — the official `exasol` package is installed
+/// here, never into the user's own library.
+fn r_lib_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    let dir = runtimes_dir(app)?.join("r-lib");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn r_ready(app: &AppHandle) -> bool {
+    rscript_bin().is_some()
+        && r_lib_dir(app).map(|d| d.join("exasol").is_dir()).unwrap_or(false)
+}
+
 /// What to tell the user when a driver has no implementation yet.
+///
+/// Specific where the reason is specific: ADO.NET is not "coming later", it is
+/// published by Exasol as a **Windows-only MSI** (the downloads portal lists no
+/// macOS or Linux build, and there is no NuGet package), so no amount of work
+/// here makes it run on this machine.
 pub fn unimplemented_driver_message(driver_id: &str) -> String {
+    if driver_id == "ado-net" {
+        return "Exasol publishes the ADO.NET provider only as a Windows installer (no macOS/Linux build, no NuGet package), \
+                so it can run only on Windows, after installing that provider. Studio will not quietly run a different driver in its place."
+            .to_string();
+    }
     let runtime = driver_runtime(driver_id);
     format!(
         "The \"{driver_id}\" driver is not wired up in Studio yet — it needs the {runtime} runtime bridge. \
@@ -94,6 +177,12 @@ pub fn unimplemented_driver_message(driver_id: &str) -> String {
 /// (JDBC via jaydebeapi/JPype), so they share the managed venv.
 fn uses_python_bridge(runtime: &str) -> bool {
     runtime == "python" || runtime == "jvm" || runtime == "odbc"
+}
+
+/// Every runtime that executes by spawning a bridge process and exchanging one
+/// JSON request/response — Python, the bundled Node, and the prebuilt Go binary.
+fn uses_bridge_process(runtime: &str) -> bool {
+    uses_python_bridge(runtime) || runtime == "node" || runtime == "go" || runtime == "r"
 }
 
 fn has_marker(app: &AppHandle, name: &str) -> bool {
@@ -257,6 +346,20 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
             let ok = crate::agent::node_binary(&app).is_some();
             (ok, true, if ok { String::new() } else { "The bundled Node runtime is missing — reinstall Exasol Studio.".into() })
         }
+        "go" => {
+            // Shipped as a prebuilt binary; only a broken install can lose it.
+            let ok = go_bridge_path(&app).is_ok();
+            (ok, true, if ok { String::new() } else { "The Go driver bridge is missing — reinstall Exasol Studio.".into() })
+        }
+        "r" => {
+            let hint = if rscript_bin().is_none() {
+                "R isn’t installed on this machine. Install R (r-project.org), then install the R driver runtime here — R is too large and too path-bound to ship inside Studio."
+            } else {
+                "Install the R driver runtime: Studio puts the official Exasol R package in its own library and points it at the ODBC driver it manages."
+            };
+            let ok = r_ready(&app);
+            (ok, true, if ok { String::new() } else { hint.into() })
+        }
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
     // What the picker calls "supported" must match what execute_via_driver
@@ -307,6 +410,7 @@ pub async fn driver_setup(app: AppHandle, driver_id: String) -> AppResult<Value>
         "python" => setup_python(&app, &id).await,
         "jvm" => setup_jvm(&app, &id).await,
         "odbc" => setup_odbc(&app, &id).await,
+        "r" => setup_r(&app, &id).await,
         other => Err(AppError::Storage(format!("The {other} driver runtime isn’t installable yet."))),
     };
     match result {
@@ -352,6 +456,45 @@ async fn setup_odbc(app: &AppHandle, id: &str) -> AppResult<()> {
         "Note: the Marketplace ODBC Driver install wires the official Exasol driver automatically; an OS-registered driver also works.",
         "info",
     );
+    Ok(())
+}
+
+/// Install the official Exasol R package into Studio's own R library.
+///
+/// `exasol` talks to the database through the Exasol ODBC driver and is built
+/// from source, so this needs the user's R plus a compiler — which is exactly
+/// why R is detected rather than bundled. Nothing is written to the user's own
+/// R library.
+async fn setup_r(app: &AppHandle, id: &str) -> AppResult<()> {
+    let rscript = rscript_bin().ok_or_else(|| {
+        AppError::Storage(
+            "R isn’t installed on this machine. Install R from r-project.org, then run this again.".into(),
+        )
+    })?;
+    let lib = r_lib_dir(app)?.to_string_lossy().to_string();
+    let script = format!(
+        "lib <- {lib:?}; dir.create(lib, showWarnings = FALSE, recursive = TRUE); \
+         repo <- \"https://cloud.r-project.org\"; \
+         need <- setdiff(c(\"jsonlite\", \"DBI\", \"RODBC\", \"remotes\"), rownames(installed.packages(lib.loc = c(lib, .libPaths())))); \
+         if (length(need)) install.packages(need, lib = lib, repos = repo); \
+         .libPaths(c(lib, .libPaths())); \
+         if (!requireNamespace(\"exasol\", quietly = TRUE)) remotes::install_github(\"exasol/r-exasol\", lib = lib, upgrade = \"never\"); \
+         if (!requireNamespace(\"exasol\", quietly = TRUE)) stop(\"the exasol package did not install\")"
+    );
+    let rscript_s = rscript.to_string_lossy().to_string();
+    emit_log(app, id, "Installing the official Exasol R package into Studio’s R library…", "info");
+    let app2 = app.clone();
+    let id2 = id.to_string();
+    tokio::task::spawn_blocking(move || -> AppResult<()> {
+        if run_streamed(&app2, &id2, &rscript_s, &["-e", &script])? != 0 {
+            return Err(AppError::Storage(
+                "The R package install failed — R needs a compiler and the unixODBC development files. See the log.".into(),
+            ));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))??;
     Ok(())
 }
 
@@ -456,14 +599,14 @@ pub fn execute_via_driver(
     max_rows: usize,
 ) -> AppResult<ExecuteResponse> {
     let runtime = driver_runtime(&profile.driver_id);
-    if uses_python_bridge(runtime) {
-        execute_python(app, profile, statements, max_rows)
+    if uses_bridge_process(runtime) {
+        execute_bridge(app, profile, statements, max_rows)
     } else {
         Err(AppError::Storage(format!("Execution via the {runtime} driver isn’t available yet.")))
     }
 }
 
-fn execute_python(
+fn execute_bridge(
     app: &AppHandle,
     profile: &ConnectionProfile,
     statements: &[String],
@@ -472,11 +615,15 @@ fn execute_python(
     if !driver_implemented(&profile.driver_id) {
         return Err(AppError::Storage(unimplemented_driver_message(&profile.driver_id)));
     }
-    // The TS driver runs on the Node runtime Studio already bundles, with the
-    // driver itself bundled into the bridge — nothing for the user to install.
+    // The TS and Go drivers run on runtimes Studio already ships — the bundled
+    // Node with the driver bundled into the bridge, and a prebuilt Go binary —
+    // so neither asks the user to install anything.
     let is_ts = profile.driver_id == "ts-js";
-    let py = if is_ts { std::path::PathBuf::new() } else { python_bin(app)? };
-    if !is_ts && !py.exists() {
+    let is_go = profile.driver_id == "go";
+    let is_r = profile.driver_id == "r";
+    let needs_python = !is_ts && !is_go && !is_r;
+    let py = if needs_python { python_bin(app)? } else { std::path::PathBuf::new() };
+    if needs_python && !py.exists() {
         return Err(AppError::Storage("This driver's runtime isn’t installed. Install it, then try again.".into()));
     }
     let is_jdbc = profile.driver_id == "jdbc";
@@ -486,18 +633,36 @@ fn execute_python(
     if profile.driver_id == "odbc" && !odbc_ready(app) {
         return Err(AppError::Storage("The ODBC runtime isn’t installed. Install it, then try again.".into()));
     }
+    if is_r && !r_ready(app) {
+        return Err(AppError::Storage(
+            "The R driver runtime isn’t installed. Install it from the Drivers tab (it needs R on this machine), then try again."
+                .into(),
+        ));
+    }
 
-    let script = if is_ts {
-        ts_bridge_path(app)?
+    // (runtime binary, script it runs). The Go bridge IS the binary, so it has
+    // no script argument.
+    let (runtime_bin, script): (std::path::PathBuf, Option<std::path::PathBuf>) = if is_go {
+        (go_bridge_path(app)?, None)
+    } else if is_r {
+        let rscript = rscript_bin().ok_or_else(|| {
+            AppError::Storage("R isn’t installed on this machine — install R, then install the R driver runtime.".into())
+        })?;
+        (rscript, Some(r_bridge_path(app)?))
+    } else if is_ts {
+        let node = crate::agent::node_binary(app).ok_or_else(|| {
+            AppError::Storage("The bundled Node runtime is missing — reinstall Exasol Studio.".into())
+        })?;
+        (node, Some(ts_bridge_path(app)?))
     } else {
         let p = python_dir(app)?.join("bridge.py");
         std::fs::write(&p, PYTHON_BRIDGE)?;
-        p
+        (py.clone(), Some(p))
     };
 
     let tls = profile.ssl_mode != "disabled";
     let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
-    let jar = if is_ts { String::new() } else { jdbc_jar(app)?.to_string_lossy().to_string() };
+    let jar = if needs_python { jdbc_jar(app)?.to_string_lossy().to_string() } else { String::new() };
     // A Marketplace-installed ODBC library is used by PATH (pyodbc accepts a
     // driver file path), so no OS-level driver registration is ever required.
     let odbc_lib = driver_override(app, "odbc")
@@ -516,17 +681,14 @@ fn execute_python(
         "jarPath": jar,
         "driverPath": odbc_lib,
         "statements": statements,
+        "expectRows": expect_rows(statements),
     });
 
-    let runtime_bin = if is_ts {
-        crate::agent::node_binary(app).ok_or_else(|| {
-            AppError::Storage("The bundled Node runtime is missing — reinstall Exasol Studio.".into())
-        })?
-    } else {
-        py.clone()
-    };
     let mut cmd = Command::new(&runtime_bin);
-    cmd.arg(&script).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(script) = &script {
+        cmd.arg(script);
+    }
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if std::env::consts::OS != "windows" {
         cmd.env("PATH", augmented_path());
     }
@@ -534,6 +696,11 @@ fn execute_python(
         if let Some(home) = jre_home(app) {
             cmd.env("JAVA_HOME", &home);
         }
+    }
+    if is_r {
+        // The managed library, so the bridge finds `exasol` without Studio ever
+        // writing into the user's own R library.
+        cmd.env("EXASOL_STUDIO_R_LIB", r_lib_dir(app)?);
     }
     let mut child = cmd
         .spawn()
@@ -596,192 +763,36 @@ fn execute_python(
 
 /// The shared Python bridge: PyExasol for the `python` drivers, jaydebeapi for
 /// JDBC. Reads one JSON request on stdin, writes one JSON response on stdout.
-const PYTHON_BRIDGE: &str = r#"
-import sys, json, time
-
-def cell(v):
-    if v is None: return None
-    if isinstance(v, (int, float, bool)): return v
-    return str(v)
-
-def run_pyexasol(req):
-    import pyexasol
-    dsn = "%s:%s" % (req["host"], req["port"])
-    C = pyexasol.connect(dsn=dsn, user=req["user"], password=req["password"],
-        schema=req.get("schema") or "", encryption=bool(req.get("tls", True)),
-        websocket_sslopt={"cert_reqs": 0} if (req.get("tls", True) and not req.get("verify")) else None)
-    max_rows = int(req.get("maxRows", 1000))
-    out = {"results": []}
-    for stmt in req.get("statements", []):
-        t0 = time.time()
-        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
-        try:
-            st = C.execute(stmt)
-            if getattr(st, "result_type", "") == "resultSet":
-                cols = st.columns(); names = list(cols.keys())
-                e["kind"] = "resultSet"
-                e["columns"] = [{"name": n, "typeName": str(cols[n].get("type", ""))} for n in names]
-                rows = st.fetchmany(max_rows)
-                e["rows"] = [[cell(v) for v in r] for r in rows]
-                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
-            else:
-                e["rowCount"] = st.rowcount()
-        except Exception as ex:
-            e["error"] = str(ex)
-        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
-    try: C.close()
-    except Exception: pass
-    return out
-
-def run_sqlalchemy(req):
-    # The POINT of this driver is the SQLAlchemy dialect — running plain
-    # pyexasol here (what the old fallback did) would be a different driver.
-    from sqlalchemy import create_engine
-    import urllib.parse as _u
-    auth = "%s:%s" % (_u.quote_plus(req["user"]), _u.quote_plus(req["password"]))
-    url = "exa+websocket://%s@%s:%s/%s" % (auth, req["host"], req["port"], req.get("schema") or "")
-    params = []
-    if not req.get("tls", True):
-        params.append("ENCRYPTION=n")
-    elif not req.get("verify"):
-        params.append("SSLCertificate=SSL_VERIFY_NONE")
-    if params:
-        url += "?" + "&".join(params)
-    engine = create_engine(url)
-    max_rows = int(req.get("maxRows", 1000))
-    out = {"results": []}
-    # AUTOCOMMIT: SQLAlchemy 2.0 opens a transaction by default, so DDL/DML
-    # would roll back when the connection closes.
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as C:
-        for stmt in req.get("statements", []):
-            t0 = time.time()
-            e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
-            try:
-                # exec_driver_sql: raw SQL, so ':' in the text is never taken
-                # as a bind parameter.
-                res = C.exec_driver_sql(stmt)
-                if res.returns_rows:
-                    e["kind"] = "resultSet"
-                    e["columns"] = [{"name": str(k), "typeName": ""} for k in res.keys()]
-                    rows = res.fetchmany(max_rows)
-                    e["rows"] = [[cell(v) for v in r] for r in rows]
-                    e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
-                else:
-                    e["rowCount"] = res.rowcount if res.rowcount and res.rowcount > 0 else 0
-            except Exception as ex:
-                e["error"] = str(ex)
-            e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-            if e["error"]: break
-    try: engine.dispose()
-    except Exception: pass
-    return out
-
-def run_jdbc(req):
-    import jaydebeapi
-    url = "jdbc:exa:%s:%s" % (req["host"], req["port"])
-    if not req.get("tls", True): url += ";encryption=0"
-    elif not req.get("verify"): url += ";validateservercertificate=0"
-    if req.get("schema"): url += ";schema=%s" % req["schema"]
-    C = jaydebeapi.connect("com.exasol.jdbc.EXADriver", url, [req["user"], req["password"]], req["jarPath"])
-    max_rows = int(req.get("maxRows", 1000))
-    out = {"results": []}
-    for stmt in req.get("statements", []):
-        t0 = time.time()
-        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
-        cur = C.cursor()
-        try:
-            cur.execute(stmt)
-            if cur.description:
-                e["kind"] = "resultSet"
-                e["columns"] = [{"name": d[0], "typeName": ""} for d in cur.description]
-                rows = cur.fetchmany(max_rows)
-                e["rows"] = [[cell(v) for v in r] for r in rows]
-                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
-            else:
-                try: e["rowCount"] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
-                except Exception: e["rowCount"] = 0
-        except Exception as ex:
-            e["error"] = str(ex)
-        finally:
-            try: cur.close()
-            except Exception: pass
-        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
-    try: C.close()
-    except Exception: pass
-    return out
-
-def run_odbc(req):
-    import pyodbc
-    # A driver LIBRARY PATH (Marketplace install) needs no OS registration;
-    # a system-registered driver is the fallback.
-    drv = req.get("driverPath") or ""
-    if not drv:
-        exa = [d for d in pyodbc.drivers() if "exa" in d.lower()]
-        if not exa:
-            raise Exception("No Exasol ODBC driver found. Install the ODBC Driver from the Marketplace, then retry.")
-        drv = exa[0]
-    # ODBC braced-value escaping: a literal } doubles, or it ends the value.
-    cs = "DRIVER={%s};EXAHOST=%s:%s;EXAUID=%s;EXAPWD=%s" % (drv.replace("}", "}}"), req["host"], req["port"], req["user"], req["password"])
-    if req.get("tls", True) and not req.get("verify"):
-        cs += ";SSLCERTIFICATE=SSL_VERIFY_NONE"
-    if req.get("schema"):
-        cs += ";SCHEMA=%s" % req["schema"]
-    C = pyodbc.connect(cs, autocommit=True)
-    max_rows = int(req.get("maxRows", 1000))
-    out = {"results": []}
-    for stmt in req.get("statements", []):
-        t0 = time.time()
-        e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
-        cur = C.cursor()
-        try:
-            cur.execute(stmt)
-            if cur.description:
-                e["kind"] = "resultSet"
-                e["columns"] = [{"name": d[0], "typeName": ""} for d in cur.description]
-                rows = cur.fetchmany(max_rows)
-                e["rows"] = [[cell(v) for v in r] for r in rows]
-                e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
-            else:
-                try: e["rowCount"] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
-                except Exception: e["rowCount"] = 0
-        except Exception as ex:
-            e["error"] = str(ex)
-        finally:
-            try: cur.close()
-            except Exception: pass
-        e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
-    try: C.close()
-    except Exception: pass
-    return out
-
-def main():
-    try:
-        req = json.load(sys.stdin)
-    except Exception as ex:
-        print(json.dumps({"fatal": "bad request: %s" % ex})); return
-    driver = req.get("driver")
-    try:
-        if driver == "jdbc":
-            out = run_jdbc(req)
-        elif driver == "odbc":
-            out = run_odbc(req)
-        elif driver == "sqlalchemy":
-            out = run_sqlalchemy(req)
-        else:
-            out = run_pyexasol(req)
-    except Exception as ex:
-        print(json.dumps({"fatal": "%s" % ex})); return
-    print(json.dumps(out))
-
-main()
-"#;
+/// The Python bridge — pyexasol, the SQLAlchemy dialect, JDBC (jaydebeapi) and
+/// ODBC (pyodbc), all in the managed venv. Kept as real Python next to the Go
+/// and R bridges so it can be read, linted and edited like the others; it is
+/// embedded at compile time and written into the venv at run time.
+const PYTHON_BRIDGE: &str = include_str!("../../../../packages/driver-bridges/python/bridge.py");
 
 #[cfg(test)]
 mod driver_support_tests {
-    use super::{driver_implemented, driver_runtime, unimplemented_driver_message};
+    use super::{driver_implemented, driver_runtime, expect_rows, unimplemented_driver_message};
+
+    #[test]
+    fn bridges_are_told_which_statements_return_rows_by_the_shared_classifier() {
+        let stmts: Vec<String> = [
+            "SELECT 1",
+            "  /* lead */ WITH x AS (SELECT 1) SELECT * FROM x",
+            "(SELECT 1) UNION (SELECT 2)",
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.DESCRIBE_SEMANTIC_OBJECT('a','b')",
+            "INSERT INTO T VALUES (1)",
+            "CREATE TABLE T (A INT)",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            expect_rows(&stmts),
+            vec![true, true, true, true, false, false],
+            "a bridge that reads this wrong either loses rows or double-runs a statement"
+        );
+    }
+
 
     #[test]
     fn only_drivers_with_a_real_implementation_are_allowed() {
@@ -792,24 +803,32 @@ mod driver_support_tests {
         // used to silently run pyexasol instead.
         assert!(driver_implemented("ts-js"), "TS runs on the bundled Node bridge");
         assert!(driver_implemented("sqlalchemy"), "SQLAlchemy runs through its own dialect");
-        for id in ["go", "r", "ado-net", "exarrow-rs"] {
-            assert!(!driver_implemented(id), "{id} must be refused, not substituted");
-        }
+        assert!(driver_implemented("exarrow-rs"), "exarrow runs in-process");
+        assert!(driver_implemented("go"), "Go runs on the prebuilt bridge binary");
+        assert!(driver_implemented("r"), "R runs the official package in a managed library");
+        // ADO.NET is published only as a Windows MSI, so it stays refused here.
+        assert!(!driver_implemented("ado-net"), "ado-net must be refused, not substituted");
     }
 
     #[test]
     fn every_unimplemented_driver_the_ui_can_offer_is_refused_by_the_same_rule() {
         // The picker's "supported" and the executor's gate must never
-        // disagree — these two were the mismatch: both claimed support.
-        for id in ["exarrow-rs"] {
-            assert!(!driver_implemented(id), "{id} runs a DIFFERENT driver than selected");
-        }
+        // disagree. Every id the executor claims must have a path that really
+        // runs THAT driver — exarrow's is `exarrow_exec`, not the sqlx pool.
+        assert!(!driver_implemented("ado-net"), "ado-net runs a DIFFERENT driver than selected");
     }
 
     #[test]
     fn the_refusal_names_the_driver_and_the_runtime_it_needs() {
-        let msg = unimplemented_driver_message("go");
-        assert!(msg.contains("go"), "{msg}");
-        assert!(msg.contains(driver_runtime("go")), "{msg}");
+        let msg = unimplemented_driver_message("websocket-over-carrier-pigeon");
+        assert!(msg.contains("websocket-over-carrier-pigeon"), "{msg}");
+        assert!(msg.contains(driver_runtime("websocket-over-carrier-pigeon")), "{msg}");
+    }
+
+    #[test]
+    fn ado_net_is_refused_with_the_real_reason_not_a_coming_soon() {
+        let msg = unimplemented_driver_message("ado-net");
+        assert!(msg.contains("Windows"), "the reason is the platform, not our backlog: {msg}");
+        assert!(!msg.contains("not wired up"), "{msg}");
     }
 }

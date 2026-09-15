@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
+  Binary,
   Boxes,
+  Braces,
   Cable,
   Check,
   Coffee,
@@ -9,6 +11,7 @@ import {
   FileArchive,
   FileCode2,
   Loader2,
+  Table2,
   X,
   Zap,
   type LucideIcon,
@@ -33,6 +36,9 @@ const DRIVER_TO_CATALOG: Record<string, string> = {
 /** One glyph per driver family (Boxicons/Lucide only — never emoji). */
 export const DRIVER_ICON: Record<string, LucideIcon> = {
   "sqlx-exasol": Zap,
+  "exarrow-rs": Table2,
+  "ts-js": Braces,
+  go: Binary,
   pyexasol: FileCode2,
   sqlalchemy: Boxes,
   jdbc: Coffee,

@@ -16,6 +16,7 @@ mod components_update;
 mod skills_market;
 mod verified_lock;
 mod driver_exec;
+mod exarrow_exec;
 mod drivers;
 mod cloudflared;
 mod community_db;
@@ -44,6 +45,10 @@ use tauri::Manager;
 use crate::state::AppState;
 
 pub fn run() {
+    // Before any TLS handshake: with two rustls crypto providers linked in,
+    // the automatic process-level lookup exarrow uses would panic instead of
+    // picking one. See exarrow_exec::install_crypto_provider.
+    crate::exarrow_exec::install_crypto_provider();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

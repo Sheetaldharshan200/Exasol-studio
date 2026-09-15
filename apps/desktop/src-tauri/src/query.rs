@@ -291,7 +291,7 @@ pub(crate) fn strip_leading_comments(statement: &str) -> &str {
 /// RETURNS TABLE output the rowcount path would silently discard; the fetch
 /// path streams a plain script's rowcount result as zero rows, so it is safe
 /// for both script shapes).
-fn is_result_set_statement(statement: &str) -> bool {
+pub(crate) fn is_result_set_statement(statement: &str) -> bool {
     let body = strip_leading_comments(statement);
     // A parenthesized query — `(SELECT …) UNION …` — has no leading keyword.
     if body.starts_with('(') {
@@ -447,7 +447,12 @@ pub async fn execute_sql(
     // If this connection's driver is a non-native one (PyExasol, JDBC, …), run
     // the statements through that driver's runtime instead of native sqlx.
     let profile = crate::profiles::find_profile(&state, &profile_id)?;
-    let (results, success, profile_session, profile_base_stmt) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
+    let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
+        // exarrow is compiled in, so it runs on this runtime — no child
+        // process, no spawn_blocking, and no sqlx pool standing in for it.
+        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows).await?;
+        (resp.results, resp.success, None, None)
+    } else if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let app_for_driver = app.clone();
         let resp = tokio::task::spawn_blocking(move || {

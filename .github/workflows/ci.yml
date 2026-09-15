@@ -82,7 +82,8 @@ jobs:
                 packages/agent-core/dist/mcp-gateway.cjs \
                 packages/agent-core/dist/exa-agent.cjs
           mkdir -p apps/desktop/src-tauri/resources/runtime \
-                   apps/desktop/src-tauri/resources/python-stack
+                   apps/desktop/src-tauri/resources/python-stack \
+                   apps/desktop/src-tauri/resources/bridges
 
       - name: cargo test
         run: cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml

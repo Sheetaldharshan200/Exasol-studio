@@ -49,5 +49,9 @@ if [ "${EXASOL_PREBUNDLE:-1}" = "1" ]; then
   fi
 fi
 
+# The prebuilt driver bridges are declared Tauri resources, so they must exist
+# before the bundle is assembled. Cheap and incremental — Go caches its build.
+"$REPO_ROOT/scripts/build-driver-bridges.sh" all
+
 cd "$REPO_ROOT/apps/desktop"
 exec pnpm tauri build "$@"

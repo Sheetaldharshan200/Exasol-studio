@@ -128,6 +128,9 @@ export function connectionUrl(p: { host: string; port: number | string; driverId
     case "odbc": return { url: `odbc:exa:${hp}`, driver: "Exasol ODBC" };
     case "pyexasol": return { url: `pyexasol://${hp}`, driver: "PyExasol" };
     case "sqlalchemy": return { url: `exa+websocket://${hp}`, driver: "SQLAlchemy" };
+    case "ts-js": return { url: `ws://${hp}`, driver: "Exasol TS driver" };
+    case "exarrow-rs": return { url: `exasol://${hp}`, driver: "exarrow (Arrow)" };
+    case "go": return { url: `exa:${hp}`, driver: "Exasol Go driver" };
     default: return { url: `exa:ws://${hp}`, driver: "Native websocket" };
   }
 }
