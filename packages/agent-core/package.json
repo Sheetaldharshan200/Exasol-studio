@@ -9,7 +9,7 @@
     "exa-agent": "dist/exa-agent.cjs"
   },
   "scripts": {
-    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\" && esbuild src/mcp-gateway.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-gateway.cjs --external:node:*",
+    "build": "node ../../scripts/gen-ui-map.mjs && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/agent-core.cjs --external:node:* && node -e \"const fs=require('fs');fs.rmSync('dist/skills',{recursive:true,force:true});fs.cpSync('skills','dist/skills',{recursive:true})\" && esbuild src/mcp-gateway.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-gateway.cjs --external:node:* && esbuild src/driver-bridge.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/driver-bridge.cjs --external:node:*",
     "build:cli": "pnpm run build && esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/exa-agent.cjs --external:node:* --banner:js=\"#!/usr/bin/env node\" && node -e \"require('fs').chmodSync('dist/exa-agent.cjs', 0o755)\"",
     "dev": "node --experimental-strip-types src/index.ts",
     "evals": "node --experimental-strip-types evals/run.ts",

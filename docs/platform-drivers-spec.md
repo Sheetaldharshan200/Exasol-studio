@@ -73,11 +73,11 @@ or (b) is refused with a specific, actionable reason. No third outcome.
 ### Tasks
 - [x] A1 `driver_implemented()` + refusal in `execute_via_driver`; no silent fallback (tested)
 - [x] A2 `driver_status` now derives `supported`/`hint` from the SAME authority, so the picker can never offer what execution refuses (the UI already consumes both)
-- [ ] A3 TS driver executes through the agent-core sidecar (no new runtime)
+- [x] A3 TS driver runs on the BUNDLED Node runtime via `driver-bridge.cjs` (the driver is bundled into it) — live-proven against a real database: typed result sets, real affected-row counts, truncation, and real DB errors
 - [ ] A4 Go bridge + runtime detection + Marketplace install path
 - [ ] A5 R bridge (`r-exasol`) + runtime detection
 - [ ] A6 ADO.NET bridge (`dotnet`) + runtime detection
-- [ ] A7 SQLAlchemy uses the dialect, not raw pyexasol
+- [x] A7 SQLAlchemy runs through its own dialect (`exa+websocket`, AUTOCOMMIT, `exec_driver_sql`) in the managed venv, not raw pyexasol
 - [ ] A8 Decide + document `websocket-api` / `exarrow-rs` mapping
 - [ ] A9 One integration case per working driver: connect → `SELECT 1` → a real result set
 

@@ -56,7 +56,8 @@
       "../../../packages/agent-core/dist/skills": "skills",
       "resources/python-stack": "python-stack",
       "resources/runtime-components.lock.json": "runtime-components.lock.json",
-      "resources/runtime": "runtime"
+      "resources/runtime": "runtime",
+      "../../../packages/agent-core/dist/driver-bridge.cjs": "driver-bridge.cjs"
     }
   },
   "plugins": {

@@ -56,7 +56,29 @@ pub fn driver_implemented(driver_id: &str) -> bool {
         "" | "sqlx-exasol" | "websocket-api"
         // real bridge implementations
         | "pyexasol" | "jdbc" | "odbc"
+        // TS driver: bundled Node + the driver bundled into driver-bridge.cjs
+        | "ts-js"
+        // SQLAlchemy dialect, in the managed Python venv (installed with pyexasol)
+        | "sqlalchemy"
     )
+}
+
+/// The bundled TS-driver bridge: release resource first, then the workspace
+/// path for `tauri dev` / local builds (same resolution agent-core.cjs uses).
+fn ts_bridge_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    if let Ok(p) = app.path().resolve("driver-bridge.cjs", tauri::path::BaseDirectory::Resource) {
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/agent-core/dist/driver-bridge.cjs");
+    if dev.exists() {
+        return Ok(dev.canonicalize().unwrap_or(dev));
+    }
+    Err(AppError::Storage(
+        "The TS driver bridge is missing — run `pnpm -F @exasol-studio/agent-core build`.".into(),
+    ))
 }
 
 /// What to tell the user when a driver has no implementation yet.
@@ -229,6 +251,11 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
         "odbc" => {
             let ok = odbc_ready(&app);
             (ok, true, if ok { String::new() } else { "Install the ODBC Driver from the Marketplace — one click sets up the runtime and wires the official Exasol driver, no OS install needed.".into() })
+        }
+        "node" => {
+            // Bundled with the app; only a broken install can lose it.
+            let ok = crate::agent::node_binary(&app).is_some();
+            (ok, true, if ok { String::new() } else { "The bundled Node runtime is missing — reinstall Exasol Studio.".into() })
         }
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
@@ -445,8 +472,11 @@ fn execute_python(
     if !driver_implemented(&profile.driver_id) {
         return Err(AppError::Storage(unimplemented_driver_message(&profile.driver_id)));
     }
-    let py = python_bin(app)?;
-    if !py.exists() {
+    // The TS driver runs on the Node runtime Studio already bundles, with the
+    // driver itself bundled into the bridge — nothing for the user to install.
+    let is_ts = profile.driver_id == "ts-js";
+    let py = if is_ts { std::path::PathBuf::new() } else { python_bin(app)? };
+    if !is_ts && !py.exists() {
         return Err(AppError::Storage("This driver's runtime isn’t installed. Install it, then try again.".into()));
     }
     let is_jdbc = profile.driver_id == "jdbc";
@@ -457,12 +487,17 @@ fn execute_python(
         return Err(AppError::Storage("The ODBC runtime isn’t installed. Install it, then try again.".into()));
     }
 
-    let script = python_dir(app)?.join("bridge.py");
-    std::fs::write(&script, PYTHON_BRIDGE)?;
+    let script = if is_ts {
+        ts_bridge_path(app)?
+    } else {
+        let p = python_dir(app)?.join("bridge.py");
+        std::fs::write(&p, PYTHON_BRIDGE)?;
+        p
+    };
 
     let tls = profile.ssl_mode != "disabled";
     let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
-    let jar = jdbc_jar(app)?.to_string_lossy().to_string();
+    let jar = if is_ts { String::new() } else { jdbc_jar(app)?.to_string_lossy().to_string() };
     // A Marketplace-installed ODBC library is used by PATH (pyodbc accepts a
     // driver file path), so no OS-level driver registration is ever required.
     let odbc_lib = driver_override(app, "odbc")
@@ -483,7 +518,14 @@ fn execute_python(
         "statements": statements,
     });
 
-    let mut cmd = Command::new(&py);
+    let runtime_bin = if is_ts {
+        crate::agent::node_binary(app).ok_or_else(|| {
+            AppError::Storage("The bundled Node runtime is missing — reinstall Exasol Studio.".into())
+        })?
+    } else {
+        py.clone()
+    };
+    let mut cmd = Command::new(&runtime_bin);
     cmd.arg(&script).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if std::env::consts::OS != "windows" {
         cmd.env("PATH", augmented_path());
@@ -592,6 +634,49 @@ def run_pyexasol(req):
     except Exception: pass
     return out
 
+def run_sqlalchemy(req):
+    # The POINT of this driver is the SQLAlchemy dialect — running plain
+    # pyexasol here (what the old fallback did) would be a different driver.
+    from sqlalchemy import create_engine
+    import urllib.parse as _u
+    auth = "%s:%s" % (_u.quote_plus(req["user"]), _u.quote_plus(req["password"]))
+    url = "exa+websocket://%s@%s:%s/%s" % (auth, req["host"], req["port"], req.get("schema") or "")
+    params = []
+    if not req.get("tls", True):
+        params.append("ENCRYPTION=n")
+    elif not req.get("verify"):
+        params.append("SSLCertificate=SSL_VERIFY_NONE")
+    if params:
+        url += "?" + "&".join(params)
+    engine = create_engine(url)
+    max_rows = int(req.get("maxRows", 1000))
+    out = {"results": []}
+    # AUTOCOMMIT: SQLAlchemy 2.0 opens a transaction by default, so DDL/DML
+    # would roll back when the connection closes.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as C:
+        for stmt in req.get("statements", []):
+            t0 = time.time()
+            e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
+            try:
+                # exec_driver_sql: raw SQL, so ':' in the text is never taken
+                # as a bind parameter.
+                res = C.exec_driver_sql(stmt)
+                if res.returns_rows:
+                    e["kind"] = "resultSet"
+                    e["columns"] = [{"name": str(k), "typeName": ""} for k in res.keys()]
+                    rows = res.fetchmany(max_rows)
+                    e["rows"] = [[cell(v) for v in r] for r in rows]
+                    e["rowCount"] = len(e["rows"]); e["truncated"] = len(e["rows"]) >= max_rows
+                else:
+                    e["rowCount"] = res.rowcount if res.rowcount and res.rowcount > 0 else 0
+            except Exception as ex:
+                e["error"] = str(ex)
+            e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
+            if e["error"]: break
+    try: engine.dispose()
+    except Exception: pass
+    return out
+
 def run_jdbc(req):
     import jaydebeapi
     url = "jdbc:exa:%s:%s" % (req["host"], req["port"])
@@ -683,6 +768,8 @@ def main():
             out = run_jdbc(req)
         elif driver == "odbc":
             out = run_odbc(req)
+        elif driver == "sqlalchemy":
+            out = run_sqlalchemy(req)
         else:
             out = run_pyexasol(req)
     except Exception as ex:
@@ -703,7 +790,9 @@ mod driver_support_tests {
         }
         // Declared in driver_runtime() but no bridge implements them — these
         // used to silently run pyexasol instead.
-        for id in ["ts-js", "go", "r", "ado-net", "sqlalchemy", "exarrow-rs"] {
+        assert!(driver_implemented("ts-js"), "TS runs on the bundled Node bridge");
+        assert!(driver_implemented("sqlalchemy"), "SQLAlchemy runs through its own dialect");
+        for id in ["go", "r", "ado-net", "exarrow-rs"] {
             assert!(!driver_implemented(id), "{id} must be refused, not substituted");
         }
     }
@@ -712,15 +801,15 @@ mod driver_support_tests {
     fn every_unimplemented_driver_the_ui_can_offer_is_refused_by_the_same_rule() {
         // The picker's "supported" and the executor's gate must never
         // disagree — these two were the mismatch: both claimed support.
-        for id in ["sqlalchemy", "exarrow-rs"] {
+        for id in ["exarrow-rs"] {
             assert!(!driver_implemented(id), "{id} runs a DIFFERENT driver than selected");
         }
     }
 
     #[test]
     fn the_refusal_names_the_driver_and_the_runtime_it_needs() {
-        let msg = unimplemented_driver_message("ts-js");
-        assert!(msg.contains("ts-js"), "{msg}");
-        assert!(msg.contains(driver_runtime("ts-js")), "{msg}");
+        let msg = unimplemented_driver_message("go");
+        assert!(msg.contains("go"), "{msg}");
+        assert!(msg.contains(driver_runtime("go")), "{msg}");
     }
 }
