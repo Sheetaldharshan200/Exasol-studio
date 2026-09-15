@@ -1,7 +1,9 @@
 # Platform & Drivers Spec — Personal 2.3, Podman, and every listed driver
 
-Status: IN PROGRESS — A1, A2 and B4 landed 2026-09-14 (the three items that
-fixed active wrongness); everything else is still open.
+Status: IN PROGRESS — **workstream A is complete** (A1–A9 landed 2026-09-14/15:
+every listed driver now either runs through its own runtime or is refused by
+name, with the reason). Workstreams B (Podman/Linux/Windows) and C (Virtual
+Schemas, UDFs, SLC) are still open.
 Assessed against the real code and the real upstream release notes.
 Owner: Exasol Studio (`apps/desktop/src-tauri` + `apps/desktop/src`)
 Scope: three workstreams that all change what Studio can honestly claim to
@@ -22,8 +24,8 @@ inferred from the version number.
 
 | Area | Today | Evidence |
 |---|---|---|
-| Driver matrix | 11 drivers listed in the Marketplace catalog; **3 runtimes actually execute** (native sqlx, JVM/JDBC, ODBC) — Python covers pyexasol | `catalog-data.ts` (11 `kind: "driver"` entries) vs `driver_exec.rs` bridge `main()`: `jdbc` → `run_jdbc`, `odbc` → `run_odbc`, **everything else → `run_pyexasol`** |
-| TS / Go / R / ADO.NET | Declared in `driver_runtime()` as `node`/`go`/`r`/`dotnet`, but no bridge implements them — selecting one **silently runs pyexasol instead** | `driver_exec.rs:27-41` vs the bridge's `else: run_pyexasol(req)` |
+| Driver matrix | **8 drivers execute** through their own runtime: native sqlx, exarrow (in-process), TS (bundled Node), Go (prebuilt bridge), pyexasol, SQLAlchemy, JDBC, ODBC. R is detected-not-bundled; ADO.NET is refused by platform | `driver_exec.rs::driver_implemented` is the single authority, read by BOTH `driver_status` and `execute_via_driver` (tested); bridges live in `packages/driver-bridges/` |
+| TS / Go / R / ADO.NET | TS and Go ship with the app and run natively (both live-proven); R needs the user's R and refuses clearly without it; ADO.NET is refused with its real reason (Windows-only MSI) | `packages/driver-bridges/{go,r,python}`, `agent-core/src/driver-bridge.ts`, `exarrow_exec.rs` |
 | Local database (macOS) | Exasol Personal, managed by Studio | `local_runtime.rs`, `local_database.rs` |
 | Local database (Linux/Windows) | **Not supported** — hard macOS gate; the fallback is a Docker container | `local_runtime.rs:1364` "only available on macOS"; `community_db.rs` (`exasol/docker-db`, `docker`, `colima start`) |
 | Personal version | Pinned `v2.2.0`, **macOS artifacts only** | `resources/runtime-components.lock.json` → `macos-aarch64`, `macos-x86_64` |
@@ -82,7 +84,11 @@ or (b) is refused with a specific, actionable reason. No third outcome.
 - [x] A6 ADO.NET: **closed as not-possible-off-Windows, with the reason recorded.** Exasol publishes the ADO.NET provider only as a Windows `.msi` (the downloads index lists `operatingSystems: [Windows]`, noarch) and there is no NuGet package — verified against `https://x-up.s3.amazonaws.com/7.x/packages.json` and nuget.org (0 hits). `ado-net` therefore stays REFUSED, and the refusal now names the real reason instead of implying a backlog item
 - [x] A7 SQLAlchemy runs through its own dialect (`exa+websocket`, AUTOCOMMIT, `exec_driver_sql`) in the managed venv, not raw pyexasol
 - [x] A8 `websocket-api` documented as a native alias; `exarrow-rs` split out into its own in-process driver (`exarrow_exec.rs`, compiled in, zero install) with the Arrow→grid conversion unit-tested
-- [ ] A9 One integration case per working driver: connect → `SELECT 1` → a real result set
+- [~] A9 Live proof per driver: exarrow has **automated** live tests
+  (`cargo test exarrow_live -- --ignored`, gated on `EXASOL_LIVE_*`) covering a
+  typed result set, an exact DECIMAL, a real NULL and a failing statement; TS
+  and Go were proven by hand against a real database. Still to do: fold the TS
+  and Go checks into the same automated, opt-in tier so they cannot silently rot
 
 ### Acceptance
 Selecting any driver in the Drivers tab either runs a query through that
@@ -229,9 +235,14 @@ container instead of failing at `CREATE SCRIPT`.
 2. **Retire Community-Docker (B7) or keep it as a fallback?** Recommendation:
    retire it once B1–B6 land — it exists only because Personal was macOS-only,
    and keeping a second engine keeps the Docker probe the user wants gone.
-3. **Driver depth (A4–A6).** Go/R/.NET each need a real bridge + toolchain
-   detection. Recommendation: ship A1–A3 first (honest gate + the TS driver we
-   can support for free), then add runtimes by demand.
+3. **Driver depth (A4–A6).** ~~Open.~~ **Settled 2026-09-15.** Go is native (a
+   prebuilt bridge binary in the bundle), R is detected-not-bundled (the
+   official package compiles against the Exasol ODBC driver and R hard-codes
+   its own install paths), and ADO.NET is closed as impossible off Windows —
+   Exasol publishes it only as a Windows MSI. The remaining question is only
+   whether to ship a **Windows-only** ADO.NET bridge; it needs a Windows
+   machine with the provider MSI installed to build and verify, so it is not
+   started until someone has one.
 
 ## 6. Sequencing
 
