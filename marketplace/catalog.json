@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T17:38:14Z",
+  "generatedAt": "2026-09-16T13:14:25Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
@@ -36,7 +36,7 @@
     },
     "dbt-exasol": {
       "repo": "exasol/dbt-exasol",
-      "latest": "v1.12.1",
+      "latest": "v1.12.2",
       "verified": null,
       "homepage": "https://github.com/exasol/dbt-exasol",
       "name": "dbt-exasol",
@@ -108,23 +108,31 @@
     },
     "exapump": {
       "repo": "exasol-labs/exapump",
-      "latest": "v0.12.0",
+      "latest": "v0.13.0",
       "verified": "v0.12.0",
       "homepage": "https://github.com/exasol-labs/exapump",
       "name": "exapump",
       "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust 🦀"
     },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.85",
+      "verified": null,
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
+      "name": "exa-engine",
+      "description": "exa — the Exasol data agent: terminal-native AI for schema-grounded SQL, verified answers and multi-agent data teams"
+    },
     "mcp-server": {
       "repo": "exasol/mcp-server",
       "latest": "2.2.0",
-      "verified": "2.0.0",
+      "verified": "2.2.0",
       "homepage": "https://github.com/exasol/mcp-server",
       "name": "mcp-server",
       "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
-      "latest": "2.3.2",
+      "latest": "2.4.1",
       "verified": null,
       "homepage": "https://github.com/exasol/pyexasol",
       "name": "pyexasol",
@@ -180,7 +188,7 @@
     },
     "driver-ts": {
       "repo": "exasol/exasol-driver-ts",
-      "latest": "0.7.0",
+      "latest": "0.8.0",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-ts",
       "name": "exasol-driver-ts",
@@ -188,7 +196,7 @@
     },
     "driver-go": {
       "repo": "exasol/exasol-driver-go",
-      "latest": "v1.1.0",
+      "latest": "v1.1.1",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-go",
       "name": "exasol-driver-go",
