@@ -821,7 +821,7 @@ async fn download_and_place_inner(
 
 /// download_and_place without the auto-extract step — for artifacts that must
 /// be checksum-verified before anything derived from them exists.
-async fn download_only(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<String> {
+pub(crate) async fn download_only(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<String> {
     download_and_place_inner(app, id, url, filename, false).await
 }
 
@@ -1337,7 +1337,7 @@ pub(crate) fn valid_version_tag(v: &str) -> bool {
 
 /// The `<latest>` version from a Maven Central maven-metadata.xml. Pure so the
 /// parsing rules are unit-tested — a full XML parser is overkill for one tag.
-fn maven_latest_version(xml: &str) -> Option<String> {
+pub(crate) fn maven_latest_version(xml: &str) -> Option<String> {
     let start = xml.find("<latest>")? + "<latest>".len();
     let end = xml[start..].find("</latest>")? + start;
     let v = xml[start..end].trim();

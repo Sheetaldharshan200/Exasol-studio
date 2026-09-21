@@ -277,7 +277,10 @@ def verify_platform_artifacts() -> None:
     if not os_name or not arch:
         raise RuntimeError(f"Unsupported validation platform: {platform.system()}/{platform.machine()}")
     key = f"{os_name}-{arch}"
-    names = ["uv", "exapump"] + (["personal"] if os_name == "macos" else [])
+    # Personal is locked for every desktop platform now, so every runner
+    # downloads, verifies and smoke-runs its own launcher — a broken Windows
+    # zip or Linux ARM build must fail here, not on a user's machine.
+    names = ["uv", "exapump", "personal"]
     with tempfile.TemporaryDirectory() as folder:
         temporary = Path(folder)
         for name in names:

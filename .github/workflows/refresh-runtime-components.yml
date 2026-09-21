@@ -171,8 +171,14 @@ jobs:
           # against the lock before it runs — then a real local deployment
           # through the launcher (Podman on the runner), exactly as Studio does.
           lock=apps/desktop/src-tauri/resources/runtime-components.lock.json
-          url=$(jq -r '.personal.artifacts["linux-x86_64"].url' "$lock")
-          sha=$(jq -r '.personal.artifacts["linux-x86_64"].sha256' "$lock")
+          # The matrix has an ARM leg; the x86_64 launcher would fail with an
+          # exec-format error there, so pick the artifact for this CPU.
+          case "$(uname -m)" in
+            aarch64|arm64) platform=linux-aarch64 ;;
+            *) platform=linux-x86_64 ;;
+          esac
+          url=$(jq -r --arg p "$platform" '.personal.artifacts[$p].url' "$lock")
+          sha=$(jq -r --arg p "$platform" '.personal.artifacts[$p].sha256' "$lock")
           curl -fsSL "$url" -o "${RUNNER_TEMP}/exasol-personal.tar.gz"
           echo "$sha  ${RUNNER_TEMP}/exasol-personal.tar.gz" | sha256sum -c -
           mkdir -p "${RUNNER_TEMP}/launcher" && tar -xzf "${RUNNER_TEMP}/exasol-personal.tar.gz" -C "${RUNNER_TEMP}/launcher"
@@ -222,7 +228,9 @@ jobs:
           if [ -f "$probe" ]; then
             uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python "$probe"
           fi
-          export EXA_DSN=127.0.0.1:8563 EXA_USER=sys EXA_PASSWORD='StudioCiOnly-9mW2zK7q' EXA_SSL_CERT_VALIDATION=no
+          # The MCP server is validated against the SAME deployment: its generated
+          # port and password, not a fixed pair that only the old container had.
+          export EXA_DSN="$host:$port" EXA_USER="$user" EXA_PASSWORD="$password" EXA_SSL_CERT_VALIDATION=no
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
           import json, os, queue, shutil, subprocess, sys, threading, time
           process = subprocess.Popen(

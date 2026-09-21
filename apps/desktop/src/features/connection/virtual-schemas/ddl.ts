@@ -9,7 +9,7 @@
  * double-quoted with embedded quotes doubled, so `my schema` stays `my schema`.
  */
 import type { VsAdapter } from "./types.ts";
-import { VS_BUCKET_PATH, VS_DRIVER_BUCKET_PATH } from "./types.ts";
+import { VS_BUCKET_PATH } from "./types.ts";
 
 const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -38,10 +38,35 @@ export function qualified(schema: string, name: string): string {
 
 /** Where an adapter's release artifact and (for JDBC) its driver live in BucketFS. */
 export function adapterJarPath(assetName: string): string {
-  return `${VS_BUCKET_PATH}/${assetName}`;
+  return `${VS_BUCKET_PATH}/vs/${assetName}`;
 }
 export function driverJarPath(fileName: string): string {
-  return `${VS_DRIVER_BUCKET_PATH}/${fileName}`;
+  return `${VS_BUCKET_PATH}/vs/${fileName}`;
+}
+
+/**
+ * The ETL layer (IMPORT FROM JDBC, which the adapters use to move rows) reads
+ * the driver from its own registration, not from BucketFS: `settings.cfg`
+ * next to the JAR under `/exa/jdbc/<DRIVERNAME>/`. Same keys and meanings as
+ * Exasol's "Add JDBC Driver" guide; the trailing newline is required.
+ */
+export function jdbcSettingsCfg(input: { driverName: string; prefix: string; mainClass: string; jar: string }): string {
+  return [
+    `DRIVERNAME=${input.driverName}`,
+    `PREFIX=${input.prefix}`,
+    `DRIVERMAIN=${input.mainClass}`,
+    `FETCHSIZE=100000`,
+    `INSERTSIZE=-1`,
+    `JAR=${input.jar}`,
+    ``,
+  ].join("\n");
+}
+
+/** `jdbc:postgresql:` from `jdbc:postgresql://host:5432/db` — what settings.cfg's PREFIX wants. */
+export function jdbcPrefix(url: string): string {
+  const m = /^(jdbc:[a-z0-9]+:)/i.exec(url);
+  if (!m) throw new Error(`not a JDBC URL: ${url}`);
+  return m[1].toLowerCase();
 }
 
 /**
@@ -76,6 +101,9 @@ export function adapterScriptDdl(
   const lines = [
     `CREATE OR REPLACE JAVA ADAPTER SCRIPT ${target} AS`,
     `  %scriptclass ${adapter.scriptClass};`,
+    // The Exasol Personal guide sets this: without it, timestamps read through
+    // the adapter shift by whatever zone the Java runtime happens to run in.
+    `  %jvmoption -Duser.timezone=UTC;`,
     `  %jar ${adapterJarPath(input.adapterAsset)};`,
   ];
   if (adapter.driver) {

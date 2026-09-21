@@ -60,6 +60,8 @@ tauri-plugin-http = "2.0.0-rc.6"
 exarrow-rs = "0.16"
 arrow = { version = "58", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# Adapter release assets are matched by the catalog's per-adapter pattern.
+regex = "1"
 
 [profile.release]
 codegen-units = 1

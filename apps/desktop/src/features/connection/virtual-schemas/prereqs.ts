@@ -12,12 +12,24 @@ export type PrereqProbe = {
   adapterScripts: { schema: string; name: string }[];
   /** UDF scripts present (SCRIPT_TYPE = 'UDF'), for document adapters' import UDF. */
   udfScripts: { schema: string; name: string }[];
-  /** File names present in the adapter bucket path (`/buckets/bfsdefault/default`, recursive). */
+  /**
+   * Paths present under the default bucket (`/buckets/bfsdefault/default`),
+   * RELATIVE to it and recursive — e.g. `vs/postgresql.jar`. Presence is
+   * decided on the exact path the DDL will reference, never on a basename:
+   * a JAR parked under `backup/` must not count as installed.
+   */
   bucketFiles: string[];
   connections: string[];
+  /**
+   * Script language container aliases installed (`exasol slc list`), e.g.
+   * `["PYTHON3", "JAVA"]`. `undefined` when the database is not a local
+   * deployment Studio manages — cloud and cluster Exasols ship their SLCs.
+   */
+  slcAliases?: string[];
 };
 
 export type Prerequisite =
+  | { kind: "javaSlc"; label: string }
   | { kind: "adapterArtifact"; label: string; asset: string }
   | { kind: "driverJar"; label: string; source: "maven" | "user"; maven?: string; manualUrl?: string }
   | { kind: "adapterScript"; label: string; schema: string; name: string }
@@ -25,6 +37,8 @@ export type Prerequisite =
 
 /** Studio registers adapters under this schema unless one already exists. */
 export const ADAPTER_SCHEMA = "ADAPTER";
+/** The directory under the default bucket where Studio stages adapter and driver JARs. */
+export const VS_DIR = "vs";
 
 /** The adapter script name Studio uses for an adapter, e.g. `POSTGRESQL_ADAPTER`. */
 export function adapterScriptName(adapter: VsAdapter): string {
@@ -54,20 +68,29 @@ export function missingPrerequisites(
   options: { schema?: string; userDriverFile?: string } = {},
 ): Prerequisite[] {
   const schema = foldIdentifier(options.schema ?? ADAPTER_SCHEMA);
-  const files = new Set(probe.bucketFiles.map((f) => f.split("/").pop() ?? f));
+  // Normalise to bucket-relative paths; the DDL references `vs/<file>`.
+  const files = new Set(probe.bucketFiles.map((f) => f.replace(/^\/?buckets\/bfsdefault\/default\//, "").replace(/^\/+/, "")));
+  const inVs = (name: string) => files.has(`${VS_DIR}/${name}`);
   const hasScript = (list: { schema: string; name: string }[], name: string) =>
     list.some((s) => foldIdentifier(s.schema) === schema && foldIdentifier(s.name) === foldIdentifier(name));
   const missing: Prerequisite[] = [];
 
+  // A Java adapter runs as a Java UDF. Local deployments ship no script
+  // language container, so the JAVA one must be installed first (it needs a
+  // database restart, which is why it comes before everything else).
+  if (adapter.runtime === "java" && probe.slcAliases && !probe.slcAliases.some((a) => a.toUpperCase() === "JAVA")) {
+    missing.push({ kind: "javaSlc", label: "Java script language container (runs the adapter)" });
+  }
+
   const assetPattern = new RegExp(adapter.release.asset);
-  const artifactPresent = adapter.runtime === "lua" || [...files].some((f) => assetPattern.test(f));
+  const artifactPresent = adapter.runtime === "lua" || [...files].some((f) => f.startsWith(`${VS_DIR}/`) && assetPattern.test(f.slice(VS_DIR.length + 1)));
   if (!artifactPresent) {
     missing.push({ kind: "adapterArtifact", label: `${adapter.name} adapter ${adapter.release.tag}`, asset: adapter.release.asset });
   }
 
   if (adapter.driver) {
     const fetched = driverFileName(adapter);
-    const present = fetched ? files.has(fetched) : Boolean(options.userDriverFile && files.has(options.userDriverFile));
+    const present = fetched ? inVs(fetched) : Boolean(options.userDriverFile && inVs(options.userDriverFile));
     if (!present) {
       missing.push(
         fetched

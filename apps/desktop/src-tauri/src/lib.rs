@@ -17,6 +17,7 @@ mod skills_market;
 mod verified_lock;
 mod driver_exec;
 mod exarrow_exec;
+mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
 mod dashboards;
@@ -125,6 +126,8 @@ pub fn run() {
             catalog::search_objects,
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
+            virtual_schema_install::vs_stage_adapter,
+            virtual_schema_install::vs_local_state,
             files::write_text_file,
             files::save_attachment,
             files::install_cli,

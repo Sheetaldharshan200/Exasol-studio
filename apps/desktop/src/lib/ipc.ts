@@ -350,8 +350,43 @@ export type AiClientStatus = {
 };
 
 export type VsPrereqs = {
+  /** Adapter scripts present (SYS.EXA_ALL_SCRIPTS, SCRIPT_TYPE = 'ADAPTER'). */
   adapters: { schema: string; name: string }[];
+  /** UDF scripts present — document adapters need an import UDF beside the adapter script. */
+  udfScripts: { schema: string; name: string }[];
   connections: string[];
+};
+
+/** The disk half of the virtual-schema prerequisite probe, for Studio's managed local Exasol Personal. */
+export type VsLocalState = {
+  /** False when there is no managed local deployment, or it predates 2.3 (no host-visible /exa yet). */
+  managedLocal: boolean;
+  /** Paths under the default bucket, relative to it (`vs/foo.jar`). */
+  bucketFiles: string[];
+  /** Aliases of the installed script language containers, upper-cased (`JAVA`, `PYTHON3`, …). */
+  slcAliases: string[];
+};
+
+export type VsStageRequest = {
+  jobId: string;
+  repo: string;
+  assetPattern: string;
+  runtime: "java" | "lua";
+  driver: {
+    name: string;
+    maven?: string;
+    userJarPath?: string;
+    settingsCfgTemplate: string;
+  } | null;
+};
+
+export type VsStageResult = {
+  releaseTag: string;
+  adapterAsset: string;
+  luaSource: string | null;
+  driverFile: string | null;
+  javaSlcInstalled: boolean;
+  restarted: boolean;
 };
 
 export type GraphColumn = { name: string; dataType: string; pk: boolean };
@@ -521,6 +556,10 @@ export const ipc = {
   getSchemaGraph: (profileId: string, schema: string) =>
     call<SchemaGraph>("get_schema_graph", { profileId, schema }),
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
+  /** What Studio's managed local Exasol already has on disk (adapter JARs, SLCs). */
+  vsLocalState: () => call<VsLocalState>("vs_local_state"),
+  /** Stage an adapter (and its driver) into the managed local Exasol; installs the Java SLC and restarts once if needed. */
+  vsStageAdapter: (req: VsStageRequest) => call<VsStageResult>("vs_stage_adapter", { req }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
   marketRepoMeta: (repos: string[]) =>

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   adapterScriptDdl, connectionDdl, dropVirtualSchemaSql, foldIdentifier, identifier, importUdfDdl,
-  proveListTablesSql, proveSelectSql, sqlString, virtualSchemaDdl,
+  jdbcPrefix, jdbcSettingsCfg, proveListTablesSql, proveSelectSql, sqlString, virtualSchemaDdl,
 } from "./ddl.ts";
 import { PostgresqlAdapter } from "./adapters/postgresql.ts";
 import { S3Adapter } from "./adapters/s3.ts";
@@ -49,8 +49,9 @@ test("a Java JDBC adapter script references both JARs; a document adapter also g
   assert.equal(pg, [
     "CREATE OR REPLACE JAVA ADAPTER SCRIPT ADAPTER.PG_ADAPTER AS",
     "  %scriptclass com.exasol.adapter.RequestDispatcher;",
-    "  %jar /buckets/bfsdefault/default/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar;",
-    "  %jar /buckets/bfsdefault/default/drivers/jdbc/postgresql-42.7.4.jar;",
+    "  %jvmoption -Duser.timezone=UTC;",
+    "  %jar /buckets/bfsdefault/default/vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar;",
+    "  %jar /buckets/bfsdefault/default/vs/postgresql-42.7.4.jar;",
     "/",
   ].join("\n"));
   assert.throws(() => adapterScriptDdl(PostgresqlAdapter, { schema: "a", name: "b", adapterAsset: "x.jar" }), /driver JAR/);
@@ -104,4 +105,13 @@ test("prove and undo statements target the folded schema name", () => {
   assert.equal(proveSelectSql("pg_vs", "customers"), "SELECT * FROM PG_VS.CUSTOMERS LIMIT 5");
   assert.equal(proveSelectSql("pg_vs", "customers", 0), "SELECT * FROM PG_VS.CUSTOMERS LIMIT 1", "never LIMIT 0");
   assert.equal(dropVirtualSchemaSql("pg_vs"), "DROP VIRTUAL SCHEMA IF EXISTS PG_VS CASCADE");
+});
+
+test("the ETL layer's driver registration matches the guide's settings.cfg, newline-terminated", () => {
+  const cfg = jdbcSettingsCfg({ driverName: "POSTGRESQL", prefix: "jdbc:postgresql:", mainClass: "org.postgresql.Driver", jar: "postgresql-42.7.13.jar" });
+  assert.equal(cfg, "DRIVERNAME=POSTGRESQL\nPREFIX=jdbc:postgresql:\nDRIVERMAIN=org.postgresql.Driver\nFETCHSIZE=100000\nINSERTSIZE=-1\nJAR=postgresql-42.7.13.jar\n");
+  assert.equal(jdbcPrefix("jdbc:postgresql://h:5432/db"), "jdbc:postgresql:");
+  assert.equal(jdbcPrefix("jdbc:sqlserver://h:1433;databaseName=x"), "jdbc:sqlserver:");
+  assert.equal(jdbcPrefix("JDBC:EXA:host:8563"), "jdbc:exa:");
+  assert.throws(() => jdbcPrefix("postgresql://h/db"), /not a JDBC URL/);
 });

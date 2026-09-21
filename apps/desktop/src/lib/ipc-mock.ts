@@ -635,8 +635,23 @@ export async function mockInvoke(
     case "market_dir_path":
       return "/Users/you/Library/Application Support/com.exasol.studio/marketplace";
 
+    case "vs_local_state":
+      return { managedLocal: true, bucketFiles: ["vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar"], slcAliases: ["PYTHON3"] };
+    case "vs_stage_adapter": {
+      await delay(600);
+      const req = (args?.req ?? {}) as { runtime?: string; driver?: { name?: string } | null };
+      return {
+        releaseTag: "4.0.2",
+        adapterAsset: req.runtime === "lua" ? "adapter-dist-1.0.0.lua" : "virtual-schema-dist-14.0.5-postgresql-4.0.2.jar",
+        luaSource: req.runtime === "lua" ? "-- mock adapter\nreturn {}" : null,
+        driverFile: req.driver ? `${(req.driver.name ?? "driver").toLowerCase()}-1.0.0.jar` : null,
+        javaSlcInstalled: req.runtime === "java",
+        restarted: req.runtime === "java",
+      };
+    }
     case "list_vs_prereqs":
       return {
+        udfScripts: [],
         adapters: [
           { schema: "ADAPTERS", name: "JDBC_ADAPTER" },
           { schema: "ADAPTERS", name: "POSTGRES_ADAPTER" },

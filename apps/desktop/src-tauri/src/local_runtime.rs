@@ -36,7 +36,7 @@ pub struct RuntimeConnection {
     pub engine: Option<String>,
 }
 
-fn runtime_dir(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) fn runtime_dir(app: &AppHandle) -> AppResult<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
@@ -322,7 +322,7 @@ fn managed_exasol(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(runtime_dir(app)?.join("bin").join(launcher_binary_name()))
 }
 
-fn exasol_cli(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) fn exasol_cli(app: &AppHandle) -> AppResult<PathBuf> {
     let managed = managed_exasol(app)?;
     if managed.is_file() {
         return Ok(managed);
@@ -537,7 +537,7 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
 /// shared `~/.exasol/personal/deployments/default` (used by the starter kit or
 /// manual `exasol` runs) is never read, started, stopped, or destroyed by
 /// Studio — destroying that one can no longer break Studio's database.
-fn personal_deployment_dir(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) fn personal_deployment_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(runtime_dir(app)?.join("deployment"))
 }
 

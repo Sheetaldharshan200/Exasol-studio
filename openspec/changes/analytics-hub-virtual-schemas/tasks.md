@@ -19,10 +19,10 @@
 
 ## 3. Prerequisite install (Rust) and IPC
 
-- [ ] 3.1 New `virtual_schema_install.rs`: resolve the adapter JAR from the repo's latest GitHub release by asset pattern, resolve a Maven driver when coordinates are given, download with size/TLS checks (checksum where published), upload both to BucketFS through `bucketfs.rs`, run `CREATE JAVA ADAPTER SCRIPT`; stream progress via `emit_log`/`market:done`; verify pure helpers in `mod tests` (asset matching, Maven URL building, manifest class check) and `cargo test`
-- [ ] 3.2 Extend `list_vs_prereqs` to report per-adapter presence (script, adapter JAR, driver JAR in BucketFS); verify `cargo test` on the classification helper
-- [ ] 3.3 Extend the database overview with `virtual: { adapter, connection } | null` per schema from `EXA_ALL_VIRTUAL_SCHEMAS`; verify `cargo test` on the row mapping and that a non-virtual schema maps to `null`
-- [ ] 3.4 Add IPC (`ipc.ts`, `ipc-mock.ts`): `vsInstallPrerequisites`, `vsProve`, extended `listVsPrereqs`; verify `tsc` and the mock returns shaped data
+- [x] 3.1 New `virtual_schema_install.rs` (`vs_stage_adapter`): resolves the adapter's latest GitHub release by the catalog's asset pattern, verifies GitHub's per-asset digest, resolves a Maven driver when coordinates are given, and — per the Exasol Personal 2.3 guide — WRITES the files into the deployment's host-visible `local/runtime/exa` (`bucketfs/bfsdefault/default/vs/` for the adapter script, `jdbc/<DRIVERNAME>/` + `settings.cfg` for the ETL layer) instead of uploading over BucketFS HTTP, installs the Java SLC with `exasol slc install java --no-restart` and restarts once; Lua adapters return their source for inlining. The DDL is generated in TS and run through the normal execute path. Pure helpers tested: Maven URL building, settings.cfg rewriting, SLC alias extraction, recursive relative listing
+- [x] 3.2 The probe is split by where the truth lives: `list_vs_prereqs` (database) now also reports UDF scripts; `vs_local_state` (disk) reports the managed deployment's bucket files and installed SLC aliases; `prereqs.ts` composes both
+- [x] 3.3 The overview already reported `isVirtual` + `adapterScript`; the source name comes from the catalog (`adapterForScript`, tested) rather than a second Rust query
+- [x] 3.4 Add IPC (`ipc.ts`, `ipc-mock.ts`): `vsInstallPrerequisites`, `vsProve`, extended `listVsPrereqs`; verify `tsc` and the mock returns shaped data
 
 ## 4. Add a data source — the flow tab
 
