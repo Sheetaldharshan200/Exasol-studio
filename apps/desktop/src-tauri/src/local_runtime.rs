@@ -1,10 +1,9 @@
 //! Studio-owned local Exasol runtime orchestration.
 //!
-//! macOS uses the native Exasol Personal launcher. Windows and Linux use the
-//! official Exasol Nano image through Docker (preferred) or Podman. This module
+//! Every platform runs Exasol Personal through the official launcher, which
+//! owns the container engine (Podman) on macOS, Linux and Windows. This module
 //! deliberately does not execute or install the Personal Local Starter Kit.
 
-use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -19,12 +18,10 @@ use tauri::{AppHandle, Manager};
 use crate::error::{AppError, AppResult};
 use crate::market::{emit_log, resolve_bin, run_streamed};
 
-const NANO_CONTAINER: &str = "exasol-studio-nano";
-const NANO_VOLUME: &str = "exasol-studio-nano-data";
 const PORT: u16 = 8563;
 // Studio's OWN Personal deployment listens off the standard port so it can
 // coexist with (and never be broken by) any other local Exasol — the starter
-// kit's Docker DB or a user-managed `exasol` deployment, both usually on 8563.
+// kit's database or a user-managed `exasol` deployment, both usually on 8563.
 const STUDIO_DB_PORT: u16 = 8565;
 const STUDIO_SSH_PORT: u16 = 2224;
 
@@ -73,19 +70,14 @@ pub fn runtime_running(app: &AppHandle) -> bool {
 /// The port Studio's managed database listens on: the deployment's recorded
 /// dbPort when installed, otherwise the platform default for a fresh install.
 fn expected_db_port(app: &AppHandle) -> u16 {
-    if std::env::consts::OS == "macos" {
-        personal_deployment_dir(app)
-            .ok()
-            .and_then(|dir| std::fs::read(dir.join("deployment.json")).ok())
-            .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
-            .and_then(|v| v.get("connection")?.get("dbPort")?.as_u64())
-            .map(|p| p as u16)
-            .unwrap_or(STUDIO_DB_PORT)
-    } else {
-        PORT
-    }
+    personal_deployment_dir(app)
+        .ok()
+        .and_then(|dir| std::fs::read(dir.join("deployment.json")).ok())
+        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+        .and_then(|v| v.get("connection")?.get("dbPort")?.as_u64())
+        .map(|p| p as u16)
+        .unwrap_or(STUDIO_DB_PORT)
 }
-
 fn wait_for_port(app: &AppHandle, id: &str, port: u16, timeout: Duration) -> AppResult<()> {
     let started = Instant::now();
     let mut last_report = 0;
@@ -316,25 +308,18 @@ fn restrict_windows_secret(path: &Path) -> AppResult<()> {
         .arg(path)
         .args(["/inheritance:r", "/grant:r", &grant])
         .status()
-        .map_err(|e| AppError::Storage(format!("could not secure the Nano password file: {e}")))?;
+        .map_err(|e| AppError::Storage(format!("could not secure the local database password file: {e}")))?;
     if !status.success() {
         return Err(AppError::Storage(
-            "Windows refused the private ACL for the Nano password file.".into(),
+            "Windows refused the private ACL for the local database password file.".into(),
         ));
     }
     Ok(())
 }
 
-fn generated_password() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect()
-}
-
 fn managed_exasol(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(runtime_dir(app)?.join("bin").join("exasol"))
+    // `exasol.exe` on Windows — a copy without the extension would not run.
+    Ok(runtime_dir(app)?.join("bin").join(launcher_binary_name()))
 }
 
 fn exasol_cli(app: &AppHandle) -> AppResult<PathBuf> {
@@ -344,6 +329,52 @@ fn exasol_cli(app: &AppHandle) -> AppResult<PathBuf> {
     }
     resolve_bin("exasol")
         .ok_or_else(|| AppError::Storage("Exasol Personal launcher is not installed.".into()))
+}
+
+/// Which archive format a release artifact is, from its name. Exasol ships
+/// the launcher as `.tar.gz` for macOS and Linux and `.zip` for Windows.
+#[derive(Debug, PartialEq, Eq)]
+enum LauncherArchive {
+    TarGz,
+    Zip,
+}
+
+fn launcher_archive_kind(name: &str) -> Option<LauncherArchive> {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".zip") {
+        Some(LauncherArchive::Zip)
+    } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        Some(LauncherArchive::TarGz)
+    } else {
+        None
+    }
+}
+
+/// The launcher executable's file name inside the archive on this platform.
+fn launcher_binary_name() -> &'static str {
+    if std::env::consts::OS == "windows" { "exasol.exe" } else { "exasol" }
+}
+
+/// Unpack a launcher release artifact, whichever format this platform's is.
+fn unpack_launcher_archive(archive: &Path, dest: &Path) -> AppResult<()> {
+    let name = archive.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    match launcher_archive_kind(name) {
+        Some(LauncherArchive::Zip) => {
+            let mut zip = zip::ZipArchive::new(File::open(archive)?)
+                .map_err(|e| AppError::Storage(format!("could not open the launcher archive: {e}")))?;
+            zip.extract(dest)
+                .map_err(|e| AppError::Storage(format!("could not extract the launcher archive: {e}")))?;
+            Ok(())
+        }
+        Some(LauncherArchive::TarGz) => {
+            let decoder = flate2::read::GzDecoder::new(File::open(archive)?);
+            tar::Archive::new(decoder).unpack(dest)?;
+            Ok(())
+        }
+        None => Err(AppError::Storage(format!(
+            "Unexpected launcher archive format: {name} (expected .tar.gz or .zip)"
+        ))),
+    }
 }
 
 fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
@@ -427,9 +458,8 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     let unpack = runtime_dir(app)?.join("launcher-unpack");
     let _ = std::fs::remove_dir_all(&unpack);
     std::fs::create_dir_all(&unpack)?;
-    let decoder = flate2::read::GzDecoder::new(File::open(&archive)?);
-    tar::Archive::new(decoder).unpack(&unpack)?;
-    let binary = find_file(&unpack, "exasol").ok_or_else(|| {
+    unpack_launcher_archive(&archive, &unpack)?;
+    let binary = find_file(&unpack, launcher_binary_name()).ok_or_else(|| {
         AppError::Storage("Exasol Personal archive did not contain `exasol`.".into())
     })?;
     let target = managed_exasol(app)?;
@@ -471,9 +501,8 @@ fn install_personal_launcher_from(
     let unpack = runtime_dir(app)?.join("launcher-unpack");
     let _ = std::fs::remove_dir_all(&unpack);
     std::fs::create_dir_all(&unpack)?;
-    let decoder = flate2::read::GzDecoder::new(File::open(&archive)?);
-    tar::Archive::new(decoder).unpack(&unpack)?;
-    let binary = find_file(&unpack, "exasol").ok_or_else(|| {
+    unpack_launcher_archive(&archive, &unpack)?;
+    let binary = find_file(&unpack, launcher_binary_name()).ok_or_else(|| {
         AppError::Storage("Exasol Personal archive did not contain `exasol`.".into())
     })?;
     let target = managed_exasol(app)?;
@@ -711,8 +740,8 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
                 let _ = std::fs::remove_file(&to);
                 std::os::unix::fs::symlink(target, &to)?;
             }
-            // Non-unix managed DBs run in Docker (no dir backup), so a symlink
-            // here isn't expected; skip rather than follow it.
+            // A symlink is not expected in a deployment directory on other
+            // platforms; skip rather than follow it.
         } else if ty.is_dir() {
             copy_dir_all(&from, &to)?;
         } else if ty.is_file() {
@@ -1007,234 +1036,16 @@ pub(crate) fn update_personal_engine(
     }
 }
 
-fn engine_owner_path(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(runtime_dir(app)?.join("container-engine"))
-}
 
-fn engine_program(name: &str) -> String {
-    resolve_bin(name)
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| name.into())
-}
 
-fn engine_name(program: &str) -> &'static str {
-    if program.to_ascii_lowercase().contains("podman") {
-        "podman"
-    } else {
-        "docker"
-    }
-}
 
-fn persist_engine_owner(app: &AppHandle, program: &str) -> AppResult<()> {
-    std::fs::write(engine_owner_path(app)?, engine_name(program))?;
-    Ok(())
-}
 
-fn container_engine(app: &AppHandle) -> AppResult<String> {
-    let owner = engine_owner_path(app)?;
-    if let Ok(name) = std::fs::read_to_string(&owner) {
-        let name = name.trim();
-        if !matches!(name, "docker" | "podman") {
-            return Err(AppError::Storage(
-                "The saved Nano container-engine owner is invalid.".into(),
-            ));
-        }
-        let program = engine_program(name);
-        if command_ok(&program, &["info"]) {
-            return Ok(program);
-        }
-        return Err(AppError::Storage(format!(
-            "The managed Exasol Nano runtime belongs to {name}, but that engine is not running. Start {name} and retry."
-        )));
-    }
 
-    let mut available = Vec::new();
-    let mut existing: Option<String> = None;
-    for name in ["docker", "podman"] {
-        let program = engine_program(name);
-        if !command_ok(&program, &["info"]) {
-            continue;
-        }
-        if container_exists(&program) {
-            if existing.is_some() {
-                return Err(AppError::Storage(
-                    "Both Docker and Podman contain an Exasol Studio Nano container; remove the duplicate before continuing."
-                        .into(),
-                ));
-            }
-            existing = Some(program.clone());
-        }
-        available.push(program);
-    }
-    if let Some(program) = existing {
-        persist_engine_owner(app, &program)?;
-        return Ok(program);
-    }
-    available.into_iter().next().ok_or_else(|| {
-        AppError::Storage(
-            "Exasol Nano requires a running Docker or Podman engine. Start one and retry.".into(),
-        )
-    })
-}
 
-fn container_exists(engine: &str) -> bool {
-    command_ok(engine, &["container", "inspect", NANO_CONTAINER])
-}
 
-fn container_running(engine: &str) -> bool {
-    Command::new(engine)
-        .args([
-            "container",
-            "inspect",
-            "-f",
-            "{{.State.Running}}",
-            NANO_CONTAINER,
-        ])
-        .output()
-        .map(|out| out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true")
-        .unwrap_or(false)
-}
 
-fn container_uses_current_image(engine: &str) -> bool {
-    let expected = crate::component_lock::components().nano.immutable_image();
-    Command::new(engine)
-        .args([
-            "container",
-            "inspect",
-            "-f",
-            "{{.Config.Image}}",
-            NANO_CONTAINER,
-        ])
-        .output()
-        .map(|output| {
-            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == expected
-        })
-        .unwrap_or(false)
-}
 
-fn first_deploy_args(engine: &str) -> bool {
-    Command::new(engine)
-        .args([
-            "container",
-            "inspect",
-            "-f",
-            "{{.Config.Cmd}}",
-            NANO_CONTAINER,
-        ])
-        .output()
-        .map(|out| {
-            out.status.success()
-                && String::from_utf8_lossy(&out.stdout).contains("sys_password_file")
-        })
-        .unwrap_or(false)
-}
 
-fn run_nano_container(
-    app: &AppHandle,
-    id: &str,
-    engine: &str,
-    secret: Option<&Path>,
-) -> AppResult<()> {
-    let image = crate::component_lock::components().nano.immutable_image();
-    let mut args = vec![
-        "run".to_string(),
-        "-d".into(),
-        "--name".into(),
-        NANO_CONTAINER.into(),
-        "--shm-size=512mb".into(),
-        "--pids-limit=-1".into(),
-        "-p".into(),
-        format!("127.0.0.1:{PORT}:8563"),
-        "-v".into(),
-        format!("{NANO_VOLUME}:/exa"),
-    ];
-    if let Some(secret) = secret {
-        let mut source = secret.to_string_lossy().replace('\\', "/");
-        source.push_str(":/run/secrets/sys_password:ro");
-        if engine.ends_with("podman") {
-            source.push_str(",z");
-        }
-        args.extend(["-v".into(), source]);
-    }
-    args.push(image);
-    if secret.is_some() {
-        args.extend([
-            "init".into(),
-            "sys_password_file=/run/secrets/sys_password".into(),
-        ]);
-    }
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    if run_streamed(app, id, engine, &refs)? != 0 {
-        return Err(AppError::Storage(
-            "Exasol Nano container failed to start.".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn ensure_nano(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
-    let engine = container_engine(app)?;
-    let password_file = runtime_dir(app)?.join("credentials/nano_sys_password");
-    let exists = container_exists(&engine);
-    let password = match std::fs::read_to_string(&password_file) {
-        Ok(value) if !value.trim().is_empty() => value.trim().to_owned(),
-        _ if !exists => {
-            let value = generated_password();
-            write_secret(&password_file, &value)?;
-            value
-        }
-        _ => return Err(AppError::Storage(format!(
-            "The managed Nano container exists but its Studio credential is missing at {}. Refusing to replace it with an unrelated password; restore the credential or destroy and recreate the managed runtime.",
-            password_file.display()
-        ))),
-    };
-    if exists {
-        if !container_uses_current_image(&engine) {
-            let image = crate::component_lock::components().nano.immutable_image();
-            if run_streamed(app, id, &engine, &["pull", &image])? != 0 {
-                return Err(AppError::Storage(format!("Could not pull {image}.")));
-            }
-            if run_streamed(app, id, &engine, &["rm", "-f", NANO_CONTAINER])? != 0 {
-                return Err(AppError::Storage(
-                    "Could not replace the outdated Exasol Nano container.".into(),
-                ));
-            }
-            run_nano_container(app, id, &engine, None)?;
-        } else if !container_running(&engine) {
-            if first_deploy_args(&engine) {
-                if run_streamed(app, id, &engine, &["rm", "-f", NANO_CONTAINER])? != 0 {
-                    return Err(AppError::Storage(
-                        "Could not replace the first-deploy Nano container.".into(),
-                    ));
-                }
-                run_nano_container(app, id, &engine, None)?;
-            } else if run_streamed(app, id, &engine, &["start", NANO_CONTAINER])? != 0 {
-                return Err(AppError::Storage(
-                    "Could not start the existing Exasol Nano container.".into(),
-                ));
-            }
-        }
-    } else {
-        if port_ready(PORT) {
-            return Err(AppError::Storage(format!("Port {PORT} is already in use.")));
-        }
-        let image = crate::component_lock::components().nano.immutable_image();
-        if run_streamed(app, id, &engine, &["pull", &image])? != 0 {
-            return Err(AppError::Storage(format!("Could not pull {image}.")));
-        }
-        run_nano_container(app, id, &engine, Some(&password_file))?;
-    }
-    wait_for_port(app, id, PORT, Duration::from_secs(600))?;
-    persist_engine_owner(app, &engine)?;
-    Ok(RuntimeConnection {
-        kind: "nano".into(),
-        host: "127.0.0.1".into(),
-        port: PORT,
-        user: "sys".into(),
-        password,
-        engine: Some(engine),
-    })
-}
 
 /// A local database already registered in the shared registry and answering
 /// on its port.
@@ -1283,7 +1094,7 @@ pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection>
     // "adopt" it through the shared registry — that path carries a REGISTRY
     // credential that drifts (stale sys / old MCP identity), which failed the
     // readiness probe and dragged setup through the stop/start recovery ladder.
-    if std::env::consts::OS == "macos" && personal_deployment_exists(app) {
+    if personal_deployment_exists(app) {
         return ensure_personal(app, id);
     }
     // Reuse a running, already-registered FOREIGN local database before
@@ -1297,11 +1108,9 @@ pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection>
         );
         return Ok(adopted);
     }
-    if std::env::consts::OS == "macos" {
-        ensure_personal(app, id)
-    } else {
-        ensure_nano(app, id)
-    }
+    // Exasol Personal 2.3 runs locally on macOS, Linux and Windows through the
+    // launcher, which owns the container engine — there is no second path.
+    ensure_personal(app, id)
 }
 
 /// Force a fresh MANAGED deployment, bypassing adoption of any already-running
@@ -1310,15 +1119,11 @@ pub fn ensure_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection>
 /// reclaims the port from an orphaned Studio daemon first, so a leftover process
 /// from a previous run can't block the fresh deploy.
 pub fn redeploy_managed(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
-    if std::env::consts::OS == "macos" {
-        // Force a CLEAN restart: stop any existing managed deployment and free
-        // the port first, so a dead/stuck daemon (port open but not query-ready)
-        // is actually replaced instead of reused because "the port answers".
-        force_stop_personal(app, id);
-        ensure_personal(app, id)
-    } else {
-        ensure_nano(app, id)
-    }
+    // Force a CLEAN restart: stop any existing managed deployment and free
+    // the port first, so a dead/stuck daemon (port open but not query-ready)
+    // is actually replaced instead of reused because "the port answers".
+    force_stop_personal(app, id);
+    ensure_personal(app, id)
 }
 
 /// Best-effort teardown of the managed Personal deployment before a fresh
@@ -1343,17 +1148,9 @@ fn force_stop_personal(app: &AppHandle, id: &str) {
 fn force_stop_personal(_app: &AppHandle, _id: &str) {}
 
 pub fn runtime_installed(app: &AppHandle) -> bool {
-    if std::env::consts::OS == "macos" {
-        personal_deployment_dir(app)
-            .map(|dir| dir.join("deployment.json").is_file())
-            .unwrap_or(false)
-    } else {
-        engine_owner_path(app).is_ok_and(|path| path.is_file())
-            || ["docker", "podman"].iter().any(|name| {
-                let engine = engine_program(name);
-                command_ok(&engine, &["info"]) && container_exists(&engine)
-            })
-    }
+    personal_deployment_dir(app)
+        .map(|dir| dir.join("deployment.json").is_file())
+        .unwrap_or(false)
 }
 
 pub fn start_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
@@ -1395,11 +1192,6 @@ fn host_prep_args<'a>(cli: &str, base: &[&'a str]) -> Vec<&'a str> {
 }
 
 pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
-    if std::env::consts::OS != "macos" {
-        return Err(AppError::Storage(
-            "Native Exasol Personal recovery is only available on macOS.".into(),
-        ));
-    }
     let cli = exasol_cli(app)?.to_string_lossy().to_string();
     let deployment = personal_deployment_dir(app)?.to_string_lossy().to_string();
     emit_log(
@@ -1423,77 +1215,39 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
 }
 
 pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32> {
-    if std::env::consts::OS == "macos" {
-        let cli = exasol_cli(app)?.to_string_lossy().to_string();
-        // Every action targets Studio's OWN deployment dir — never the shared
-        // default one, so Studio can't destroy a deployment it doesn't own.
-        let ddir = personal_deployment_dir(app)?.to_string_lossy().to_string();
-        match action {
-            "status" => {
-                emit_log(
-                    app,
-                    id,
-                    if port_ready(expected_db_port(app))
-                        && command_ok(&cli, &["info", "--deployment-dir", &ddir])
-                    {
-                        "running"
-                    } else {
-                        "stopped"
-                    },
-                    "out",
-                );
-                Ok(0)
-            }
-            "info" => run_streamed(app, id, &cli, &["info", "--deployment-dir", &ddir]),
-            "start" => {
-                ensure_personal(app, id)?;
-                Ok(0)
-            }
-            "stop" => run_streamed(app, id, &cli, &["stop", "--deployment-dir", &ddir]),
-            "destroy" => run_streamed(
+    let cli = exasol_cli(app)?.to_string_lossy().to_string();
+    // Every action targets Studio's OWN deployment dir — never the shared
+    // default one, so Studio can't destroy a deployment it doesn't own.
+    let ddir = personal_deployment_dir(app)?.to_string_lossy().to_string();
+    match action {
+        "status" => {
+            emit_log(
                 app,
                 id,
-                &cli,
-                &["destroy", "--remove", "--auto-approve", "--deployment-dir", &ddir],
-            ),
-            _ => Err(AppError::Storage(format!("Unsupported action: {action}"))),
-        }
-    } else {
-        let engine = container_engine(app)?;
-        match action {
-            "status" => {
-                emit_log(
-                    app,
-                    id,
-                    if container_running(&engine) {
-                        "running"
-                    } else if container_exists(&engine) {
-                        "stopped"
-                    } else {
-                        "not installed"
-                    },
-                    "out",
-                );
-                Ok(0)
-            }
-            "info" => run_streamed(app, id, &engine, &["container", "inspect", NANO_CONTAINER]),
-            "start" => {
-                ensure_nano(app, id)?;
-                Ok(0)
-            }
-            "stop" => run_streamed(app, id, &engine, &["stop", "-t", "60", NANO_CONTAINER]),
-            "destroy" => {
-                let container = run_streamed(app, id, &engine, &["rm", "-f", NANO_CONTAINER])?;
-                let volume = run_streamed(app, id, &engine, &["volume", "rm", NANO_VOLUME])?;
-                if container == 0 && volume == 0 {
-                    let _ = std::fs::remove_file(engine_owner_path(app)?);
-                    Ok(0)
+                if port_ready(expected_db_port(app))
+                    && command_ok(&cli, &["info", "--deployment-dir", &ddir])
+                {
+                    "running"
                 } else {
-                    Ok(1)
-                }
-            }
-            _ => Err(AppError::Storage(format!("Unsupported action: {action}"))),
+                    "stopped"
+                },
+                "out",
+            );
+            Ok(0)
         }
+        "info" => run_streamed(app, id, &cli, &["info", "--deployment-dir", &ddir]),
+        "start" => {
+            ensure_personal(app, id)?;
+            Ok(0)
+        }
+        "stop" => run_streamed(app, id, &cli, &["stop", "--deployment-dir", &ddir]),
+        "destroy" => run_streamed(
+            app,
+            id,
+            &cli,
+            &["destroy", "--remove", "--auto-approve", "--deployment-dir", &ddir],
+        ),
+        _ => Err(AppError::Storage(format!("Unsupported action: {action}"))),
     }
 }
 
@@ -1514,10 +1268,15 @@ mod tests {
     }
 
     #[test]
-    fn generated_password_is_long_ascii_alphanumeric() {
-        let password = generated_password();
-        assert_eq!(password.len(), 32);
-        assert!(password.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    fn launcher_archives_are_recognised_by_name() {
+        assert_eq!(launcher_archive_kind("exasol-personal_macOS_arm64.tar.gz"), Some(LauncherArchive::TarGz));
+        assert_eq!(launcher_archive_kind("exasol-personal_Linux_x86_64.tar.gz"), Some(LauncherArchive::TarGz));
+        // Windows ships a zip — the one platform whose archive is not a tarball.
+        assert_eq!(launcher_archive_kind("exasol-personal_Windows_x86_64.zip"), Some(LauncherArchive::Zip));
+        assert_eq!(launcher_archive_kind("EXASOL.ZIP"), Some(LauncherArchive::Zip), "case-insensitive");
+        assert_eq!(launcher_archive_kind("exasol-personal.tgz"), Some(LauncherArchive::TarGz));
+        assert_eq!(launcher_archive_kind("exasol-personal.msi"), None, "an unknown format is refused, not guessed");
+        assert_eq!(launcher_archive_kind(""), None);
     }
 
     #[test]
@@ -1530,13 +1289,6 @@ mod tests {
             digest,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-    }
-
-    #[test]
-    fn nano_image_is_immutable() {
-        let image = crate::component_lock::components().nano.immutable_image();
-        assert!(image.starts_with("docker.io/exasol/nano@sha256:"));
-        assert_eq!(image.rsplit(':').next().unwrap().len(), 64);
     }
 
     #[test]

@@ -17,7 +17,6 @@ export type Install =
   | "source-build"
   | "semantic-views"
   | "bundled"
-  | "community-docker"
   | "maven"
   /** Downloaded from the driver's NATIVE registry (npm / Go proxy / crates.io /
    *  GitHub tags) at any version — independent of Studio, usable by your own
@@ -50,19 +49,6 @@ export type RepoMeta = { name: string; description: string | null; htmlUrl: stri
 // Official Exasol / Exasol-Labs repositories only.
 export const CATALOG: CatalogItem[] = [
   { id: "exasol-personal", repo: "exasol/exasol-personal", kind: "database", install: "personal-local" },
-  // Full Exasol 8 in Docker (BucketFS, virtual schemas, extensions; ≤10 GiB).
-  // Lifecycle is managed by the community_db Rust commands: Docker checks,
-  // live version tags from Docker Hub, pull/run, start/stop/remove.
-  {
-    id: "exasol-community",
-    repo: "exasol/docker-db",
-    kind: "database",
-    install: "community-docker",
-    // Override: the repo's About line reads "Documentation for the Docker
-    // version…", which mislabels a full database as documentation.
-    name: "Exasol Community",
-    description: "Full Exasol 8 database running in Docker — BucketFS, virtual schemas and extensions, up to 10 GiB of data. Free for evaluation and development.",
-  },
   { id: "exapump", repo: "exasol-labs/exapump", kind: "cli", install: "binary", labs: true },
   { id: "semantic-views", repo: "exasol-labs/exasol-semantic-views", kind: "extension", install: "semantic-views", labs: true },
   { id: "json-tables", repo: "exasol-labs/exasol-json-tables", kind: "extension", install: "source-build", labs: true },
@@ -116,7 +102,9 @@ export const CATALOG: CatalogItem[] = [
   { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
   { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "binary", labs: true },
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
-  { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "uv-pip" },
+  // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
+  // container engine, so this links to the project instead of installing it.
+  { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "reference" },
   { id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", kind: "skills", install: "bundled", labs: true },
   // The AI panel's engine — a managed component (updates via update_component,
   // digest-verified; the sidecar restarts after a switch). Shown as a card so
@@ -146,7 +134,7 @@ export function repoDisplayName(repo: string): string {
 /**
  * Fill an item's display fields. Explicit `name`/`description` on the entry are
  * deliberate OVERRIDES and win (a repo's About line is not always a product
- * description — exasol/docker-db's says "Documentation for…"); GitHub metadata
+ * description — some About lines read "Documentation for…"); GitHub metadata
  * fills everything not overridden; safe fallbacks cover loading/offline.
  */
 export function resolveCatalogItem(

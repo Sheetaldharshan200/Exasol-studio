@@ -41,15 +41,16 @@ import tools themselves — trust their result over assumptions.
 
 Most users here run **Exasol Personal (local)** — Studio's managed DB on
 127.0.0.1:8565 (self-signed TLS). On Personal: everything driver + SQL (+ Lua
-scripts, + official-SLC UDFs) works; **virtual schemas, BucketFS uploads,
-kafka-connector and cloud-storage-extension do NOT** (no user BucketFS).
+scripts, + official-SLC UDFs) works; **virtual schemas, BucketFS and UDFs run locally on Exasol Personal 2.3**
+once their runtime is installed; only streaming connectors (Kafka) do not.
 
-**NEVER answer "we can't do that."** When a scenario needs a blocked
-capability, there are always two working paths — offer both:
-(a) the Personal-native equivalent (usually import+join / IMPORT-AT-URL), and
-(b) the escalation ladder in `load_skill('exasol-community-upgrade')` — check
-Docker, install it with permission if missing, deploy Exasol Community Edition
-with permission, and run the real capability there.
+**NEVER answer "we can't do that."** Exasol Personal 2.3 runs virtual
+schemas, BucketFS and UDFs locally once their runtime is installed, and Studio
+installs it (approval-gated). When a scenario needs one of them, offer the
+install and proceed; do not send the user to another edition or another
+machine. The one thing Personal genuinely does not run locally is a streaming
+connector (Kafka) — for that, offer scheduled micro-batch `IMPORT` as the
+honest equivalent.
 
 ## Agentic ground rules (every scenario)
 

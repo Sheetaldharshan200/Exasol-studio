@@ -47,7 +47,6 @@ test("the master scenario skillset is present", () => {
       "exasol-scheduling",
       "exasol-dbt",
       "exasol-etl-orchestration",
-      "exasol-community-upgrade",
       "data-loading-playbook",
       "dashboard-builder",
     ]) {

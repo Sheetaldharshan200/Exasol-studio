@@ -16,7 +16,7 @@ export const PYPI_PACKAGE: Record<string, string> = {
 };
 
 export type VersionSource = {
-  source: "github" | "pypi" | "dockerhub" | "npm" | "goproxy" | "crates" | "exasol-downloads" | "maven-exasol-jdbc";
+  source: "github" | "pypi" | "npm" | "goproxy" | "crates" | "exasol-downloads" | "maven-exasol-jdbc";
   reference: string;
 };
 
@@ -40,12 +40,9 @@ export const PACKAGE_SOURCE: Record<string, VersionSource> = {
 };
 
 /** How to list an item's versions — null when the item has no version-addressable
- *  install (reference links, the Community docker lifecycle card, bundled
+ *  install (reference links, bundled
  *  skills, source builds reconciled to a revision). */
 export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install">): VersionSource | null {
-  // AI Lab installs as a Docker image, not a pip package — its versions are
-  // Docker Hub tags (must mirror the Rust install_ai_lab dispatch).
-  if (item.id === "ai-lab") return { source: "dockerhub", reference: "exasol/ai-lab" };
   // The AI engine is bundled but updates from its release repo.
   if (item.id === "exa-agent" && item.repo) return { source: "github", reference: item.repo };
   // Exasol Personal: official engine releases — a pick on the card switches

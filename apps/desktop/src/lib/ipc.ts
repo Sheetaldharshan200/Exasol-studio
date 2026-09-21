@@ -255,7 +255,7 @@ export type SearchHit = {
   selectable: boolean;
 };
 
-export type MarketEnv = { os: string; arch: string; docker: boolean; podman: boolean };
+export type MarketEnv = { os: string; arch: string };
 export type PersonalLocalStatus = {
   state: "idle" | "installing" | "ready" | "failed" | "stopped";
   step: string;
@@ -334,22 +334,6 @@ export type CatalogEntry = {
   name?: string | null;
   description?: string | null;
 };
-/** Live state of the Exasol Community (docker-db) card. */
-export type CommunityStatus = {
-  dockerInstalled: boolean;
-  engineRunning: boolean;
-  os: string;
-  arch: string;
-  /** amd64 host → native; otherwise the image runs emulated (experimental). */
-  native: boolean;
-  containerExists: boolean;
-  running: boolean;
-  tag: string | null;
-  dbPort: number;
-  bucketfsPort: number;
-  user: string;
-};
-
 export type MarketCatalog = {
   generatedAt: string | null;
   mirrorRepo: string;
@@ -539,12 +523,6 @@ export const ipc = {
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
-  // Exasol Community database (full exasol/docker-db in Docker).
-  communityStatus: () => call<CommunityStatus>("community_status"),
-  communityVersions: () => call<string[]>("community_versions"),
-  communityInstall: (tag: string) => call<CommunityStatus>("community_install", { tag }),
-  communityControl: (action: "start" | "stop" | "remove" | "destroy") => call<CommunityStatus>("community_control", { action }),
-  communitySetup: (action: "start-docker" | "install-docker") => call<CommunityStatus>("community_setup", { action }),
   marketRepoMeta: (repos: string[]) =>
     call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
       "market_repo_meta",
@@ -565,7 +543,7 @@ export const ipc = {
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),
   /** Web build: the engine installs what a local server process can (pip
-   *  packages, the starter-kit stack, docker pulls). */
+   *  packages, the starter-kit stack). */
   marketInstallEngine: (id: string) => call<{ done: boolean; started?: boolean; note?: string }>("market_install", { id }),
   marketInstall: (id: string, version: string, url: string, filename: string) =>
     call<{ ok: boolean; path: string }>("market_install", { id, version, url, filename }),

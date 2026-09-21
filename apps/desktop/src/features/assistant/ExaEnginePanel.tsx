@@ -290,7 +290,7 @@ export function ExaEnginePanel({
   useEffect(() => {
     if (!engineClient) return;
     // v2: reseed once more so the scenario-router master skillset (federation,
-    // scheduling, dbt, ETL, community-upgrade) becomes default-active on
+    // scheduling, dbt, ETL) becomes default-active on
     // existing installs too. The merge below is a union — always safe to re-run.
     if (localStorage.getItem("exa.skills.seededAll2") === "1") return;
     void (async () => {

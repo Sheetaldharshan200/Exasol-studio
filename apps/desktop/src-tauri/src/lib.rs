@@ -19,7 +19,6 @@ mod driver_exec;
 mod exarrow_exec;
 mod drivers;
 mod cloudflared;
-mod community_db;
 mod dashboards;
 mod error;
 mod exapump;
@@ -146,11 +145,6 @@ pub fn run() {
             fs::fs_delete,
             market::market_env,
             market::market_catalog,
-            community_db::community_status,
-            community_db::community_versions,
-            community_db::community_install,
-            community_db::community_control,
-            community_db::community_setup,
             market::market_doc,
             market::market_doc_save,
             market::market_doc_load,

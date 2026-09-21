@@ -60,7 +60,6 @@ import {
 } from "@/features/marketplace/catalog-data";
 import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
-import { CommunityDbActions } from "@/features/marketplace/CommunityDbActions";
 import { pickAsset } from "@/features/marketplace/assets";
 import { componentVersionSource, versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
@@ -172,14 +171,6 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         `Install ${item.id === "mcp-server" ? "exasol-mcp-server" : "exasol-agent-skills"} as a uv tool`,
       ];
     case "uv-pip":
-      // AI Lab is a Docker image, not a pip package — say what actually runs.
-      if (item.id === "ai-lab") {
-        return [
-          "Detect a running Docker or Podman engine",
-          "Pull the exasol/ai-lab image (the chosen version)",
-          "Show the run command (JupyterLab on port 49494)",
-        ];
-      }
       return [
         "Ensure the uv Python package manager (install it if missing)",
         "Create a managed Python environment",
@@ -199,12 +190,6 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       ];
     case "bundled":
       return ["Verify the pinned skills shipped inside Exasol Studio", "Make them available to the AI agent immediately"];
-    case "community-docker":
-      return [
-        "Pull the chosen exasol/docker-db version from Docker Hub",
-        "Run it privileged with data persisted in a named volume (DB on 127.0.0.1:8574, BucketFS on 2581)",
-        "Register the sys connection in Studio once the database answers",
-      ];
     case "maven":
       return [
         "Resolve the latest exasol-jdbc version from Maven Central (live)",
@@ -218,9 +203,7 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
-      return env && env.os === "macos"
-        ? ["Install the verified native Exasol Personal launcher", "Run `exasol install local` and save its generated credential in the Studio vault"]
-        : ["Detect a running Docker or Podman engine", "Pull the pinned official Exasol Nano image", "Create a persistent local container with a generated vault-backed SYS credential"];
+      return ["Install the verified native Exasol Personal launcher", "Run `exasol install local` and save its generated credential in the Studio vault"];
     case "personal-cloud":
       return [
         "Install the official Exasol launcher (if not already present)",
@@ -705,7 +688,6 @@ export function Marketplace() {
     }
   }
 
-  const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
   const [nav, setNavState] = useState<string>("recommended");
@@ -903,7 +885,7 @@ export function Marketplace() {
   // a selection made before state moved on (item got installed, release info
   // arrived and revealed no host build) is re-validated at install time.
   const canBatchInstall = (item: CatalogItem): boolean => {
-    if (item.install === "reference" || item.install === "community-docker") return false;
+    if (item.install === "reference") return false;
     // Runs-inside-Studio drivers join the batch too — their batch action is
     // the runtime setup (installDriverRuntime), skipped once ready.
     const did = DRIVER_RUNTIME[item.id];
@@ -1055,7 +1037,7 @@ export function Marketplace() {
     );
 
     // Live any-version picker: list fetched on first open (GitHub tags / PyPI
-    // versions / Docker Hub tags / Maven Central), newest first. Shared by the
+    // versions / Maven Central), newest first. Shared by the
     // plain Install branch AND the runs-inside-Studio driver branch, so every
     // installable item lists its versions.
     // Direct driver flows bypass the install queue, so the menu must also
@@ -1104,12 +1086,7 @@ export function Marketplace() {
         </DropdownMenuContent>
       </DropdownMenu>
     ) : null;
-    // The Community database manages its own docker lifecycle — dedicated card
-    // actions (Docker checks, live versions, install/start/stop) instead of the
-    // generic install button.
-    const actions = item.install === "community-docker" ? (
-      <CommunityDbActions />
-    ) : (
+    const actions = (
       <div className="flex flex-wrap items-center gap-2">
         {did ? (
           // ONE button end to end: picking a version makes the same button
@@ -1413,12 +1390,6 @@ export function Marketplace() {
         {/* mt-auto pins the action row to the card bottom so buttons line up
             across a grid row regardless of description length. */}
         <div className="mt-auto pt-3">{actions}</div>
-        {item.install === "personal-local" && env && env.os !== "macos" && !env.docker && !env.podman ? (
-          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
-            <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
-            Start or install Docker/Podman to run Exasol Nano on {env.os}.
-          </p>
-        ) : null}
       </div>
     );
   };
@@ -1459,14 +1430,6 @@ export function Marketplace() {
             <div className="flex items-center gap-1.5">
               <span className="rounded-md border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
                 {env.os} · {env.arch}
-              </span>
-              <span
-                className={cn(
-                  "rounded-md border px-2 py-1 font-mono text-[10px]",
-                  runtime ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground",
-                )}
-              >
-                {runtime ? runtime : "no docker/podman"}
               </span>
             </div>
           ) : null}

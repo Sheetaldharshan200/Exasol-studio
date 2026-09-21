@@ -285,8 +285,6 @@ fn find_named_file(dir: &std::path::Path, name: &str) -> Option<PathBuf> {
 pub struct MarketEnv {
     pub os: String,
     pub arch: String,
-    pub docker: bool,
-    pub podman: bool,
 }
 
 pub(crate) fn has_binary(bin: &str) -> bool {
@@ -299,14 +297,12 @@ pub(crate) fn has_binary(bin: &str) -> bool {
     c.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
-/// Host OS/arch and whether Docker / Podman are available.
+/// Host OS and architecture, for platform-specific Marketplace copy.
 #[tauri::command]
 pub fn market_env() -> MarketEnv {
     MarketEnv {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        docker: has_binary("docker"),
-        podman: has_binary("podman"),
     }
 }
 
@@ -899,7 +895,7 @@ fn extract_zip_tree(archive: &std::path::Path, dest: &std::path::Path) -> AppRes
 /// user's real tools.
 fn shadowable_tool_name(name: &str) -> bool {
     [
-        "sh", "bash", "zsh", "env", "sudo", "git", "docker", "podman", "colima", "python",
+        "sh", "bash", "zsh", "env", "sudo", "git", "podman", "python",
         "python3", "pip", "pip3", "node", "npm", "npx", "uv", "uvx", "brew", "cargo", "rustc",
         "go", "java", "terraform", "exasol", "exapump", "ls", "cat", "rm", "cp", "mv", "curl",
         "wget", "make", "cc", "gcc", "clang",
@@ -1016,39 +1012,6 @@ pub(crate) fn auto_extract_and_link(app: &AppHandle, id: &str, archive: &std::pa
     }
 }
 
-/// AI Lab is NOT a PyPI package (the old `uv pip install exasol-ai-lab`
-/// failed forever — no such package). It ships as the exasol/ai-lab Docker
-/// image (JupyterLab on port 49494). Pull the requested tag (default latest)
-/// with whichever engine exists.
-fn install_ai_lab(app: &AppHandle, id: &str, tag: Option<&str>) -> AppResult<String> {
-    // Zero prerequisites: bring a container engine up ourselves (start a
-    // stopped one, or install Colima headlessly on macOS) — never dead-end on
-    // "install Docker first". Podman is honored when it's what the user runs.
-    let engine = match crate::community_db::ensure_engine_ready(app, id) {
-        Ok(bin) => bin,
-        Err(engine_error) => resolve_bin("podman")
-            .map(|p| p.to_string_lossy().to_string())
-            .ok_or(engine_error)?,
-    };
-    let tag = tag.unwrap_or("latest");
-    // Docker's tag grammar is stricter than the generic version validation.
-    if !valid_docker_tag(tag) {
-        return Err(AppError::Storage(format!("Invalid AI Lab image tag: {tag}")));
-    }
-    let image = format!("docker.io/exasol/ai-lab:{tag}");
-    emit_log(app, id, format!("Pulling {image}…"), "info");
-    if run_streamed(app, id, &engine, &["pull", &image])? != 0 {
-        return Err(AppError::Storage(format!("Could not pull the exasol/ai-lab:{tag} image.")));
-    }
-    emit_log(
-        app,
-        id,
-        format!("AI Lab image ready. Start it with: docker run --detach --name exasol-ai-lab -p 127.0.0.1:49494:49494 exasol/ai-lab:{tag} — then open http://localhost:49494 (JupyterLab)."),
-        "info",
-    );
-    Ok(format!("exasol/ai-lab:{tag} image pulled"))
-}
-
 fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String> {
     let uv = ensure_uv(app, id)?;
     let venv = market_dir(app)?.join(id).join("venv");
@@ -1121,8 +1084,8 @@ fn cmd_exists_win(bin: &str) -> bool {
 }
 
 // The official Exasol launcher (`exasol`) drives cloud deployments. The local
-// runtime is owned by `local_runtime`: native Personal on macOS, Nano through
-// Docker/Podman on Windows and Linux.
+// runtime is owned by `local_runtime`: Exasol Personal through the official
+// launcher on macOS, Linux and Windows.
 const EXASOL_INSTALLER_SH: &str = "curl -fsSL https://www.exasol.com/install/ | sh";
 
 fn exasol_bin() -> String {
@@ -1152,7 +1115,7 @@ fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Local database: native Exasol Personal on macOS, Exasol Nano elsewhere.
+/// Local database: Exasol Personal through the official launcher, every platform.
 fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
     let runtime = crate::local_runtime::ensure_runtime(app, id)?;
     Ok(format!(
@@ -1473,19 +1436,10 @@ fn merge_versions_cache(cache_path: &std::path::Path, key: &str, entry: Value) {
     }
 }
 
-/// A Docker image tag per Docker's own grammar — stricter than
-/// `valid_version_tag` (no `+`, must not start with `.` or `-`).
-fn valid_docker_tag(v: &str) -> bool {
-    let mut chars = v.chars();
-    matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
-        && v.len() <= 128
-        && chars.all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
-}
-
 /// Live version list for an item, so ANY version can be installed — not just
 /// the newest. `source` is "github" (release tags of `reference` = owner/repo,
 /// disk-cached 1h — the unauthenticated API rate-limits at 60/hr), "pypi"
-/// (release versions of `reference` = package name), "dockerhub" (image tags
+/// (release versions of `reference` = package name),
 /// of `reference` = org/repo), or "maven-exasol-jdbc" (Maven Central;
 /// `reference` ignored). Newest first.
 #[tauri::command]
@@ -1617,43 +1571,7 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
                 .unwrap_or_default();
             merge_versions_cache(&cache_path, &reference, json!({ "at": now, "etag": etag, "list": list }));
             list
-        }
-        "dockerhub" => {
-            if !ok_repo(&reference) {
-                return Err(AppError::Storage("Invalid image repository.".into()));
-            }
-            // Follow pagination (bounded) — releases past the first page must
-            // not silently vanish from the dropdown.
-            let mut names: Vec<String> = Vec::new();
-            let mut url = format!("https://hub.docker.com/v2/repositories/{reference}/tags?page_size=100");
-            for _ in 0..4 {
-                let body: Value = client
-                    .get(&url)
-                    .header("User-Agent", "exasol-studio")
-                    .timeout(timeout)
-                    .send()
-                    .await
-                    .map_err(|e| AppError::Storage(e.to_string()))?
-                    .error_for_status()
-                    .map_err(|e| AppError::Storage(format!("Docker Hub: {e}")))?
-                    .json()
-                    .await
-                    .map_err(|e| AppError::Storage(e.to_string()))?;
-                // A 200 without `results` is a schema surprise, not "no tags".
-                let page = body
-                    .get("results")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| AppError::Storage("Docker Hub returned an unexpected tag listing.".into()))?;
-                names.extend(page.iter().filter_map(|t| t.get("name").and_then(Value::as_str)).map(str::to_string));
-                match body.get("next").and_then(Value::as_str) {
-                    // Only follow Docker Hub's own pagination links.
-                    Some(next) if next.starts_with("https://hub.docker.com/") => url = next.to_string(),
-                    _ => break,
-                }
-            }
-            crate::community_db::version_tags(names)
-        }
-        "pypi" => {
+        }        "pypi" => {
             if !ok_segment(&reference) {
                 return Err(AppError::Storage("Invalid package name.".into()));
             }
@@ -2175,18 +2093,7 @@ pub async fn market_install_run(
         "pyexasol" => install_uv_pip(&app, &id, &pip_spec("pyexasol", Some(&stack.pyexasol_version))),
         "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
         "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
-        "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),
-        "ai-lab" => {
-            // Engine provisioning can take minutes (brew install, colima boot,
-            // image pull) — keep it off the async runtime's worker threads.
-            let app2 = app.clone();
-            let id2 = id.clone();
-            let req2 = requested.clone();
-            tauri::async_runtime::spawn_blocking(move || install_ai_lab(&app2, &id2, req2.as_deref()))
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))?
-        }
-        "json-tables" => install_json_tables(&app, &id).await,
+        "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),        "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
         "driver-jdbc" => install_jdbc_from_maven(&app, &id, requested.as_deref()).await.map(|(v, note)| {
@@ -2242,7 +2149,7 @@ pub async fn market_install_run(
     }
 }
 
-/// Control the Studio-managed local runtime (native Personal on macOS, Nano on
+/// Control the Studio-managed local runtime (Exasol Personal via the launcher on
 /// Windows/Linux). Streams output over `market:log` under
 /// the id `exasol-local` and finishes with `market:done`, so the frontend can
 /// reuse the install-console UI. Blocking lifecycle actions (start/stop/destroy)
@@ -2372,7 +2279,7 @@ fn data_file_exists(app: &AppHandle, rel: &str) -> bool {
 /// id → bool, plus `exasol-personal:running` for the DB's live state.
 #[tauri::command]
 pub async fn market_detect(app: AppHandle) -> AppResult<Value> {
-    // Every probe here spawns processes (python imports, docker inspect,
+    // Every probe here spawns processes (python imports,
     // launcher status) — seconds of work. A SYNC Tauri command runs on the
     // MAIN thread, which froze the whole window when the Marketplace opened;
     // spawn_blocking keeps the UI fluid while the probes run.
@@ -2442,18 +2349,6 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
             managed_exists(&app, "sqlalchemy-exasol", "venv")
                 || python_import_ok("sqlalchemy_exasol")
         ),
-    );
-    map.insert(
-        "ai-lab".into(),
-        json!(["docker", "podman"].iter().any(|name| {
-            resolve_bin(name).is_some_and(|p| {
-                std::process::Command::new(p)
-                    .args(["image", "inspect", "exasol/ai-lab:latest"])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-            })
-        })),
     );
     map.insert(
         "json-tables".into(),
@@ -2584,19 +2479,6 @@ mod tests {
         // Dot-segment or empty tails are rejected by the tag validation.
         assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/..</id></entry>").is_empty());
         assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/</id></entry>").is_empty());
-    }
-
-    #[test]
-    fn docker_tags_follow_dockers_grammar() {
-        use super::valid_docker_tag;
-        assert!(valid_docker_tag("latest"));
-        assert!(valid_docker_tag("6.0.0"));
-        assert!(valid_docker_tag("v8.29.1"));
-        assert!(!valid_docker_tag("")); // empty
-        assert!(!valid_docker_tag(".hidden")); // must not start with separator
-        assert!(!valid_docker_tag("-flag"));
-        assert!(!valid_docker_tag("1.0+build")); // `+` is version-legal, tag-illegal
-        assert!(!valid_docker_tag(&"a".repeat(129)));
     }
 
     #[test]

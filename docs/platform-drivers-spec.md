@@ -1,9 +1,10 @@
 # Platform & Drivers Spec — Personal 2.3, Podman, and every listed driver
 
-Status: IN PROGRESS — **workstream A is complete** (A1–A9 landed 2026-09-14/17:
-every listed driver now either runs through its own runtime or is refused by
-name, with the reason). Workstreams B (Podman/Linux/Windows) and C (Virtual
-Schemas, UDFs, SLC) are still open.
+Status: IN PROGRESS — **workstreams A and B are complete** (A: every listed
+driver runs through its own runtime or is refused by name; B: Exasol Personal
+2.3.0 on Podman via the launcher on macOS, Linux and Windows, Docker retired —
+landed 2026-09-14/21). Workstream C (Virtual Schemas, UDFs, SLC) continues in
+`openspec/changes/analytics-hub-virtual-schemas`.
 Assessed against the real code and the real upstream release notes.
 Owner: Exasol Studio (`apps/desktop/src-tauri` + `apps/desktop/src`)
 Scope: three workstreams that all change what Studio can honestly claim to
@@ -26,15 +27,15 @@ inferred from the version number.
 |---|---|---|
 | Driver matrix | **8 drivers execute** through their own runtime: native sqlx, exarrow (in-process), TS (bundled Node), Go (prebuilt bridge), pyexasol, SQLAlchemy, JDBC, ODBC. R is detected-not-bundled; ADO.NET is refused by platform | `driver_exec.rs::driver_implemented` is the single authority, read by BOTH `driver_status` and `execute_via_driver` (tested); bridges live in `packages/driver-bridges/` |
 | TS / Go / R / ADO.NET | TS and Go ship with the app and run natively (both live-proven); R needs the user's R and refuses clearly without it; ADO.NET is refused with its real reason (Windows-only MSI) | `packages/driver-bridges/{go,r,python}`, `agent-core/src/driver-bridge.ts`, `exarrow_exec.rs` |
-| Local database (macOS) | Exasol Personal, managed by Studio | `local_runtime.rs`, `local_database.rs` |
-| Local database (Linux/Windows) | **Not supported** — hard macOS gate; the fallback is a Docker container | `local_runtime.rs:1364` "only available on macOS"; `community_db.rs` (`exasol/docker-db`, `docker`, `colima start`) |
-| Personal version | Pinned `v2.2.0`, **macOS artifacts only** | `resources/runtime-components.lock.json` → `macos-aarch64`, `macos-x86_64` |
-| Virtual Schemas | UI exists (`NewVirtualSchema.tsx`); upstream only enabled them on LOCAL deployments in 2.3 | release notes 2.3.0 "Enabled Virtual Schema support in local deployments" |
+| Local database (all platforms) | Exasol Personal 2.3.0 through the official launcher (Podman), on macOS, Linux and Windows x86_64 — no other engine, no Docker anywhere | `local_runtime.rs` (platform-neutral; nano path deleted), `local_database.rs` |
+| Personal version | Pinned `v2.3.0`, five artifacts (macOS arm64/x86_64, Linux x86_64/arm64, Windows x86_64), checksums from Exasol's published list | `resources/runtime-components.lock.json`; `.github/runtime-component-sources.json` |
+| Virtual Schemas | Enabled locally by 2.3.0; Studio's per-adapter catalog (23 adapters, one file each) with tested DDL and prerequisite logic is in; the guided add-data-source flow and installer are in progress | `apps/desktop/src/features/connection/virtual-schemas/`; `openspec/changes/analytics-hub-virtual-schemas` |
 | UDFs / SLC | UDF *builder* exists (`UdfBuilder.tsx`); **no script-language-container lifecycle at all** | no `exasol slc` call anywhere in the repo |
 
-The one-line summary: the Marketplace advertises drivers Studio cannot run,
-and the local runtime is macOS-only on a container engine upstream has moved
-away from.
+The one-line summary, as of 2026-09-21: every listed driver runs or is
+refused by name; the local database is Exasol Personal 2.3.0 on every desktop
+platform with no Docker left in the codebase; the analytics hub over virtual
+schemas is the remaining work.
 
 ---
 
@@ -165,15 +166,15 @@ asks the user to install a container engine — the launcher owns that.
    administrator approval" rather than looking hung.
 
 ### Tasks
-- [ ] B1 Add Linux/Windows artifacts to the verified lock (+ digests)
-- [ ] B2 `local_runtime_supported()` capability fn (pure + tests: macOS any, Linux any, Windows x86_64 only)
-- [ ] B3 Remove the 6 hard `OS == "macos"` gates; route through B2
+- [x] B1 Lock pinned to **v2.3.0** with all five artifacts (macOS arm64/x86_64, Linux x86_64/arm64, Windows x86_64), SHA-256 from Exasol's published checksums, `executableSha256` computed by the refresh script; the script's pre-refresh guard now accepts platforms newly added to the sources
+- [x] B2 Not needed as a separate function: the launcher decides platform support and reports it; Studio's only check is "is the launcher present" (`runtime_installed`, `ensure_runtime`)
+- [x] B3 All six `OS == "macos"` gates removed; `ensure_runtime`, `redeploy_managed`, `runtime_installed`, `restart_personal_runtime`, `control_runtime` and `expected_db_port` are platform-neutral. The entire nano/container path (`ensure_nano`, engine detection, container lifecycle — ~280 lines) is deleted; `local_runtime.rs` shrank from 1,607 to ~1,330 lines
 - [x] B4 `--auto-approve` on every non-interactive install/start, gated by a `--help` capability probe so the pinned 2.2 launcher (which has no such flag) still works (tested)
-- [ ] B5 Windows path/quoting + `.zip` extraction for the launcher archive
-- [ ] B6 Surface Podman install progress + admin-approval hint (Windows)
-- [ ] B7 Retire Community-Docker: delete probes/commands/UI, migration note
-- [ ] B8 Marketplace + onboarding copy: "Docker" → nothing (the launcher manages Podman)
-- [ ] B9 `docs/` + README: local database on macOS/Linux/Windows, Windows arm64 excluded
+- [x] B5 `unpack_launcher_archive` dispatches `.zip` (Windows) vs `.tar.gz`; `launcher_binary_name()` is `exasol.exe` on Windows and `managed_exasol` uses it; unit test `launcher_archives_are_recognised_by_name`
+- [ ] B6 Surface Podman install progress + admin-approval hint (Windows) — the launcher's own output streams into the Local Exasol panel already; a Windows-specific hint waits for a Windows machine to verify the wording against what the launcher prints
+- [x] B7 `community_db.rs` (424 lines), `CommunityDbActions.tsx`, the Community tile, `community-docker` install kind, the `community_*` IPC, the Docker/Colima probes, the engine badge, the AI Lab Docker-image install (AI Lab is now a reference item) and the `nano` lock component are all gone; the `exasol-community-upgrade` skill is deleted and the router/federation/ETL skills no longer point at a Docker ladder
+- [x] B8 Every Studio-owned text, comment and prompt line that named Docker, Colima or Nano is rewritten; `grep -rni 'docker\|colima\|nano'` over Studio's own code returns nothing (upstream-vendored skills excluded)
+- [x] B9 `docs/` updated here; the CI refresh workflow validates against an Exasol Personal deployment made by the launcher on the Linux runner instead of a nano container; `scripts/verify-virtual-schema-postgres.sh` runs PostgreSQL in Podman against the local Personal
 
 ### Acceptance
 On a clean Linux box with no container engine, "Set up the local database"
@@ -250,13 +251,12 @@ container instead of failing at `CREATE SCRIPT`.
 
 ## 5. Decisions needed before implementation
 
-1. **Pin an RC?** 2.3.0 is still a release candidate (rc3, 2026-09-14); the
-   current verified pin is 2.2.0. Recommendation: **do not move the verified
-   pin to an RC.** Add 2.3.0-rc3 as an opt-in channel so this work can be
-   built and tested now, and flip the pin when 2.3.0 ships final.
-2. **Retire Community-Docker (B7) or keep it as a fallback?** Recommendation:
-   retire it once B1–B6 land — it exists only because Personal was macOS-only,
-   and keeping a second engine keeps the Docker probe the user wants gone.
+1. ~~**Pin an RC?**~~ **Moot — 2.3.0 shipped final on 2026-09-21** and is the
+   pin. No RC channel was ever needed.
+2. ~~**Retire Community-Docker (B7) or keep it as a fallback?**~~ **Retired**
+   (user decision, 2026-09-21): Personal on Podman via the launcher is the
+   local database on every platform; Studio neither probes for nor mentions
+   Docker anywhere.
 3. **Driver depth (A4–A6).** ~~Open.~~ **Settled 2026-09-15.** Go is native (a
    prebuilt bridge binary in the bundle), R is detected-not-bundled (the
    official package compiles against the Exasol ODBC driver and R hard-codes

@@ -1,6 +1,6 @@
 //! Connect external AI clients (Claude Desktop, Claude Code, Cursor, …) to the
 //! Exasol Studio MCP GATEWAY — one `exasol-studio` MCP entry that speaks for
-//! EVERY database currently connected in Studio (nano, Personal, remote, …),
+//! EVERY database currently connected in Studio (Personal, remote, …),
 //! not a per-database MCP config. Each client's config gets an entry that
 //! launches the bundled stdio bridge (mcp-gateway.cjs); the bridge proxies
 //! tool calls to the running agent sidecar, which holds the live pools and

@@ -93,7 +93,7 @@ function MainApp() {
 
   // Zero-setup experience: open the managed connection as soon as the
   // database/profile are ready — but ONLY when Personal is the sole database
-  // here. Once the user has their own connections (nano, remote, …), nothing
+  // here. Once the user has their own connections (remote, another local Exasol, …), nothing
   // ever connects without a click; the sidebar card shows the green
   // "running" dot and connects on tap.
   useEffect(() => {

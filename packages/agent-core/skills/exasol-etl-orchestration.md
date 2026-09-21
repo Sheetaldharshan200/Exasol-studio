@@ -1,6 +1,6 @@
 ---
 name: exasol-etl-orchestration
-description: Build ETL/ELT pipelines on Exasol — stage (files, URLs, S3, other DBs, Kafka), transform (SQL / dbt), schedule the pipeline, monitor it — composed from the loading, dbt, scheduling and federation skills, with the Community Edition ladder for stream/extension stages
+description: Build ETL/ELT pipelines on Exasol — stage (files, URLs, S3, other DBs, Kafka), transform (SQL / dbt), schedule the pipeline, monitor it — composed from the loading, dbt, scheduling and federation skills; virtual schemas and the cloud-storage extension run on Exasol Personal 2.3 once installed
 ---
 
 # Pipelines — stage → transform → schedule → monitor
@@ -21,8 +21,9 @@ stage with tools.
 |---|---|
 | Local/attached files (CSV/Parquet/JSON) | `data-loading-playbook` (import tools, exapump, json-tables) |
 | HTTP/S3/cloud URLs | native `IMPORT INTO … FROM CSV AT '<url>'` (see `exasol-import`; named CONNECTION objects for credentials) |
-| Another database | `exasol-federation` (IMPORT FROM JDBC/EXA, or export+load) |
-| Kafka / streaming, cloud-storage-extension | NOT available on Personal (BucketFS) — never dead-end: offer micro-batch IMPORT on a schedule as the native path, or walk `exasol-community-upgrade` (Docker → Community Edition) and install the extension there |
+| Another database or bucket | `exasol-federation` — a virtual schema (live) by default; IMPORT FROM JDBC/EXA for a snapshot |
+| cloud-storage-extension (Parquet/Avro/ORC/Delta from object storage) | `exasol-cloud-storage-extension` — runs on Exasol Personal 2.3 once its BucketFS artifacts are installed |
+| Kafka / streaming | No local streaming connector on Personal — offer micro-batch `IMPORT` on a schedule (`exasol-scheduling`) as the honest equivalent |
 
 Land raw data in a dedicated `STAGE_*` schema; keep transforms out of it.
 

@@ -58,7 +58,7 @@ export type McpServerConfig = {
   name: string;
   /** How Studio reaches the server. Defaults to "stdio" for backward compat.
    *  "http" connects to a REMOTE server (no local process) — the self-sustained
-   *  path for hosted MCP servers like GitHub's, requiring no Docker/binary. */
+   *  path for hosted MCP servers like GitHub's, requiring no local binary. */
   transport?: "stdio" | "http";
   // stdio transport
   command?: string;
@@ -156,7 +156,7 @@ export class McpManager {
         const headers = Object.fromEntries(Object.entries(cfg.headers ?? {}).map(([k, v]) => [k, this.box.open(v)]));
         const url = new URL(cfg.url);
         // Prefer Streamable HTTP (the current spec); fall back to SSE for older
-        // remote servers. Both are remote — no local process, no Docker.
+        // remote servers. Both are remote — no local process.
         try {
           await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers } }));
         } catch {

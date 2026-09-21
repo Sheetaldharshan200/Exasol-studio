@@ -6,7 +6,10 @@
       "executable": "exasol",
       "assets": {
         "macos-aarch64": "^exasol-personal_macOS_arm64\\.tar\\.gz$",
-        "macos-x86_64": "^exasol-personal_macOS_x86_64\\.tar\\.gz$"
+        "macos-x86_64": "^exasol-personal_macOS_x86_64\\.tar\\.gz$",
+        "linux-x86_64": "^exasol-personal_Linux_x86_64\\.tar\\.gz$",
+        "linux-aarch64": "^exasol-personal_Linux_arm64\\.tar\\.gz$",
+        "windows-x86_64": "^exasol-personal_Windows_x86_64\\.zip$"
       }
     },
     "exapump": {
@@ -30,17 +33,6 @@
         "windows-aarch64": "^uv-aarch64-pc-windows-msvc\\.zip$",
         "windows-x86_64": "^uv-x86_64-pc-windows-msvc\\.zip$"
       }
-    }
-  },
-  "containerImages": {
-    "nano": {
-      "registry": "docker.io",
-      "repository": "exasol/nano",
-      "stableTagPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+-nano\\.[0-9]+$",
-      "requiredArchitectures": [
-        "amd64",
-        "arm64"
-      ]
     }
   },
   "pythonStack": {

@@ -1258,7 +1258,7 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     status.message = if cfg!(target_os = "macos") {
         "Installing or starting native Exasol Personal…".into()
     } else {
-        "Pulling or starting Exasol Nano with Docker/Podman…".into()
+        "Starting Exasol Personal…".into()
     };
     status.local_ready = false;
     write_status(&app, &data_dir, status.clone())?;

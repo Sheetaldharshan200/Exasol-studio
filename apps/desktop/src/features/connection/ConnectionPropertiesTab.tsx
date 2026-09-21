@@ -578,7 +578,7 @@ export function ConnectionPropertiesTab({
   }
   const s = settings;
   const connectedLive = connection?.profile.id === profileId ? connection : null;
-  // Studio's own managed local DB (vs a hand-made local/nano connection) —
+  // Studio's own managed local DB (vs a hand-made local connection) —
   // it authenticates with the master password, everything else with its own.
   const isManagedLocal =
     /managed automatically by exasol studio/i.test(profile?.notes ?? "") || profile?.name === "Exasol Personal (local)";
@@ -1060,7 +1060,7 @@ export function ConnectionPropertiesTab({
                   {/* The two setups people actually hit — spelled out on hover. */}
                   <span
                     className="inline-flex cursor-help"
-                    title={"Exasol Personal or nano (Docker): the default password is 'exasol'.\nStudio's built-in Exasol Personal (local): use your master password (the one from vault setup)."}
+                    title={"An Exasol Personal you installed yourself: the launcher printed its generated password.\nStudio's built-in Exasol Personal (local): use your master password (the one from vault setup)."}
                   >
                     <Info className="h-3 w-3 opacity-70" aria-label="Which password to use" />
                   </span>
@@ -1081,7 +1081,7 @@ export function ConnectionPropertiesTab({
               <p className="border-b border-border/60 py-2 text-[11px] leading-relaxed text-muted-foreground">
                 {isManagedLocal
                   ? "This is Studio's built-in Exasol Personal (local) — sign in with your master password (the one you set during vault setup)."
-                  : "Exasol Personal or nano (Docker) use the password 'exasol' by default. Studio's own built-in Exasol Personal (local) uses your master password."}
+                  : "An Exasol Personal you installed yourself uses the password its launcher printed. Studio's own built-in Exasol Personal (local) uses your master password."}
               </p>
               <div className="flex items-center gap-3 py-2">
                 <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Save Database Password</span>

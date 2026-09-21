@@ -17,7 +17,7 @@ const profiles: Record<string, unknown>[] = [
     username: "sys",
     password: "exasol",
     schema: null,
-    notes: "Local Docker Exasol for development.",
+    notes: "Local Exasol Personal for development.",
     sslMode: "required",
     compression: false,
     driverId: "sqlx-exasol",
@@ -450,7 +450,7 @@ export async function mockInvoke(
     }
 
     case "market_env":
-      return { os: "macos", arch: "aarch64", docker: false, podman: false };
+      return { os: "macos", arch: "aarch64" };
 
     case "market_doc":
       return `# ${String(args?.repo ?? "docs")}\n\nThis is a **preview** of the documentation.\n\n\`\`\`bash\nexasol install local\n\`\`\`\n\n- Point one\n- Point two\n`;

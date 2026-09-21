@@ -96,7 +96,7 @@ const server = new McpServer({ name: "exasol-studio", version: "1.0.0" });
 
 const DB_ARG = z
   .string()
-  .describe("Which connected database to use — a name from list_databases (e.g. \"Exasol-nano\").");
+  .describe("Which connected database to use — a name from list_databases (e.g. \"Exasol Personal (local)\").");
 
 type GatewayDb = { id: string; name: string; exposed: boolean; caps: { sql: boolean; nl2sql: boolean } };
 

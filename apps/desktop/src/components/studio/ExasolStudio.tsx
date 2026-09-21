@@ -990,7 +990,7 @@ export function ExasolStudio({
     const managed = Boolean(
       p &&
         (p.notes?.includes("Managed automatically by Exasol Studio") ||
-          /^Exasol (Personal \(local\)|Community \(Docker\))$/i.test(p.name)),
+          /^Exasol Personal \(local\)$/i.test(p.name)),
     );
     const message = managed
       ? `${name} is managed by Exasol Studio and will be re-created automatically while the local database is installed. To remove it permanently, uninstall the local database from the Marketplace. Remove it for now anyway?`

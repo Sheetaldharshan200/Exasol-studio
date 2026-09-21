@@ -44,7 +44,7 @@ Agentic setup flow:
    optional AFTER) via run_sql — approval-gated like any write.
 4. Verify: query the task + history tables and show the REAL next/last run.
 
-**Honesty rules:** the daemon must stay running (systemd/Docker/launchd — it is
+**Honesty rules:** the daemon must stay running (systemd/launchd — it is
 client-side, not inside the DB); missed runs are NOT replayed (next occurrence
 is computed from the current time). Say both plainly when the host is a laptop
 and steer to the launchd row instead. Never claim a job "will run nightly" on a

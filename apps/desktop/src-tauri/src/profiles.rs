@@ -421,7 +421,7 @@ pub fn ensure_personal_local_profile(
 }
 
 /// Upsert a Studio-managed LOCAL connection profile (Personal, Community
-/// docker-db, …): reconcile the password on an existing host/port/user match,
+/// another local Exasol, …): reconcile the password on an existing host/port/user match,
 /// create it otherwise. Loopback connections force compression off — it buys
 /// nothing locally and just adds CPU.
 pub fn ensure_local_profile(

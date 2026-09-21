@@ -474,7 +474,7 @@ export function Sidebar({
   // it. Hidden only while the local DB is the active connection (it's in the
   // tree then).
   // The managed local DB's endpoint comes from its profile (Studio's isolated
-  // Personal deployment runs on its own port, e.g. 8565; Nano uses 8563). The
+  // Personal deployment runs on its own port, e.g. 8565; the starter kit uses 8563). The
   // permanent card represents that endpoint, so fold any duplicate profile
   // (e.g. a hand-made "sys@localhost") into it instead of listing it twice.
   // Find the managed local profile ROBUSTLY: prefer the status link, but fall

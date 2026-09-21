@@ -69,7 +69,6 @@ test("Exasol Personal lists its official engine releases", () => {
 
 test("items without a version-addressable install have no source", () => {
   assert.equal(versionSource({ id: "driver-odbc", install: "reference" }), null);
-  assert.equal(versionSource({ id: "exasol-community", repo: "exasol/docker-db", install: "community-docker" }), null);
   assert.equal(versionSource({ id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", install: "bundled" }), null);
   // A pip item whose package mapping is missing must not guess.
   assert.equal(versionSource({ id: "unknown-pip", install: "uv-pip" }), null);
