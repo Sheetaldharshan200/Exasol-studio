@@ -9,6 +9,19 @@ test("resultTabLabel describes each result kind", () => {
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 0, error: "boom" }, 0), "Result 1 · error");
 });
 
+test("an unknown affected-row count never renders as zero", () => {
+  // The R driver cannot report affected rows — r-exasol hardcodes 0 for every
+  // non-SELECT. "0 affected" for an INSERT that wrote three is a wrong answer,
+  // so "executed" is a distinct kind that carries no number to misread.
+  assert.equal(resultTabLabel({ kind: "executed", rowCount: 0, error: null }, 0), "Result 1 · executed");
+  assert.equal(
+    resultTabLabel({ kind: "executed", rowCount: 0, error: null }, 1, "INSERT"),
+    "2] INSERT · executed",
+  );
+  // An error still wins: the statement did not run at all.
+  assert.equal(resultTabLabel({ kind: "executed", rowCount: 0, error: "boom" }, 0), "Result 1 · error");
+});
+
 test("resultTabLabel shows the statement verb with editor-style numbering", () => {
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 3, error: null }, 7, "SELECT"), "8] SELECT · 3 rows");
   assert.equal(resultTabLabel({ kind: "rowCount", rowCount: 12, error: null }, 3, "INSERT"), "4] INSERT · 12 affected");

@@ -162,6 +162,17 @@ export function ResultsGrid({
       </div>
     );
   }
+  if (result.kind === "executed") {
+    // The statement ran, but this driver cannot say how many rows it touched.
+    // Printing "0 rows affected" would be a wrong answer, not a missing one.
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <span className="rounded-md bg-secondary px-3 py-1.5">
+          Statement executed · {result.elapsedMs} ms
+        </span>
+      </div>
+    );
+  }
   if (result.kind === "rowCount") {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

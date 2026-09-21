@@ -185,10 +185,6 @@ fn r_advice(app: &AppHandle) -> &'static str {
     ""
 }
 
-fn r_ready(app: &AppHandle) -> bool {
-    r_missing(app).is_none()
-}
-
 /// What to tell the user when a driver has no implementation yet.
 ///
 /// Specific where the reason is specific: ADO.NET is not "coming later", it is

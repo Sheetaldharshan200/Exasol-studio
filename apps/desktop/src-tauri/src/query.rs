@@ -20,7 +20,11 @@ pub struct ColumnMeta {
 #[serde(rename_all = "camelCase")]
 pub struct StatementResult {
     pub statement: String,
-    pub kind: String, // "resultSet" | "rowCount"
+    /// "resultSet" — rows follow. "rowCount" — a write, and `row_count` is the
+    /// number it affected. "executed" — it ran, but this driver cannot say how
+    /// many rows it touched (r-exasol reports no count for writes), so the UI
+    /// must not print one.
+    pub kind: String,
     pub columns: Vec<ColumnMeta>,
     pub rows: Vec<Vec<Value>>,
     pub row_count: u64,

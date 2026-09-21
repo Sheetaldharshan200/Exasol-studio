@@ -85,13 +85,20 @@ or (b) is refused with a specific, actionable reason. No third outcome.
   package into (the user's own library is never touched). R itself is NOT
   bundled and cannot be — it is a large runtime that hard-codes its install
   paths, and `exasol` compiles from source against the Exasol ODBC driver.
-  Readiness therefore has three steps and the hint names whichever is missing:
-  R, the package, the managed ODBC library. Three bugs that only a live run
-  exposed, all fixed: the package prints progress to **stdout** (which
-  corrupted the JSON reply), the ODBC driver path belongs on `exa()` and was
-  silently ignored on `dbConnect` (falling back to a system-registered DSN),
-  and `dbExecute`/`dbColumnInfo` are re-exported but unimplemented, so every
-  write would have failed
+  Readiness separates what BLOCKS (R, the package) from what is merely worth
+  saying (the managed ODBC library — `exasol` falls back to an OS-registered
+  DSN, so refusing a user who has one would block a setup that works). Four
+  bugs that only a live run exposed, all fixed: the package prints progress to
+  **stdout** (which corrupted the JSON reply), the ODBC driver path belongs on
+  `exa()` and was silently ignored on `dbConnect` (falling back to a
+  system-registered DSN), `dbExecute`/`dbColumnInfo` are re-exported but
+  unimplemented so every write would have failed, and r-exasol **cannot report
+  affected rows at all** — `dbSendQuery` hardcodes `rowcount <- 0` for every
+  non-SELECT, the profile it captures describes the COMMIT rather than the
+  statement, and RODBC underneath returns no count either. Rather than say "0
+  rows affected" for an INSERT that wrote three, the result carries a third
+  kind, `executed`, and the UI says "Statement executed". A missing number is
+  honest; a wrong one is the bug class this workstream exists to remove
 - [x] A6 ADO.NET: **closed as not-possible-off-Windows, with the reason recorded.** Exasol publishes the ADO.NET provider only as a Windows `.msi` (the downloads index lists `operatingSystems: [Windows]`, noarch) and there is no NuGet package — verified against `https://x-up.s3.amazonaws.com/7.x/packages.json` and nuget.org (0 hits). `ado-net` therefore stays REFUSED, and the refusal now names the real reason instead of implying a backlog item
 - [x] A7 SQLAlchemy runs through its own dialect (`exa+websocket`, AUTOCOMMIT, `exec_driver_sql`) in the managed venv, not raw pyexasol
 - [x] A8 `websocket-api` documented as a native alias; `exarrow-rs` split out into its own in-process driver (`exarrow_exec.rs`, compiled in, zero install) with the Arrow→grid conversion unit-tested

@@ -146,9 +146,15 @@ for (i in seq_along(statements)) {
       })
       e$rowCount <- nrow(df)
     } else {
-      affected <- DBI::dbGetRowsAffected(res)
-      # DDL reports nothing; that is a legitimate 0, not a failure.
-      e$rowCount <- if (is.numeric(affected) && !is.na(affected)) as.integer(affected) else 0L
+      # r-exasol CANNOT report affected rows: dbSendQuery hardcodes
+      # `rowcount <- 0` for every non-SELECT, the profile it captures describes
+      # the COMMIT rather than the statement, and RODBC underneath returns
+      # character(0) with no count either. Saying "0 rows affected" for an
+      # INSERT that wrote three is a wrong answer, so this says the count is
+      # unavailable instead — the statement ran, and Studio renders
+      # "Statement executed".
+      e$kind <- "executed"
+      e$rowCount <- 0L
     }
     NULL
   }, error = function(err) conditionMessage(err))

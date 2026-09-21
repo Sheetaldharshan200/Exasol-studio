@@ -82,6 +82,7 @@ export function schemaArguments(snap: ExaSnapshot): string[] {
 /** Render the first `maxRows` of a result set as a GFM markdown table. */
 function resultToMarkdown(result: StatementResult, maxRows = 20): string {
   if (result.kind !== "resultSet" || result.columns.length === 0) {
+    if (result.kind === "executed") return "Statement executed (this driver reports no row count).";
     return result.kind === "rowCount" ? `${result.rowCount} row(s) affected.` : "(no result set)";
   }
   const header = `| ${result.columns.map((c) => c.name).join(" | ")} |`;

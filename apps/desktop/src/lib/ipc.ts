@@ -399,7 +399,8 @@ export type ColumnMeta = { name: string; typeName: string };
 
 export type StatementResult = {
   statement: string;
-  kind: "resultSet" | "rowCount";
+  /** "executed" = it ran, but the driver cannot report how many rows it touched. */
+  kind: "resultSet" | "rowCount" | "executed";
   columns: ColumnMeta[];
   rows: unknown[][];
   rowCount: number;

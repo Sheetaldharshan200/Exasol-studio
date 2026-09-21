@@ -1145,7 +1145,7 @@ const CellView = memo(function CellView({
             <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
               <button onClick={() => setCollapsed((v) => !v)} className="flex items-center gap-1 hover:text-foreground">
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", collapsed && "-rotate-90")} />
-                {cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
+                {cell.result.kind === "executed" ? "Statement executed" : cell.result.kind === "rowCount" ? `${cell.result.rowCount} row(s) affected` : `${cell.result.rowCount} row${cell.result.rowCount === 1 ? "" : "s"}`}
               </button>
               {cell.result.kind === "resultSet" && cell.result.rows.length > 0 ? (
                 // Visual picker: every chart kind as a picture tile; "table" = the grid.

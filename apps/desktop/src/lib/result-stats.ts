@@ -38,7 +38,7 @@ export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][]
 /** A short tab label for one statement's result in a multi-result run, e.g.
  *  "Result 2 · 42 rows", "Result 3 · error", "Result 1 · 5 affected". */
 export function resultTabLabel(
-  r: { kind: "resultSet" | "rowCount"; rowCount: number; error: string | null },
+  r: { kind: "resultSet" | "rowCount" | "executed"; rowCount: number; error: string | null },
   index: number,
   /** The statement's leading verb (SELECT, INSERT, …) so a script's tabs say
    *  WHAT ran, not just "Result N". */
@@ -47,6 +47,7 @@ export function resultTabLabel(
   // "8] SELECT" — the same "N]" numbering as the editor's statement markers.
   const head = verb ? `${index + 1}] ${verb}` : `Result ${index + 1}`;
   if (r.error) return `${head} · error`;
+  if (r.kind === "executed") return `${head} · executed`;
   if (r.kind === "rowCount") return `${head} · ${r.rowCount} affected`;
   return `${head} · ${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;
 }

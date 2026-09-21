@@ -175,10 +175,21 @@ fn assert_bridge_contract(program: &Path, script: Option<&Path>, driver_path: &s
     for r in results {
         assert!(r["error"].is_null(), "write step failed: {}", r["error"]);
     }
-    assert_eq!(
-        results[2]["rowCount"], json!(3),
-        "the INSERT must report the rows it wrote, not 0"
-    );
+    // The INSERT must report 3 — or say plainly that it cannot count, which
+    // r-exasol genuinely cannot. What it must never do is claim 0, because a
+    // caller cannot tell that apart from "nothing was written".
+    let insert = &results[2];
+    if insert["kind"] == json!("executed") {
+        assert_eq!(
+            insert["rowCount"], json!(0),
+            "an unknown count is declared by kind, and carries no number to misread"
+        );
+    } else {
+        assert_eq!(
+            insert["rowCount"], json!(3),
+            "the INSERT must report the rows it wrote, not 0"
+        );
+    }
     assert_eq!(
         results[3]["rows"][0][0],
         json!(3),
