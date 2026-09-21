@@ -1,6 +1,6 @@
 # Platform & Drivers Spec — Personal 2.3, Podman, and every listed driver
 
-Status: IN PROGRESS — **workstream A is complete** (A1–A9 landed 2026-09-14/15:
+Status: IN PROGRESS — **workstream A is complete** (A1–A9 landed 2026-09-14/17:
 every listed driver now either runs through its own runtime or is refused by
 name, with the reason). Workstreams B (Podman/Linux/Windows) and C (Virtual
 Schemas, UDFs, SLC) are still open.
@@ -80,15 +80,30 @@ or (b) is refused with a specific, actionable reason. No third outcome.
 - [x] A2 `driver_status` now derives `supported`/`hint` from the SAME authority, so the picker can never offer what execution refuses (the UI already consumes both)
 - [x] A3 TS driver runs on the BUNDLED Node runtime via `driver-bridge.cjs` (the driver is bundled into it) — live-proven against a real database: typed result sets, real affected-row counts, truncation, and real DB errors
 - [x] A4 Go driver runs NATIVELY: a prebuilt `exasol-bridge-go` binary ships as an app resource (built by `scripts/build-driver-bridges.sh`, in release CI per target) — live-proven against a real database: typed result sets, exact DECIMALs, real NULLs, real DB errors, batch stops at the first failure
-- [x] A5 R bridge (`bridge.R`, the official `exasol` package) + `Rscript` detection + a managed R library Studio installs into. R itself is NOT bundled and cannot be: it is a large runtime that hard-codes its own install paths, and `exasol` is compiled from source against the Exasol ODBC driver. Studio detects R, installs the package into its own library, and refuses clearly when R is absent
+- [x] A5 R driver **runs, live-proven**: `bridge.R` on the official `exasol`
+  package, with `Rscript` detection and a managed R library Studio builds the
+  package into (the user's own library is never touched). R itself is NOT
+  bundled and cannot be — it is a large runtime that hard-codes its install
+  paths, and `exasol` compiles from source against the Exasol ODBC driver.
+  Readiness therefore has three steps and the hint names whichever is missing:
+  R, the package, the managed ODBC library. Three bugs that only a live run
+  exposed, all fixed: the package prints progress to **stdout** (which
+  corrupted the JSON reply), the ODBC driver path belongs on `exa()` and was
+  silently ignored on `dbConnect` (falling back to a system-registered DSN),
+  and `dbExecute`/`dbColumnInfo` are re-exported but unimplemented, so every
+  write would have failed
 - [x] A6 ADO.NET: **closed as not-possible-off-Windows, with the reason recorded.** Exasol publishes the ADO.NET provider only as a Windows `.msi` (the downloads index lists `operatingSystems: [Windows]`, noarch) and there is no NuGet package — verified against `https://x-up.s3.amazonaws.com/7.x/packages.json` and nuget.org (0 hits). `ado-net` therefore stays REFUSED, and the refusal now names the real reason instead of implying a backlog item
 - [x] A7 SQLAlchemy runs through its own dialect (`exa+websocket`, AUTOCOMMIT, `exec_driver_sql`) in the managed venv, not raw pyexasol
 - [x] A8 `websocket-api` documented as a native alias; `exarrow-rs` split out into its own in-process driver (`exarrow_exec.rs`, compiled in, zero install) with the Arrow→grid conversion unit-tested
-- [~] A9 Live proof per driver: exarrow has **automated** live tests
-  (`cargo test exarrow_live -- --ignored`, gated on `EXASOL_LIVE_*`) covering a
-  typed result set, an exact DECIMAL, a real NULL and a failing statement; TS
-  and Go were proven by hand against a real database. Still to do: fold the TS
-  and Go checks into the same automated, opt-in tier so they cannot silently rot
+- [x] A9 Live proof per driver, **automated and opt-in**. `tests/bridge_live.rs`
+  spawns the Go, TS and R bridges exactly as `execute_bridge` does and asserts
+  one shared contract: typed values, an exact DECIMAL, a real NULL, a failing
+  statement that errors and stops the batch, and — the one only a real process
+  can check — stdout being exactly one JSON document. exarrow, being
+  in-process, keeps its own live tests in `exarrow_exec.rs`. All skip
+  themselves when credentials or a runtime are absent, so the default suite
+  stays hermetic. Run with
+  `EXASOL_LIVE_PASSWORD=… cargo test --test bridge_live -- --ignored`
 
 ### Acceptance
 Selecting any driver in the Drivers tab either runs a query through that

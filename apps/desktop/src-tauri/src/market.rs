@@ -2008,18 +2008,20 @@ async fn install_registry_package(
             )
         }
         "driver-r" => {
-            let v = match requested {
-                Some(v) => v.to_string(),
-                None => crate::upstream::latest("exasol/r-exasol")
-                    .map(|r| r.tag)
-                    .ok_or_else(|| AppError::Storage("Could not resolve the latest r-exasol release.".into()))?,
-            };
-            (
-                v.clone(),
-                format!("https://codeload.github.com/exasol/r-exasol/tar.gz/refs/tags/{v}"),
-                format!("r-exasol-{v}.tar.gz"),
-                "R package source — or install in R with `remotes::install_github(\"exasol/r-exasol\")`",
-            )
+            // One install = usable, like the ODBC tile: build the official
+            // Exasol R package into Studio's OWN R library and leave the
+            // user's library untouched. Downloading a tarball and telling them
+            // to install it themselves is not an install.
+            let v = crate::upstream::latest("exasol/r-exasol")
+                .map(|r| r.tag)
+                .unwrap_or_else(|| "latest".into());
+            crate::driver_exec::driver_setup(app.clone(), "r".into()).await?;
+            return Ok((
+                v,
+                "Installed into Studio’s R library. Pick the R driver on any connection — \
+                 it reaches Exasol through the ODBC driver Studio manages, so install that too if you haven’t."
+                    .into(),
+            ));
         }
         "driver-odbc" | "driver-adonet" => {
             let artifact_name = if id == "driver-odbc" { "ODBC" } else { "ADO.NET" };

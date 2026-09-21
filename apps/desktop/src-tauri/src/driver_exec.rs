@@ -149,9 +149,44 @@ fn r_lib_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(dir)
 }
 
+/// The Exasol ODBC library Studio manages. The R package is RODBC-backed, so
+/// without this it falls back to a system-registered "{EXASolution Driver}" DSN
+/// — the OS-level registration Studio exists to avoid needing.
+fn managed_odbc_lib(app: &AppHandle) -> Option<String> {
+    driver_override(app, "odbc").filter(|p| std::path::Path::new(p).is_file())
+}
+
+/// What the R driver still needs, in the order the user has to fix it. `None`
+/// means ready.
+fn r_missing(app: &AppHandle) -> Option<&'static str> {
+    if rscript_bin().is_none() {
+        return Some(
+            "R isn’t installed on this machine. Install R (r-project.org), then install the R driver runtime here — R is a large runtime that hard-codes its own install paths, so it cannot ship inside Studio.",
+        );
+    }
+    if !r_lib_dir(app).map(|d| d.join("exasol").is_dir()).unwrap_or(false) {
+        return Some(
+            "Install the R driver runtime: Studio builds the official Exasol R package into its own library, leaving your R installation untouched.",
+        );
+    }
+    None
+}
+
+/// Worth saying even when the driver is ready. The managed ODBC library is
+/// deliberately not a blocker: `exasol` falls back to a system-registered
+/// "{EXASolution Driver}" DSN when no path is given, so a user who registered
+/// the driver with their OS already has a working setup, and refusing them
+/// because Studio has not installed its own copy would block something that
+/// works.
+fn r_advice(app: &AppHandle) -> &'static str {
+    if managed_odbc_lib(app).is_none() {
+        return "Ready — it will use an ODBC driver registered with your OS. Installing the ODBC Driver from the Marketplace lets Studio point R at its own copy instead, with no OS-level registration.";
+    }
+    ""
+}
+
 fn r_ready(app: &AppHandle) -> bool {
-    rscript_bin().is_some()
-        && r_lib_dir(app).map(|d| d.join("exasol").is_dir()).unwrap_or(false)
+    r_missing(app).is_none()
 }
 
 /// What to tell the user when a driver has no implementation yet.
@@ -351,15 +386,10 @@ pub fn driver_status(app: AppHandle, driver_id: String) -> AppResult<DriverStatu
             let ok = go_bridge_path(&app).is_ok();
             (ok, true, if ok { String::new() } else { "The Go driver bridge is missing — reinstall Exasol Studio.".into() })
         }
-        "r" => {
-            let hint = if rscript_bin().is_none() {
-                "R isn’t installed on this machine. Install R (r-project.org), then install the R driver runtime here — R is too large and too path-bound to ship inside Studio."
-            } else {
-                "Install the R driver runtime: Studio puts the official Exasol R package in its own library and points it at the ODBC driver it manages."
-            };
-            let ok = r_ready(&app);
-            (ok, true, if ok { String::new() } else { hint.into() })
-        }
+        "r" => match r_missing(&app) {
+            None => (true, true, r_advice(&app).into()),
+            Some(blocker) => (false, true, blocker.into()),
+        },
         other => (false, false, format!("The {other} driver runtime isn’t available yet — it’s coming in a later update.")),
     };
     // What the picker calls "supported" must match what execute_via_driver
@@ -633,11 +663,8 @@ fn execute_bridge(
     if profile.driver_id == "odbc" && !odbc_ready(app) {
         return Err(AppError::Storage("The ODBC runtime isn’t installed. Install it, then try again.".into()));
     }
-    if is_r && !r_ready(app) {
-        return Err(AppError::Storage(
-            "The R driver runtime isn’t installed. Install it from the Drivers tab (it needs R on this machine), then try again."
-                .into(),
-        ));
+    if let Some(missing) = is_r.then(|| r_missing(app)).flatten() {
+        return Err(AppError::Storage(missing.to_string()));
     }
 
     // (runtime binary, script it runs). The Go bridge IS the binary, so it has

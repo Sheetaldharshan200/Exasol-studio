@@ -1,7 +1,7 @@
 ---
 title: Driver bridges and in-process drivers
 category: architecture
-updated: 2026-09-15
+updated: 2026-09-17
 ---
 
 # Driver bridges and in-process drivers
@@ -40,6 +40,20 @@ pyexasol connection.
 | node (ts-js) | `agent-core/src/driver-bridge.ts` → `driver-bridge.cjs` | yes (bundled Node + bundled driver) |
 | go | `go/main.go` → prebuilt `exasol-bridge-go` | yes (bundle resource) |
 | r | `r/bridge.R` | script yes, R itself no |
+
+## How the bridges are proved
+
+`apps/desktop/src-tauri/tests/bridge_live.rs` spawns each bridge exactly as
+`execute_bridge` does and asserts one shared contract: typed values, an exact
+DECIMAL, a real NULL, a failing statement that errors and stops the batch, and
+stdout being **exactly one JSON document**. Opt-in
+(`EXASOL_LIVE_PASSWORD=… cargo test --test bridge_live -- --ignored`), and each
+test skips itself when its runtime is absent.
+
+This tier exists because the *process contract* is where these bridges actually
+break, and unit tests cannot see it. Every shipped bug lived there: a driver
+rejecting with a plain object (`[object Object]`), a failed SELECT reported as
+a successful zero-row result, and R printing progress to stdout.
 
 ## Gotchas that cost real time
 
@@ -81,12 +95,45 @@ for DDL/DML too and returns zero columns, but the affected count is gone — an
 INSERT of 3 rows reports 0. Hence `Exec` for non-row statements, and hence
 `expectRows`.
 
+## r-exasol: three traps, all invisible until it ran
+
+1. **It prints to stdout.** `exa()` prints "EXASOL driver loaded" and the
+   connection prints "Using temporary schema: TEMP_…_CREATED_BY_R". Studio
+   parses stdout as one JSON document, so a single stray line breaks every
+   query with "The driver returned no result". The bridge sinks R output to
+   stderr on the first line and releases it only to emit the reply —
+   counting active diversions, because `sink(NULL)` with nothing to remove is
+   itself an error. `exa(silent = TRUE)` also suppresses the driver lines.
+2. **The ODBC driver path belongs on the DRIVER, not the connection.**
+   `exa(driver = "/path/libexaodbc-…dylib")`. Passing `driver=` to `dbConnect`
+   is silently ignored and the package falls back to a system-registered
+   `{EXASolution Driver}` DSN — the OS-level registration Studio manages its
+   own driver to avoid needing.
+3. **Half the DBI surface is re-exported but unimplemented.** `dbExecute`,
+   `dbSendStatement` and `dbColumnInfo` all appear in the NAMESPACE yet have no
+   method for `EXAConnection`/`EXAResult`. Every write would have failed. Use
+   `dbSendQuery` for everything and read the count off the same result with
+   `dbGetRowsAffected`; infer column types from the R vector, and report an
+   empty type for an all-NA column (which R types as `logical` whatever the
+   database said) rather than claiming BOOLEAN.
+
+Value fidelity: RODBC returns large DECIMALs as **character**, so a
+`DECIMAL(36,18)` round-trips with all 36 digits; small ones arrive as doubles
+and are sent as JSON numbers.
+
+Building `r-exasol` from source needs a working C/C++ toolchain. On macOS a
+conda-provided R fails here with "C compiler cannot create executables" — the
+conda clang wrapper cannot link. Pointing `R_MAKEVARS_USER` at a Makevars that
+sets `CC`/`CXX`/`OBJC` to `/usr/bin/clang` fixes it (`ps`, pulled in by
+`remotes`, compiles Objective-C, so `OBJC` matters too).
+
 ## What cannot be made native, and why
 
 - **R** — a large runtime that hard-codes its install paths, and the official
   `exasol` package compiles from source against the Exasol ODBC driver
-  (`RODBC` is a hard dependency). Detect it, install the package into
-  Studio's own R library, refuse clearly when absent.
+  (`RODBC` is a hard dependency). Detect it, build the package into Studio's
+  own R library, and refuse with the specific missing piece: R, the package, or
+  the managed ODBC library.
 - **ADO.NET** — Exasol publishes it **only** as a Windows `.msi`
   (`x-up.s3.amazonaws.com/7.x/packages.json` lists `operatingSystems:
   [Windows]`, noarch) and there is no NuGet package (nuget.org: 0 hits for

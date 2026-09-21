@@ -17,14 +17,36 @@
 .lib <- Sys.getenv("EXASOL_STUDIO_R_LIB")
 if (nzchar(.lib)) .libPaths(c(.lib, .libPaths()))
 
+# `exasol` prints progress to STDOUT ("EXASOL driver loaded", "Using temporary
+# schema: …"). Studio parses stdout as one JSON document, so a single stray line
+# breaks every query with "The driver returned no result". Everything printed
+# from here on goes to stderr, where it is only ever read as an error hint; the
+# JSON is written after `sink` is released, and is the sole thing on stdout.
+sink(stderr(), type = "output")
+
+# Release every active diversion before writing. Counted rather than assumed:
+# `sink(NULL)` with nothing to remove is itself an error, and emitting into a
+# still-diverted stdout would send the reply to stderr and leave Studio with an
+# empty answer.
+release_stdout <- function() {
+  while (sink.number(type = "output") > 0) sink(NULL, type = "output")
+}
+
+emit <- function(payload) {
+  release_stdout()
+  cat(jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null"), "\n", sep = "")
+  flush(stdout())
+}
+
 fatal <- function(msg) {
-  cat(jsonlite::toJSON(list(fatal = msg), auto_unbox = TRUE), "\n", sep = "")
+  emit(list(fatal = msg))
   quit(save = "no", status = 0) # the response IS the error; a non-zero exit would hide it
 }
 
 if (!requireNamespace("jsonlite", quietly = TRUE)) {
   # Without jsonlite there is no way to speak the protocol at all, so this one
   # message is plain text — driver_exec.rs reports a non-JSON reply verbatim.
+  release_stdout()
   cat("The R runtime is missing the jsonlite package. Install the R driver runtime from Studio.\n")
   quit(save = "no", status = 1)
 }
@@ -54,7 +76,6 @@ conn_args <- list(
   pwd = req$password
 )
 if (!is.null(req$schema) && nzchar(req$schema)) conn_args$schema <- req$schema
-if (!is.null(req$driverPath) && nzchar(req$driverPath)) conn_args$driver <- req$driverPath
 encryption <- is.null(req$tls) || isTRUE(req$tls)
 conn_args$encryption <- if (encryption) "Y" else "N"
 if (encryption && !isTRUE(req$verify)) conn_args$sslcertificate <- "SSL_VERIFY_NONE"
@@ -62,14 +83,34 @@ if (encryption && !isTRUE(req$verify)) conn_args$sslcertificate <- "SSL_VERIFY_N
 # `autocommit = "Y"` is the package default, and it is what Studio needs: the
 # transaction is otherwise rolled back on disconnect, silently losing writes.
 conn_args$autocommit <- "Y"
+# The ODBC driver path is a property of the DRIVER, not of the connection:
+# passing it to dbConnect is silently ignored and the package falls back to a
+# system-registered "{EXASolution Driver}" DSN, which is exactly what Studio
+# manages its own driver to avoid needing. `silent` stops it printing.
+driver_path <- if (!is.null(req$driverPath) && nzchar(req$driverPath)) req$driverPath else NULL
 conn <- tryCatch(
-  do.call(DBI::dbConnect, c(list(exasol::exa()), conn_args)),
+  do.call(DBI::dbConnect, c(list(exasol::exa(driver = driver_path, silent = TRUE)), conn_args)),
   error = function(e) e
 )
 if (inherits(conn, "error")) fatal(paste("the R driver could not connect:", conditionMessage(conn)))
 
+# The grid header. R has no access to the database's own type names here
+# (r-exasol re-exports dbColumnInfo but implements no method for it), so the
+# type is inferred from the R vector. An all-NA column comes back `logical`
+# whatever its real type, so it reports nothing rather than claiming BOOLEAN —
+# an empty header beats a wrong one.
+column_meta <- function(name, v) {
+  if (all(is.na(v))) return(list(name = name, typeName = ""))
+  list(name = name, typeName = switch(class(v)[1],
+    integer = "DECIMAL", numeric = "DOUBLE", character = "VARCHAR",
+    logical = "BOOLEAN", Date = "DATE", factor = "VARCHAR",
+    toupper(class(v)[1])))
+}
+
 # One cell, rendered the way Studio's native driver renders it: numbers stay
 # numbers, exact types stay text (so no digit is lost), NA is a real NULL.
+# Large DECIMALs arrive as character and keep every digit; small ones arrive as
+# doubles and are sent as JSON numbers.
 cell <- function(v) {
   if (length(v) == 0 || is.na(v)) return(NULL)
   if (is.logical(v) || is.numeric(v)) return(unname(v))
@@ -95,9 +136,7 @@ for (i in seq_along(statements)) {
       # which is a complete result and must not be flagged.
       df <- DBI::dbFetch(res, n = max_rows + 1)
       e$kind <- "resultSet"
-      e$columns <- lapply(names(df), function(n) {
-        list(name = n, typeName = toupper(class(df[[n]])[1]))
-      })
+      e$columns <- lapply(names(df), function(n) column_meta(n, df[[n]]))
       if (nrow(df) > max_rows) {
         df <- df[seq_len(max_rows), , drop = FALSE]
         e$truncated <- TRUE
@@ -124,4 +163,4 @@ for (i in seq_along(statements)) {
 }
 
 try(DBI::dbDisconnect(conn), silent = TRUE)
-cat(jsonlite::toJSON(list(results = results), auto_unbox = TRUE, null = "null"), "\n", sep = "")
+emit(list(results = results))
