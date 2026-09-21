@@ -267,7 +267,12 @@ export function ResultsPanel({
               {response!.results.map((r, i) => (
                 <div key={i} className="border-b border-border">
                   <div className="truncate bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground" title={ranStmts[i]?.text}>
-                    {i + 1}] {statementVerb(ranStmts[i]?.text) ?? ""} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                    {/* The same tested formatter the result tabs use, so a
+                        write says "affected", a driver that cannot count says
+                        "executed", and a failure says "error" — instead of
+                        every one of them claiming "0 rows". */}
+                    {resultTabLabel(r, i, statementVerb(ranStmts[i]?.text) ?? undefined)}
+                    {r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                     {ranStmts[i] ? <> · {ranStmts[i].text.replace(/\s+/g, " ").slice(0, 80)}</> : null}
                   </div>
                   <div className="h-[280px]">
