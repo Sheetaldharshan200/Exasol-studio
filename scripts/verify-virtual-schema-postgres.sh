@@ -38,10 +38,15 @@ JDBC_VER=42.7.4
 JDBC_URL="https://repo1.maven.org/maven2/org/postgresql/postgresql/${JDBC_VER}/postgresql-${JDBC_VER}.jar"
 WORK="$(mktemp -d)"
 
+# pyexasol comes from the python stack Studio ships. The environment is built
+# OUTSIDE the repo (uv would otherwise drop a .venv next to the lock file) and
+# synced from the lock on first use — `--no-sync` here would leave it empty.
+export UV_PROJECT_ENVIRONMENT="${TMPDIR:-/tmp}/exasol-studio-python-stack"
+
 sql() {
-  # One pyexasol session per call, from the python stack Studio ships — the
-  # same way the refresh workflow talks to a database.
-  uv run --locked --no-sync --project "$ROOT/apps/desktop/src-tauri/resources/python-stack" python - "$@" <<'PY'
+  # One pyexasol session per call, the same way the refresh workflow talks to
+  # a database.
+  uv run --locked --project "$ROOT/apps/desktop/src-tauri/resources/python-stack" python - "$@" <<'PY'
 import ssl, sys, pyexasol
 host, port, user, pw, *stmts = sys.argv[1:]
 c = pyexasol.connect(dsn=f"{host}:{port}", user=user, password=pw, encryption=True,

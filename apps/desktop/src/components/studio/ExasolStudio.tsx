@@ -29,7 +29,7 @@ import { ActivityRail, type ActivityId } from "@/features/workbench/ActivityRail
 import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
-import { NewVirtualSchema } from "@/features/connection/NewVirtualSchema";
+import { AddSourceFlow } from "@/features/connection/virtual-schemas/AddSourceFlow";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LogsPanel } from "@/features/connection/LogsPanel";
 import { BackupsPanel } from "@/features/connection/BackupsPanel";
@@ -71,7 +71,6 @@ import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
-import { openVsWindow, VS_DONE } from "@/lib/vs-window";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
@@ -245,7 +244,6 @@ export function ExasolStudio({
   // "next" past the newest entry restores it instead of losing it.
   const historyDraft = useRef<string | null>(null);
   const [namePrompt, setNamePrompt] = useState<{ value: string } | null>(null);
-  const [vsFor, setVsFor] = useState<string | null>(null);
   const [bucketFsFor, setBucketFsFor] = useState<ConnectionProfile | null>(null);
   const [loadFor, setLoadFor] = useState<{ name: string; path: string } | null>(null);
   const [editTable, setEditTable] = useState<{ schema?: string; table: string; pk: string[]; columns: string[] } | null>(null);
@@ -637,19 +635,6 @@ export function ExasolStudio({
   // Resolve the workspace folder where saved scripts land.
   useEffect(() => {
     ipc.fsWorkspaceDir().then((e) => setWsPath(e.path)).catch(() => undefined);
-  }, []);
-
-  // The separate virtual-schema window reports success here → refresh its tree.
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen<{ profileId: string }>(VS_DONE, (e) => {
-        setTreeKeys((k) => ({ ...k, [e.payload.profileId]: (k[e.payload.profileId] ?? 0) + 1 }));
-      });
-    })();
-    return () => unlisten?.();
   }, []);
 
   // Apply persisted app settings live (initial load + when the Settings window
@@ -2020,12 +2005,22 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
-  // Open the New Virtual Schema flow in a separate native window (falls back to
-  // an in-app modal in the browser preview).
-  async function openVs(profileId: string) {
-    const name = connections.find((c) => c.profile.id === profileId)?.profile.name ?? "Exasol";
-    const opened = await openVsWindow({ profileId, connectionName: name });
-    if (!opened) setVsFor(profileId);
+  // "Add a data source": attach another database or bucket to this connection
+  // as a virtual schema. A workbench tab like everything else — one per
+  // connection; opening it again focuses the existing one.
+  function openAddSource(profileId: string) {
+    onFocusConnection(profileId);
+    const list = tabsByConn[profileId] ?? tabsFor(profileId);
+    const existing = list.find((t) => t.view === "addSource");
+    if (existing) {
+      setActiveIdByConn((a) => ({ ...a, [profileId]: existing.id }));
+      return;
+    }
+    const name = connections.find((c) => c.profile.id === profileId)?.profile.name ?? "connection";
+    tabCounter.current += 1;
+    const tab: SqlTab = { id: `tab-${Date.now()}-${tabCounter.current}`, title: `Add data source · ${name}`, view: "addSource", sql: "", response: null, execError: null };
+    setTabsByConn((prev) => ({ ...prev, [profileId]: [...(prev[profileId] ?? tabsFor(profileId)), tab] }));
+    setActiveIdByConn((a) => ({ ...a, [profileId]: tab.id }));
   }
 
   // Open a brand-new Visualizer tab (multiple diagrams are allowed).
@@ -2875,7 +2870,7 @@ export function ExasolStudio({
               onRemoveConnection={(id) => void removeConnection(id)}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
-              onNewVirtualSchema={openVs}
+              onNewVirtualSchema={openAddSource}
               onUploadDriver={(pid) => {
                 const c = connections.find((x) => x.profile.id === pid);
                 if (c) setBucketFsFor(c.profile);
@@ -3263,6 +3258,7 @@ export function ExasolStudio({
               connections={connections}
               activeProfileId={connection?.profile.id ?? null}
               onFocus={onFocusConnection}
+              onAddSource={connection ? () => openAddSource(connection.profile.id) : undefined}
             />
 
             {!isSpecialTab ? (
@@ -3431,7 +3427,7 @@ export function ExasolStudio({
                   registerExasolCompletion(m, () => sqlCatalogRef.current);
                 }}
                 onConnectDb={() => openConnect()}
-                onAddVirtualSchema={() => (connection ? openVs(connection.profile.id) : openConnect())}
+                onAddVirtualSchema={() => (connection ? openAddSource(connection.profile.id) : openConnect())}
                 onAsk={(text, kind, chart) => {
                   // Cell → exa: the prompt carries the source and, for chart
                   // cells, the current design so exa can modify it directly.
@@ -3474,7 +3470,15 @@ export function ExasolStudio({
             </div>
           ) : isSpecialTab && connection ? (
             <div className="min-h-0 flex-1">
-              {activeTab.view === "connProps" ? (
+              {activeTab.view === "addSource" ? (
+                <AddSourceFlow
+                  key={activeTab.id}
+                  profileId={connection.profile.id}
+                  connectionName={connection.profile.name}
+                  managedLocal={localStatus?.profileId === connection.profile.id}
+                  onCreated={() => refreshConnection(connection.profile.id)}
+                />
+              ) : activeTab.view === "connProps" ? (
                 // ONE unified Database Connection page (Connection | Properties |
                 // Database Info | Data Types | Search) — a single tab per
                 // connection; menu entries just switch its section.
@@ -3517,7 +3521,7 @@ export function ExasolStudio({
                   profileId={connection.profile.id}
                   connectionName={connection.profile.name}
                   onOpenSql={openBuiltSql}
-                  onNewVs={() => openVs(connection.profile.id)}
+                  onNewVs={() => openAddSource(connection.profile.id)}
                 />
               )}
             </div>
@@ -3840,15 +3844,6 @@ export function ExasolStudio({
             </div>
           </div>
         </div>
-      ) : null}
-
-      {vsFor ? (
-        <NewVirtualSchema
-          profileId={vsFor}
-          connectionName={connections.find((c) => c.profile.id === vsFor)?.profile.name ?? "Exasol"}
-          onClose={() => setVsFor(null)}
-          onCreated={() => refreshConnection(vsFor)}
-        />
       ) : null}
 
       {bucketFsFor ? <BucketFsPanel profile={bucketFsFor} onClose={() => setBucketFsFor(null)} /> : null}

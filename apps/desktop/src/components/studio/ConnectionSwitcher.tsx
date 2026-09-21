@@ -2,7 +2,7 @@
  * The toolbar connection switcher and the small labelled <Select> wrapper it
  * uses. Extracted from ExasolStudio.tsx.
  */
-import { Database } from "lucide-react";
+import { Database, Plus } from "lucide-react";
 
 import {
   Select,
@@ -50,19 +50,25 @@ export function Selector({
 }
 
 /** Toolbar switcher across all open connections (focus follows selection). */
+/** Sentinel item value: not a profile, but the door into the add-data-source flow. */
+const ADD_SOURCE = "__add_source__";
+
 export function ConnectionSwitcher({
   connections,
   activeProfileId,
   onFocus,
+  onAddSource,
 }: {
   connections: ActiveConnection[];
   activeProfileId: string | null;
   onFocus: (profileId: string) => void;
+  /** Open "Add a data source" for the active connection. */
+  onAddSource?: () => void;
 }) {
   return (
     <Select
       value={activeProfileId ?? undefined}
-      onValueChange={onFocus}
+      onValueChange={(v) => (v === ADD_SOURCE ? onAddSource?.() : onFocus(v))}
       disabled={connections.length === 0}
     >
       <SelectTrigger className="h-6 min-w-[140px] shrink-0 gap-1.5 text-xs" size="sm" aria-label="Connection">
@@ -79,6 +85,13 @@ export function ConnectionSwitcher({
             </SelectItem>
           ))
         )}
+        {onAddSource && connections.length > 0 ? (
+          <SelectItem value={ADD_SOURCE} data-agent-id="connection-switcher.add-source" className="border-t border-border text-primary">
+            <span className="flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Add a data source…
+            </span>
+          </SelectItem>
+        ) : null}
       </SelectContent>
     </Select>
   );

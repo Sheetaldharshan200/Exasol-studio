@@ -146,3 +146,8 @@ Root causes fixed today: (1) catalog.json published the LOCK pin as `latest`, hi
 (4) Update-state polling removed everywhere (user rule): fetch only at app open and on Updates/catalog tab clicks — Marketplace 10-min interval, IndependentComponents 5-min interval, badge 6h interval, and the Rust updates.rs 6h loop are all gone.
 Also: pickAsset extracted pure to marketplace/assets.ts (metadata filter + platform-null, 5 tests); driver-jdbc installs from Maven Central via tested <latest> parser; binary items with no build for the host show an honest 'No macOS build yet' instead of a doomed Install; card actions pinned to card bottom; multi-select install (cards) and multi-select update (components) added.
 
+
+
+## [2026-09-21] ingest | Analytics hub: virtual schemas on Exasol Personal 2.3, one adapter file each, Docker retired
+Personal 2.3.0 pinned for 5 platforms (nano + all Docker/Colima paths deleted; Podman is the launcher's business, Studio never probes engines). New page analytics-hub-virtual-schemas: 23 adapter files pinned to the upstream repo list by test; pure ddl/prereqs/plan modules (29 tests); Rust vs_stage_adapter writes through the deployment's local/runtime/exa; add-data-source tab replaces the native VS window + modal; sidebar/visualizer name the source of each virtual schema.
+Live proof: tests/virtual_schema_live.rs attaches the local database to itself through the Lua adapter and reads/joins rows. Gotchas: reqwest::blocking inside tokio tests; uv --no-sync empty venv.

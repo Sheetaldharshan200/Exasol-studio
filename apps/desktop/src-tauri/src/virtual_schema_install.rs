@@ -199,17 +199,34 @@ fn copy_into(src: &Path, dir: &Path, name: &str) -> AppResult<PathBuf> {
 #[tauri::command]
 pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<StageResult> {
     let id = req.job_id.clone();
-    let exa = exa_dir(&app)?;
-    if !exa.is_dir() {
-        return Err(AppError::Storage(
-            "This Studio's local Exasol Personal does not expose its /exa directory yet. \
-             Restart the local database once (Marketplace → Local Exasol → Stop, Start) so the 2.3 launcher \
-             rebuilds it, then try again."
-                .into(),
-        ));
+    // A Lua adapter without a driver writes nothing: its source is returned
+    // for inlining, so it can be fetched for ANY Exasol. Everything else
+    // lands in the managed deployment's /exa and needs it to exist.
+    let writes_files = req.runtime == "java" || req.driver.is_some();
+    let exa = match exa_dir(&app) {
+        Ok(dir) if dir.is_dir() => Some(dir),
+        Ok(_) if writes_files => {
+            return Err(AppError::Storage(
+                "This Studio's local Exasol Personal does not expose its /exa directory yet. \
+                 Restart the local database once (Marketplace → Local Exasol → Stop, Start) so the 2.3 launcher \
+                 rebuilds it, then try again."
+                    .into(),
+            ))
+        }
+        Err(e) if writes_files => return Err(e),
+        _ => None,
+    };
+    let vs_dir = exa.as_ref().map(|e| e.join(BUCKET_DIR).join(VS_DIR));
+    if let Some(dir) = &vs_dir {
+        std::fs::create_dir_all(dir)?;
     }
-    let vs_dir = exa.join(BUCKET_DIR).join(VS_DIR);
-    std::fs::create_dir_all(&vs_dir)?;
+    // Only reachable when `writes_files` — the match above guarantees Some.
+    let staging = || -> AppResult<(&Path, &Path)> {
+        match (&exa, &vs_dir) {
+            (Some(e), Some(v)) => Ok((e.as_path(), v.as_path())),
+            _ => Err(AppError::Storage("No managed local Exasol Personal to stage files into.".into())),
+        }
+    };
 
     // 1. The adapter release.
     emit_log(&app, &id, format!("Resolving the latest {} release…", req.repo), "info");
@@ -254,7 +271,8 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
         lua_source = Some(std::fs::read_to_string(&downloaded)?);
         emit_log(&app, &id, "Lua adapter: its source is inlined into the adapter script; nothing to stage.", "info");
     } else {
-        copy_into(Path::new(&downloaded), &vs_dir, &asset.name)?;
+        let (_, vs_dir) = staging()?;
+        copy_into(Path::new(&downloaded), vs_dir, &asset.name)?;
         emit_log(&app, &id, format!("Staged /buckets/bfsdefault/default/{VS_DIR}/{}", asset.name), "info");
     }
 
@@ -302,7 +320,8 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
                 )))
             }
         };
-        copy_into(Path::new(&local), &vs_dir, &jar_name)?;
+        let (exa, vs_dir) = staging()?;
+        copy_into(Path::new(&local), vs_dir, &jar_name)?;
         let jdbc_dir = exa.join("jdbc").join(&driver.name);
         copy_into(Path::new(&local), &jdbc_dir, &jar_name)?;
         std::fs::write(jdbc_dir.join("settings.cfg"), settings_cfg_with_jar(&driver.settings_cfg_template, &jar_name))?;
@@ -310,9 +329,12 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
         driver_file = Some(jar_name);
     }
 
-    // 3. Java adapters run as Java UDFs: the Java SLC must be installed.
+    // 3. Java adapters run as Java UDFs: the Java SLC must be installed. A
+    //    newly registered driver needs a restart too — the ETL layer reads
+    //    jdbc/<NAME>/settings.cfg at start — whatever the adapter's runtime
+    //    (the Lua Databricks adapter ships a JDBC driver).
     let mut java_slc_installed = false;
-    let mut restarted = false;
+    let mut needs_restart = driver_file.is_some();
     if req.runtime == "java" {
         let cli = exasol_cli(&app)?;
         let deployment = personal_deployment_dir(&app)?;
@@ -334,22 +356,23 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
                 return Err(AppError::Storage("Installing the Java script language container failed. See the log.".into()));
             }
             java_slc_installed = true;
-            // One restart applies the container and the driver registration together.
-            emit_log(&app, &id, "Restarting the local database once to activate the Java runtime…", "info");
-            let (app3, id3) = (app.clone(), id.clone());
-            tauri::async_runtime::spawn_blocking(move || restart_personal_runtime(&app3, &id3))
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))??;
-            restarted = true;
-        } else if driver_file.is_some() {
-            // The ETL layer reads jdbc/<NAME>/settings.cfg at start.
-            emit_log(&app, &id, "Restarting the local database once to register the driver…", "info");
-            let (app3, id3) = (app.clone(), id.clone());
-            tauri::async_runtime::spawn_blocking(move || restart_personal_runtime(&app3, &id3))
-                .await
-                .map_err(|e| AppError::Storage(e.to_string()))??;
-            restarted = true;
+            needs_restart = true;
         }
+    }
+    // One restart applies the container and the driver registration together.
+    let mut restarted = false;
+    if needs_restart {
+        let why = match (java_slc_installed, driver_file.is_some()) {
+            (true, true) => "activate the Java runtime and register the driver",
+            (true, false) => "activate the Java runtime",
+            _ => "register the driver",
+        };
+        emit_log(&app, &id, format!("Restarting the local database once to {why}…"), "info");
+        let (app3, id3) = (app.clone(), id.clone());
+        tauri::async_runtime::spawn_blocking(move || restart_personal_runtime(&app3, &id3))
+            .await
+            .map_err(|e| AppError::Storage(e.to_string()))??;
+        restarted = true;
     }
 
     Ok(StageResult {

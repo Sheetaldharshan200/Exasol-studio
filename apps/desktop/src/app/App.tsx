@@ -6,10 +6,8 @@ import { UpdateBanner } from "@/features/onboarding/UpdateBanner";
 import { useMarketplaceUpdateBadge } from "@/features/marketplace/use-update-badge";
 import { Tour, STUDIO_TOUR } from "@/features/onboarding/Tour";
 import { ConnectRunWindow } from "@/features/connection/ConnectRunWindow";
-import { VirtualSchemaWindow } from "@/features/connection/VirtualSchemaWindow";
 import { useConnections } from "@/state/useConnections";
 import { isConnectWindow, EV_ESTABLISHED } from "@/lib/connect-window";
-import { isVsWindow } from "@/lib/vs-window";
 import { isSettingsWindow } from "@/lib/settings-window";
 import { SettingsWindow } from "@/features/settings/SettingsWindow";
 import { SettingsModalHost } from "@/features/settings/SettingsModal";
@@ -28,10 +26,6 @@ export function App() {
   // The dedicated native connect window renders only the run flow.
   if (isConnectWindow()) {
     return <ConnectRunWindow />;
-  }
-  // The dedicated native virtual-schema window renders only that wizard.
-  if (isVsWindow()) {
-    return <VirtualSchemaWindow />;
   }
   // The standalone Settings window.
   if (isSettingsWindow()) {

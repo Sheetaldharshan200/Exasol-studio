@@ -204,7 +204,7 @@ function ConnectionSection({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onNewVs}>
-                <Waypoints className="h-3.5 w-3.5" /> New virtual schema
+                <Waypoints className="h-3.5 w-3.5" /> Add a data source…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onUploadDriver}>
                 <HardDriveUpload className="h-3.5 w-3.5" /> Upload driver to BucketFS

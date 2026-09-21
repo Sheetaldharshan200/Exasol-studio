@@ -52,7 +52,6 @@ test("a Java JDBC adapter script references both JARs; a document adapter also g
     "  %jvmoption -Duser.timezone=UTC;",
     "  %jar /buckets/bfsdefault/default/vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar;",
     "  %jar /buckets/bfsdefault/default/vs/postgresql-42.7.4.jar;",
-    "/",
   ].join("\n"));
   assert.throws(() => adapterScriptDdl(PostgresqlAdapter, { schema: "a", name: "b", adapterAsset: "x.jar" }), /driver JAR/);
 
@@ -65,7 +64,7 @@ test("a Java JDBC adapter script references both JARs; a document adapter also g
 
 test("a Lua adapter inlines its released source and references no JAR", () => {
   const ddl = adapterScriptDdl(DatabricksAdapter, { schema: "adapter", name: "dbx", adapterAsset: "ignored.lua", luaSource: "-- adapter\nreturn {}\n" });
-  assert.equal(ddl, "CREATE OR REPLACE LUA ADAPTER SCRIPT ADAPTER.DBX AS\n-- adapter\nreturn {}\n/");
+  assert.equal(ddl, "CREATE OR REPLACE LUA ADAPTER SCRIPT ADAPTER.DBX AS\n-- adapter\nreturn {}");
   assert.ok(!ddl.includes("%jar"));
   assert.throws(() => adapterScriptDdl(DatabricksAdapter, { schema: "a", name: "b", adapterAsset: "x" }), /released source/);
 });

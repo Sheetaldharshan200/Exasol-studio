@@ -88,6 +88,10 @@ export function connectionDdl(input: { name: string; to: string; user?: string; 
  * The adapter script. Java adapters reference their JAR (and the JDBC driver
  * JAR) in BucketFS; Lua adapters inline the released source, so there is
  * nothing in BucketFS to reference.
+ *
+ * No exaplus `/` terminator: the flow runs each statement on its own
+ * (`split = false`), and a script body can legitimately contain semicolons,
+ * which is exactly why it must never go through the statement splitter.
  */
 export function adapterScriptDdl(
   adapter: VsAdapter,
@@ -96,7 +100,7 @@ export function adapterScriptDdl(
   const target = qualified(input.schema, input.name);
   if (adapter.runtime === "lua") {
     if (!input.luaSource?.trim()) throw new Error(`${adapter.id}: a Lua adapter needs its released source`);
-    return `CREATE OR REPLACE LUA ADAPTER SCRIPT ${target} AS\n${input.luaSource.trimEnd()}\n/`;
+    return `CREATE OR REPLACE LUA ADAPTER SCRIPT ${target} AS\n${input.luaSource.trimEnd()}`;
   }
   const lines = [
     `CREATE OR REPLACE JAVA ADAPTER SCRIPT ${target} AS`,
@@ -110,7 +114,7 @@ export function adapterScriptDdl(
     if (!input.driverFile) throw new Error(`${adapter.id}: a JDBC adapter needs its driver JAR`);
     lines.push(`  %jar ${driverJarPath(input.driverFile)};`);
   }
-  return lines.join("\n") + "\n/";
+  return lines.join("\n");
 }
 
 /**
@@ -128,7 +132,6 @@ export function importUdfDdl(adapter: VsAdapter, input: { schema: string; adapte
     `  EMITS(...) AS`,
     `  %scriptclass ${adapter.importUdf.scriptClass};`,
     `  %jar ${adapterJarPath(input.adapterAsset)};`,
-    `/`,
   ].join("\n");
 }
 

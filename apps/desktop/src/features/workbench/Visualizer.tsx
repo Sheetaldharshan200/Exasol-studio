@@ -56,6 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
 import { errorMessage, ipc, type GraphLink, type GraphTable, type SchemaGraph } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,9 @@ const HEADER_H = 34;
 const ROW_H = 26;
 
 const graphCache = new Map<string, SchemaGraph>();
-const schemaCache = new Map<string, string[]>();
+/** A schema in the picker: virtual ones carry the source they federate. */
+type SchemaEntry = { name: string; source?: string };
+const schemaCache = new Map<string, SchemaEntry[]>();
 const lastSchema = new Map<string, string>();
 
 type Selection = { table: string; column?: string } | null;
@@ -487,7 +490,7 @@ export function Visualizer({
   // Per-tab schema memory (independent tabs); the heavier graph/schema-list
   // caches stay keyed by profile since they're the same database.
   const schemaKey = instanceId ?? profileId;
-  const [schemas, setSchemas] = useState<string[]>(() => schemaCache.get(profileId) ?? []);
+  const [schemas, setSchemas] = useState<SchemaEntry[]>(() => schemaCache.get(profileId) ?? []);
   const [schema, setSchema] = useState<string>(() => lastSchema.get(schemaKey) ?? "");
   const [graph, setGraph] = useState<SchemaGraph | null>(
     () => graphCache.get(`${profileId}:${lastSchema.get(schemaKey) ?? ""}`) ?? null,
@@ -553,16 +556,19 @@ export function Visualizer({
     const cached = schemaCache.get(profileId);
     if (cached) {
       setSchemas(cached);
-      setSchema((cur) => cur || lastSchema.get(schemaKey) || cached[0] || "");
+      setSchema((cur) => cur || lastSchema.get(schemaKey) || cached[0]?.name || "");
       return;
     }
     ipc
       .getDatabaseOverview(profileId)
       .then((o) => {
-        const names = o.schemas.map((s) => s.name);
-        schemaCache.set(profileId, names);
-        setSchemas(names);
-        setSchema((cur) => cur || names[0] || "");
+        const entries: SchemaEntry[] = o.schemas.map((s) => ({
+          name: s.name,
+          source: s.isVirtual ? adapterForScript(s.adapterScript)?.name ?? "virtual" : undefined,
+        }));
+        schemaCache.set(profileId, entries);
+        setSchemas(entries);
+        setSchema((cur) => cur || entries[0]?.name || "");
       })
       .catch((e) => setError(errorMessage(e)));
   }, [profileId, refreshTick]);
@@ -887,8 +893,12 @@ export function Visualizer({
             </SelectTrigger>
             <SelectContent>
               {schemas.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
+                <SelectItem key={s.name} value={s.name}>
+                  <span className="flex items-center gap-1.5">
+                    {s.source ? <Waypoints className="h-3 w-3 text-teal" /> : null}
+                    {s.name}
+                    {s.source ? <span className="text-[10px] text-muted-foreground">{s.source}</span> : null}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -975,16 +985,17 @@ export function Visualizer({
           </EdgeStyleContext.Provider>
         )}
 
-        {/* Floating "add" — connect another database via a virtual schema */}
+        {/* Floating "add" — attach another database or bucket as a virtual schema */}
         {onNewVs ? (
           <button
             onClick={onNewVs}
-            title="Add a virtual schema (connect another database)"
+            data-agent-id="visualizer.add-source"
+            title="Add a data source — attach another database or bucket as a virtual schema"
             className="absolute top-3 left-3 z-20 flex h-8 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
           >
             <Plus className="h-3.5 w-3.5" />
             <Waypoints className="h-3.5 w-3.5 text-teal" />
-            Virtual schema
+            Add data source
           </button>
         ) : null}
 

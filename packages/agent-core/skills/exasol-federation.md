@@ -47,6 +47,14 @@ never tell them virtual schemas are unavailable locally.
 - The full adapter list, with each source's own file, is Studio's virtual
   schema catalog (`apps/desktop/src/features/connection/virtual-schemas/`).
   Prefer the dedicated adapter over a generic one when the source has one.
+- In Studio the user-facing door is **Add a data source** — the last item of
+  the database dropdown, the "Add data source" button in the Visualizer, or
+  the Virtual Schemas folder in the sidebar. It walks source → credentials →
+  options → prerequisites → create, installs what is missing on the local
+  Exasol Personal, and only reports success after it has READ rows through
+  the new schema. When the user would rather click than paste SQL, point
+  them there; when you do it yourself, hold the same rule — created means
+  proved by a read.
 
 Credentials always go in a named `CONNECTION` object — never inline a password
 in SQL. After `CREATE VIRTUAL SCHEMA`, prove it with a `SELECT … LIMIT 5`

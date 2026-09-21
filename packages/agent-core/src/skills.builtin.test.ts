@@ -75,3 +75,24 @@ test("router skills cross-reference existing skills, not phantom ones", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// "I have data here and there" must land on the federation skill and that skill
+// must default to a virtual schema — the hub's promise, pinned so a rewrite of
+// the skill text cannot quietly drop either half.
+test("the federation skill triggers on multi-source phrasing and defaults to a virtual schema", () => {
+  const { s, dir } = store();
+  try {
+    const skill = s.get("exasol-federation");
+    assert.ok(skill, "exasol-federation is a builtin skill");
+    const description = skill!.description.toLowerCase();
+    for (const cue of ["multiple sources", "here", "there", "postgres", "s3"]) {
+      assert.ok(description.includes(cue), `description must carry the trigger word "${cue}"`);
+    }
+    assert.ok(/default to a virtual schema/i.test(skill!.description), "the description must name the default");
+    assert.ok(/Add a data source/.test(skill!.body), "the body must point at Studio's add-data-source flow");
+    assert.ok(/created means\s+proved/i.test(skill!.body), "the body must carry the created-means-proved rule");
+    assert.ok(/virtual-schemas\//.test(skill!.body), "the body must reference the adapter catalog directory");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
