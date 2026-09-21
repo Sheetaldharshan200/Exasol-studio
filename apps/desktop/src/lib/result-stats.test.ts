@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cellText, filterRows, toCsv, computeStats, resultTabLabel, statementVerb } from "./result-stats.ts";
+import { cellText, filterRows, toCsv, computeStats, resultTabLabel, resultSummary, rowTotal, statementVerb } from "./result-stats.ts";
 
 test("resultTabLabel describes each result kind", () => {
   assert.equal(resultTabLabel({ kind: "resultSet", rowCount: 42, error: null }, 1), "Result 2 · 42 rows");
@@ -111,4 +111,28 @@ test("computeStats clamps negative inputs to zero", () => {
   assert.equal(s.cols, 0);
   assert.equal(s.throughputPerSec, 0);
   assert.equal(s.avgPerRowMs, 0);
+});
+
+test("resultSummary says what a result did without inventing a number", () => {
+  assert.equal(resultSummary({ kind: "resultSet", rowCount: 42 }), "42 rows");
+  assert.equal(resultSummary({ kind: "resultSet", rowCount: 1 }), "1 row");
+  assert.equal(resultSummary({ kind: "rowCount", rowCount: 3 }), "3 rows affected");
+  assert.equal(resultSummary({ kind: "rowCount", rowCount: 1 }), "1 row affected");
+  // The R driver's writes: it ran, the count is unknown, and no "0" appears.
+  assert.equal(resultSummary({ kind: "executed", rowCount: 0 }), "Statement executed");
+});
+
+test("rowTotal keeps unknown counts visible instead of folding them in as zero", () => {
+  const known = [
+    { kind: "resultSet" as const, rowCount: 5 },
+    { kind: "rowCount" as const, rowCount: 3 },
+  ];
+  assert.deepEqual(rowTotal(known), { rows: 8, withoutCount: 0 });
+
+  // One R-driver INSERT in the run: it must not silently subtract from the
+  // truth by contributing 0 — it is counted as a statement without a count.
+  const mixed = [...known, { kind: "executed" as const, rowCount: 0 }];
+  assert.deepEqual(rowTotal(mixed), { rows: 8, withoutCount: 1 });
+
+  assert.deepEqual(rowTotal([]), { rows: 0, withoutCount: 0 });
 });

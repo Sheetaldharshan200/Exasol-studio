@@ -3,6 +3,7 @@
  * When running in a plain browser (design preview via `pnpm dev`), a mock
  * backend with representative Exasol data is used instead.
  */
+import type { ResultKind } from "./result-stats.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { mockInvoke } from "@/lib/ipc-mock";
 
@@ -400,7 +401,7 @@ export type ColumnMeta = { name: string; typeName: string };
 export type StatementResult = {
   statement: string;
   /** "executed" = it ran, but the driver cannot report how many rows it touched. */
-  kind: "resultSet" | "rowCount" | "executed";
+  kind: ResultKind;
   columns: ColumnMeta[];
   rows: unknown[][];
   rowCount: number;

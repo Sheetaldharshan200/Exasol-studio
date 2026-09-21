@@ -45,7 +45,7 @@ import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { GitLogTab } from "./GitLogTab";
 import { filterEntries, keyEntries, sortEntries, verbOf, type LogSortKey } from "@/lib/history-log";
 import { fmtClock } from "@/lib/sql-text";
-import { cellText, filterRows } from "@/lib/result-stats";
+import { cellText, filterRows, resultSummary, rowTotal } from "@/lib/result-stats";
 import { termBusReady } from "@/lib/term-bus";
 import { cn } from "@/lib/utils";
 import { IconButton } from "./IconButton";
@@ -70,7 +70,11 @@ export function RunStatusStrip({
   const elapsedMs = (meta.finishedAt ?? Date.now()) - meta.startedAt;
   const dur = elapsedMs < 10_000 ? `${Math.round(elapsedMs)} ms` : `${(elapsedMs / 1000).toFixed(1)} s`;
   const stmts = response?.results.length ?? 0;
-  const rows = response?.results.reduce((a, r) => a + r.rowCount, 0) ?? 0;
+  const total = rowTotal(response?.results ?? []);
+  // A driver that cannot count (the R driver) must not be summed in as 0.
+  const rowsText = total.withoutCount
+    ? `${total.rows} rows · ${total.withoutCount} without a count`
+    : `${total.rows} rows`;
   return (
     <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-panel/40 px-3 py-1 font-mono text-[10.5px] whitespace-nowrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <span>
@@ -84,7 +88,7 @@ export function RunStatusStrip({
         <span className={meta.ok ? "text-primary" : "text-destructive"}>
           {meta.ok ? "✓ Completed" : "✗ Failed"} {fmtClock(meta.finishedAt!)} · {dur}
           {meta.ok && stmts > 0
-            ? ` · ${stmts} statement${stmts === 1 ? "" : "s"} · ${rows} row${rows === 1 ? "" : "s"}`
+            ? ` · ${stmts} statement${stmts === 1 ? "" : "s"} · ${rowsText}`
             : ""}
         </span>
       )}
@@ -162,22 +166,14 @@ export function ResultsGrid({
       </div>
     );
   }
-  if (result.kind === "executed") {
-    // The statement ran, but this driver cannot say how many rows it touched.
-    // Printing "0 rows affected" would be a wrong answer, not a missing one.
+  if (result.kind !== "resultSet") {
+    // A write, or a statement whose driver cannot report a count. The shared
+    // summary says which — printing "0 rows affected" for the latter would be
+    // a wrong answer, not a missing one.
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <span className="rounded-md bg-secondary px-3 py-1.5">
-          Statement executed · {result.elapsedMs} ms
-        </span>
-      </div>
-    );
-  }
-  if (result.kind === "rowCount") {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <span className="rounded-md bg-secondary px-3 py-1.5">
-          {result.rowCount} row{result.rowCount === 1 ? "" : "s"} affected · {result.elapsedMs} ms
+          {resultSummary(result)} · {result.elapsedMs} ms
         </span>
       </div>
     );

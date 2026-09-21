@@ -11,6 +11,7 @@
  */
 import type { SqlCatalog } from "@/lib/sql-completion";
 import type { StatementResult } from "@/lib/ipc";
+import { resultSummary } from "../../../lib/result-stats.ts";
 
 /** A read-only snapshot of the workbench, captured when the menu opens. */
 export type ExaSnapshot = {
@@ -83,7 +84,7 @@ export function schemaArguments(snap: ExaSnapshot): string[] {
 function resultToMarkdown(result: StatementResult, maxRows = 20): string {
   if (result.kind !== "resultSet" || result.columns.length === 0) {
     if (result.kind === "executed") return "Statement executed (this driver reports no row count).";
-    return result.kind === "rowCount" ? `${result.rowCount} row(s) affected.` : "(no result set)";
+    return result.kind === "rowCount" ? `${resultSummary(result)}.` : "(no result set)";
   }
   const header = `| ${result.columns.map((c) => c.name).join(" | ")} |`;
   const divider = `| ${result.columns.map(() => "---").join(" | ")} |`;
@@ -126,7 +127,7 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
         id: "results",
         providerId: id,
         label: "results",
-        body: `Most recent query result (${snap.lastResult.rowCount} row(s)):\n\n${resultToMarkdown(snap.lastResult)}`,
+        body: `Most recent query result (${resultSummary(snap.lastResult)}):\n\n${resultToMarkdown(snap.lastResult)}`,
       };
     }
     case "connection": {

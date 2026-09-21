@@ -83,7 +83,17 @@ fn run_bridge(program: &Path, script: Option<&Path>, req: &Value) -> Value {
 ///
 /// `label` names a scratch schema for the write round-trip, so bridges tested
 /// in parallel (cargo runs tests on threads) never share one.
-fn assert_bridge_contract(program: &Path, script: Option<&Path>, driver_path: &str, label: &str) {
+///
+/// `counts_rows` says whether this driver can report affected rows. Only R
+/// cannot, and only R is allowed to say so — otherwise "I cannot count" becomes
+/// an escape hatch that would hide Go or TS silently losing their counts.
+fn assert_bridge_contract(
+    program: &Path,
+    script: Option<&Path>,
+    driver_path: &str,
+    label: &str,
+    counts_rows: bool,
+) {
     // 1. A typed result set: numbers stay numbers, a scaled DECIMAL keeps every
     //    digit, and a real NULL stays NULL.
     let reply = run_bridge(
@@ -175,19 +185,27 @@ fn assert_bridge_contract(program: &Path, script: Option<&Path>, driver_path: &s
     for r in results {
         assert!(r["error"].is_null(), "write step failed: {}", r["error"]);
     }
-    // The INSERT must report 3 — or say plainly that it cannot count, which
-    // r-exasol genuinely cannot. What it must never do is claim 0, because a
-    // caller cannot tell that apart from "nothing was written".
+    // A driver that CAN count must report 3. One that cannot must say so by
+    // kind, and carry no number to misread. What none of them may do is claim
+    // 0, because a caller cannot tell that apart from "nothing was written".
     let insert = &results[2];
-    if insert["kind"] == json!("executed") {
+    if counts_rows {
         assert_eq!(
-            insert["rowCount"], json!(0),
-            "an unknown count is declared by kind, and carries no number to misread"
+            insert["kind"], json!("rowCount"),
+            "this driver reports affected rows, so it must not claim it cannot"
         );
-    } else {
         assert_eq!(
             insert["rowCount"], json!(3),
             "the INSERT must report the rows it wrote, not 0"
+        );
+    } else {
+        assert_eq!(
+            insert["kind"], json!("executed"),
+            "a driver that cannot count must declare that, not report 0 affected"
+        );
+        assert_eq!(
+            insert["rowCount"], json!(0),
+            "an unknown count carries no number to misread"
         );
     }
     assert_eq!(
@@ -235,7 +253,7 @@ fn go_bridge_speaks_the_contract() {
         repo_root().join("apps/desktop/src-tauri/resources/bridges/exasol-bridge-go"),
         "./scripts/build-driver-bridges.sh",
     );
-    assert_bridge_contract(&bin, None, "", "GO");
+    assert_bridge_contract(&bin, None, "", "GO", true);
 }
 
 #[test]
@@ -253,7 +271,7 @@ fn ts_bridge_speaks_the_contract() {
         eprintln!("skipped: no node on PATH");
         return;
     };
-    assert_bridge_contract(&node, Some(&script), "", "TS");
+    assert_bridge_contract(&node, Some(&script), "", "TS", true);
 }
 
 #[test]
@@ -275,7 +293,9 @@ fn r_bridge_speaks_the_contract() {
         return;
     }
     let script = repo_root().join("packages/driver-bridges/r/bridge.R");
-    assert_bridge_contract(&rscript, Some(&script), &driver, "R");
+    // r-exasol cannot report affected rows at any layer of its stack, so it is
+    // the one driver held to "declare the unknown" instead of "report 3".
+    assert_bridge_contract(&rscript, Some(&script), &driver, "R", false);
 }
 
 fn which(bin: &str) -> Option<PathBuf> {

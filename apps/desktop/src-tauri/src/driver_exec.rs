@@ -120,6 +120,18 @@ pub(crate) fn expect_rows(statements: &[String]) -> Vec<bool> {
     statements.iter().map(|s| crate::query::is_result_set_statement(s)).collect()
 }
 
+/// The result kinds a bridge may report. Anything else is a bridge bug — and
+/// the safe reading of a kind Studio does not recognise is "it ran, no count",
+/// never "0 rows affected": a typo in a bridge must not resurrect the wrong
+/// answer the `executed` kind exists to remove.
+pub(crate) fn result_kind(reported: Option<&str>) -> &'static str {
+    match reported {
+        Some("resultSet") => "resultSet",
+        Some("rowCount") => "rowCount",
+        _ => "executed",
+    }
+}
+
 /// The R bridge script: release resource first, then the workspace copy.
 fn r_bridge_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
     if let Ok(p) = app.path().resolve("bridge.R", tauri::path::BaseDirectory::Resource) {
@@ -768,7 +780,7 @@ fn execute_bridge(
                 .unwrap_or_default();
             results.push(StatementResult {
                 statement: r.get("statement").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                kind: r.get("kind").and_then(|v| v.as_str()).unwrap_or("rowCount").to_string(),
+                kind: result_kind(r.get("kind").and_then(|v| v.as_str())).to_string(),
                 columns,
                 rows,
                 row_count: r.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
@@ -795,6 +807,19 @@ const PYTHON_BRIDGE: &str = include_str!("../../../../packages/driver-bridges/py
 #[cfg(test)]
 mod driver_support_tests {
     use super::{driver_implemented, driver_runtime, expect_rows, unimplemented_driver_message};
+
+    #[test]
+    fn an_unrecognised_bridge_kind_never_becomes_a_confident_row_count() {
+        use super::result_kind;
+        assert_eq!(result_kind(Some("resultSet")), "resultSet");
+        assert_eq!(result_kind(Some("rowCount")), "rowCount");
+        assert_eq!(result_kind(Some("executed")), "executed");
+        // A typo, or a bridge from a newer Studio, or nothing at all: the only
+        // reading that cannot be a lie is "it ran, and we have no count".
+        assert_eq!(result_kind(Some("execute")), "executed");
+        assert_eq!(result_kind(Some("")), "executed");
+        assert_eq!(result_kind(None), "executed");
+    }
 
     #[test]
     fn bridges_are_told_which_statements_return_rows_by_the_shared_classifier() {

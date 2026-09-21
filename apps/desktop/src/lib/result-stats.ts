@@ -35,10 +35,41 @@ export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][]
   return [header, ...body].join("\r\n");
 }
 
+/** "executed" = the statement ran, but the driver cannot report a row count. */
+export type ResultKind = "resultSet" | "rowCount" | "executed";
+
+/** What one result did, in words — "42 rows", "3 rows affected", or
+ *  "Statement executed" when the driver cannot report a count.
+ *
+ *  Every surface that describes a result uses this, so a driver that cannot
+ *  count can never be rendered as a confident "0". */
+export function resultSummary(r: { kind: ResultKind; rowCount: number }): string {
+  if (r.kind === "executed") return "Statement executed";
+  if (r.kind === "rowCount") return `${r.rowCount} row${r.rowCount === 1 ? "" : "s"} affected`;
+  return `${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`;
+}
+
+/** Rows across a whole run, keeping the unknowns visible.
+ *
+ *  A result whose driver reports no count contributes nothing to `rows` — it
+ *  is counted in `withoutCount` instead, so a summary can say so rather than
+ *  folding an unknown into the total as a zero. */
+export function rowTotal(
+  results: readonly { kind: ResultKind; rowCount: number }[],
+): { rows: number; withoutCount: number } {
+  let rows = 0;
+  let withoutCount = 0;
+  for (const r of results) {
+    if (r.kind === "executed") withoutCount += 1;
+    else rows += r.rowCount;
+  }
+  return { rows, withoutCount };
+}
+
 /** A short tab label for one statement's result in a multi-result run, e.g.
  *  "Result 2 · 42 rows", "Result 3 · error", "Result 1 · 5 affected". */
 export function resultTabLabel(
-  r: { kind: "resultSet" | "rowCount" | "executed"; rowCount: number; error: string | null },
+  r: { kind: ResultKind; rowCount: number; error: string | null },
   index: number,
   /** The statement's leading verb (SELECT, INSERT, …) so a script's tabs say
    *  WHAT ran, not just "Result N". */
