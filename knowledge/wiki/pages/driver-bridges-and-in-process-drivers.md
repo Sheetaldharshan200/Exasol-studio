@@ -113,7 +113,7 @@ for DDL/DML too and returns zero columns, but the affected count is gone — an
 INSERT of 3 rows reports 0. Hence `Exec` for non-row statements, and hence
 `expectRows`.
 
-## r-exasol: four traps, all invisible until it ran
+## r-exasol: five traps, all invisible until it ran
 
 1. **It prints to stdout.** `exa()` prints "EXASOL driver loaded", and
    `dbSendQuery` prints "Using temporary schema: TEMP_…_CREATED_BY_R". Studio
@@ -131,11 +131,17 @@ INSERT of 3 rows reports 0. Hence `Exec` for non-row statements, and hence
    `dbSendStatement` and `dbColumnInfo` all appear in the NAMESPACE yet have no
    method for `EXAConnection`/`EXAResult`. Every write would have failed. Use
    `dbSendQuery` for everything (it wraps RODBC's `sqlQuery`, which handles DDL
-   and DML fine) and read the count off the same result with
-   `dbGetRowsAffected`; infer column types from the R vector, and report an
-   empty type for an all-NA column (which R types as `logical` whatever the
-   database said) rather than claiming BOOLEAN.
-4. **It creates a temporary schema on the server.** `dbSendQuery` makes a
+   and DML fine); infer column types from the R vector, and report an empty
+   type for an all-NA column (which R types as `logical` whatever the database
+   said) rather than claiming BOOLEAN.
+4. **It cannot report affected rows — at all.** `dbSendQuery` hardcodes
+   `rowcount <- 0` for every non-SELECT (`} else rowcount <- 0` in
+   `EXADBI-query.R`), so `dbGetRowsAffected` always answers 0 for a write. The
+   profile it captures describes the **COMMIT**, not the statement
+   (`COMMAND_NAME = COMMIT`, `OBJECT_ROWS = NA`), and RODBC underneath returns
+   `character(0)` from `sqlQuery` and `1` from `odbcQuery` — no count anywhere
+   in the stack. See "An unknown count" below.
+5. **It creates a temporary schema on the server.** `dbSendQuery` makes a
    `TEMP_…_CREATED_BY_R` schema for its high-speed transfer layer and drops it
    on disconnect. Expect it in the catalog during an R session.
 
@@ -148,6 +154,25 @@ conda-provided R fails with "C compiler cannot create executables" — the conda
 clang wrapper cannot link. Pointing `R_MAKEVARS_USER` at a Makevars that sets
 `CC`/`CXX`/`OBJC` to `/usr/bin/clang` fixes it (`ps`, pulled in by `remotes`,
 compiles Objective-C, so `OBJC` matters too).
+
+## An unknown count is a third kind, not a zero
+
+`StatementResult.kind` is `resultSet` | `rowCount` | **`executed`**. The last
+means *it ran, and this driver cannot say how many rows it touched* — only the
+R bridge emits it, because only r-exasol has that limitation. The UI renders
+"Statement executed" and prints no number.
+
+Saying "0 rows affected" for an INSERT that wrote three is the same wrong
+answer as the original silent-driver-substitution bug: the caller cannot tell
+it apart from "nothing was written". A missing number is honest; a wrong one is
+a defect. `kind` was already a free-form string passed straight through
+`driver_exec.rs`, so adding a value cost no Rust type change — only the six UI
+display sites learned it.
+
+The live write round-trip accepts a real count **or** a declared unknown, and
+still fails a claimed 0. The read-back that proves the write committed runs
+either way, so R is held to the same standard as Go and TS on the thing that
+matters.
 
 ## Readiness: what blocks versus what is worth saying
 
