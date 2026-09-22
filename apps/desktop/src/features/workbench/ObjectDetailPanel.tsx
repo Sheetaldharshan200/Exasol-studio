@@ -45,6 +45,7 @@ export function ObjectDetailPanel({
   connectionName,
   object,
   onOpenData,
+  busy,
   onOpenSql,
   onApplyDdl,
   navTab,
@@ -56,6 +57,8 @@ export function ObjectDetailPanel({
   object: ObjectRef;
   /** Run SELECT * against this object in a new query tab. */
   onOpenData: (sql: string) => void;
+  /** A statement is already running on this connection. */
+  busy?: boolean;
   /** Open DDL in a new query tab (structure editor "Review SQL"). */
   onOpenSql?: (sql: string, title?: string) => void;
   /** Run DDL directly (structure editor "Confirm & Save"); returns first error. */
@@ -192,7 +195,9 @@ export function ObjectDetailPanel({
           {isTable ? (
             <button
               onClick={() => onOpenData(`SELECT * FROM ${qualify(object.schema, object.name)} LIMIT 1000;`)}
-              className="ml-auto flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary"
+              disabled={busy}
+              title={busy ? "A statement is already running on this connection" : undefined}
+              className="ml-auto flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" /> Open data
             </button>

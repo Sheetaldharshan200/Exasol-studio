@@ -98,7 +98,9 @@ export function ResultsPanel({
   const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
   // Memoized: splitStatements is O(buffer) and this component re-renders per
   // keystroke — a huge script must not re-split on every render.
-  const isSingleSelect = useMemo(() => splitStatements(sql).length === 1 && /^select/i.test(sql.trim()), [sql]);
+  // Paging belongs to the statement that RAN — see ranSql below.
+  const pagedFrom = runMeta?.sql ?? sql;
+  const isSingleSelect = useMemo(() => splitStatements(pagedFrom).length === 1 && /^select/i.test(pagedFrom.trim()), [pagedFrom]);
   // What actually RAN (a selection, the statement at the cursor, …) — the
   // buffer may have moved on since. Result views must attribute rows to THIS,
   // and each result to ITS statement (statement i produced result i).

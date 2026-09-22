@@ -242,6 +242,48 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
     `.is-far`. The minimap paints it transparent so the table rects still show.
   - The selected card's ShineBorder is a running animation and now sits in
     `.vs-deco`, so it parks during a gesture with the rest of the decoration.
+## Running state, one session, and an editable grid (2026-09-22)
+
+- **"Open data" never said it was running.** The object tab's Open data button
+  goes through `openBuiltSql`, which executed the query and set the app-wide
+  `running` flag but never wrote the tab's `runMeta` — and `ResultsPanel`
+  derives `busy` from `runMeta`. So the results area showed "Run a statement to
+  see results here." for the whole wait, which against a virtual schema is
+  most of the wait. It now writes the same run record the Run button does.
+  A finished `runMeta` also keeps its `sql`: without it, `ranSql` fell back to
+  the live buffer, so result labels and paging followed the editor rather than
+  the statement that produced the rows.
+- **One statement at a time, per connection.** `running` is React state and
+  therefore a render behind: `run()` checked it, `openBuiltSql` did not, and
+  paging, prefetch and editor saves called `ipc.executeSql` directly. Two
+  statements on one websocket session hang or kill the driver. Everything in
+  `ExasolStudio.tsx` now executes through `lib/serial-queue.ts`
+  (`createSerialQueue`, keyed by connection profile, tested for ordering,
+  rejection isolation and leak-freedom); the `acquireRun` ref lease stays on
+  top of it as the UI's one-run-at-a-time gate.
+  - A result page carries a generation per connection (`runGens`/`genOf`,
+    bumped by `acquireRun`). A queued page job re-checks it before touching
+    the database and drops its answer if a newer run has started, so a late
+    page of the previous query can never replace the current one's rows, and
+    DDL on another database does not invalidate a page of this one.
+- **The editable grid.** `Add row` now scrolls the staged row into view and
+  puts the caret in it; rows carry ids so two added in one tick cannot collide;
+  a row can be duplicated; the toolbar shows what is staged ("2 edited · 1 new");
+  ⌘S / ⌘↵ saves and Escape leaves only when nothing is staged.
+  - `edit-grid-model.ts` distinguishes three cell states, which the generated
+    INSERT depends on: a string, an explicit `null` (SQL NULL), and an absent
+    or empty cell (left out, so the column takes its DEFAULT). A duplicated
+    NULL used to come through as "empty" and silently became the default.
+  - `edit-dml.ts` is the generated SQL, extracted from the component and
+    tested (quote escaping, typed literals, catalog identifier case, no-PK
+    identity, ordering, a row staged against rows that are gone). An empty
+    staged row emits `INSERT INTO t DEFAULT VALUES` — verified live on
+    Exasol 8 — instead of silently producing no statement.
+- **`use-result-paging.ts`** holds the page cache, prefetch and generation
+  guard; `ExasolStudio.tsx` came back down to 3,966 lines. Every path that
+  caches a page evicts through `cachePage`, so walking a large result cannot
+  grow the cache without limit (only the prefetch path used to evict).
+
 - **Inference at scale.** `inferLinks` was parents × children × columns with a
   regex per step: 1.7 s for 1,000 tables, run again on every progressive
   publish. It now indexes every column once by (type family, exact / flat /

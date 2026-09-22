@@ -140,10 +140,14 @@ export function ResultsGrid({
   // so the editable grid renders with IDENTICAL geometry (no resize jump).
   const roTableRef = useRef<HTMLTableElement | null>(null);
   const [editColWidths, setEditColWidths] = useState<number[] | null>(null);
-  const startEditing = (cell: { row: number; col: number } | null) => {
+  // "Add row" opens the editor with a row already staged, so inserting a row
+  // is one click from the results, the way a data grid is expected to behave.
+  const [openWithNewRow, setOpenWithNewRow] = useState(false);
+  const startEditing = (cell: { row: number; col: number } | null, withNewRow = false) => {
     const ths = roTableRef.current?.querySelectorAll("thead th");
     setEditColWidths(ths ? Array.from(ths).map((th) => (th as HTMLElement).offsetWidth) : null);
     setFocusCell(cell);
+    setOpenWithNewRow(withNewRow);
     setEditing(true);
   };
   if (error) {
@@ -189,12 +193,14 @@ export function ResultsGrid({
         pk={editable.pk}
         catalogColumns={editable.columns}
         initialFocus={focusCell}
+        autoAddRow={openWithNewRow}
         colWidths={editColWidths}
         onOpenSql={onOpenSql}
         onApply={onCommitEdits}
         onExit={() => {
           setEditing(false);
           setFocusCell(null);
+          setOpenWithNewRow(false);
         }}
       />
     );
@@ -213,13 +219,22 @@ export function ResultsGrid({
       {hideToolbar ? null : (
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
           {canEdit ? (
-            <button
-              onClick={() => startEditing(null)}
-              title={`Edit rows in ${editable!.table}`}
-              className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit data
-            </button>
+            <>
+              <button
+                onClick={() => startEditing(null)}
+                title={`Edit rows in ${editable!.table}`}
+                className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit data
+              </button>
+              <button
+                onClick={() => startEditing(null, true)}
+                title={`Insert a row into ${editable!.table}`}
+                className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add row
+              </button>
+            </>
           ) : null}
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">
             {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
