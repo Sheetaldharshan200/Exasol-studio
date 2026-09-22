@@ -94,3 +94,15 @@ contents are unknown, so the flow does not pretend to know them.
 3. **"Scripts exist" must cover the import UDF.** The plan skipped script creation when only the adapter script existed, leaving a document adapter without its `IMPORT_FROM_*` UDF. Fix: pure `needsScriptInstall(missing, staged)` over both script kinds, tested with the S3 fixture.
 
 Rule of thumb that falls out of it: classify by *what gets written where* (`writes_files = java || driver`), never by the adapter's language.
+
+## Field finding (2026-09-22): the driver JAR's name is versioned
+
+Studio stages a Maven driver as `<artifact>-<version>.jar` (`postgresql-42.7.13.jar`),
+but the prerequisite check looked for `vs/postgresql.jar`, so the driver read as
+missing on every visit and, on a database where it WAS present, `buildPlan`
+threw "a JDBC adapter needs its driver JAR" straight into render — the tab error
+boundary caught it (its first real catch). Fixes: `presentDriverFile` matches
+the artifact under any version (a user-supplied JAR still matches only by the
+exact name the user typed), `resolveDriverFile` picks staged → typed → bucket,
+and `tryBuildPlan` turns a plan that cannot be built yet into a message on the
+create step. Rule: anything derived in render from probe data must not throw.

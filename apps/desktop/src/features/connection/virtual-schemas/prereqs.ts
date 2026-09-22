@@ -54,6 +54,28 @@ export function driverFileName(adapter: VsAdapter): string | undefined {
 }
 
 /**
+ * The driver JAR already in `vs/`, if any. Studio stages a Maven driver as
+ * `<artifact>-<version>.jar` (whatever Maven Central's latest was that day),
+ * so the match is by artifact, any version; a user-supplied JAR matches by
+ * its exact name. `files` are bucket-relative (`vs/postgresql-42.7.13.jar`).
+ */
+export function presentDriverFile(adapter: VsAdapter, files: Iterable<string>, userDriverFile?: string): string | undefined {
+  if (!adapter.driver) return undefined;
+  const list = [...files].map((f) => f.replace(/^\/?buckets\/bfsdefault\/default\//, "").replace(/^\/+/, ""));
+  const maven = adapter.driver.source.maven;
+  if (maven) {
+    const artifact = maven.split(":")[1].toLowerCase();
+    const re = new RegExp(`^${VS_DIR}/(${artifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:-[\\w.]+)?\\.jar)$`, "i");
+    for (const f of list) {
+      const m = re.exec(f);
+      if (m) return m[1];
+    }
+    return undefined;
+  }
+  return userDriverFile && list.includes(`${VS_DIR}/${userDriverFile}`) ? userDriverFile : undefined;
+}
+
+/**
  * The ordered list of what must be installed, in the order it must happen:
  * artifacts into BucketFS first, then the scripts that reference them.
  *
@@ -90,7 +112,7 @@ export function missingPrerequisites(
 
   if (adapter.driver) {
     const fetched = driverFileName(adapter);
-    const present = fetched ? inVs(fetched) : Boolean(options.userDriverFile && inVs(options.userDriverFile));
+    const present = presentDriverFile(adapter, files, options.userDriverFile) !== undefined;
     if (!present) {
       missing.push(
         fetched

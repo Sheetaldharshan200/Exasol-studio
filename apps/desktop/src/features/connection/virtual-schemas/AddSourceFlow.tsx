@@ -4,7 +4,7 @@ import { errorMessage, ipc, type VsLocalState, type VsPrereqs, type VsStageResul
 import { cn } from "@/lib/utils";
 import type { FieldValues, VsAdapter } from "./types.ts";
 import { missingPrerequisites, type PrereqProbe } from "./prereqs.ts";
-import { buildPlan, defaultNames, needsScriptInstall, readyToCreate, type PlanNames } from "./plan.ts";
+import { defaultNames, needsScriptInstall, readyToCreate, resolveDriverFile, tryBuildPlan, type PlanNames } from "./plan.ts";
 import { SourceLogo } from "./SourceLogo";
 import { SourcePicker } from "./steps/SourcePicker";
 import { CredentialsStep, credentialsComplete } from "./steps/CredentialsStep";
@@ -92,17 +92,18 @@ export function AddSourceFlow({
     return managedLocal ? missingInDb : missingInDb.filter((m) => m.kind === "adapterScript" || m.kind === "importUdf");
   }, [missingInDb, staged, managedLocal]);
 
-  const plan = useMemo(() => {
-    if (!adapter) return [];
-    // Staged by Studio, or — on a database Studio cannot write to — the file
-    // names the user uploaded by hand.
+  const { plan, error: planError } = useMemo(() => {
+    if (!adapter) return { plan: [], error: null };
+    // Staged by Studio, the file names the user uploaded by hand, or what an
+    // earlier run left in the bucket. A plan that cannot be built yet is a
+    // message on the create step, never an exception in render.
     const stagedFiles = {
       adapterAsset: staged?.adapterAsset ?? adapterFile.trim(),
-      driverFile: staged?.driverFile ?? (adapter.driver ? userJarPath.split("/").pop() || undefined : undefined),
+      driverFile: resolveDriverFile({ adapter, stagedDriverFile: staged?.driverFile, userJarPath, bucketFiles: probe?.bucketFiles ?? [] }),
       luaSource: staged?.luaSource ?? undefined,
     };
-    return buildPlan(adapter, values, names, stagedFiles, { installScripts: needsScriptInstall(missingInDb, staged !== null) });
-  }, [adapter, values, names, staged, userJarPath, adapterFile, missingInDb]);
+    return tryBuildPlan(adapter, values, names, stagedFiles, { installScripts: needsScriptInstall(missingInDb, staged !== null) });
+  }, [adapter, values, names, staged, userJarPath, adapterFile, missingInDb, probe]);
 
   const canNext =
     step === 0 ? adapter !== null
@@ -174,7 +175,11 @@ export function AddSourceFlow({
               onStaged={setStaged}
             />
           ) : null}
-          {step === 4 && adapter ? (
+          {step === 4 && adapter && planError ? (
+            <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-foreground">
+              This source cannot be created yet: {planError}. Go back to Prerequisites and install or name the missing file.
+            </p>
+          ) : step === 4 && adapter ? (
             <CreateStep
               key={`${adapter.id}:${names.virtualSchema}`}
               profileId={profileId}

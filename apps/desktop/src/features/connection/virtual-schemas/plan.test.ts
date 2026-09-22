@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPlan, defaultNames, needsScriptInstall, pointsAtLocalhost, readyToCreate } from "./plan.ts";
+import { buildPlan, defaultNames, needsScriptInstall, pointsAtLocalhost, readyToCreate, resolveDriverFile, tryBuildPlan } from "./plan.ts";
 import { adapterById } from "./adapters/index.ts";
 import { missingPrerequisites } from "./prereqs.ts";
 import { PostgresqlAdapter } from "./adapters/postgresql.ts";
@@ -92,4 +92,26 @@ test("needsScriptInstall: a document adapter whose script exists but whose impor
   assert.equal(needsScriptInstall(missing, false), true);
   assert.equal(needsScriptInstall([], false), false, "everything present: leave the scripts alone");
   assert.equal(needsScriptInstall([], true), true, "just staged a new release: the script must point at it");
+});
+
+test("resolveDriverFile: staged wins, then the typed path's basename, then the versioned JAR already in the bucket", () => {
+  const pg = adapterById("postgresql")!;
+  const bucket = ["vs/postgresql-42.7.13.jar"];
+  assert.equal(resolveDriverFile({ adapter: pg, stagedDriverFile: "postgresql-42.7.14.jar", userJarPath: "/x/other.jar", bucketFiles: bucket }), "postgresql-42.7.14.jar");
+  assert.equal(resolveDriverFile({ adapter: pg, stagedDriverFile: null, userJarPath: "/Users/me/Downloads/pg.jar", bucketFiles: bucket }), "pg.jar");
+  assert.equal(resolveDriverFile({ adapter: pg, stagedDriverFile: null, userJarPath: "", bucketFiles: bucket }), "postgresql-42.7.13.jar");
+  assert.equal(resolveDriverFile({ adapter: pg, stagedDriverFile: null, userJarPath: "", bucketFiles: [] }), undefined);
+  assert.equal(resolveDriverFile({ adapter: adapterById("s3")!, stagedDriverFile: null, userJarPath: "", bucketFiles: bucket }), undefined, "no driver, no file");
+});
+
+test("tryBuildPlan reports why a plan cannot be built instead of throwing", () => {
+  const pg = adapterById("postgresql")!;
+  const names = defaultNames(pg);
+  const values = { host: "h", port: "5432", database: "d", user: "u", password: "p", schema: "public" };
+  const r = tryBuildPlan(pg, values, names, { adapterAsset: "vs.jar", driverFile: undefined, luaSource: undefined }, { installScripts: true });
+  assert.deepEqual(r.plan, []);
+  assert.match(r.error ?? "", /driver JAR/);
+  const ok = tryBuildPlan(pg, values, names, { adapterAsset: "vs.jar", driverFile: "postgresql-42.7.13.jar", luaSource: undefined }, { installScripts: true });
+  assert.equal(ok.error, null);
+  assert.ok(ok.plan.length > 0);
 });
