@@ -306,7 +306,7 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
     <div className="vs-box pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
-      <div className="pointer-events-auto flex h-[44px] items-center gap-2 px-3">
+      <div className="vs-box-handle pointer-events-auto flex h-[44px] cursor-grab items-center gap-2 px-3 active:cursor-grabbing" title="Drag to move the whole schema">
         <span className="flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
           <span className="truncate font-heading text-[15px] font-semibold tracking-tight text-foreground">{d.schema}</span>
@@ -317,10 +317,10 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
         </span>
         {more > 0 ? (
           <>
-            <button onClick={d.onShowMore} className="shrink-0 rounded-md border border-border bg-panel px-2 py-0.5 text-[11px] text-foreground hover:bg-secondary">
+            <button onClick={d.onShowMore} onPointerDown={(e) => e.stopPropagation()} className="nodrag shrink-0 rounded-md border border-border bg-panel px-2 py-0.5 text-[11px] text-foreground hover:bg-secondary">
               Show {Math.min(more, TABLE_PAGE)} more
             </button>
-            <button onClick={d.onShowAll} className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
+            <button onClick={d.onShowAll} onPointerDown={(e) => e.stopPropagation()} className="nodrag shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
               All
             </button>
           </>

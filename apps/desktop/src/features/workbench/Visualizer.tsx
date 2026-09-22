@@ -156,6 +156,40 @@ export function Visualizer({
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
 
+  // Dragging a schema box moves every table in it: remember where the box and
+  // its tables started, then offset them by the box's travel on each frame.
+  const groupDrag = useRef<{ id: string; schema: string; x: number; y: number; tables: Record<string, { x: number; y: number }> } | null>(null);
+  const onNodeDragStart = useCallback(
+    (_e: unknown, node: Node) => {
+      if (node.type !== "schemaGroup") return;
+      const schema = (node.data as unknown as SchemaGroupData).schema;
+      const tables: Record<string, { x: number; y: number }> = {};
+      for (const n of nodes) {
+        if (n.type === "table" && (n.data as unknown as TableNodeData).table.schema === schema) tables[n.id] = { ...n.position };
+      }
+      groupDrag.current = { id: node.id, schema, x: node.position.x, y: node.position.y, tables };
+    },
+    [nodes],
+  );
+  const onNodeDrag = useCallback(
+    (_e: unknown, node: Node) => {
+      const start = groupDrag.current;
+      if (!start || node.id !== start.id) return;
+      const dx = node.position.x - start.x;
+      const dy = node.position.y - start.y;
+      setNodes((nds) =>
+        nds.map((n) => {
+          const from = start.tables[n.id];
+          return from ? { ...n, position: { x: from.x + dx, y: from.y + dy } } : n;
+        }),
+      );
+    },
+    [setNodes],
+  );
+  const onNodeDragStop = useCallback(() => {
+    groupDrag.current = null;
+  }, []);
+
   const onSelect = useCallback((table: string, column?: string) => {
     setSel((prev) => (prev && prev.table === table && prev.column === column ? null : { table, column }));
   }, []);
@@ -360,7 +394,9 @@ export function Visualizer({
         type: "schemaGroup",
         position: { x: g.box.x, y: g.box.y },
         style: { width: g.box.width, height: g.box.height },
-        draggable: false,
+        // Drag the box by its title strip; its tables follow (onNodeDrag below).
+        draggable: true,
+        dragHandle: ".vs-box-handle",
         selectable: false,
         connectable: false,
         zIndex: -1,
@@ -706,6 +742,9 @@ export function Visualizer({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => setSel(null)}
+              onNodeDragStart={onNodeDragStart}
+              onNodeDrag={onNodeDrag}
+              onNodeDragStop={onNodeDragStop}
               onMoveStart={() => setPaneClass("is-moving", true)}
               onMove={(_e, vp) => setPaneClass("is-far", vp.zoom < FAR_ZOOM)}
               onMoveEnd={(_e, vp) => {
