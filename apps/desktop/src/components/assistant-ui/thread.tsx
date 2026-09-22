@@ -29,6 +29,8 @@ import { extractContextPins } from "@/features/assistant/exa/context";
 import { workingLabel, workingStatus } from "@/features/assistant/exa/work-label";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
+import { ExaComposerInput } from "@/features/assistant/exa/ExaComposerInput";
+import { ExaNextActions } from "@/features/assistant/exa/ExaNextActions";
 import {
   ComposerQuotePreview,
   QuoteBlock,
@@ -55,6 +57,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   type ToolCallMessagePartComponent,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -251,7 +254,7 @@ const Composer: FC = () => {
           <ComposerAttachments />
           {/* Studio: resolved @-context chips sit above the input. */}
           <ExaComposerChips />
-          <ComposerPrimitive.Input
+          <ExaComposerInput
             placeholder="Send a message..."
             // data-bare: the shell already draws the box — opt out of the
             // app-wide focus border/ring so no second border appears inside.
@@ -604,6 +607,8 @@ const AssistantMessage: FC = () => {
           }}
         </MessagePrimitive.GroupedParts>
         <MessageError />
+        {/* Studio: deterministic "what next" chips (run / open / chart / visualize). */}
+        <ExaNextActions />
       </div>
 
       <div
@@ -897,6 +902,18 @@ const UserActionBar: FC = () => {
 };
 
 const EditComposer: FC = () => {
+  // The runtime seeds the edit box with the message's RAW text parts —
+  // including the engine's machine context and synthetic tool echoes (file
+  // bodies). Rewrite the seed once on mount so the user edits only what
+  // they actually typed.
+  const aui = useAui();
+  useEffect(() => {
+    const composer = aui.message().composer();
+    const raw = composer.getState().text;
+    const clean = stripMachineContext(raw);
+    if (clean !== raw) composer.setText(clean);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <MessagePrimitive.Root
       data-slot="aui_edit-composer-wrapper"

@@ -163,44 +163,59 @@ jobs:
           mkdir -p apps/desktop/src-tauri/resources/runtime
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
           pnpm --dir apps/desktop tauri build --no-bundle
-      - name: Start Nano and load Semantic Views
+      - name: Start Exasol Personal and load Semantic Views
         if: startsWith(matrix.label, 'Linux')
         shell: bash
         run: |
-          image=$(jq -r '.nano | "\(.registry)/\(.repository)@\(.digest)"' apps/desktop/src-tauri/resources/runtime-components.lock.json)
-          docker buildx imagetools inspect "$image" --raw > "${RUNNER_TEMP}/nano-manifest.json"
-          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | index("amd64") and index("arm64")' "${RUNNER_TEMP}/nano-manifest.json"
-          password_file="${RUNNER_TEMP}/nano-password"
-          printf '%s' 'StudioCiOnly-9mW2zK7q' > "$password_file"
-          chmod 600 "$password_file"
-          docker run -d --name exasol-studio-ci-nano \
-            --shm-size=2g --pids-limit=-1 \
-            -p 127.0.0.1:8563:8563 \
-            -v "$password_file:/run/secrets/sys_password:ro" \
-            "$image" init sys_password_file=/run/secrets/sys_password
-          # Wait for real SQL readiness, not just an open port: Docker's port
-          # proxy accepts 8563 immediately (before Nano's engine is up), so a
-          # bare TCP connect returns instantly and the installer then hits
-          # "SSL: UNEXPECTED_EOF". Poll an actual pyexasol connection instead.
+          # The same locked launcher artifact Studio installs on Linux, verified
+          # against the lock before it runs — then a real local deployment
+          # through the launcher (Podman on the runner), exactly as Studio does.
+          lock=apps/desktop/src-tauri/resources/runtime-components.lock.json
+          # The matrix has an ARM leg; the x86_64 launcher would fail with an
+          # exec-format error there, so pick the artifact for this CPU.
+          case "$(uname -m)" in
+            aarch64|arm64) platform=linux-aarch64 ;;
+            *) platform=linux-x86_64 ;;
+          esac
+          url=$(jq -r --arg p "$platform" '.personal.artifacts[$p].url' "$lock")
+          sha=$(jq -r --arg p "$platform" '.personal.artifacts[$p].sha256' "$lock")
+          curl -fsSL "$url" -o "${RUNNER_TEMP}/exasol-personal.tar.gz"
+          echo "$sha  ${RUNNER_TEMP}/exasol-personal.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/launcher" && tar -xzf "${RUNNER_TEMP}/exasol-personal.tar.gz" -C "${RUNNER_TEMP}/launcher"
+          exasol=$(find "${RUNNER_TEMP}/launcher" -type f -name exasol | head -1)
+          deployment="${RUNNER_TEMP}/exasol-deployment"
+          # Host preparation and every confirmation are unattended: 2.3 auto-proceeds
+          # without a TTY and --auto-approve covers host prep (the one exception).
+          "$exasol" --auto-approve install local --deployment-dir "$deployment"
+          host=$(jq -r '.connection.host' "$deployment/deployment.json")
+          port=$(jq -r '.connection.dbPort' "$deployment/deployment.json")
+          user=$(jq -r '.connection.username' "$deployment/deployment.json")
+          password=$(jq -r '.dbPassword' "$deployment/secrets.json")
+          echo "::add-mask::$password"
+          # Wait for real SQL readiness, not just an open port. Poll an actual
+          # pyexasol connection from Studio's locked python stack.
+          EXA_HOST="$host" EXA_PORT="$port" EXA_USER="$user" EXA_PASSWORD="$password" \
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
-          import ssl, sys, time
+          import os, ssl, sys, time
           import pyexasol
           last = None
           for i in range(120):
               try:
-                  c = pyexasol.connect(dsn="127.0.0.1:8563", user="sys",
-                                       password="StudioCiOnly-9mW2zK7q", encryption=True,
+                  c = pyexasol.connect(dsn=f"{os.environ['EXA_HOST']}:{os.environ['EXA_PORT']}", user=os.environ["EXA_USER"],
+                                       password=os.environ["EXA_PASSWORD"], encryption=True,
                                        websocket_sslopt={"cert_reqs": ssl.CERT_NONE})
                   c.execute("SELECT 1").fetchval()
                   c.close()
-                  print(f"Nano SQL-ready after ~{i * 5}s")
+                  print(f"Exasol Personal SQL-ready after ~{i * 5}s")
                   sys.exit(0)
               except Exception as e:  # noqa: BLE001 — any failure means "not ready yet"
                   last = e
                   time.sleep(5)
-          raise SystemExit(f"Nano was not SQL-ready within ten minutes: {last}")
+          raise SystemExit(f"Exasol Personal was not SQL-ready within ten minutes: {last}")
           PY
-          export EXASOL_HOST=127.0.0.1 EXASOL_PORT=8563 EXASOL_USER=sys EXASOL_PASSWORD='StudioCiOnly-9mW2zK7q'
+          echo "EXASOL_DEPLOYMENT_DIR=$deployment" >> "$GITHUB_ENV"
+          echo "EXASOL_LAUNCHER=$exasol" >> "$GITHUB_ENV"
+          export EXASOL_HOST="$host" EXASOL_PORT="$port" EXASOL_USER="$user" EXASOL_PASSWORD="$password"
           # Semantic Views is no longer vendored — the app fetches it from its
           # repo at install time, so validate against the same fresh source.
           semantic_dir="${RUNNER_TEMP}/exasol-semantic-views"
@@ -213,7 +228,9 @@ jobs:
           if [ -f "$probe" ]; then
             uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python "$probe"
           fi
-          export EXA_DSN=127.0.0.1:8563 EXA_USER=sys EXA_PASSWORD='StudioCiOnly-9mW2zK7q' EXA_SSL_CERT_VALIDATION=no
+          # The MCP server is validated against the SAME deployment: its generated
+          # port and password, not a fixed pair that only the old container had.
+          export EXA_DSN="$host:$port" EXA_USER="$user" EXA_PASSWORD="$password" EXA_SSL_CERT_VALIDATION=no
           uv run --locked --no-sync --project apps/desktop/src-tauri/resources/python-stack python - <<'PY'
           import json, os, queue, shutil, subprocess, sys, threading, time
           process = subprocess.Popen(
@@ -268,9 +285,12 @@ jobs:
                   process.kill()
                   process.wait()
           PY
-      - name: Stop Nano validation container
+      - name: Destroy the Exasol Personal validation deployment
         if: always() && startsWith(matrix.label, 'Linux')
-        run: docker rm -f exasol-studio-ci-nano || true
+        run: |
+          if [ -n "${EXASOL_LAUNCHER:-}" ] && [ -d "${EXASOL_DEPLOYMENT_DIR:-}" ]; then
+            "$EXASOL_LAUNCHER" --auto-approve destroy --remove --deployment-dir "$EXASOL_DEPLOYMENT_DIR" || true
+          fi
 
   commit:
     needs: [refresh, validate]

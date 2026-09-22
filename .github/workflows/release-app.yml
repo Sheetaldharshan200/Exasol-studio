@@ -110,6 +110,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/fetch-runtime.mjs ${{ matrix.target }}
 
+      # The Go driver bridge is a declared bundle resource AND the thing that
+      # makes the Go driver native — without this step the bundle would either
+      # fail resource validation or ship without it. Go cross-compiles from the
+      # runner's own toolchain, so each target builds its own binary.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: packages/driver-bridges/go/go.sum
+
+      - name: Build driver bridges
+        run: ./scripts/build-driver-bridges.sh all
+
       # linuxdeploy ldd-scans every ELF in the AppDir and ABORTS the whole
       # bundle when ldd fails on one (v2026.4.0 arm64: "Failed to run ldd:
       # exited with code 1" on runtime/exa-engine/opencode — a binary ldd

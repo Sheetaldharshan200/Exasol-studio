@@ -17,16 +17,22 @@ export function BrandLoader({
   size = 72,
   className,
   label,
+  instant = false,
 }: {
   size?: number;
   className?: string;
   label?: string;
+  /** Transient overlays (tab switches) can't afford the slow draw-from-zero:
+   *  instant shows the FILLED mark from the first frame, kept alive by the
+   *  pulsing glow, so a short wait still reads as the brand, not as text. */
+  instant?: boolean;
 }) {
   const leadRef = useRef<SVGPathElement>(null);
   const trailRef = useRef<SVGPathElement>(null);
 
   // Measure each path so the stroke-draw is exact regardless of geometry.
   useEffect(() => {
+    if (instant) return; // no draw animation to calibrate
     for (const ref of [leadRef, trailRef]) {
       const path = ref.current;
       if (path) {
@@ -34,7 +40,7 @@ export function BrandLoader({
         path.style.setProperty("--l", String(len));
       }
     }
-  }, []);
+  }, [instant]);
 
   return (
     <div className={cn("flex flex-col items-center gap-5", className)}>
@@ -51,7 +57,7 @@ export function BrandLoader({
         >
           <path
             ref={trailRef}
-            className="exa-logo-path exa-logo-trail"
+            className={instant ? "exa-logo-instant" : "exa-logo-path exa-logo-trail"}
             d={TRAIL_PATH}
             fill="currentColor"
             stroke="currentColor"
@@ -60,7 +66,7 @@ export function BrandLoader({
           />
           <path
             ref={leadRef}
-            className="exa-logo-path exa-logo-lead"
+            className={instant ? "exa-logo-instant" : "exa-logo-path exa-logo-lead"}
             d={LEAD_PATH}
             fill="var(--primary)"
             stroke="var(--primary)"

@@ -75,8 +75,8 @@ type QueryOut = {
   truncated: boolean;
 };
 
-function runQuery(database: string, sql: string): Promise<QueryOut> {
-  return studio<QueryOut>("/gateway/query", { method: "POST", body: { database, sql } });
+function runQuery(database: string, sql: string, verify?: boolean): Promise<QueryOut> {
+  return studio<QueryOut>("/gateway/query", { method: "POST", body: { database, sql, verify } });
 }
 
 /** Single-quote string literal for interpolating user args into canned SQL. */
@@ -96,7 +96,7 @@ const server = new McpServer({ name: "exasol-studio", version: "1.0.0" });
 
 const DB_ARG = z
   .string()
-  .describe("Which connected database to use — a name from list_databases (e.g. \"Exasol-nano\").");
+  .describe("Which connected database to use — a name from list_databases (e.g. \"Exasol Personal (local)\").");
 
 type GatewayDb = { id: string; name: string; exposed: boolean; caps: { sql: boolean; nl2sql: boolean } };
 
@@ -279,11 +279,138 @@ server.tool(
 
 server.tool(
   "run_query",
-  "Run a read-only SQL statement (SELECT / WITH / DESCRIBE — one statement per call) against one connected database. Results are capped; add LIMIT for big tables. Exasol folds unquoted identifiers to UPPERCASE — double-quote identifiers to keep case.",
-  { database: DB_ARG, sql: z.string().describe("The SQL statement to run.") },
-  async ({ database, sql }) => {
+  "Run a read-only SQL statement (SELECT / WITH / DESCRIBE — one statement per call) against one connected database. Results are capped; add LIMIT for big tables. Exasol folds unquoted identifiers to UPPERCASE — double-quote identifiers to keep case. " +
+    "Set verify:true on the query whose result you are about to present as your final answer: Studio re-runs it on an INDEPENDENT database session and returns a `verification` stamp (verified / mismatch / unverified) — quote that stamp with your answer. Leave verify off for exploration.",
+  {
+    database: DB_ARG,
+    sql: z.string().describe("The SQL statement to run."),
+    verify: z
+      .boolean()
+      .optional()
+      .describe("true = independently reproduce this result and stamp it (use on the final answer-backing query only)."),
+  },
+  async ({ database, sql, verify }) => {
     try {
-      return text(await runQuery(database, sql));
+      return text(await runQuery(database, sql, verify));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+// ── P2: explicit plans (docs/agentic-architecture-spec.md) ──────────────────
+server.tool(
+  "propose_plan",
+  "For MULTI-STEP work (loading files then querying, building something across several tools, any task with 3+ dependent actions): propose an explicit plan FIRST. The plan renders live in Exasol Studio with per-step status. Steps may name the tool and/or the SQL they intend to run; `dependsOn` lists step ids that must finish first. Plans containing write steps (imports, DDL/DML, installs) require the USER's explicit go-ahead — present the plan, wait for their yes, then call approve_plan. Skip plans entirely for single-step questions.",
+  {
+    goal: z.string().describe("One line: what the whole plan achieves."),
+    steps: z
+      .array(
+        z.object({
+          id: z.string().optional().describe("Short id (s1, s2, …) — auto-assigned when omitted."),
+          title: z.string().describe("What this step does, user-readable."),
+          tool: z.string().optional().describe("Tool the step will use (e.g. run_query, import via Studio)."),
+          sql: z.string().optional().describe("SQL the step will run, when known."),
+          dependsOn: z.array(z.string()).optional().describe("Step ids that must be done first."),
+          onFailure: z.string().optional().describe("Id of a compensation step (e.g. drop the staging table) to run only if THIS step fails hard. The referenced step is excluded from normal execution."),
+        }),
+      )
+      .min(1)
+      .max(12),
+  },
+  async ({ goal, steps }) => {
+    try {
+      return text(await studio("/gateway/plan", { method: "POST", body: { goal, steps } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "approve_plan",
+  "Mark the current plan approved — call ONLY after the user explicitly said yes to a plan with write steps. Never approve on their behalf.",
+  { planId: z.string().optional().describe("Defaults to the current plan.") },
+  async ({ planId }) => {
+    try {
+      return text(await studio("/gateway/plan/approve", { method: "POST", body: { planId } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "update_plan_step",
+  "Advance a plan step as you work: running when you start it, done/failed (with a short note) when it settles. Keep the plan truthful — the user watches it live. Transitions are enforced (a step cannot start before its dependencies are done; write plans must be approved first).",
+  {
+    planId: z.string().optional().describe("Defaults to the current plan."),
+    stepId: z.string(),
+    status: z.enum(["running", "done", "failed", "skipped"]),
+    note: z.string().optional().describe("Short outcome note (row counts, error reason)."),
+  },
+  async ({ planId, stepId, status, note }) => {
+    try {
+      return text(await studio("/gateway/plan/step", { method: "POST", body: { planId, stepId, status, note } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "semantic_models",
+  "Snapshot of the Semantic Views layer on a connected database: models (name, DRAFT/PUBLISHED status, published schema), open validation issues, and `schemasWithoutModel` — datasets no model covers yet. Call this FIRST on databases with Semantic Views and prefer published measures/dimensions over ad-hoc SQL. When a freshly loaded dataset appears under schemasWithoutModel, OFFER to draft a model for it. DRAFTING RECIPE (never guess syntax — every admin script's exact parameter names and call template are one query away: SELECT SCRIPT_NAME, PARAMETER_NAME, CALL_TEMPLATE FROM SEMANTIC_CATALOG.ADMIN_SCRIPT_PARAMETERS via run_query): propose ONE plan whose steps are each `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('<SCRIPT>', '<json args>')` — CREATE_MODEL, ADD_ENTITY per table (with grain + primary_key_expr), ADD_RELATIONSHIP + ADD_UNIQUE_KEY_WITH_COLUMNS + ADD_RELATIONSHIP_KEY_MAPPING per join, ADD_SEMANTIC_OBJECT, ADD_DIMENSION per attribute, APPLY_SEMANTIC_DEFINITION for facts/metrics, then VALIDATE_MODEL — get the user's approval, execute_plan. The model stays a DRAFT until the user says publish.",
+  { database: z.string().describe("Connected database (name or id from list_databases).") },
+  async ({ database }) => {
+    try {
+      return text(await studio(`/gateway/semantic/models?database=${encodeURIComponent(database)}`, { method: "GET" }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "semantic_call",
+  "Run ONE read-only SEMANTIC_ADMIN script by name (audited list: COMPILE_REQUEST_JSON, COMPILE_SQL, DESCRIBE_SEMANTIC_OBJECT/METRIC, SEARCH_SEMANTIC_OBJECTS, GET_BUSINESS_GLOSSARY, EXPLAIN_*, EXPORT_*, SUGGEST_GRAIN_METADATA). Compile semantic requests here, then execute ONLY the returned GENERATED_SQL with run_query. Anything that WRITES to the catalog — including VALIDATE_MODEL (it records validation runs; the automatic sync validates for you) and all CREATE/ADD/… scripts — is refused on this tool: run those as EXECUTE SCRIPT steps in an approved plan instead.",
+  {
+    database: z.string().describe("Connected database (name or id)."),
+    script: z.string().describe("SEMANTIC_ADMIN script name, e.g. COMPILE_SQL"),
+    args: z.record(z.any()).optional().describe("Named parameters; omit optional ones entirely (never pass null)."),
+  },
+  async ({ database, script, args }) => {
+    try {
+      return text(await studio("/gateway/semantic", { method: "POST", body: { database, script, args: args ?? {} } }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "current_plan",
+  "The CURRENT plan and its per-step status — check this FIRST when the user says 'continue', 'do it', 'finish the todo list', or refers to pending work: the open plan IS the todo list. Resume by finishing its pending steps (update_plan_step / execute_plan for SQL steps), or propose a corrected plan if the existing one is malformed (proposing supersedes it as current).",
+  {},
+  async () => {
+    try {
+      return text(await studio("/gateway/plan/current", { method: "GET" }));
+    } catch (e) {
+      return errText(e);
+    }
+  },
+);
+
+server.tool(
+  "execute_plan",
+  "Execute the current plan's SQL steps as a dependency DAG: independent steps run IN PARALLEL, transient failures retry once with backoff, a hard failure skips its dependents and runs the step's onFailure compensation, and every transition persists (a crash resumes by calling this again). Requirements: every unfinished step must carry `sql` (finish tool-shaped steps yourself via update_plan_step first), and a plan with write steps must be approved (approve_plan after the user's yes). Steps update live in Studio while it runs. Prefer this over running the steps one-by-one whenever the plan has 2+ independent SQL steps; when a step's own SQL can fan out inside the database (DISTRIBUTE BY + SET UDFs, Lua pquery scripts, scheduler AFTER chains), write the step's SQL that way and let the database do the heavy graph.",
+  {
+    database: z.string().describe("Connected database to run against (name or id from list_databases)."),
+    planId: z.string().optional().describe("Defaults to the current plan."),
+  },
+  async ({ database, planId }) => {
+    try {
+      return text(await studio("/gateway/plan/execute", { method: "POST", body: { database, planId } }));
     } catch (e) {
       return errText(e);
     }

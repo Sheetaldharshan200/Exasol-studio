@@ -17,6 +17,11 @@ export type Install =
   | "source-build"
   | "semantic-views"
   | "bundled"
+  | "maven"
+  /** Downloaded from the driver's NATIVE registry (npm / Go proxy / crates.io /
+   *  GitHub tags) at any version — independent of Studio, usable by your own
+   *  tools (see versions.ts PACKAGE_SOURCE + Rust install_registry_package). */
+  | "package"
   | "reference";
 
 export type CatalogItem = {
@@ -36,10 +41,20 @@ export type ResolvedCatalogItem = Omit<CatalogItem, "name" | "description" | "ho
   name: string;
   description: string;
   homepage: string;
+  stars: number | null;
+  pushedAt: string | null;
 };
 
 /** What GitHub says about a repo (subset of GET /repos/{owner}/{repo}). */
-export type RepoMeta = { name: string; description: string | null; htmlUrl: string };
+export type RepoMeta = {
+  name: string;
+  description: string | null;
+  htmlUrl: string;
+  /** GitHub stargazers — social proof on the catalog card. */
+  stars?: number | null;
+  /** Last push, ISO — "updated 3 days ago" on the card. */
+  pushedAt?: string | null;
+};
 
 // Official Exasol / Exasol-Labs repositories only.
 export const CATALOG: CatalogItem[] = [
@@ -50,11 +65,11 @@ export const CATALOG: CatalogItem[] = [
   { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool" },
   { id: "pyexasol", repo: "exasol/pyexasol", kind: "driver", install: "uv-pip" },
   { id: "sqlalchemy-exasol", repo: "exasol/sqlalchemy-exasol", kind: "driver", install: "uv-pip" },
-  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "reference", labs: true },
+  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "package", labs: true },
   {
     id: "driver-jdbc",
     kind: "driver",
-    install: "reference",
+    install: "maven",
     name: "JDBC Driver",
     description: "JDBC driver for Java tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
@@ -62,32 +77,56 @@ export const CATALOG: CatalogItem[] = [
   {
     id: "driver-odbc",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "ODBC Driver",
     description: "ODBC driver for apps and BI tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
   },
-  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "reference" },
-  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "reference" },
+  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "package" },
+  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "package" },
   {
     id: "driver-adonet",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "ADO.NET Provider",
-    description: "ADO.NET provider for .NET.",
+    description: "ADO.NET provider for .NET (Windows driver package).",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/ado.net.htm",
   },
   {
     id: "driver-r",
+    repo: "exasol/r-exasol",
     kind: "driver",
-    install: "reference",
+    install: "package",
     name: "R Integration",
     description: "R integration for Exasol.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
-  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "reference" },
-  { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "uv-pip" },
+  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "package" },
+  { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip" },
+  { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip" },
+  { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "binary", labs: true },
+  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "package", labs: true },
+  { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "binary", labs: true },
+  { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
+  { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true },
+  { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
+  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "binary", labs: true },
+  { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
+  // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
+  // container engine, so this links to the project instead of installing it.
+  { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "reference" },
   { id: "agent-skills", repo: "exasol-labs/exasol-agent-skills", kind: "skills", install: "bundled", labs: true },
+  // The AI panel's engine — a managed component (updates via update_component,
+  // digest-verified; the sidecar restarts after a switch). Shown as a card so
+  // ALL components live in one place, no separate panel.
+  {
+    id: "exa-agent",
+    repo: "Sheetaldharshan200/exa-engine",
+    kind: "server",
+    install: "bundled",
+    name: "Exa Agent Engine",
+    description: "The engine behind Studio's AI panel. Updates independently of Studio releases; sessions are kept across engine switches.",
+  },
 ];
 
 /** The repos whose metadata the marketplace needs. */
@@ -103,9 +142,10 @@ export function repoDisplayName(repo: string): string {
 }
 
 /**
- * Fill an item's display fields: GitHub metadata first (the exact repo name
- * and About line), the item's own fields for repo-less entries, safe
- * fallbacks while metadata is loading or unavailable.
+ * Fill an item's display fields. Explicit `name`/`description` on the entry are
+ * deliberate OVERRIDES and win (a repo's About line is not always a product
+ * description — some About lines read "Documentation for…"); GitHub metadata
+ * fills everything not overridden; safe fallbacks cover loading/offline.
  */
 export function resolveCatalogItem(
   item: CatalogItem,
@@ -114,9 +154,11 @@ export function resolveCatalogItem(
   const m = item.repo ? meta?.[item.repo] : undefined;
   return {
     ...item,
-    name: m?.name || item.name || (item.repo ? repoDisplayName(item.repo) : item.id),
-    description: (m ? m.description : null) ?? item.description ?? "",
-    homepage: m?.htmlUrl || item.homepage || (item.repo ? `https://github.com/${item.repo}` : ""),
+    name: item.name || m?.name || (item.repo ? repoDisplayName(item.repo) : item.id),
+    description: item.description ?? (m ? m.description : null) ?? "",
+    homepage: item.homepage || m?.htmlUrl || (item.repo ? `https://github.com/${item.repo}` : ""),
+    stars: m?.stars ?? null,
+    pushedAt: m?.pushedAt ?? null,
   };
 }
 

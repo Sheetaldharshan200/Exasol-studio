@@ -285,8 +285,6 @@ fn find_named_file(dir: &std::path::Path, name: &str) -> Option<PathBuf> {
 pub struct MarketEnv {
     pub os: String,
     pub arch: String,
-    pub docker: bool,
-    pub podman: bool,
 }
 
 pub(crate) fn has_binary(bin: &str) -> bool {
@@ -299,14 +297,12 @@ pub(crate) fn has_binary(bin: &str) -> bool {
     c.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
-/// Host OS/arch and whether Docker / Podman are available.
+/// Host OS and architecture, for platform-specific Marketplace copy.
 #[tauri::command]
 pub fn market_env() -> MarketEnv {
     MarketEnv {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        docker: has_binary("docker"),
-        podman: has_binary("podman"),
     }
 }
 
@@ -421,6 +417,9 @@ pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<V
                     "name": v.get("name"),
                     "description": v.get("description"),
                     "htmlUrl": v.get("html_url"),
+                    // Social proof for the catalog cards (Docker Hub shows pulls + stars).
+                    "stars": v.get("stargazers_count"),
+                    "pushedAt": v.get("pushed_at"),
                 }))
             }
         });
@@ -592,13 +591,26 @@ pub fn market_doc_forget(app: AppHandle, id: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Latest GitHub release for a repo ("owner/name"); null when none exist.
+/// Latest GitHub release for a repo ("owner/name") — or, with `tag`, that
+/// specific release (so any version can be installed, not just the newest);
+/// null when none exist.
 #[tauri::command]
-pub async fn market_release(app: AppHandle, repo: String) -> AppResult<Value> {
+pub async fn market_release(app: AppHandle, repo: String, tag: Option<String>) -> AppResult<Value> {
+    // The tag becomes a URL path segment — refuse anything path-like.
+    if let Some(t) = &tag {
+        if !valid_version_tag(t) {
+            return Err(AppError::Storage(format!("Invalid release tag: {t}")));
+        }
+    }
     // 1h disk cache per repo: the marketplace asks for ~17 repos per open and
     // unauthenticated GitHub rate-limits at 60 req/h per IP — without a cache
     // the live "latest" labels 403 into nothing on any busy machine. A failed
-    // fetch serves the last-known value instead of erasing it.
+    // fetch serves the last-known value instead of erasing it. Tagged releases
+    // are immutable, so their cache entries never really go stale.
+    let cache_key = match &tag {
+        Some(t) => format!("{repo}@{t}"),
+        None => repo.clone(),
+    };
     let cache_path = market_dir(&app)?.join("release-cache.json");
     let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
         .ok()
@@ -608,18 +620,21 @@ pub async fn market_release(app: AppHandle, repo: String) -> AppResult<Value> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if let Some(entry) = cache.get(&repo) {
+    if let Some(entry) = cache.get(&cache_key) {
         let at = entry.get("at").and_then(|v| v.as_u64()).unwrap_or(0);
         if now.saturating_sub(at) < 3600 {
             return Ok(entry.get("value").cloned().unwrap_or(Value::Null));
         }
     }
-    let cached_value = cache.get(&repo).and_then(|e| e.get("value")).cloned();
+    let cached_value = cache.get(&cache_key).and_then(|e| e.get("value")).cloned();
     let store = |cache: &mut serde_json::Map<String, Value>, value: &Value| {
-        cache.insert(repo.clone(), json!({ "at": now, "value": value }));
+        cache.insert(cache_key.clone(), json!({ "at": now, "value": value }));
         let _ = std::fs::write(&cache_path, serde_json::to_string(cache).unwrap_or_default());
     };
-    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let url = match &tag {
+        Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
+        None => format!("https://api.github.com/repos/{repo}/releases/latest"),
+    };
     let client = reqwest::Client::new();
     let resp = match client
         .get(&url)
@@ -722,6 +737,16 @@ async fn download_and_place(
     url: &str,
     filename: &str,
 ) -> AppResult<String> {
+    download_and_place_inner(app, id, url, filename, true).await
+}
+
+async fn download_and_place_inner(
+    app: &AppHandle,
+    id: &str,
+    url: &str,
+    filename: &str,
+    auto_extract: bool,
+) -> AppResult<String> {
     use futures_util::StreamExt;
     use std::io::Write;
 
@@ -786,30 +811,208 @@ async fn download_and_place(
             let _ = std::fs::set_permissions(&file, perm);
         }
     }
+    // ZERO-manual-step rule: a saved archive is not "usable" — extract it here
+    // and put extracted CLI binaries on Studio's PATH. Files external tools
+    // consume as-is (.taco, .jar, .whl) are deliberately kept untouched.
+    // Callers that must checksum-verify FIRST (the Exasol downloads portal)
+    // use download_only + call auto_extract_and_link after the verify.
+    if auto_extract {
+        auto_extract_and_link(app, id, &file);
+    }
     Ok(file.to_string_lossy().to_string())
 }
 
-/// AI Lab is NOT a PyPI package (the old `uv pip install exasol-ai-lab`
-/// failed forever — no such package). It ships as the exasol/ai-lab Docker
-/// image (JupyterLab on port 49494). Pull it with whichever engine exists.
-fn install_ai_lab(app: &AppHandle, id: &str) -> AppResult<String> {
-    let engine = ["docker", "podman"]
-        .iter()
-        .find_map(|name| resolve_bin(name).map(|p| p.to_string_lossy().to_string()))
-        .ok_or_else(|| AppError::Storage(
-            "Exasol AI Lab ships as a Docker image (exasol/ai-lab). Install Docker Desktop or Podman first, then retry.".into(),
-        ))?;
-    emit_log(app, id, "Pulling docker.io/exasol/ai-lab:latest…", "info");
-    if run_streamed(app, id, &engine, &["pull", "docker.io/exasol/ai-lab:latest"])? != 0 {
-        return Err(AppError::Storage("Could not pull the exasol/ai-lab image.".into()));
+/// download_and_place without the auto-extract step — for artifacts that must
+/// be checksum-verified before anything derived from them exists.
+pub(crate) async fn download_only(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<String> {
+    download_and_place_inner(app, id, url, filename, false).await
+}
+
+/// Which archives get auto-extracted; pure so the routing is unit-tested.
+/// None = keep the file as-is (either not an archive, or a file an external
+/// tool consumes whole).
+fn archive_kind(filename: &str) -> Option<&'static str> {
+    let name = filename.to_ascii_lowercase();
+    if [".taco", ".jar", ".whl", ".nupkg"].iter().any(|s| name.ends_with(s)) {
+        return None;
     }
-    emit_log(
-        app,
-        id,
-        "AI Lab image ready. Start it with: docker run --detach --name exasol-ai-lab -p 127.0.0.1:49494:49494 exasol/ai-lab:latest — then open http://localhost:49494 (JupyterLab).",
-        "info",
-    );
-    Ok("exasol/ai-lab image pulled".into())
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") || name.ends_with(".crate") {
+        Some("tar")
+    } else if name.ends_with(".zip") {
+        Some("zip")
+    } else {
+        None
+    }
+}
+
+/// File extensions that are never CLI entry points — they stay in the
+/// unpacked tree but are not linked onto the PATH.
+fn non_binary_extension(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        ".sh", ".bat", ".ps1", ".so", ".dylib", ".dll", ".a", ".h", ".c", ".py", ".txt", ".md",
+        ".json", ".yml", ".yaml", ".toml", ".html", ".css", ".js", ".ts", ".go", ".rs", ".r",
+        ".sql", ".mod", ".sum", ".gz", ".zip", ".sig", ".pem", ".crt", ".plist", ".conf",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
+}
+
+fn extract_tar_gz(archive: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let decoder = flate2::read::GzDecoder::new(std::fs::File::open(archive)?);
+    tar::Archive::new(decoder)
+        .unpack(dest)
+        .map_err(|e| AppError::Storage(format!("extract: {e}")))
+}
+
+/// Structure-preserving zip extraction (engine.rs's extractor flattens on
+/// purpose — wrong for source trees). Entry paths are sanitized via
+/// enclosed_name; unix modes are preserved.
+fn extract_zip_tree(archive: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let file = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| AppError::Storage(format!("zip open: {e}")))?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| AppError::Storage(format!("zip entry: {e}")))?;
+        let Some(rel) = entry.enclosed_name().map(|p| p.to_path_buf()) else { continue };
+        let target = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = std::fs::File::create(&target)?;
+        std::io::copy(&mut entry, &mut out)?;
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode));
+        }
+    }
+    Ok(())
+}
+
+/// Names an extracted binary must NEVER take on the PATH: personal-local/bin
+/// is PREPENDED for the terminal and the AI agent, so these would shadow the
+/// user's real tools.
+fn shadowable_tool_name(name: &str) -> bool {
+    [
+        "sh", "bash", "zsh", "env", "sudo", "git", "podman", "python",
+        "python3", "pip", "pip3", "node", "npm", "npx", "uv", "uvx", "brew", "cargo", "rustc",
+        "go", "java", "terraform", "exasol", "exapump", "ls", "cat", "rm", "cp", "mv", "curl",
+        "wget", "make", "cc", "gcc", "clang",
+    ]
+    .contains(&name.to_ascii_lowercase().as_str())
+}
+
+#[cfg(unix)]
+fn link_executables(dir: &std::path::Path, root: &std::path::Path, bin_dir: &std::path::Path, depth: u8, linked: &mut Vec<String>) {
+    use std::os::unix::fs::PermissionsExt;
+    if depth > 4 || linked.len() >= 5 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(root_canonical) = root.canonicalize() else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // NEVER follow symlinks — a tar entry can symlink outside the unpack
+        // dir, and following it would walk (and link!) foreign files.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            link_executables(&path, root, bin_dir, depth + 1, linked);
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+        if non_binary_extension(name) || shadowable_tool_name(name) {
+            continue;
+        }
+        let executable = meta.is_file() && meta.permissions().mode() & 0o111 != 0 && meta.len() > 0;
+        if !executable {
+            continue;
+        }
+        // Belt and suspenders: the real file must live under the unpack dir.
+        if !path.canonicalize().map(|p| p.starts_with(&root_canonical)).unwrap_or(false) {
+            continue;
+        }
+        let link = bin_dir.join(name);
+        // Replace only prior symlinks — a REAL file here is a managed binary
+        // (exapump lives in this dir) and must never be shadowed.
+        match std::fs::symlink_metadata(&link) {
+            Ok(link_meta) if !link_meta.file_type().is_symlink() => continue,
+            Ok(_) => {
+                let _ = std::fs::remove_file(&link);
+            }
+            Err(_) => {}
+        }
+        if std::os::unix::fs::symlink(&path, &link).is_ok() {
+            linked.push(name.to_string());
+            if linked.len() >= 5 {
+                return;
+            }
+        }
+    }
+}
+
+/// First file under `dir` (depth-limited) whose name matches.
+fn find_file(dir: &std::path::Path, depth: u8, matches: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    if depth > 4 {
+        return None;
+    }
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_file(&path, depth + 1, matches) {
+                return Some(found);
+            }
+        } else if path.file_name().and_then(|s| s.to_str()).is_some_and(matches) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+pub(crate) fn auto_extract_and_link(app: &AppHandle, id: &str, archive: &std::path::Path) {
+    let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let Some(kind) = archive_kind(name) else { return };
+    let Some(dir) = archive.parent().map(|p| p.join("unpacked")) else { return };
+    let _ = std::fs::remove_dir_all(&dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let extracted = match kind {
+        "tar" => extract_tar_gz(archive, &dir),
+        _ => extract_zip_tree(archive, &dir),
+    };
+    if let Err(e) = extracted {
+        emit_log(app, id, format!("Could not extract the archive ({e}) — the download is kept as-is."), "err");
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
+    emit_log(app, id, format!("Extracted to {}.", dir.display()), "info");
+    #[cfg(unix)]
+    {
+        let bin_dir = app
+            .state::<crate::state::AppState>()
+            .data_dir
+            .join("personal-local")
+            .join("bin");
+        if std::fs::create_dir_all(&bin_dir).is_ok() {
+            let mut linked: Vec<String> = Vec::new();
+            link_executables(&dir, &dir, &bin_dir, 0, &mut linked);
+            if !linked.is_empty() {
+                emit_log(
+                    app,
+                    id,
+                    format!("Ready on Studio's PATH (terminal + AI agent): {}.", linked.join(", ")),
+                    "info",
+                );
+            }
+        }
+    }
 }
 
 fn install_uv_pip(app: &AppHandle, id: &str, package: &str) -> AppResult<String> {
@@ -884,8 +1087,8 @@ fn cmd_exists_win(bin: &str) -> bool {
 }
 
 // The official Exasol launcher (`exasol`) drives cloud deployments. The local
-// runtime is owned by `local_runtime`: native Personal on macOS, Nano through
-// Docker/Podman on Windows and Linux.
+// runtime is owned by `local_runtime`: Exasol Personal through the official
+// launcher on macOS, Linux and Windows.
 const EXASOL_INSTALLER_SH: &str = "curl -fsSL https://www.exasol.com/install/ | sh";
 
 fn exasol_bin() -> String {
@@ -915,7 +1118,7 @@ fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Local database: native Exasol Personal on macOS, Exasol Nano elsewhere.
+/// Local database: Exasol Personal through the official launcher, every platform.
 fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
     let runtime = crate::local_runtime::ensure_runtime(app, id)?;
     Ok(format!(
@@ -1122,6 +1325,735 @@ async fn install_json_tables(app: &AppHandle, id: &str) -> AppResult<String> {
     Ok("JSON Tables installed (prebuilt ingest engine + Python package).".into())
 }
 
+/// A version/tag string safe to embed in a URL path segment or a `pkg==v`
+/// spec — never anything path- or option-like. Pure so it's unit-tested.
+/// Shared with update_component, which embeds versions the same two ways.
+pub(crate) fn valid_version_tag(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 100
+        // Never option-like, and never dot-segment-like: a bare "." or ".."
+        // used as a URL path segment normalizes OUT of the intended endpoint.
+        && !v.starts_with('-')
+        && !v.starts_with('.')
+        && v.chars().all(|c| c.is_ascii_alphanumeric() || ".-_+".contains(c))
+}
+
+/// The `<latest>` version from a Maven Central maven-metadata.xml. Pure so the
+/// parsing rules are unit-tested — a full XML parser is overkill for one tag.
+pub(crate) fn maven_latest_version(xml: &str) -> Option<String> {
+    let start = xml.find("<latest>")? + "<latest>".len();
+    let end = xml[start..].find("</latest>")? + start;
+    let v = xml[start..end].trim();
+    if !valid_version_tag(v) {
+        return None;
+    }
+    Some(v.to_string())
+}
+
+/// Every `<version>` from a Maven Central maven-metadata.xml — the file lists
+/// oldest first, returned newest first. Pure so it's unit-tested.
+fn maven_all_versions(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find("<version>") {
+        rest = &rest[start + "<version>".len()..];
+        let Some(end) = rest.find("</version>") else { break };
+        let v = rest[..end].trim();
+        if valid_version_tag(v) {
+            out.push(v.to_string());
+        }
+        rest = &rest[end..];
+    }
+    out.reverse();
+    out
+}
+
+/// Sort version strings newest first by numeric segments ("2.0.10" above
+/// "2.0.9"). A version with trailing non-numeric content ("1.0.dev1",
+/// "2.0-rc1") sorts BELOW the plain release with the same numeric prefix —
+/// the pre-release convention — with plain string order as the last resort.
+/// Pure so it's unit-tested.
+fn sort_versions_desc(mut versions: Vec<String>) -> Vec<String> {
+    fn key(v: &str) -> (Vec<u64>, bool, String) {
+        let segments: Vec<&str> = v
+            .trim_start_matches(['v', 'V'])
+            .split(|c: char| c == '.' || c == '-' || c == '+')
+            .collect();
+        let numeric: Vec<u64> = segments.iter().map_while(|p| p.parse::<u64>().ok()).collect();
+        // true = a final release (every segment numeric) — ranks above a
+        // pre-release with the same numeric prefix when sorted descending.
+        let is_final = numeric.len() == segments.len();
+        (numeric, is_final, v.to_string())
+    }
+    versions.sort_by(|a, b| key(b).cmp(&key(a)));
+    versions
+}
+
+/// Release tags from a GitHub releases.atom feed — the entry ids end in the
+/// tag ("tag:github.com,2008:Repository/123/v2.2.0"). The atom feed is a plain
+/// web endpoint with NO API rate limit, which matters on shared/corporate IPs
+/// where the unauthenticated API 403s permanently. Pure so it's unit-tested.
+fn atom_release_tags(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find("<entry>") {
+        rest = &rest[start..];
+        let Some(id_start) = rest.find("<id>") else { break };
+        let after = &rest[id_start + "<id>".len()..];
+        let Some(id_end) = after.find("</id>") else { break };
+        let id = after[..id_end].trim();
+        if let Some(tag) = id.rsplit('/').next() {
+            if valid_version_tag(tag) && !out.iter().any(|t| t == tag) {
+                out.push(tag.to_string());
+            }
+        }
+        rest = &after[id_end..];
+    }
+    out
+}
+
+/// The last-known latest release tag for a repo, from market_release's disk
+/// cache — enough to keep a version dropdown useful (one entry: the newest)
+/// when the API is rate-limited before any full list was ever fetched.
+fn latest_tag_from_release_cache(app: &AppHandle, repo: &str) -> Option<String> {
+    let path = market_dir(app).ok()?.join("release-cache.json");
+    let cache: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let tag = cache.get(repo)?.get("value")?.get("tag")?.as_str()?;
+    if valid_version_tag(tag) { Some(tag.to_string()) } else { None }
+}
+
+/// Merge one entry into the versions cache under a process-wide lock, writing
+/// via temp file + rename — concurrent version fetches (several dropdowns
+/// opened quickly) must not lose each other's entries or expose a torn file.
+fn merge_versions_cache(cache_path: &std::path::Path, key: &str, entry: Value) {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cache: serde_json::Map<String, Value> = std::fs::read_to_string(cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    cache.insert(key.into(), entry);
+    let tmp = cache_path.with_extension("json.partial");
+    if std::fs::write(&tmp, serde_json::to_string(&cache).unwrap_or_default()).is_ok() {
+        let _ = std::fs::rename(&tmp, cache_path);
+    }
+}
+
+/// Live version list for an item, so ANY version can be installed — not just
+/// the newest. `source` is "github" (release tags of `reference` = owner/repo,
+/// disk-cached 1h — the unauthenticated API rate-limits at 60/hr), "pypi"
+/// (release versions of `reference` = package name),
+/// of `reference` = org/repo), or "maven-exasol-jdbc" (Maven Central;
+/// `reference` ignored). Newest first.
+#[tauri::command]
+pub async fn market_versions(app: AppHandle, source: String, reference: String) -> AppResult<Vec<String>> {
+    fn ok_segment(s: &str) -> bool {
+        !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    }
+    fn ok_repo(reference: &str) -> bool {
+        let mut parts = reference.split('/');
+        matches!(
+            (parts.next(), parts.next(), parts.next()),
+            (Some(o), Some(n), None) if ok_segment(o) && ok_segment(n)
+        )
+    }
+    let client = reqwest::Client::new();
+    let timeout = std::time::Duration::from_secs(8);
+    let list: Vec<String> = match source.as_str() {
+        "github" => {
+            if !ok_repo(&reference) {
+                return Err(AppError::Storage("Invalid repository.".into()));
+            }
+            // Industry-standard rate-limit handling, in order:
+            //   1. fresh disk cache (1h) — no request at all;
+            //   2. ETag revalidation — a 304 answer does NOT count against
+            //      GitHub's unauthenticated 60/hr limit, so refreshes are free
+            //      once a list has been fetched once;
+            //   3. stale cache over any error — old truth beats none;
+            //   4. the release cache's known latest tag as a one-entry list —
+            //      the dropdown still offers the newest version;
+            //   5. only then an error.
+            let cache_path = market_dir(&app)?.join("versions-cache.json");
+            let cache: serde_json::Map<String, Value> = std::fs::read_to_string(&cache_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let entry = cache.get(&reference);
+            let cached_list = entry.and_then(|e| e.get("list")).and_then(Value::as_array).map(|list| {
+                list.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()
+            });
+            let cached_at = entry.and_then(|e| e.get("at")).and_then(Value::as_u64).unwrap_or(0);
+            let cached_etag = entry.and_then(|e| e.get("etag")).and_then(Value::as_str).map(str::to_string);
+            // A future timestamp (clock rollback, corrupted entry) is not
+            // "fresh forever" — only a real past-hour entry counts.
+            if let Some(list) = &cached_list {
+                if cached_at <= now && now - cached_at < 3600 {
+                    return Ok(list.clone());
+                }
+            }
+            let mut request = client
+                .get(format!("https://api.github.com/repos/{reference}/releases?per_page=30"))
+                .header("User-Agent", "exasol-studio")
+                .header("Accept", "application/vnd.github+json")
+                .timeout(timeout);
+            if let (Some(etag), Some(_)) = (&cached_etag, &cached_list) {
+                request = request.header("If-None-Match", etag.as_str());
+            }
+            let fetched = request.send().await.map_err(|e| AppError::Storage(e.to_string()));
+            let response = match fetched {
+                Ok(r) if r.status() == reqwest::StatusCode::NOT_MODIFIED => {
+                    // Unchanged upstream: re-stamp freshness, serve the cache.
+                    if let Some(list) = cached_list {
+                        merge_versions_cache(
+                            &cache_path,
+                            &reference,
+                            json!({ "at": now, "etag": cached_etag, "list": list.clone() }),
+                        );
+                        return Ok(list);
+                    }
+                    return Err(AppError::Storage("GitHub answered 304 with no local cache.".into()));
+                }
+                Ok(r) => r.error_for_status().map_err(|e| AppError::Storage(format!("GitHub: {e}"))),
+                Err(e) => Err(e),
+            };
+            let response = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    // The API is rate-limited or unreachable. The releases.atom
+                    // feed is a plain web page with NO API rate limit — on
+                    // shared/corporate IPs (permanent 403s) it is the reliable
+                    // live source, so try it before any stale data.
+                    if let Ok(feed) = client
+                        .get(format!("https://github.com/{reference}/releases.atom"))
+                        .header("User-Agent", "exasol-studio")
+                        .timeout(timeout)
+                        .send()
+                        .await
+                        .and_then(|r| r.error_for_status())
+                    {
+                        if let Ok(xml) = feed.text().await {
+                            let tags = atom_release_tags(&xml);
+                            if !tags.is_empty() {
+                                merge_versions_cache(&cache_path, &reference, json!({ "at": now, "list": tags.clone() }));
+                                return Ok(tags);
+                            }
+                        }
+                    }
+                    if let Some(list) = cached_list {
+                        return Ok(list); // stale cache over an error
+                    }
+                    // Last resort: the release cache usually knows the latest
+                    // tag — a one-entry list beats an error message.
+                    if let Some(tag) = latest_tag_from_release_cache(&app, &reference) {
+                        return Ok(vec![tag]);
+                    }
+                    return Err(e);
+                }
+            };
+            let etag = response
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let body: Value = response.json().await.map_err(|e| AppError::Storage(e.to_string()))?;
+            // GitHub already lists newest first.
+            let list: Vec<String> = body
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|r| !r.get("draft").and_then(Value::as_bool).unwrap_or(false))
+                        .filter_map(|r| r.get("tag_name").and_then(Value::as_str))
+                        .filter(|t| valid_version_tag(t))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            merge_versions_cache(&cache_path, &reference, json!({ "at": now, "etag": etag, "list": list }));
+            list
+        }        "pypi" => {
+            if !ok_segment(&reference) {
+                return Err(AppError::Storage("Invalid package name.".into()));
+            }
+            let body: Value = client
+                .get(format!("https://pypi.org/pypi/{reference}/json"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("PyPI: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("releases")
+                .and_then(Value::as_object)
+                .map(|releases| {
+                    releases
+                        .iter()
+                        // Skip versions with no files (never uploaded) and
+                        // versions whose EVERY file is yanked — pip would
+                        // refuse or warn on those, so offering them only
+                        // fails the install.
+                        .filter(|(v, files)| {
+                            valid_version_tag(v)
+                                && files.as_array().is_some_and(|f| {
+                                    f.iter().any(|file| !file.get("yanked").and_then(Value::as_bool).unwrap_or(false))
+                                })
+                        })
+                        .map(|(v, _)| v.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            sort_versions_desc(versions)
+        }
+        "npm" => {
+            // Scoped names ("@exasol/pkg") — validate, then encode the slash.
+            if reference.is_empty()
+                || !reference.chars().all(|c| c.is_ascii_alphanumeric() || "@/._-".contains(c))
+            {
+                return Err(AppError::Storage("Invalid npm package name.".into()));
+            }
+            let encoded = reference.replace('/', "%2F");
+            let body: Value = client
+                .get(format!("https://registry.npmjs.org/{encoded}"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("npm: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("versions")
+                .and_then(Value::as_object)
+                .ok_or_else(|| AppError::Storage("npm returned an unexpected package listing.".into()))?
+                .keys()
+                .filter(|v| valid_version_tag(v))
+                .cloned()
+                .collect();
+            sort_versions_desc(versions)
+        }
+        "goproxy" => {
+            if reference.is_empty()
+                || !reference.chars().all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c))
+            {
+                return Err(AppError::Storage("Invalid Go module path.".into()));
+            }
+            let text = client
+                .get(format!("https://proxy.golang.org/{reference}/@v/list"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("Go proxy: {e}")))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            sort_versions_desc(
+                text.lines().map(str::trim).filter(|v| valid_version_tag(v)).map(str::to_string).collect(),
+            )
+        }
+        "crates" => {
+            if !ok_segment(&reference) {
+                return Err(AppError::Storage("Invalid crate name.".into()));
+            }
+            let body: Value = client
+                .get(format!("https://crates.io/api/v1/crates/{reference}"))
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("crates.io: {e}")))?
+                .json()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            let versions: Vec<String> = body
+                .get("versions")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::Storage("crates.io returned an unexpected listing.".into()))?
+                .iter()
+                .filter(|v| !v.get("yanked").and_then(Value::as_bool).unwrap_or(false))
+                .filter_map(|v| v.get("num").and_then(Value::as_str))
+                .filter(|v| valid_version_tag(v))
+                .map(str::to_string)
+                .collect();
+            sort_versions_desc(versions)
+        }
+        "exasol-downloads" => {
+            // The official Exasol downloads portal index — versions for THIS
+            // platform only (offering a Linux-only build on macOS would be a
+            // guaranteed-failing install).
+            if !matches!(reference.as_str(), "ODBC" | "ADO.NET") {
+                return Err(AppError::Storage("Unknown Exasol downloads artifact.".into()));
+            }
+            let index = exasol_downloads_index().await?;
+            portal_artifacts(&index, &reference, std::env::consts::OS, std::env::consts::ARCH)
+                .into_iter()
+                .map(|a| a.version)
+                .collect()
+        }
+        "maven-exasol-jdbc" => {
+            let xml = client
+                .get("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml")
+                .header("User-Agent", "exasol-studio")
+                .timeout(timeout)
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(format!("Maven Central: {e}")))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            maven_all_versions(&xml)
+        }
+        _ => return Err(AppError::Storage(format!("Unknown version source: {source}"))),
+    };
+    Ok(list.into_iter().take(30).collect())
+}
+
+/// The official Exasol JDBC driver ships on Maven Central (com.exasol:exasol-jdbc),
+/// not GitHub releases: install the requested version, or resolve `<latest>`
+/// live, and download the jar into the managed marketplace folder, ready to
+/// point Java tools (DBeaver, DataGrip…) at. Returns (resolved version, note)
+/// so the manifest records the REAL version — the repo-less catalog card may
+/// pass none, and "latest" would break update detection forever.
+async fn install_jdbc_from_maven(app: &AppHandle, id: &str, requested: Option<&str>) -> AppResult<(String, String)> {
+    const META: &str = "https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml";
+    let v = match requested {
+        Some(v) if valid_version_tag(v) => v.to_string(),
+        Some(v) => return Err(AppError::Storage(format!("Invalid JDBC driver version: {v}"))),
+        None => {
+            emit_log(app, id, "Resolving the latest exasol-jdbc from Maven Central…", "info");
+            let xml = reqwest::Client::new()
+                .get(META)
+                .header("User-Agent", "exasol-studio")
+                .send()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .error_for_status()
+                .map_err(|e| AppError::Storage(e.to_string()))?
+                .text()
+                .await
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            maven_latest_version(&xml).ok_or_else(|| {
+                AppError::Storage("Could not read the latest exasol-jdbc version from Maven Central.".into())
+            })?
+        }
+    };
+    let jar = format!("exasol-jdbc-{v}.jar");
+    let url = format!("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/{v}/{jar}");
+    let path = download_and_place(app, id, &url, &jar).await?;
+    let note = format!("Exasol JDBC driver {v} downloaded to {path}. Point your Java tool's driver path at this jar.");
+    Ok((v, note))
+}
+
+/// One artifact choice from Exasol's official downloads index.
+struct PortalArtifact {
+    version: String,
+    url: String,
+    filename: String,
+    sha256: Option<String>,
+}
+
+/// Parse Exasol's machine-readable downloads index
+/// (x-up.s3.amazonaws.com/7.x/packages.json — the same data the downloads
+/// portal renders) into the artifact list for one driver on one platform,
+/// newest first. Pure so the platform mapping is unit-tested.
+fn portal_artifacts(index: &Value, artifact: &str, host_os: &str, host_arch: &str) -> Vec<PortalArtifact> {
+    let portal_os = match host_os {
+        "macos" => "MacOS",
+        "windows" => "Windows",
+        _ => "Linux",
+    };
+    // ADO.NET ships Windows-only; everything else matches the host.
+    let (want_os, want_arch) = if artifact == "ADO.NET" {
+        ("Windows", "noarch")
+    } else {
+        (portal_os, host_arch)
+    };
+    let Some(oses) = index
+        .get("artefacts")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|e| e.get("name").and_then(Value::as_str) == Some(artifact)))
+        .and_then(|e| e.get("operatingSystems"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let Some(arches) = oses
+        .iter()
+        .find(|o| o.get("operatingSystem").and_then(Value::as_str) == Some(want_os))
+        .and_then(|o| o.get("architectures"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    // Exact architecture first; "universal"/"noarch" builds cover every host.
+    let arch_entry = arches
+        .iter()
+        .find(|a| a.get("architecture").and_then(Value::as_str) == Some(want_arch))
+        .or_else(|| {
+            arches.iter().find(|a| {
+                matches!(a.get("architecture").and_then(Value::as_str), Some("universal") | Some("noarch"))
+            })
+        });
+    let Some(versions) = arch_entry.and_then(|a| a.get("versions")).and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut list: Vec<PortalArtifact> = versions
+        .iter()
+        .filter_map(|v| {
+            let version = v.get("version")?.as_str()?.to_string();
+            let file = v.get("packageFile")?;
+            Some(PortalArtifact {
+                url: file.get("url")?.as_str()?.to_string(),
+                filename: file.get("filename")?.as_str()?.to_string(),
+                sha256: file.get("sha256").and_then(Value::as_str).map(str::to_string),
+                version,
+            })
+        })
+        .filter(|a| valid_version_tag(&a.version) && a.url.starts_with("https://"))
+        .collect();
+    // Same ordering rule as every other version list: newest first.
+    let order = sort_versions_desc(list.iter().map(|a| a.version.clone()).collect());
+    list.sort_by_key(|a| order.iter().position(|v| *v == a.version).unwrap_or(usize::MAX));
+    list
+}
+
+async fn exasol_downloads_index() -> AppResult<Value> {
+    reqwest::Client::new()
+        .get("https://x-up.s3.amazonaws.com/7.x/packages.json")
+        .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .error_for_status()
+        .map_err(|e| AppError::Storage(format!("Exasol downloads: {e}")))?
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))
+}
+
+/// One small JSON GET with the standard headers.
+async fn fetch_json(url: &str) -> AppResult<Value> {
+    reqwest::Client::new()
+        .get(url)
+        .header("User-Agent", "exasol-studio")
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .error_for_status()
+        .map_err(|e| AppError::Storage(e.to_string()))?
+        .json()
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))
+}
+
+/// Download a driver package from its NATIVE registry (npm / Go proxy /
+/// crates.io / GitHub tags) into the managed marketplace folder — independent
+/// of any Studio-pinned runtime, at the requested version or the registry's
+/// latest. Returns (resolved version, note).
+async fn install_registry_package(
+    app: &AppHandle,
+    id: &str,
+    requested: Option<&str>,
+) -> AppResult<(String, String)> {
+    let (version, url, filename, hint) = match id {
+        "driver-ts" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => fetch_json("https://registry.npmjs.org/@exasol%2Fexasol-driver-ts/latest")
+                    .await?
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::Storage("npm returned no latest version.".into()))?
+                    .to_string(),
+            };
+            (
+                v.clone(),
+                format!("https://registry.npmjs.org/@exasol/exasol-driver-ts/-/exasol-driver-ts-{v}.tgz"),
+                format!("exasol-driver-ts-{v}.tgz"),
+                "npm package tarball — or add it to a project with `npm install @exasol/exasol-driver-ts`",
+            )
+        }
+        "driver-go" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => fetch_json("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@latest")
+                    .await?
+                    .get("Version")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::Storage("The Go proxy returned no latest version.".into()))?
+                    .to_string(),
+            };
+            (
+                v.clone(),
+                format!("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@v/{v}.zip"),
+                format!("exasol-driver-go-{v}.zip"),
+                "Go module zip — or add it to a project with `go get github.com/exasol/exasol-driver-go`",
+            )
+        }
+        "exarrow-rs" => {
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => {
+                    let body = fetch_json("https://crates.io/api/v1/crates/exarrow-rs").await?;
+                    body.get("crate")
+                        .and_then(|c| c.get("max_stable_version").or_else(|| c.get("max_version")))
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| AppError::Storage("crates.io returned no latest version.".into()))?
+                        .to_string()
+                }
+            };
+            (
+                v.clone(),
+                format!("https://crates.io/api/v1/crates/exarrow-rs/{v}/download"),
+                format!("exarrow-rs-{v}.crate"),
+                "crates.io package — or add it to a project with `cargo add exarrow-rs`",
+            )
+        }
+        "driver-r" => {
+            // One install = usable, like the ODBC tile: build the official
+            // Exasol R package into Studio's OWN R library and leave the
+            // user's library untouched. Downloading a tarball and telling them
+            // to install it themselves is not an install.
+            let v = crate::upstream::latest("exasol/r-exasol")
+                .map(|r| r.tag)
+                .unwrap_or_else(|| "latest".into());
+            crate::driver_exec::driver_setup(app.clone(), "r".into()).await?;
+            return Ok((
+                v,
+                "Installed into Studio’s R library. Pick the R driver on any connection — \
+                 it reaches Exasol through the ODBC driver Studio manages, so install that too if you haven’t."
+                    .into(),
+            ));
+        }
+        "driver-odbc" | "driver-adonet" => {
+            let artifact_name = if id == "driver-odbc" { "ODBC" } else { "ADO.NET" };
+            let index = exasol_downloads_index().await?;
+            let artifacts = portal_artifacts(&index, artifact_name, std::env::consts::OS, std::env::consts::ARCH);
+            let chosen = match requested {
+                Some(v) => artifacts.into_iter().find(|a| a.version == v).ok_or_else(|| {
+                    AppError::Storage(format!("{artifact_name} {v} is not published for this platform."))
+                })?,
+                None => artifacts.into_iter().next().ok_or_else(|| {
+                    AppError::Storage(format!("{artifact_name} has no build for this platform on the Exasol downloads portal."))
+                })?,
+            };
+            // Verify BEFORE extracting/linking — nothing derived from an
+            // unverified file may ever exist (not even a dangling symlink).
+            let path = download_only(app, id, &chosen.url, &chosen.filename).await?;
+            if let Some(expected) = &chosen.sha256 {
+                let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
+                if !actual.eq_ignore_ascii_case(expected) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(AppError::Storage(format!(
+                        "{} failed checksum verification — the download was discarded.",
+                        chosen.filename
+                    )));
+                }
+                emit_log(app, id, "Checksum verified against the Exasol downloads portal.", "info");
+            }
+            auto_extract_and_link(app, id, std::path::Path::new(&path));
+            let mut hint = if id == "driver-odbc" {
+                "ODBC driver files extracted".to_string()
+            } else {
+                "Windows driver package for your .NET projects".to_string()
+            };
+            // One install = usable: wire the extracted ODBC library straight
+            // into Studio's connection runtime (pyodbc takes a driver PATH, so
+            // no OS-level registration is needed) and ensure the runtime venv.
+            if id == "driver-odbc" {
+                let unpacked = market_dir(app)?.join(id).join("unpacked");
+                if let Some(lib) = find_file(&unpacked, 0, &|name: &str| {
+                    let lower = name.to_ascii_lowercase();
+                    lower.contains("exaodbc")
+                        && (lower.ends_with(".dylib") || lower.ends_with(".so") || lower.ends_with(".dll"))
+                }) {
+                    // Propagate: claiming "wired into Studio" on a failed
+                    // override write would be a lie.
+                    crate::driver_exec::driver_override_set(
+                        app.clone(),
+                        "odbc".into(),
+                        Some(lib.to_string_lossy().to_string()),
+                    )?;
+                    crate::driver_exec::driver_setup(app.clone(), "odbc".into()).await?;
+                    hint = "wired into Studio's connections — pick the ODBC driver on any connection and it just works".to_string();
+                }
+            }
+            return Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)));
+        }
+        "dash-server" => {
+            // Not on PyPI — pip-install straight from the GitHub tag tarball
+            // into its own managed environment, so it runs from Studio.
+            let v = match requested {
+                Some(v) => v.to_string(),
+                None => crate::upstream::latest("exasol-labs/dash-server")
+                    .map(|r| r.tag)
+                    .ok_or_else(|| AppError::Storage("Could not resolve the latest dash-server release.".into()))?,
+            };
+            if !valid_version_tag(&v) {
+                return Err(AppError::Storage(format!("Invalid dash-server version: {v}")));
+            }
+            let spec = format!("https://github.com/exasol-labs/dash-server/archive/refs/tags/{v}.tar.gz");
+            let note = install_uv_pip(app, id, &spec)?;
+            return Ok((v.clone(), format!("dash-server {v} installed into a managed environment. {note}")));
+        }
+        "more-functions" => {
+            // A SQL function library with no releases: download the current
+            // scripts snapshot, ready to run in the SQL editor.
+            let path = download_and_place(
+                app,
+                id,
+                "https://api.github.com/repos/exasol-labs/more-functions/tarball",
+                "more-functions-snapshot.tar.gz",
+            )
+            .await?;
+            return Ok((
+                "snapshot".into(),
+                format!("SQL function library downloaded to {path} — unpack it and run the scripts in the SQL editor against your database."),
+            ));
+        }
+        "driver-websocket" => {
+            // A living protocol spec (no releases): download the current
+            // snapshot — the API description plus client implementations.
+            let path = download_and_place(
+                app,
+                id,
+                "https://api.github.com/repos/exasol/websocket-api/tarball",
+                "websocket-api-snapshot.tar.gz",
+            )
+            .await?;
+            return Ok((
+                "snapshot".into(),
+                format!("Current WebSocket API spec snapshot downloaded to {path} — the protocol description plus client implementations."),
+            ));
+        }
+        other => return Err(AppError::Storage(format!("{other} has no registry package install."))),
+    };
+    if !valid_version_tag(&version) {
+        return Err(AppError::Storage(format!("Invalid package version: {version}")));
+    }
+    let path = download_and_place(app, id, &url, &filename).await?;
+    Ok((version.clone(), format!("Version {version} downloaded to {path}. {hint}.")))
+}
+
 /// Perform a real installation for an item, streaming logs over `market:log`
 /// and finishing with a `market:done` event. Records the item as installed.
 #[tauri::command]
@@ -1134,24 +2066,50 @@ pub async fn market_install_run(
     // Which database an in-database add-on (Semantic Views) installs into.
     // Absent means the managed local runtime; other items ignore it.
     profile_id: Option<String>,
+    // An EXPLICIT user pick from the card's version dropdown — distinct from
+    // `version` (the display/manifest value, usually the catalog latest),
+    // which must never silently override a verified pip pin.
+    requested: Option<String>,
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
     let stack = &crate::component_lock::components().python_stack;
-    let mcp_package = format!("exasol-mcp-server=={}", stack.mcp_server_version);
-    let pyexasol_package = format!("pyexasol=={}", stack.pyexasol_version);
+    // Validated before it can reach a package spec or URL.
+    let requested = requested.filter(|v| valid_version_tag(v));
+    // The pip spec for a PyPI-backed item: the requested version, else the
+    // verified pin where one exists, else the package's latest.
+    let pip_spec = |package: &str, pin: Option<&str>| -> String {
+        match requested.as_deref().or(pin) {
+            Some(v) => format!("{package}=={}", v.trim_start_matches(['v', 'V'])),
+            None => package.to_string(),
+        }
+    };
+    // Installers that resolve the real version themselves (Maven) report it
+    // here so the manifest never records a meaningless "latest".
+    let mut resolved_version: Option<String> = None;
     let result: AppResult<String> = match id.as_str() {
-        "mcp-server" => install_uv_tool(&app, &id, &mcp_package),
+        "mcp-server" => install_uv_tool(&app, &id, &pip_spec("exasol-mcp-server", Some(&stack.mcp_server_version))),
         "agent-skills" => {
             let dir = app.state::<crate::state::AppState>().data_dir.clone();
             crate::local_database::ensure_agent_skills(&app, &dir)
                 .map(|revision| format!("Exasol agent skills synced from exasol-labs ({revision})."))
         }
-        "pyexasol" => install_uv_pip(&app, &id, &pyexasol_package),
-        "sqlalchemy-exasol" => install_uv_pip(&app, &id, "sqlalchemy-exasol"),
-        "ai-lab" => install_ai_lab(&app, &id),
-        "json-tables" => install_json_tables(&app, &id).await,
+        "pyexasol" => install_uv_pip(&app, &id, &pip_spec("pyexasol", Some(&stack.pyexasol_version))),
+        "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
+        "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
+        "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),        "json-tables" => install_json_tables(&app, &id).await,
         "exasol-personal" => install_personal_local(&app, &id),
         "exasol-cloud" => install_personal_cloud(&app, &id),
+        "driver-jdbc" => install_jdbc_from_maven(&app, &id, requested.as_deref()).await.map(|(v, note)| {
+            resolved_version = Some(v);
+            note
+        }),
+        "driver-ts" | "driver-go" | "exarrow-rs" | "driver-r" | "driver-odbc" | "driver-adonet" | "driver-websocket"
+        | "dash-server" | "more-functions" => {
+            install_registry_package(&app, &id, requested.as_deref()).await.map(|(v, note)| {
+                resolved_version = Some(v);
+                note
+            })
+        }
         "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
             .await
             .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
@@ -1169,7 +2127,13 @@ pub async fn market_install_run(
             items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
             items.push(json!({
                 "id": id,
-                "version": version.unwrap_or_else(|| "latest".into()),
+                // Record only what was actually installed: installer-resolved
+                // first, then the validated pick, then the display version IF
+                // it passes validation — never a raw value execution ignored.
+                "version": resolved_version
+                    .or(requested)
+                    .or(version.filter(|v| valid_version_tag(v)))
+                    .unwrap_or_else(|| "latest".into()),
                 "note": note,
             }));
             write_manifest(&app, &items)?;
@@ -1188,7 +2152,7 @@ pub async fn market_install_run(
     }
 }
 
-/// Control the Studio-managed local runtime (native Personal on macOS, Nano on
+/// Control the Studio-managed local runtime (Exasol Personal via the launcher on
 /// Windows/Linux). Streams output over `market:log` under
 /// the id `exasol-local` and finishes with `market:done`, so the frontend can
 /// reuse the install-console UI. Blocking lifecycle actions (start/stop/destroy)
@@ -1255,6 +2219,16 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
 #[tauri::command]
 pub fn market_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let dir = market_dir(&app)?.join(&id);
+    // A JDBC override pointing INTO the directory being deleted would leave
+    // the Drivers UI showing a custom jar that no longer exists (the runtime
+    // itself falls back safely, but the display would lie). Clear it first.
+    if id == "driver-jdbc" {
+        if let Some(current) = crate::driver_exec::driver_override(&app, "jdbc") {
+            if std::path::Path::new(&current).starts_with(&dir) {
+                let _ = crate::driver_exec::driver_override_set(app.clone(), "jdbc".into(), None);
+            }
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
     let mut items = read_manifest(&app);
     items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
@@ -1307,7 +2281,17 @@ fn data_file_exists(app: &AppHandle, rel: &str) -> bool {
 /// guesses — so the badges always match what setup actually did. Returns
 /// id → bool, plus `exasol-personal:running` for the DB's live state.
 #[tauri::command]
-pub fn market_detect(app: AppHandle) -> AppResult<Value> {
+pub async fn market_detect(app: AppHandle) -> AppResult<Value> {
+    // Every probe here spawns processes (python imports,
+    // launcher status) — seconds of work. A SYNC Tauri command runs on the
+    // MAIN thread, which froze the whole window when the Marketplace opened;
+    // spawn_blocking keeps the UI fluid while the probes run.
+    tauri::async_runtime::spawn_blocking(move || market_detect_blocking(app))
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
     use crate::local_database as db;
     let mut map = serde_json::Map::new();
 
@@ -1370,18 +2354,6 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
         ),
     );
     map.insert(
-        "ai-lab".into(),
-        json!(["docker", "podman"].iter().any(|name| {
-            resolve_bin(name).is_some_and(|p| {
-                std::process::Command::new(p)
-                    .args(["image", "inspect", "exasol/ai-lab:latest"])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-            })
-        })),
-    );
-    map.insert(
         "json-tables".into(),
         json!(
             managed_exists(&app, "json-tables", "venv")
@@ -1396,3 +2368,203 @@ pub fn market_detect(app: AppHandle) -> AppResult<Value> {
 pub fn market_dir_path(app: AppHandle) -> AppResult<String> {
     Ok(market_dir(&app)?.to_string_lossy().to_string())
 }
+
+/// Point the SQL editor's driver runtime at an INDEPENDENTLY downloaded driver
+/// file — downloads stay unmanaged and unpinned, but one click makes Studio use
+/// one. Today: the JDBC jar (sets the same override as Drivers → "Use custom
+/// JAR", so it survives runtime reinstalls and is cleared the same way).
+#[tauri::command]
+pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> AppResult<Value> {
+    if !valid_version_tag(&version) {
+        return Err(AppError::Storage(format!("Invalid version: {version}")));
+    }
+    match id.as_str() {
+        "driver-jdbc" => {
+            let jar = market_dir(&app)?.join(&id).join(format!("exasol-jdbc-{version}.jar"));
+            if !jar.is_file() {
+                return Err(AppError::Storage(format!(
+                    "exasol-jdbc-{version}.jar isn't downloaded yet — install that version first."
+                )));
+            }
+            crate::driver_exec::driver_override_set(app, "jdbc".into(), Some(jar.to_string_lossy().to_string()))
+        }
+        other => Err(AppError::Storage(format!(
+            "{other} runs outside Studio — download any version here and use it from your own tools."
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
+
+    #[test]
+    fn archives_extract_except_files_tools_consume_whole() {
+        use super::archive_kind;
+        assert_eq!(archive_kind("exasol_scheduler-v0.2-macos-arm64.tar.gz"), Some("tar"));
+        assert_eq!(archive_kind("exasol-driver-ts-0.7.0.tgz"), Some("tar"));
+        assert_eq!(archive_kind("exarrow-rs-0.16.0.crate"), Some("tar"));
+        assert_eq!(archive_kind("grafana-datasource.zip"), Some("zip"));
+        // Consumed whole by their tools — never unpacked.
+        assert_eq!(archive_kind("exasol_jdbc.taco"), None);
+        assert_eq!(archive_kind("exasol-jdbc-26.2.9.jar"), None);
+        assert_eq!(archive_kind("exasol_json_tables.whl"), None);
+        assert_eq!(archive_kind("plain-binary"), None);
+    }
+
+    #[test]
+    fn portal_artifacts_match_the_host_platform() {
+        use super::portal_artifacts;
+        let index = serde_json::json!({
+            "artefacts": [{
+                "name": "ODBC",
+                "operatingSystems": [
+                    { "operatingSystem": "Linux", "architectures": [
+                        { "architecture": "x86_64", "versions": [
+                            { "version": "25.2.5", "packageFile": { "filename": "Exasol_ODBC-25.2.5-Linux-x86_64.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/25.2.5/l.tar.gz", "sha256": "aa" } }
+                        ]}
+                    ]},
+                    { "operatingSystem": "MacOS", "architectures": [
+                        { "architecture": "universal", "versions": [
+                            { "version": "25.2.4", "packageFile": { "filename": "old.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/25.2.4/m.tar.gz", "sha256": "bb" } },
+                            { "version": "26.2.6", "packageFile": { "filename": "Exasol_ODBC-26.2.6-macOS.tar.gz", "url": "https://x-up.s3.amazonaws.com/7.x/26.2.6/m.tar.gz", "sha256": "cc" } }
+                        ]}
+                    ]}
+                ]
+            }, {
+                "name": "ADO.NET",
+                "operatingSystems": [
+                    { "operatingSystem": "Windows", "architectures": [
+                        { "architecture": "noarch", "versions": [
+                            { "version": "25.2.2", "packageFile": { "filename": "ado.zip", "url": "https://x-up.s3.amazonaws.com/7.x/ado.zip" } }
+                        ]}
+                    ]}
+                ]
+            }]
+        });
+        // macOS aarch64 → the universal MacOS build, newest first.
+        let mac = portal_artifacts(&index, "ODBC", "macos", "aarch64");
+        assert_eq!(mac.iter().map(|a| a.version.as_str()).collect::<Vec<_>>(), ["26.2.6", "25.2.4"]);
+        assert_eq!(mac[0].sha256.as_deref(), Some("cc"));
+        // Linux x86_64 → the exact-arch build.
+        let linux = portal_artifacts(&index, "ODBC", "linux", "x86_64");
+        assert_eq!(linux[0].version, "25.2.5");
+        // ADO.NET is Windows-only BY DESIGN and must resolve from any host.
+        let ado = portal_artifacts(&index, "ADO.NET", "macos", "aarch64");
+        assert_eq!(ado[0].version, "25.2.2");
+        assert!(ado[0].sha256.is_none());
+        // Unknown artifact or platform → empty, never a wrong-platform pick.
+        assert!(portal_artifacts(&index, "JDBC", "macos", "aarch64").is_empty());
+        assert!(portal_artifacts(&serde_json::json!({}), "ODBC", "macos", "aarch64").is_empty());
+    }
+
+    #[test]
+    fn atom_feed_tags_parse_from_entry_ids() {
+        use super::atom_release_tags;
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>tag:github.com,2008:https://github.com/exasol/exasol-personal/releases</id>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.3.0-rc2</id>
+    <title>v2.3.0-rc2</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.2.0</id>
+    <title>v2.2.0</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1164833371/v2.2.0</id>
+    <title>duplicate entries are ignored</title>
+  </entry>
+</feed>"#;
+        assert_eq!(atom_release_tags(xml), ["v2.3.0-rc2", "v2.2.0"]);
+        assert!(atom_release_tags("<feed></feed>").is_empty());
+        // Dot-segment or empty tails are rejected by the tag validation.
+        assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/..</id></entry>").is_empty());
+        assert!(atom_release_tags("<entry><id>tag:github.com,2008:Repository/1/</id></entry>").is_empty());
+    }
+
+    #[test]
+    fn version_tags_reject_anything_path_or_option_like() {
+        assert!(valid_version_tag("26.2.9"));
+        assert!(valid_version_tag("v2.2.0"));
+        assert!(valid_version_tag("2.3.0-RC1+build_7"));
+        assert!(!valid_version_tag(""));
+        assert!(!valid_version_tag("../../evil"));
+        assert!(!valid_version_tag("1.0/x"));
+        assert!(!valid_version_tag(".")); // URL dot segments normalize away
+        assert!(!valid_version_tag(".."));
+        assert!(!valid_version_tag(".hidden"));
+        assert!(!valid_version_tag("--upgrade")); // never an option
+        assert!(!valid_version_tag(&"9".repeat(101))); // absurd length
+    }
+
+    #[test]
+    fn maven_all_versions_lists_newest_first_and_skips_junk() {
+        let xml = r#"<metadata><versioning>
+  <versions>
+    <version>7.1.20</version>
+    <version>../nope</version>
+    <version>25.2.4</version>
+    <version>26.2.9</version>
+  </versions>
+</versioning></metadata>"#;
+        assert_eq!(maven_all_versions(xml), ["26.2.9", "25.2.4", "7.1.20"]);
+        assert!(maven_all_versions("<metadata/>").is_empty());
+    }
+
+    #[test]
+    fn sort_versions_desc_orders_numerically_not_lexically() {
+        let sorted = sort_versions_desc(vec![
+            "2.0.9".into(),
+            "2.0.10".into(),
+            "0.9.0".into(),
+            "v2.1.0".into(),
+        ]);
+        assert_eq!(sorted, ["v2.1.0", "2.0.10", "2.0.9", "0.9.0"]);
+    }
+
+    #[test]
+    fn sort_versions_desc_ranks_prereleases_below_their_final() {
+        let sorted = sort_versions_desc(vec![
+            "1.0.dev1".into(),
+            "1.0".into(),
+            "2.0-rc1".into(),
+            "2.0".into(),
+        ]);
+        assert_eq!(sorted, ["2.0", "2.0-rc1", "1.0", "1.0.dev1"]);
+    }
+
+    #[test]
+    fn maven_latest_parses_real_metadata_layout() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.exasol</groupId>
+  <artifactId>exasol-jdbc</artifactId>
+  <versioning>
+    <latest>26.2.9</latest>
+    <release>26.2.9</release>
+    <versions><version>7.1.20</version><version>26.2.9</version></versions>
+  </versioning>
+</metadata>"#;
+        assert_eq!(maven_latest_version(xml).as_deref(), Some("26.2.9"));
+    }
+
+    #[test]
+    fn maven_latest_rejects_missing_empty_or_unsafe_values() {
+        assert_eq!(maven_latest_version("<metadata></metadata>"), None);
+        assert_eq!(maven_latest_version("<latest>  </latest>"), None);
+        // A hostile value must never become part of a download path.
+        assert_eq!(maven_latest_version("<latest>../../evil</latest>"), None);
+        assert_eq!(maven_latest_version("<latest>1.0/x</latest>"), None);
+    }
+
+    #[test]
+    fn maven_latest_tolerates_whitespace_and_prerelease_tags() {
+        assert_eq!(
+            maven_latest_version("<latest>\n  26.3.0-RC1\n</latest>"),
+            Some("26.3.0-RC1".into())
+        );
+    }
+}
+

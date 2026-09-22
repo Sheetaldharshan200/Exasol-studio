@@ -97,7 +97,10 @@ export function ExaModelSelector({
     }
   }
 
-  /** Kick off an OAuth method: authorize, then (for auto flows) await the callback. */
+  /** Kick off an OAuth method: authorize, open the browser, then let the user
+   *  finish. "auto" flows complete via a background callback poll; the code
+   *  paste box is ALWAYS offered as the reliable fallback (Anthropic's Pro/Max
+   *  redirect hands back a code either way), so the flow can't get stuck. */
   async function startOauth(providerId: string, idx: number, inputs: Record<string, string>) {
     setOauthState("waiting");
     try {
@@ -108,16 +111,20 @@ export function ExaModelSelector({
       }
       setOauth(r.authorization);
       void openExternal(r.authorization.url); // straight into the browser
-      if (r.authorization.method === "auto") {
-        // The engine polls the flow inline; this resolves when auth completes.
-        const done = await agent.engine.oauthCallback(providerId, idx);
-        finishOauth(providerId, done.ok);
-        return;
-      }
-      // method "code": the paste box renders only outside "waiting", so the
-      // state must return to idle here — leaving it waiting hid the input
-      // forever (the Claude Pro/Max flow was unfinishable).
+      // Back to idle immediately so the paste box shows — never leave it stuck
+      // on "waiting", which hid the input forever when a "code" flow was (mis)
+      // reported as anything else.
       setOauthState("idle");
+      if (r.authorization.method === "auto") {
+        // Poll for the auto callback in the BACKGROUND; if it resolves the flow
+        // finishes on its own, but the code box stays available meanwhile.
+        void agent.engine
+          .oauthCallback(providerId, idx)
+          .then((done) => {
+            if (done.ok) finishOauth(providerId, true);
+          })
+          .catch(() => undefined);
+      }
     } catch {
       setOauthState("failed");
     }
@@ -274,8 +281,14 @@ export function ExaModelSelector({
             >
               <ExternalLink className="h-3 w-3 shrink-0" /> {flowOauth.url}
             </button>
-            {flowOauth.instructions ? <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{flowOauth.instructions}</p> : null}
-            {flowOauth.method === "code" && flowState !== "waiting" ? (
+            {flowOauth.instructions ? (
+              <p className="mt-1.5 font-mono text-[11.5px] text-foreground">{flowOauth.instructions}</p>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-muted-foreground">Sign in in the browser, then paste the authorization code below.</p>
+            )}
+            {/* Always offer the paste box for an active flow — the reliable way to
+                finish (and the only way if the auto callback doesn't complete). */}
+            {flowState !== "waiting" ? (
               <div className="mt-1.5 flex items-center gap-1.5" onKeyDown={(e) => e.stopPropagation()}>
                 <input
                   autoFocus
@@ -391,6 +404,11 @@ export function ExaModelSelector({
     <DropdownMenu
       open={open}
       onOpenChange={(o) => {
+        // Keep the menu OPEN while an OAuth flow is mid-way: opening the browser
+        // blurs the app window, which Radix treats as an outside interaction and
+        // would otherwise dismiss the menu — taking the code-paste box with it,
+        // so the user could never enter the code.
+        if (!o && oauth) return;
         onOpenChange?.(o);
         if (o) fetchCatalog();
         else {
@@ -424,7 +442,16 @@ export function ExaModelSelector({
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} collisionPadding={12} className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5">
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        collisionPadding={12}
+        className="w-72 max-w-[calc(100vw-24px)] rounded-xl p-1.5"
+        onInteractOutside={(e) => oauth && e.preventDefault()}
+        onFocusOutside={(e) => oauth && e.preventDefault()}
+        onPointerDownOutside={(e) => oauth && e.preventDefault()}
+        onEscapeKeyDown={(e) => oauth && e.preventDefault()}
+      >
         {/* Header: label + search & settings top-right. */}
         <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -491,6 +518,9 @@ export function ExaModelSelector({
                     className="max-h-80 w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
                     sideOffset={6}
                     collisionPadding={12}
+                    onInteractOutside={(e) => oauth && e.preventDefault()}
+                    onFocusOutside={(e) => oauth && e.preventDefault()}
+                    onEscapeKeyDown={(e) => oauth && e.preventDefault()}
                   >
                     {connectFlow(c)}
                   </DropdownMenuSubContent>
@@ -515,6 +545,9 @@ export function ExaModelSelector({
                         className="max-h-72 w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-1 [scrollbar-width:thin]"
                         sideOffset={6}
                         collisionPadding={12}
+                        onInteractOutside={(e) => oauth && e.preventDefault()}
+                        onFocusOutside={(e) => oauth && e.preventDefault()}
+                        onEscapeKeyDown={(e) => oauth && e.preventDefault()}
                       >
                         {needsKey(p) ? (
                           // Unconnected cloud providers get the SAME engine-

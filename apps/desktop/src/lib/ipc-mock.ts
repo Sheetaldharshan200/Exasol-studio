@@ -17,7 +17,7 @@ const profiles: Record<string, unknown>[] = [
     username: "sys",
     password: "exasol",
     schema: null,
-    notes: "Local Docker Exasol for development.",
+    notes: "Local Exasol Personal for development.",
     sslMode: "required",
     compression: false,
     driverId: "sqlx-exasol",
@@ -450,7 +450,7 @@ export async function mockInvoke(
     }
 
     case "market_env":
-      return { os: "macos", arch: "aarch64", docker: false, podman: false };
+      return { os: "macos", arch: "aarch64" };
 
     case "market_doc":
       return `# ${String(args?.repo ?? "docs")}\n\nThis is a **preview** of the documentation.\n\n\`\`\`bash\nexasol install local\n\`\`\`\n\n- Point one\n- Point two\n`;
@@ -552,12 +552,25 @@ export async function mockInvoke(
       const jvm = id === "jdbc";
       const odbc = id === "odbc";
       const native = ["sqlx-exasol", "websocket-api", "exarrow-rs", ""].includes(id);
+      // Shipped with the app, so ready without any install — same as native.
+      const bundled = id === "ts-js" || id === "go";
+      const r = id === "r";
       return {
         driverId: id,
         runtime: native ? "native" : python ? "python" : jvm ? "jvm" : odbc ? "odbc" : id,
-        ready: native,
-        supported: native || python || jvm || odbc,
-        hint: native ? "" : python ? "Install the Python driver runtime." : jvm ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)." : odbc ? "Install the ODBC runtime, then Exasol’s OS ODBC driver." : "This driver runtime is coming soon.",
+        ready: native || bundled,
+        supported: native || bundled || python || jvm || odbc || r,
+        hint: native || bundled
+          ? ""
+          : python
+            ? "Install the Python driver runtime."
+            : jvm
+              ? "Install the JDBC runtime (bundled JRE + Exasol JDBC driver)."
+              : odbc
+                ? "Install the ODBC runtime, then Exasol’s OS ODBC driver."
+                : r
+                  ? "Install R on this machine, then install the R driver runtime here."
+                  : "Exasol publishes this driver for Windows only.",
       };
     }
     case "driver_setup":
@@ -622,8 +635,23 @@ export async function mockInvoke(
     case "market_dir_path":
       return "/Users/you/Library/Application Support/com.exasol.studio/marketplace";
 
+    case "vs_local_state":
+      return { managedLocal: true, bucketFiles: ["vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar"], slcAliases: ["PYTHON3"] };
+    case "vs_stage_adapter": {
+      await delay(600);
+      const req = (args?.req ?? {}) as { runtime?: string; driver?: { name?: string } | null };
+      return {
+        releaseTag: "4.0.2",
+        adapterAsset: req.runtime === "lua" ? "adapter-dist-1.0.0.lua" : "virtual-schema-dist-14.0.5-postgresql-4.0.2.jar",
+        luaSource: req.runtime === "lua" ? "-- mock adapter\nreturn {}" : null,
+        driverFile: req.driver ? `${(req.driver.name ?? "driver").toLowerCase()}-1.0.0.jar` : null,
+        javaSlcInstalled: req.runtime === "java",
+        restarted: req.runtime === "java",
+      };
+    }
     case "list_vs_prereqs":
       return {
+        udfScripts: [],
         adapters: [
           { schema: "ADAPTERS", name: "JDBC_ADAPTER" },
           { schema: "ADAPTERS", name: "POSTGRES_ADAPTER" },
@@ -718,9 +746,13 @@ export async function mockInvoke(
           ["3", "Initech", "1", "980.25"],
         ],
         truncated: false,
+        hasMore: false,
+        offset: Number(args?.offset ?? 0),
         format: fmt,
       };
     }
+    case "fs_count_rows":
+      return 3;
 
     case "fs_delete":
       return null;

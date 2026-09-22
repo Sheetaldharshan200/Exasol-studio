@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeF
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage, mapChatMessagesToStoredMessages, mapStoredMessagesToChatMessages, type BaseMessage, type StoredMessage } from "@langchain/core/messages";
+import { ToolSpanPairer, type TraceSpan } from "./trace.ts";
 
 /** SSE event pushed to attached clients. */
 export type AgentEvent =
@@ -9,7 +10,7 @@ export type AgentEvent =
   | { type: "reasoning-delta"; messageId: string; delta: string }
   | { type: "message-start"; messageId: string; role: "assistant" }
   | { type: "message-done"; messageId: string; usage?: { inputTokens?: number; outputTokens?: number } }
-  | { type: "tool-start"; callId: string; name: string; args: unknown }
+  | { type: "tool-start"; callId: string; name: string; args: unknown; provisional?: boolean }
   | { type: "tool-end"; callId: string; name: string; ok: boolean; summary?: string }
   | { type: "permission-ask"; id: string; tool: string; summary: string; detail: string }
   | { type: "permission-result"; id: string; allow: boolean }
@@ -21,6 +22,17 @@ export type AgentEvent =
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
   | { type: "error"; message: string }
+  | {
+      /** P1: the answer's final SQL result re-run on an INDEPENDENT session. */
+      type: "verification";
+      messageId: string;
+      status: "verified" | "mismatch" | "unverified";
+      detail: string;
+      expectedRows?: number;
+      actualRows?: number;
+      elapsedMs?: number;
+      sql?: string;
+    }
   | { type: "status"; state: "idle" | "thinking" | "streaming" };
 
 /** A render-ready conversation item, rebuilt from the transcript. */
@@ -49,6 +61,9 @@ export class Session {
   abort: AbortController | null = null;
   /** Connection granted to this session's tools (set per message). */
   connectionId: string | null = null;
+  /** Read queries the CURRENT turn ran (cleared at turn start) — the raw
+   *  material P1 verification plans from. Shape matches verify.ts SqlRun. */
+  sqlRuns: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean }[] = [];
   private listeners = new Set<(e: AgentEvent) => void>();
   private pendingPermissions = new Map<string, (allow: boolean) => void>();
   private pendingUi = new Map<string, (r: { ok: boolean; detail?: string }) => void>();
@@ -133,8 +148,28 @@ export class Session {
     return () => this.listeners.delete(fn);
   }
 
+  /** P3: one global trace sink (set once by the server; null in tests). */
+  static traceSink: ((span: TraceSpan) => void) | null = null;
+  private readonly spanPairer = new ToolSpanPairer();
+
   emit(e: AgentEvent) {
+    // P3 tool spans fall out of the events every surface already emits —
+    // no per-tool instrumentation anywhere else.
+    // Provisional starts (streaming tool-input activity) can carry a
+    // different id than the finished call — pairing them would leak an
+    // open span per call, so only the definitive tool-start opens one.
+    if (e.type === "tool-start" && !e.provisional) {
+      this.spanPairer.start(e.callId, e.name);
+    } else if (e.type === "tool-end") {
+      const span = this.spanPairer.end(e.callId, e.ok);
+      if (span) Session.traceSink?.({ ...span, sessionId: this.id });
+    }
     for (const fn of this.listeners) fn(e);
+  }
+
+  /** Emit a non-tool span (turn totals, verification) for this session. */
+  traceSpan(span: Omit<TraceSpan, "sessionId">) {
+    Session.traceSink?.({ ...span, sessionId: this.id });
   }
 
   /** Set once from the first user message; UI is notified. */
@@ -314,6 +349,18 @@ export class Session {
             id: `r${n}`,
             role: "assistant",
             content: "_Recovered an interrupted turn — the steps above completed before the app closed, and their results are preserved._",
+          });
+          break;
+        case "verification":
+          // P1 stamps survive reload — shown as a compact tool-style item.
+          items.push({
+            kind: "tool",
+            id: `v${n}`,
+            name: "verification",
+            args: { sql: e.sql },
+            done: true,
+            ok: e.status === "verified",
+            summary: `${String(e.status)} — ${String(e.detail ?? "")}`.slice(0, 160),
           });
           break;
         case "tool.call":

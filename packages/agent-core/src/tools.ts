@@ -2,6 +2,8 @@ import { generateText, tool, type ToolSet } from "./llm.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 import type { DbRegistry, QueryOutput } from "./db.ts";
+import { SEMANTIC_READONLY_SCRIPTS } from "./semantic.ts";
+import { semanticOverview } from "./semantic-sync.ts";
 import type { Session } from "./session.ts";
 import type { AgentSettings } from "./config.ts";
 import type { MemoryStore } from "./memory.ts";
@@ -39,6 +41,19 @@ const READ_KEYWORDS = new Set(["SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "VA
  * CONTENTS can neither fake nor hide a keyword or semicolon; an unterminated
  * literal is left visible, which errs toward "write".
  */
+/** P1: bounded per-turn record of read runs (verification raw material) —
+ *  a long tool-heavy turn must not accumulate unbounded result payloads. */
+const SQL_RUNS_CAP = 20;
+function pushSqlRun(
+  session: { sqlRuns: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean }[] },
+  run: { sql: string; columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean },
+) {
+  session.sqlRuns.push(run);
+  if (session.sqlRuns.length > SQL_RUNS_CAP) {
+    session.sqlRuns.splice(0, session.sqlRuns.length - SQL_RUNS_CAP);
+  }
+}
+
 export function classifySql(sql: string): "read" | "write" {
   const blinded = sql
     .replace(/--[^\n]*\n/g, "\n")
@@ -333,6 +348,9 @@ export function buildTools(ctx: {
           const started = Date.now();
           const out = await db.query(id, sql);
           session.record({ kind: "tool.run_sql", mode: "read", sql, rows: out.rowCount, ms: Date.now() - started });
+          // P1 verification raw material: keep what the answer will be built
+          // from, so the turn's final result can be independently reproduced.
+          pushSqlRun(session, { sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
           return shape(out);
         }
         // Mutation: human in the loop, always.
@@ -369,6 +387,87 @@ export function buildTools(ctx: {
 
     ...(ctx.semanticViewsReady
       ? {
+          semantic_models: tool({
+            description:
+              "List the Semantic Views models on the active connection — name, status (PUBLISHED models are queryable), published schema, and any CURRENT validation issues. " +
+              "Call this FIRST when the database has Semantic Views: prefer published measures/dimensions over ad-hoc SQL, and surface open issues to the user instead of querying around them.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const overview = await semanticOverview((cid, sql) => db.query(cid, sql), id);
+              session.record({ kind: "tool.semantic_models", models: overview.models.length });
+              return overview;
+            },
+          }),
+
+          semantic_admin: tool({
+            description:
+              "Run ONE Semantic Views admin script by name through SEMANTIC_ADMIN.CALL_ADMIN_JSON — the governed way to CREATE and evolve semantic models (CREATE_MODEL, ADD_ENTITY, ADD_RELATIONSHIP, ADD_UNIQUE_KEY_WITH_COLUMNS, ADD_RELATIONSHIP_KEY_MAPPING, ADD_SEMANTIC_OBJECT, ADD_DIMENSION, ADD_METRIC, DROP_MODEL, …) and to read the catalog (DESCRIBE_*, SEARCH_*, GET_*, EXPLAIN_*, SUGGEST_*). Never guess parameter names — SELECT SCRIPT_NAME, PARAMETER_NAME, CALL_TEMPLATE FROM SEMANTIC_CATALOG.ADMIN_SCRIPT_PARAMETERS lists every script's exact signature. " +
+              "Read-only scripts run immediately; anything that changes the catalog asks the user first. Draft models for a NEW dataset this way when the user agrees — but NEVER call PUBLISH_MODEL unless the user explicitly asked to publish (drafts are reviewable; published models are a governed contract).",
+            inputSchema: z.object({
+              script: z.string().regex(/^[A-Za-z0-9_]+$/).describe("Script name inside SEMANTIC_ADMIN, e.g. CREATE_MODEL, ADD_ENTITY, DESCRIBE_SEMANTIC_OBJECT"),
+              args: z.record(z.unknown()).describe("Named parameters as documented; omit optional ones entirely (never pass null)"),
+            }),
+            execute: async ({ script, args }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              const name = script.toUpperCase();
+              if (!SEMANTIC_READONLY_SCRIPTS.has(name)) {
+                // The user must see EXACTLY what will run — never a truncated
+                // preview of content that executes in full.
+                const allowed = await session.askPermission({
+                  tool: "semantic_admin",
+                  summary: `Semantic catalog change: ${name}`,
+                  detail: `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('${name}', …)\n${JSON.stringify(args, null, 2)}`,
+                });
+                if (!allowed) return { denied: true, message: "The user declined this semantic catalog change." };
+              }
+              const out = await db.query(
+                id,
+                `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON(${lit(name)}, ${lit(JSON.stringify(args))})`,
+              );
+              session.record({ kind: "tool.semantic_admin", script: name, rows: out.rowCount });
+              return shape(out);
+            },
+          }),
+
+          semantic_apply_definition: tool({
+            description:
+              "Apply a declarative Semantic SQL definition (ALTER SEMANTIC VIEW … with REPLACE FACTS/METRICS/DIMENSIONS blocks) through SEMANTIC_ADMIN.APPLY_SEMANTIC_DEFINITION. " +
+              "ALWAYS dry-run first (default): it snapshots, simulates, validates, and rolls back — check STATUS in the result (DRY_RUN means it would validate; ERROR names the blocking rule). Set commit:true only after a clean dry run; committing asks the user. New models are bootstrapped with semantic_admin scripts first — CREATE SEMANTIC VIEW is refused by design.",
+            inputSchema: z.object({
+              definition: z.string().min(1).describe("The full ALTER SEMANTIC VIEW statement (Semantic SQL)"),
+              commit: z.boolean().optional().describe("false/omitted = dry run (safe); true = apply for real (asks the user)"),
+            }),
+            execute: async ({ definition, commit }) => {
+              const id = requireConn();
+              if (id !== ctx.semanticViewsConnectionId) {
+                return { error: "Semantic Views is not ready for the active connection." };
+              }
+              if (commit) {
+                // Full definition in the ask — approving truncated content
+                // would let material changes hide past the preview.
+                const allowed = await session.askPermission({
+                  tool: "semantic_apply_definition",
+                  summary: "Apply a semantic model definition (commit)",
+                  detail: definition,
+                });
+                if (!allowed) return { denied: true, message: "The user declined this semantic definition." };
+              }
+              const out = await db.query(
+                id,
+                `EXECUTE SCRIPT SEMANTIC_ADMIN.APPLY_SEMANTIC_DEFINITION(${lit(definition)}, ${commit ? "FALSE" : "TRUE"})`,
+              );
+              session.record({ kind: "tool.semantic_apply_definition", commit: Boolean(commit), rows: out.rowCount });
+              return shape(out);
+            },
+          }),
+
           semantic_compile_request: tool({
             description:
               "Compile a structured analytics request through Exasol Semantic Views. " +
@@ -1168,7 +1267,12 @@ export function buildTools(ctx: {
         }
         const manager = new TaskManager();
         for (const s of statements) {
-          manager.submit(s.purpose, async () => shape(await db.query(id, s.sql)));
+          manager.submit(s.purpose, async () => {
+            const out = await db.query(id, s.sql);
+            // Batch reads back answers too — they must be verifiable (P1).
+            pushSqlRun(session, { sql: s.sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated });
+            return shape(out);
+          });
         }
         const emitted = new Set<string>();
         const results = await manager.drain(4, (t) => {

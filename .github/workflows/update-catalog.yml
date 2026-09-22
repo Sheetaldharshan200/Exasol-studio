@@ -40,7 +40,6 @@ jobs:
           items=$(cat <<'EOF'
           exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
           exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
-          exasol-community|exasol/docker-db|https://github.com/exasol/docker-db
           notebook-connector|exasol/notebook-connector|https://github.com/exasol/notebook-connector
           dbt-exasol|exasol/dbt-exasol|https://github.com/exasol/dbt-exasol
           exasol-scheduler|exasol-labs/exasol-scheduler|https://github.com/exasol-labs/exasol-scheduler

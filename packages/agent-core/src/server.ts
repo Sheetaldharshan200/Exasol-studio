@@ -4,8 +4,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type ConfigStore } from "./config.ts";
 import { ProviderRegistry } from "./providers.ts";
-import { SessionStore } from "./session.ts";
+import { Session, SessionStore } from "./session.ts";
+import { TraceStore } from "./trace-store.ts";
 import { DbRegistry, type DbConnectionInfo } from "./db.ts";
+import { compareResults, planVerification } from "./verify.ts";
+import { applyStepUpdate, buildPlan, planProgress, type Plan, type PlanStepInput, type StepStatus } from "./plan.ts";
+import { executePlan } from "./dag-executor.ts";
+import { classifySql } from "./tools.ts";
+import { SemanticSync, semanticOverview } from "./semantic-sync.ts";
+import { SEMANTIC_READONLY_SCRIPTS } from "./semantic.ts";
+import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
 import { DashboardStore } from "./dashboards.ts";
@@ -49,6 +57,86 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const takeAction = (): PendingAction | undefined => {
     const a = actionQueue.shift();
     return a;
+  };
+  // Fire-and-forget UI push (plan cards): enqueued server-side, so it never
+  // re-enters HTTP and never depends on the app-control toggle — it renders
+  // information, it does not drive the UI.
+  const pushUiAction = (action: string, args: unknown) => {
+    const id = `a${++actionSeq}`;
+    const item: PendingAction = { id, action, args, resolve: () => undefined };
+    pendingById.set(id, item);
+    if (actionWaiter) {
+      const w = actionWaiter;
+      actionWaiter = null;
+      w(item);
+    } else {
+      actionQueue.push(item);
+    }
+    // Nothing awaits it — clean up if no webview ever picks it up.
+    setTimeout(() => pendingById.delete(id), 30_000);
+  };
+
+  // ── P2: explicit plans (docs/agentic-architecture-spec.md) ────────────────
+  const plans = new PlanStore(config.dataDir);
+  const pushPlan = (plan: Plan) => pushUiAction("plan_updated", { plan });
+
+  // ── P3: run observability — every session's spans land here ──────────────
+  const traces = new TraceStore(config.dataDir);
+  Session.traceSink = (span) => traces.append(span);
+  const traceGateway = (name: string, startedAt: number, ok: boolean, meta?: Record<string, string | number | boolean>) =>
+    traces.append({ kind: "gateway", name, startedAt, durationMs: Date.now() - startedAt, ok, ...(meta ? { meta } : {}) });
+
+  // Semantic-layer upkeep: every write on any connection (from any surface —
+  // run_sql, batches, imports, DAG plan steps) marks that connection dirty;
+  // a debounced pass revalidates the Semantic Views models and, after schema
+  // changes, regenerates their published metadata surfaces. Results land as
+  // a trace span and a UI notice. No-op on databases without the framework.
+  const semanticSync = new SemanticSync(
+    { queryIsolated: (id, sql) => db.queryIsolated(id, sql) },
+    (result) => {
+      traces.append({
+        kind: "verification",
+        name: "semantic_revalidate",
+        startedAt: Date.now() - result.elapsedMs,
+        durationMs: result.elapsedMs,
+        ok: result.issueCount === 0 && result.models.every((m) => m.validated && m.refreshed !== false),
+        meta: { connection: result.connectionId, impact: result.impact, models: result.models.length, issues: result.issueCount, uncovered: result.uncoveredSchemas.length },
+      });
+      const failed = result.models.filter((m) => !m.validated || m.refreshed === false);
+      pushUiAction("semantic_validation", {
+        connectionId: result.connectionId,
+        impact: result.impact,
+        issueCount: result.issueCount,
+        issues: result.issues,
+        refreshed: result.models.filter((m) => m.refreshed).map((m) => m.name),
+        failed: failed.map((m) => `${m.name}: ${m.error ?? "validation failed"}`),
+        uncoveredSchemas: result.uncoveredSchemas,
+      });
+      log.info("semantic models synced", {
+        connection: result.connectionId,
+        impact: result.impact,
+        models: result.models.length,
+        issues: result.issueCount,
+        ms: result.elapsedMs,
+      });
+    },
+  );
+  db.onWrite = (id, sql) => semanticSync.noteWrite(id, sql);
+
+  /** Gateway database resolution: name/id lookup + exposure + SQL-cap gates
+   *  (the same checks run_query applies, shared by the semantic routes). */
+  const resolveGatewayDb = (wanted: string): { id: string; name: string } | { error: string; status: number } => {
+    if (!wanted) return { error: "database is required", status: 400 };
+    const conns = db.list();
+    const target = conns.find((c) => c.id === wanted) ?? conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+    if (!target) return { error: `No connected database named "${wanted}".`, status: 404 };
+    if ((config.get().gatewayExposure ?? {})[target.id] === false) {
+      return { error: `"${target.name}" is connected, but its MCP exposure is turned OFF.`, status: 403 };
+    }
+    if ((config.get().gatewayCaps ?? {})[target.id]?.sql === false) {
+      return { error: `The SQL service is turned off for "${target.name}" on the Studio gateway.`, status: 403 };
+    }
+    return { id: target.id, name: target.name };
   };
   // Exa engine (opencode) — reads EXA_ENGINE_BIN / EXA_ENGINE_CONFIG_DIR from
   // the sidecar's env; degrades cleanly to "not installed" when absent.
@@ -353,6 +441,9 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         setTimeout(() => {
           kb.refresh(info.id, db).catch((e) => log.warn("kb crawl failed", { error: String(e) }));
         }, 50);
+        // Changes made OUTSIDE the agent (exapump, other SQL clients) since
+        // the last session get caught by a connect-time semantic pass.
+        semanticSync.noteConnect(info.id);
         return json(res, 200, { ok: true });
       }
 
@@ -402,7 +493,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "query") {
-        const body = await readBody<{ database?: string; sql?: string }>(req);
+        const body = await readBody<{ database?: string; sql?: string; verify?: boolean }>(req);
         const wanted = (body.database ?? "").trim();
         const sql = (body.sql ?? "").trim().replace(/;\s*$/, "");
         if (!wanted || !sql) return json(res, 400, { error: "database and sql are required" });
@@ -434,8 +525,226 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (sql.replace(/'(?:[^']|'')*'/g, "''").includes(";")) {
           return json(res, 403, { error: "One statement per call — remove the extra ';'." });
         }
-        const out = await db.query(target.id, sql);
+        const gatewayStarted = Date.now();
+        let out;
+        try {
+          out = await db.query(target.id, sql);
+        } catch (e) {
+          // Failed queries are gateway activity too — trace, then rethrow to
+          // the normal error response path.
+          traceGateway("run_query", gatewayStarted, false, { database: target.name });
+          throw e;
+        }
+        traceGateway("run_query", gatewayStarted, true, {
+          database: target.name,
+          rowCount: out.rowCount,
+          verified: body.verify === true,
+        });
+        // P1 verification (opt-in per query — the model sets verify:true on
+        // the statement whose result backs its final answer): reproduce the
+        // result on an INDEPENDENT session and stamp the response honestly.
+        if (body.verify === true) {
+          const run = { sql, columns: out.columns, rows: out.rows, rowCount: out.rowCount, truncated: out.truncated };
+          const plan = planVerification([run]);
+          if (!plan) {
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: { status: "unverified", detail: "Not verifiable (non-deterministic SQL)." },
+            });
+          }
+          const startedVerify = Date.now();
+          try {
+            // Self-limiting (5s): on timeout the throwaway session is CLOSED,
+            // so no duplicate query keeps running in the background.
+            const actual = await db.verifyQuery(target.id, plan.sql);
+            const outcome = compareResults(plan, { sql: plan.sql, ...actual });
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: {
+                status: outcome.status,
+                detail: outcome.detail,
+                expectedRows: run.rowCount,
+                actualRows: actual.rowCount,
+                elapsedMs: Date.now() - startedVerify,
+              },
+            });
+          } catch (e) {
+            return json(res, 200, {
+              database: target.name,
+              ...out,
+              verification: {
+                status: "unverified",
+                detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
+                elapsedMs: Date.now() - startedVerify,
+              },
+            });
+          }
+        }
         return json(res, 200, { database: target.name, ...out });
+      }
+      // ── Semantic layer on the gateway (the visible panel's surface) ──────
+      // GET /v1/gateway/semantic/models?database= → models, open validation
+      // issues, and datasets no model covers — the discovery snapshot.
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "semantic" && parts[3] === "models") {
+        const wanted = (url.searchParams.get("database") ?? "").trim();
+        const target = resolveGatewayDb(wanted);
+        if ("error" in target) return json(res, target.status, { error: target.error });
+        const started = Date.now();
+        try {
+          const overview = await semanticOverview((id, sql) => db.queryIsolated(id, sql), target.id);
+          traceGateway("semantic_models", started, true, { database: target.name, models: overview.models.length });
+          return json(res, 200, overview);
+        } catch (e) {
+          traceGateway("semantic_models", started, false, { database: target.name });
+          return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      // POST /v1/gateway/semantic {database, script, args} — run ONE
+      // read-only SEMANTIC_ADMIN script (audited allowlist: compile,
+      // describe, search, explain, suggest, validate …). Catalog MUTATIONS
+      // never pass here — they go through an approved plan's EXECUTE SCRIPT
+      // steps, keeping the gateway's write gate singular.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "semantic" && !parts[3]) {
+        const body = await readBody<{ database?: string; script?: string; args?: Record<string, unknown> }>(req);
+        const script = (body.script ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9_]+$/.test(script)) return json(res, 400, { error: "script must be a SEMANTIC_ADMIN script name" });
+        if (!SEMANTIC_READONLY_SCRIPTS.has(script)) {
+          return json(res, 403, {
+            error: `"${script}" changes the semantic catalog — run it as an EXECUTE SCRIPT step in an approved plan (propose_plan → approve_plan → execute_plan) instead.`,
+          });
+        }
+        const target = resolveGatewayDb((body.database ?? "").trim());
+        if ("error" in target) return json(res, target.status, { error: target.error });
+        const started = Date.now();
+        try {
+          const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
+          const out = await db.queryIsolated(
+            target.id,
+            `EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON(${lit(script)}, ${lit(JSON.stringify(body.args ?? {}))})`,
+          );
+          traceGateway("semantic_call", started, true, { database: target.name, script });
+          return json(res, 200, { columns: out.columns, rows: out.rows, rowCount: out.rowCount });
+        } catch (e) {
+          traceGateway("semantic_call", started, false, { database: target.name, script });
+          return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      // ── P3 traces: usage summary + recent activity ───────────────────────
+      if (req.method === "GET" && parts[1] === "traces" && parts[2] === "summary") {
+        const days = Math.min(30, Math.max(1, Number(url.searchParams.get("days")) || 7));
+        return json(res, 200, traces.summary(days));
+      }
+      if (req.method === "GET" && parts[1] === "traces" && parts[2] === "recent") {
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+        return json(res, 200, { spans: traces.recent(limit) });
+      }
+      // ── P2 plans: propose / update step / read current ──────────────────
+      // POST /v1/gateway/plan {goal, steps} → validated Plan (becomes current,
+      // pushed live to the panel). Validation + approval rules are pure
+      // (plan.ts, tested); this route is only transport.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && !parts[3]) {
+        const body = await readBody<{ goal?: string; steps?: PlanStepInput[] }>(req);
+        const out = buildPlan(body.goal ?? "", body.steps ?? []);
+        if ("error" in out) return json(res, 400, { error: out.error });
+        plans.save(out.plan);
+        pushPlan(out.plan);
+        return json(res, 200, {
+          plan: out.plan,
+          hint: out.plan.requiresApproval
+            ? "This plan contains write steps: present it to the user and WAIT for their explicit go-ahead, then call approve_plan. Do not start write steps before that."
+            : "Read-only plan — proceed, updating each step's status as you go.",
+        });
+      }
+      // POST /v1/gateway/plan/approve {planId}
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "approve") {
+        const body = await readBody<{ planId?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan." });
+        const approved: Plan = { ...plan, approved: true, updatedAt: Date.now() };
+        plans.save(approved);
+        pushPlan(approved);
+        return json(res, 200, { plan: approved });
+      }
+      // POST /v1/gateway/plan/step {planId?, stepId, status, note?}
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "step") {
+        const body = await readBody<{ planId?: string; stepId?: string; status?: StepStatus; note?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan — propose one first." });
+        if (!body.stepId || !body.status) return json(res, 400, { error: "stepId and status are required" });
+        const out = applyStepUpdate(plan, body.stepId, body.status, body.note);
+        if ("error" in out) return json(res, 400, { error: out.error });
+        plans.save(out.plan);
+        pushPlan(out.plan);
+        return json(res, 200, { plan: out.plan, progress: planProgress(out.plan) });
+      }
+      // GET /v1/gateway/plan/current
+      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "current") {
+        const plan = plans.current();
+        return json(res, 200, plan ? { plan, progress: planProgress(plan) } : { plan: null });
+      }
+      // POST /v1/gateway/plan/execute {planId?, database} — P5: run the
+      // approved plan's SQL steps as a DAG (parallel independent steps,
+      // retry/backoff, skip-on-failure, onFailure compensation). Every
+      // transition persists + pushes live, so the run survives a crash and
+      // resumes by calling this again. Approval is enforced in the DAG core.
+      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "plan" && parts[3] === "execute") {
+        const body = await readBody<{ planId?: string; database?: string }>(req);
+        const plan = body.planId ? plans.get(body.planId) : plans.current();
+        if (!plan) return json(res, 404, { error: "No such plan — propose one first." });
+        const wanted = (body.database ?? "").trim();
+        if (!wanted) return json(res, 400, { error: "database is required" });
+        const conns = db.list();
+        const target =
+          conns.find((c) => c.id === wanted) ??
+          conns.find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+        const exposure = config.get().gatewayExposure ?? {};
+        if (!target) return json(res, 404, { error: `No connected database named "${wanted}".` });
+        if (exposure[target.id] === false) {
+          return json(res, 403, { error: `"${target.name}" is connected, but its MCP exposure is turned OFF.` });
+        }
+        if ((config.get().gatewayCaps ?? {})[target.id]?.sql === false) {
+          return json(res, 403, { error: `The SQL service is turned off for "${target.name}" on the Studio gateway.` });
+        }
+        // The same write guardrail run_sql honors: an approved plan authorizes
+        // writes under policy "ask", but "deny" is absolute — no path around it.
+        if (config.settings().writePolicy === "deny") {
+          const writes = plan.steps.filter(
+            (s) => s.sql && (s.status === "pending" || s.status === "running" || s.status === "failed") && classifySql(s.sql) !== "read",
+          );
+          if (writes.length) {
+            return json(res, 403, {
+              error: `Write statements are disabled in this workspace's AI guardrails — the plan's write step(s) ${writes.map((s) => `"${s.id}"`).join(", ")} cannot run. Provide the SQL for the user to run manually instead.`,
+            });
+          }
+        }
+        const started = Date.now();
+        const out = await executePlan({
+          plan,
+          // Parallel steps must NOT share the pooled websocket (strictly
+          // request-response per session) — each runs on its own session.
+          // Script steps route through query (they return tables), so the
+          // semantic sync is notified here — a Lua script can run DDL (the
+          // in-DB offload path) and must not change the schema invisibly;
+          // classifySemanticImpact ignores everything non-mutating.
+          db: {
+            query: async (id, sql) => {
+              const out = await db.queryIsolated(id, sql);
+              semanticSync.noteWrite(id, sql);
+              return out;
+            },
+            execute: (id, sql) => db.executeIsolated(id, sql),
+          },
+          connectionId: target.id,
+          save: (p) => {
+            plans.save(p);
+            pushPlan(p);
+          },
+        });
+        if ("error" in out) return json(res, 400, { error: out.error });
+        traceGateway("execute_plan", started, out.ok, { database: target.name, done: out.done, failed: out.failed });
+        return json(res, 200, { ok: out.ok, plan: out.plan, progress: planProgress(out.plan), notes: out.notes });
       }
       // POST /v1/gateway/nl2sql {database, question} → {sql} — the text-to-SQL
       // service: generates SQL grounded in the database's REAL schema but

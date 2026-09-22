@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { loadAiStyle, styleDirective } from "@/features/assistant/exa/ai-style";
 import { agent, skills as skillsApi, type AgentProviderInfo, type EngineSessionInfo, type EngineStatus } from "@/lib/agent-client";
 import { useStudioActionBridge } from "@/features/assistant/useStudioActionBridge";
+import { PlanCard } from "@/features/assistant/PlanCard";
 import { ipc, isTauri } from "@/lib/ipc";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { BrandLoader } from "@/components/brand/BrandLoader";
@@ -278,14 +279,20 @@ export function ExaEnginePanel({
     window.addEventListener("exa:app-control-changed", onChanged);
     return () => window.removeEventListener("exa:app-control-changed", onChanged);
   }, [engineClient]);
-  useStudioActionBridge(Boolean(engineClient) && appControlOn);
+  // Always poll while the engine runs: CONTROL actions are gated server-side
+  // at enqueue time (app-control toggle), while informational pushes (P2 plan
+  // cards) must arrive regardless of that toggle.
+  useStudioActionBridge(Boolean(engineClient));
 
   // Install ALL skills into the agent by default (once): every bundled skill —
   // including the exasol-ecosystem catalog — becomes an active default skill,
   // so the agent starts with the full Exasol playbook. Idempotent via a flag.
   useEffect(() => {
     if (!engineClient) return;
-    if (localStorage.getItem("exa.skills.seededAll") === "1") return;
+    // v2: reseed once more so the scenario-router master skillset (federation,
+    // scheduling, dbt, ETL) becomes default-active on
+    // existing installs too. The merge below is a union — always safe to re-run.
+    if (localStorage.getItem("exa.skills.seededAll2") === "1") return;
     void (async () => {
       try {
         const all = await skillsApi.list();
@@ -294,7 +301,7 @@ export function ExaEnginePanel({
         const { settings } = await agent.getSettings();
         const merged = [...new Set([...settings.defaultSkills, ...names])];
         await agent.setSettings({ defaultSkills: merged });
-        localStorage.setItem("exa.skills.seededAll", "1");
+        localStorage.setItem("exa.skills.seededAll2", "1");
       } catch {
         /* best-effort — retries on the next mount until it succeeds */
       }
@@ -766,6 +773,8 @@ export function ExaEnginePanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
+      {/* P2: the agent's explicit plan, live above the thread. */}
+      {engineClient ? <PlanCard /> : null}
       {engineClient ? (
       <ExaErrorBoundary>
       <ExaThread

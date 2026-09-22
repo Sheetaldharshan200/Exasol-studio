@@ -1,16 +1,17 @@
-//! Component update watcher (cron-style): every few hours, compare the pinned
-//! component versions against the OFFICIAL GitHub releases and push an in-app
-//! notification when something newer exists. Watch only — nothing is ever
-//! auto-updated; the notification deep-links to Marketplace → Updates, where
-//! the official release installs directly (digest-verified, revertible to the
-//! verified baseline) — independent of Studio releases.
+//! Component update check at APP OPEN: once, shortly after launch, compare the
+//! installed component versions against the OFFICIAL GitHub releases and push
+//! an in-app notification when something newer exists. No background polling —
+//! updates are fetched only when the app opens and when the Updates/catalog
+//! tabs are clicked (user rule). Watch only — nothing is ever auto-updated;
+//! the notification deep-links to Marketplace → Updates, where the official
+//! release installs directly (digest-verified, revertible to the verified
+//! baseline) — independent of Studio releases.
 
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(45);
 
 fn latest_release_tag(repo: &str) -> Option<String> {
@@ -95,14 +96,11 @@ fn check_once(app: &AppHandle, already_notified: &mut HashSet<String>) {
     }
 }
 
-/// Spawn the watcher. Called once from app setup.
+/// Spawn the one-shot app-open check. Called once from app setup.
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let mut already_notified: HashSet<String> = HashSet::new();
         std::thread::sleep(FIRST_CHECK_AFTER);
-        loop {
-            check_once(&app, &mut already_notified);
-            std::thread::sleep(CHECK_EVERY);
-        }
+        check_once(&app, &mut already_notified);
     });
 }

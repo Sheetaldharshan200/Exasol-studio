@@ -1,5 +1,6 @@
 import { ipc } from "@/lib/ipc";
 import { NODE_ICON, scriptKind, type NodeKind } from "@/features/workbench/icons";
+import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
 
 /** Object identity for right-click actions (generate SQL, DDL, …). */
 export type NodeCtx = {
@@ -105,7 +106,7 @@ function schemasFolder(profileId: string): TreeNode {
 /**
  * Virtual Schemas — a distinct folder (a JDBC/document adapter over an external
  * source), separated from regular schemas so they're easy to find and manage.
- * The folder's context action opens the New Virtual Schema wizard; empty when
+ * The folder's context action opens the add-data-source flow; empty when
  * none exist (or when the engine has no virtual-schema support, e.g. the
  * lightweight local build).
  */
@@ -124,7 +125,9 @@ function virtualSchemasFolder(profileId: string): TreeNode {
           id: `schema:${schema.name}`,
           label: schema.name,
           kind: "virtual-schema" as const,
-          badge: "virtual",
+          // Name the source (PostgreSQL, S3, …) when the adapter script is one
+          // from the catalog; a hand-rolled adapter stays a plain "virtual".
+          badge: adapterForScript(schema.adapterScript)?.name ?? "virtual",
           expandable: true,
           ctx: { type: "virtual-schema" as const, name: schema.name },
           load: () => schemaChildren(profileId, schema.name),

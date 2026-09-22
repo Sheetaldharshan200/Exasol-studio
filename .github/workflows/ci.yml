@@ -44,6 +44,11 @@ jobs:
       - name: Agent-core tests
         run: pnpm run test:agent-core
 
+      # P4 deterministic eval tier: model-free regression suite over the
+      # recovery layer — a red case here means an agent behavior regressed.
+      - name: Agent evals (deterministic tier)
+        run: pnpm --filter @exasol-studio/agent-core evals
+
       - name: SQL parser tests
         run: pnpm run test:parser
 
@@ -77,7 +82,8 @@ jobs:
                 packages/agent-core/dist/mcp-gateway.cjs \
                 packages/agent-core/dist/exa-agent.cjs
           mkdir -p apps/desktop/src-tauri/resources/runtime \
-                   apps/desktop/src-tauri/resources/python-stack
+                   apps/desktop/src-tauri/resources/python-stack \
+                   apps/desktop/src-tauri/resources/bridges
 
       - name: cargo test
         run: cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml

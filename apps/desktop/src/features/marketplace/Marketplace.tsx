@@ -1,33 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
-  BarChart3,
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
-  Cloud,
-  Cpu,
-  Database,
   Download,
-  Package,
   Plus,
   ExternalLink,
-  FileCode2,
-  LayoutGrid,
-  List,
   DatabaseBackup,
   Loader2,
-  Plug,
   RefreshCcw,
-  Search,
   Server,
   ShieldCheck,
-  Store,
   Trash2,
   TriangleAlert,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   errorMessage,
@@ -41,13 +29,11 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { fuzzyRank } from "@/lib/fuzzy";
-import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
+import { Icon as BxIcon } from "@/components/ui/icon";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { BrandLoader } from "@/components/brand/BrandLoader";
-import { McpMark } from "@/components/brand/McpMark";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
@@ -58,8 +44,18 @@ import {
   resolveCatalog,
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
-import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
-import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
+import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
+import { pickAsset } from "@/features/marketplace/assets";
+import { versionSource } from "@/features/marketplace/versions";
+import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
+import { itemState, type ItemSources } from "@/features/marketplace/item-state";
+import { applyFilters, emptyFilters, sectionOf, type HubFilters, type SectionKey, type Sort } from "@/features/marketplace/hub/filters";
+import { HubHeader, type HubPage } from "@/features/marketplace/hub/HubHeader";
+import { HubHome, type Featured } from "@/features/marketplace/hub/HubHome";
+import { HubSearch } from "@/features/marketplace/hub/HubSearch";
+import { FilterDrawer } from "@/features/marketplace/hub/FilterDrawer";
+import { HubDetail } from "@/features/marketplace/hub/HubDetail";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -67,19 +63,6 @@ import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/fea
 // plain strings everywhere.
 export type CatalogItem = ResolvedCatalogItem;
 
-const KIND_ICON: Record<Kind, LucideIcon> = {
-  database: Database,
-  cli: Cpu,
-  driver: Plug,
-  server: Server,
-  extension: Boxes,
-  skills: FileCode2,
-  cloud: Cloud,
-  bi: BarChart3,
-};
-
-// Marketplace sections (ordered). Every catalog item maps to exactly one.
-type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
 // Left category rail — one entry per view.
 // Driver runtimes: marketplace item id → the driver id the connect dialog uses.
 // These install the SAME on-demand runtime, so "installed" here == usable there.
@@ -90,53 +73,6 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-odbc": "odbc",
 };
 
-// Horizontal tab bar: Kits first, then Catalog, then the status views (so
-// Updates stays visible), then a single "Categories" tab that expands into the
-// per-kind sections.
-const PRIMARY_NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "recommended", label: "Kits", icon: "package" },
-  { key: "all", label: "Catalog", icon: "extension" },
-  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
-  { key: "installing", label: "Installing", icon: "loader" },
-  { key: "installed", label: "Installed", icon: "check" },
-];
-const CATEGORY_NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "database", label: "Databases", icon: "database" },
-  { key: "load", label: "Data & tools", icon: "spanner" },
-  { key: "drivers", label: "Drivers", icon: "usb" },
-  { key: "extension", label: "Extensions", icon: "extension" },
-  { key: "ai", label: "AI & Agents", icon: "cognition" },
-  { key: "bi", label: "BI & Analytics", icon: "dashboard-grid" },
-];
-
-const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
-  { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
-  { key: "load", label: "Data loading & tools", hint: "Move data in and out" },
-  { key: "drivers", label: "Drivers", hint: "Connect your apps & scripts to Exasol" },
-  { key: "extension", label: "Extensions", hint: "Extend what Exasol can store & query" },
-  { key: "ai", label: "AI & Agents", hint: "MCP, agent skills, LLM workflows" },
-  { key: "bi", label: "BI & Analytics", hint: "Dashboards and visual analytics" },
-];
-function sectionOf(kind: Kind): SectionKey {
-  switch (kind) {
-    case "database":
-    case "cloud":
-      return "database";
-    case "cli":
-      return "load";
-    case "driver":
-      return "drivers";
-    case "extension":
-      return "extension";
-    case "server":
-    case "skills":
-      return "ai";
-    case "bi":
-      return "bi";
-  }
-}
-
-
 function openExternal(url: string) {
   if (isTauri()) {
     // OS opener via the backend — reliable regardless of JS plugin scoping.
@@ -144,25 +80,6 @@ function openExternal(url: string) {
   } else {
     window.open(url, "_blank");
   }
-}
-
-/** Pick the release asset that best matches the host platform. */
-function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset | null {
-  if (!assets.length) return null;
-  if (!env) return assets[0];
-  const osTokens =
-    env.os === "macos"
-      ? ["darwin", "macos", "apple", "osx"]
-      : env.os === "windows"
-        ? ["windows", "win", ".exe", ".msi"]
-        : ["linux"];
-  const archTokens = env.arch === "aarch64" ? ["arm64", "aarch64"] : ["x86_64", "amd64", "x64"];
-  const byOsArch = assets.find((a) => {
-    const n = a.name.toLowerCase();
-    return osTokens.some((t) => n.includes(t)) && archTokens.some((t) => n.includes(t));
-  });
-  const byOs = assets.find((a) => osTokens.some((t) => a.name.toLowerCase().includes(t)));
-  return byOsArch ?? byOs ?? assets[0];
 }
 
 
@@ -175,7 +92,11 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
   switch (item.install) {
     case "binary":
       return asset
-        ? ["Download the official release build for this platform", "Make it executable in Exasol Studio's managed folder", "Mark it as installed"]
+        ? [
+            "Download the official release build for this platform",
+            "Extract it and put CLI binaries on Studio's PATH (terminal + AI agent) — usable immediately",
+            "Mark it as installed",
+          ]
         : ["No prebuilt asset was found for this platform"];
     case "uv-tool":
       return [
@@ -186,7 +107,7 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       return [
         "Ensure the uv Python package manager (install it if missing)",
         "Create a managed Python environment",
-        `Install ${item.id === "pyexasol" ? "pyexasol" : "exasol-ai-lab"} into it`,
+        "Install the package (the chosen version, else the verified one) into it",
       ];
     case "source-build":
       return [
@@ -202,12 +123,20 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
       ];
     case "bundled":
       return ["Verify the pinned skills shipped inside Exasol Studio", "Make them available to the AI agent immediately"];
+    case "maven":
+      return [
+        "Resolve the latest exasol-jdbc version from Maven Central (live)",
+        "Download the driver jar into Studio's marketplace folder for your Java tools",
+      ];
+    case "package":
+      return [
+        "Resolve the chosen version from the official source (registry or Exasol downloads portal)",
+        "Download and extract it — usable immediately, no manual steps (the ODBC driver is wired straight into Studio's connections)",
+      ];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
-      return env && env.os === "macos"
-        ? ["Install the verified native Exasol Personal launcher", "Run `exasol install local` and save its generated credential in the Studio vault"]
-        : ["Detect a running Docker or Podman engine", "Pull the pinned official Exasol Nano image", "Create a persistent local container with a generated vault-backed SYS credential"];
+      return ["Install the verified native Exasol Personal launcher", "Run `exasol install local` and save its generated credential in the Studio vault"];
     case "personal-cloud":
       return [
         "Install the official Exasol launcher (if not already present)",
@@ -323,7 +252,9 @@ export function Marketplace() {
   useEffect(() => {
     const on = (e: Event) => {
       const nav = (e as CustomEvent<{ nav?: string }>).detail?.nav;
-      if (nav) setNav(nav);
+      // Legacy names from older deep links still land somewhere sensible.
+      const mapped: Record<string, HubPage> = { all: "search", recommended: "kits", updates: "updates", installed: "installed", installing: "installing", kits: "kits", "ai-clients": "ai-clients", home: "home" };
+      if (nav && mapped[nav]) goto(mapped[nav]);
     };
     window.addEventListener("studio:marketplace-nav", on);
     return () => window.removeEventListener("studio:marketplace-nav", on);
@@ -374,26 +305,15 @@ export function Marketplace() {
         for (const res of results) if (res.status === "fulfilled") map[res.value[0]] = res.value[1];
         setReleases(map);
       })
-      .finally(() => setLoadingReleases(false));
+      .finally(() => {
+        setLoadingReleases(false);
+        // "Checked" means the slowest source answered too, not that we asked.
+        setCheckedAt(Date.now());
+      });
   }, []);
 
   useEffect(() => {
     refresh();
-    // Keep an OPEN Marketplace in sync with the catalog source in the background
-    // (the catalog.json mirror updates on its own cadence); light local reads +
-    // one catalog fetch, so it never disrupts the user.
-    // IMPORTANT: the periodic sync uses ONLY the rate-limit-free catalog.json
-    // mirror (raw.githubusercontent) + local reads — NEVER the per-repo GitHub
-    // API (marketRelease / componentsUpstream), which is unauthenticated and
-    // capped at 60/hr. Re-firing those on a timer exhausts the quota and makes
-    // the Updates tab go blank. Live release fetches stay mount-only.
-    const iv = window.setInterval(() => {
-      ipc.marketCatalog().then(setCatalog).catch(() => undefined);
-      ipc.marketInstalled().then(setInstalled).catch(() => undefined);
-      ipc.listComponents().then(setComponents).catch(() => undefined);
-    }, 10 * 60 * 1000);
-    return () => window.clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   // Kick the release fetch once the page is ready (painted) — never before, so
@@ -403,6 +323,7 @@ export function Marketplace() {
   useEffect(() => {
     if (ready) refreshReleases();
   }, [ready, refreshReleases]);
+
 
   // A standalone install window finished → refresh installed/detected state.
   useEffect(() => {
@@ -458,22 +379,6 @@ export function Marketplace() {
     [releases, catalog],
   );
 
-  const updatesAvailable = useMemo(
-    () =>
-      CATALOG.filter((item) => {
-        if (CATALOG_TO_COMPONENT[item.id]) return false; // managed → Updates panel
-        const inst = installedMap[item.id];
-        const latest = catalog?.items?.[item.id]?.latest ?? null;
-        return isNewerVersion(latest, inst?.version);
-      }).length,
-    [installedMap, catalog],
-  );
-  // Managed-component updates (reported by IndependentComponents): null while
-  // it is still checking. The badge and the Updates empty state both fold this
-  // in, so an available engine/component update can never hide behind
-  // "everything is up to date".
-  const [managedUpdates, setManagedUpdates] = useState<number | null>(null);
-  const totalUpdates = updatesAvailable + (managedUpdates ?? 0);
 
   // ── Starter-pack queue ──────────────────────────────────────────────────
   // Read the pack chosen during setup once, then run it after releases load
@@ -530,8 +435,6 @@ export function Marketplace() {
           })();
           return;
         }
-        const asset = pickAsset(releases[item.id]?.assets ?? [], env);
-        const version = latestFor(item.id) ?? undefined;
         let un: UnlistenFn | undefined;
         let settled = false;
         const finish = (v: boolean) => {
@@ -540,43 +443,83 @@ export function Marketplace() {
           un?.();
           resolve(v);
         };
-        listen<{ id: string; ok: boolean }>("market:done", (e) => {
-          if (e.payload.id === item.id) finish(e.payload.ok);
-        })
-          .then((u) => {
-            un = u;
-            ipc
-              .marketInstallRun(
-                item.id,
-                version,
-                asset?.url,
-                asset?.name,
-                item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
-              )
-              .catch(() => finish(false));
-          })
-          .catch(() => finish(false));
+        void (async () => {
+          try {
+            // The card's version dropdown wins over "latest". A chosen tag on a
+            // GitHub-release item resolves THAT release's assets, so the
+            // download matches exactly the version the user asked for.
+            const chosen = verPickRef.current[item.id];
+            let release = releases[item.id] ?? null;
+            if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
+              release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
+            }
+            const asset = pickAsset(release?.assets ?? [], env);
+            const version = chosen ?? latestFor(item.id) ?? undefined;
+            un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
+              if (e.payload.id === item.id) finish(e.payload.ok);
+            });
+            await ipc.marketInstallRun(
+              item.id,
+              version,
+              asset?.url,
+              asset?.name,
+              item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
+              // Only the explicit dropdown pick may override a verified pip
+              // pin — the display version above never does.
+              chosen,
+            );
+          } catch {
+            finish(false);
+          }
+        })();
       }),
     [releases, env, latestFor],
   );
+
+  // Any-version installs: per-item chosen version + lazily fetched live lists
+  // (fetched the first time a card's version dropdown opens — never on a
+  // timer). undefined = not fetched, null = loading, [] = none found.
+  const [verPick, setVerPick] = useState<Record<string, string>>({});
+  const verPickRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    verPickRef.current = verPick;
+  }, [verPick]);
+  // undefined = not fetched, null = loading, "error" = fetch failed (rate
+  // limit / offline — NOT the same as "this project has no versions").
+  const [verLists, setVerLists] = useState<Record<string, string[] | null | "error" | undefined>>({});
+  const loadVersions = (item: CatalogItem) => {
+    const src = versionSource(item);
+    if (!src || (item.id in verLists && verLists[item.id] !== "error")) return;
+    setVerLists((m) => ({ ...m, [item.id]: null }));
+    ipc
+      .marketVersions(src.source, src.reference)
+      .then((v) => setVerLists((m) => ({ ...m, [item.id]: v })))
+      .catch(() => setVerLists((m) => ({ ...m, [item.id]: "error" })));
+  };
+
+  // Ids with an installer ACTUALLY running. A ref (not derived queue state) so
+  // two enqueues in the same tick — a double-click, a stale multi-select — can
+  // never start a second installer for the same id.
+  const activeInstallsRef = useRef<Set<string>>(new Set());
 
   // Queue items and install them all IN PARALLEL — one install never blocks
   // another, and each reports its own status independently.
   const enqueue = useCallback(
     (items: CatalogItem[]) => {
-      const fresh = items.filter((i) => i.install !== "reference");
+      const fresh = items.filter((i) => i.install !== "reference" && !activeInstallsRef.current.has(i.id));
       if (!fresh.length) return;
+      for (const item of fresh) activeInstallsRef.current.add(item.id);
       setQueue((q) => {
-        const seen = new Set(q.filter((x) => x.status === "installing" || x.status === "pending").map((x) => x.id));
-        const add = fresh
-          .filter((i) => !seen.has(i.id))
-          .map((i) => ({ id: i.id, name: i.name, status: "installing" as const }));
         // drop any prior finished entry for these ids, then add fresh
         const kept = q.filter((x) => !fresh.some((f) => f.id === x.id));
-        return [...kept, ...add];
+        return [...kept, ...fresh.map((i) => ({ id: i.id, name: i.name, status: "installing" as const }))];
       });
       for (const item of fresh) {
         void installOne(item).then((ok) => {
+          activeInstallsRef.current.delete(item.id);
+          // A finished install consumes its dropdown pick — a stale hidden
+          // pick must never redirect a later "Update to latest" click.
+          setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
           setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: ok ? "done" : "failed" } : x)));
           refreshInstalled();
         });
@@ -621,6 +564,42 @@ export function Marketplace() {
     enqueue(items);
   }
 
+  // Managed components (Personal, ExaPump, MCP Server, Exa Agent) never swap
+  // via a plain marketplace download — they go through the managed
+  // verify-or-refuse path (digest-verified official release; the DB engine is
+  // backup-first with automatic rollback; the AI engine restarts its sidecar).
+  async function switchManaged(item: CatalogItem, version?: string) {
+    const compId = CATALOG_TO_COMPONENT[item.id];
+    if (!compId) return;
+    setBusy((b) => ({ ...b, [item.id]: true }));
+    try {
+      await ipc.updateComponent(compId, version);
+      if (compId === "exa-agent") await ipc.agentRestart().catch(() => undefined);
+      setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", {
+          detail: {
+            kind: "info",
+            title: item.name,
+            body:
+              compId === "personal"
+                ? `Database engine switched to ${version ?? "the verified build"} (your data was backed up first).`
+                : `${item.name} updated${version ? ` to ${version}` : ""}.`,
+          },
+        }),
+      );
+    } catch (e) {
+      // e.g. "already on X; there's nothing newer to install" — honest refusal.
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", { detail: { kind: "warning", title: item.name, body: errorMessage(e) } }),
+      );
+    } finally {
+      setBusy((b) => ({ ...b, [item.id]: false }));
+      refreshInstalled();
+      ipc.listComponents().then(setComponents).catch(() => undefined);
+    }
+  }
+
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
     try {
@@ -631,67 +610,115 @@ export function Marketplace() {
     }
   }
 
-  const runtime = env?.docker ? "docker" : env?.podman ? "podman" : null;
 
   const [query, setQuery] = useState("");
-  const [nav, setNav] = useState<string>("recommended");
+  const [nav, setNavState] = useState<HubPage>("home");
+  // Tab switches render a LOT of cards at once. A transition lets the clicked
+  // tab highlight paint immediately and time-slices the heavy grid render, so
+  // Kits → Catalog never feels stuck; navPending dims the content meanwhile.
+  const [navPending, startNavTransition] = useTransition();
+  const setNav = useCallback((key: HubPage) => startNavTransition(() => setNavState(key)), []);
+  // The page one level below the nav: an item's own page.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const page: HubPage = detailId ? "detail" : nav;
+  const goto = useCallback(
+    (next: HubPage) => {
+      setDetailId(null);
+      setNav(next === "detail" ? "home" : next);
+    },
+    [setNav],
+  );
+  const openDetail = useCallback((id: string) => setDetailId(id), []);
+  // Search-page state: the rail's filters, the sort, the drawer.
+  const [filters, setFilters] = useState<HubFilters>(emptyFilters);
+  const [sort, setSort] = useState<Sort>("suggested");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // READMEs for item pages, by repo (undefined = loading, null = none).
+  const [readmes, setReadmes] = useState<Record<string, string | null>>({});
+  // When every surface was last re-synced together.
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  // An item page shows the repo's README — fetched once per repo (Rust caches
+  // it on disk), never for repo-less items.
+  useEffect(() => {
+    const item = detailId ? CATALOG.find((c) => c.id === detailId) : undefined;
+    const repo = item?.repo;
+    if (!repo || repo in readmes) return;
+    ipc
+      .marketDoc(repo)
+      .then((md) => setReadmes((m) => ({ ...m, [repo]: md ?? null })))
+      .catch(() => setReadmes((m) => ({ ...m, [repo]: null })));
+  }, [detailId, CATALOG, readmes]);
+  // A light fade on every switch WITHOUT remounting the subtree (a key= remount
+  // re-created every card and made switching slower, not smoother).
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    contentRef.current?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
+  }, [nav]);
+  // Fetch-on-demand ONLY (user rule): update state re-syncs when the app opens
+  // (mount) and when a tab is clicked — never on a background timer. Uses the
+  // rate-limit-free catalog.json mirror + local reads; componentsUpstream (the
+  // unauthenticated 60/hr GitHub API, now with a mirror fallback) re-fires only
+  // for the Updates tab, where its answer is what the user came to see.
+  useEffect(() => {
+    ipc.marketCatalog().then(setCatalog).catch(() => undefined);
+    ipc.marketInstalled().then(setInstalled).catch(() => undefined);
+    ipc.listComponents().then(setComponents).catch(() => undefined);
+    if (nav === "updates") {
+      ipc
+        .componentsUpstream()
+        .then((list) => setComponentUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
+        .catch(() => undefined);
+    }
+  }, [nav]);
   // Kit "template" modal (Image-45 style): shows a kit's tools + install action.
   const [kitModal, setKitModal] = useState<Pack | null>(null);
-  const [layout, setLayout] = useState<"grid" | "list">("grid");
-  const isList = layout === "list";
-  const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
-
-  // Query-filtered catalog (the category rail narrows further) — real fuzzy
-  // relevance (word boundaries, camelCase, consecutive runs), same scorer as
-  // the global ⌘K search, so "sqla" finds sqlalchemy-exasol and "mcp srv"
-  // finds the MCP server.
-  const visible = useMemo(() => {
-    const q = query.trim();
-    if (!q) return CATALOG;
-    return fuzzyRank(q, CATALOG, (item) => `${item.name} ${item.id} ${item.repo ?? ""} ${item.kind} ${item.description}`).map(
-      (r) => r.item,
-    );
-  }, [query, CATALOG]);
-
   // Global search (⌘K) deep-link: land on the marketplace with the query set.
   useEffect(() => {
     const onSearch = (e: Event) => {
       const q = (e as CustomEvent<{ query?: string }>).detail?.query ?? "";
-      setNav("all");
+      goto("search");
       setQuery(q);
     };
     window.addEventListener("studio:marketplace-search", onSearch);
     return () => window.removeEventListener("studio:marketplace-search", onSearch);
-  }, []);
+  }, [goto]);
 
   // Driver runtime state lives above navItems — the memo below reads it.
   const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});
   const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
 
-  // Items to show for the selected category (flat lists; "all" is grouped below).
-  const navItems = useMemo(() => {
-    if (nav === "installed") return visible.filter((i) => installedMap[i.id] || detected[i.id]);
-    if (nav === "installing")
-      // Only ACTIVE installs — finished/failed ones leave the list. Driver
-      // runtimes install through their own path, so include busy ones too.
-      return visible.filter(
-        (i) =>
-          queue.some((x) => x.id === i.id && (x.status === "pending" || x.status === "installing")) ||
-          (DRIVER_RUNTIME[i.id] ? driverBusy[DRIVER_RUNTIME[i.id]] : false),
-      );
-    if (nav === "updates")
-      return visible.filter((i) => {
-        if (CATALOG_TO_COMPONENT[i.id]) return false; // managed → Managed Components panel
-        const inst = installedMap[i.id];
-        const l = catalog?.items?.[i.id]?.latest ?? null;
-        return isNewerVersion(l, inst?.version);
-      });
-    if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
-      return visible.filter((i) => sectionOf(i.kind) === nav);
-    return visible;
-  }, [nav, visible, installedMap, detected, queue, catalog, driverBusy]);
+  // ONE decision per item — the card, the item page, the Updates page and the
+  // header badge all read it, so they cannot disagree.
+  const stateOf = useCallback(
+    (item: CatalogItem) => {
+      const did = DRIVER_RUNTIME[item.id];
+      const sources: ItemSources = {
+        installed: installedMap,
+        componentUpstream,
+        detected,
+        installing: installingIds,
+        latestFor,
+        releaseAssets: (id) => releases[id]?.assets ?? [],
+        env,
+        driverRuntime: did ? { id: did, ready: Boolean(driverReady[did]), busy: Boolean(driverBusy[did]) } : undefined,
+      };
+      return itemState(item, sources);
+    },
+    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy],
+  );
+  const updateItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "update"), [CATALOG, stateOf]);
+  // The header count IS the Updates page's length — one decision, one number.
+  const totalUpdates = updateItems.length;
+  const installedItems = useMemo(
+    () => CATALOG.filter((i) => ["installed", "update", "running", "ready", "onSystem"].includes(stateOf(i).kind)),
+    [CATALOG, stateOf],
+  );
+  const installingItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "installing"), [CATALOG, stateOf]);
+  const installedCount = installedItems.length;
+  // The search page and the list pages share one pipeline: query → rail → sort.
+  const listBase = page === "updates" ? updateItems : page === "installed" ? installedItems : page === "installing" ? installingItems : CATALOG;
+  const results = useMemo(() => applyFilters(listBase, stateOf, query, filters, sort), [listBase, stateOf, query, filters, sort]);
 
-  const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
   const refreshDrivers = useCallback(() => {
     for (const did of new Set(Object.values(DRIVER_RUNTIME))) {
@@ -708,6 +735,9 @@ export function Marketplace() {
       await ipc.driverSetup(did);
       const s = await ipc.driverStatus(did);
       setDriverReady((r) => ({ ...r, [did]: s.ready }));
+      // Connection forms filter their driver dropdown by readiness — tell
+      // them a driver just became available.
+      window.dispatchEvent(new CustomEvent("studio:drivers-changed"));
     } catch {
       /* surfaced when they try to use it */
     } finally {
@@ -715,132 +745,312 @@ export function Marketplace() {
     }
   }
 
-  const renderCard = (item: CatalogItem, compact = false) => {
-    // Item-specific glyphs win over the kind fallback: MCP surfaces show the
-    // official MCP mark everywhere (rail, tabs, cards), never a generic server.
-    const Icon = item.id === "mcp-server" ? McpMark : KIND_ICON[item.kind];
-    const inst = installedMap[item.id];
+  // ONE seamless action for the runs-inside-Studio drivers: download the
+  // picked version (when one is chosen), wire it into Studio where supported
+  // (the JDBC jar becomes the SQL editor's driver), and set up the runtime —
+  // never separate Download / Install / Use buttons. Busy for the WHOLE flow
+  // and deduped via activeInstallsRef, so a double-click during the download
+  // phase (before installDriverRuntime's own busy flag) can't start twice.
+  async function installDriverAndUse(item: CatalogItem, did: string) {
+    // Synchronous re-entry guard for the WHOLE flow (React state commits too
+    // late to stop a fast double-click, even on the runtime-only path).
+    const flowKey = `driver-flow:${did}`;
+    if (activeInstallsRef.current.has(flowKey) || activeInstallsRef.current.has(item.id)) return;
+    activeInstallsRef.current.add(flowKey);
+    setDriverBusy((b) => ({ ...b, [did]: true }));
+    try {
+      const chosen = verPickRef.current[item.id];
+      if (chosen) {
+        activeInstallsRef.current.add(item.id);
+        let ok = false;
+        try {
+          ok = await installOne(item);
+        } finally {
+          activeInstallsRef.current.delete(item.id);
+        }
+        refreshInstalled();
+        if (!ok) {
+          // The chosen version did NOT arrive — keep the pick and stop here,
+          // never run the runtime setup as if "Install {v} & use here" worked.
+          window.dispatchEvent(
+            new CustomEvent("studio:notice", {
+              detail: { kind: "warning", title: `${item.name} ${chosen}`, body: "The download failed — nothing was changed. Check the install log and try again." },
+            }),
+          );
+          return;
+        }
+        setVerPick(({ [item.id]: _consumed, ...rest }) => rest);
+        if (item.id === "driver-jdbc") {
+          await ipc.marketUseDownloaded(item.id, chosen).catch((e) =>
+            window.dispatchEvent(
+              new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Could not switch the JDBC jar", body: errorMessage(e) } }),
+            ),
+          );
+        }
+      }
+      await installDriverRuntime(did);
+    } finally {
+      activeInstallsRef.current.delete(flowKey);
+      setDriverBusy((b) => ({ ...b, [did]: false }));
+    }
+  }
+
+  // Multi-select install: checked cards batch into ONE "Install selected"
+  // action (the existing parallel queue) instead of one click per card.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // One eligibility check shared by the card checkbox AND the batch action, so
+  // a selection made before state moved on (item got installed, release info
+  // arrived and revealed no host build) is re-validated at install time.
+  const canBatchInstall = (item: CatalogItem): boolean => {
+    if (item.install === "reference") return false;
+    // Runs-inside-Studio drivers join the batch too — their batch action is
+    // the runtime setup (installDriverRuntime), skipped once ready.
+    const did = DRIVER_RUNTIME[item.id];
+    if (did) return !driverReady[did] && !driverBusy[did];
+    if (installedMap[item.id] || detected[item.id]) return false;
+    if (installingIds.has(item.id)) return false;
+    const assets = releases[item.id]?.assets ?? [];
+    return !(item.install === "binary" && assets.length > 0 && pickAsset(assets, env) === null);
+  };
+  // A card is also batch-selectable when it has an UPDATE available — installs
+  // and updates are the same gesture ("everything is same"): managed
+  // components update via update_component, addons via their install path.
+  const batchUpdateTarget = (item: CatalogItem): string | null => {
+    const compId = CATALOG_TO_COMPONENT[item.id];
+    if (compId) {
+      const comp = components.find((c) => c.id === compId);
+      const tag = componentUpstream[compId];
+      return comp?.installed && tag && isNewerVersion(tag, comp.installed) ? tag : null;
+    }
+    const instVersion = installedMap[item.id]?.version;
+    const l = latestFor(item.id);
+    return instVersion && l && isNewerVersion(l, instVersion) ? l : null;
+  };
+  async function installSelected(ids: Set<string> = selected) {
+    const chosen = CATALOG.filter((c) => ids.has(c.id));
+    setSelected(new Set());
+    enqueue(
+      chosen.filter(
+        (c) => !CATALOG_TO_COMPONENT[c.id] && !DRIVER_RUNTIME[c.id] && (canBatchInstall(c) || batchUpdateTarget(c) !== null),
+      ),
+    );
+    // Runs-inside-Studio drivers batch through their runtime setup (parallel).
+    for (const c of chosen) {
+      const did = DRIVER_RUNTIME[c.id];
+      if (did && canBatchInstall(c)) void installDriverAndUse(c, did);
+    }
+    // Managed updates run sequentially — the DB engine takes a maintenance lock.
+    for (const c of chosen) {
+      const target = CATALOG_TO_COMPONENT[c.id] ? batchUpdateTarget(c) : null;
+      if (target) await switchManaged(c, target);
+    }
+  }
+
+  // The install / update / manage controls for one item — shown on its page.
+  // Every state decision the buttons need is derived here, from the same
+  // sources `stateOf` reads.
+  const renderActions = (item: CatalogItem) => {
+    const managedCompId = CATALOG_TO_COMPONENT[item.id];
+    const managedComp = managedCompId ? components.find((c) => c.id === managedCompId) : undefined;
+    // Managed components (Personal, ExaPump, MCP, Exa Agent) are installed the
+    // moment list_components says so — the market manifest is only for addons.
+    // Everything renders through the SAME card states; no separate panel.
+    const inst =
+      installedMap[item.id] ??
+      (managedComp?.installed
+        ? { id: item.id, version: managedComp.installed, path: "", filename: "" }
+        : undefined);
     const onSystem = detected[item.id] && !inst;
     const isBusy = busy[item.id];
     const isInstalling = installingIds.has(item.id);
     const latest = latestFor(item.id);
     // Non-managed catalog items update in place from the card.
     const newer = !CATALOG_TO_COMPONENT[item.id] && isNewerVersion(latest, inst?.version);
-    // Managed components update via the Updates tab (verify-or-refuse), but the
-    // card must still SHOW an available update — using the SAME live upstream the
-    // Updates tab uses — instead of falsely reading "up to date".
-    const managedCompId = CATALOG_TO_COMPONENT[item.id];
+    // Managed components update IN PLACE from the card too (verify-or-refuse
+    // via update_component) — the available tag comes from the same live
+    // upstream the badge counts.
     const managedTag = managedCompId ? componentUpstream[managedCompId] : undefined;
     const managedUpdate = Boolean(inst && managedTag && isNewerVersion(managedTag, inst?.version));
-    // The version shown on the card: for managed components it's the AUTHORITATIVE
-    // installed version (list_components), never the catalog's "latest" (which can
-    // lag or be an upstream tag) — so the card matches the Managed Components panel.
-    const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : latest;
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
-    const comingSoon = !did && item.install === "reference";
 
-    // The DB is a running service, not just a file — show live state.
-    const dbRunning = item.id === "exasol-personal" && detected["exasol-personal:running"] === true;
+    // A binary release that ships builds — but none for THIS host (e.g. the
+    // linux-only exa-postgres-interface on macOS) — gets an honest state
+    // instead of an Install button that can only fail.
+    const noHostBuild =
+      item.install === "binary" &&
+      !inst &&
+      !onSystem &&
+      !did &&
+      (releases[item.id]?.assets?.length ?? 0) > 0 &&
+      pickAsset(releases[item.id]?.assets ?? [], env) === null;
 
-    const badges = (
-      <>
-        {item.labs ? (
-          <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">labs</span>
-        ) : (
-          <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
-        )}
-        {item.id === "exasol-personal" && (inst || onSystem) ? (
-          <span className={cn(
-            "flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-medium uppercase",
-            dbRunning ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
-          )}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", dbRunning ? "bg-primary" : "bg-muted-foreground/60")} />
-            {dbRunning ? "running" : "stopped"}
-          </span>
-        ) : null}
-        {inst || (did && runtimeReady) ? (
-          <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-            <Check className="h-2.5 w-2.5" />
-            {/*
-              Semantic Views is SQL objects inside ONE database, so a bare
-              "installed" is ambiguous the moment a second database exists. The
-              install note records where it landed; surface that here.
-            */}
-            {item.id === "semantic-views" && inst?.note?.includes(" in ")
-              ? `installed in ${inst.note.split(" in ").pop()?.replace(/\.$/, "")}`
-              : "installed"}
-          </span>
-        ) : onSystem ? (
-          <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
-            <Check className="h-2.5 w-2.5" /> detected
-          </span>
-        ) : comingSoon ? (
-          <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium uppercase text-muted-foreground">coming soon</span>
-        ) : null}
-      </>
-    );
-
+    // Live any-version picker: list fetched on first open (GitHub tags / PyPI
+    // versions / Maven Central), newest first. Shared by the
+    // plain Install branch AND the runs-inside-Studio driver branch, so every
+    // installable item lists its versions.
+    // Direct driver flows bypass the install queue, so the menu must also
+    // freeze on driverBusy — changing the pick mid-install would desync the
+    // label from what actually ran.
+    const versionMenuBusy = isInstalling || (did ? driverBusy[did] : false);
+    const versionMenu = versionSource(item) ? (
+      <DropdownMenu onOpenChange={(o) => o && loadVersions(item)}>
+        <DropdownMenuTrigger asChild>
+          <button
+            disabled={versionMenuBusy}
+            aria-label={`${item.name} version to install`}
+            className="flex h-7 max-w-[150px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+          >
+            <span className="truncate">{verPick[item.id] ?? "latest"}</span>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+          <DropdownMenuItem
+            onClick={() => setVerPick(({ [item.id]: _drop, ...rest }) => rest)}
+            className="font-mono text-[12px]"
+          >
+            latest
+            {!verPick[item.id] ? <Check className="ml-auto h-3 w-3" /> : null}
+          </DropdownMenuItem>
+          {verLists[item.id] === null ? (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+            </div>
+          ) : verLists[item.id] === "error" ? (
+            <div className="max-w-56 px-2 py-1.5 text-[11px] text-muted-foreground">
+              Couldn't load the version list (offline or rate-limited) — reopen to retry.
+            </div>
+          ) : (
+            (verLists[item.id] as string[] | undefined ?? []).map((v) => (
+              <DropdownMenuItem key={v} onClick={() => setVerPick((m) => ({ ...m, [item.id]: v }))} className="font-mono text-[12px]">
+                {v}
+                {verPick[item.id] === v ? <Check className="ml-auto h-3 w-3" /> : null}
+              </DropdownMenuItem>
+            ))
+          )}
+          {Array.isArray(verLists[item.id]) && (verLists[item.id] as string[]).length === 0 ? (
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No published versions found.</div>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null;
     const actions = (
       <div className="flex flex-wrap items-center gap-2">
         {did ? (
-          runtimeReady ? (
-            <>
-              {newer ? (
-                <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
-                  <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
-                </button>
-              ) : (
-                <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                  <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
-                </span>
-              )}
-              <button
-                onClick={() => void installDriverRuntime(did)}
-                disabled={driverBusy[did]}
-                title="Reinstall"
-                aria-label={`Reinstall ${item.name}`}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
-              >
-                {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-              </button>
-            </>
-          ) : (
-            <button onClick={() => void installDriverRuntime(did)} disabled={driverBusy[did]} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
-              {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
-              {driverBusy[did] ? "Installing…" : "Install & use here"}
-            </button>
-          )
-        ) : comingSoon ? (
+          // ONE button end to end: picking a version makes the same button
+          // download that version, wire it in where supported (the JDBC jar
+          // becomes the SQL editor's driver) and set up the runtime.
           <>
-            <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">Coming soon to Exasol Studio</span>
-            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground">
-              Docs <ExternalLink className="h-3.5 w-3.5" />
-            </button>
+            {versionMenu}
+            {verPick[item.id] || !runtimeReady ? (
+              <button
+                onClick={() => void installDriverAndUse(item, did)}
+                disabled={driverBusy[did] || isInstalling}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+              >
+                {driverBusy[did] || isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+                {driverBusy[did] || isInstalling
+                  ? "Installing…"
+                  : verPick[item.id]
+                    ? `Install ${verPick[item.id]}`
+                    : "Install"}
+              </button>
+            ) : (
+              <>
+                {newer ? (
+                  <button onClick={() => startInstall(item)} disabled={isBusy} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
+                    <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
+                  </button>
+                ) : (
+                  <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
+                    <Check className="h-3.5 w-3.5 text-primary" /> Ready to use
+                  </span>
+                )}
+                <button
+                  onClick={() => void installDriverRuntime(did)}
+                  disabled={driverBusy[did]}
+                  title="Reinstall"
+                  aria-label={`Reinstall ${item.name}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  {driverBusy[did] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+                </button>
+              </>
+            )}
           </>
         ) : inst ? (
           <>
-            {newer ? (
+            {versionMenu}
+            {verPick[item.id] && verPick[item.id] !== inst.version ? (
+              // Switching versions is a first-class action, not a reinstall
+              // trick: pick any version and this replaces the installed one.
+              // The DB engine routes through the managed backup-first path.
+              <button
+                onClick={() => (managedCompId ? void switchManaged(item, verPick[item.id]) : startInstall(item))}
+                disabled={isInstalling || isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                {isInstalling || isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isInstalling || isBusy ? "Switching…" : `Switch to ${verPick[item.id]}`}
+              </button>
+            ) : newer ? (
               <button onClick={() => startInstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50">
                 <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {latest}
               </button>
             ) : managedUpdate ? (
-              // Managed component: the actual verify-or-refuse update lives in the
-              // Updates tab — send the user there, but SHOW the update here.
-              <button onClick={() => setNav("updates")} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50" title={`Update to ${managedTag} in the Updates tab`}>
-                <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" /> Update to {managedTag}
+              // Managed component: the verify-or-refuse update runs RIGHT HERE
+              // (digest-verified; DB engine backs up first) — no separate panel.
+              <button
+                onClick={() => void switchManaged(item, managedTag)}
+                disabled={isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+                title={`Install the official ${managedTag} release (digest-verified)`}
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isBusy ? "Updating…" : `Update to ${managedTag}`}
               </button>
             ) : (
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground">
-                <Check className="h-3.5 w-3.5 text-primary" /> Up to date
+                <Check className="h-3.5 w-3.5 text-primary" />
+                {/* Claim "up to date" only when a known latest CONFIRMS it —
+                    otherwise state what is installed, honestly. */}
+                {latest
+                  ? "Up to date"
+                  : inst.version && inst.version !== "latest"
+                    ? `Installed · ${inst.version}`
+                    : "Installed"}
               </span>
             )}
-            <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
-              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
-            </button>
+            {/* Managed components have their own lifecycle (the DB's Manage
+                panel, the engine's baseline) — a marketplace-folder uninstall
+                would be meaningless there. */}
+            {!managedCompId ? (
+              <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
+              </button>
+            ) : null}
           </>
         ) : onSystem ? (
           <>
+            {versionMenu}
+            {managedCompId && verPick[item.id] ? (
+              <button
+                onClick={() => void switchManaged(item, verPick[item.id])}
+                disabled={isBusy}
+                className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="rotate-ccw-dot" className="h-3.5 w-3.5" />}
+                {isBusy ? "Switching…" : `Switch to ${verPick[item.id]}`}
+              </button>
+            ) : null}
             <span className="flex h-7 items-center gap-1.5 rounded-md border border-syntax-function/40 bg-syntax-function/10 px-2.5 text-[12px] text-syntax-function">
               <Check className="h-3.5 w-3.5" /> Already on your system
             </span>
@@ -859,6 +1069,18 @@ export function Marketplace() {
           <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
             Get <ExternalLink className="h-3.5 w-3.5" />
           </button>
+        ) : noHostBuild ? (
+          <>
+            <span
+              title="The upstream release ships platform-specific builds, but none for this machine."
+              className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground"
+            >
+              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> No {env?.os === "macos" ? "macOS" : (env?.os ?? "this-platform")} build yet
+            </span>
+            <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
+              Get <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          </>
         ) : (
           <>
             {item.id === "semantic-views" && profiles.length > 0 ? (
@@ -893,17 +1115,20 @@ export function Marketplace() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
+            {versionMenu}
             <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {isInstalling
                 ? "Installing…"
                 : item.id === "semantic-views"
                   ? `Install in ${semanticTarget ? (profiles.find((p) => p.id === semanticTarget)?.name ?? "database") : "local database"}`
-                  : "Install"}
+                  : verPick[item.id]
+                    ? `Install ${verPick[item.id]}`
+                    : "Install"}
             </button>
           </>
         )}
-        {item.homepage && !comingSoon && item.install !== "reference" ? (
+        {item.homepage && item.install !== "reference" ? (
           <button
             onClick={() => openExternal(item.homepage)}
             title={`Docs — ${item.homepage}`}
@@ -914,63 +1139,70 @@ export function Marketplace() {
           </button>
         ) : null}
         {item.install === "personal-local" && (inst || onSystem) ? (
-          <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
-            <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+          <>
+            <button onClick={() => setManageLocal(true)} className="flex h-7 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-[12px] font-medium text-primary hover:bg-primary/20">
+              <Server className="h-3.5 w-3.5" /> Manage (start/stop)
+            </button>
+            {/* The DB carries data — back up any time, right from the card
+                (this used to live in the removed Components panel). */}
+            <button
+              onClick={() =>
+                void (async () => {
+                  setBusy((b) => ({ ...b, [item.id]: true }));
+                  try {
+                    await ipc.backupLocalDatabase();
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "info", title: "Exasol Personal", body: "Local database backed up (see personal-local/backups)." } }),
+                    );
+                  } catch (e) {
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Backup failed", body: errorMessage(e) } }),
+                    );
+                  } finally {
+                    setBusy((b) => ({ ...b, [item.id]: false }));
+                  }
+                })()
+              }
+              disabled={isBusy}
+              title="Stop the database, copy config + data to a timestamped backup, then restart"
+              className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
+            </button>
+          </>
+        ) : null}
+        {item.id === "driver-jdbc" ? (
+          // Pin your OWN jar — the same override the Drivers tab offers, so
+          // the marketplace card is the one-stop surface for JDBC.
+          <button
+            onClick={() =>
+              void (async () => {
+                try {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const path = await open({ multiple: false, filters: [{ name: "Java archive", extensions: ["jar"] }], title: "Choose the driver JAR" });
+                  if (typeof path === "string" && path) {
+                    await ipc.driverOverrideSet("jdbc", path);
+                    window.dispatchEvent(new CustomEvent("studio:drivers-changed"));
+                    window.dispatchEvent(
+                      new CustomEvent("studio:notice", { detail: { kind: "info", title: "JDBC driver", body: "Studio's SQL editor now uses your custom JAR." } }),
+                    );
+                  }
+                } catch (e) {
+                  window.dispatchEvent(
+                    new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Custom JAR", body: errorMessage(e) } }),
+                  );
+                }
+              })()
+            }
+            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Custom JAR
           </button>
         ) : null}
       </div>
     );
 
-    // Compact list row.
-    if (compact) {
-      return (
-        <div key={item.id} className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3 py-2">
-          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="break-words text-[12.5px] font-semibold text-foreground">{item.name}</span>
-              {badges}
-            </div>
-            <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
-          </div>
-          <div className="shrink-0">{actions}</div>
-        </div>
-      );
-    }
-
-    // Full grid card.
-    return (
-      <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
-        <div className="flex items-start gap-2.5">
-          <Icon className="h-5 w-5 shrink-0 text-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="break-words leading-snug text-[13px] font-semibold text-foreground">{item.name}</span>
-              {badges}
-            </div>
-            {did ? (
-              <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-primary"><Check className="h-3 w-3" /> Runs inside Exasol Studio</p>
-            ) : comingSoon ? (
-              <p className="mt-0.5 text-[10px] text-muted-foreground">Supported by Exasol — not yet runnable in Exasol Studio</p>
-            ) : null}
-            <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
-            <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-              {displayVersion ? <span>{displayVersion}</span> : null}
-              <button onClick={() => openExternal(item.homepage)} className="flex items-center gap-0.5 hover:text-foreground">
-                GitHub <ExternalLink className="h-2.5 w-2.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="mt-3">{actions}</div>
-        {item.install === "personal-local" && env && env.os !== "macos" && !env.docker && !env.podman ? (
-          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] text-muted-foreground">
-            <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
-            Start or install Docker/Podman to run Exasol Nano on {env.os}.
-          </p>
-        ) : null}
-      </div>
-    );
+    return actions;
   };
 
   // First open: show the brand loader immediately instead of a blank/janky
@@ -983,178 +1215,129 @@ export function Marketplace() {
     );
   }
 
+  const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
+  const selection = {
+    selectable: (item: CatalogItem) => canBatchInstall(item) || batchUpdateTarget(item) !== null,
+    selected,
+    toggle: toggleSelected,
+  };
+  const crumb =
+    page === "detail" && detailItem ? (detailItem.repo ?? detailItem.name)
+    : page === "search" ? "Search"
+    : page === "updates" ? "Updates"
+    : page === "installed" ? "Installed"
+    : page === "installing" ? "Installing"
+    : page === "kits" ? "Kits"
+    : page === "ai-clients" ? "AI clients"
+    : null;
+  const featured: Featured[] = [
+    {
+      eyebrow: "Exasol Personal 2.3",
+      title: "Run Exasol on your laptop",
+      body: "One local database Studio manages for you — start, stop, back up — and, since 2.3, virtual schemas.",
+      art: "database",
+      onClick: () => openDetail("exasol-personal"),
+    },
+    {
+      eyebrow: "Analytics hub",
+      title: "Attach any database as a virtual schema",
+      body: "PostgreSQL, MySQL, Snowflake, S3 and 19 more adapters. Query them from one Exasol, live, without copying.",
+      art: "federation",
+      onClick: () => window.dispatchEvent(new CustomEvent("studio:open-add-source")),
+    },
+    {
+      eyebrow: "AI clients",
+      title: "Connect Claude, Codex and Cursor to Exasol",
+      body: "The bundled MCP server gives every AI client read-only access to your data, set up in one click.",
+      art: "mcp",
+      onClick: () => goto("ai-clients"),
+    },
+  ];
+  const openSection = (key: SectionKey) => {
+    const next = emptyFilters();
+    next.sections.add(key);
+    setFilters(next);
+    goto("search");
+  };
+  const refreshAll = () => {
+    refresh();
+    refreshReleases();
+    refreshDrivers();
+  };
+  const emptyText =
+    query ? `No items match “${query}”.`
+    : page === "installing" ? "Nothing installing right now — active installs (including drivers) show up here live."
+    : page === "updates" ? "Everything is up to date."
+    : page === "installed" ? "Nothing installed yet — everything you add shows up here."
+    : "Nothing here yet.";
+
   return (
     <div className="h-full overflow-auto bg-editor">
-      <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
-        <header className="mb-5 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
-            <BxIcon name="extension" className="h-4 w-4" />
-          </div>
-          <div className="flex-1">
-            <h2 className="font-heading text-[15px] font-bold text-foreground">Marketplace</h2>
-            <p className="text-xs text-muted-foreground">
-              Install Exasol tools, drivers and extensions — one click, with a live install log.
-            </p>
-          </div>
-          {totalUpdates > 0 ? (
-            <span className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-              </span>
-              {totalUpdates} update{totalUpdates > 1 ? "s" : ""} available
-            </span>
-          ) : null}
-          {env ? (
-            <div className="flex items-center gap-1.5">
-              <span className="rounded-md border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                {env.os} · {env.arch}
-              </span>
-              <span
-                className={cn(
-                  "rounded-md border px-2 py-1 font-mono text-[10px]",
-                  runtime ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground",
-                )}
-              >
-                {runtime ? runtime : "no docker/podman"}
-              </span>
-            </div>
-          ) : null}
-          <button
-            onClick={() => { refresh(); refreshReleases(); }}
-            disabled={loadingReleases}
-            title="Check for updates"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
-          >
-            <RefreshCcw className={cn("h-3.5 w-3.5", loadingReleases && "animate-spin")} />
-          </button>
-        </header>
-
-        {/* Horizontal tab bar — Kits, Catalog, status (Updates visible), then a
-            single Categories tab that expands into the per-kind sections. */}
-        <nav className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {PRIMARY_NAV.map((n) => {
-            const active = nav === n.key;
-            const count =
-              n.key === "installed"
-                ? installedCount
-                : n.key === "installing"
-                  ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
-                  : n.key === "updates"
-                    ? totalUpdates
-                    : 0;
-            return (
-              <button
-                key={n.key}
-                onClick={() => setNav(n.key)}
-                className={cn(
-                  "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-                  active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
-                <span className="truncate">{n.label}</span>
-                {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
-              </button>
-            );
-          })}
-          {/* Categories — one tab that expands to the per-kind views. */}
-          {(() => {
-            const catActive = CATEGORY_NAV.some((c) => c.key === nav);
-            const current = CATEGORY_NAV.find((c) => c.key === nav);
-            return (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+      <div className="mx-auto w-full max-w-[1400px] px-8 py-5">
+        <HubHeader
+          page={page}
+          crumb={crumb}
+          counts={{ updates: totalUpdates, installed: installedCount, installing: installingIds.size + Object.values(driverBusy).filter(Boolean).length }}
+          checkedAt={checkedAt}
+          refreshing={loadingReleases}
+          onNavigate={goto}
+          onRefresh={refreshAll}
+        />
+        <div ref={contentRef} className={cn("pt-6 transition-opacity", navPending && "opacity-60")}>
+          {page === "detail" && detailItem ? (
+            <HubDetail
+              key={detailItem.id}
+              item={detailItem}
+              state={stateOf(detailItem)}
+              actions={renderActions(detailItem)}
+              versions={versionSource(detailItem) ? verLists[detailItem.id] : []}
+              pickedVersion={verPick[detailItem.id]}
+              onPickVersion={(v) => setVerPick(({ [detailItem.id]: _drop, ...rest }) => (v ? { ...rest, [detailItem.id]: v } : rest))}
+              onLoadVersions={() => loadVersions(detailItem)}
+              readme={detailItem.repo ? readmes[detailItem.repo] : null}
+              related={CATALOG.filter((c) => c.id !== detailItem.id && sectionOf(c.kind) === sectionOf(detailItem.kind))}
+              stateOf={stateOf}
+              onOpen={openDetail}
+              onBack={() => setDetailId(null)}
+              onOpenExternal={openExternal}
+            />
+          ) : page === "home" ? (
+            <HubHome
+              items={CATALOG}
+              stateOf={stateOf}
+              query={query}
+              onQuery={setQuery}
+              onSearch={() => goto("search")}
+              onOpenSection={openSection}
+              onOpen={openDetail}
+              featured={featured}
+              selection={selection}
+              updatesBanner={
+                totalUpdates > 0 ? (
                   <button
-                    className={cn(
-                      "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-                      catActive ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
+                    onClick={() => goto("updates")}
+                    className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-left text-[13px] text-foreground hover:bg-primary/15"
                   >
-                    <BxIcon name="grid" className={cn("h-3.5 w-3.5 shrink-0", catActive ? "text-primary" : "")} />
-                    <span className="truncate">{catActive && current ? current.label : "Categories"}</span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                    </span>
+                    <span className="font-medium">{totalUpdates} update{totalUpdates > 1 ? "s" : ""} available</span>
+                    <span className="text-muted-foreground">— review and update everything from one page</span>
+                    <ChevronRight className="ml-auto h-4 w-4 text-primary" />
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {CATEGORY_NAV.map((c) => (
-                    <DropdownMenuItem key={c.key} onClick={() => setNav(c.key)} className={cn(nav === c.key && "text-primary")}>
-                      <BxIcon name={c.icon} className="h-3.5 w-3.5" />
-                      {c.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          })()}
-          {/* AI clients — hook Claude/Codex/Cursor/… up to Exasol via the
-              bundled read-only MCP server (the starter kit's mcp-setup, in-app). */}
-          <button
-            onClick={() => setNav("ai-clients")}
-            className={cn(
-              "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-              nav === "ai-clients" ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <BxIcon name="cognition" className={cn("h-3.5 w-3.5 shrink-0", nav === "ai-clients" ? "text-primary" : "")} />
-            <span className="truncate">AI clients</span>
-          </button>
-        </nav>
-
-        {/* Content */}
-        <div className="min-w-0">
-            <div className="mb-4 flex items-center justify-end gap-2">
-              <div className="relative w-56">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="h-8 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                />
-                {query ? (
-                  <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
+                ) : null
+              }
+            />
+          ) : page === "ai-clients" ? (
+            <AiClientsTab />
+          ) : page === "kits" ? (
+            <div className="grid gap-5">
+              <div>
+                <h1 className="font-heading text-[22px] font-bold text-foreground">Kits</h1>
+                <p className="mt-1 text-[13px] text-muted-foreground">Curated bundles — one click installs a whole workflow.</p>
               </div>
-              <div className="flex h-8 shrink-0 items-center gap-1">
-                <button
-                  onClick={() => setLayout("grid")}
-                  aria-label="Grid view"
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "grid" ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setLayout("list")}
-                  aria-label="List view"
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "list" ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {nav === "updates" ? (
-              <IndependentComponents
-                onActionable={setManagedUpdates}
-                describe={(compId) => {
-                  const catalogId = Object.entries(CATALOG_TO_COMPONENT).find(([, c]) => c === compId)?.[0];
-                  return CATALOG.find((i) => i.id === catalogId)?.description ?? "";
-                }}
-              />
-            ) : null}
-            {nav === "ai-clients" ? (
-              <AiClientsTab layout={layout} />
-            ) : nav === "recommended" ? (
-              <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;
                   const allInstalled = pack.items.every((it) => {
@@ -1169,75 +1352,97 @@ export function Marketplace() {
                       onClick={() => setKitModal(pack)}
                       onKeyDown={(e) => { if (e.key === "Enter") setKitModal(pack); }}
                       title="See what's in this kit"
-                      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                      className="group flex min-h-[188px] cursor-pointer flex-col rounded-xl border border-border bg-panel text-left transition-colors hover:border-foreground/25"
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{pack.name}</span>
-                        {/* + installs the whole kit; clicking the card shows what's inside. */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
-                          disabled={allInstalled}
-                          title={allInstalled ? "Already installed" : "Install this kit"}
-                          className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
-                            allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary",
-                          )}
-                        >
-                          {allInstalled ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
-                        </button>
+                      <div className="flex-1 p-5">
+                        <div className="flex items-center gap-3.5">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"><PackIcon className="h-6 w-6 text-[#0b1730]" strokeWidth={1.75} /></span>
+                          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">{pack.name}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
+                            disabled={allInstalled}
+                            title={allInstalled ? "Already installed" : "Install this kit"}
+                            aria-label={allInstalled ? `${pack.name} is installed` : `Install ${pack.name}`}
+                            className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors", allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary")}
+                          >
+                            {allInstalled ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        <p className="mt-3.5 line-clamp-2 text-[13px] leading-relaxed text-foreground/85">{pack.tagline}</p>
                       </div>
-                      <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5 border-t border-border px-5 py-3">
                         {pack.items.map((it) => (
-                          <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
+                          <span key={it.id} className="rounded-full bg-secondary px-2 py-px text-[10.5px] text-muted-foreground">{it.label}</span>
                         ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            ) : nav === "all" && !query ? (
-              <>
-                {SECTION_META.map((sec) => {
-                  const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
-                  if (!items.length) return null;
-                  return (
-                    <section key={sec.key} className="mb-6">
-                      <div className="mb-2.5 flex items-baseline gap-2">
-                        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
-                        <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
-                        <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
-                      </div>
-                      <div className={gridClass}>{items.map((i) => renderCard(i, isList))}</div>
-                    </section>
-                  );
-                })}
-              </>
-            ) : navItems.length ? (
-              <div className={gridClass}>{navItems.map((i) => renderCard(i, isList))}</div>
-            ) : nav === "updates" && !query && managedUpdates !== 0 ? (
-              // Managed components are still checking (null) or ARE listing
-              // updates above — claiming "up to date" here would be a lie.
-              null
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-                {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
-                <p className="text-sm">
-                  {query
-                    ? "No items match “" + query + "”."
-                    : nav === "installing"
-                      ? "Nothing installing right now — active installs (including drivers) show up here live."
-                      : nav === "updates"
-                        ? "Everything is up to date."
-                        : "Nothing here yet."}
-                </p>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="grid gap-5">
+              {page === "updates" ? (
+                <>
+                  <StudioUpdateCard />
+                  {updateItems.length > 0 ? (
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => void installSelected(new Set(updateItems.map((i) => i.id)))}
+                        disabled={queueBusy}
+                        data-agent-id="market.update-all"
+                        className="cta-glow flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+                      >
+                        <BxIcon name="rotate-ccw-dot" className="h-4 w-4" /> Update all ({updateItems.length})
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+              <HubSearch
+                title={page === "updates" ? "Updates" : page === "installed" ? "Installed" : page === "installing" ? "Installing" : "Search"}
+                results={results}
+                total={listBase.length}
+                query={query}
+                onQuery={setQuery}
+                filters={filters}
+                onFilters={setFilters}
+                onOpenFilters={() => setDrawerOpen(true)}
+                sort={sort}
+                onSort={setSort}
+                stateOf={stateOf}
+                onOpen={openDetail}
+                selection={selection}
+                emptyText={emptyText}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
+      <FilterDrawer open={drawerOpen} onOpenChange={setDrawerOpen} filters={filters} onChange={setFilters} />
+
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
+
+      {selected.size > 0 ? (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border bg-popover px-3 py-2 shadow-2xl">
+          <span className="text-[12px] font-medium text-foreground">
+            {selected.size} selected
+          </span>
+          <button
+            onClick={() => void installSelected()}
+            className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85"
+          >
+            <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" /> Install / update selected
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       {queue.length ? (
         <div className="fixed bottom-4 right-4 z-50 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
@@ -1653,211 +1858,3 @@ async function simulate(
   push("success", `${item.name} installed.`);
 }
 
-/**
- * Components — installed once at setup (local database, ExaPump, MCP server),
- * then fully INDEPENDENT: each updates straight from its own official
- * releases (digest-verified), on its own schedule, with no coupling to
- * Studio releases or to each other. A component that failed during setup is
- * retried from its own card.
- */
-/** Managed components needing attention: an official release moved past the
- *  installed version, setup failed / never ran, or an opaque revision drifted
- *  from the verified one. Shared by the panel and the Updates view's badge and
- *  empty state, so they can never disagree. */
-function actionableComponents(comps: ComponentInfo[], upstream: Record<string, string>): ComponentInfo[] {
-  return comps.filter((c) => {
-    const tag = c.opaqueVersion ? null : upstream?.[c.id];
-    return (
-      (tag && isNewerVersion(tag, c.installed)) ||
-      (!c.opaqueVersion && !c.installed) ||
-      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified)
-    );
-  });
-}
-
-function IndependentComponents({
-  onActionable,
-  describe,
-}: {
-  onActionable?: (n: number | null) => void;
-  /** GitHub About line for a component (resolved via the catalog mapping). */
-  describe?: (compId: string) => string;
-}) {
-  const [comps, setComps] = useState<ComponentInfo[] | null>(null);
-  const [upstream, setUpstream] = useState<Record<string, string> | null>(null);
-  // Report the actionable count up: the Updates view must not claim
-  // "everything is up to date" while this panel is loading or listing updates.
-  useEffect(() => {
-    onActionable?.(comps && upstream !== null ? actionableComponents(comps, upstream).length : null);
-  }, [comps, upstream, onActionable]);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Live progress for long component operations (the DB engine update backs
-  // up, stops, swaps and restarts the database — minutes, not seconds).
-  // Rust streams every step over market:log with the bootstrap job id.
-  const [live, setLive] = useState<string[]>([]);
-
-  const refresh = useCallback(async () => {
-    const list = await ipc.listComponents().catch(() => [] as ComponentInfo[]);
-    setComps(list);
-  }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  const refreshUpstream = useCallback(() => {
-    void ipc
-      .componentsUpstream()
-      .then((list) => setUpstream(Object.fromEntries(list.map((u) => [u.id, u.tag]))))
-      // On failure keep the last-known tags (or {} on the very first attempt) so
-      // a transient rate-limit doesn't hide a real update behind "up to date".
-      .catch(() => setUpstream((prev) => prev ?? {}));
-  }, []);
-  useEffect(() => refreshUpstream(), [refreshUpstream]);
-  // Periodically re-read the LOCAL installed list only. Do NOT re-fire
-  // componentsUpstream on a timer — it's an unauthenticated GitHub API call
-  // (60/hr) and re-firing it exhausts the quota, blanking the Updates tab. The
-  // upstream tags are fetched once on mount; a manual Refresh re-checks them.
-  useEffect(() => {
-    const iv = window.setInterval(() => void refresh(), 5 * 60 * 1000);
-    return () => window.clearInterval(iv);
-  }, [refresh]);
-  const anyBusy = Boolean(busy) || Boolean(comps?.some((c) => c.busy));
-  useEffect(() => {
-    if (!anyBusy) return;
-    let unlisten: (() => void) | undefined;
-    void listen<{ id: string; line: string; level: string }>("market:log", (e) => {
-      if (e.payload.id !== "personal-local-bootstrap") return;
-      setLive((prev) => [...prev.slice(-5), e.payload.line]);
-    }).then((u) => {
-      unlisten = u;
-    });
-    // While busy, keep the row states fresh (the op may have started in a
-    // previous mount — the busy flag comes from Rust, not this component).
-    const t = window.setInterval(() => void refresh(), 5000);
-    return () => {
-      unlisten?.();
-      window.clearInterval(t);
-      setLive([]);
-    };
-  }, [anyBusy, refresh]);
-
-  async function run(id: string, action: () => Promise<void>, ok: string) {
-    setBusy(id); setNote(null);
-    try {
-      await action();
-      setNote(ok);
-      // Refresh IN PLACE: rows update from fresh data without unmounting the
-      // section (no loader flash — comps/upstream stay non-null throughout).
-      await refresh();
-      refreshUpstream();
-    }
-    catch (e) { setNote(errorMessage(e)); }
-    finally { setBusy(null); }
-  }
-
-  // Loader until BOTH facts exist: what's installed AND what the latest
-  // official releases are — otherwise "all up to date" flashes first and the
-  // update buttons pop in seconds later.
-  if (!comps || upstream === null) {
-    return (
-      <section className="mb-6 flex items-center justify-center rounded-xl border border-border bg-panel/40 p-8">
-        <BrandLoader size={44} label="Checking components…" />
-      </section>
-    );
-  }
-
-  // A component is actionable when its own official releases moved past what
-  // is installed. Opaque revisions (Semantic Views) reconcile by difference.
-  const updateFor = (c: ComponentInfo): string | null => {
-    if (c.opaqueVersion) return null;
-    const tag = upstream?.[c.id];
-    return tag && isNewerVersion(tag, c.installed) ? tag : null;
-  };
-  const actionable = actionableComponents(comps, upstream);
-
-  return (
-    <section className="mb-6 rounded-xl border border-border bg-panel/40 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-primary" />
-        <h3 className="text-[12.5px] font-semibold text-foreground">Components</h3>
-      </div>
-
-      {note ? <p className="mb-2 rounded-md bg-secondary/60 px-2.5 py-1.5 text-[11.5px] text-foreground">{note}</p> : null}
-      {anyBusy && live.length > 0 ? (
-        <div className="mb-2 rounded-md border border-border bg-panel px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
-          {live.map((l, i) => (
-            <p key={i} className={cn("truncate", i === live.length - 1 && "text-foreground")}>{l}</p>
-          ))}
-        </div>
-      ) : null}
-      {actionable.length === 0 ? (
-        <p className="flex items-center gap-1.5 py-1 text-[11.5px] text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-primary" /> All installed components are up to date.
-        </p>
-      ) : null}
-      <div className="divide-y divide-border/60">
-        {actionable.map((c) => {
-          const isBusy = busy === c.id || c.busy;
-          const target = updateFor(c);
-          const upBtn = "flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60";
-          return (
-            <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
-              <div className="min-w-40 flex-1">
-                <span className="text-[12.5px] font-medium text-foreground">{c.name}</span>
-                {describe?.(c.id) ? (
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{describe(c.id)}</p>
-                ) : null}
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-muted-foreground">
-                  <span>installed {c.installed ?? "—"}</span>
-                  {target ? <span>official {target}</span> : null}
-                  {c.busy ? <span className="text-syntax-function">working — live log above</span> : null}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {c.id === "personal" ? (
-                  // The DB engine carries data — back up any time; its update
-                  // is backup-first with automatic rollback.
-                  <button
-                    onClick={() => void run(c.id, async () => { await ipc.backupLocalDatabase(); }, "Local database backed up (see personal-local/backups).")}
-                    disabled={isBusy}
-                    title="Stop the database, copy config + data to a timestamped backup, then restart"
-                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseBackup className="h-3.5 w-3.5" />} Back up
-                  </button>
-                ) : null}
-                {target ? (
-                  <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, target), `${c.name} updated to ${target}.`)}
-                    disabled={isBusy}
-                    title={
-                      c.id === "personal"
-                        ? `Install the official ${target} release (digest-verified). Backs up your data first and rolls back automatically if the new engine fails to start.`
-                        : `Install the official ${target} release (digest-verified).`
-                    }
-                    className={upBtn}
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update to {target}
-                  </button>
-                ) : c.opaqueVersion && c.installed ? (
-                  <button onClick={() => void run(c.id, () => ipc.updateComponent(c.id), `${c.name} reconciled.`)} disabled={isBusy} className={upBtn}>
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Update
-                  </button>
-                ) : !c.opaqueVersion && !c.installed ? (
-                  // Fresh/failed install: resolve to the LATEST official
-                  // release (digest-verified); the pin is only the fallback
-                  // when the release can't be resolved.
-                  <button
-                    onClick={() => void run(c.id, () => ipc.updateComponent(c.id, upstream[c.id] ?? undefined), `${c.name} installed${upstream[c.id] ? ` (${upstream[c.id]})` : ""}.`)}
-                    disabled={isBusy}
-                    className={upBtn}
-                  >
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Install{upstream[c.id] ? ` ${upstream[c.id]}` : ""}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}

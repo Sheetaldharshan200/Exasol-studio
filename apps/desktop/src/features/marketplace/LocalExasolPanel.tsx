@@ -17,7 +17,7 @@ const ACTIONS: { key: Action; label: string; Icon: typeof Play; danger?: boolean
 ];
 
 /**
- * Control the Studio-managed local runtime (native Personal on macOS, Nano on
+ * Control the Studio-managed local runtime (Exasol Personal via the launcher on
  * Windows/Linux) straight from the app. Streams lifecycle output live over the
  * `market:log` / `market:done` events (id `exasol-local`).
  */
@@ -123,7 +123,7 @@ export function LocalExasolPanel({ onClose }: { onClose: () => void }) {
         >
           {lines.length === 0 ? (
             <p className="text-muted-foreground">
-              Manage native Exasol Personal on macOS or Exasol Nano through Docker/Podman on Windows and Linux. Run <span className="text-foreground">Status</span> to check
+              Manage Studio’s Exasol Personal 2.3 — the official launcher runs it on Podman on macOS, Linux and Windows (amd64). Run <span className="text-foreground">Status</span> to check
               whether it is up, then <span className="text-foreground">Start</span> / <span className="text-foreground">Stop</span>{" "}
               as needed. Studio-owned lifecycle output streams here.
             </p>

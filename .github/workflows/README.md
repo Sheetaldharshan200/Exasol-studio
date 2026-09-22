@@ -5,7 +5,7 @@ every tool in its Marketplace.
 
 ## Bundled first-install runtime — `refresh-runtime-components.yml`
 Runs daily (and on manual dispatch) to resolve the latest stable Exasol
-Personal, Exasol Nano, ExaPump, and uv releases; solve a compatible
+Personal, ExaPump, and uv releases; solve a compatible
 PyExasol/MCP Python environment; and resolve immutable revisions for Semantic
 Views, Exasol agent skills, and Fable Method. It opens a review-gated pull
 request only for changed generated state, after macOS, Linux, and Windows

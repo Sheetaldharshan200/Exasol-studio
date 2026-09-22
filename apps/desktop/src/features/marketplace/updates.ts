@@ -3,7 +3,6 @@
 // (the CI-generated catalog.json mirror + per-repo upstream tags). Kept free of
 // React/ipc so it's unit-testable.
 
-import type { ComponentInfo, InstalledItem, MarketCatalog } from "@/lib/ipc";
 
 /** Catalog ids that are MANAGED components (updated via the Updates panel, not
  *  the addon list). Excluded from the addon-update count so a managed component
@@ -13,6 +12,7 @@ export const CATALOG_TO_COMPONENT: Record<string, string> = {
   exapump: "exapump",
   "mcp-server": "mcp-server",
   "semantic-views": "semantic-views",
+  "exa-agent": "exa-agent",
 };
 
 /** True only when `remote` is a STRICTLY newer version than `local` (numeric
@@ -32,34 +32,4 @@ export function isNewerVersion(remote: string | null | undefined, local: string 
     if (x !== y) return x > y;
   }
   return false;
-}
-
-/** Count ADDON (non-managed catalog) updates: an installed addon whose catalog
- *  `latest` is strictly newer than its installed version. */
-export function countCatalogUpdates(
-  catalog: MarketCatalog | null,
-  installed: InstalledItem[],
-  catalogIds: string[],
-): number {
-  const installedVer: Record<string, string> = {};
-  for (const i of installed) installedVer[i.id] = i.version;
-  return catalogIds.filter((id) => {
-    if (CATALOG_TO_COMPONENT[id]) return false; // managed → counted separately
-    const latest = catalog?.items?.[id]?.latest ?? null;
-    return isNewerVersion(latest, installedVer[id]);
-  }).length;
-}
-
-/** Count MANAGED-component actions (mirrors Marketplace's actionableComponents):
- *  a newer upstream tag, a not-yet-installed component, or an opaque-version
- *  drift from the verified build. */
-export function countManagedUpdates(comps: ComponentInfo[], upstream: Record<string, string>): number {
-  return comps.filter((c) => {
-    const tag = c.opaqueVersion ? null : upstream?.[c.id];
-    return (
-      (tag && isNewerVersion(tag, c.installed)) ||
-      (!c.opaqueVersion && !c.installed) ||
-      (c.opaqueVersion && Boolean(c.installed) && c.installed !== c.verified)
-    );
-  }).length;
 }

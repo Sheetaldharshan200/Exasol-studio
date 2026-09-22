@@ -101,6 +101,20 @@ fn capabilities_path(data_dir: &Path) -> PathBuf {
     data_dir.join("agent/capabilities.json")
 }
 
+/// Point the persisted bootstrap status at a (re)created managed profile.
+/// Without this, the permanent local card keeps referencing the DELETED
+/// profile id after a delete + self-heal, and clicking it opens the blank
+/// connect form instead of the restored connection.
+pub(crate) fn record_profile_id(app: &AppHandle, profile_id: &str) {
+    let data_dir = app.state::<AppState>().data_dir.clone();
+    let status = read_status(&data_dir);
+    if status.profile_id.as_deref() != Some(profile_id) {
+        let mut next = status;
+        next.profile_id = Some(profile_id.into());
+        let _ = write_status(app, &data_dir, next);
+    }
+}
+
 fn read_status(data_dir: &Path) -> BootstrapStatus {
     std::fs::read_to_string(status_path(data_dir))
         .ok()
@@ -247,7 +261,7 @@ while time.monotonic() < deadline:
         raise SystemExit(0)
     except Exception as error:
         last_error = error
-        time.sleep(5)
+        time.sleep(3)
     finally:
         if connection is not None:
             try:
@@ -339,9 +353,17 @@ fn query_ready_runtime(
     python: &Path,
     runtime: &RuntimeConnection,
 ) -> AppResult<RuntimeConnection> {
-    // Fast-fail a REUSED (adopted) daemon so self-heal kicks in quickly; be
-    // patient with our OWN (personal) deploy, which cold-boots slowly.
-    let initial_deadline = if runtime.kind == "adopted" { 30 } else { 150 };
+    // Fast-fail so self-heal kicks in quickly. Our OWN (personal) deploy needs
+    // little extra patience: the `exasol` launcher only returns once the DB
+    // reports "ready to accept connections", so by probe time a healthy DB
+    // authenticates within seconds. A daemon that keeps RESETTING connections
+    // (wedged from an unclean previous shutdown) never fixes itself by waiting
+    // — the 150s patience this used to carry only postponed the restart that
+    // actually heals it. Trade-off accepted: if a slow machine genuinely needs
+    // more than 45s from "ready" to first authenticated query, the cost is ONE
+    // redundant restart followed by the 90s validate — bounded and
+    // self-correcting, vs. minutes of guaranteed stall on every wedged daemon.
+    let initial_deadline = if runtime.kind == "adopted" { 30 } else { 45 };
     match validate_with_deadline(app, python, runtime, initial_deadline) {
         Ok(()) => Ok(runtime.clone()),
         Err(first_error) if runtime.kind == "personal" => {
@@ -366,24 +388,35 @@ fn query_ready_runtime(
             }
         }
         Err(first_error) if runtime.kind == "adopted" => {
-            // A REUSED (adopted) database that opened its port but isn't
-            // query-ready is almost always a stale daemon left over from a
-            // previous run. Self-heal: deploy Studio's OWN managed database
-            // (reclaiming the port from an orphaned Studio daemon) and validate
-            // that instead of failing the whole setup.
+            // A REUSED (adopted) database that opened its port but rejected the
+            // stored credential is USUALLY fine — the unified-credential model
+            // changed SYS to the master password on an earlier run, so the
+            // adopted (deploy-time) credential no longer matches. Try the master
+            // FIRST: cheap, no slow redeploy, and it fixes the common case.
+            if crate::local_runtime::personal_db_running(app) {
+                if let Ok(recovered) = recover_personal_auth(app, python, runtime) {
+                    return Ok(recovered);
+                }
+            }
+            // The master didn't work either → it really is stale. Deploy Studio's
+            // OWN managed database (reclaiming the port from an orphaned daemon).
             emit_log(
                 app,
                 JOB_ID,
                 format!(
-                    "The reused local Exasol on {}:{} isn't query-ready ({first_error}); it looks stale — deploying Studio's own managed database…",
+                    "The reused local Exasol on {}:{} isn't query-ready ({first_error}); redeploying Studio's own managed database…",
                     runtime.host, runtime.port
                 ),
                 "info",
             );
             let fresh = crate::local_runtime::redeploy_managed(app, JOB_ID)?;
-            // A brand-new deploy cold-boots slowly — wait it out generously.
-            validate_with_deadline(app, python, &fresh, 180)?;
-            Ok(fresh)
+            // The DB is ready ~15s after a restart, so 60s covers a cold boot.
+            // Waiting longer only stalls a CREDENTIAL mismatch (which never fixes
+            // itself) — on failure, jump straight to the master-password recovery.
+            match validate_with_deadline(app, python, &fresh, 60) {
+                Ok(()) => Ok(fresh),
+                Err(_) => recover_personal_auth(app, python, &fresh),
+            }
         }
         Err(error) => Err(error),
     }
@@ -1065,13 +1098,36 @@ fn install_semantic_views(
         .ok()
         .is_some_and(|version| version.trim() == semantic_revision);
     let installer = bundle.join("tools/install.py");
-    let probe = installer
-        .parent()
-        .expect("installer has tools directory")
-        .join("probe_ready.py");
     let python_s = python.to_string_lossy().to_string();
     let installer_s = installer.to_string_lossy().to_string();
-    let probe_s = probe.to_string_lossy().to_string();
+    // The readiness probe is STUDIO'S contract, embedded here — it used to be
+    // upstream's tools/probe_ready.py, which the repo no longer ships (a
+    // missing script made python exit 2 and failed every install). Exit
+    // codes: 0 = framework + complete example, 1 = framework missing,
+    // 3 = framework only (clean — the state Studio's own install produces),
+    // 4 = SALES/MART objects exist but are incomplete or user-owned.
+    const SEMANTIC_PROBE: &str = r#"import os, ssl, sys, pyexasol
+c = pyexasol.connect(
+    dsn=f"{os.environ['EXASOL_HOST']}:{os.environ['EXASOL_PORT']}",
+    user=os.environ["EXASOL_USER"],
+    password=os.environ["EXASOL_PASSWORD"],
+    encryption=True,
+    websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+)
+def one(q):
+    return c.execute(q).fetchone()[0]
+framework = one("SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA='SYS_SEMANTIC' AND TABLE_NAME='MODELS'")
+admin = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='SEMANTIC_ADMIN'")
+if not framework or not admin:
+    sys.exit(1)
+mart = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='MART'")
+demo = one("SELECT COUNT(*) FROM SYS.EXA_ALL_OBJECTS WHERE OBJECT_TYPE='SCHEMA' AND OBJECT_NAME='SEMANTIC_SALES'")
+if not mart and not demo:
+    sys.exit(3)
+sales = one("SELECT COUNT(*) FROM SYS_SEMANTIC.MODELS WHERE MODEL_NAME='sales'")
+tables = one("SELECT COUNT(*) FROM SYS.EXA_ALL_TABLES WHERE TABLE_SCHEMA='MART' AND TABLE_NAME IN ('CUSTOMERS','PRODUCTS','ORDERS','ORDER_LINES')")
+sys.exit(0 if (sales and tables == 4) else 4)
+"#;
     let port = runtime.port.to_string();
     let envs = [
         ("EXASOL_HOST", runtime.host.as_str()),
@@ -1084,8 +1140,10 @@ fn install_semantic_views(
         database: format!("{} ({}:{})", runtime.kind, runtime.host, runtime.port),
     };
     if previously_ready {
-        match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
-            0 => {
+        match run_streamed_env(app, JOB_ID, &python_s, &["-c", SEMANTIC_PROBE], &envs)? {
+            // 3 (framework, no example) is READY too — Studio's own install is
+            // clean by design; accepting only 0 here would reinstall forever.
+            0 | 3 => {
                 record_installed()?;
                 return Ok(summary);
             }
@@ -1105,7 +1163,7 @@ fn install_semantic_views(
             "Semantic Views framework installation failed.".into(),
         ));
     }
-    match run_streamed_env(app, JOB_ID, &python_s, &[&probe_s], &envs)? {
+    match run_streamed_env(app, JOB_ID, &python_s, &["-c", SEMANTIC_PROBE], &envs)? {
         0 => {}
         // Framework installed but no semantic model / demo data present. We do
         // NOT seed the MART example — a fresh database stays clean and the user
@@ -1200,7 +1258,7 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
     status.message = if cfg!(target_os = "macos") {
         "Installing or starting native Exasol Personal…".into()
     } else {
-        "Pulling or starting Exasol Nano with Docker/Podman…".into()
+        "Starting Exasol Personal…".into()
     };
     status.local_ready = false;
     write_status(&app, &data_dir, status.clone())?;
@@ -1251,6 +1309,21 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         &lock.python_stack.pyexasol_version,
         None,
     );
+
+    // Save the built-in connection the moment the database is query-ready —
+    // BEFORE the ExaPump / agent-skills downloads — so the user can connect and
+    // work while the remaining components install in the background.
+    status.step = "connection-profile".into();
+    status.message = "Saving the built-in local connection in the Studio vault…".into();
+    write_status(&app, &data_dir, status.clone())?;
+    let profile = profiles::ensure_personal_local_profile(
+        &app.state::<AppState>(),
+        &runtime.host,
+        runtime.port,
+        &runtime.user,
+        &runtime.password,
+    )?;
+    status.profile_id = Some(profile.id.clone());
 
     // Components are INDEPENDENT: the bootstrap installs the database plus
     // ExaPump and the MCP server, and a component that fails to install must
@@ -1306,17 +1379,6 @@ fn run_bootstrap(app: AppHandle) -> AppResult<()> {
         ),
     }
 
-    status.step = "connection-profile".into();
-    status.message = "Saving the built-in local connection in the Studio vault…".into();
-    write_status(&app, &data_dir, status.clone())?;
-    let profile = profiles::ensure_personal_local_profile(
-        &app.state::<AppState>(),
-        &runtime.host,
-        runtime.port,
-        &runtime.user,
-        &runtime.password,
-    )?;
-    status.profile_id = Some(profile.id.clone());
 
     status.step = "mcp-server".into();
     status.message =
@@ -1658,9 +1720,10 @@ fn component_repo(id: ComponentId) -> String {
         ComponentId::ExaPump => c.exapump.repository.clone(),
         ComponentId::McpServer => "exasol/mcp-server".to_string(),
         ComponentId::SemanticViews => "exasol-labs/exasol-semantic-views".to_string(),
-        // Exa engine = opencode (MIT); binary from opencode's GitHub Releases
-        // (the source of truth), rebranded in-product as Exa.
-        ComponentId::ExaAgent => "Sheetaldharshan200/exa".to_string(),
+        // Exa engine = opencode (MIT); binary from the exa-engine GitHub
+        // Releases (engine.rs EXA_REPO — the repo installs actually pull from),
+        // rebranded in-product as Exa.
+        ComponentId::ExaAgent => "Sheetaldharshan200/exa-engine".to_string(),
     }
 }
 
@@ -1732,6 +1795,10 @@ pub fn list_components(app: AppHandle) -> AppResult<Vec<ComponentInfo>> {
         ComponentId::ExaPump,
         ComponentId::McpServer,
         ComponentId::SemanticViews,
+        // The Exa AI engine updates like any other component (its own dir +
+        // manifest); the running sidecar resolves the installed copy lazily,
+        // and the Updates row restarts the sidecar after a successful update.
+        ComponentId::ExaAgent,
     ];
     Ok(ids
         .iter()
@@ -1898,6 +1965,13 @@ fn reconcile_semantic(app: &AppHandle, data_dir: &Path) -> AppResult<()> {
 pub async fn update_component(app: AppHandle, id: String, version: Option<String>) -> AppResult<()> {
     let component = ComponentId::from_slug(&id)
         .ok_or_else(|| AppError::InvalidSettings(format!("unknown component `{id}`")))?;
+    // The version becomes a pip spec or a GitHub release-tag URL segment —
+    // refuse anything path- or option-like before it reaches either.
+    if let Some(v) = &version {
+        if !crate::market::valid_version_tag(v) {
+            return Err(AppError::InvalidSettings(format!("Invalid version: {v}")));
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let data_dir = app.state::<AppState>().data_dir.clone();
         match component {

@@ -511,11 +511,10 @@ function ExaSqlOpsSelector({ ops, onChange, applying }: { ops: SqlOps; onChange:
   const grantedCount = Object.values(ops).filter(Boolean).length;
   const dirty = (Object.keys(draft) as (keyof SqlOps)[]).some((k) => draft[k] !== ops[k]);
   // Closing the shield commits any staged toggles — ticking and then dismissing
-  // is treated as Save, so a change is never silently lost.
+  // IS the save, so a change is never silently lost and no button is needed.
   const commit = () => {
     if (dirty) onChange(draft); // commits → engine restarts with the new grants
   };
-  const save = () => setOpen(false); // triggers commit via onOpenChange
   useEffect(() => {
     if (open) document.body.dataset.exaMenuOpen = "1";
     else delete document.body.dataset.exaMenuOpen;
@@ -541,18 +540,7 @@ function ExaSqlOpsSelector({ ops, onChange, applying }: { ops: SqlOps; onChange:
       <DropdownMenuContent side="top" align="start" className="max-h-96 w-72 overflow-y-auto">
         <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 flex items-center justify-between border-b border-border bg-popover px-3 py-1.5">
           <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">SQL operations</span>
-          <button
-            type="button"
-            onClick={save}
-            disabled={!dirty}
-            title={dirty ? "Save & refresh the AI engine" : "No changes"}
-            className={cn(
-              "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
-              dirty ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-muted-foreground",
-            )}
-          >
-            <ShieldCheckIcon className="h-3 w-3" /> Save
-          </button>
+          <span className="text-[10px] text-muted-foreground">{dirty ? "applies on close" : ""}</span>
         </div>
         <DropdownMenuCheckboxItem checked disabled className="text-[12px]">
           <span className="flex min-w-0 flex-col">

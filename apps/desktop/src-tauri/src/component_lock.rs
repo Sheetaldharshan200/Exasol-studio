@@ -11,7 +11,6 @@ pub struct RuntimeComponents {
     pub generated_by: String,
     pub generated_at: String,
     pub personal: ReleaseComponent,
-    pub nano: ContainerComponent,
     pub uv: ReleaseComponent,
     pub python_stack: PythonStack,
     pub exapump: ReleaseComponent,
@@ -31,20 +30,6 @@ pub struct Artifact {
     pub url: String,
     pub sha256: String,
     pub executable_sha256: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ContainerComponent {
-    pub registry: String,
-    pub repository: String,
-    pub tag: String,
-    pub digest: String,
-}
-
-impl ContainerComponent {
-    pub fn immutable_image(&self) -> String {
-        format!("{}/{}@{}", self.registry, self.repository, self.digest)
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,7 +88,6 @@ fn baked() -> &'static RuntimeComponents {
         for release in [&parsed.personal, &parsed.uv, &parsed.exapump] {
             assert!(!release.repository.is_empty());
         }
-        assert!(!parsed.nano.tag.is_empty());
         parsed
     })
 }
@@ -121,9 +105,6 @@ mod tests {
         let lock = components();
         assert!(lock.generated_by.ends_with("refresh_runtime_components.py"));
         assert!(!lock.generated_at.is_empty());
-        assert!(lock.nano.digest.starts_with("sha256:"));
-        assert!(is_sha256(lock.nano.digest.trim_start_matches("sha256:")));
-        assert!(!lock.nano.tag.is_empty());
         assert!(is_sha256(&lock.python_stack.lock_sha256));
         for component in [&lock.personal, &lock.uv, &lock.exapump] {
             assert!(!component.repository.is_empty());

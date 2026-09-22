@@ -115,17 +115,21 @@ export function ResultsPanel({
   }, [view, planData, profiling, lastResult, onProfile]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
-      <div className="flex h-8 shrink-0 items-center gap-1 border-y border-border px-2">
+      <div className="flex h-8 shrink-0 items-center gap-0.5 border-y border-border px-2">
+        {/* Same selection language as the Marketplace tabs: an underline on
+            the active tab, never a colored pill background. */}
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => onViewChange(t.id)}
             className={cn(
-              "flex h-6 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition",
-              view === t.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
+              "flex h-full shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[12px] transition-colors",
+              view === t.id
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            <t.icon className="h-3.5 w-3.5" />
+            <t.icon className={cn("h-3.5 w-3.5", view === t.id && "text-primary")} />
             {t.label}
           </button>
         ))}
@@ -263,7 +267,12 @@ export function ResultsPanel({
               {response!.results.map((r, i) => (
                 <div key={i} className="border-b border-border">
                   <div className="truncate bg-secondary/50 px-3 py-1 font-mono text-[10px] text-muted-foreground" title={ranStmts[i]?.text}>
-                    {i + 1}] {statementVerb(ranStmts[i]?.text) ?? ""} · {r.rowCount} rows{r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
+                    {/* The same tested formatter the result tabs use, so a
+                        write says "affected", a driver that cannot count says
+                        "executed", and a failure says "error" — instead of
+                        every one of them claiming "0 rows". */}
+                    {resultTabLabel(r, i, statementVerb(ranStmts[i]?.text) ?? undefined)}
+                    {r.truncated ? " (truncated)" : ""} · {r.elapsedMs} ms
                     {ranStmts[i] ? <> · {ranStmts[i].text.replace(/\s+/g, " ").slice(0, 80)}</> : null}
                   </div>
                   <div className="h-[280px]">

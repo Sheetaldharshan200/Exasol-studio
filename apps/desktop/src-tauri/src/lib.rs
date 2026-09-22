@@ -16,6 +16,8 @@ mod components_update;
 mod skills_market;
 mod verified_lock;
 mod driver_exec;
+mod exarrow_exec;
+mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
 mod dashboards;
@@ -43,6 +45,10 @@ use tauri::Manager;
 use crate::state::AppState;
 
 pub fn run() {
+    // Before any TLS handshake: with two rustls crypto providers linked in,
+    // the automatic process-level lookup exarrow uses would panic instead of
+    // picking one. See exarrow_exec::install_crypto_provider.
+    crate::exarrow_exec::install_crypto_provider();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -120,6 +126,8 @@ pub fn run() {
             catalog::search_objects,
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
+            virtual_schema_install::vs_stage_adapter,
+            virtual_schema_install::vs_local_state,
             files::write_text_file,
             files::save_attachment,
             files::install_cli,
@@ -134,6 +142,7 @@ pub fn run() {
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,
+            fs::fs_count_rows,
             fs::fs_workspace_dir,
             fs::fs_home_roots,
             fs::fs_search,
@@ -145,6 +154,8 @@ pub fn run() {
             market::market_doc_load,
             market::market_doc_forget,
             market::market_release,
+            market::market_versions,
+            market::market_use_downloaded,
             market::market_installed,
             market::market_detect,
             market::market_install,
@@ -200,6 +211,7 @@ pub fn run() {
             history::sql_history_list,
             history::sql_history_clear,
             agent::agent_api,
+            agent::agent_restart,
             agent::agent_grant_connection,
             agent::engine_ops_sync,
             agent::engine_options_get,

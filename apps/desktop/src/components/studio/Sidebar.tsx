@@ -204,7 +204,7 @@ function ConnectionSection({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onNewVs}>
-                <Waypoints className="h-3.5 w-3.5" /> New virtual schema
+                <Waypoints className="h-3.5 w-3.5" /> Add a data source…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onUploadDriver}>
                 <HardDriveUpload className="h-3.5 w-3.5" /> Upload driver to BucketFS
@@ -474,7 +474,7 @@ export function Sidebar({
   // it. Hidden only while the local DB is the active connection (it's in the
   // tree then).
   // The managed local DB's endpoint comes from its profile (Studio's isolated
-  // Personal deployment runs on its own port, e.g. 8565; Nano uses 8563). The
+  // Personal deployment runs on its own port, e.g. 8565; the starter kit uses 8563). The
   // permanent card represents that endpoint, so fold any duplicate profile
   // (e.g. a hand-made "sys@localhost") into it instead of listing it twice.
   // Find the managed local profile ROBUSTLY: prefer the status link, but fall
@@ -553,11 +553,15 @@ export function Sidebar({
       {disconnected.map((p) => {
         const isLocal = p.host === "127.0.0.1" || p.host === "localhost";
         return (
-          <div key={p.id} className="group relative flex items-center">
+          // The row highlight lives on the WRAPPER so the connect area and the
+          // trash share it. The trash has its own always-reserved slot (fades
+          // in — never overlays the connect pill, never shifts the layout), so
+          // hovering shows BOTH actions side by side.
+          <div key={p.id} className="group flex items-center rounded-md hover:bg-secondary/60">
           <button
             data-agent-id={`sidebar.saved.${p.id}`}
             onClick={() => onConnectProfile(p.id)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary/60"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
             title={`Connect to ${p.name} (${p.host}:${p.port})`}
           >
             <span
@@ -574,10 +578,9 @@ export function Sidebar({
                 {p.username}@{p.host}:{p.port}
               </div>
             </div>
-            {/* Neutral hint when idle; hidden on hover so the trash owns the right
-                edge (they used to stack on top of each other). Clicking the row
-                still connects — the pill is only a cue. */}
-            <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:invisible">
+            {/* The row's action cue — stays visible and lights up on hover
+                (same treatment as the connected row's pill). */}
+            <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[9px] font-medium uppercase text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground">
               connect
             </span>
           </button>
@@ -585,7 +588,7 @@ export function Sidebar({
             onClick={(e) => { e.stopPropagation(); onRemoveConnection(p.id); }}
             title={`Remove ${p.name}`}
             aria-label={`Remove ${p.name}`}
-            className="absolute right-1.5 hidden h-6 w-6 items-center justify-center rounded-md bg-panel text-muted-foreground/70 hover:bg-secondary hover:text-destructive group-hover:flex"
+            className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-secondary hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

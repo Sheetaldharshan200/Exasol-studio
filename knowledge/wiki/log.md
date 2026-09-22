@@ -138,3 +138,22 @@ PR #95 root cause: history ids were h-<timestamp-millis>; same-millisecond runs 
 #99/#103 executeSql 5th arg is SPLIT not addHistory — every internal call must pass the 6th arg false or it spams SQL History (profiling, catalog loaders, page turns all hit this).
 #100 plan-block.ts: AI explain-plan sends only the heaviest statement's compact table (25 parts, ms).
 
+
+## [2026-09-06] fix | Catalog latest/verified split, updates fetch-on-demand, real driver installs, faster Personal self-heal
+Root causes fixed today: (1) catalog.json published the LOCK pin as `latest`, hiding MCP Server 2.2.0 behind 2.0.0 across the whole app — latest is now the real upstream tag, the pin moved to a new `verified` field (PR #144); Rust components_upstream falls back to the mirror when the unauthenticated GitHub API is rate-limited.
+(2) 'Refresh bundled runtime components' failed daily since Sep 4 with exit 128: it still `git add`ed apps/desktop/src-tauri/resources/exasol-semantic-views, removed when Semantic Views moved to fetch-at-install; validation now clones the repo fresh (PR #145).
+(3) Personal setup stall: a wedged DB daemon accepts TCP then resets the TLS handshake ('Connection reset by peer') and never recovers by waiting; the 150s initial readiness deadline only postponed the restart that heals it — cut to 45s (the exasol launcher already waits for DB-ready before returning).
+(4) Update-state polling removed everywhere (user rule): fetch only at app open and on Updates/catalog tab clicks — Marketplace 10-min interval, IndependentComponents 5-min interval, badge 6h interval, and the Rust updates.rs 6h loop are all gone.
+Also: pickAsset extracted pure to marketplace/assets.ts (metadata filter + platform-null, 5 tests); driver-jdbc installs from Maven Central via tested <latest> parser; binary items with no build for the host show an honest 'No macOS build yet' instead of a doomed Install; card actions pinned to card bottom; multi-select install (cards) and multi-select update (components) added.
+
+
+
+## [2026-09-21] ingest | Analytics hub: virtual schemas on Exasol Personal 2.3, one adapter file each, Docker retired
+Personal 2.3.0 pinned for 5 platforms (nano + all Docker/Colima paths deleted; Podman is the launcher's business, Studio never probes engines). New page analytics-hub-virtual-schemas: 23 adapter files pinned to the upstream repo list by test; pure ddl/prereqs/plan modules (29 tests); Rust vs_stage_adapter writes through the deployment's local/runtime/exa; add-data-source tab replaces the native VS window + modal; sidebar/visualizer name the source of each virtual schema.
+Live proof: tests/virtual_schema_live.rs attaches the local database to itself through the Lua adapter and reads/joins rows. Gotchas: reqwest::blocking inside tokio tests; uv --no-sync empty venv.
+
+
+## [2026-09-22] ingest | Workbench scale and polish: Docker-Hub Marketplace, visualizer focus + scored inference, paged big files, chat completion/chips
+New page workbench-scale-and-polish. item-state.ts is the one update decision (badge/header/page agree); hub/ pages; focusBounds + layoutRev; infer-links with type gate + ambiguity penalty + slider; build-sql extracted (+aggregates/join types); fs_read_table offset window + fs_count_rows; routeOpen size guard; git diff 1 MB cap; TabErrorBoundary per tab; complete-draft + next-actions.
+
+## [2026-09-22] ingest | Visualizer Build pane (aggregates, join types, 100-row preview) + component split to 843 lines; Codex round 4 (current-vs-display SQL, superseded preview, stale ORDER BY)

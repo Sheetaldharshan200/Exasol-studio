@@ -128,7 +128,7 @@ export function McpConfigTab({ presetId, target = "studio" }: { presetId: string
       }
 
       if (wantsRemote) {
-        // Remote MCP server — no local process, no Docker. Self-sustained.
+        // Remote MCP server — no local process. Self-sustained.
         await agent.mcpAdd({
           name,
           transport: "http",
@@ -201,7 +201,7 @@ export function McpConfigTab({ presetId, target = "studio" }: { presetId: string
             </div>
             <p className="text-[11.5px] text-muted-foreground">
               {custom.transport === "http"
-                ? "Connects to a hosted MCP server over HTTP — nothing runs locally, no Docker or binaries needed."
+                ? "Connects to a hosted MCP server over HTTP — nothing runs locally, no binaries needed."
                 : "Runs an MCP server as a local process (needs the command available on this machine)."}
             </p>
             {(custom.transport === "http"

@@ -43,7 +43,7 @@ const OFFICIAL: OfficialSkill[] = [
   { id: "exasol-notebook-connections", label: "Notebook connections", desc: "Connect notebooks to Exasol.", icon: "notebook" },
   { id: "exasol-ai-setup", label: "AI setup", desc: "Prepare the database for AI workloads.", icon: "brain-circuit" },
   { id: "exasol-setup-personal", label: "Set up Personal", desc: "Install and run Exasol Personal locally.", icon: "plug" },
-  { id: "exasol-itde", label: "ITDE", desc: "The integration-test Docker environment.", icon: "spanner" },
+  { id: "exasol-itde", label: "ITDE", desc: "The notebook-connector integration-test database environment.", icon: "spanner" },
   { id: "exasol-virtual-schema-adapter-development", label: "Adapter development", desc: "Build your own virtual-schema adapters.", icon: "wrench" },
   { id: "exasol", label: "Exasol core", desc: "The umbrella skill routing to the others.", icon: "skills" },
 ];

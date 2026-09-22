@@ -38,7 +38,9 @@ export type TabView =
   | "bucketfs"
   | "backups"
   | "health"
-  | "exaEngine";
+  | "exaEngine"
+  /** Attach another database or bucket as a virtual schema (the add-data-source flow). */
+  | "addSource";
 
 /** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
  *  async profile that finishes after a tab-switch can't flip another tab's
@@ -157,6 +159,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   backups: "database",
   health: "heart",
   exaEngine: "brain-circuit",
+  addSource: "link",
 };
 
 /** Shown when a connection bucket has no open tabs (VS Code-style start page). */

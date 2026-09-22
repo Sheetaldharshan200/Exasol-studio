@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-04T06:42:27.346Z",
+  "generatedAt": "2026-09-22T05:52:39.971Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -31,6 +31,60 @@
       "hint": "Sidebar: Providers & Models / Guardrails (read-write policy, pet mode + companion picker, restrictions) / Behavior (steps, temperature, workspace instructions)."
     },
     {
+      "id": "anchor.add-source.create",
+      "label": "add source create",
+      "where": "apps/desktop/src/features/connection/virtual-schemas/steps/CreateStep.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/virtual-schemas/steps/CreateStep.tsx"
+    },
+    {
+      "id": "anchor.add-source.install",
+      "label": "add source install",
+      "where": "apps/desktop/src/features/connection/virtual-schemas/steps/PrerequisitesStep.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/virtual-schemas/steps/PrerequisitesStep.tsx"
+    },
+    {
+      "id": "anchor.add-source.next",
+      "label": "add source next",
+      "where": "apps/desktop/src/features/connection/virtual-schemas/AddSourceFlow.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/connection/virtual-schemas/AddSourceFlow.tsx"
+    },
+    {
+      "id": "anchor.builder.preview",
+      "label": "builder preview",
+      "where": "apps/desktop/src/features/workbench/visualizer/BuilderPane.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/visualizer/BuilderPane.tsx"
+    },
+    {
+      "id": "anchor.chat.next-actions",
+      "label": "chat next actions",
+      "where": "apps/desktop/src/features/assistant/exa/ExaNextActions.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/assistant/exa/ExaNextActions.tsx"
+    },
+    {
+      "id": "anchor.connection-switcher.add-source",
+      "label": "connection switcher add source",
+      "where": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/components/studio/ConnectionSwitcher.tsx"
+    },
+    {
+      "id": "anchor.market.filters",
+      "label": "market filters",
+      "where": "apps/desktop/src/features/marketplace/hub/HubSearch.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/hub/HubSearch.tsx"
+    },
+    {
+      "id": "anchor.market.search",
+      "label": "market search",
+      "where": "apps/desktop/src/features/marketplace/hub/HubSearch.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/hub/HubSearch.tsx"
+    },
+    {
+      "id": "anchor.market.update-all",
+      "label": "market update all",
+      "where": "apps/desktop/src/features/marketplace/Marketplace.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/Marketplace.tsx"
+    },
+    {
       "id": "anchor.rail.mcp",
       "label": "rail mcp",
       "where": "apps/desktop/src/features/workbench/ActivityRail.tsx",
@@ -59,6 +113,12 @@
       "label": "titlebar connect",
       "where": "apps/desktop/src/components/studio/TitleBar.tsx",
       "hint": "Agent action anchor in apps/desktop/src/components/studio/TitleBar.tsx"
+    },
+    {
+      "id": "anchor.visualizer.add-source",
+      "label": "visualizer add source",
+      "where": "apps/desktop/src/features/workbench/Visualizer.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/Visualizer.tsx"
     },
     {
       "id": "bi.dashboards",

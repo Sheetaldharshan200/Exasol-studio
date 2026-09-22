@@ -20,7 +20,11 @@ pub struct ColumnMeta {
 #[serde(rename_all = "camelCase")]
 pub struct StatementResult {
     pub statement: String,
-    pub kind: String, // "resultSet" | "rowCount"
+    /// "resultSet" — rows follow. "rowCount" — a write, and `row_count` is the
+    /// number it affected. "executed" — it ran, but this driver cannot say how
+    /// many rows it touched (r-exasol reports no count for writes), so the UI
+    /// must not print one.
+    pub kind: String,
     pub columns: Vec<ColumnMeta>,
     pub rows: Vec<Vec<Value>>,
     pub row_count: u64,
@@ -264,32 +268,43 @@ fn parse_activity_percent(a: &str) -> Option<u8> {
     rest[..close].trim().parse::<u8>().ok()
 }
 
-fn is_result_set_statement(statement: &str) -> bool {
-    let first_word = statement
-        .trim_start_matches(|c: char| c.is_whitespace())
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_ascii_uppercase();
-    // Comments before the keyword: strip crude leading comments.
-    let lowered = statement.trim_start();
-    let effective = if lowered.starts_with("--") || lowered.starts_with("/*") {
-        // Fall back to scanning for the first keyword after comments.
-        statement
-            .lines()
-            .map(str::trim)
-            .find(|l| !l.is_empty() && !l.starts_with("--"))
-            .unwrap_or("")
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_ascii_uppercase()
-    } else {
-        first_word
-    };
+/// The statement with leading whitespace, `--` line comments, and `/* */`
+/// block comments removed — classification must see the real first token.
+/// Shared with the semantic-sync statement classifiers.
+pub(crate) fn strip_leading_comments(statement: &str) -> &str {
+    let mut s = statement;
+    loop {
+        let trimmed = s.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("--") {
+            s = rest.split_once('\n').map(|(_, tail)| tail).unwrap_or("");
+        } else if let Some(rest) = trimmed.strip_prefix("/*") {
+            s = rest.split_once("*/").map(|(_, tail)| tail).unwrap_or("");
+        } else {
+            return trimmed;
+        }
+    }
+}
+
+/// Does this statement produce a RESULT SET (vs a row count)?
+///
+/// Why a keyword list at all: the driver's only both-kinds API re-splits the
+/// SQL on semicolons (ExecuteBatch), which would shred `CREATE SCRIPT` bodies
+/// — so statements must be routed up front. The set below is CLOSED under
+/// Exasol's grammar: result sets come only from queries (SELECT / WITH /
+/// VALUES / a parenthesized query), DESCRIBE, and EXECUTE SCRIPT (whose
+/// RETURNS TABLE output the rowcount path would silently discard; the fetch
+/// path streams a plain script's rowcount result as zero rows, so it is safe
+/// for both script shapes).
+pub(crate) fn is_result_set_statement(statement: &str) -> bool {
+    let body = strip_leading_comments(statement);
+    // A parenthesized query — `(SELECT …) UNION …` — has no leading keyword.
+    if body.starts_with('(') {
+        return true;
+    }
+    let first_word = body.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
     matches!(
-        effective.as_str(),
-        "SELECT" | "WITH" | "VALUES" | "DESCRIBE" | "DESC" | "EXPLAIN"
+        first_word.as_str(),
+        "SELECT" | "WITH" | "VALUES" | "DESCRIBE" | "DESC" | "EXPLAIN" | "EXECUTE"
     )
 }
 
@@ -436,7 +451,12 @@ pub async fn execute_sql(
     // If this connection's driver is a non-native one (PyExasol, JDBC, …), run
     // the statements through that driver's runtime instead of native sqlx.
     let profile = crate::profiles::find_profile(&state, &profile_id)?;
-    let (results, success, profile_session, profile_base_stmt) = if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
+    let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
+        // exarrow is compiled in, so it runs on this runtime — no child
+        // process, no spawn_blocking, and no sqlx pool standing in for it.
+        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows).await?;
+        (resp.results, resp.success, None, None)
+    } else if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let app_for_driver = app.clone();
         let resp = tokio::task::spawn_blocking(move || {
@@ -602,15 +622,22 @@ pub async fn execute_sql(
     // model bound to it. Revalidate in the background — never on the query's
     // own latency — and only for statements that actually succeeded: failed
     // DDL changed nothing.
-    if results
+    let schema_changed = results.iter().any(|r| {
+        r.error.is_none()
+            && (crate::semantic_sync::is_schema_change(&r.statement)
+                || crate::semantic_sync::is_semantic_impacting_script(&r.statement))
+    });
+    let data_changed = results
         .iter()
-        .any(|r| r.error.is_none() && crate::semantic_sync::is_schema_change(&r.statement))
-    {
+        .any(|r| r.error.is_none() && crate::semantic_sync::is_bulk_data_change(&r.statement));
+    if schema_changed || data_changed {
         if let Ok(pool) = require_pool(&state, &profile_id).await {
             let app_handle = app.clone();
             let pid = profile_id.clone();
             tauri::async_runtime::spawn(async move {
-                crate::semantic_sync::revalidate(&app_handle, &pool, &pid).await;
+                // Surfaces are republished only for schema changes; data loads
+                // get a validate-only pass.
+                crate::semantic_sync::revalidate(&app_handle, &pool, &pid, schema_changed).await;
             });
         }
     }
@@ -661,6 +688,57 @@ pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
+
+    #[test]
+    fn execute_script_is_a_result_set_statement() {
+        // A script's RETURNS TABLE output must reach the results grid — the
+        // rowcount path silently discarded it ("0 rows affected").
+        assert!(is_result_set_statement(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.DESCRIBE_SEMANTIC_OBJECT('tpch', 'SALES')"
+        ));
+        assert!(is_result_set_statement("  execute script my.s()"));
+        assert!(!is_result_set_statement("INSERT INTO T VALUES (1)"));
+    }
+
+    #[test]
+    fn comments_and_parentheses_do_not_hide_a_query() {
+        // Every output-producing statement head Exasol has, behind the
+        // disguises that used to misroute them.
+        assert!(is_result_set_statement("(SELECT 1) UNION ALL (SELECT 2)"));
+        assert!(is_result_set_statement("/* optimizer hint */ SELECT 1"));
+        assert!(is_result_set_statement("-- comment\nSELECT 1"));
+        assert!(is_result_set_statement("/* a */ -- b\n  /* c */ WITH x AS (SELECT 1) SELECT * FROM x"));
+        assert!(is_result_set_statement("-- note\nEXECUTE SCRIPT s.t()"));
+        assert!(is_result_set_statement("VALUES 1"));
+        assert!(is_result_set_statement("DESC my_table"));
+        // ...and disguises must not turn writes into queries.
+        assert!(!is_result_set_statement("/* c */ INSERT INTO t VALUES (1)"));
+        assert!(!is_result_set_statement("-- c\nUPDATE t SET a = 1"));
+        assert!(!is_result_set_statement("-- only a comment"));
+        assert!(!is_result_set_statement(""));
+    }
+
+    #[test]
+    fn semantic_scripts_trigger_revalidation_except_the_syncs_own_calls() {
+        use crate::semantic_sync::is_semantic_impacting_script;
+        assert!(is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.CALL_ADMIN_JSON('CREATE_MODEL', '{}')"
+        ));
+        assert!(is_semantic_impacting_script("execute script etl.load_everything()"));
+        assert!(!is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.VALIDATE_MODEL('tpch')"
+        ));
+        assert!(!is_semantic_impacting_script(
+            "EXECUTE SCRIPT SEMANTIC_ADMIN.REFRESH_SEMANTIC_SURFACE('tpch')"
+        ));
+        assert!(!is_semantic_impacting_script("SELECT 1"));
+        // a comment must not hide a user script from the sync
+        assert!(is_semantic_impacting_script("-- reload\nEXECUTE SCRIPT etl.reload()"));
+        // ...and a wrapper that merely MENTIONS the sync's calls still triggers
+        assert!(is_semantic_impacting_script(
+            "EXECUTE SCRIPT MY.WRAPPER('SEMANTIC_ADMIN.VALIDATE_MODEL')"
+        ));
+    }
 
     #[test]
     fn parses_simple_percent() {

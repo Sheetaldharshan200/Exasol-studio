@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   Braces,
   Database,
   FileClock,
@@ -24,6 +25,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { AgentUsage } from "./AgentUsage";
 import { AiPersonalization } from "./AiPersonalization";
 import { ToolsPlugins } from "./ToolsPlugins";
 import { Icon } from "@/components/ui/icon";
@@ -63,6 +65,14 @@ const CATEGORIES: Category[] = [
     icon: Wrench,
     label: "Tools & Plugins",
     desc: "What the assistant is allowed to use — tool groups (files, terminal, search, tasks) and every connected MCP server, each with its own switch.",
+    controls: [],
+  },
+  {
+    tab: "ai",
+    key: "usage",
+    icon: Activity,
+    label: "Agent usage",
+    desc: "What the assistant actually did — turns, tool calls, token usage by provider and day, and the recent run activity, recorded locally.",
     controls: [],
   },
   {
@@ -134,6 +144,23 @@ const CATEGORIES: Category[] = [
     desc: "Editing behavior and syntax colors for the SQL editor.",
     controls: [
       { key: "editorFontSize", label: "Editor font size", type: "number", min: 11, max: 22, unit: "px" },
+      {
+        key: "editorFontFamily",
+        label: "Editor font",
+        type: "select",
+        options: [
+          { value: "JetBrains Mono", label: "JetBrains Mono" },
+          { value: "SF Mono", label: "SF Mono" },
+          { value: "Menlo", label: "Menlo" },
+          { value: "Monaco", label: "Monaco" },
+          { value: "Fira Code", label: "Fira Code" },
+          { value: "Cascadia Code", label: "Cascadia Code" },
+          { value: "Source Code Pro", label: "Source Code Pro" },
+          { value: "IBM Plex Mono", label: "IBM Plex Mono" },
+          { value: "Courier New", label: "Courier New" },
+        ],
+        help: "Fonts not installed on this machine fall back to JetBrains Mono.",
+      },
       { key: "wordWrap", label: "Word wrap", type: "toggle" },
       {
         key: "stmtNumbers",
@@ -293,6 +320,7 @@ const DEFAULTS: Record<string, SettingValue> = {
   metadataCache: "persistent",
   metadataStaleDays: 60,
   editorFontSize: 13,
+  editorFontFamily: "JetBrains Mono",
   wordWrap: false,
   stmtNumbers: true,
   autoComplete: true,
@@ -352,6 +380,21 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
       .getAppSettings()
       .then((s) => setValues((v) => ({ ...v, ...(s as Record<string, SettingValue>) })))
       .catch(() => undefined);
+  }, []);
+
+  // Stay in sync the OTHER way too: a change saved elsewhere (the main
+  // window's own toggles, another settings surface) lands here live, so this
+  // window never shows stale values while open.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<Record<string, SettingValue>>("settings:changed", (e) => {
+        setValues((v) => ({ ...v, ...e.payload }));
+      });
+    })();
+    return () => unlisten?.();
   }, []);
 
   // Apply the chosen theme to THIS (settings) window live, so the appearance
@@ -501,6 +544,8 @@ export function SettingsWindow({ embedded }: { embedded?: SettingsEmbed } = {}) 
                 <div className="mt-4">
                   <ToolsPlugins />
                 </div>
+              ) : current.key === "usage" ? (
+                <AgentUsage />
               ) : (
                 <>
                   <div className="mt-5 space-y-5">

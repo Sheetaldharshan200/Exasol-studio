@@ -64,6 +64,14 @@ pub async fn list_vs_prereqs(state: State<'_, AppState>, profile_id: String) -> 
     .await
     .unwrap_or_default();
 
+    let udfs = fetch_all_rows(
+        &pool,
+        "SELECT SCRIPT_SCHEMA, SCRIPT_NAME FROM SYS.EXA_ALL_SCRIPTS \
+         WHERE SCRIPT_TYPE = 'UDF' ORDER BY SCRIPT_SCHEMA, SCRIPT_NAME",
+    )
+    .await
+    .unwrap_or_default();
+
     let connections = fetch_first_ok(
         &pool,
         &[
@@ -75,6 +83,9 @@ pub async fn list_vs_prereqs(state: State<'_, AppState>, profile_id: String) -> 
 
     Ok(json!({
         "adapters": adapters.iter().map(|r| obj(vec![
+            ("schema", cell(r, 0)), ("name", cell(r, 1)),
+        ])).collect::<Vec<_>>(),
+        "udfScripts": udfs.iter().map(|r| obj(vec![
             ("schema", cell(r, 0)), ("name", cell(r, 1)),
         ])).collect::<Vec<_>>(),
         "connections": connections.iter().filter_map(|r| r.first().and_then(|v| v.as_str()).map(String::from)).collect::<Vec<_>>(),

@@ -196,6 +196,27 @@ fn ensure_agent(app: &AppHandle) -> AppResult<AgentInfo> {
     Ok(out)
 }
 
+/// Stop the agent sidecar so the NEXT panel call respawns it fresh — used
+/// after an Exa engine update so nothing keeps running on the old binary.
+/// Sessions are safe: chat history lives on disk in the agent data dir and is
+/// reloaded by the fresh sidecar; only the process restarts.
+#[tauri::command]
+pub fn agent_restart(app: AppHandle) -> AppResult<()> {
+    let sidecar = app.state::<AgentSidecar>();
+    let mut guard = sidecar
+        .inner
+        .lock()
+        .map_err(|_| AppError::Assistant("agent state poisoned".into()))?;
+    if let Some((mut child, _)) = guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    if let Ok(mut streams) = sidecar.streams.lock() {
+        streams.clear();
+    }
+    Ok(())
+}
+
 /// Grant a saved connection to the agent: decrypt the profile server-side
 /// and register it with the sidecar over localhost. The password flows
 /// Rust → sidecar memory only — it never enters the webview.

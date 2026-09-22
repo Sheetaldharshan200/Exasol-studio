@@ -23,6 +23,7 @@ export type Attachment = {
 import uiMap from "../data/ui-map.json" with { type: "json" };
 import type { SkillStore } from "./skills.ts";
 import { maybeCompact } from "./compact.ts";
+import { compareResults, planVerification } from "./verify.ts";
 import { extractMemories } from "./memory-extract.ts";
 import { extractTextToolCalls, resolveToolName, repairArgs, zodSchemaish } from "./tool-repair.ts";
 import { TurnBoard } from "./board.ts";
@@ -74,7 +75,7 @@ Connections — how they actually work:
 - Credentials must NEVER be collected in chat; Exasol Studio manages connections and grants the active one to your tools automatically.
 - Clarify-first for vague asks (e.g. "make a dashboard" with no subject): one short question, then do it.
 - If any tool fails twice with the same error, STOP and tell the user what failed instead of trying again.
-- Local Exasol background knowledge: Studio uses native Exasol Personal on macOS and digest-pinned Exasol Nano through Docker/Podman on Windows/Linux. The managed local profile uses localhost, a generated vault-backed SYS password, and self-signed TLS; the bundled MCP server uses its own read-only STUDIO_MCP_* profile. Connect through the saved profiles and never ask the user to paste generated passwords into chat.
+- Local Exasol background knowledge: Studio's local database is Exasol Personal 2.3, run by the official launcher on Podman on macOS, Linux and Windows; its port is published on 127.0.0.1 only. Virtual schemas and UDFs run locally once their runtime is installed. The managed local database is the default connection.
 
 Exasol SQL dialect:
 - Use LIMIT n (never FETCH FIRST or TOP). QUALIFY filters window functions. IDENTITY columns exist.
@@ -334,6 +335,7 @@ export async function runTurn(opts: {
 
   session.running = true;
   session.abort = new AbortController();
+  session.sqlRuns = []; // fresh turn — P1 verification only covers THIS turn's reads
   session.emit({ type: "status", state: "thinking" });
 
   // Fold older turns into a summary if we're nearing the context window.
@@ -574,7 +576,7 @@ export async function runTurn(opts: {
             case "tool-input-start": {
               // The model has STARTED producing a tool call (e.g. a big
               // artifact HTML) — show activity now so it never looks stuck.
-              session.emit({ type: "tool-start", callId: part.id, name: part.toolName, args: {} });
+              session.emit({ type: "tool-start", callId: part.id, name: part.toolName, args: {}, provisional: true });
               break;
             }
             case "tool-call": {
@@ -829,6 +831,76 @@ export async function runTurn(opts: {
         messageId: currentTextId ?? fallbackId,
         usage: s.usage,
       });
+      // P1 verification: reproduce the answer's final SQL result on an
+      // INDEPENDENT database session, bounded to 5s. Read-only by
+      // construction (planVerification refuses writes), never blocks the
+      // answer (it already streamed), and always reports honestly.
+      // (A pure-chat turn — no SQL at all — gets NO verification event on
+      // purpose: a stamp on prose would be noise, not honesty.)
+      if (session.connectionId && session.sqlRuns.length > 0) {
+        const messageId = currentTextId ?? fallbackId;
+        const startedVerify = Date.now();
+        try {
+          const plan = planVerification(session.sqlRuns);
+          if (plan) {
+            // db.verifyQuery self-limits (5s) and CLOSES its throwaway session
+            // on timeout — nothing keeps running in the background.
+            const actual = await db.verifyQuery(session.connectionId, plan.sql);
+            const outcome = compareResults(plan, {
+              sql: plan.sql,
+              columns: actual.columns,
+              rows: actual.rows,
+              rowCount: actual.rowCount,
+              truncated: actual.truncated,
+            });
+            const event = {
+              type: "verification" as const,
+              messageId,
+              status: outcome.status,
+              detail: outcome.detail,
+              expectedRows: plan.expected.rowCount,
+              actualRows: actual.rowCount,
+              elapsedMs: Date.now() - startedVerify,
+              sql: plan.sql,
+            };
+            session.emit(event);
+            session.record({ kind: "verification", ...event });
+          } else {
+            const event = {
+              type: "verification" as const,
+              messageId,
+              status: "unverified" as const,
+              detail: "Nothing verifiable this turn (write statements or non-deterministic SQL).",
+            };
+            session.emit(event);
+            session.record({ kind: "verification", ...event });
+          }
+        } catch (e) {
+          // Verification must NEVER break finalize — the answer already streamed.
+          const event = {
+            type: "verification" as const,
+            messageId,
+            status: "unverified" as const,
+            detail: `Independent re-run failed: ${e instanceof Error ? e.message : String(e)}`,
+            elapsedMs: Date.now() - startedVerify,
+          };
+          session.emit(event);
+          session.record({ kind: "verification", ...event });
+        }
+      }
+      // P3: one turn-level span — duration, tokens, provider — lands in the
+      // trace store (the tool spans came from tool-start/tool-end already).
+      session.traceSpan({
+        kind: "turn",
+        name: modelRef,
+        model: modelRef,
+        provider: turnProviderId,
+        startedAt: started,
+        durationMs: Date.now() - started,
+        ok: true,
+        tokens: { input: s.usage?.inputTokens, output: s.usage?.outputTokens },
+        meta: { steps: s.toolCalls ?? 0 },
+      });
       // Verified researcher findings outlive the turn: tested SQL with a
       // stated purpose is exactly the kind of fact future sessions should know.
       if (settings.enableInsights && session.connectionId) {
@@ -884,6 +956,18 @@ export async function runTurn(opts: {
     }
     if (!aborted) message = humanizeProviderError(turnProviderId, message);
     session.record({ kind: aborted ? "aborted" : "error", model: modelRef, error: message });
+    // P3: failed and aborted turns count too — observability that only sees
+    // successes overstates reliability.
+    session.traceSpan({
+      kind: "turn",
+      name: modelRef,
+      model: modelRef,
+      provider: turnProviderId,
+      startedAt: started,
+      durationMs: Date.now() - started,
+      ok: false,
+      meta: { outcome: aborted ? "aborted" : "error" },
+    });
     if (!aborted) log.error("turn failed", { model: modelRef, error: message });
     session.emit(
       aborted
@@ -1000,8 +1084,10 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   want(/\bexport\b|download.*(table|schema|csv)|backup/, "export_tables");
   add("load_skill");
   // Semantic-view tools only exist in `all` when the layer is ready; when they
-  // do, they're the source of truth for analytics, so always surface them.
-  add("semantic_compile_request", "semantic_compile_sql");
+  // do, they're the source of truth for analytics, so always surface them —
+  // discovery (semantic_models) and authoring included, or the model cannot
+  // check coverage or draft models for new datasets without request_tools.
+  add("semantic_models", "semantic_compile_request", "semantic_compile_sql", "semantic_admin", "semantic_apply_definition");
   // Bridged MCP tools (mcp_*): the user explicitly connected those servers —
   // always expose them (each call is approval-gated anyway).
   for (const n of Object.keys(all)) if (n.startsWith("mcp_")) keep.add(n);

@@ -1,29 +1,46 @@
-// Background Marketplace-update poller. Independent of whether the Marketplace
-// panel is open: it periodically reads the SAME catalog source the Updates tab
-// uses (the catalog.json mirror + per-repo upstream tags) and raises a
-// studio:notice badge when the number of available updates goes UP — so the
-// user learns about updates without opening the tab. Notifies only on a rise
-// (persisted "seen" count), so it never nags.
+// App-open Marketplace-update check. Runs ONCE shortly after launch (no
+// background polling — user rule: updates are fetched only on app open and on
+// clicking the Updates/catalog tabs). Reads the SAME catalog source the
+// Updates tab uses (the catalog.json mirror + per-repo upstream tags) and
+// raises a studio:notice badge when the number of available updates went UP
+// since last seen — so the user learns about updates without opening the tab.
 
 import { useEffect } from "react";
 import { ipc } from "@/lib/ipc";
 import { CATALOG } from "@/features/marketplace/catalog-data";
-import { countCatalogUpdates, countManagedUpdates } from "@/features/marketplace/updates";
+import { CATALOG_TO_COMPONENT } from "@/features/marketplace/updates";
+import { countUpdates } from "@/features/marketplace/item-state";
+import type { InstalledItem } from "@/lib/ipc";
 
 const SEEN_KEY = "exa.market.updatesSeen";
 const FIRST_DELAY_MS = 8_000; // shortly after launch, once the app has settled
-const INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
 async function currentUpdateCount(): Promise<number> {
-  const [catalog, installed, comps, upstreamList] = await Promise.all([
+  const [catalog, installed, detected, comps, upstreamList] = await Promise.all([
     ipc.marketCatalog().catch(() => null),
     ipc.marketInstalled().catch(() => []),
+    ipc.marketDetect().catch(() => ({}) as Record<string, boolean>),
     ipc.listComponents().catch(() => []),
     ipc.componentsUpstream().catch(() => []),
   ]);
-  const upstream = Object.fromEntries(upstreamList.map((u) => [u.id, u.tag]));
-  const catalogIds = CATALOG.map((c) => c.id);
-  return countCatalogUpdates(catalog, installed, catalogIds) + countManagedUpdates(comps, upstream);
+  // The same installedMap the Marketplace builds: addons from the manifest,
+  // managed components only when detected AND versioned by list_components.
+  const installedMap: Record<string, InstalledItem> = {};
+  for (const i of installed) installedMap[i.id] = i;
+  for (const [catalogId, compId] of Object.entries(CATALOG_TO_COMPONENT)) {
+    const comp = comps.find((c) => c.id === compId);
+    if (comp && detected[catalogId] && comp.installed) installedMap[catalogId] = { id: catalogId, version: comp.installed, path: "", filename: "" };
+    else delete installedMap[catalogId];
+  }
+  return countUpdates(CATALOG, {
+    installed: installedMap,
+    componentUpstream: Object.fromEntries(upstreamList.map((u) => [u.id, u.tag])),
+    detected,
+    installing: new Set(),
+    latestFor: (id) => catalog?.items?.[id]?.latest ?? null,
+    releaseAssets: () => [],
+    env: null,
+  });
 }
 
 export function useMarketplaceUpdateBadge(): void {
@@ -54,11 +71,9 @@ export function useMarketplaceUpdateBadge(): void {
       }
     };
     const first = window.setTimeout(() => void check(), FIRST_DELAY_MS);
-    const iv = window.setInterval(() => void check(), INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearTimeout(first);
-      window.clearInterval(iv);
     };
   }, []);
 }

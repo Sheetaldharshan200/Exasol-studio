@@ -55,6 +55,43 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
   const args = (rawArgs ?? {}) as Record<string, unknown>;
   try {
     switch (name) {
+      case "plan_updated": {
+        // P2: the agent proposed or advanced an explicit plan — render it live
+        // (informational; no app control involved).
+        window.dispatchEvent(new CustomEvent("studio:plan-updated", { detail: args.plan }));
+        return { ok: true };
+      }
+      case "semantic_validation": {
+        // The agent-side semantic sync finished a pass — surface it exactly
+        // like the Rust-side revalidation toast (informational).
+        const issueCount = Number(args.issueCount ?? 0);
+        const issues = Array.isArray(args.issues) ? (args.issues as string[]) : [];
+        const failed = Array.isArray(args.failed) ? (args.failed as string[]) : [];
+        const uncovered = Array.isArray(args.uncoveredSchemas) ? (args.uncoveredSchemas as string[]) : [];
+        window.dispatchEvent(
+          new CustomEvent("studio:notice", {
+            detail:
+              issueCount > 0 || failed.length > 0
+                ? {
+                    kind: "warning",
+                    title: `Semantic Views: ${issueCount || failed.length} issue${(issueCount || failed.length) === 1 ? "" : "s"} after ${args.impact === "schema" ? "a schema change" : "data changes"}`,
+                    body: [...issues, ...failed].slice(0, 3).join("\n"),
+                  }
+                : uncovered.length
+                  ? {
+                      kind: "info",
+                      title: `Dataset${uncovered.length === 1 ? "" : "s"} without a semantic model: ${uncovered.slice(0, 4).join(", ")}`,
+                      body: "Ask the assistant to draft a semantic model for it — governed metrics beat ad-hoc SQL.",
+                    }
+                  : {
+                      kind: "success",
+                      title: args.impact === "schema" ? "Semantic Views refreshed" : "Semantic Views revalidated",
+                      body: "All models are consistent with the database.",
+                    },
+          }),
+        );
+        return { ok: true };
+      }
       case "open": {
         const spec = OPEN_EVENTS[str(args.target).toLowerCase()];
         if (!spec) return { ok: false, error: `Unknown view "${str(args.target)}". One of: ${Object.keys(OPEN_EVENTS).join(", ")}.` };

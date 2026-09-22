@@ -152,38 +152,6 @@ def version_key(tag: str) -> tuple[int, ...]:
     return tuple(int(value) for value in re.findall(r"\d+", tag))
 
 
-def resolve_nano(source: dict[str, Any]) -> dict[str, Any]:
-    repository = source["repository"]
-    pattern = re.compile(source["stableTagPattern"])
-    required = set(source["requiredArchitectures"])
-    url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=100&ordering=last_updated"
-    candidates: list[dict[str, Any]] = []
-    while url:
-        page = json.loads(request(url, accept="application/json"))
-        for tag in page.get("results", []):
-            architectures = {
-                image.get("architecture")
-                for image in tag.get("images", [])
-                if image.get("os") == "linux"
-            }
-            if (
-                pattern.fullmatch(tag.get("name", ""))
-                and tag.get("content_type") == "image"
-                and required.issubset(architectures)
-                and re.fullmatch(r"sha256:[0-9a-fA-F]{64}", tag.get("digest", ""))
-            ):
-                candidates.append(tag)
-        url = page.get("next")
-    if not candidates:
-        raise RuntimeError(f"No stable multi-architecture image found for {repository}")
-    selected = max(candidates, key=lambda item: version_key(item["name"]))
-    return {
-        "registry": source["registry"],
-        "repository": repository,
-        "tag": selected["name"],
-        "digest": selected["digest"].lower(),
-    }
-
 
 def replace_tree(source: Path, destination: Path) -> None:
     if destination.exists():
@@ -225,8 +193,10 @@ def refresh_python_stack(config: dict[str, Any]) -> dict[str, str]:
 
 def refresh() -> None:
     if LOCK_PATH.exists():
-        # Refuse to turn local drift into a newly "generated" trusted hash.
-        verify()
+        # Refuse to turn local drift into a newly "generated" trusted hash —
+        # but a platform newly listed in the sources is exactly what this
+        # refresh exists to resolve, so the lock may lag the catalog there.
+        verify(allow_new_platforms=True)
     sources = load_json(SOURCES_PATH)
     previous = load_json(LOCK_PATH) if LOCK_PATH.exists() else {}
     resolved: dict[str, Any] = {
@@ -234,7 +204,6 @@ def refresh() -> None:
         "generatedBy": GENERATOR,
         "generatedAt": previous.get("generatedAt", ""),
         "personal": resolve_release(sources["githubReleases"]["personal"], previous.get("personal")),
-        "nano": resolve_nano(sources["containerImages"]["nano"]),
         "uv": resolve_release(sources["githubReleases"]["uv"], previous.get("uv")),
         "pythonStack": refresh_python_stack(sources["pythonStack"]),
         "exapump": resolve_release(sources["githubReleases"]["exapump"], previous.get("exapump")),
@@ -246,7 +215,15 @@ def refresh() -> None:
     LOCK_PATH.write_text(json.dumps(resolved, indent=2) + "\n", encoding="utf-8")
 
 
-def verify() -> None:
+def verify(*, allow_new_platforms: bool = False) -> None:
+    """Check the lock against the source catalog.
+
+    ``allow_new_platforms`` is for the pre-refresh guard: a platform ADDED to
+    the sources is legitimate drift the refresh is about to resolve, so the
+    lock may cover a subset of the catalog's platforms. Anything the lock
+    covers that the catalog does not is still refused, and after a refresh the
+    two must match exactly.
+    """
     sources = load_json(SOURCES_PATH)
     lock = load_json(LOCK_PATH)
     if lock.get("schemaVersion") != sources.get("schemaVersion") or lock.get("generatedBy") != GENERATOR:
@@ -264,7 +241,9 @@ def verify() -> None:
             raise RuntimeError(f"{name} repository differs from the source catalog")
         if not component.get("version"):
             raise RuntimeError(f"{name} has no selected release version")
-        if set(component["artifacts"]) != platforms:
+        covered = set(component["artifacts"])
+        lagging = allow_new_platforms and covered < platforms
+        if covered != platforms and not lagging:
             raise RuntimeError(f"{name} platform coverage differs from the source catalog")
         url_prefix = f"https://github.com/{repository}/releases/download/{component['version']}/"
         for platform_name, artifact in component["artifacts"].items():
@@ -276,13 +255,6 @@ def verify() -> None:
                 raise RuntimeError(f"{name} artifact URL is outside its declared GitHub release")
             if release_source.get("executable") and not sha_pattern.fullmatch(artifact.get("executableSha256", "")):
                 raise RuntimeError(f"{name} does not lock its extracted executable")
-    nano_source = sources["containerImages"]["nano"]
-    if lock["nano"].get("registry") != nano_source["registry"] or lock["nano"].get("repository") != nano_source["repository"]:
-        raise RuntimeError("Nano image identity differs from the source catalog")
-    if not re.fullmatch(nano_source["stableTagPattern"], lock["nano"].get("tag", "")):
-        raise RuntimeError("Nano tag does not match the declared stable-release policy")
-    if not re.fullmatch(r"sha256:[0-9a-f]{64}", lock["nano"]["digest"]):
-        raise RuntimeError("Nano is not pinned to an immutable SHA-256 digest")
     if sha256_file(PYTHON_STACK / "uv.lock") != lock["pythonStack"]["lockSha256"]:
         raise RuntimeError("Python uv.lock does not match runtime-components.lock.json")
     locked = tomllib.loads((PYTHON_STACK / "uv.lock").read_text(encoding="utf-8"))
@@ -305,7 +277,10 @@ def verify_platform_artifacts() -> None:
     if not os_name or not arch:
         raise RuntimeError(f"Unsupported validation platform: {platform.system()}/{platform.machine()}")
     key = f"{os_name}-{arch}"
-    names = ["uv", "exapump"] + (["personal"] if os_name == "macos" else [])
+    # Personal is locked for every desktop platform now, so every runner
+    # downloads, verifies and smoke-runs its own launcher — a broken Windows
+    # zip or Linux ARM build must fail here, not on a user's machine.
+    names = ["uv", "exapump", "personal"]
     with tempfile.TemporaryDirectory() as folder:
         temporary = Path(folder)
         for name in names:

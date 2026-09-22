@@ -11,6 +11,7 @@
  */
 import type { SqlCatalog } from "@/lib/sql-completion";
 import type { StatementResult } from "@/lib/ipc";
+import { resultSummary } from "../../../lib/result-stats.ts";
 
 /** A read-only snapshot of the workbench, captured when the menu opens. */
 export type ExaSnapshot = {
@@ -82,7 +83,8 @@ export function schemaArguments(snap: ExaSnapshot): string[] {
 /** Render the first `maxRows` of a result set as a GFM markdown table. */
 function resultToMarkdown(result: StatementResult, maxRows = 20): string {
   if (result.kind !== "resultSet" || result.columns.length === 0) {
-    return result.kind === "rowCount" ? `${result.rowCount} row(s) affected.` : "(no result set)";
+    if (result.kind === "executed") return "Statement executed (this driver reports no row count).";
+    return result.kind === "rowCount" ? `${resultSummary(result)}.` : "(no result set)";
   }
   const header = `| ${result.columns.map((c) => c.name).join(" | ")} |`;
   const divider = `| ${result.columns.map(() => "---").join(" | ")} |`;
@@ -125,7 +127,7 @@ export function resolveContext(id: ContextProviderId, arg: string | null, snap: 
         id: "results",
         providerId: id,
         label: "results",
-        body: `Most recent query result (${snap.lastResult.rowCount} row(s)):\n\n${resultToMarkdown(snap.lastResult)}`,
+        body: `Most recent query result (${resultSummary(snap.lastResult)}):\n\n${resultToMarkdown(snap.lastResult)}`,
       };
     }
     case "connection": {
@@ -264,6 +266,13 @@ export function neutralizeSentinels(text: string): string {
 }
 
 /** The user-visible remainder of a message (machine context removed). */
+/** The engine appends SYNTHETIC parts to a user message when its tools read
+ *  files ("Called the Read tool with the following input: {…}" followed by
+ *  the whole file body) — model-only context that must never render as the
+ *  user's words. Synthetic parts always TRAIL the typed text, so everything
+ *  from the first echo marker on is machine content by construction. */
+const SYNTHETIC_ECHO_RE = /Called the \w+ tool with the following input:/;
+
 export function stripMachineContext(text: string): string {
   let out = text;
   for (;;) {
@@ -277,5 +286,7 @@ export function stripMachineContext(text: string): string {
     }
     out = out.slice(0, start) + out.slice(end + CTX_CLOSE.length);
   }
+  const echo = SYNTHETIC_ECHO_RE.exec(out);
+  if (echo) out = out.slice(0, echo.index);
   return out.replace(/^\s+/, "").replace(/\s+$/, "");
 }

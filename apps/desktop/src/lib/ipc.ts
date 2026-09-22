@@ -3,6 +3,7 @@
  * When running in a plain browser (design preview via `pnpm dev`), a mock
  * backend with representative Exasol data is used instead.
  */
+import type { ResultKind } from "./result-stats.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { mockInvoke } from "@/lib/ipc-mock";
 
@@ -254,7 +255,7 @@ export type SearchHit = {
   selectable: boolean;
 };
 
-export type MarketEnv = { os: string; arch: string; docker: boolean; podman: boolean };
+export type MarketEnv = { os: string; arch: string };
 export type PersonalLocalStatus = {
   state: "idle" | "installing" | "ready" | "failed" | "stopped";
   step: string;
@@ -321,7 +322,11 @@ export type InstalledItem = { id: string; version: string; path: string; filenam
 
 export type CatalogEntry = {
   repo: string;
+  /** The REAL upstream release tag — never masked by the verified pin. */
   latest: string | null;
+  /** The validated lock pin for managed components (Personal, ExaPump, MCP
+   *  Server) — the baseline Revert returns to. Null for everything else. */
+  verified?: string | null;
   homepage: string;
   /** Repo name + About from GitHub, fetched AUTHENTICATED by the catalog cron
    *  — the reliable metadata source when the app's own unauthenticated GitHub
@@ -345,8 +350,43 @@ export type AiClientStatus = {
 };
 
 export type VsPrereqs = {
+  /** Adapter scripts present (SYS.EXA_ALL_SCRIPTS, SCRIPT_TYPE = 'ADAPTER'). */
   adapters: { schema: string; name: string }[];
+  /** UDF scripts present — document adapters need an import UDF beside the adapter script. */
+  udfScripts: { schema: string; name: string }[];
   connections: string[];
+};
+
+/** The disk half of the virtual-schema prerequisite probe, for Studio's managed local Exasol Personal. */
+export type VsLocalState = {
+  /** False when there is no managed local deployment, or it predates 2.3 (no host-visible /exa yet). */
+  managedLocal: boolean;
+  /** Paths under the default bucket, relative to it (`vs/foo.jar`). */
+  bucketFiles: string[];
+  /** Aliases of the installed script language containers, upper-cased (`JAVA`, `PYTHON3`, …). */
+  slcAliases: string[];
+};
+
+export type VsStageRequest = {
+  jobId: string;
+  repo: string;
+  assetPattern: string;
+  runtime: "java" | "lua";
+  driver: {
+    name: string;
+    maven?: string;
+    userJarPath?: string;
+    settingsCfgTemplate: string;
+  } | null;
+};
+
+export type VsStageResult = {
+  releaseTag: string;
+  adapterAsset: string;
+  luaSource: string | null;
+  driverFile: string | null;
+  javaSlcInstalled: boolean;
+  restarted: boolean;
 };
 
 export type GraphColumn = { name: string; dataType: string; pk: boolean };
@@ -371,7 +411,11 @@ export type FsEntry = {
 export type TablePreview = {
   columns: string[];
   rows: string[][];
+  /** More rows follow this window (same as `hasMore`; kept for older callers). */
   truncated: boolean;
+  hasMore: boolean;
+  /** First row of this window, 0-based. */
+  offset: number;
   format: string;
 };
 
@@ -379,7 +423,8 @@ export type ColumnMeta = { name: string; typeName: string };
 
 export type StatementResult = {
   statement: string;
-  kind: "resultSet" | "rowCount";
+  /** "executed" = it ran, but the driver cannot report how many rows it touched. */
+  kind: ResultKind;
   columns: ColumnMeta[];
   rows: unknown[][];
   rowCount: number;
@@ -515,10 +560,14 @@ export const ipc = {
   getSchemaGraph: (profileId: string, schema: string) =>
     call<SchemaGraph>("get_schema_graph", { profileId, schema }),
   listVsPrereqs: (profileId: string) => call<VsPrereqs>("list_vs_prereqs", { profileId }),
+  /** What Studio's managed local Exasol already has on disk (adapter JARs, SLCs). */
+  vsLocalState: () => call<VsLocalState>("vs_local_state"),
+  /** Stage an adapter (and its driver) into the managed local Exasol; installs the Java SLC and restarts once if needed. */
+  vsStageAdapter: (req: VsStageRequest) => call<VsStageResult>("vs_stage_adapter", { req }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
   marketRepoMeta: (repos: string[]) =>
-    call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
+    call<Record<string, { name: string; description: string | null; htmlUrl: string; stars?: number | null; pushedAt?: string | null }>>(
       "market_repo_meta",
       { repos },
     ),
@@ -526,11 +575,18 @@ export const ipc = {
   marketDocSave: (id: string, content: string) => call<void>("market_doc_save", { id, content }),
   marketDocLoad: (id: string) => call<string | null>("market_doc_load", { id }),
   marketDocForget: (id: string) => call<void>("market_doc_forget", { id }),
-  marketRelease: (repo: string) => call<Release>("market_release", { repo }),
+  marketRelease: (repo: string, tag?: string) => call<Release>("market_release", { repo, tag }),
+  /** Live version list for a marketplace item (newest first) — source is
+   *  "github" (reference = owner/repo), "pypi" (reference = package) or
+   *  "maven-exasol-jdbc". */
+  marketVersions: (source: string, reference: string) => call<string[]>("market_versions", { source, reference }),
+  /** Point Studio's SQL-editor driver runtime at an independently downloaded
+   *  driver file (today: the JDBC jar — same override as "Use custom JAR"). */
+  marketUseDownloaded: (id: string, version: string) => call<Record<string, string>>("market_use_downloaded", { id, version }),
   marketInstalled: () => call<InstalledItem[]>("market_installed"),
   marketDetect: () => call<Record<string, boolean>>("market_detect"),
   /** Web build: the engine installs what a local server process can (pip
-   *  packages, the starter-kit stack, docker pulls). */
+   *  packages, the starter-kit stack). */
   marketInstallEngine: (id: string) => call<{ done: boolean; started?: boolean; note?: string }>("market_install", { id }),
   marketInstall: (id: string, version: string, url: string, filename: string) =>
     call<{ ok: boolean; path: string }>("market_install", { id, version, url, filename }),
@@ -540,7 +596,11 @@ export const ipc = {
     url?: string,
     filename?: string,
     profileId?: string,
-  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename, profileId }),
+    // ONLY an explicit user pick from the version dropdown. `version` is the
+    // display/manifest value (often the catalog latest) and must never
+    // override a verified pip pin — `requested` is what does that, on purpose.
+    requested?: string,
+  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename, profileId, requested }),
   marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
   personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
@@ -549,6 +609,9 @@ export const ipc = {
   /** Latest OFFICIAL release tag per managed component (best-effort). */
   componentsUpstream: () => call<{ id: string; tag: string }[]>("components_upstream"),
   updateComponent: (id: string, version?: string) => call<void>("update_component", { id, version }),
+  /** Bounce the AI sidecar so the next panel call respawns it on the freshly
+   *  installed engine. Sessions live on disk and are reloaded. */
+  agentRestart: () => call<void>("agent_restart"),
   revertComponent: (id: string) => call<void>("revert_component", { id }),
   backupLocalDatabase: () => call<string>("backup_local_database"),
   skillsListTargets: () => call<SkillTarget[]>("skills_list_targets"),
@@ -650,8 +713,11 @@ export const ipc = {
   installCli: () => call<string>("install_cli"),
   fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
   fsReadText: (path: string) => call<string>("fs_read_text", { path }),
-  fsReadTable: (path: string, limit?: number) =>
-    call<TablePreview>("fs_read_table", { path, limit }),
+  /** One window of a tabular file — never the whole file (see open-file.ts). */
+  fsReadTable: (path: string, limit?: number, offset?: number) =>
+    call<TablePreview>("fs_read_table", { path, limit, offset }),
+  /** Total data rows, one streaming pass; cheap for Parquet, linear for CSV. */
+  fsCountRows: (path: string) => call<number>("fs_count_rows", { path }),
   fsSearch: (root: string, query: string, limit?: number) =>
     call<FsEntry[]>("fs_search", { root, query, limit }),
   fsDelete: (path: string) => call<void>("fs_delete", { path }),
