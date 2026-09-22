@@ -129,3 +129,13 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   not mis-qualify them; (5) framing reads live node positions (tables can be
   dragged inside their box). Known limit: identifiers containing dots are
   ambiguous in the dotted ids.
+- **Crash after "Building graph…" (2026-09-22).** webview.log showed three
+  `ResizeObserver loop completed with undelivered notifications` right before
+  the restart: React Flow's `onlyRenderVisibleElements` with parent/child nodes
+  flips children in and out of "visible" while their dimensions settle — a
+  measure→render loop that ends in a renderer kill (`panic = "abort"` is the
+  Rust side; the webview dies on its own). Removed the flag. Bounded rendering
+  now comes from `budgetLinks` (`MAX_EDGES = 400`: over it, declared links plus
+  the selected table's, the rest counted in the header) and from the
+  dense/paused edge decoration. Schema graphs also load ONE at a time —
+  concurrent statements on the shared websocket session are a known hang.

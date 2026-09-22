@@ -38,7 +38,7 @@ import { focusBounds } from "./visualizer-focus.ts";
 import { inferLinks } from "./infer-links.ts";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
-import { GROUP_HEADER, colKey, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
+import { GROUP_HEADER, budgetLinks, colKey, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -104,6 +104,8 @@ export function Visualizer({
   // Inferred links below this confidence stay hidden (see infer-links.ts).
   const [minScore, setMinScore] = useState(0.6);
   const [hiddenInferred, setHiddenInferred] = useState(0);
+  // Links held back by the render budget (see budgetLinks) — shown in the header.
+  const [budgetHidden, setBudgetHidden] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
   // While the user pans or zooms, links draw as plain lines (see diagram.tsx).
   const [interacting, setInteracting] = useState(false);
@@ -157,6 +159,29 @@ export function Visualizer({
   // Bumped by the layout effect each time a new set of nodes is committed, so
   // "show everything" also runs after a schema switch, once the new nodes exist.
   const [layoutRev, setLayoutRev] = useState(0);
+  const allLinksRef = useRef<(GraphLink & { inferred: boolean; score?: number })[]>([]);
+  const toEdges = useCallback(
+    (links: (GraphLink & { inferred: boolean; score?: number })[]): Edge[] =>
+      links.map((l, i) => ({
+        id: `${l.source}.${l.sourceColumn}->${l.target}.${l.targetColumn}-${i}`,
+        source: l.source,
+        target: l.target,
+        sourceHandle: `${l.sourceColumn}__s`,
+        targetHandle: `${l.targetColumn}__t`,
+        type: "beam",
+        data: {
+          source: l.source,
+          target: l.target,
+          sourceColumn: l.sourceColumn,
+          targetColumn: l.targetColumn,
+          label: `${l.sourceColumn} → ${l.targetColumn}`,
+          score: l.score,
+          active: false,
+          inferred: l.inferred,
+        } as unknown as Record<string, unknown>,
+      })),
+    [],
+  );
   useEffect(() => {
     const inst = rfRef.current;
     if (!inst || nodes.length === 0) return;
@@ -303,6 +328,8 @@ export function Visualizer({
       setHiddenInferred(0);
     }
     const links = [...declared, ...inferred];
+    // Every link is kept; what gets DRAWN is budgeted per selection below.
+    allLinksRef.current = links;
 
     const sourceCols = new Map<string, Set<string>>();
     const targetCols = new Map<string, Set<string>>();
@@ -364,26 +391,9 @@ export function Visualizer({
       : [];
     setNodes([...groupNodes, ...tableNodes, ...addNode]);
     setLayoutRev((r) => r + 1);
-    setEdges(
-      links.map((l, i) => ({
-        id: `${l.source}.${l.sourceColumn}->${l.target}.${l.targetColumn}-${i}`,
-        source: l.source,
-        target: l.target,
-        sourceHandle: `${l.sourceColumn}__s`,
-        targetHandle: `${l.targetColumn}__t`,
-        type: "beam",
-        data: {
-          source: l.source,
-          target: l.target,
-          sourceColumn: l.sourceColumn,
-          targetColumn: l.targetColumn,
-          label: `${l.sourceColumn} → ${l.targetColumn}`,
-          score: (l as { score?: number }).score,
-          active: false,
-          inferred: l.inferred,
-        } as unknown as Record<string, unknown>,
-      })),
-    );
+    const budget = budgetLinks(links, null);
+    setBudgetHidden(budget.hidden);
+    setEdges(toEdges(budget.shown));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, showInferred, minScore, selectedList, schemas]);
 
@@ -469,8 +479,12 @@ export function Visualizer({
         },
       })),
     );
-    setEdges((eds) =>
-      eds.map((e) => {
+    // Over budget, the selected table's links join the drawn set; then mark
+    // the ones the selection lights up.
+    const budget = budgetLinks(allLinksRef.current, sel?.table ?? null);
+    setBudgetHidden(budget.hidden);
+    setEdges(
+      toEdges(budget.shown).map((e) => {
         const d = e.data as unknown as BeamEdgeData;
         return { ...e, data: { ...e.data, active: edgeIsActive(d, sel) } };
       }),
@@ -649,7 +663,7 @@ export function Visualizer({
           <Search className="h-3.5 w-3.5" />
         </button>
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-          {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links
+          {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links{budgetHidden ? ` (+${budgetHidden} hidden — select a table to see its links)` : ""}
         </span>
       </header>
 
@@ -684,7 +698,6 @@ export function Visualizer({
               onPaneClick={() => setSel(null)}
               onMoveStart={() => setInteracting(true)}
               onMoveEnd={() => setInteracting(false)}
-              onlyRenderVisibleElements
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView

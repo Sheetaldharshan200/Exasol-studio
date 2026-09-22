@@ -131,3 +131,23 @@ export function whereSchemas(group: { rules: unknown[] }): string[] {
   walk(group.rules);
   return [...out];
 }
+
+/** Above this many links the canvas draws only what the user can read. */
+export const MAX_EDGES = 400;
+
+/**
+ * A render budget for links, so a schema with a million relationships stays
+ * a diagram and not a hang: under `max`, everything; over it, every declared
+ * key plus every link touching the selected table — inferred links between
+ * unselected tables wait until the user picks one. Returns what to draw and
+ * how many were held back.
+ */
+export function budgetLinks<L extends { source: string; target: string; inferred?: boolean }>(
+  links: L[],
+  selectedTable: string | null,
+  max = MAX_EDGES,
+): { shown: L[]; hidden: number } {
+  if (links.length <= max) return { shown: links, hidden: 0 };
+  const shown = links.filter((l) => !l.inferred || l.source === selectedTable || l.target === selectedTable);
+  return { shown: shown.length <= max ? shown : shown.slice(0, max), hidden: links.length - Math.min(shown.length, max) };
+}

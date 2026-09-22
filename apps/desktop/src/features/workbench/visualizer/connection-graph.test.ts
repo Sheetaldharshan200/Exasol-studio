@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GROUP_HEADER, GROUP_PAD, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
 
 const T = (name: string, n = 2) => ({ name, columns: Array.from({ length: n }, (_, i) => ({ name: `C${i}`, dataType: "INT", pk: i === 0 })) });
 
@@ -55,4 +55,20 @@ test("whereSchemas finds every schema a nested WHERE group names, and nothing el
   ] };
   assert.deepEqual(whereSchemas(group).sort(), ["MYSQL_VS", "RETAIL"]);
   assert.deepEqual(whereSchemas({ rules: [] }), []);
+});
+
+test("budgetLinks: everything under the cap; over it, declared links plus the selected table's, the rest counted", () => {
+  const declared = Array.from({ length: 3 }, (_, i) => ({ source: `S.D${i}`, target: `S.P${i}`, inferred: false }));
+  const inferred = Array.from({ length: 10 }, (_, i) => ({ source: `S.I${i}`, target: `S.P0`, inferred: true }));
+  const all = [...declared, ...inferred];
+  assert.deepEqual(budgetLinks(all, null, 20), { shown: all, hidden: 0 });
+  const over = budgetLinks(all, null, 5);
+  assert.deepEqual(over.shown, declared);
+  assert.equal(over.hidden, 10);
+  const withSel = budgetLinks(all, "S.I4", 5);
+  assert.deepEqual(withSel.shown.map((l) => l.source), ["S.D0", "S.D1", "S.D2", "S.I4"]);
+  assert.equal(withSel.hidden, 9);
+  const tooManyDeclared = budgetLinks(Array.from({ length: 50 }, (_, i) => ({ source: `a${i}`, target: "b", inferred: false })), null, 10);
+  assert.equal(tooManyDeclared.shown.length, 10);
+  assert.equal(tooManyDeclared.hidden, 40);
 });
