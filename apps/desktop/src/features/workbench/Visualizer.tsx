@@ -248,14 +248,25 @@ export function Visualizer({
     let alive = true;
     setLoading(true);
     setError(null);
-    Promise.allSettled(missing.map((name) => ipc.getSchemaGraph(profileId, name).then((g) => graphCache.set(`${profileId}:${name}`, g))))
-      .then((results) => {
+    // ONE schema at a time, on purpose: the connection is a single websocket
+    // session and concurrent statements on it hang or kill the driver (the
+    // same trap the agent's DAG runner hit). Each schema shows up as soon as
+    // its graph is in, so a big database fills in progressively.
+    const publish = () =>
+      setGraphs(Object.fromEntries(selectedList.flatMap((name) => (graphCache.has(`${profileId}:${name}`) ? [[name, graphCache.get(`${profileId}:${name}`)!]] : []))));
+    (async () => {
+      let firstError: string | null = null;
+      for (const name of missing) {
         if (!alive) return;
-        const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-        if (failed) setError(errorMessage(failed.reason));
-        setGraphs(Object.fromEntries(selectedList.flatMap((name) => (graphCache.has(`${profileId}:${name}`) ? [[name, graphCache.get(`${profileId}:${name}`)!]] : []))));
-      })
-      .finally(() => alive && setLoading(false));
+        try {
+          graphCache.set(`${profileId}:${name}`, await ipc.getSchemaGraph(profileId, name));
+        } catch (e) {
+          firstError ??= errorMessage(e);
+        }
+        if (alive) publish();
+      }
+      if (alive && firstError) setError(firstError);
+    })().finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
