@@ -78,13 +78,12 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
 };
 
 /**
- * Style plus two performance facts the diagram derives: `dense` (many links —
- * only the selected link animates or carries a label) and `paused` (the user
- * is panning/zooming — every link draws as a plain line until they stop).
- * A hundred links each running a JS-driven gradient was what made a big
- * schema stutter on every move.
+ * Style plus one performance fact the diagram derives: `dense` (many links —
+ * only the selected link animates or carries a label). Panning/zooming hides
+ * decoration through a CSS class on the pane, not through React state, so a
+ * gesture never re-renders an edge.
  */
-export type EdgeRenderContext = EdgeStyle & { dense?: boolean; paused?: boolean };
+export type EdgeRenderContext = EdgeStyle & { dense?: boolean };
 export const EdgeStyleContext = createContext<EdgeRenderContext>(DEFAULT_EDGE_STYLE);
 /** Above this many links the diagram is "dense": decoration only on the selected link. */
 export const DENSE_EDGES = 24;
@@ -220,9 +219,10 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const width = active ? cfg.width + 1.25 : cfg.width;
   const dash = dashFor(cfg.line, width);
   const opacity = active ? 1 : cfg.dense ? (inferred ? 0.28 : 0.6) : inferred ? 0.55 : 0.85;
-  // Decoration is for the link the user is looking at. Everything animates
-  // only on a small diagram at rest.
-  const decorate = !cfg.paused && (active || (!cfg.dense && !inferred));
+  // Decoration is for the link the user is looking at; on a small diagram every
+  // declared link gets it. While the user pans or zooms, CSS hides `.vs-deco`
+  // (see global.css) — no edge re-renders on a gesture.
+  const decorate = active || (!cfg.dense && !inferred);
   const animate = cfg.pulse && decorate;
   const showLabel = Boolean(d?.label) && decorate;
   // Empty pulseColor means "match the link color".
@@ -244,7 +244,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
         style={{ opacity }}
       />
       {animate ? (
-        <>
+        <g className="vs-deco">
           {/* Brighter moving highlight + travelling dot on top of the pulse line. */}
           <path d={path} fill="none" stroke={`url(#${gid})`} strokeWidth={width + 1.5} strokeLinecap="round" />
           <circle r={width + 2} fill={pulse}>
@@ -262,7 +262,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
               <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
             </linearGradient>
           </defs>
-        </>
+        </g>
       ) : null}
       {showLabel ? (
         <EdgeLabelRenderer>
@@ -273,7 +273,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
               background: `${cfg.to}1f`,
               color: cfg.from,
             }}
-            className="pointer-events-none absolute rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] whitespace-nowrap"
+            className="vs-deco pointer-events-none absolute rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] whitespace-nowrap"
           >
             {inferred ? `≈ ${d.score !== undefined ? d.score.toFixed(1) + " " : ""}` : ""}
             {d.label}
@@ -305,8 +305,8 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   return (
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
-    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-primary/45 bg-primary/[0.035] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_12%,transparent)]">
-      <div className="pointer-events-auto flex h-[44px] items-center gap-2 rounded-t-2xl border-b border-dashed border-primary/30 bg-panel/70 px-4">
+    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-primary/50">
+      <div className="pointer-events-auto flex h-[44px] items-center gap-2 rounded-t-2xl border-b border-dashed border-primary/30 bg-panel px-4">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
         <span className="truncate font-heading text-[16px] font-semibold tracking-tight text-foreground">{d.schema}</span>
         {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}

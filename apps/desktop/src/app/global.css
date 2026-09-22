@@ -839,3 +839,23 @@
 [data-hide-tools] [class*="aui-tool-"] {
   display: none !important;
 }
+
+/* Schema visualizer: the viewport is promoted to its own compositor layer so a
+   pan is a transform, not a repaint; the dot grid is static CSS instead of
+   React Flow's <Background>, which re-renders on every viewport change. */
+.visualizer-pane {
+  background-color: var(--editor);
+  background-image: radial-gradient(color-mix(in srgb, var(--border) 85%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.visualizer-pane .react-flow__viewport {
+  will-change: transform;
+}
+.visualizer-pane .react-flow__node {
+  will-change: transform;
+}
+/* A gesture in progress: link decoration (pulse, shimmer, labels) goes away
+   through the cascade — the edges themselves never re-render. */
+.visualizer-pane.is-moving .vs-deco {
+  display: none;
+}

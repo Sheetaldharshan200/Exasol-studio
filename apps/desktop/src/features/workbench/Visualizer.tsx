@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/ui/icon";
 import {
-  Background,
   Controls,
   MiniMap,
   ReactFlow,
@@ -109,7 +108,8 @@ export function Visualizer({
   // Links held back by the render budget (see budgetLinks) — shown in the header.
   const [budgetHidden, setBudgetHidden] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
-  // While the user pans or zooms, links draw as plain lines (see diagram.tsx).
+  // While the user pans or zooms: a class on the pane hides link decoration
+  // (CSS, no re-render) and the minimap pauses.
   const [interacting, setInteracting] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
@@ -496,7 +496,7 @@ export function Visualizer({
   }, [sel, mode, picked, matches]);
 
   const counts = useMemo(() => ({ tables: nodes.filter((n) => n.type === "table").length, edges: edges.length }), [nodes, edges]);
-  const edgeRender = useMemo(() => ({ ...edgeStyle, dense: edges.length > DENSE_EDGES, paused: interacting }), [edgeStyle, edges.length, interacting]);
+  const edgeRender = useMemo(() => ({ ...edgeStyle, dense: edges.length > DENSE_EDGES }), [edgeStyle, edges.length]);
 
   // react-querybuilder fields from involved (picked) tables, else all tables.
   const fields: Field[] = useMemo(() => {
@@ -707,11 +707,12 @@ export function Visualizer({
               fitView
               minZoom={0.15}
               proOptions={{ hideAttribution: true }}
-              className="bg-editor"
+              className={cn("visualizer-pane", interacting && "is-moving")}
             >
-              <Background color="var(--border)" gap={22} />
               <Controls className="!bottom-3 !left-3" showInteractive={false} />
-              <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
+              {interacting ? null : (
+                <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
+              )}
             </ReactFlow>
           </EdgeStyleContext.Provider>
           </DiagramStateContext.Provider>
