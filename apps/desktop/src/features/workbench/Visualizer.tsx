@@ -717,6 +717,20 @@ export function Visualizer({
           </DiagramStateContext.Provider>
         )}
 
+        {/* Floating "add" — the same door as the box at the end of the row, always in view */}
+        {onNewVs ? (
+          <button
+            onClick={onNewVs}
+            data-agent-id="visualizer.add-source"
+            title="Add a data source — attach another database or bucket as a virtual schema"
+            className="absolute top-3 left-3 z-20 flex h-8 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <Waypoints className="h-3.5 w-3.5 text-teal" />
+            Add data source
+          </button>
+        ) : null}
+
         {/* Floating VS Code-style fuzzy search over tables + columns */}
         {searchOpen ? (
           <div className="absolute top-3 right-3 z-20 flex w-80 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-2xl">
