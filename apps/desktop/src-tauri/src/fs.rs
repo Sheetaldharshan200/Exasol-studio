@@ -96,27 +96,70 @@ pub fn fs_home_roots() -> AppResult<Vec<FsEntry>> {
 pub struct TablePreview {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
+    /// More rows follow this window (kept as `truncated` for older callers).
     pub truncated: bool,
+    pub has_more: bool,
+    /// The window's first row index (0-based) — echoes the request.
+    pub offset: usize,
     pub format: String,
 }
 
-/// Read a tabular file (CSV / TSV / Parquet) into a preview grid.
+/// One WINDOW of a tabular file (CSV / TSV / Parquet): `offset` rows are
+/// skipped while streaming and only `limit` are kept, so a 5-million-row CSV
+/// costs the same memory as a 5-row one. `limit` is clamped to 10,000 — a grid
+/// never shows more at once, and 100,000 rows of strings is what used to hang
+/// the app.
 #[tauri::command]
-pub async fn fs_read_table(path: String, limit: Option<usize>) -> AppResult<TablePreview> {
-    let limit = limit.unwrap_or(1000).clamp(1, 100_000);
-    let ext = std::path::Path::new(&path)
+pub async fn fs_read_table(path: String, limit: Option<usize>, offset: Option<usize>) -> AppResult<TablePreview> {
+    let limit = limit.unwrap_or(1000).clamp(1, 10_000);
+    let offset = offset.unwrap_or(0);
+    match table_kind(&path)? {
+        TableKind::Delimited(delim) => read_delimited(&path, delim, offset, limit),
+        TableKind::Parquet => read_parquet(&path, offset, limit),
+    }
+}
+
+/// Total data rows of a tabular file — one streaming pass for CSV/TSV (the
+/// only correct answer with quoted newlines), the footer for Parquet.
+#[tauri::command]
+pub async fn fs_count_rows(path: String) -> AppResult<u64> {
+    match table_kind(&path)? {
+        TableKind::Delimited(delim) => {
+            let mut reader = csv::ReaderBuilder::new()
+                .delimiter(delim)
+                .flexible(true)
+                .from_path(&path)
+                .map_err(|e| AppError::Storage(e.to_string()))?;
+            Ok(reader.records().filter(|r| r.is_ok()).count() as u64)
+        }
+        TableKind::Parquet => {
+            use parquet::file::reader::{FileReader, SerializedFileReader};
+            let file = std::fs::File::open(&path)?;
+            let reader = SerializedFileReader::new(file).map_err(|e| AppError::Storage(e.to_string()))?;
+            Ok(reader.metadata().file_metadata().num_rows().max(0) as u64)
+        }
+    }
+}
+
+enum TableKind {
+    Delimited(u8),
+    Parquet,
+}
+
+fn table_kind(path: &str) -> AppResult<TableKind> {
+    let ext = std::path::Path::new(path)
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
     match ext.as_str() {
-        "csv" => read_delimited(&path, b',', limit),
-        "tsv" => read_delimited(&path, b'\t', limit),
-        "parquet" => read_parquet(&path, limit),
+        "csv" => Ok(TableKind::Delimited(b',')),
+        "tsv" => Ok(TableKind::Delimited(b'\t')),
+        "parquet" => Ok(TableKind::Parquet),
         other => Err(AppError::Storage(format!("Cannot preview .{other} files."))),
     }
 }
 
-fn read_delimited(path: &str, delimiter: u8, limit: usize) -> AppResult<TablePreview> {
+fn read_delimited(path: &str, delimiter: u8, offset: usize, limit: usize) -> AppResult<TablePreview> {
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(delimiter)
         .flexible(true)
@@ -126,51 +169,49 @@ fn read_delimited(path: &str, delimiter: u8, limit: usize) -> AppResult<TablePre
         .headers()
         .map(|h| h.iter().map(|s| s.to_string()).collect())
         .unwrap_or_default();
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    let mut truncated = false;
-    for record in reader.records() {
-        if rows.len() >= limit {
-            truncated = true;
-            break;
-        }
-        if let Ok(rec) = record {
-            rows.push(rec.iter().map(|s| s.to_string()).collect());
-        }
-    }
+    let (rows, has_more) = window(reader.records().filter_map(Result::ok).map(|rec| rec.iter().map(|s| s.to_string()).collect()), offset, limit);
     Ok(TablePreview {
         columns,
         rows,
-        truncated,
+        truncated: has_more,
+        has_more,
+        offset,
         format: if delimiter == b'\t' { "TSV".into() } else { "CSV".into() },
     })
 }
 
-fn read_parquet(path: &str, limit: usize) -> AppResult<TablePreview> {
+fn read_parquet(path: &str, offset: usize, limit: usize) -> AppResult<TablePreview> {
     use parquet::file::reader::{FileReader, SerializedFileReader};
 
     let file = std::fs::File::open(path)?;
     let reader = SerializedFileReader::new(file).map_err(|e| AppError::Storage(e.to_string()))?;
-    let mut iter = reader
+    // Column names come from the schema, so an empty window still has headers.
+    let columns: Vec<String> = reader
+        .metadata()
+        .file_metadata()
+        .schema_descr()
+        .columns()
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect();
+    let iter = reader
         .get_row_iter(None)
         .map_err(|e| AppError::Storage(e.to_string()))?;
+    let (rows, has_more) = window(
+        iter.filter_map(Result::ok).map(|row| row.get_column_iter().map(|(_, field)| field.to_string()).collect()),
+        offset,
+        limit,
+    );
+    Ok(TablePreview { columns, rows, truncated: has_more, has_more, offset, format: "Parquet".into() })
+}
 
-    let mut columns: Vec<String> = Vec::new();
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    let mut truncated = false;
-
-    while let Some(record) = iter.next() {
-        let row = record.map_err(|e| AppError::Storage(e.to_string()))?;
-        if columns.is_empty() {
-            columns = row.get_column_iter().map(|(name, _)| name.clone()).collect();
-        }
-        if rows.len() >= limit {
-            truncated = true;
-            break;
-        }
-        rows.push(row.get_column_iter().map(|(_, field)| field.to_string()).collect());
-    }
-
-    Ok(TablePreview { columns, rows, truncated, format: "Parquet".into() })
+/// Skip `offset` rows, keep `limit`, and peek one further to learn whether
+/// more follow — without ever holding more than `limit` rows.
+fn window<I: Iterator<Item = Vec<String>>>(rows: I, offset: usize, limit: usize) -> (Vec<Vec<String>>, bool) {
+    let mut it = rows.skip(offset);
+    let kept: Vec<Vec<String>> = it.by_ref().take(limit).collect();
+    let has_more = it.next().is_some();
+    (kept, has_more)
 }
 
 /// Bounded recursive filename search under a root (skips hidden entries).
@@ -226,4 +267,71 @@ pub fn fs_delete(path: String) -> AppResult<()> {
         std::fs::remove_file(p)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod table_window_tests {
+    use super::*;
+
+    fn csv_file(body: &str) -> tempfile::NamedTempFile {
+        let f = tempfile::Builder::new().suffix(".csv").tempfile().unwrap();
+        std::fs::write(f.path(), body).unwrap();
+        f
+    }
+
+    #[test]
+    fn a_window_in_the_middle_keeps_only_its_rows_and_knows_more_follow() {
+        let f = csv_file("id,name\n1,a\n2,b\n3,c\n4,d\n5,e\n");
+        let p = read_delimited(f.path().to_str().unwrap(), b',', 1, 2).unwrap();
+        assert_eq!(p.columns, vec!["id", "name"]);
+        assert_eq!(p.rows, vec![vec!["2", "b"], vec!["3", "c"]]);
+        assert!(p.has_more);
+        assert_eq!(p.offset, 1);
+        let last = read_delimited(f.path().to_str().unwrap(), b',', 3, 2).unwrap();
+        assert_eq!(last.rows.len(), 2);
+        assert!(!last.has_more, "the window that reaches the end reports no more");
+    }
+
+    #[test]
+    fn past_the_end_header_only_and_empty_files_are_answers_not_errors() {
+        let f = csv_file("id,name\n1,a\n");
+        let past = read_delimited(f.path().to_str().unwrap(), b',', 10, 5).unwrap();
+        assert!(past.rows.is_empty() && !past.has_more);
+        let h = csv_file("id,name\n");
+        let header_only = read_delimited(h.path().to_str().unwrap(), b',', 0, 5).unwrap();
+        assert_eq!(header_only.columns, vec!["id", "name"]);
+        assert!(header_only.rows.is_empty());
+        let e = csv_file("");
+        let empty = read_delimited(e.path().to_str().unwrap(), b',', 0, 5).unwrap();
+        assert!(empty.columns.is_empty() && empty.rows.is_empty());
+    }
+
+    #[test]
+    fn quoted_newlines_are_one_record_for_the_window_and_the_count() {
+        let f = csv_file("id,note\n1,\"first\nline\"\n2,plain\n3,\"a,b\"\n");
+        let p = read_delimited(f.path().to_str().unwrap(), b',', 0, 10).unwrap();
+        assert_eq!(p.rows.len(), 3);
+        assert_eq!(p.rows[0][1], "first\nline");
+        let n = tauri::async_runtime::block_on(fs_count_rows(f.path().to_string_lossy().to_string())).unwrap();
+        assert_eq!(n, 3);
+    }
+
+    #[test]
+    fn the_limit_is_clamped_and_unknown_extensions_are_refused() {
+        let f = csv_file("id\n1\n");
+        let p = tauri::async_runtime::block_on(fs_read_table(f.path().to_string_lossy().to_string(), Some(1_000_000), None)).unwrap();
+        assert_eq!(p.rows.len(), 1);
+        assert!(table_kind("notes.txt").is_err());
+    }
+
+    #[test]
+    fn window_never_holds_more_than_limit() {
+        let rows = (0..100).map(|i| vec![i.to_string()]);
+        let (kept, more) = window(rows, 95, 10);
+        assert_eq!(kept.len(), 5);
+        assert!(!more);
+        let (kept, more) = window((0..100).map(|i| vec![i.to_string()]), 0, 10);
+        assert_eq!(kept.len(), 10);
+        assert!(more);
+    }
 }

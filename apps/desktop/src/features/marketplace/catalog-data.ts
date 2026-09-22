@@ -41,10 +41,20 @@ export type ResolvedCatalogItem = Omit<CatalogItem, "name" | "description" | "ho
   name: string;
   description: string;
   homepage: string;
+  stars: number | null;
+  pushedAt: string | null;
 };
 
 /** What GitHub says about a repo (subset of GET /repos/{owner}/{repo}). */
-export type RepoMeta = { name: string; description: string | null; htmlUrl: string };
+export type RepoMeta = {
+  name: string;
+  description: string | null;
+  htmlUrl: string;
+  /** GitHub stargazers — social proof on the catalog card. */
+  stars?: number | null;
+  /** Last push, ISO — "updated 3 days ago" on the card. */
+  pushedAt?: string | null;
+};
 
 // Official Exasol / Exasol-Labs repositories only.
 export const CATALOG: CatalogItem[] = [
@@ -147,6 +157,8 @@ export function resolveCatalogItem(
     name: item.name || m?.name || (item.repo ? repoDisplayName(item.repo) : item.id),
     description: item.description ?? (m ? m.description : null) ?? "",
     homepage: item.homepage || m?.htmlUrl || (item.repo ? `https://github.com/${item.repo}` : ""),
+    stars: m?.stars ?? null,
+    pushedAt: m?.pushedAt ?? null,
   };
 }
 

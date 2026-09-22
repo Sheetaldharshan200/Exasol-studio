@@ -417,6 +417,9 @@ pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<V
                     "name": v.get("name"),
                     "description": v.get("description"),
                     "htmlUrl": v.get("html_url"),
+                    // Social proof for the catalog cards (Docker Hub shows pulls + stars).
+                    "stars": v.get("stargazers_count"),
+                    "pushedAt": v.get("pushed_at"),
                 }))
             }
         });
@@ -2564,3 +2567,4 @@ mod tests {
         );
     }
 }
+

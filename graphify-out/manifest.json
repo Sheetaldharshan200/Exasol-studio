@@ -480,13 +480,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/fs.rs": {
-    "mtime": 1784141870.7500446,
-    "ast_hash": "bb16ba6e5f47df88ead864e7bfa1e8a0",
+    "mtime": 1790016633.3355289,
+    "ast_hash": "a1a3b93012fa1bba8a9ad3c4360f5efb",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/git.rs": {
-    "mtime": 1788279776.7684667,
-    "ast_hash": "c49e899f28e687e2e1577d6b623efc93",
+    "mtime": 1790055439.5991366,
+    "ast_hash": "617824cd73f1a5e7bff79356940be73e",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/history.rs": {
@@ -495,8 +495,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/lib.rs": {
-    "mtime": 1790012688.1835268,
-    "ast_hash": "52c448754bb148b472f7e8d56c2611f0",
+    "mtime": 1790016633.3359993,
+    "ast_hash": "11e5383317997c034a3871bb0d54c8c0",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_database.rs": {
@@ -520,8 +520,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/market.rs": {
-    "mtime": 1790012688.183096,
-    "ast_hash": "3eb4c2876938fa2c88714e02cc41b349",
+    "mtime": 1790015811.5560381,
+    "ast_hash": "d6f795b0b20225021203a7f260954370",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/metadata.rs": {
@@ -660,8 +660,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1790013373.338635,
-    "ast_hash": "4510e3f25da88ff16fd1ee9b0d324398",
+    "mtime": 1790055439.5937045,
+    "ast_hash": "d0c7aff1e2d67b79a0357555f8fdaff0",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ThemeCustomizer.tsx": {
@@ -920,8 +920,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/Marketplace.tsx": {
-    "mtime": 1790011354.3916018,
-    "ast_hash": "1562bad4190603029dff7f0ee5333695",
+    "mtime": 1790016832.7963362,
+    "ast_hash": "9ae873324c30dadbb5305119a61decb2",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/McpConfigTab.tsx": {
@@ -1005,13 +1005,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/FileExplorer.tsx": {
-    "mtime": 1784048498.9576313,
-    "ast_hash": "b0084a6100b1ae195de7ab86b7337f2e",
+    "mtime": 1790017033.1714385,
+    "ast_hash": "659afb3552792f3460aa4da9ab7ddb97",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/FilePreviewPanel.tsx": {
-    "mtime": 1783977477.071778,
-    "ast_hash": "dea350813abf67cec01fdb35d3ce6c30",
+    "mtime": 1790055439.5976834,
+    "ast_hash": "abd4adb10bc8bd2fd38460e409039c10",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/GitPanel.tsx": {
@@ -1075,8 +1075,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/Visualizer.tsx": {
-    "mtime": 1790013555.4634323,
-    "ast_hash": "ab08faa351daba005d734c555a47c9bd",
+    "mtime": 1790017087.1528306,
+    "ast_hash": "e7e838dc7671d315b3096215f0d6c7c5",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/workbench/WelcomeScreen.tsx": {
@@ -1135,13 +1135,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/ipc-mock.ts": {
-    "mtime": 1790012811.322809,
-    "ast_hash": "356576aac56246625b4d9cd13a560947",
+    "mtime": 1790017033.1701748,
+    "ast_hash": "ec377e516e9aad5ea691c62459f74219",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/ipc.ts": {
-    "mtime": 1790012811.3220615,
-    "ast_hash": "4e0d43eb0b4a4d97baa9ce4ebf04191c",
+    "mtime": 1790016920.8903027,
+    "ast_hash": "0bc08b5c9520162c66155f12e5bf8a89",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/platform.ts": {
@@ -1220,8 +1220,8 @@
     "semantic_hash": ""
   },
   "packages/agent-core/data/ui-map.json": {
-    "mtime": 1790014693.9491887,
-    "ast_hash": "4a8740e459103a517b95f74c71786da4",
+    "mtime": 1790016343.6489756,
+    "ast_hash": "a98a26ff142a0d57c7bb4cf0f3f6cde9",
     "semantic_hash": ""
   },
   "packages/agent-core/evals/live.ts": {
@@ -2715,8 +2715,8 @@
     "semantic_hash": ""
   },
   "knowledge/wiki/log.md": {
-    "mtime": 1790013879.7306604,
-    "ast_hash": "ed1ab6e8ba65f50771c7b488d501ba2e",
+    "mtime": 1790055104.8090663,
+    "ast_hash": "f8e690203e838db25490777e02f05428",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/ai-integrations.md": {
@@ -3300,8 +3300,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/assistant-ui/thread.tsx": {
-    "mtime": 1788945941.6916442,
-    "ast_hash": "737752e3cd13415b14ee4c1a47e6c53b",
+    "mtime": 1790054978.0857255,
+    "ast_hash": "f61dd01853b14e92a7cf5b34d4a9b0b1",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/assistant-ui/tool-fallback.tsx": {
@@ -3755,8 +3755,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/catalog-data.ts": {
-    "mtime": 1790011354.3891242,
-    "ast_hash": "0579f77cb50d1446585d8c27e6ca39a6",
+    "mtime": 1790015692.0825982,
+    "ast_hash": "cefbc22e2156ce2672d87644574c500c",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/settings/AiPersonalization.tsx": {
@@ -23510,18 +23510,18 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/updates.test.ts": {
-    "mtime": 1788505000.618507,
-    "ast_hash": "8848bd374f624edbf4d728581e24a3fd",
+    "mtime": 1790017181.7998447,
+    "ast_hash": "fc5827f6318365368c55b0e5b731f5bf",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/updates.ts": {
-    "mtime": 1788797311.26104,
-    "ast_hash": "b3253aaceca58d3c39a516eb3c4956b4",
+    "mtime": 1790017154.7514486,
+    "ast_hash": "a2af55efa299b49ebbe1476894d96a2f",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/use-update-badge.ts": {
-    "mtime": 1788756793.8146403,
-    "ast_hash": "c541558f5fae2604cba41367cc7d62ef",
+    "mtime": 1790016832.797113,
+    "ast_hash": "eedfeb5ba1993ab4cfb4506c15a472c2",
     "semantic_hash": ""
   },
   "apps/desktop/src/features/marketplace/versions.test.ts": {
@@ -24145,8 +24145,143 @@
     "semantic_hash": ""
   },
   "openspec/changes/workbench-scale-and-polish/tasks.md": {
-    "mtime": 1790014463.5678189,
-    "ast_hash": "05873bd490cf92fa59727c36af6a20b3",
+    "mtime": 1790055439.599579,
+    "ast_hash": "77d135250c318d2991c1cc8642e1f3c3",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/TabErrorBoundary.tsx": {
+    "mtime": 1790016542.522459,
+    "ast_hash": "903c21d62430a1e37f6cc5e16ab1e745",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/ExaComposerInput.tsx": {
+    "mtime": 1790055439.5969462,
+    "ast_hash": "1422b2e2555302ea7b2a9fa7e05a6728",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/ExaNextActions.tsx": {
+    "mtime": 1790055439.5942626,
+    "ast_hash": "7b595615eaca86be6371c1ae5bba492f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/complete-draft.test.ts": {
+    "mtime": 1790016997.4977238,
+    "ast_hash": "8c89e9e512f42d5fd85fe667e15e4e50",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/complete-draft.ts": {
+    "mtime": 1790016997.4900405,
+    "ast_hash": "c62e532e47f8b217a285f03d7b48ce07",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/next-actions.test.ts": {
+    "mtime": 1790016997.5127902,
+    "ast_hash": "eac200ea6ad552014c0c49b73c425f1f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/assistant/exa/next-actions.ts": {
+    "mtime": 1790016997.505762,
+    "ast_hash": "311f37fd9d38bdd10d6677e2f4e9e46a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/FilterDrawer.tsx": {
+    "mtime": 1790016074.8184533,
+    "ast_hash": "438bfd91dc81e4169dff2db273a58e22",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubCard.tsx": {
+    "mtime": 1790016832.7994008,
+    "ast_hash": "a3ce0b3e71a5221230c8e895cf2f8d45",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubDetail.tsx": {
+    "mtime": 1790016074.8361726,
+    "ast_hash": "e76dcfe92bc1f51bb6fda00b603df660",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubHeader.tsx": {
+    "mtime": 1790015967.3207166,
+    "ast_hash": "3bc2f38d1a11dd97bd63cc4303dc8057",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubHome.tsx": {
+    "mtime": 1790016074.8060672,
+    "ast_hash": "255bee6c8db89b88d5bbfdd45bbbd694",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubLogo.tsx": {
+    "mtime": 1790015967.3080416,
+    "ast_hash": "15e56f161aad9f70fecd2566edb23f91",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/HubSearch.tsx": {
+    "mtime": 1790016074.8266456,
+    "ast_hash": "b6d4eb595e2e88e482dbe837838f6442",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/filters.test.ts": {
+    "mtime": 1790015787.2730498,
+    "ast_hash": "a4992faa46fe3181ee2888527906174e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/hub/filters.ts": {
+    "mtime": 1790015811.5578809,
+    "ast_hash": "c4cbe7c0ef11c590b8d9d5bdb8d66c29",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/item-state.test.ts": {
+    "mtime": 1790016832.7950134,
+    "ast_hash": "b8efd55bbc1cf2d02fb2baf06a67e29c",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/marketplace/item-state.ts": {
+    "mtime": 1790016832.7942626,
+    "ast_hash": "75db106e95fb868be856e96e4f9d43d2",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/build-sql.test.ts": {
+    "mtime": 1790016955.1870656,
+    "ast_hash": "ba3a1ec2aa1df6f16d0823af82dc052f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/build-sql.ts": {
+    "mtime": 1790016955.1757426,
+    "ast_hash": "f9ec0629792ccdcba3472dc225636a53",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/infer-links.test.ts": {
+    "mtime": 1790016474.5589304,
+    "ast_hash": "970252b934b6fd0e5bf1199d57f1b5dc",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/infer-links.ts": {
+    "mtime": 1790016460.4190755,
+    "ast_hash": "d1e9570dda3173d399352bd8cb3d30ff",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/open-file.test.ts": {
+    "mtime": 1790016542.5159278,
+    "ast_hash": "064f9eb7b964ec94bfbbcd0a6e680181",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/open-file.ts": {
+    "mtime": 1790016542.509874,
+    "ast_hash": "ef73017909f11d4a5268f305d46c2257",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/visualizer-focus.test.ts": {
+    "mtime": 1790015512.784012,
+    "ast_hash": "e6e030584c8a9744a84a20f963693f8e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/features/workbench/visualizer-focus.ts": {
+    "mtime": 1790015512.7728355,
+    "ast_hash": "12937dd0eaad9256b3463b1f13bd7158",
+    "semantic_hash": ""
+  },
+  "knowledge/wiki/pages/workbench-scale-and-polish.md": {
+    "mtime": 1790055104.8043065,
+    "ast_hash": "3cfbb23c749f8eaa2067b62c707fe0f1",
     "semantic_hash": ""
   }
 }

@@ -360,13 +360,48 @@ pub fn git_diff(path: String, staged: bool) -> AppResult<String> {
     args.push(path.as_str());
     let (_, out, _) = run(&args)?;
     if out.trim().is_empty() {
-        // Untracked file: show its content as an all-added diff.
-        if let Ok(text) = std::fs::read_to_string(workspace()?.join(&path)) {
+        // Untracked file: show its content as an all-added diff — but a huge
+        // data file is read in full only up to the cap.
+        let full = workspace()?.join(&path);
+        if let Ok(meta) = std::fs::metadata(&full) {
+            if meta.len() > DIFF_CAP as u64 {
+                return Ok(format!("@@ new file @@\n{}", too_large_note(meta.len() as usize, 0)));
+            }
+        }
+        if let Ok(text) = std::fs::read_to_string(&full) {
             let body: String = text.lines().map(|l| format!("+{l}")).collect::<Vec<_>>().join("\n");
             return Ok(format!("@@ new file @@\n{body}"));
         }
     }
-    Ok(out)
+    Ok(cap_diff(out, DIFF_CAP))
+}
+
+/// A diff bigger than this is a data dump, not something a person reads; the
+/// panel shows the head and says how much was left out.
+pub(crate) const DIFF_CAP: usize = 1024 * 1024;
+
+pub(crate) fn cap_diff(out: String, cap: usize) -> String {
+    if out.len() <= cap {
+        return out;
+    }
+    // Never slice inside a multi-byte character, then cut on a line boundary
+    // so the last hunk line is never half a line.
+    let mut safe = cap;
+    while !out.is_char_boundary(safe) {
+        safe -= 1;
+    }
+    let head_end = out[..safe].rfind('\n').unwrap_or(safe);
+    let shown = out[..head_end].lines().count();
+    format!("{}\n{}", &out[..head_end], too_large_note(out.len(), shown))
+}
+
+fn too_large_note(total_bytes: usize, shown_lines: usize) -> String {
+    let mb = total_bytes as f64 / (1024.0 * 1024.0);
+    if shown_lines == 0 {
+        format!("… diff too large to show ({mb:.1} MB). Open the file itself instead.")
+    } else {
+        format!("… diff truncated after {shown_lines} lines ({mb:.1} MB in total). Open the file itself for the rest.")
+    }
 }
 
 // ── Remote operations ──────────────────────────────────────────────────────────
@@ -923,5 +958,45 @@ mod ref_tests {
         assert!(validate_ref_name("a..b").is_err());
         assert!(validate_ref_name("").is_err());
         assert!(validate_ref_name("  ").is_err());
+    }
+}
+
+#[cfg(test)]
+mod diff_cap_tests {
+    use super::cap_diff;
+
+    #[test]
+    fn under_the_cap_the_diff_is_untouched() {
+        let d = "@@ -1 +1 @@\n-a\n+b\n".to_string();
+        assert_eq!(cap_diff(d.clone(), 1024), d);
+    }
+
+    #[test]
+    fn over_the_cap_it_is_cut_on_a_line_and_says_how_much_was_left() {
+        let line = "+xxxxxxxxx\n"; // 11 bytes
+        let d: String = std::iter::repeat(line).take(1000).collect();
+        let out = cap_diff(d, 100);
+        assert!(out.starts_with("+xxxxxxxxx\n"));
+        assert!(out.contains("diff truncated after 9 lines"), "{out}");
+        assert!(!out.contains("+xxxxxxxxx+"), "never half a line");
+        assert!(out.len() < 400);
+    }
+
+    #[test]
+    fn a_multi_byte_character_on_the_cap_is_never_split() {
+        // "é" is two bytes; a cap that lands between them must back off.
+        let d = "é".repeat(100);
+        let out = cap_diff(d.clone(), 101);
+        assert!(out.starts_with(&"é".repeat(50)), "{out}");
+        assert!(out.contains("diff truncated"));
+        let _ = cap_diff("+ü\n".repeat(50), 4); // byte 4 sits inside a char + newline mix
+    }
+
+    #[test]
+    fn a_binary_like_blob_without_newlines_still_caps() {
+        let d = "x".repeat(5000);
+        let out = cap_diff(d, 100);
+        assert!(out.starts_with(&"x".repeat(100)));
+        assert!(out.contains("diff truncated after 1 lines"));
     }
 }

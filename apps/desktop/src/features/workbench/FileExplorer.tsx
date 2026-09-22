@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { routeOpen } from "@/features/workbench/open-file";
 import {
   ChevronRight,
   ChevronsDownUp,
@@ -34,6 +35,8 @@ const ROW_H = 26;
 const TEXT_EXT = new Set(["sql"]);
 const TABLE_EXT = new Set(["csv", "tsv", "parquet"]);
 const OPENABLE = new Set([...TEXT_EXT, ...TABLE_EXT]);
+const notify = (kind: "info" | "warning", title: string, body: string) =>
+  window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
 const extOf = (name: string) => name.split(".").pop()?.toLowerCase() ?? "";
 const isHidden = (name: string) => name.startsWith(".");
 
@@ -213,18 +216,25 @@ export function FileExplorer({
     return () => clearTimeout(handle);
   }, [query, roots]);
 
+  // The route (text editor vs paged grid vs refuse) is decided from the name
+  // and size BEFORE any byte is read — a 300 MB CSV never reaches Monaco.
   const openPath = useCallback(
-    async (name: string, path: string) => {
-      const ext = extOf(name);
-      if (TABLE_EXT.has(ext)) {
+    async (name: string, path: string, size?: number | null) => {
+      if (!OPENABLE.has(extOf(name))) return;
+      const route = routeOpen({ name, size });
+      if (route.kind === "refuse") {
+        notify("warning", name, route.reason);
+        return;
+      }
+      if (route.kind === "preview") {
         onOpenData(name, path);
-      } else if (TEXT_EXT.has(ext)) {
-        try {
-          const content = await ipc.fsReadText(path);
-          onOpenFile(name, content, path);
-        } catch {
-          /* ignore unreadable file */
-        }
+        return;
+      }
+      try {
+        const content = await ipc.fsReadText(path);
+        onOpenFile(name, content, path);
+      } catch (e) {
+        notify("warning", `Could not open ${name}`, errorMessage(e));
       }
     },
     [onOpenFile, onOpenData],
@@ -232,7 +242,7 @@ export function FileExplorer({
 
   const openEntry = useCallback(
     (entry: FsEntry) => {
-      if (!entry.isDir) void openPath(entry.name, entry.path);
+      if (!entry.isDir) void openPath(entry.name, entry.path, entry.size);
     },
     [openPath],
   );
@@ -259,7 +269,7 @@ export function FileExplorer({
     for (const p of [...selected]) {
       const entry = entryByPath.current.get(p);
       if (entry && !entry.isDir && OPENABLE.has(extOf(entry.name))) {
-        await openPath(entry.name, entry.path);
+        await openPath(entry.name, entry.path, entry.size);
       }
     }
     setSelected(new Set());

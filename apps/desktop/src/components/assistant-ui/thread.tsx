@@ -29,6 +29,8 @@ import { extractContextPins } from "@/features/assistant/exa/context";
 import { workingLabel, workingStatus } from "@/features/assistant/exa/work-label";
 import { openLinkOrPath } from "@/lib/open-target";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
+import { ExaComposerInput } from "@/features/assistant/exa/ExaComposerInput";
+import { ExaNextActions } from "@/features/assistant/exa/ExaNextActions";
 import {
   ComposerQuotePreview,
   QuoteBlock,
@@ -252,7 +254,7 @@ const Composer: FC = () => {
           <ComposerAttachments />
           {/* Studio: resolved @-context chips sit above the input. */}
           <ExaComposerChips />
-          <ComposerPrimitive.Input
+          <ExaComposerInput
             placeholder="Send a message..."
             // data-bare: the shell already draws the box — opt out of the
             // app-wide focus border/ring so no second border appears inside.
@@ -605,6 +607,8 @@ const AssistantMessage: FC = () => {
           }}
         </MessagePrimitive.GroupedParts>
         <MessageError />
+        {/* Studio: deterministic "what next" chips (run / open / chart / visualize). */}
+        <ExaNextActions />
       </div>
 
       <div

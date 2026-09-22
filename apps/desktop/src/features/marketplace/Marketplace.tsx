@@ -1,33 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
-  BarChart3,
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
-  Cloud,
-  Cpu,
-  Database,
   Download,
-  Package,
   Plus,
   ExternalLink,
-  FileCode2,
-  LayoutGrid,
-  List,
   DatabaseBackup,
   Loader2,
-  Plug,
   RefreshCcw,
-  Search,
   Server,
   ShieldCheck,
-  Store,
   Trash2,
   TriangleAlert,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   errorMessage,
@@ -41,13 +29,11 @@ import {
   type ReleaseAsset,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { fuzzyRank } from "@/lib/fuzzy";
-import { Icon as BxIcon, type IconName } from "@/components/ui/icon";
+import { Icon as BxIcon } from "@/components/ui/icon";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { INSTALL_DONE } from "@/lib/install-window";
 import { PACKS, type Pack } from "@/features/onboarding/SetupPacks";
 import { BrandLoader } from "@/components/brand/BrandLoader";
-import { McpMark } from "@/components/brand/McpMark";
 import { LocalExasolPanel } from "@/features/marketplace/LocalExasolPanel";
 import { AiClientsTab } from "@/features/marketplace/AiClientsTab";
 
@@ -58,11 +44,18 @@ import {
   resolveCatalog,
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
-import type { Kind, ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
-import { CATALOG_TO_COMPONENT, countManagedUpdates, isNewerVersion } from "@/features/marketplace/updates";
+import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
 import { pickAsset } from "@/features/marketplace/assets";
-import { componentVersionSource, versionSource } from "@/features/marketplace/versions";
+import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
+import { itemState, type ItemSources } from "@/features/marketplace/item-state";
+import { applyFilters, emptyFilters, sectionOf, type HubFilters, type SectionKey, type Sort } from "@/features/marketplace/hub/filters";
+import { HubHeader, type HubPage } from "@/features/marketplace/hub/HubHeader";
+import { HubHome, type Featured } from "@/features/marketplace/hub/HubHome";
+import { HubSearch } from "@/features/marketplace/hub/HubSearch";
+import { FilterDrawer } from "@/features/marketplace/hub/FilterDrawer";
+import { HubDetail } from "@/features/marketplace/hub/HubDetail";
 
 // The registry lives in catalog-data.ts (one line per addon: id + repo + kind
 // + install); every display field resolves from the official GitHub repo at
@@ -70,19 +63,6 @@ import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 // plain strings everywhere.
 export type CatalogItem = ResolvedCatalogItem;
 
-const KIND_ICON: Record<Kind, LucideIcon> = {
-  database: Database,
-  cli: Cpu,
-  driver: Plug,
-  server: Server,
-  extension: Boxes,
-  skills: FileCode2,
-  cloud: Cloud,
-  bi: BarChart3,
-};
-
-// Marketplace sections (ordered). Every catalog item maps to exactly one.
-type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
 // Left category rail — one entry per view.
 // Driver runtimes: marketplace item id → the driver id the connect dialog uses.
 // These install the SAME on-demand runtime, so "installed" here == usable there.
@@ -92,53 +72,6 @@ const DRIVER_RUNTIME: Record<string, string> = {
   "driver-jdbc": "jdbc",
   "driver-odbc": "odbc",
 };
-
-// Horizontal tab bar: Kits first, then Catalog, then the status views (so
-// Updates stays visible), then a single "Categories" tab that expands into the
-// per-kind sections.
-const PRIMARY_NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "recommended", label: "Kits", icon: "package" },
-  { key: "all", label: "Catalog", icon: "extension" },
-  { key: "updates", label: "Updates", icon: "rotate-ccw-dot" },
-  { key: "installing", label: "Installing", icon: "loader" },
-  { key: "installed", label: "Installed", icon: "check" },
-];
-const CATEGORY_NAV: { key: string; label: string; icon: IconName }[] = [
-  { key: "database", label: "Databases", icon: "database" },
-  { key: "load", label: "Data & tools", icon: "spanner" },
-  { key: "drivers", label: "Drivers", icon: "usb" },
-  { key: "extension", label: "Extensions", icon: "extension" },
-  { key: "ai", label: "AI & Agents", icon: "cognition" },
-  { key: "bi", label: "BI & Analytics", icon: "dashboard-grid" },
-];
-
-const SECTION_META: { key: SectionKey; label: string; hint: string }[] = [
-  { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
-  { key: "load", label: "Data loading & tools", hint: "Move data in and out" },
-  { key: "drivers", label: "Drivers", hint: "Connect your apps & scripts to Exasol" },
-  { key: "extension", label: "Extensions", hint: "Extend what Exasol can store & query" },
-  { key: "ai", label: "AI & Agents", hint: "MCP, agent skills, LLM workflows" },
-  { key: "bi", label: "BI & Analytics", hint: "Dashboards and visual analytics" },
-];
-function sectionOf(kind: Kind): SectionKey {
-  switch (kind) {
-    case "database":
-    case "cloud":
-      return "database";
-    case "cli":
-      return "load";
-    case "driver":
-      return "drivers";
-    case "extension":
-      return "extension";
-    case "server":
-    case "skills":
-      return "ai";
-    case "bi":
-      return "bi";
-  }
-}
-
 
 function openExternal(url: string) {
   if (isTauri()) {
@@ -319,7 +252,9 @@ export function Marketplace() {
   useEffect(() => {
     const on = (e: Event) => {
       const nav = (e as CustomEvent<{ nav?: string }>).detail?.nav;
-      if (nav) setNav(nav);
+      // Legacy names from older deep links still land somewhere sensible.
+      const mapped: Record<string, HubPage> = { all: "search", recommended: "kits", updates: "updates", installed: "installed", installing: "installing", kits: "kits", "ai-clients": "ai-clients", home: "home" };
+      if (nav && mapped[nav]) goto(mapped[nav]);
     };
     window.addEventListener("studio:marketplace-nav", on);
     return () => window.removeEventListener("studio:marketplace-nav", on);
@@ -370,7 +305,11 @@ export function Marketplace() {
         for (const res of results) if (res.status === "fulfilled") map[res.value[0]] = res.value[1];
         setReleases(map);
       })
-      .finally(() => setLoadingReleases(false));
+      .finally(() => {
+        setLoadingReleases(false);
+        // "Checked" means the slowest source answered too, not that we asked.
+        setCheckedAt(Date.now());
+      });
   }, []);
 
   useEffect(() => {
@@ -384,6 +323,7 @@ export function Marketplace() {
   useEffect(() => {
     if (ready) refreshReleases();
   }, [ready, refreshReleases]);
+
 
   // A standalone install window finished → refresh installed/detected state.
   useEffect(() => {
@@ -439,24 +379,6 @@ export function Marketplace() {
     [releases, catalog],
   );
 
-  const updatesAvailable = useMemo(
-    () =>
-      CATALOG.filter((item) => {
-        if (CATALOG_TO_COMPONENT[item.id]) return false; // managed → Updates panel
-        const inst = installedMap[item.id];
-        const latest = catalog?.items?.[item.id]?.latest ?? null;
-        return isNewerVersion(latest, inst?.version);
-      }).length,
-    [installedMap, catalog],
-  );
-  // Managed-component updates (reported by IndependentComponents): null while
-  // it is still checking. The badge and the Updates empty state both fold this
-  // in, so an available engine/component update can never hide behind
-  // "everything is up to date".
-  // Computed straight from components + live upstream — the separate
-  // "Managed Components" panel is gone; cards carry their own updates.
-  const managedUpdates = useMemo(() => countManagedUpdates(components, componentUpstream), [components, componentUpstream]);
-  const totalUpdates = updatesAvailable + managedUpdates;
 
   // ── Starter-pack queue ──────────────────────────────────────────────────
   // Read the pack chosen during setup once, then run it after releases load
@@ -690,32 +612,48 @@ export function Marketplace() {
 
 
   const [query, setQuery] = useState("");
-  const [nav, setNavState] = useState<string>("recommended");
+  const [nav, setNavState] = useState<HubPage>("home");
   // Tab switches render a LOT of cards at once. A transition lets the clicked
   // tab highlight paint immediately and time-slices the heavy grid render, so
   // Kits → Catalog never feels stuck; navPending dims the content meanwhile.
   const [navPending, startNavTransition] = useTransition();
-  const setNav = useCallback((key: string) => startNavTransition(() => setNavState(key)), []);
+  const setNav = useCallback((key: HubPage) => startNavTransition(() => setNavState(key)), []);
+  // The page one level below the nav: an item's own page.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const page: HubPage = detailId ? "detail" : nav;
+  const goto = useCallback(
+    (next: HubPage) => {
+      setDetailId(null);
+      setNav(next === "detail" ? "home" : next);
+    },
+    [setNav],
+  );
+  const openDetail = useCallback((id: string) => setDetailId(id), []);
+  // Search-page state: the rail's filters, the sort, the drawer.
+  const [filters, setFilters] = useState<HubFilters>(emptyFilters);
+  const [sort, setSort] = useState<Sort>("suggested");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // READMEs for item pages, by repo (undefined = loading, null = none).
+  const [readmes, setReadmes] = useState<Record<string, string | null>>({});
+  // When every surface was last re-synced together.
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  // An item page shows the repo's README — fetched once per repo (Rust caches
+  // it on disk), never for repo-less items.
+  useEffect(() => {
+    const item = detailId ? CATALOG.find((c) => c.id === detailId) : undefined;
+    const repo = item?.repo;
+    if (!repo || repo in readmes) return;
+    ipc
+      .marketDoc(repo)
+      .then((md) => setReadmes((m) => ({ ...m, [repo]: md ?? null })))
+      .catch(() => setReadmes((m) => ({ ...m, [repo]: null })));
+  }, [detailId, CATALOG, readmes]);
   // A light fade on every switch WITHOUT remounting the subtree (a key= remount
   // re-created every card and made switching slower, not smoother).
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     contentRef.current?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
   }, [nav]);
-  // Progressive card reveal: React transitions time-slice RENDERS but the
-  // COMMIT of ~29 cards is still one block — mount the first chunk instantly
-  // and the rest a beat later, so no single commit is big enough to hang.
-  const REVEAL_STEP = 12;
-  const [revealCount, setRevealCount] = useState(REVEAL_STEP);
-  useEffect(() => {
-    setRevealCount(REVEAL_STEP);
-  }, [nav, query]);
-  useEffect(() => {
-    if (revealCount >= CATALOG.length) return;
-    const t = window.setTimeout(() => setRevealCount((n) => n + REVEAL_STEP), 40);
-    return () => window.clearTimeout(t);
-  }, [revealCount, nav, query]);
-
   // Fetch-on-demand ONLY (user rule): update state re-syncs when the app opens
   // (mount) and when a tab is clicked — never on a background timer. Uses the
   // rate-limit-free catalog.json mirror + local reads; componentsUpstream (the
@@ -734,67 +672,53 @@ export function Marketplace() {
   }, [nav]);
   // Kit "template" modal (Image-45 style): shows a kit's tools + install action.
   const [kitModal, setKitModal] = useState<Pack | null>(null);
-  const [layout, setLayout] = useState<"grid" | "list">("grid");
-  const isList = layout === "list";
-  const gridClass = isList ? "grid grid-cols-1 gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]";
-
-  // Query-filtered catalog (the category rail narrows further) — real fuzzy
-  // relevance (word boundaries, camelCase, consecutive runs), same scorer as
-  // the global ⌘K search, so "sqla" finds sqlalchemy-exasol and "mcp srv"
-  // finds the MCP server.
-  const visible = useMemo(() => {
-    const q = query.trim();
-    if (!q) return CATALOG;
-    return fuzzyRank(q, CATALOG, (item) => `${item.name} ${item.id} ${item.repo ?? ""} ${item.kind} ${item.description}`).map(
-      (r) => r.item,
-    );
-  }, [query, CATALOG]);
-
   // Global search (⌘K) deep-link: land on the marketplace with the query set.
   useEffect(() => {
     const onSearch = (e: Event) => {
       const q = (e as CustomEvent<{ query?: string }>).detail?.query ?? "";
-      setNav("all");
+      goto("search");
       setQuery(q);
     };
     window.addEventListener("studio:marketplace-search", onSearch);
     return () => window.removeEventListener("studio:marketplace-search", onSearch);
-  }, []);
+  }, [goto]);
 
   // Driver runtime state lives above navItems — the memo below reads it.
   const [driverReady, setDriverReady] = useState<Record<string, boolean>>({});
   const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
 
-  // Items to show for the selected category (flat lists; "all" is grouped below).
-  const navItems = useMemo(() => {
-    if (nav === "installed") return visible.filter((i) => installedMap[i.id] || detected[i.id]);
-    if (nav === "installing")
-      // Only ACTIVE installs — finished/failed ones leave the list. Driver
-      // runtimes install through their own path, so include busy ones too.
-      return visible.filter(
-        (i) =>
-          queue.some((x) => x.id === i.id && (x.status === "pending" || x.status === "installing")) ||
-          (DRIVER_RUNTIME[i.id] ? driverBusy[DRIVER_RUNTIME[i.id]] : false),
-      );
-    if (nav === "updates")
-      return visible.filter((i) => {
-        const compId = CATALOG_TO_COMPONENT[i.id];
-        if (compId) {
-          // Managed components update in place on their cards.
-          const comp = components.find((c) => c.id === compId);
-          const tag = componentUpstream[compId];
-          return Boolean(comp?.installed && tag && isNewerVersion(tag, comp.installed));
-        }
-        const inst = installedMap[i.id];
-        const l = catalog?.items?.[i.id]?.latest ?? null;
-        return isNewerVersion(l, inst?.version);
-      });
-    if (["database", "load", "drivers", "extension", "ai", "bi"].includes(nav))
-      return visible.filter((i) => sectionOf(i.kind) === nav);
-    return visible;
-  }, [nav, visible, installedMap, detected, queue, catalog, driverBusy, components, componentUpstream]);
+  // ONE decision per item — the card, the item page, the Updates page and the
+  // header badge all read it, so they cannot disagree.
+  const stateOf = useCallback(
+    (item: CatalogItem) => {
+      const did = DRIVER_RUNTIME[item.id];
+      const sources: ItemSources = {
+        installed: installedMap,
+        componentUpstream,
+        detected,
+        installing: installingIds,
+        latestFor,
+        releaseAssets: (id) => releases[id]?.assets ?? [],
+        env,
+        driverRuntime: did ? { id: did, ready: Boolean(driverReady[did]), busy: Boolean(driverBusy[did]) } : undefined,
+      };
+      return itemState(item, sources);
+    },
+    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy],
+  );
+  const updateItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "update"), [CATALOG, stateOf]);
+  // The header count IS the Updates page's length — one decision, one number.
+  const totalUpdates = updateItems.length;
+  const installedItems = useMemo(
+    () => CATALOG.filter((i) => ["installed", "update", "running", "ready", "onSystem"].includes(stateOf(i).kind)),
+    [CATALOG, stateOf],
+  );
+  const installingItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "installing"), [CATALOG, stateOf]);
+  const installedCount = installedItems.length;
+  // The search page and the list pages share one pipeline: query → rail → sort.
+  const listBase = page === "updates" ? updateItems : page === "installed" ? installedItems : page === "installing" ? installingItems : CATALOG;
+  const results = useMemo(() => applyFilters(listBase, stateOf, query, filters, sort), [listBase, stateOf, query, filters, sort]);
 
-  const installedCount = useMemo(() => CATALOG.filter((i) => installedMap[i.id] || detected[i.id]).length, [installedMap, detected]);
 
   const refreshDrivers = useCallback(() => {
     for (const did of new Set(Object.values(DRIVER_RUNTIME))) {
@@ -909,8 +833,8 @@ export function Marketplace() {
     const l = latestFor(item.id);
     return instVersion && l && isNewerVersion(l, instVersion) ? l : null;
   };
-  async function installSelected() {
-    const chosen = CATALOG.filter((c) => selected.has(c.id));
+  async function installSelected(ids: Set<string> = selected) {
+    const chosen = CATALOG.filter((c) => ids.has(c.id));
     setSelected(new Set());
     enqueue(
       chosen.filter(
@@ -929,10 +853,10 @@ export function Marketplace() {
     }
   }
 
-  const renderCard = (item: CatalogItem, compact = false) => {
-    // Item-specific glyphs win over the kind fallback: MCP surfaces show the
-    // official MCP mark everywhere (rail, tabs, cards), never a generic server.
-    const Icon = item.id === "mcp-server" ? McpMark : KIND_ICON[item.kind];
+  // The install / update / manage controls for one item — shown on its page.
+  // Every state decision the buttons need is derived here, from the same
+  // sources `stateOf` reads.
+  const renderActions = (item: CatalogItem) => {
     const managedCompId = CATALOG_TO_COMPONENT[item.id];
     const managedComp = managedCompId ? components.find((c) => c.id === managedCompId) : undefined;
     // Managed components (Personal, ExaPump, MCP, Exa Agent) are installed the
@@ -954,17 +878,8 @@ export function Marketplace() {
     // upstream the badge counts.
     const managedTag = managedCompId ? componentUpstream[managedCompId] : undefined;
     const managedUpdate = Boolean(inst && managedTag && isNewerVersion(managedTag, inst?.version));
-    // The version shown on the card: for managed components it's the AUTHORITATIVE
-    // installed version (list_components), never the catalog's "latest" (which can
-    // lag or be an upstream tag) — so the card matches the Managed Components panel.
-    // Repo-less items (portal drivers) have no catalog "latest" — the
-    // installed version is still worth showing on the card.
-    const displayVersion = CATALOG_TO_COMPONENT[item.id] ? (inst?.version ?? null) : (latest ?? inst?.version ?? null);
     const did = DRIVER_RUNTIME[item.id];
     const runtimeReady = did ? driverReady[did] : false;
-
-    // The DB is a running service, not just a file — show live state.
-    const dbRunning = item.id === "exasol-personal" && detected["exasol-personal:running"] === true;
 
     // A binary release that ships builds — but none for THIS host (e.g. the
     // linux-only exa-postgres-interface on macOS) — gets an honest state
@@ -976,65 +891,6 @@ export function Marketplace() {
       !did &&
       (releases[item.id]?.assets?.length ?? 0) > 0 &&
       pickAsset(releases[item.id]?.assets ?? [], env) === null;
-
-    // Installable OR updatable — both join the multi-select batch (the batch
-    // re-checks eligibility at run time).
-    const selectable = canBatchInstall(item) || batchUpdateTarget(item) !== null;
-    const isChecked = selected.has(item.id);
-    const selectBox = selectable ? (
-      <button
-        role="checkbox"
-        aria-checked={isChecked}
-        aria-label={`Select ${item.name} to install together`}
-        title="Select to install together"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleSelected(item.id);
-        }}
-        className={cn(
-          "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
-          isChecked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent hover:border-primary/60",
-        )}
-      >
-        <Check className="h-3 w-3" />
-      </button>
-    ) : null;
-
-    const badges = (
-      <>
-        {item.labs ? (
-          <span className="rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">labs</span>
-        ) : (
-          <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">official</span>
-        )}
-        {item.id === "exasol-personal" && (inst || onSystem) ? (
-          <span className={cn(
-            "flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-medium uppercase",
-            dbRunning ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
-          )}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", dbRunning ? "bg-primary" : "bg-muted-foreground/60")} />
-            {dbRunning ? "running" : "stopped"}
-          </span>
-        ) : null}
-        {inst || (did && runtimeReady) ? (
-          <span className="flex items-center gap-0.5 rounded bg-primary/15 px-1 py-px text-[9px] font-medium uppercase text-primary">
-            <Check className="h-2.5 w-2.5" />
-            {/*
-              Semantic Views is SQL objects inside ONE database, so a bare
-              "installed" is ambiguous the moment a second database exists. The
-              install note records where it landed; surface that here.
-            */}
-            {item.id === "semantic-views" && inst?.note?.includes(" in ")
-              ? `installed in ${inst.note.split(" in ").pop()?.replace(/\.$/, "")}`
-              : "installed"}
-          </span>
-        ) : onSystem ? (
-          <span className="flex items-center gap-0.5 rounded bg-syntax-function/15 px-1 py-px text-[9px] font-medium uppercase text-syntax-function">
-            <Check className="h-2.5 w-2.5" /> detected
-          </span>
-        ) : null}
-      </>
-    );
 
     // Live any-version picker: list fetched on first open (GitHub tags / PyPI
     // versions / Maven Central), newest first. Shared by the
@@ -1346,52 +1202,7 @@ export function Marketplace() {
       </div>
     );
 
-    // Compact list row.
-    if (compact) {
-      return (
-        <div key={item.id} className="flex items-center gap-3 rounded-lg border border-border bg-panel/60 px-3 py-2">
-          {selectBox}
-          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="break-words text-[12.5px] font-semibold text-foreground">{item.name}</span>
-              {badges}
-            </div>
-            <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
-          </div>
-          <div className="shrink-0">{actions}</div>
-        </div>
-      );
-    }
-
-    // Full grid card.
-    return (
-      <div key={item.id} className="flex flex-col rounded-xl border border-border bg-panel/60 p-4">
-        <div className="flex items-start gap-2.5">
-          <Icon className="h-5 w-5 shrink-0 text-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="break-words leading-snug text-[13px] font-semibold text-foreground">{item.name}</span>
-              {badges}
-            </div>
-            {did ? (
-              <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-primary"><Check className="h-3 w-3" /> Runs inside Exasol Studio</p>
-            ) : null}
-            <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{item.description}</p>
-            <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-              {displayVersion ? <span>{displayVersion}</span> : null}
-              <button onClick={() => openExternal(item.homepage)} className="flex items-center gap-0.5 hover:text-foreground">
-                GitHub <ExternalLink className="h-2.5 w-2.5" />
-              </button>
-            </div>
-          </div>
-          {selectBox}
-        </div>
-        {/* mt-auto pins the action row to the card bottom so buttons line up
-            across a grid row regardless of description length. */}
-        <div className="mt-auto pt-3">{actions}</div>
-      </div>
-    );
+    return actions;
   };
 
   // First open: show the brand loader immediately instead of a blank/janky
@@ -1404,178 +1215,129 @@ export function Marketplace() {
     );
   }
 
+  const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
+  const selection = {
+    selectable: (item: CatalogItem) => canBatchInstall(item) || batchUpdateTarget(item) !== null,
+    selected,
+    toggle: toggleSelected,
+  };
+  const crumb =
+    page === "detail" && detailItem ? (detailItem.repo ?? detailItem.name)
+    : page === "search" ? "Search"
+    : page === "updates" ? "Updates"
+    : page === "installed" ? "Installed"
+    : page === "installing" ? "Installing"
+    : page === "kits" ? "Kits"
+    : page === "ai-clients" ? "AI clients"
+    : null;
+  const featured: Featured[] = [
+    {
+      eyebrow: "Exasol Personal 2.3",
+      title: "Run Exasol on your laptop",
+      body: "One local database Studio manages for you — start, stop, back up — and, since 2.3, virtual schemas.",
+      art: "database",
+      onClick: () => openDetail("exasol-personal"),
+    },
+    {
+      eyebrow: "Analytics hub",
+      title: "Attach any database as a virtual schema",
+      body: "PostgreSQL, MySQL, Snowflake, S3 and 19 more adapters. Query them from one Exasol, live, without copying.",
+      art: "federation",
+      onClick: () => window.dispatchEvent(new CustomEvent("studio:open-add-source")),
+    },
+    {
+      eyebrow: "AI clients",
+      title: "Connect Claude, Codex and Cursor to Exasol",
+      body: "The bundled MCP server gives every AI client read-only access to your data, set up in one click.",
+      art: "mcp",
+      onClick: () => goto("ai-clients"),
+    },
+  ];
+  const openSection = (key: SectionKey) => {
+    const next = emptyFilters();
+    next.sections.add(key);
+    setFilters(next);
+    goto("search");
+  };
+  const refreshAll = () => {
+    refresh();
+    refreshReleases();
+    refreshDrivers();
+  };
+  const emptyText =
+    query ? `No items match “${query}”.`
+    : page === "installing" ? "Nothing installing right now — active installs (including drivers) show up here live."
+    : page === "updates" ? "Everything is up to date."
+    : page === "installed" ? "Nothing installed yet — everything you add shows up here."
+    : "Nothing here yet.";
+
   return (
     <div className="h-full overflow-auto bg-editor">
-      <div className="mx-auto w-full max-w-[1600px] px-8 py-6">
-        <header className="mb-5 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary">
-            <BxIcon name="extension" className="h-4 w-4" />
-          </div>
-          <div className="flex-1">
-            <h2 className="font-heading text-[15px] font-bold text-foreground">Marketplace</h2>
-            <p className="text-xs text-muted-foreground">
-              Install Exasol tools, drivers and extensions — one click, with a live install log.
-            </p>
-          </div>
-          {totalUpdates > 0 ? (
-            <span className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-              </span>
-              {totalUpdates} update{totalUpdates > 1 ? "s" : ""} available
-            </span>
-          ) : null}
-          {env ? (
-            <div className="flex items-center gap-1.5">
-              <span className="rounded-md border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                {env.os} · {env.arch}
-              </span>
-            </div>
-          ) : null}
-          <button
-            onClick={() => { refresh(); refreshReleases(); }}
-            disabled={loadingReleases}
-            title="Check for updates"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
-          >
-            <RefreshCcw className={cn("h-3.5 w-3.5", loadingReleases && "animate-spin")} />
-          </button>
-        </header>
-
-        {/* Horizontal tab bar — Kits, Catalog, status (Updates visible), then a
-            single Categories tab that expands into the per-kind sections. */}
-        <nav className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {PRIMARY_NAV.map((n) => {
-            const active = nav === n.key;
-            const count =
-              n.key === "installed"
-                ? installedCount
-                : n.key === "installing"
-                  ? installingIds.size + Object.values(driverBusy).filter(Boolean).length
-                  : n.key === "updates"
-                    ? totalUpdates
-                    : 0;
-            return (
-              <button
-                key={n.key}
-                onClick={() => setNav(n.key)}
-                className={cn(
-                  "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-                  active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <BxIcon name={n.icon} className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "", n.key === "installing" && count > 0 ? "animate-spin" : "")} />
-                <span className="truncate">{n.label}</span>
-                {count > 0 ? <span className="rounded-full bg-secondary px-1.5 text-[9.5px] text-muted-foreground">{count}</span> : null}
-              </button>
-            );
-          })}
-          {/* Categories — one tab that expands to the per-kind views. */}
-          {(() => {
-            const catActive = CATEGORY_NAV.some((c) => c.key === nav);
-            const current = CATEGORY_NAV.find((c) => c.key === nav);
-            return (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+      <div className="mx-auto w-full max-w-[1400px] px-8 py-5">
+        <HubHeader
+          page={page}
+          crumb={crumb}
+          counts={{ updates: totalUpdates, installed: installedCount, installing: installingIds.size + Object.values(driverBusy).filter(Boolean).length }}
+          checkedAt={checkedAt}
+          refreshing={loadingReleases}
+          onNavigate={goto}
+          onRefresh={refreshAll}
+        />
+        <div ref={contentRef} className={cn("pt-6 transition-opacity", navPending && "opacity-60")}>
+          {page === "detail" && detailItem ? (
+            <HubDetail
+              key={detailItem.id}
+              item={detailItem}
+              state={stateOf(detailItem)}
+              actions={renderActions(detailItem)}
+              versions={versionSource(detailItem) ? verLists[detailItem.id] : []}
+              pickedVersion={verPick[detailItem.id]}
+              onPickVersion={(v) => setVerPick(({ [detailItem.id]: _drop, ...rest }) => (v ? { ...rest, [detailItem.id]: v } : rest))}
+              onLoadVersions={() => loadVersions(detailItem)}
+              readme={detailItem.repo ? readmes[detailItem.repo] : null}
+              related={CATALOG.filter((c) => c.id !== detailItem.id && sectionOf(c.kind) === sectionOf(detailItem.kind))}
+              stateOf={stateOf}
+              onOpen={openDetail}
+              onBack={() => setDetailId(null)}
+              onOpenExternal={openExternal}
+            />
+          ) : page === "home" ? (
+            <HubHome
+              items={CATALOG}
+              stateOf={stateOf}
+              query={query}
+              onQuery={setQuery}
+              onSearch={() => goto("search")}
+              onOpenSection={openSection}
+              onOpen={openDetail}
+              featured={featured}
+              selection={selection}
+              updatesBanner={
+                totalUpdates > 0 ? (
                   <button
-                    className={cn(
-                      "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-                      catActive ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
+                    onClick={() => goto("updates")}
+                    className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-left text-[13px] text-foreground hover:bg-primary/15"
                   >
-                    <BxIcon name="grid" className={cn("h-3.5 w-3.5 shrink-0", catActive ? "text-primary" : "")} />
-                    <span className="truncate">{catActive && current ? current.label : "Categories"}</span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                    </span>
+                    <span className="font-medium">{totalUpdates} update{totalUpdates > 1 ? "s" : ""} available</span>
+                    <span className="text-muted-foreground">— review and update everything from one page</span>
+                    <ChevronRight className="ml-auto h-4 w-4 text-primary" />
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {CATEGORY_NAV.map((c) => (
-                    <DropdownMenuItem key={c.key} onClick={() => setNav(c.key)} className={cn(nav === c.key && "text-primary")}>
-                      <BxIcon name={c.icon} className="h-3.5 w-3.5" />
-                      {c.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          })()}
-          {/* AI clients — hook Claude/Codex/Cursor/… up to Exasol via the
-              bundled read-only MCP server (the starter kit's mcp-setup, in-app). */}
-          <button
-            onClick={() => setNav("ai-clients")}
-            className={cn(
-              "flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors",
-              nav === "ai-clients" ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <BxIcon name="cognition" className={cn("h-3.5 w-3.5 shrink-0", nav === "ai-clients" ? "text-primary" : "")} />
-            <span className="truncate">AI clients</span>
-          </button>
-        </nav>
-
-        {/* Content */}
-        <div className="min-w-0">
-            <div className="mb-4 flex items-center justify-end gap-2">
-              <div className="relative w-56">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="h-8 w-full rounded-lg border border-border bg-panel/70 pl-8 pr-8 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                />
-                {query ? (
-                  <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
+                ) : null
+              }
+            />
+          ) : page === "ai-clients" ? (
+            <AiClientsTab />
+          ) : page === "kits" ? (
+            <div className="grid gap-5">
+              <div>
+                <h1 className="font-heading text-[22px] font-bold text-foreground">Kits</h1>
+                <p className="mt-1 text-[13px] text-muted-foreground">Curated bundles — one click installs a whole workflow.</p>
               </div>
-              <div className="flex h-8 shrink-0 items-center gap-1">
-                <button
-                  onClick={() => setLayout("grid")}
-                  aria-label="Grid view"
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "grid" ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setLayout("list")}
-                  aria-label="List view"
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                    layout === "list" ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* No key= remount here (that re-created every card per switch):
-                the fade runs imperatively on the ref. While the transition is
-                pending the THEMED brand loader overlays the dimmed content —
-                never a frozen-looking screen. */}
-            <div ref={contentRef} className={cn("relative transition-opacity duration-150", navPending && "opacity-40")}>
-              {navPending ? (
-                <div className="absolute inset-x-0 top-24 z-10 flex justify-center">
-                  {/* instant: a short tab switch must show the BRAND mark from
-                      the first frame — the slow draw-from-zero loop left only
-                      the label visible, which read as plain loading text. */}
-                  <BrandLoader size={56} instant />
-                </div>
-              ) : null}
-            {/* Updates tab: Studio's own card, then the SAME cards as
-                everywhere else filtered to those with an update — managed
-                components update in place on their cards, no separate panel. */}
-            {nav === "updates" ? <StudioUpdateCard /> : null}
-            {nav === "ai-clients" ? (
-              <AiClientsTab layout={layout} />
-            ) : nav === "recommended" ? (
-              <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
                 {PACKS.map((pack) => {
                   const PackIcon = pack.icon;
                   const allInstalled = pack.items.every((it) => {
@@ -1590,78 +1352,75 @@ export function Marketplace() {
                       onClick={() => setKitModal(pack)}
                       onKeyDown={(e) => { if (e.key === "Enter") setKitModal(pack); }}
                       title="See what's in this kit"
-                      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-panel/60 p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-secondary/40"
+                      className="group flex min-h-[188px] cursor-pointer flex-col rounded-xl border border-border bg-panel text-left transition-colors hover:border-foreground/25"
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg text-primary"><PackIcon className="h-4 w-4" /></div>
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{pack.name}</span>
-                        {/* + installs the whole kit; clicking the card shows what's inside. */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
-                          disabled={allInstalled}
-                          title={allInstalled ? "Already installed" : "Install this kit"}
-                          className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
-                            allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary",
-                          )}
-                        >
-                          {allInstalled ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
-                        </button>
+                      <div className="flex-1 p-5">
+                        <div className="flex items-center gap-3.5">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"><PackIcon className="h-6 w-6 text-[#0b1730]" strokeWidth={1.75} /></span>
+                          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">{pack.name}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); if (!allInstalled) installPack(pack); }}
+                            disabled={allInstalled}
+                            title={allInstalled ? "Already installed" : "Install this kit"}
+                            aria-label={allInstalled ? `${pack.name} is installed` : `Install ${pack.name}`}
+                            className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors", allInstalled ? "text-primary" : "text-muted-foreground hover:text-primary")}
+                          >
+                            {allInstalled ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        <p className="mt-3.5 line-clamp-2 text-[13px] leading-relaxed text-foreground/85">{pack.tagline}</p>
                       </div>
-                      <p className="mt-1.5 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">{pack.tagline}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5 border-t border-border px-5 py-3">
                         {pack.items.map((it) => (
-                          <span key={it.id} className="rounded bg-secondary/60 px-1.5 py-px text-[10px] text-muted-foreground">{it.label}</span>
+                          <span key={it.id} className="rounded-full bg-secondary px-2 py-px text-[10.5px] text-muted-foreground">{it.label}</span>
                         ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            ) : nav === "all" && !query ? (
-              <>
-                {(() => {
-                  // Progressive reveal across sections: only `revealCount`
-                  // cards mount per frame batch (see the reveal effect above).
-                  let used = 0;
-                  return SECTION_META.map((sec) => {
-                    const items = visible.filter((i) => sectionOf(i.kind) === sec.key);
-                    if (!items.length) return null;
-                    const shown = items.slice(0, Math.max(0, revealCount - used));
-                    used += items.length;
-                    if (!shown.length) return null;
-                    return (
-                      <section key={sec.key} className="mb-6">
-                        <div className="mb-2.5 flex items-baseline gap-2">
-                          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">{sec.label}</h3>
-                          <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">{items.length}</span>
-                          <span className="text-[11px] text-muted-foreground">- {sec.hint}</span>
-                        </div>
-                        <div className={gridClass}>{shown.map((i) => renderCard(i, isList))}</div>
-                      </section>
-                    );
-                  });
-                })()}
-              </>
-            ) : navItems.length ? (
-              <div className={gridClass}>{navItems.slice(0, revealCount).map((i) => renderCard(i, isList))}</div>
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-                {nav === "installing" ? <Check className="h-6 w-6 opacity-40" /> : <Search className="h-6 w-6 opacity-40" />}
-                <p className="text-sm">
-                  {query
-                    ? "No items match “" + query + "”."
-                    : nav === "installing"
-                      ? "Nothing installing right now — active installs (including drivers) show up here live."
-                      : nav === "updates"
-                        ? "Everything is up to date."
-                        : "Nothing here yet."}
-                </p>
-              </div>
-            )}
             </div>
-          </div>
+          ) : (
+            <div className="grid gap-5">
+              {page === "updates" ? (
+                <>
+                  <StudioUpdateCard />
+                  {updateItems.length > 0 ? (
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => void installSelected(new Set(updateItems.map((i) => i.id)))}
+                        disabled={queueBusy}
+                        data-agent-id="market.update-all"
+                        className="cta-glow flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+                      >
+                        <BxIcon name="rotate-ccw-dot" className="h-4 w-4" /> Update all ({updateItems.length})
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+              <HubSearch
+                title={page === "updates" ? "Updates" : page === "installed" ? "Installed" : page === "installing" ? "Installing" : "Search"}
+                results={results}
+                total={listBase.length}
+                query={query}
+                onQuery={setQuery}
+                filters={filters}
+                onFilters={setFilters}
+                onOpenFilters={() => setDrawerOpen(true)}
+                sort={sort}
+                onSort={setSort}
+                stateOf={stateOf}
+                onOpen={openDetail}
+                selection={selection}
+                emptyText={emptyText}
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      <FilterDrawer open={drawerOpen} onOpenChange={setDrawerOpen} filters={filters} onChange={setFilters} />
 
       {manageLocal ? <LocalExasolPanel onClose={() => setManageLocal(false)} /> : null}
 

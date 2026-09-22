@@ -142,6 +142,7 @@ pub fn run() {
             fs::fs_list_dir,
             fs::fs_read_text,
             fs::fs_read_table,
+            fs::fs_count_rows,
             fs::fs_workspace_dir,
             fs::fs_home_roots,
             fs::fs_search,

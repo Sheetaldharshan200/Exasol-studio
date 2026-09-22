@@ -746,9 +746,13 @@ export async function mockInvoke(
           ["3", "Initech", "1", "980.25"],
         ],
         truncated: false,
+        hasMore: false,
+        offset: Number(args?.offset ?? 0),
         format: fmt,
       };
     }
+    case "fs_count_rows":
+      return 3;
 
     case "fs_delete":
       return null;

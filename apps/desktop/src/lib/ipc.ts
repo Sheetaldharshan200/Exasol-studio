@@ -411,7 +411,11 @@ export type FsEntry = {
 export type TablePreview = {
   columns: string[];
   rows: string[][];
+  /** More rows follow this window (same as `hasMore`; kept for older callers). */
   truncated: boolean;
+  hasMore: boolean;
+  /** First row of this window, 0-based. */
+  offset: number;
   format: string;
 };
 
@@ -563,7 +567,7 @@ export const ipc = {
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
   marketRepoMeta: (repos: string[]) =>
-    call<Record<string, { name: string; description: string | null; htmlUrl: string }>>(
+    call<Record<string, { name: string; description: string | null; htmlUrl: string; stars?: number | null; pushedAt?: string | null }>>(
       "market_repo_meta",
       { repos },
     ),
@@ -709,8 +713,11 @@ export const ipc = {
   installCli: () => call<string>("install_cli"),
   fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
   fsReadText: (path: string) => call<string>("fs_read_text", { path }),
-  fsReadTable: (path: string, limit?: number) =>
-    call<TablePreview>("fs_read_table", { path, limit }),
+  /** One window of a tabular file — never the whole file (see open-file.ts). */
+  fsReadTable: (path: string, limit?: number, offset?: number) =>
+    call<TablePreview>("fs_read_table", { path, limit, offset }),
+  /** Total data rows, one streaming pass; cheap for Parquet, linear for CSV. */
+  fsCountRows: (path: string) => call<number>("fs_count_rows", { path }),
   fsSearch: (root: string, query: string, limit?: number) =>
     call<FsEntry[]>("fs_search", { root, query, limit }),
   fsDelete: (path: string) => call<void>("fs_delete", { path }),

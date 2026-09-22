@@ -8,21 +8,39 @@
 import { useEffect } from "react";
 import { ipc } from "@/lib/ipc";
 import { CATALOG } from "@/features/marketplace/catalog-data";
-import { countCatalogUpdates, countManagedUpdates } from "@/features/marketplace/updates";
+import { CATALOG_TO_COMPONENT } from "@/features/marketplace/updates";
+import { countUpdates } from "@/features/marketplace/item-state";
+import type { InstalledItem } from "@/lib/ipc";
 
 const SEEN_KEY = "exa.market.updatesSeen";
 const FIRST_DELAY_MS = 8_000; // shortly after launch, once the app has settled
 
 async function currentUpdateCount(): Promise<number> {
-  const [catalog, installed, comps, upstreamList] = await Promise.all([
+  const [catalog, installed, detected, comps, upstreamList] = await Promise.all([
     ipc.marketCatalog().catch(() => null),
     ipc.marketInstalled().catch(() => []),
+    ipc.marketDetect().catch(() => ({}) as Record<string, boolean>),
     ipc.listComponents().catch(() => []),
     ipc.componentsUpstream().catch(() => []),
   ]);
-  const upstream = Object.fromEntries(upstreamList.map((u) => [u.id, u.tag]));
-  const catalogIds = CATALOG.map((c) => c.id);
-  return countCatalogUpdates(catalog, installed, catalogIds) + countManagedUpdates(comps, upstream);
+  // The same installedMap the Marketplace builds: addons from the manifest,
+  // managed components only when detected AND versioned by list_components.
+  const installedMap: Record<string, InstalledItem> = {};
+  for (const i of installed) installedMap[i.id] = i;
+  for (const [catalogId, compId] of Object.entries(CATALOG_TO_COMPONENT)) {
+    const comp = comps.find((c) => c.id === compId);
+    if (comp && detected[catalogId] && comp.installed) installedMap[catalogId] = { id: catalogId, version: comp.installed, path: "", filename: "" };
+    else delete installedMap[catalogId];
+  }
+  return countUpdates(CATALOG, {
+    installed: installedMap,
+    componentUpstream: Object.fromEntries(upstreamList.map((u) => [u.id, u.tag])),
+    detected,
+    installing: new Set(),
+    latestFor: (id) => catalog?.items?.[id]?.latest ?? null,
+    releaseAssets: () => [],
+    env: null,
+  });
 }
 
 export function useMarketplaceUpdateBadge(): void {

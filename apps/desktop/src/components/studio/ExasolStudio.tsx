@@ -30,6 +30,7 @@ import { ExaEnginePanel } from "@/features/assistant/ExaEnginePanel";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { McpConfigTab } from "@/features/marketplace/McpConfigTab";
 import { AddSourceFlow } from "@/features/connection/virtual-schemas/AddSourceFlow";
+import { TabErrorBoundary } from "./TabErrorBoundary";
 import { BucketFsPanel } from "@/features/connection/BucketFsPanel";
 import { LogsPanel } from "@/features/connection/LogsPanel";
 import { BackupsPanel } from "@/features/connection/BackupsPanel";
@@ -2023,6 +2024,30 @@ export function ExasolStudio({
     setActiveIdByConn((a) => ({ ...a, [profileId]: tab.id }));
   }
 
+  // Other surfaces (the Marketplace's featured card) ask for the flow by event;
+  // it lands on the active connection, or on the connect screen when none. The
+  // listener is registered once and reads the LATEST handler through a ref, so
+  // it never acts on stale tabs or connections.
+  const openAddSourceRef = useRef<() => void>(() => undefined);
+  openAddSourceRef.current = () => (connection ? openAddSource(connection.profile.id) : openConnect());
+  useEffect(() => {
+    const on = () => openAddSourceRef.current();
+    window.addEventListener("studio:open-add-source", on);
+    return () => window.removeEventListener("studio:open-add-source", on);
+  }, []);
+  // The chat's "Run it" chip carries its SQL: open it in a query tab and run
+  // THAT text — never "whatever the editor holds right now".
+  const runSqlRef = useRef<(sql: string) => void>(() => undefined);
+  runSqlRef.current = (sql) => void openBuiltSql(sql, true);
+  useEffect(() => {
+    const on = (ev: Event) => {
+      const sql = (ev as CustomEvent<{ sql?: string }>).detail?.sql;
+      if (sql?.trim()) runSqlRef.current(sql);
+    };
+    window.addEventListener("studio:run-sql", on);
+    return () => window.removeEventListener("studio:run-sql", on);
+  }, []);
+
   // Open a brand-new Visualizer tab (multiple diagrams are allowed).
   function newVisualizer() {
     if (!connection) {
@@ -3296,6 +3321,7 @@ export function ExasolStudio({
           })()}
 
           {/* Connect flow, catalog surface, file preview, or SQL editor */}
+          <TabErrorBoundary tabId={activeTab.id} title={activeTab.title} onClose={() => closeTab(activeTab.id)}>
           {activeTab.view === "connect" ? (
             // New connection = the SAME unified Database Connection page in
             // new-profile mode (Test connection / Save & Connect footer).
@@ -3327,8 +3353,9 @@ export function ExasolStudio({
                   try {
                     const text = await ipc.fsReadText(p);
                     openFile(activeTab.title, text, p);
-                  } catch {
-                    /* unreadable as text */
+                  } catch (e) {
+                    // Over the text cap (8 MB) or unreadable — say so instead of nothing.
+                    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "warning", title: `Could not open ${activeTab.title} as text`, body: errorMessage(e) } }));
                   }
                 }}
                 onDelete={async () => {
@@ -3733,6 +3760,7 @@ export function ExasolStudio({
               </ResizablePanel>
             </ResizablePanelGroup>
           )}
+          </TabErrorBoundary>
           </>
             </div>
           </ResizablePanel>

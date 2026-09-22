@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T18:18:13.947Z",
+  "generatedAt": "2026-09-21T18:45:43.632Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -53,6 +53,24 @@
       "label": "connection switcher add source",
       "where": "apps/desktop/src/components/studio/ConnectionSwitcher.tsx",
       "hint": "Agent action anchor in apps/desktop/src/components/studio/ConnectionSwitcher.tsx"
+    },
+    {
+      "id": "anchor.market.filters",
+      "label": "market filters",
+      "where": "apps/desktop/src/features/marketplace/hub/HubSearch.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/hub/HubSearch.tsx"
+    },
+    {
+      "id": "anchor.market.search",
+      "label": "market search",
+      "where": "apps/desktop/src/features/marketplace/hub/HubSearch.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/hub/HubSearch.tsx"
+    },
+    {
+      "id": "anchor.market.update-all",
+      "label": "market update all",
+      "where": "apps/desktop/src/features/marketplace/Marketplace.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/marketplace/Marketplace.tsx"
     },
     {
       "id": "anchor.rail.mcp",

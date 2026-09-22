@@ -57,6 +57,9 @@ import {
 } from "@/components/ui/select";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
+import { focusBounds } from "./visualizer-focus.ts";
+import { inferLinks } from "./infer-links.ts";
+import { buildSql } from "./build-sql.ts";
 import { errorMessage, ipc, type GraphLink, type GraphTable, type SchemaGraph } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +98,8 @@ type BeamEdgeData = {
   label: string;
   active: boolean;
   inferred: boolean;
+  /** Confidence of an inferred link (undefined for declared keys). */
+  score?: number;
 };
 
 type EdgeStyle = {
@@ -336,7 +341,7 @@ function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
             }}
             className="pointer-events-none absolute rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] whitespace-nowrap"
           >
-            {inferred ? "≈ " : ""}
+            {inferred ? `≈ ${d.score !== undefined ? d.score.toFixed(1) + " " : ""}` : ""}
             {d.label}
           </div>
         </EdgeLabelRenderer>
@@ -417,60 +422,6 @@ function edgeIsActive(d: BeamEdgeData, sel: Selection): boolean {
   return d.sourceColumn === sel.column || d.targetColumn === sel.column;
 }
 
-/** Build a SELECT from picked columns, joining involved tables via FK links. */
-function buildSql(
-  schema: string,
-  picked: string[],
-  links: GraphLink[],
-  whereSql: string,
-  orderKey: string | null,
-  orderDir: "ASC" | "DESC",
-  limit: number | null,
-): string {
-  if (picked.length === 0) return "-- Tick columns on the tables to build a query.";
-  const q = (id: string) => `"${id}"`;
-  const qualify = (key: string) => {
-    const [t, c] = key.split(".");
-    return `${q(t)}.${q(c)}`;
-  };
-  const involved: string[] = [];
-  for (const k of picked) {
-    const t = k.split(".")[0];
-    if (!involved.includes(t)) involved.push(t);
-  }
-  const base = involved[0];
-  const included = new Set([base]);
-  const joins: string[] = [];
-  let progress = true;
-  while (progress && included.size < involved.length) {
-    progress = false;
-    for (const t of involved) {
-      if (included.has(t)) continue;
-      const link = links.find(
-        (l) => (l.source === t && included.has(l.target)) || (l.target === t && included.has(l.source)),
-      );
-      if (link) {
-        joins.push(
-          `JOIN ${q(schema)}.${q(t)} ON ${q(link.source)}.${q(link.sourceColumn)} = ${q(link.target)}.${q(link.targetColumn)}`,
-        );
-        included.add(t);
-        progress = true;
-      }
-    }
-  }
-  for (const t of involved) {
-    if (!included.has(t)) {
-      joins.push(`CROSS JOIN ${q(schema)}.${q(t)}`);
-      included.add(t);
-    }
-  }
-  let sql = `SELECT\n  ${picked.map(qualify).join(",\n  ")}\nFROM ${q(schema)}.${q(base)}`;
-  for (const j of joins) sql += `\n${j}`;
-  if (whereSql && whereSql !== "(1 = 1)" && whereSql.trim()) sql += `\nWHERE ${whereSql}`;
-  if (orderKey) sql += `\nORDER BY ${qualify(orderKey)} ${orderDir}`;
-  if (limit && limit > 0) sql += `\nLIMIT ${limit}`;
-  return sql + ";";
-}
 
 export function Visualizer({
   profileId,
@@ -501,6 +452,9 @@ export function Visualizer({
   const [sel, setSel] = useState<Selection>(null);
   const [mode, setMode] = useState<Mode>("diagram");
   const [showInferred, setShowInferred] = useState(true);
+  // Inferred links below this confidence stay hidden (see infer-links.ts).
+  const [minScore, setMinScore] = useState(0.6);
+  const [hiddenInferred, setHiddenInferred] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
@@ -541,6 +495,40 @@ export function Visualizer({
 
   const onSelect = useCallback((table: string, column?: string) => {
     setSel((prev) => (prev && prev.table === table && prev.column === column ? null : { table, column }));
+  }, []);
+
+  // Click a table → the viewport animates to frame it together with the
+  // tables it joins (zoom derived from their bounds, never fixed); click the
+  // empty canvas, press Escape, or click the same table again → back to the
+  // whole schema. Column clicks inside the same table do not move the view.
+  const selTable = sel?.table ?? null;
+  // Bumped by the layout effect each time a new set of nodes is committed, so
+  // "show everything" also runs after a schema switch, once the new nodes exist.
+  const [layoutRev, setLayoutRev] = useState(0);
+  useEffect(() => {
+    const inst = rfRef.current;
+    if (!inst || nodes.length === 0) return;
+    if (!selTable) {
+      // React Flow measures the fresh nodes a frame after they mount.
+      const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
+      return () => window.clearTimeout(t);
+    }
+    const rect = focusBounds(
+      nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, width: NODE_W, height: nodeHeight((n.data as unknown as TableNodeData).table) })),
+      edges.map((e) => ({ source: e.source, target: e.target })),
+      selTable,
+    );
+    if (rect) void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
+    // A change of TABLE or a fresh layout moves the view; nodes/edges are read
+    // at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selTable, layoutRev]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSel(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
   const onPick = useCallback((table: string, column: string) => {
     setPicked((prev) => {
@@ -616,41 +604,18 @@ export function Visualizer({
       .filter((l) => names.has(l.source) && names.has(l.target) && l.source !== l.target)
       .map((l) => ({ ...l, inferred: false }));
 
-    // Infer relationships when no FK is declared: a column whose name matches
-    // another table's primary-key column name (e.g. energy.METER_ID → meters.METER_ID).
-    const linkKey = (l: { source: string; sourceColumn: string; target: string; targetColumn: string }) =>
-      `${l.source}.${l.sourceColumn}>${l.target}.${l.targetColumn}`;
-    const declaredSet = new Set(declared.map(linkKey));
+    // Inferred relationships (no FK declared): scored, type-gated, ambiguity-
+    // penalised — see infer-links.ts. Links under the confidence slider are
+    // hidden and counted so the user knows they exist.
     const pkByTable = new Map<string, Set<string>>();
     visible.forEach((t) => pkByTable.set(t.name, new Set(t.columns.filter((c) => c.pk).map((c) => c.name))));
-    const inferred: (GraphLink & { inferred: boolean })[] = [];
+    let inferred: (GraphLink & { inferred: boolean; score?: number })[] = [];
     if (showInferred) {
-      const seen = new Set<string>();
-      const colNames = new Map<string, Set<string>>();
-      visible.forEach((t) => colNames.set(t.name, new Set(t.columns.map((c) => c.name))));
-      // Treat every single-column primary key as a parent key; any OTHER table
-      // that has a column of the same name is inferred to reference it — this
-      // covers composite-key children (e.g. ENERGY_READINGS.METER_ID which is
-      // part of that table's PK) referencing ENERGY_METERS.METER_ID.
-      for (const parent of visible) {
-        const pk = [...(pkByTable.get(parent.name) ?? new Set())];
-        if (pk.length !== 1) continue;
-        const key = pk[0];
-        for (const child of visible) {
-          if (child.name === parent.name) continue;
-          if (!(colNames.get(child.name) ?? new Set()).has(key)) continue;
-          // Skip if the child also has this exact column as a single-col PK
-          // (both are parents of the same key — ambiguous).
-          const childPk = pkByTable.get(child.name) ?? new Set();
-          if (childPk.has(key) && childPk.size === 1) continue;
-          const l = { source: child.name, sourceColumn: key, target: parent.name, targetColumn: key, inferred: true };
-          const k = linkKey(l);
-          if (!declaredSet.has(k) && !seen.has(k)) {
-            seen.add(k);
-            inferred.push(l as GraphLink & { inferred: boolean });
-          }
-        }
-      }
+      const all = inferLinks(visible, declared, { minScore: 0 });
+      inferred = all.filter((l) => l.score >= minScore).map((l) => ({ source: l.source, sourceColumn: l.sourceColumn, target: l.target, targetColumn: l.targetColumn, inferred: true, score: l.score }));
+      setHiddenInferred(all.length - inferred.length);
+    } else {
+      setHiddenInferred(0);
     }
     const links = [...declared, ...inferred];
 
@@ -698,6 +663,7 @@ export function Visualizer({
         };
       }),
     );
+    setLayoutRev((r) => r + 1);
     setEdges(
       links.map((l, i) => ({
         id: `${l.source}.${l.sourceColumn}->${l.target}.${l.targetColumn}-${i}`,
@@ -712,13 +678,14 @@ export function Visualizer({
           sourceColumn: l.sourceColumn,
           targetColumn: l.targetColumn,
           label: `${l.sourceColumn} → ${l.targetColumn}`,
+          score: (l as { score?: number }).score,
           active: false,
           inferred: l.inferred,
         } as unknown as Record<string, unknown>,
       })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, showInferred]);
+  }, [graph, showInferred, minScore]);
 
   // Fuzzy search across table + column names → ranked results + match sets.
   const searchTerm = search.trim();
@@ -748,22 +715,8 @@ export function Visualizer({
     return { results: results.slice(0, 60), tables, cols };
   }, [graph, searchTerm]);
 
-  // Center the canvas on a table and select it.
-  const jumpTo = useCallback(
-    (table: string, column?: string) => {
-      setSel({ table, column });
-      const node = rfRef.current?.getNode?.(table) ?? nodes.find((n) => n.id === table);
-      if (node && rfRef.current) {
-        const t = (node.data as unknown as TableNodeData).table;
-        const h = t ? nodeHeight(t) : 120;
-        rfRef.current.setCenter(node.position.x + NODE_W / 2, node.position.y + h / 2, {
-          zoom: 1.15,
-          duration: 500,
-        });
-      }
-    },
-    [nodes],
-  );
+  // Select a table (and column): the selection effect above frames it.
+  const jumpTo = useCallback((table: string, column?: string) => setSel({ table, column }), []);
 
   // The AI's schema answers drive the diagram: a locate event highlights and
   // centers the named table/column instead of leaving the answer text-only.
@@ -835,7 +788,7 @@ export function Visualizer({
     const whereSql = where.rules.length
       ? formatQuery(where, { format: "sql", quoteFieldNamesWith: ["", ""] as [string, string] })
       : "";
-    return buildSql(schema, [...picked], graph.links, whereSql, orderKey, orderDir, limit);
+    return buildSql({ schema, picked: [...picked], links: graph.links, whereSql, orderKey, orderDir, limit });
   }, [graph, schema, picked, where, orderKey, orderDir, limit]);
 
   const pickedFields: Field[] = useMemo(
@@ -1080,6 +1033,20 @@ export function Visualizer({
               <div className="grid gap-2.5">
                 <ToggleRow label="Show links" checked={edgeStyle.show} onChange={(v) => setEdgeStyle((s) => ({ ...s, show: v }))} />
                 <ToggleRow label="Animated pulse" checked={edgeStyle.pulse} onChange={(v) => setEdgeStyle((s) => ({ ...s, pulse: v }))} />
+                <label className="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground">
+                  <span className="w-24 shrink-0">Min confidence</span>
+                  <input
+                    type="range"
+                    min={0.3}
+                    max={1}
+                    step={0.1}
+                    value={minScore}
+                    onChange={(e) => setMinScore(Number(e.target.value))}
+                    aria-label="Minimum confidence for inferred links"
+                    className="h-1 flex-1 accent-primary"
+                  />
+                  <span className="w-14 shrink-0 text-right font-mono text-foreground">{minScore.toFixed(1)}{hiddenInferred ? ` · ${hiddenInferred} hidden` : ""}</span>
+                </label>
                 <div>
                   <p className="mb-1 text-[11px] text-muted-foreground">Line</p>
                   <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
