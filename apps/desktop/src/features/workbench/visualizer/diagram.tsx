@@ -3,8 +3,8 @@
  * styling, and the edge-selection rule. Moved verbatim out of Visualizer.tsx;
  * no behaviour lives here that the component did not already have.
  */
-import { createContext, useContext } from "react";
-import { EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from "@xyflow/react";
+import { createContext, memo, useContext, useEffect } from "react";
+import { EdgeLabelRenderer, Handle, Position, getBezierPath, useStore, useUpdateNodeInternals, type EdgeProps, type NodeProps } from "@xyflow/react";
 import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
@@ -17,20 +17,34 @@ export const ROW_H = 26;
 export type Selection = { table: string; column?: string } | null;
 export type Mode = "diagram" | "build";
 
+/**
+ * What a table node is given ONCE, at layout time. Everything that changes
+ * with a click (selection, picks, search matches, mode) travels through
+ * `DiagramStateContext` instead, so a click re-renders nodes without rebuilding
+ * a single node object — React Flow's first performance rule.
+ */
 export type TableNodeData = {
   /** `id` is `SCHEMA.TABLE` — what selection, picks and links refer to. */
   table: GraphTable & { id: string; schema: string };
-  mode: Mode;
-  selTable?: string;
-  selColumn?: string;
-  picked: Set<string>; // `${table}.${col}` chosen for SELECT
   sourceCols: Set<string>;
   targetCols: Set<string>;
-  matchedTables: Set<string>;
-  matchedCols: Set<string>;
   onSelect: (table: string, column?: string) => void;
   onPick: (table: string, column: string) => void;
 };
+
+export type DiagramState = {
+  mode: Mode;
+  selTable?: string;
+  selColumn?: string;
+  picked: Set<string>; // `${SCHEMA.TABLE}.${col}` chosen for SELECT
+  matchedTables: Set<string>;
+  matchedCols: Set<string>;
+};
+export const EMPTY_DIAGRAM_STATE: DiagramState = { mode: "diagram", picked: new Set(), matchedTables: new Set(), matchedCols: new Set() };
+export const DiagramStateContext = createContext<DiagramState>(EMPTY_DIAGRAM_STATE);
+
+/** Below this zoom a table is its header only — the columns are unreadable anyway. */
+export const LOD_ZOOM = 0.5;
 
 export type BeamEdgeData = {
   source: string;
@@ -107,28 +121,37 @@ export const rowY = (i: number) => HEADER_H + i * ROW_H + ROW_H / 2;
 export const nodeHeight = (t: GraphTable) => HEADER_H + t.columns.length * ROW_H;
 export const colKey = (table: string, col: string) => `${table}.${col}`;
 
-export function TableNode({ data }: NodeProps) {
+export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
   const d = data as unknown as TableNodeData;
-  const { table, mode, selTable, selColumn, picked, sourceCols, targetCols, matchedTables, matchedCols, onSelect, onPick } = d;
-  const isSel = selTable === table.id;
-  const build = mode === "build";
-  const tableMatched = matchedTables?.has(table.id);
+  const { table, sourceCols, targetCols, onSelect, onPick } = d;
+  const state = useContext(DiagramStateContext);
+  const isSel = state.selTable === table.id;
+  const build = state.mode === "build";
+  const tableMatched = state.matchedTables.has(table.id);
+  // Level of detail: zoomed out, a table is its header. The selector returns
+  // a boolean, so the node re-renders only when it crosses the threshold.
+  const compact = useStore((s) => s.transform[2] < LOD_ZOOM) && !isSel;
+  const updateInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateInternals(id);
+  }, [compact, id, updateInternals]);
+  const handleTop = (i: number) => (compact ? HEADER_H / 2 : rowY(i));
   return (
     <div
       style={{ width: NODE_W }}
       className={cn(
-        "relative overflow-hidden rounded-xl border bg-panel shadow-xl transition-colors",
-        isSel ? "border-[#a78bfa]" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
+        "relative overflow-hidden rounded-xl border bg-panel",
+        isSel ? "border-[#a78bfa] shadow-xl" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
       )}
     >
       {table.columns.map((col, i) =>
         targetCols.has(col.name) ? (
-          <Handle key={`t-${col.name}`} type="target" id={`${col.name}__t`} position={Position.Left} style={{ top: rowY(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
+          <Handle key={`t-${col.name}`} type="target" id={`${col.name}__t`} position={Position.Left} style={{ top: handleTop(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
         ) : null,
       )}
       {table.columns.map((col, i) =>
         sourceCols.has(col.name) ? (
-          <Handle key={`s-${col.name}`} type="source" id={`${col.name}__s`} position={Position.Right} style={{ top: rowY(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
+          <Handle key={`s-${col.name}`} type="source" id={`${col.name}__s`} position={Position.Right} style={{ top: handleTop(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
         ) : null,
       )}
 
@@ -136,7 +159,8 @@ export function TableNode({ data }: NodeProps) {
         onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
-          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left transition-colors",
+          "flex w-full items-center gap-1.5 px-3 text-left",
+          !compact && "border-b border-border",
           isSel ? "bg-[#a78bfa]/15" : "bg-secondary/70 hover:bg-secondary",
         )}
       >
@@ -145,63 +169,54 @@ export function TableNode({ data }: NodeProps) {
         <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">{table.columns.length}</span>
       </button>
 
-      <div>
-        {table.columns.map((col) => {
-          const key = colKey(table.id, col.name);
-          const isPicked = picked.has(key);
-          const colSel = isSel && selColumn === col.name;
-          const colMatched = matchedCols?.has(key);
-          return (
-            <div
-              key={col.name}
-              onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
-              style={{ height: ROW_H }}
-              className={cn(
-                "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] transition-colors last:border-0 hover:bg-secondary/50",
-                colSel && "bg-[#a78bfa]/20",
-                isPicked && "bg-primary/10",
-                colMatched && !colSel && "bg-amber-400/15",
-              )}
-            >
-              {build ? (
-                <span
-                  className={cn(
-                    "flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] border",
-                    isPicked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
-                  )}
-                >
-                  {isPicked ? <span className="text-[8px] leading-none">✓</span> : null}
-                </span>
-              ) : col.pk ? (
-                <KeyRound className="h-3 w-3 shrink-0 text-warning" />
-              ) : (
-                <span className="w-3 shrink-0" />
-              )}
-              <span
+      {compact ? null : (
+        <div>
+          {table.columns.map((col) => {
+            const key = colKey(table.id, col.name);
+            const isPicked = state.picked.has(key);
+            const colSel = isSel && state.selColumn === col.name;
+            const colMatched = state.matchedCols.has(key);
+            return (
+              <div
+                key={col.name}
+                onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
+                style={{ height: ROW_H }}
                 className={cn(
-                  "truncate",
-                  colMatched ? "font-semibold text-amber-300" : col.pk ? "text-foreground" : "text-muted-foreground",
+                  "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
+                  colSel && "bg-[#a78bfa]/20",
+                  isPicked && "bg-primary/10",
+                  colMatched && !colSel && "bg-amber-400/15",
                 )}
               >
-                {col.name}
-              </span>
-              {colMatched ? (
-                <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[8px] font-semibold tracking-wide text-amber-300 uppercase">
-                  match
-                </span>
-              ) : null}
-              <span className="ml-auto shrink-0 truncate text-syntax-type/70">{col.dataType}</span>
-            </div>
-          );
-        })}
-      </div>
+                {build ? (
+                  <span
+                    className={cn(
+                      "flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] border",
+                      isPicked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
+                    )}
+                  >
+                    {isPicked ? <span className="text-[8px] leading-none">✓</span> : null}
+                  </span>
+                ) : col.pk ? (
+                  <KeyRound className="h-3 w-3 shrink-0 text-warning" />
+                ) : (
+                  <span className="w-3 shrink-0" />
+                )}
+                <span className={cn("truncate", colMatched ? "font-semibold text-amber-300" : col.pk ? "text-foreground" : "text-muted-foreground")}>{col.name}</span>
+                {colMatched ? (
+                  <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[8px] font-semibold tracking-wide text-amber-300 uppercase">match</span>
+                ) : null}
+                <span className="ml-auto shrink-0 truncate text-syntax-type/70">{col.dataType}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {isSel && !build ? (
-        <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} />
-      ) : null}
+      {isSel && !build ? <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} /> : null}
     </div>
   );
-}
+});
 
 export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps) {
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
@@ -285,26 +300,48 @@ export type SchemaGroupData = {
   schema: string;
   /** The federated source for a virtual schema (PostgreSQL, MySQL, …). */
   source?: string;
-  tableCount: number;
+  /** Tables drawn now vs. tables in the schema — the box paginates. */
+  shown: number;
+  total: number;
+  onShowMore: () => void;
+  onShowAll: () => void;
 };
 
 /**
  * The dashed box a schema's tables live in. Its size comes from the layout
  * (`style.width/height`), so this only draws the frame and the title strip.
  */
-export function SchemaGroupNode({ data }: NodeProps) {
+export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps) {
   const d = data as unknown as SchemaGroupData;
+  const more = d.total - d.shown;
   return (
-    <div className="h-full w-full rounded-2xl border-2 border-dashed border-border/80 bg-panel/20">
-      <div className="flex h-[44px] items-center gap-2 px-4">
+    // The box is a backdrop: only its header takes pointer events, so dragging
+    // and clicking the canvas work straight through it.
+    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-border/80 bg-panel/20">
+      <div className="pointer-events-auto flex h-[44px] items-center gap-2 px-4">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
         <span className="truncate font-heading text-[15px] font-semibold text-foreground">{d.schema}</span>
         {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
-        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{d.tableCount} table{d.tableCount === 1 ? "" : "s"}</span>
+        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+          {more > 0 ? `${d.shown} of ${d.total} tables` : `${d.total} table${d.total === 1 ? "" : "s"}`}
+        </span>
+        {more > 0 ? (
+          <>
+            <button onClick={d.onShowMore} className="shrink-0 rounded-md border border-border bg-panel px-2 py-0.5 text-[11px] text-foreground hover:bg-secondary">
+              Show {Math.min(more, TABLE_PAGE)} more
+            </button>
+            <button onClick={d.onShowAll} className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
+              All
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );
-}
+});
+
+/** Tables drawn per schema box before the user asks for more. */
+export const TABLE_PAGE = 20;
 
 /** The last box on the canvas: attach another database or bucket right here. */
 export function AddSourceNode({ data }: NodeProps) {
@@ -322,7 +359,7 @@ export function AddSourceNode({ data }: NodeProps) {
   );
 }
 
-export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, addSource: AddSourceNode };
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, addSource: memo(AddSourceNode) };
 export const edgeTypes = { beam: BeamEdge };
 
 export function ToggleRow({

@@ -60,7 +60,7 @@ import {
 import { RQB_CLASSNAMES, RQB_TRANSLATIONS } from "./visualizer/query-builder-style";
 import { fuzzyScore } from "./visualizer/search";
 import { errorMessage, ipc, type GraphLink, type SchemaGraph } from "@/lib/ipc";
-import type { SchemaGroupData } from "./visualizer/diagram";
+import { DiagramStateContext, TABLE_PAGE, type DiagramState, type SchemaGroupData } from "./visualizer/diagram";
 import { cn } from "@/lib/utils";
 
 const graphCache = new Map<string, SchemaGraph>();
@@ -95,6 +95,8 @@ export function Visualizer({
   // Every schema is on the canvas by default; the picker narrows.
   const [selected, setSelected] = useState<Set<string>>(() => new Set(lastSelection.get(schemaKey) ?? schemaCache.get(profileId)?.map((s) => s.name) ?? []));
   const [graphs, setGraphs] = useState<Record<string, SchemaGraph>>({});
+  // Tables drawn per schema box (TABLE_PAGE at first; "Show more" / "All" extend).
+  const [shownPerSchema, setShownPerSchema] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -120,6 +122,7 @@ export function Visualizer({
     for (const key of Array.from(graphCache.keys())) {
       if (key.startsWith(`${profileId}:`)) graphCache.delete(key);
     }
+    setShownPerSchema({});
     setRefreshTick((t) => t + 1);
   }, [profileId]);
 
@@ -190,17 +193,12 @@ export function Visualizer({
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
       return () => window.clearTimeout(t);
     }
-    // Tables live inside their schema box, so their absolute position is the
-    // box's plus their own — read live, because a table may have been dragged.
-    const live = inst.getNodes();
-    const byId = new Map(live.map((n) => [n.id, n]));
+    // Read live positions: a table may have been dragged since the layout.
     const rect = focusBounds(
-      live
+      inst
+        .getNodes()
         .filter((n) => n.type === "table")
-        .map((n) => {
-          const parent = n.parentId ? byId.get(n.parentId) : undefined;
-          return { id: n.id, x: (parent?.position.x ?? 0) + n.position.x, y: (parent?.position.y ?? 0) + n.position.y, width: NODE_W, height: nodeHeight((n.data as unknown as TableNodeData).table) };
-        }),
+        .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, width: NODE_W, height: nodeHeight((n.data as unknown as TableNodeData).table) })),
       edges.map((e) => ({ source: e.source, target: e.target })),
       selTable,
     );
@@ -328,8 +326,6 @@ export function Visualizer({
       setHiddenInferred(0);
     }
     const links = [...declared, ...inferred];
-    // Every link is kept; what gets DRAWN is budgeted per selection below.
-    allLinksRef.current = links;
 
     const sourceCols = new Map<string, Set<string>>();
     const targetCols = new Map<string, Set<string>>();
@@ -339,43 +335,53 @@ export function Visualizer({
       if (!targetCols.has(l.target)) targetCols.set(l.target, new Set());
       targetCols.get(l.target)!.add(l.targetColumn);
     }
-    const layout = layoutSchemas(
-      selectedList.map((name) => ({ schema: name, tables: visible.filter((t) => t.schema === name) })),
-      NODE_W,
-      nodeHeight,
-    );
-    const groupNodes: Node[] = layout.groups.map((g) => ({
-      id: `schema:${g.schema}`,
-      type: "schemaGroup",
-      position: { x: g.box.x, y: g.box.y },
-      style: { width: g.box.width, height: g.box.height },
-      draggable: false,
-      selectable: false,
-      zIndex: -1,
-      data: {
-        schema: g.schema,
-        source: schemas.find((sc) => sc.name === g.schema)?.source,
-        tableCount: visible.filter((t) => t.schema === g.schema).length,
-      } satisfies SchemaGroupData as unknown as Record<string, unknown>,
-    }));
-    const tableNodes: Node[] = visible.map((table) => ({
-      id: table.id,
-      type: "table",
-      parentId: `schema:${table.schema}`,
-      extent: "parent" as const,
-      position: layout.tables[table.id] ?? { x: 0, y: 0 },
-      data: {
-        table,
-        mode,
-        onSelect,
-        onPick,
-        picked,
-        sourceCols: sourceCols.get(table.id) ?? new Set(),
-        targetCols: targetCols.get(table.id) ?? new Set(),
-        matchedTables: new Set<string>(),
-        matchedCols: new Set<string>(),
-      } as unknown as Record<string, unknown>,
-    }));
+    // Pagination per box: a schema with 500 tables draws TABLE_PAGE of them
+    // until the user asks for more — DOM stays bounded whatever the database.
+    const perSchema = selectedList.map((name) => {
+      const all = visible.filter((t) => t.schema === name);
+      const shown = Math.min(all.length, shownPerSchema[name] ?? TABLE_PAGE);
+      return { schema: name, tables: all.slice(0, shown), total: all.length };
+    });
+    const drawn = new Set(perSchema.flatMap((g) => g.tables.map((t) => t.id)));
+    const layout = layoutSchemas(perSchema.map(({ schema, tables }) => ({ schema, tables })), NODE_W, nodeHeight);
+    // Boxes are plain backdrop nodes and tables are absolutely positioned — no
+    // sub-flow parent/child machinery (its measure→render loop killed the
+    // renderer). The box only shows where a schema's tables were laid out.
+    const groupNodes: Node[] = layout.groups.map((g) => {
+      const info = perSchema.find((p) => p.schema === g.schema)!;
+      return {
+        id: `schema:${g.schema}`,
+        type: "schemaGroup",
+        position: { x: g.box.x, y: g.box.y },
+        style: { width: g.box.width, height: g.box.height },
+        draggable: false,
+        selectable: false,
+        connectable: false,
+        zIndex: -1,
+        data: {
+          schema: g.schema,
+          source: schemas.find((sc) => sc.name === g.schema)?.source,
+          shown: info.tables.length,
+          total: info.total,
+          onShowMore: () => setShownPerSchema((m) => ({ ...m, [g.schema]: (m[g.schema] ?? TABLE_PAGE) + TABLE_PAGE })),
+          onShowAll: () => setShownPerSchema((m) => ({ ...m, [g.schema]: Number.MAX_SAFE_INTEGER })),
+        } satisfies SchemaGroupData as unknown as Record<string, unknown>,
+      };
+    });
+    const tableNodes: Node[] = visible
+      .filter((table) => drawn.has(table.id))
+      .map((table) => ({
+        id: table.id,
+        type: "table",
+        position: layout.absolute[table.id] ?? { x: 0, y: 0 },
+        data: {
+          table,
+          sourceCols: sourceCols.get(table.id) ?? new Set(),
+          targetCols: targetCols.get(table.id) ?? new Set(),
+          onSelect,
+          onPick,
+        } satisfies TableNodeData as unknown as Record<string, unknown>,
+      }));
     // The add-source box takes the next slot after the last schema box.
     const last = layout.groups[layout.groups.length - 1];
     const addNode: Node[] = onNewVs
@@ -391,11 +397,14 @@ export function Visualizer({
       : [];
     setNodes([...groupNodes, ...tableNodes, ...addNode]);
     setLayoutRev((r) => r + 1);
-    const budget = budgetLinks(links, null);
-    setBudgetHidden(budget.hidden);
+    // Only links between drawn tables can be drawn; the rest wait for "Show more".
+    const drawable = links.filter((l) => drawn.has(l.source) && drawn.has(l.target));
+    allLinksRef.current = drawable;
+    const budget = budgetLinks(drawable, null);
+    setBudgetHidden(budget.hidden + (links.length - drawable.length));
     setEdges(toEdges(budget.shown));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, showInferred, minScore, selectedList, schemas]);
+  }, [graph, showInferred, minScore, selectedList, schemas, shownPerSchema]);
 
   // Fuzzy search across table + column names → ranked results + match sets.
   const searchTerm = search.trim();
@@ -426,7 +435,12 @@ export function Visualizer({
   }, [graph, searchTerm]);
 
   // Select a table (and column): the selection effect above frames it.
-  const jumpTo = useCallback((table: string, column?: string) => setSel({ table, column }), []);
+  const jumpTo = useCallback((table: string, column?: string) => {
+    // A table beyond the box's page cannot be framed: show its whole schema first.
+    const { schema: sc } = splitTableId(table);
+    setShownPerSchema((m) => ((m[sc] ?? TABLE_PAGE) === Number.MAX_SAFE_INTEGER ? m : { ...m, [sc]: Number.MAX_SAFE_INTEGER }));
+    setSel({ table, column });
+  }, []);
 
   // The AI's schema answers drive the diagram: a locate event highlights and
   // centers the named table/column instead of leaving the answer text-only.
@@ -463,22 +477,11 @@ export function Visualizer({
   }, [nodes, graph, jumpTo]);
 
   // Reflect selection / mode / picked columns / matches into node & edge data.
+  const diagramState: DiagramState = useMemo(
+    () => ({ mode, selTable: sel?.table, selColumn: sel?.column, picked, matchedTables: matches.tables, matchedCols: matches.cols }),
+    [mode, sel, picked, matches],
+  );
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({
-        ...n,
-        selected: n.id === sel?.table,
-        data: {
-          ...n.data,
-          mode,
-          picked,
-          selTable: sel?.table,
-          selColumn: sel?.column,
-          matchedTables: matches.tables,
-          matchedCols: matches.cols,
-        },
-      })),
-    );
     // Over budget, the selected table's links join the drawn set; then mark
     // the ones the selection lights up.
     const budget = budgetLinks(allLinksRef.current, sel?.table ?? null);
@@ -688,6 +691,7 @@ export function Visualizer({
             ) : null}
           </div>
         ) : (
+          <DiagramStateContext.Provider value={diagramState}>
           <EdgeStyleContext.Provider value={edgeRender}>
             <ReactFlow
               nodes={nodes}
@@ -710,6 +714,7 @@ export function Visualizer({
               <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
             </ReactFlow>
           </EdgeStyleContext.Provider>
+          </DiagramStateContext.Provider>
         )}
 
         {/* Floating VS Code-style fuzzy search over tables + columns */}

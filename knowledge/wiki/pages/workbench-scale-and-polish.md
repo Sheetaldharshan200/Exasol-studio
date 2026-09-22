@@ -139,3 +139,18 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   the selected table's, the rest counted in the header) and from the
   dense/paused edge decoration. Schema graphs also load ONE at a time —
   concurrent statements on the shared websocket session are a known hang.
+- **Production shape of the canvas (2026-09-22, after a second renderer death
+  with sub-flows removed from culling but not from the model).** Per React
+  Flow's own performance guidance — memoise node components, never rebuild
+  node objects on interaction, render detail only where it can be read,
+  collapse, keep node CSS plain — the canvas now: (1) uses NO sub-flow
+  parent/child nodes at all; schema boxes are backdrop nodes (`zIndex -1`,
+  `pointer-events: none` except their header) and tables sit at absolute
+  positions from `layoutSchemas`; (2) puts selection, picks, mode and search
+  matches in `DiagramStateContext` so a click re-renders memoised `TableNode`s
+  without touching the nodes array; (3) draws a table as its header only below
+  zoom 0.5 (`useStore` boolean selector + `useUpdateNodeInternals`); (4)
+  paginates each box (`TABLE_PAGE = 20`, "Show N more" / "All", jump/locate
+  reveals the whole schema); (5) draws only links between drawn tables, then
+  applies `budgetLinks`; (6) loads schema graphs one at a time. Sources:
+  reactflow.dev/learn/advanced-use/performance, xyflow issue #4792.
