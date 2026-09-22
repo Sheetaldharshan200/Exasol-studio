@@ -12,12 +12,15 @@ export function CredentialsStep({
   values,
   onChange,
   managedLocal,
+  hostAddress,
 }: {
   adapter: VsAdapter;
   values: FieldValues;
   onChange: (next: FieldValues) => void;
   /** The target is Studio's own local Exasol, which runs inside the launcher's runtime. */
   managedLocal: boolean;
+  /** This machine as the local database sees it (VM runtime gateway); null when unknown. */
+  hostAddress?: string | null;
 }) {
   const localhostWarning = managedLocal && pointsAtLocalhost(values);
   return (
@@ -56,8 +59,24 @@ export function CredentialsStep({
           <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
           <span>
             The database connects to this source, not your laptop — and the local Exasol runs inside its own runtime, where{" "}
-            <span className="font-mono">localhost</span> means that runtime. Use this computer’s network address (or the
-            container hostname the runtime can reach) instead.
+            <span className="font-mono">localhost</span> means that runtime.{" "}
+            {hostAddress ? (
+              <>
+                This Mac, as the database sees it, is{" "}
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...values, host: hostAddress })}
+                  className="rounded border border-warning/50 bg-warning/15 px-1.5 font-mono text-[11px] text-foreground hover:bg-warning/25"
+                >
+                  {hostAddress}
+                </button>{" "}
+                — click to use it.
+              </>
+            ) : (
+              <>Use this computer’s network address (or the container hostname the runtime can reach) instead.</>
+            )}{" "}
+            On macOS also allow incoming connections for your database server in System Settings → Network → Firewall, or the
+            connection is silently refused.
           </span>
         </p>
       ) : null}

@@ -636,7 +636,7 @@ export async function mockInvoke(
       return "/Users/you/Library/Application Support/com.exasol.studio/marketplace";
 
     case "vs_local_state":
-      return { managedLocal: true, bucketFiles: ["vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar"], slcAliases: ["PYTHON3"] };
+      return { managedLocal: true, bucketFiles: ["vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar"], slcAliases: ["PYTHON3"], hostAddress: "192.168.64.1" };
     case "vs_stage_adapter": {
       await delay(600);
       const req = (args?.req ?? {}) as { runtime?: string; driver?: { name?: string } | null };
