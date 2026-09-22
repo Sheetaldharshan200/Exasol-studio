@@ -89,7 +89,9 @@ export function layoutSchemas(
       x: GROUP_PAD + (i % cols) * (nodeWidth + gapX),
       y: GROUP_HEADER + GROUP_PAD + rowTop[Math.floor(i / cols)],
     }));
-    return { schema, width: Math.max(width, 260), height: Math.max(height, GROUP_HEADER + GROUP_PAD * 2 + 60), rel };
+    // An empty schema is a slim labelled box, not a hole in the canvas.
+    const minHeight = list.length ? GROUP_HEADER + GROUP_PAD * 2 + 60 : GROUP_HEADER + 12;
+    return { schema, width: Math.max(width, 260), height: Math.max(list.length ? height : 0, minHeight), rel };
   });
   let x = 0;
   let y = 0;

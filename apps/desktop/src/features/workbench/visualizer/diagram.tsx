@@ -44,7 +44,7 @@ export const EMPTY_DIAGRAM_STATE: DiagramState = { mode: "diagram", picked: new 
 export const DiagramStateContext = createContext<DiagramState>(EMPTY_DIAGRAM_STATE);
 
 /** Below this zoom a table is its header only — the columns are unreadable anyway. */
-export const LOD_ZOOM = 0.5;
+export const LOD_ZOOM = 0.35;
 
 export type BeamEdgeData = {
   source: string;
@@ -231,7 +231,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
   const width = active ? cfg.width + 1.25 : cfg.width;
   const dash = dashFor(cfg.line, width);
-  const opacity = active ? 1 : inferred ? 0.55 : 0.85;
+  const opacity = active ? 1 : cfg.dense ? (inferred ? 0.28 : 0.6) : inferred ? 0.55 : 0.85;
   // Decoration is for the link the user is looking at. Everything animates
   // only on a small diagram at rest.
   const decorate = !cfg.paused && (active || (!cfg.dense && !inferred));
@@ -317,10 +317,10 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   return (
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
-    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-border/80 bg-panel/20">
-      <div className="pointer-events-auto flex h-[44px] items-center gap-2 px-4">
+    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-primary/45 bg-primary/[0.035] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_12%,transparent)]">
+      <div className="pointer-events-auto flex h-[44px] items-center gap-2 rounded-t-2xl border-b border-dashed border-primary/30 bg-panel/70 px-4">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
-        <span className="truncate font-heading text-[15px] font-semibold text-foreground">{d.schema}</span>
+        <span className="truncate font-heading text-[16px] font-semibold tracking-tight text-foreground">{d.schema}</span>
         {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
         <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
           {more > 0 ? `${d.shown} of ${d.total} tables` : `${d.total} table${d.total === 1 ? "" : "s"}`}

@@ -42,9 +42,10 @@ test("layout: tables sit inside their box with header and padding; boxes go left
   assert.equal(Object.keys(L.absolute).length, 7);
 });
 
-test("layout of an empty schema still yields a box", () => {
+test("layout of an empty schema still yields a box — a slim one", () => {
   const L = layoutSchemas([{ schema: "EMPTY", tables: [] }], 200, () => 50);
   assert.equal(L.groups[0].box.width, 260);
+  assert.equal(L.groups[0].box.height, GROUP_HEADER + 12);
   assert.deepEqual(L.tables, {});
 });
 
