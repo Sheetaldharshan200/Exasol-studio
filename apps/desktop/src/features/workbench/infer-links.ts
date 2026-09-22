@@ -49,18 +49,21 @@ function conventionNames(parent: string): Set<string> {
   return new Set([`${p}ID`, `${s}ID`, `${p}KEY`, `${s}KEY`]);
 }
 
+type IdTable = GraphTable & { id?: string };
+const idOf = (t: IdTable) => t.id ?? t.name;
+
 export function inferLinks(
-  tables: GraphTable[],
+  tables: IdTable[],
   declared: GraphLink[],
   options: { minScore?: number } = {},
 ): InferredLink[] {
   const minScore = options.minScore ?? 0.6;
   const declaredPairs = new Set(declared.map((l) => `${l.source}.${l.sourceColumn}>${l.target}.${l.targetColumn}`.toUpperCase()));
-  const pkOf = new Map(tables.map((t) => [t.name, t.columns.filter((c) => c.pk)]));
+  const pkOf = new Map(tables.map((t) => [idOf(t), t.columns.filter((c) => c.pk)]));
 
   const candidates: InferredLink[] = [];
   for (const parent of tables) {
-    const pks = pkOf.get(parent.name) ?? [];
+    const pks = pkOf.get(idOf(parent)) ?? [];
     if (pks.length === 0) continue;
     const composite = pks.length > 1 ? 0.8 : 1;
     const conv = conventionNames(parent.name);
@@ -70,8 +73,8 @@ export function inferLinks(
       if (pkFamily === "other") continue;
       const pkNorm = normaliseKey(pk.name);
       for (const child of tables) {
-        if (child.name === parent.name) continue;
-        const childPks = pkOf.get(child.name) ?? [];
+        if (idOf(child) === idOf(parent)) continue;
+        const childPks = pkOf.get(idOf(child)) ?? [];
         for (const col of child.columns) {
           if (typeFamily(col.dataType) !== pkFamily) continue;
           // The child's own sole primary key is a parent key, not a reference.
@@ -91,9 +94,9 @@ export function inferLinks(
             reason = "normalised name";
           }
           if (!reason) continue;
-          const key = `${child.name}.${col.name}>${parent.name}.${pk.name}`.toUpperCase();
+          const key = `${idOf(child)}.${col.name}>${idOf(parent)}.${pk.name}`.toUpperCase();
           if (declaredPairs.has(key)) continue;
-          candidates.push({ source: child.name, sourceColumn: col.name, target: parent.name, targetColumn: pk.name, score: score * composite, reason, ambiguous: false });
+          candidates.push({ source: idOf(child), sourceColumn: col.name, target: idOf(parent), targetColumn: pk.name, score: score * composite, reason, ambiguous: false });
         }
       }
     }

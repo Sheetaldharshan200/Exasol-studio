@@ -398,6 +398,8 @@ export type GraphLink = {
   sourceColumn: string;
   target: string;
   targetColumn: string;
+  /** The referenced table's schema when a declared FK points into another schema. */
+  targetSchema?: string | null;
 };
 export type SchemaGraph = { tables: GraphTable[]; links: GraphLink[] };
 

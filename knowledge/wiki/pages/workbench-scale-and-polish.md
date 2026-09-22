@@ -98,3 +98,34 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
 - assistant-ui's composer is driven through `useAui().composer().setText()`;
   state via `useAuiState((s) => s.composer.text)`.
 - `reqwest::blocking` inside `#[tokio::test]` panics — use the async client.
+
+## One canvas per connection (2026-09-22)
+
+- Table identity is `SCHEMA.TABLE`, columns `SCHEMA.TABLE.COLUMN`; the last dot
+  separates the column, the first the schema (`connection-graph.ts`). Per-schema
+  graphs (`getSchemaGraph`, cached per profile:schema) are merged; declared links
+  are intra-schema (what the Rust graph returns), inferred links run across every
+  visible table by id — so a virtual schema's `sales.customer_id` can point at a
+  local `CUSTOMERS.ID`.
+- Each schema is a React Flow parent node (`schemaGroup`, dashed box, `zIndex -1`,
+  not draggable) and its tables are children with `extent: "parent"` and
+  RELATIVE positions; `layoutSchemas` also returns absolute positions, kept in a
+  ref for `focusBounds`. Groups come first in the nodes array.
+- Selection: all schemas by default, remembered per tab (`lastSelection`); a new
+  schema joins automatically until the user has narrowed. Locate events for a
+  hidden schema add it first, then jump.
+- Performance: each declared link used to render two paths, an SMIL dot, a
+  framer-motion gradient and an HTML label — with a hundred links every pan
+  re-ran a hundred JS animations. Now: `dense` (> 24 links) → only the selected
+  link is decorated; `paused` (onMoveStart/onMoveEnd) → plain lines while moving;
+  the shimmer is `<animate>` on the gradient. `EdgeRenderContext = EdgeStyle &
+  {dense, paused}`.
+- Codex round 5 on the canvas: (1) remember a selection only once the schema
+  list exists — an early `[]` read as "the user hid everything"; (2) locate
+  events resolve schema/table/column case-insensitively against what exists;
+  (3) hiding a schema also drops its aggregates, join types and any WHERE
+  naming it (`whereSchemas`); (4) declared cross-schema FKs carry
+  `targetSchema` from `get_schema_graph` (REFERENCED_SCHEMA) so the merge does
+  not mis-qualify them; (5) framing reads live node positions (tables can be
+  dragged inside their box). Known limit: identifiers containing dots are
+  ambiguous in the dotted ids.

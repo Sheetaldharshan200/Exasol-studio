@@ -18,6 +18,8 @@ import {
   type RuleGroupType,
 } from "react-querybuilder";
 import {
+  Check,
+  ChevronDown,
   Columns3,
   Loader2,
   RotateCw,
@@ -30,25 +32,20 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
 import { focusBounds } from "./visualizer-focus.ts";
 import { inferLinks } from "./infer-links.ts";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
+import { GROUP_HEADER, colKey, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
+  DENSE_EDGES,
   EdgeStyleContext,
   NODE_W,
   PULSE_PRESETS,
-  colKey,
   edgeIsActive,
   edgeTypes,
   nodeHeight,
@@ -63,13 +60,16 @@ import {
 import { RQB_CLASSNAMES, RQB_TRANSLATIONS } from "./visualizer/query-builder-style";
 import { fuzzyScore } from "./visualizer/search";
 import { errorMessage, ipc, type GraphLink, type SchemaGraph } from "@/lib/ipc";
+import type { SchemaGroupData } from "./visualizer/diagram";
 import { cn } from "@/lib/utils";
 
 const graphCache = new Map<string, SchemaGraph>();
 /** A schema in the picker: virtual ones carry the source they federate. */
 type SchemaEntry = { name: string; source?: string };
 const schemaCache = new Map<string, SchemaEntry[]>();
-const lastSchema = new Map<string, string>();
+/** Which schemas a tab shows; a new tab shows all of them. */
+const lastSelection = new Map<string, string[]>();
+const ADD_SOURCE_ID = "__add_source__";
 
 /** Subsequence fuzzy score (higher = better); null if not all chars match. */
 
@@ -92,10 +92,9 @@ export function Visualizer({
   // caches stay keyed by profile since they're the same database.
   const schemaKey = instanceId ?? profileId;
   const [schemas, setSchemas] = useState<SchemaEntry[]>(() => schemaCache.get(profileId) ?? []);
-  const [schema, setSchema] = useState<string>(() => lastSchema.get(schemaKey) ?? "");
-  const [graph, setGraph] = useState<SchemaGraph | null>(
-    () => graphCache.get(`${profileId}:${lastSchema.get(schemaKey) ?? ""}`) ?? null,
-  );
+  // Every schema is on the canvas by default; the picker narrows.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(lastSelection.get(schemaKey) ?? schemaCache.get(profileId)?.map((s) => s.name) ?? []));
+  const [graphs, setGraphs] = useState<Record<string, SchemaGraph>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -106,6 +105,8 @@ export function Visualizer({
   const [minScore, setMinScore] = useState(0.6);
   const [hiddenInferred, setHiddenInferred] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
+  // While the user pans or zooms, links draw as plain lines (see diagram.tsx).
+  const [interacting, setInteracting] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
   // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
@@ -164,8 +165,17 @@ export function Visualizer({
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
       return () => window.clearTimeout(t);
     }
+    // Tables live inside their schema box, so their absolute position is the
+    // box's plus their own — read live, because a table may have been dragged.
+    const live = inst.getNodes();
+    const byId = new Map(live.map((n) => [n.id, n]));
     const rect = focusBounds(
-      nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, width: NODE_W, height: nodeHeight((n.data as unknown as TableNodeData).table) })),
+      live
+        .filter((n) => n.type === "table")
+        .map((n) => {
+          const parent = n.parentId ? byId.get(n.parentId) : undefined;
+          return { id: n.id, x: (parent?.position.x ?? 0) + n.position.x, y: (parent?.position.y ?? 0) + n.position.y, width: NODE_W, height: nodeHeight((n.data as unknown as TableNodeData).table) };
+        }),
       edges.map((e) => ({ source: e.source, target: e.target })),
       selTable,
     );
@@ -192,10 +202,16 @@ export function Visualizer({
   }, []);
 
   useEffect(() => {
+    // A remembered selection wins; otherwise every schema (new schemas join
+    // automatically until the user has narrowed).
+    const apply = (entries: SchemaEntry[]) => {
+      setSchemas(entries);
+      const remembered = lastSelection.has(schemaKey) ? lastSelection.get(schemaKey)! : null;
+      setSelected(remembered ? new Set(remembered.filter((n) => entries.some((e) => e.name === n))) : new Set(entries.map((e) => e.name)));
+    };
     const cached = schemaCache.get(profileId);
     if (cached) {
-      setSchemas(cached);
-      setSchema((cur) => cur || lastSchema.get(schemaKey) || cached[0]?.name || "");
+      apply(cached);
       return;
     }
     ipc
@@ -206,41 +222,50 @@ export function Visualizer({
           source: s.isVirtual ? adapterForScript(s.adapterScript)?.name ?? "virtual" : undefined,
         }));
         schemaCache.set(profileId, entries);
-        setSchemas(entries);
-        setSchema((cur) => cur || entries[0]?.name || "");
+        apply(entries);
       })
       .catch((e) => setError(errorMessage(e)));
   }, [profileId, refreshTick]);
 
+  const selectedList = useMemo(() => schemas.filter((s) => selected.has(s.name)).map((s) => s.name), [schemas, selected]);
   useEffect(() => {
-    if (!schema) return;
-    lastSchema.set(schemaKey, schema);
-    setPicked(new Set());
-    setWhere({ combinator: "and", rules: [] });
-    setOrderKey(null);
-    const key = `${profileId}:${schema}`;
-    const cached = graphCache.get(key);
-    if (cached) {
-      setGraph(cached);
+    // Only a choice made with the list in hand is worth remembering — before
+    // the schemas arrive the selection is empty for a different reason.
+    if (schemas.length) lastSelection.set(schemaKey, selectedList);
+    // 3. Everything the builder holds about a hidden schema goes with it: picks,
+    //    aggregates, join types, and the WHERE group if any rule named it.
+    const keep = (key: string) => selected.has(splitTableId(splitColKey(key).table).schema);
+    setPicked((prev) => new Set([...prev].filter(keep)));
+    setAggregates((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => keep(k))));
+    setJoinTypes((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => { const [src, dst] = k.split(">"); return keep(src) && keep(dst); })));
+    setWhere((prev) => (whereSchemas(prev).every((sc) => selected.has(sc)) ? prev : { combinator: "and", rules: [] }));
+    const missing = selectedList.filter((name) => !graphCache.has(`${profileId}:${name}`));
+    if (missing.length === 0) {
+      setGraphs(Object.fromEntries(selectedList.map((name) => [name, graphCache.get(`${profileId}:${name}`)!])));
       setError(null);
       return;
     }
     let alive = true;
     setLoading(true);
     setError(null);
-    setSel(null);
-    ipc
-      .getSchemaGraph(profileId, schema)
-      .then((g) => {
-        graphCache.set(key, g);
-        if (alive) setGraph(g);
+    Promise.allSettled(missing.map((name) => ipc.getSchemaGraph(profileId, name).then((g) => graphCache.set(`${profileId}:${name}`, g))))
+      .then((results) => {
+        if (!alive) return;
+        const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        if (failed) setError(errorMessage(failed.reason));
+        setGraphs(Object.fromEntries(selectedList.flatMap((name) => (graphCache.has(`${profileId}:${name}`) ? [[name, graphCache.get(`${profileId}:${name}`)!]] : []))));
       })
-      .catch((e) => alive && setError(errorMessage(e)))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [profileId, schema, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId, selectedList.join("|"), refreshTick]);
+  // One graph for the whole connection: SCHEMA.TABLE ids, links across schemas.
+  const graph: ConnGraph | null = useMemo(() => {
+    const parts = selectedList.flatMap((name) => (graphs[name] ? [{ schema: name, graph: graphs[name] }] : []));
+    return parts.length ? mergeSchemaGraphs(parts) : null;
+  }, [graphs, selectedList]);
 
   // Rebuild layout when the graph or filter changes.
   useEffect(() => {
@@ -250,7 +275,7 @@ export function Visualizer({
       return;
     }
     const visible = graph.tables;
-    const names = new Set(visible.map((t) => t.name));
+    const names = new Set(visible.map((t) => t.id));
     const declared = graph.links
       .filter((l) => names.has(l.source) && names.has(l.target) && l.source !== l.target)
       .map((l) => ({ ...l, inferred: false }));
@@ -258,8 +283,6 @@ export function Visualizer({
     // Inferred relationships (no FK declared): scored, type-gated, ambiguity-
     // penalised — see infer-links.ts. Links under the confidence slider are
     // hidden and counted so the user knows they exist.
-    const pkByTable = new Map<string, Set<string>>();
-    visible.forEach((t) => pkByTable.set(t.name, new Set(t.columns.filter((c) => c.pk).map((c) => c.name))));
     let inferred: (GraphLink & { inferred: boolean; score?: number })[] = [];
     if (showInferred) {
       const all = inferLinks(visible, declared, { minScore: 0 });
@@ -278,42 +301,57 @@ export function Visualizer({
       if (!targetCols.has(l.target)) targetCols.set(l.target, new Set());
       targetCols.get(l.target)!.add(l.targetColumn);
     }
-    const cols = Math.max(1, Math.ceil(Math.sqrt(visible.length)));
-    const gapX = 96;
-    const gapY = 72;
-    const rowMax: number[] = [];
-    visible.forEach((t, i) => {
-      const r = Math.floor(i / cols);
-      rowMax[r] = Math.max(rowMax[r] ?? 0, nodeHeight(t));
-    });
-    const rowTop: number[] = [];
-    let acc = 0;
-    for (let r = 0; r < rowMax.length; r++) {
-      rowTop[r] = acc;
-      acc += rowMax[r] + gapY;
-    }
-    setNodes(
-      visible.map((table, i) => {
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        return {
-          id: table.name,
-          type: "table",
-          position: { x: c * (NODE_W + gapX), y: rowTop[r] },
-          data: {
-            table,
-            mode,
-            onSelect,
-            onPick,
-            picked,
-            sourceCols: sourceCols.get(table.name) ?? new Set(),
-            targetCols: targetCols.get(table.name) ?? new Set(),
-            matchedTables: new Set<string>(),
-            matchedCols: new Set<string>(),
-          } as unknown as Record<string, unknown>,
-        };
-      }),
+    const layout = layoutSchemas(
+      selectedList.map((name) => ({ schema: name, tables: visible.filter((t) => t.schema === name) })),
+      NODE_W,
+      nodeHeight,
     );
+    const groupNodes: Node[] = layout.groups.map((g) => ({
+      id: `schema:${g.schema}`,
+      type: "schemaGroup",
+      position: { x: g.box.x, y: g.box.y },
+      style: { width: g.box.width, height: g.box.height },
+      draggable: false,
+      selectable: false,
+      zIndex: -1,
+      data: {
+        schema: g.schema,
+        source: schemas.find((sc) => sc.name === g.schema)?.source,
+        tableCount: visible.filter((t) => t.schema === g.schema).length,
+      } satisfies SchemaGroupData as unknown as Record<string, unknown>,
+    }));
+    const tableNodes: Node[] = visible.map((table) => ({
+      id: table.id,
+      type: "table",
+      parentId: `schema:${table.schema}`,
+      extent: "parent" as const,
+      position: layout.tables[table.id] ?? { x: 0, y: 0 },
+      data: {
+        table,
+        mode,
+        onSelect,
+        onPick,
+        picked,
+        sourceCols: sourceCols.get(table.id) ?? new Set(),
+        targetCols: targetCols.get(table.id) ?? new Set(),
+        matchedTables: new Set<string>(),
+        matchedCols: new Set<string>(),
+      } as unknown as Record<string, unknown>,
+    }));
+    // The add-source box takes the next slot after the last schema box.
+    const last = layout.groups[layout.groups.length - 1];
+    const addNode: Node[] = onNewVs
+      ? [{
+          id: ADD_SOURCE_ID,
+          type: "addSource",
+          position: last ? { x: last.box.x + last.box.width + 120, y: last.box.y } : { x: 0, y: 0 },
+          style: { width: 260, height: GROUP_HEADER + 56 + 60 },
+          draggable: false,
+          selectable: false,
+          data: { onClick: onNewVs } as unknown as Record<string, unknown>,
+        }]
+      : [];
+    setNodes([...groupNodes, ...tableNodes, ...addNode]);
     setLayoutRev((r) => r + 1);
     setEdges(
       links.map((l, i) => ({
@@ -336,7 +374,7 @@ export function Visualizer({
       })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, showInferred, minScore]);
+  }, [graph, showInferred, minScore, selectedList, schemas]);
 
   // Fuzzy search across table + column names → ranked results + match sets.
   const searchTerm = search.trim();
@@ -348,17 +386,17 @@ export function Visualizer({
     const tables = new Set<string>();
     const cols = new Set<string>();
     for (const t of graph.tables) {
-      const ts = fuzzyScore(searchTerm, t.name);
-      if (ts !== null) {
-        results.push({ table: t.name, score: ts + 50 });
-        tables.add(t.name);
+      const ts = Math.max(fuzzyScore(searchTerm, t.name) ?? -1, fuzzyScore(searchTerm, t.id) ?? -1);
+      if (ts >= 0) {
+        results.push({ table: t.id, score: ts + 50 });
+        tables.add(t.id);
       }
       for (const c of t.columns) {
         const cs = Math.max(fuzzyScore(searchTerm, c.name) ?? -1, fuzzyScore(searchTerm, `${t.name}.${c.name}`) ?? -1);
         if (cs >= 0) {
-          results.push({ table: t.name, column: c.name, score: cs });
-          tables.add(t.name);
-          cols.add(colKey(t.name, c.name));
+          results.push({ table: t.id, column: c.name, score: cs });
+          tables.add(t.id);
+          cols.add(colKey(t.id, c.name));
         }
       }
     }
@@ -371,30 +409,37 @@ export function Visualizer({
 
   // The AI's schema answers drive the diagram: a locate event highlights and
   // centers the named table/column instead of leaving the answer text-only.
-  const pendingLocate = useRef<{ table: string; column?: string } | null>(null);
+  const pendingLocate = useRef<{ schema: string; table: string; column?: string } | null>(null);
   useEffect(() => {
     const onLocate = (e: Event) => {
       const d = (e as CustomEvent<{ schema?: string; table?: string; column?: string }>).detail;
       if (!d?.table) return;
-      const table = d.table.toUpperCase();
-      const column = d.column ? d.column.toUpperCase() : undefined;
-      if (d.schema && d.schema.toUpperCase() !== (schema ?? "").toUpperCase()) {
-        // Different schema: switch first, jump once its graph is in.
-        pendingLocate.current = { table, column };
-        setSchema(d.schema.toUpperCase());
+      const wantSchema = (d.schema ?? selectedList[0] ?? "").toUpperCase();
+      const wantTable = d.table.toUpperCase();
+      // Names arrive from the AI in whatever case it wrote them; match what exists.
+      const schemaEntry = schemas.find((sc) => sc.name.toUpperCase() === wantSchema);
+      if (!schemaEntry) return;
+      const known = graph?.tables.find((t) => t.schema === schemaEntry.name && t.name.toUpperCase() === wantTable);
+      const column = known ? known.columns.find((c) => c.name.toUpperCase() === (d.column ?? "").toUpperCase())?.name : d.column;
+      if (!selected.has(schemaEntry.name) || !known) {
+        // The schema is hidden or its graph is not in yet: show it, jump later.
+        pendingLocate.current = { schema: schemaEntry.name, table: wantTable, column };
+        setSelected((prev) => new Set([...prev, schemaEntry.name]));
         return;
       }
-      jumpTo(table, column);
+      jumpTo(known.id, column);
     };
     window.addEventListener("studio:visualizer-locate", onLocate);
     return () => window.removeEventListener("studio:visualizer-locate", onLocate);
-  }, [jumpTo, schema]);
+  }, [jumpTo, selected, selectedList, schemas, graph]);
   useEffect(() => {
     const pending = pendingLocate.current;
-    if (!pending || !nodes.some((n) => n.id === pending.table)) return;
+    if (!pending) return;
+    const hit = graph?.tables.find((t) => t.schema === pending.schema && t.name.toUpperCase() === pending.table);
+    if (!hit || !nodes.some((n) => n.id === hit.id)) return;
     pendingLocate.current = null;
-    jumpTo(pending.table, pending.column);
-  }, [nodes, jumpTo]);
+    jumpTo(hit.id, hit.columns.find((c) => c.name.toUpperCase() === (pending.column ?? "").toUpperCase())?.name ?? pending.column);
+  }, [nodes, graph, jumpTo]);
 
   // Reflect selection / mode / picked columns / matches into node & edge data.
   useEffect(() => {
@@ -422,15 +467,16 @@ export function Visualizer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, mode, picked, matches]);
 
-  const counts = useMemo(() => ({ nodes: nodes.length, edges: edges.length }), [nodes, edges]);
+  const counts = useMemo(() => ({ tables: nodes.filter((n) => n.type === "table").length, edges: edges.length }), [nodes, edges]);
+  const edgeRender = useMemo(() => ({ ...edgeStyle, dense: edges.length > DENSE_EDGES, paused: interacting }), [edgeStyle, edges.length, interacting]);
 
   // react-querybuilder fields from involved (picked) tables, else all tables.
   const fields: Field[] = useMemo(() => {
     if (!graph) return [];
-    const involved = new Set([...picked].map((k) => k.split(".")[0]));
-    const tables = involved.size ? graph.tables.filter((t) => involved.has(t.name)) : graph.tables;
+    const involved = new Set([...picked].map((k) => splitColKey(k).table));
+    const tables = involved.size ? graph.tables.filter((t) => involved.has(t.id)) : graph.tables;
     return tables.flatMap((t) =>
-      t.columns.map((c) => ({ name: `"${t.name}"."${c.name}"`, label: `${t.name}.${c.name}` })),
+      t.columns.map((c) => ({ name: `"${t.schema}"."${t.name}"."${c.name}"`, label: `${t.id}.${c.name}` })),
     );
   }, [graph, picked]);
 
@@ -439,8 +485,8 @@ export function Visualizer({
     const whereSql = where.rules.length
       ? formatQuery(where, { format: "sql", quoteFieldNamesWith: ["", ""] as [string, string] })
       : "";
-    return buildSql({ schema, picked: [...picked], links: graph.links, whereSql, orderKey, orderDir, limit, aggregates, joinTypes });
-  }, [graph, schema, picked, where, orderKey, orderDir, limit, aggregates, joinTypes]);
+    return buildSql({ picked: [...picked], links: graph.links, whereSql, orderKey, orderDir, limit, aggregates, joinTypes });
+  }, [graph, picked, where, orderKey, orderDir, limit, aggregates, joinTypes]);
   // The SQL pane follows the WHERE builder a beat behind the keystrokes.
   const [debouncedSql, setDebouncedSql] = useState(generatedSql);
   useEffect(() => {
@@ -455,7 +501,7 @@ export function Visualizer({
   // Links between the picked tables — the joins the SQL will use.
   const joinLinks = useMemo(() => {
     if (!graph) return [];
-    const involved = new Set([...picked].map((k) => k.split(".")[0]));
+    const involved = new Set([...picked].map((k) => splitColKey(k).table));
     return graph.links.filter((l) => involved.has(l.source) && involved.has(l.target));
   }, [graph, picked]);
 
@@ -507,23 +553,49 @@ export function Visualizer({
           </button>
         </div>
         <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span>Schema</span>
-          <Select value={schema} onValueChange={setSchema} disabled={schemas.length === 0}>
-            <SelectTrigger className="h-7 min-w-[130px] text-xs" size="sm">
-              <SelectValue placeholder="schema" />
-            </SelectTrigger>
-            <SelectContent>
-              {schemas.map((s) => (
-                <SelectItem key={s.name} value={s.name}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={schemas.length === 0}
+                data-agent-id="visualizer.schemas"
+                className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[11.5px] text-foreground hover:bg-secondary disabled:opacity-50"
+              >
+                <span>{selected.size === schemas.length ? "All schemas" : `${selected.size} of ${schemas.length} schemas`}</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-80 min-w-[240px] overflow-y-auto">
+              <DropdownMenuItem onClick={() => setSelected(new Set(schemas.map((sc) => sc.name)))} className="text-[12px]">
+                <Check className="h-3.5 w-3.5" /> Show all
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSelected(new Set())} className="text-[12px]">
+                <X className="h-3.5 w-3.5" /> Hide all
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {schemas.map((sc) => (
+                <DropdownMenuCheckboxItem
+                  key={sc.name}
+                  checked={selected.has(sc.name)}
+                  onCheckedChange={(on) =>
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.add(sc.name);
+                      else next.delete(sc.name);
+                      return next;
+                    })
+                  }
+                  onSelect={(e) => e.preventDefault()}
+                  className="text-[12px]"
+                >
                   <span className="flex items-center gap-1.5">
-                    {s.source ? <Waypoints className="h-3 w-3 text-teal" /> : null}
-                    {s.name}
-                    {s.source ? <span className="text-[10px] text-muted-foreground">{s.source}</span> : null}
+                    {sc.source ? <Waypoints className="h-3 w-3 text-teal" /> : null}
+                    {sc.name}
+                    {sc.source ? <span className="text-[10px] text-muted-foreground">{sc.source}</span> : null}
                   </span>
-                </SelectItem>
+                </DropdownMenuCheckboxItem>
               ))}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={reload}
             title="Refresh — re-read schemas and tables from the database"
@@ -566,7 +638,7 @@ export function Visualizer({
           <Search className="h-3.5 w-3.5" />
         </button>
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-          {counts.nodes} tables · {counts.edges} links
+          {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links
         </span>
       </header>
 
@@ -582,9 +654,16 @@ export function Visualizer({
           </div>
         ) : null}
         {!loading && !error && nodes.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No tables to visualize in this schema.</div>
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <span>{selected.size === 0 ? "No schemas selected — pick some in the schema menu." : "No tables in the selected schemas yet."}</span>
+            {onNewVs ? (
+              <button onClick={onNewVs} className="flex items-center gap-1.5 rounded-md border border-teal/50 px-2.5 py-1 text-[12px] text-teal hover:bg-teal/10">
+                <Plus className="h-3.5 w-3.5" /> Add a data source
+              </button>
+            ) : null}
+          </div>
         ) : (
-          <EdgeStyleContext.Provider value={edgeStyle}>
+          <EdgeStyleContext.Provider value={edgeRender}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -592,6 +671,8 @@ export function Visualizer({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => setSel(null)}
+              onMoveStart={() => setInteracting(true)}
+              onMoveEnd={() => setInteracting(false)}
               onlyRenderVisibleElements
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
@@ -606,20 +687,6 @@ export function Visualizer({
             </ReactFlow>
           </EdgeStyleContext.Provider>
         )}
-
-        {/* Floating "add" — attach another database or bucket as a virtual schema */}
-        {onNewVs ? (
-          <button
-            onClick={onNewVs}
-            data-agent-id="visualizer.add-source"
-            title="Add a data source — attach another database or bucket as a virtual schema"
-            className="absolute top-3 left-3 z-20 flex h-8 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <Waypoints className="h-3.5 w-3.5 text-teal" />
-            Add data source
-          </button>
-        ) : null}
 
         {/* Floating VS Code-style fuzzy search over tables + columns */}
         {searchOpen ? (
@@ -672,10 +739,8 @@ export function Visualizer({
                         <Table2 className="h-3.5 w-3.5 shrink-0 text-primary" />
                       )}
                       <span className="min-w-0 flex-1 truncate">
-                        <span className="text-foreground">{m.column ?? m.table}</span>
-                        {m.column ? (
-                          <span className="ml-1.5 text-[10px] text-muted-foreground">{m.table}</span>
-                        ) : null}
+                        <span className="text-foreground">{m.column ?? splitTableId(m.table).table}</span>
+                        <span className="ml-1.5 text-[10px] text-muted-foreground">{m.column ? m.table : splitTableId(m.table).schema}</span>
                       </span>
                       <span className="shrink-0 rounded bg-secondary px-1 py-px text-[9px] text-muted-foreground uppercase">
                         {m.column ? "col" : "table"}
@@ -808,8 +873,8 @@ export function Visualizer({
           connectionName={connectionName}
           picked={picked}
           onUnpick={(k) => {
-            const [t, c] = k.split(".");
-            onPick(t, c);
+            const { table, column } = splitColKey(k);
+            onPick(table, column);
           }}
           onClear={() => setPicked(new Set())}
           aggregates={aggregates}

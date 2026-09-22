@@ -5,8 +5,7 @@
  */
 import { createContext, useContext } from "react";
 import { EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from "@xyflow/react";
-import { motion } from "motion/react";
-import { KeyRound, Table2 } from "lucide-react";
+import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -19,7 +18,8 @@ export type Selection = { table: string; column?: string } | null;
 export type Mode = "diagram" | "build";
 
 export type TableNodeData = {
-  table: GraphTable;
+  /** `id` is `SCHEMA.TABLE` — what selection, picks and links refer to. */
+  table: GraphTable & { id: string; schema: string };
   mode: Mode;
   selTable?: string;
   selColumn?: string;
@@ -66,7 +66,17 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
   pulseColor: "#22d3ee",
 };
 
-export const EdgeStyleContext = createContext<EdgeStyle>(DEFAULT_EDGE_STYLE);
+/**
+ * Style plus two performance facts the diagram derives: `dense` (many links —
+ * only the selected link animates or carries a label) and `paused` (the user
+ * is panning/zooming — every link draws as a plain line until they stop).
+ * A hundred links each running a JS-driven gradient was what made a big
+ * schema stutter on every move.
+ */
+export type EdgeRenderContext = EdgeStyle & { dense?: boolean; paused?: boolean };
+export const EdgeStyleContext = createContext<EdgeRenderContext>(DEFAULT_EDGE_STYLE);
+/** Above this many links the diagram is "dense": decoration only on the selected link. */
+export const DENSE_EDGES = 24;
 
 export const COLOR_PRESETS: { label: string; from: string; to: string }[] = [
   { label: "Purple", from: "#a78bfa", to: "#7c3aed" },
@@ -100,9 +110,9 @@ export const colKey = (table: string, col: string) => `${table}.${col}`;
 export function TableNode({ data }: NodeProps) {
   const d = data as unknown as TableNodeData;
   const { table, mode, selTable, selColumn, picked, sourceCols, targetCols, matchedTables, matchedCols, onSelect, onPick } = d;
-  const isSel = selTable === table.name;
+  const isSel = selTable === table.id;
   const build = mode === "build";
-  const tableMatched = matchedTables?.has(table.name);
+  const tableMatched = matchedTables?.has(table.id);
   return (
     <div
       style={{ width: NODE_W }}
@@ -123,7 +133,7 @@ export function TableNode({ data }: NodeProps) {
       )}
 
       <button
-        onClick={() => onSelect(table.name)}
+        onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
           "flex w-full items-center gap-1.5 border-b border-border px-3 text-left transition-colors",
@@ -137,14 +147,14 @@ export function TableNode({ data }: NodeProps) {
 
       <div>
         {table.columns.map((col) => {
-          const key = colKey(table.name, col.name);
+          const key = colKey(table.id, col.name);
           const isPicked = picked.has(key);
           const colSel = isSel && selColumn === col.name;
           const colMatched = matchedCols?.has(key);
           return (
             <div
               key={col.name}
-              onClick={() => (build ? onPick(table.name, col.name) : onSelect(table.name, col.name))}
+              onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
               style={{ height: ROW_H }}
               className={cn(
                 "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] transition-colors last:border-0 hover:bg-secondary/50",
@@ -207,7 +217,11 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const width = active ? cfg.width + 1.25 : cfg.width;
   const dash = dashFor(cfg.line, width);
   const opacity = active ? 1 : inferred ? 0.55 : 0.85;
-  const animate = cfg.pulse && (active || !inferred);
+  // Decoration is for the link the user is looking at. Everything animates
+  // only on a small diagram at rest.
+  const decorate = !cfg.paused && (active || (!cfg.dense && !inferred));
+  const animate = cfg.pulse && decorate;
+  const showLabel = Boolean(d?.label) && decorate;
   // Empty pulseColor means "match the link color".
   const pulse = cfg.pulseColor || cfg.to;
 
@@ -236,21 +250,18 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
             </animateMotion>
           </circle>
           <defs>
-            <motion.linearGradient
-              id={gid}
-              initial={{ x1: "0%", x2: "0%" }}
-              animate={{ x1: ["-25%", "100%"], x2: ["0%", "125%"] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: "linear" }}
-            >
-              {/* White shimmer travelling along the pulse-colored line. */}
+            {/* The shimmer runs as an SVG animation — no JavaScript per frame. */}
+            <linearGradient id={gid} x1="-25%" x2="0%" y1="0" y2="0">
+              <animate attributeName="x1" values="-25%;100%" dur="2.4s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="0%;125%" dur="2.4s" repeatCount="indefinite" />
               <stop stopColor="#ffffff" stopOpacity="0" />
               <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.85" />
               <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-            </motion.linearGradient>
+            </linearGradient>
           </defs>
         </>
       ) : null}
-      {d?.label && (active || !inferred) ? (
+      {showLabel ? (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -270,7 +281,48 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   );
 }
 
-export const nodeTypes = { table: TableNode };
+export type SchemaGroupData = {
+  schema: string;
+  /** The federated source for a virtual schema (PostgreSQL, MySQL, …). */
+  source?: string;
+  tableCount: number;
+};
+
+/**
+ * The dashed box a schema's tables live in. Its size comes from the layout
+ * (`style.width/height`), so this only draws the frame and the title strip.
+ */
+export function SchemaGroupNode({ data }: NodeProps) {
+  const d = data as unknown as SchemaGroupData;
+  return (
+    <div className="h-full w-full rounded-2xl border-2 border-dashed border-border/80 bg-panel/20">
+      <div className="flex h-[44px] items-center gap-2 px-4">
+        {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
+        <span className="truncate font-heading text-[15px] font-semibold text-foreground">{d.schema}</span>
+        {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
+        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{d.tableCount} table{d.tableCount === 1 ? "" : "s"}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The last box on the canvas: attach another database or bucket right here. */
+export function AddSourceNode({ data }: NodeProps) {
+  const d = data as unknown as { onClick: () => void };
+  return (
+    <button
+      onClick={d.onClick}
+      data-agent-id="visualizer.add-source-box"
+      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-teal/50 bg-teal/5 text-teal transition-colors hover:border-teal hover:bg-teal/10"
+    >
+      <Plus className="h-7 w-7" />
+      <span className="text-[13px] font-semibold">Add data source</span>
+      <span className="px-6 text-center text-[11px] text-muted-foreground">PostgreSQL, MySQL, S3, another Exasol… as a live schema here</span>
+    </button>
+  );
+}
+
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, addSource: AddSourceNode };
 export const edgeTypes = { beam: BeamEdge };
 
 export function ToggleRow({
