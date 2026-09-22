@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code2, CopyPlus, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { pendingSummary, rowToDraft, type Draft } from "./edit-grid-model";
 import { buildDml, qualify } from "./edit-dml";
+import { pairWidths, scrollbarGutter, totalWidth } from "@/lib/table-widths";
 import type { ColumnMeta } from "@/lib/ipc";
 
 type Cell = unknown;
@@ -70,6 +71,40 @@ export function EditableResultGrid({
     const n = el.value.length;
     el.setSelectionRange(n, n);
   }, []);
+  // The widths the read-only grid was using, so entering edit mode does not
+  // shift the columns; measured here if it could not supply them.
+  const [widths, setWidths] = useState<number[] | null>(colWidths?.length ? colWidths : null);
+  const headRef = useRef<HTMLTableSectionElement | null>(null);
+  const bodyRef = useRef<HTMLTableSectionElement | null>(null);
+  const headScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const [gutter, setGutter] = useState(0);
+  useLayoutEffect(() => {
+    const scroller = bodyScrollRef.current;
+    if (scroller) setGutter((g) => { const next = scrollbarGutter(scroller.offsetWidth, scroller.clientWidth); return next === g ? g : next; });
+    if (widths) return;
+    const cells = (el: Element | null | undefined) => (el ? Array.from(el.children).map((c) => (c as HTMLElement).offsetWidth) : []);
+    const paired = pairWidths(cells(headRef.current?.querySelector("tr")), cells(bodyRef.current?.querySelector("tr")));
+    if (paired) setWidths(paired);
+  }, [widths, columns, rows]);
+  // A resize can add or remove the scrollbar with no React update at all, and
+  // the header has to give back exactly what the body loses.
+  useEffect(() => {
+    const scroller = bodyScrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const measure = () =>
+      setGutter((g) => {
+        const next = scrollbarGutter(scroller.offsetWidth, scroller.clientWidth);
+        return next === g ? g : next;
+      });
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  const tableFix = widths
+    ? { className: "table-fixed", style: { width: totalWidth(widths) } }
+    : { className: "w-full", style: undefined };
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
   // Staged rows carry an id: two rows added in one tick would otherwise both
   // be "the last index", and removing one would shift every ref after it.
@@ -205,19 +240,21 @@ export function EditableResultGrid({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto p-px">
-        <table
-          className={"w-full border-collapse border border-border text-[12px]" + (colWidths?.length ? " table-fixed" : "")}
-          style={colWidths?.length ? { width: colWidths.reduce((a, b) => a + b, 0) } : undefined}
-        >
-          {colWidths?.length ? (
+      {/* Column names sit outside the scroller, as in the read-only grid, so
+          the scrollbar starts at the first row instead of running up beside
+          the header. Both tables are fixed to the same widths. */}
+      <div ref={headScrollRef} className="shrink-0 overflow-hidden px-px pt-px" style={gutter ? { marginRight: gutter } : undefined}>
+        {/* The seam between the two tables is the header's own bottom border:
+            each table draws only the edges it owns, so it is not doubled. */}
+        <table className={cn("border-collapse border-x border-t border-border text-[12px]", tableFix.className)} style={tableFix.style}>
+          {widths ? (
             <colgroup>
-              {colWidths.map((w, i) => (
+              {widths.map((w, i) => (
                 <col key={i} style={{ width: w }} />
               ))}
             </colgroup>
           ) : null}
-          <thead className="sticky top-0 z-10">
+          <thead ref={headRef}>
             <tr className="bg-secondary">
               <th className="w-14 border-b border-r border-border px-1 py-1.5" />
               {columns.map((col) => (
@@ -228,7 +265,25 @@ export function EditableResultGrid({
               ))}
             </tr>
           </thead>
-          <tbody className="font-mono">
+        </table>
+      </div>
+      <div
+        ref={bodyScrollRef}
+        className="min-h-0 flex-1 overflow-auto px-px pb-px"
+        onScroll={(e) => {
+          const head = headScrollRef.current;
+          if (head) head.scrollLeft = e.currentTarget.scrollLeft;
+        }}
+      >
+        <table className={cn("border-collapse border-x border-b border-border text-[12px]", tableFix.className)} style={tableFix.style}>
+          {widths ? (
+            <colgroup>
+              {widths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
+          ) : null}
+          <tbody ref={bodyRef} className="font-mono">
             {rows.map((row, r) => {
               const del = deleted.has(r);
               return (

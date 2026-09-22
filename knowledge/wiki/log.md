@@ -169,3 +169,5 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] fix | Visualizer smoothness: viewport promotion scoped to the gesture (a permanently promoted layer re-rasterizes at every scale — the "hangs after some point" wall), and the far-detail tier could never fire because FAR_ZOOM 0.12 < minZoom 0.15; zoomed out is now a map of named schema boxes (zoom-lod.ts, --vs-zoom)
 
 ## [2026-09-22] fix | Open data ran without a runMeta so the results area looked idle for the whole wait; all execution now serialized per connection through a tested serial queue with per-connection result generations; editable grid gains duplicate/scroll-to-new-row/⌘S and a tested DML builder (a cloned NULL used to become the column DEFAULT)
+
+## [2026-09-22] fix | Results scrollbar now starts at row 1 (header is its own table above the scroller; widths paired, scrollbar gutter compensated); schema boxes stopped swallowing pans (React Flow sets pointer-events inline on draggable nodes); tap a schema name to frame it; cards survive to much lower zoom; links bolder by default

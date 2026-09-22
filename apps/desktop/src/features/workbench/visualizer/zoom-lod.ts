@@ -5,8 +5,10 @@
 // changes. Above the threshold the cards are read; below it they are a map,
 // and what has to be legible is which schema you are looking at.
 
-/** A row thinner than this paints glyphs nobody can resolve. */
-export const LEGIBLE_ROW_PX = 7;
+/** A row thinner than this paints glyphs nobody can resolve. Deliberately
+ *  low: the cards are what people come to the diagram for, so they stay on
+ *  until a row really is a hairline. */
+export const LEGIBLE_ROW_PX = 4;
 
 /** Screen height of one column row at this zoom. */
 export const rowScreenPx = (zoom: number, rowHeight: number): number => zoom * rowHeight;

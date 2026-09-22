@@ -149,8 +149,22 @@ export function Visualizer({
     settle.current = setTimeout(() => setPaneClass("is-moving", false), GESTURE_SETTLE_MS);
   }, [setPaneClass]);
   useEffect(() => () => { if (settle.current) clearTimeout(settle.current); }, []);
+  /** Frame one schema: click its name (or its big name when zoomed out). The
+   *  box is read live, so a schema that has been dragged frames where it is. */
+  const focusSchema = useCallback((schema: string) => {
+    const inst = rfRef.current;
+    const box = inst?.getNodes().find((n) => n.id === `schema:${schema}`);
+    if (!inst || !box) return;
+    const width = Number(box.style?.width ?? 0);
+    const height = Number(box.style?.height ?? 0);
+    if (!width || !height) return;
+    void inst.fitBounds({ x: box.position.x, y: box.position.y, width, height }, { duration: 450, padding: 0.08 });
+    syncZoomAfterRef.current(450);
+  }, []);
+
   /** Re-read the viewport after a programmatic move (fitView / fitBounds never
    *  raise onMove), once its animation has landed. */
+  const syncZoomAfterRef = useRef<(ms: number) => void>(() => {});
   const syncZoomAfter = useCallback((ms: number) => {
     const t = window.setTimeout(() => {
       const vp = rfRef.current?.getViewport();
@@ -158,6 +172,7 @@ export function Visualizer({
     }, ms + 60);
     return () => window.clearTimeout(t);
   }, [applyZoom]);
+  syncZoomAfterRef.current = syncZoomAfter;
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
   // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
@@ -444,7 +459,7 @@ export function Visualizer({
       return { schema: name, tables: all.slice(0, shown), total: all.length };
     });
     const drawn = new Set(perSchema.flatMap((g) => g.tables.map((t) => t.id)));
-    const layout = layoutSchemas(perSchema.map(({ schema, tables }) => ({ schema, tables })), NODE_W, nodeHeight);
+    const layout = layoutSchemas(perSchema.map(({ schema, tables }) => ({ schema, tables })), NODE_W, nodeHeight, { groupGap: 170 });
     // Boxes are plain backdrop nodes and tables are absolutely positioned — no
     // sub-flow parent/child machinery (its measure→render loop killed the
     // renderer). The box only shows where a schema's tables were laid out.
@@ -463,6 +478,7 @@ export function Visualizer({
         zIndex: -1,
         data: {
           schema: g.schema,
+          onFocus: () => focusSchema(g.schema),
           source: schemas.find((sc) => sc.name === g.schema)?.source,
           shown: info.tables.length,
           total: info.total,
@@ -482,7 +498,7 @@ export function Visualizer({
         position: { x: g.box.x, y: g.box.y },
         style: { width: g.box.width, height: g.box.height },
         draggable: true,
-        dragHandle: ".vs-box-far",
+        dragHandle: ".vs-box-far-label",
         selectable: false,
         connectable: false,
         zIndex: 5,
@@ -490,6 +506,7 @@ export function Visualizer({
           schema: g.schema,
           source: schemas.find((sc) => sc.name === g.schema)?.source,
           total: info.total,
+          onFocus: () => focusSchema(g.schema),
         } satisfies SchemaFarData as unknown as Record<string, unknown>,
       };
     });

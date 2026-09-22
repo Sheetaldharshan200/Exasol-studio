@@ -38,7 +38,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EditableResultGrid } from "@/features/workbench/EditableResultGrid";
 import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
 import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
@@ -50,282 +49,6 @@ import { termBusReady } from "@/lib/term-bus";
 import { cn } from "@/lib/utils";
 import { IconButton } from "./IconButton";
 import type { SqlTab } from "./tabs";
-
-/** Execution lifecycle: Started → Running (live) → Completed/Failed, with timestamps. */
-export function RunStatusStrip({
-  meta,
-  response,
-}: {
-  meta?: SqlTab["runMeta"];
-  response: ExecuteResponse | null;
-}) {
-  const running = Boolean(meta && !meta.finishedAt);
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const t = window.setInterval(() => tick((n) => n + 1), 100);
-    return () => window.clearInterval(t);
-  }, [running]);
-  if (!meta) return null;
-  const elapsedMs = (meta.finishedAt ?? Date.now()) - meta.startedAt;
-  const dur = elapsedMs < 10_000 ? `${Math.round(elapsedMs)} ms` : `${(elapsedMs / 1000).toFixed(1)} s`;
-  const stmts = response?.results.length ?? 0;
-  const total = rowTotal(response?.results ?? []);
-  // A driver that cannot count (the R driver) must not be summed in as 0.
-  const rowsText = total.withoutCount
-    ? `${total.rows} rows · ${total.withoutCount} without a count`
-    : `${total.rows} rows`;
-  return (
-    <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-panel/40 px-3 py-1 font-mono text-[10.5px] whitespace-nowrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <span>
-        Started {fmtClock(meta.startedAt)} · {meta.scope}
-      </span>
-      {running ? (
-        <span className="flex items-center gap-1 text-primary">
-          <Loader2 className="h-3 w-3 animate-spin" /> Running… {(elapsedMs / 1000).toFixed(1)}s
-        </span>
-      ) : (
-        <span className={meta.ok ? "text-primary" : "text-destructive"}>
-          {meta.ok ? "✓ Completed" : "✗ Failed"} {fmtClock(meta.finishedAt!)} · {dur}
-          {meta.ok && stmts > 0
-            ? ` · ${stmts} statement${stmts === 1 ? "" : "s"} · ${rowsText}`
-            : ""}
-        </span>
-      )}
-    </div>
-  );
-}
-
-export function ResultsGrid({
-  result,
-  error,
-  editable,
-  onOpenSql,
-  onCommitEdits,
-  editBusy,
-  fontSize = 12,
-  zebra = true,
-  filterQuery,
-  onCellClick,
-  selected,
-  hideToolbar = false,
-}: {
-  result: StatementResult | null;
-  error: string | null;
-  /** Present when this result maps to a single updatable table. */
-  editable?: { schema?: string; table: string; pk: string[]; columns: string[] } | null;
-  onOpenSql?: (sql: string, title?: string) => void;
-  onCommitEdits?: (statements: string[]) => Promise<{ ok: boolean; error?: string; failedSql?: string }>;
-  editBusy?: boolean;
-  fontSize?: number;
-  zebra?: boolean;
-  /** Client-side substring filter applied to the read-only rows (empty = all). */
-  filterQuery?: string;
-  /** Single-click a data cell to inspect it. Row/col index into the DISPLAYED
-   *  (post-filter) rows. */
-  onCellClick?: (info: { value: unknown; column: string; row: number; col: number }) => void;
-  /** The currently inspected cell (display indices), highlighted. */
-  selected?: { row: number; col: number } | null;
-  /** Hide the internal toolbar (Edit data + count) when the parent shows its own. */
-  hideToolbar?: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  // The cell the user double-tapped — edit mode opens with THAT cell focused.
-  const [focusCell, setFocusCell] = useState<{ row: number; col: number } | null>(null);
-  // Rows currently rendered into the DOM (grows via "Show more"); resets per result.
-  const RENDER_STEP = 1000;
-  const [renderCap, setRenderCap] = useState(RENDER_STEP);
-  useEffect(() => setRenderCap(RENDER_STEP), [result]);
-  // Column widths captured from the read-only table the moment editing starts,
-  // so the editable grid renders with IDENTICAL geometry (no resize jump).
-  const roTableRef = useRef<HTMLTableElement | null>(null);
-  const [editColWidths, setEditColWidths] = useState<number[] | null>(null);
-  // "Add row" opens the editor with a row already staged, so inserting a row
-  // is one click from the results, the way a data grid is expected to behave.
-  const [openWithNewRow, setOpenWithNewRow] = useState(false);
-  const startEditing = (cell: { row: number; col: number } | null, withNewRow = false) => {
-    const ths = roTableRef.current?.querySelectorAll("thead th");
-    setEditColWidths(ths ? Array.from(ths).map((th) => (th as HTMLElement).offsetWidth) : null);
-    setFocusCell(cell);
-    setOpenWithNewRow(withNewRow);
-    setEditing(true);
-  };
-  if (error) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="max-w-lg rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
-            <CircleSlash2 className="h-4 w-4 text-destructive" /> Statement failed
-          </div>
-          <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground">{error}</pre>
-        </div>
-      </div>
-    );
-  }
-  if (!result) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-        <Table2 className="h-6 w-6 opacity-40" />
-        <p className="text-sm">Run a statement to see results here.</p>
-      </div>
-    );
-  }
-  if (result.kind !== "resultSet") {
-    // A write, or a statement whose driver cannot report a count. The shared
-    // summary says which — printing "0 rows affected" for the latter would be
-    // a wrong answer, not a missing one.
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <span className="rounded-md bg-secondary px-3 py-1.5">
-          {resultSummary(result)} · {result.elapsedMs} ms
-        </span>
-      </div>
-    );
-  }
-  const canEdit = Boolean(editable && (onOpenSql || onCommitEdits));
-  if (editing && editable && (onOpenSql || onCommitEdits)) {
-    return (
-      <EditableResultGrid
-        columns={result.columns}
-        rows={result.rows}
-        schema={editable.schema}
-        table={editable.table}
-        pk={editable.pk}
-        catalogColumns={editable.columns}
-        initialFocus={focusCell}
-        autoAddRow={openWithNewRow}
-        colWidths={editColWidths}
-        onOpenSql={onOpenSql}
-        onApply={onCommitEdits}
-        onExit={() => {
-          setEditing(false);
-          setFocusCell(null);
-          setOpenWithNewRow(false);
-        }}
-      />
-    );
-  }
-  const filterActive = Boolean(filterQuery && filterQuery.trim());
-  const filtered = filterActive ? filterRows(result.rows, filterQuery!) : result.rows;
-  // Editing addresses unfiltered `result.rows`, but the grid shows filtered
-  // display indices — so double-click-to-edit is only safe when no filter is
-  // active. Clear the filter to edit.
-  const editableNow = canEdit && !filterActive;
-  // Big results render incrementally: the DOM gets the first chunk and grows
-  // on demand — 100k-row fetches must not freeze the window.
-  const visible = filtered.length > renderCap ? filtered.slice(0, renderCap) : filtered;
-  return (
-    <div className="flex h-full flex-col">
-      {hideToolbar ? null : (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
-          {canEdit ? (
-            <>
-              <button
-                onClick={() => startEditing(null)}
-                title={`Edit rows in ${editable!.table}`}
-                className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <Pencil className="h-3.5 w-3.5" /> Edit data
-              </button>
-              <button
-                onClick={() => startEditing(null, true)}
-                title={`Insert a row into ${editable!.table}`}
-                className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5" /> Add row
-              </button>
-            </>
-          ) : null}
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-            {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · {result.elapsedMs} ms
-          </span>
-        </div>
-      )}
-      <div className="h-full min-h-0 flex-1 overflow-auto" style={{ fontSize }}>
-        {/* border-separate (NOT collapse) so the sticky header cells carry their
-            own opaque background + border — with border-collapse the row bg and
-            borders stay behind and scrolling rows show through the header. */}
-        <table ref={roTableRef} className="w-full border-separate border-spacing-0">
-          <thead className="sticky top-0 z-10">
-            <tr>
-              <th className="border-y border-r border-l border-border bg-secondary px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground">
-                #
-              </th>
-              {result.columns.map((col) => (
-                <th
-                  key={col.name}
-                  className="border-y border-r border-border bg-secondary px-3 py-1.5 text-left font-medium text-foreground"
-                >
-                  {col.name}
-                  <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
-                    {col.typeName}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="font-mono">
-            {filtered.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={result.columns.length + 1}
-                  className="border-r border-b border-l border-border px-3 py-4 text-center text-[11px] text-muted-foreground"
-                >
-                  {filterActive ? <>No rows match “{filterQuery}”.</> : "No rows found."}
-                </td>
-              </tr>
-            ) : (
-              visible.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  title={editableNow ? "Double-click a cell to edit it" : undefined}
-                  className={cn("hover:bg-accent/60", zebra && "even:bg-secondary/30", editableNow && "cursor-cell")}
-                >
-                  <td className="border-r border-b border-l border-border px-2 py-1 text-right text-[10px] text-muted-foreground">
-                    {rowIndex + 1}
-                  </td>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={cellIndex}
-                      onClick={onCellClick ? () => onCellClick({ value: cell, column: result.columns[cellIndex]?.name ?? "", row: rowIndex, col: cellIndex }) : undefined}
-                      onDoubleClick={editableNow ? () => startEditing({ row: rowIndex, col: cellIndex }) : undefined}
-                      className={cn(
-                        "max-w-[380px] truncate border-r border-b border-border px-3 py-1 text-foreground",
-                        onCellClick && "cursor-pointer",
-                        selected && selected.row === rowIndex && selected.col === cellIndex && "bg-primary/15 ring-1 ring-inset ring-primary/40",
-                      )}
-                    >
-                      {cell === null ? <span className="text-muted-foreground italic">null</span> : cellText(cell)}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-        {filtered.length > visible.length ? (
-          <div className="flex items-center justify-center gap-3 border-b border-border py-2">
-            <span className="font-mono text-[11px] text-muted-foreground">
-              showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} rows
-            </span>
-            <button
-              onClick={() => setRenderCap((c) => c + RENDER_STEP)}
-              className="h-6 rounded-md border border-border px-2.5 text-[11.5px] text-foreground transition-colors hover:bg-secondary"
-            >
-              Show {Math.min(RENDER_STEP, filtered.length - visible.length).toLocaleString()} more
-            </button>
-            <button
-              onClick={() => setRenderCap(filtered.length)}
-              className="h-6 rounded-md border border-border px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Show all
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 
 function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
@@ -556,6 +279,53 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
     </>
   );
 }
+
+/** Execution lifecycle: Started → Running (live) → Completed/Failed, with timestamps. */
+export function RunStatusStrip({
+  meta,
+  response,
+}: {
+  meta?: SqlTab["runMeta"];
+  response: ExecuteResponse | null;
+}) {
+  const running = Boolean(meta && !meta.finishedAt);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const t = window.setInterval(() => tick((n) => n + 1), 100);
+    return () => window.clearInterval(t);
+  }, [running]);
+  if (!meta) return null;
+  const elapsedMs = (meta.finishedAt ?? Date.now()) - meta.startedAt;
+  const dur = elapsedMs < 10_000 ? `${Math.round(elapsedMs)} ms` : `${(elapsedMs / 1000).toFixed(1)} s`;
+  const stmts = response?.results.length ?? 0;
+  const total = rowTotal(response?.results ?? []);
+  // A driver that cannot count (the R driver) must not be summed in as 0.
+  const rowsText = total.withoutCount
+    ? `${total.rows} rows · ${total.withoutCount} without a count`
+    : `${total.rows} rows`;
+  return (
+    <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-panel/40 px-3 py-1 font-mono text-[10.5px] whitespace-nowrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <span>
+        Started {fmtClock(meta.startedAt)} · {meta.scope}
+      </span>
+      {running ? (
+        <span className="flex items-center gap-1 text-primary">
+          <Loader2 className="h-3 w-3 animate-spin" /> Running… {(elapsedMs / 1000).toFixed(1)}s
+        </span>
+      ) : (
+        <span className={meta.ok ? "text-primary" : "text-destructive"}>
+          {meta.ok ? "✓ Completed" : "✗ Failed"} {fmtClock(meta.finishedAt!)} · {dur}
+          {meta.ok && stmts > 0
+            ? ` · ${stmts} statement${stmts === 1 ? "" : "s"} · ${rowsText}`
+            : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export { ResultsGrid } from "./ResultsGrid";
 
 export function HistoryDock({
   entries,

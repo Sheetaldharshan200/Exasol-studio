@@ -284,6 +284,43 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   caches a page evicts through `cachePage`, so walking a large result cannot
   grow the cache without limit (only the prefetch path used to evict).
 
+## The results table and the schema map (2026-09-22, evening)
+
+- **The scrollbar started above row 1.** The column names lived inside the
+  `overflow-auto` container as a sticky `thead`, so the vertical scrollbar ran
+  the full height of the panel, past the header. Both results grids now put the
+  header in its OWN table above the scroller, with the body table inside it.
+  Two tables need one set of widths: `lib/table-widths.ts` measures each at its
+  natural size and fixes both to the wider of each pair (`pairWidths`), the
+  header mirrors the body's `scrollLeft`, and `scrollbarGutter` gives the
+  header back exactly what a classic scrollbar takes from the body — zero on
+  macOS overlay scrollbars, re-measured by a `ResizeObserver` on the scroller
+  because a window resize adds or removes that scrollbar with no React update.
+  Border ownership is split (header `border-t`, body `border-b`) so the seam is
+  not drawn twice, and the "Show more" footer takes the table's width so it
+  does not slide away when the grid is scrolled sideways.
+  `ResultsGrid` moved to its own module; HistoryDock.tsx went 854 → 576 lines.
+- **A schema box swallowed every pan started inside it.** React Flow puts
+  `pointer-events` inline on a draggable node, and the schema backdrop is a
+  full-box draggable node — so dragging anywhere inside a schema hit the
+  backdrop and did nothing, instead of panning the canvas. Both schema nodes
+  are now `pointer-events: none !important`, with only the title strip and (at
+  map zoom) the name label re-enabling them. The map-zoom label is a
+  content-sized button, not the `inset: 0` wrapper: an overlay that fills the
+  box is the same bug in a different coat.
+- **Click a schema's name to frame it** (`focusSchema` → `fitBounds` from the
+  box's live position, so a dragged schema frames where it is), at either zoom.
+- **Detail survives much further out** — `LEGIBLE_ROW_PX` 7 → 4, so the cards
+  are still drawn at a zoom where a row is a hairline. The map tier is for
+  genuinely far out, not for "slightly zoomed".
+- **Links read as links** — default width 2.5, and the "dense" threshold that
+  strips decoration went 24 → 60 links, with the faint opacities lifted
+  (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1
+  normal). Decoration is already hidden during gestures, so the higher
+  threshold costs nothing while moving.
+- **Schemas sit further apart** (`groupGap` 120 → 170) so a box's name never
+  crowds its neighbour.
+
 - **Inference at scale.** `inferLinks` was parents × children × columns with a
   regex per step: 1.7 s for 1,000 tables, run again on every progressive
   publish. It now indexes every column once by (type family, exact / flat /

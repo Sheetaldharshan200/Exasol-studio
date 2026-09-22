@@ -70,7 +70,7 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
   show: true,
   pulse: true,
   line: "solid",
-  width: 2,
+  width: 2.5,
   from: "#a78bfa",
   to: "#7c3aed",
   // Cyan pulse over the purple link — reads clearly as "flow" vs. the link.
@@ -85,8 +85,10 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
  */
 export type EdgeRenderContext = EdgeStyle & { dense?: boolean };
 export const EdgeStyleContext = createContext<EdgeRenderContext>(DEFAULT_EDGE_STYLE);
-/** Above this many links the diagram is "dense": decoration only on the selected link. */
-export const DENSE_EDGES = 24;
+/** Above this many links the diagram is "dense": decoration only on the
+ *  selected link. Set high enough that an ordinary schema keeps its pulses —
+ *  below it the links are meant to be the thing you notice. */
+export const DENSE_EDGES = 60;
 
 export const COLOR_PRESETS: { label: string; from: string; to: string }[] = [
   { label: "Purple", from: "#a78bfa", to: "#7c3aed" },
@@ -222,7 +224,9 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
   const width = active ? cfg.width + 1.25 : cfg.width;
   const dash = dashFor(cfg.line, width);
-  const opacity = active ? 1 : cfg.dense ? (inferred ? 0.28 : 0.6) : inferred ? 0.55 : 0.85;
+  // Even at their faintest a link has to be followable across the canvas; an
+  // inferred one reads as weaker than a declared one, never as invisible.
+  const opacity = active ? 1 : cfg.dense ? (inferred ? 0.55 : 0.85) : inferred ? 0.75 : 1;
   // Decoration is for the link the user is looking at; on a small diagram every
   // declared link gets it. While the user pans or zooms, CSS hides `.vs-deco`
   // (see global.css) — no edge re-renders on a gesture.
@@ -290,6 +294,8 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
 export type SchemaGroupData = {
   schema: string;
+  /** Frame this whole schema (click its name). */
+  onFocus: () => void;
   /** The federated source for a virtual schema (PostgreSQL, MySQL, …). */
   source?: string;
   /** Tables drawn now vs. tables in the schema — the box paginates. */
@@ -311,11 +317,16 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
     // and clicking the canvas work straight through it.
     <div className="vs-box pointer-events-none relative h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
       <div className="vs-box-handle pointer-events-auto flex h-[44px] cursor-grab items-center gap-2 px-3 active:cursor-grabbing" title="Drag to move the whole schema">
-        <span className="flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1">
+        <button
+          onClick={d.onFocus}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={`Zoom to ${d.schema}`}
+          className="nodrag flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1 transition-colors hover:border-primary/60 hover:bg-secondary"
+        >
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
           <span className="truncate font-heading text-[15px] font-semibold tracking-tight text-foreground">{d.schema}</span>
           {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
-        </span>
+        </button>
         <span className="ml-auto shrink-0 rounded-md bg-panel px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
           {more > 0 ? `${d.shown} of ${d.total} tables` : `${d.total} table${d.total === 1 ? "" : "s"}`}
         </span>
@@ -334,7 +345,7 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   );
 });
 
-export type SchemaFarData = { schema: string; source?: string; total: number };
+export type SchemaFarData = { schema: string; source?: string; total: number; onFocus: () => void };
 
 /**
  * The schema's name, drawn ONLY when the canvas is zoomed out past legibility.
@@ -347,12 +358,20 @@ export const SchemaFarNode = memo(function SchemaFarNode({ data }: NodeProps) {
   const d = data as unknown as SchemaFarData;
   return (
     <div className="pointer-events-none relative h-full w-full">
-      <div className="vs-box-far vs-box-handle" title="Drag to move the whole schema">
-        <span>{d.schema}</span>
-        <span className="vs-box-far-sub">
-          {d.source ? `${d.source} · ` : ""}
-          {d.total} table{d.total === 1 ? "" : "s"}
-        </span>
+      {/* The wrapper only centres the label; it must never take pointer events,
+          or panning inside a schema would grab the schema instead of the canvas. */}
+      <div className="vs-box-far">
+        <button
+          className="vs-box-far-label"
+          title="Click to zoom to this schema · drag to move it"
+          onClick={d.onFocus}
+        >
+          <span>{d.schema}</span>
+          <span className="vs-box-far-sub">
+            {d.source ? `${d.source} · ` : ""}
+            {d.total} table{d.total === 1 ? "" : "s"}
+          </span>
+        </button>
       </div>
     </div>
   );

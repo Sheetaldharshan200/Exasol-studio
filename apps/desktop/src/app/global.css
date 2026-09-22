@@ -914,8 +914,16 @@
    never take pointer events — only the label itself does, and only at map
    zoom, where it is the grab handle. React Flow sets `pointer-events` inline
    on a draggable node, hence the override. */
-.visualizer-pane .react-flow__node-schemaFar {
+/* Neither schema node may take pointer events across its whole box: React
+   Flow puts `pointer-events` inline on a draggable node, and a full-box node
+   that swallows them makes the canvas un-pannable wherever a schema is. Only
+   the title strip (and, zoomed out, the big name) are grabbable. */
+.visualizer-pane .react-flow__node-schemaFar,
+.visualizer-pane .react-flow__node-schemaGroup {
   pointer-events: none !important;
+}
+.visualizer-pane .vs-box-handle {
+  pointer-events: auto;
 }
 .vs-box-far {
   display: none;
@@ -923,13 +931,20 @@
 .visualizer-pane.is-far .vs-box-far {
   position: absolute;
   inset: 0;
-  /* The name is also the grab target once the header strip is gone. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The box is scenery. Only the label below is interactive, so a drag that
+     starts on empty space inside a schema pans the canvas. */
+  pointer-events: none;
+  padding: 0 calc(8px / var(--vs-zoom));
+}
+.visualizer-pane.is-far .vs-box-far-label {
   pointer-events: auto;
   cursor: grab;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: calc(6px / var(--vs-zoom));
   font-size: calc(15px / var(--vs-zoom));
   line-height: 1.15;
@@ -937,9 +952,14 @@
   letter-spacing: calc(0.5px / var(--vs-zoom));
   color: var(--foreground);
   text-align: center;
-  padding: 0 calc(8px / var(--vs-zoom));
+  padding: calc(6px / var(--vs-zoom)) calc(12px / var(--vs-zoom));
+  border-radius: calc(10px / var(--vs-zoom));
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
 }
-.visualizer-pane.is-far .vs-box-far .vs-box-far-sub {
+.visualizer-pane.is-far .vs-box-far-label:active {
+  cursor: grabbing;
+}
+.visualizer-pane.is-far .vs-box-far-label .vs-box-far-sub {
   font-size: calc(10px / var(--vs-zoom));
   font-weight: 500;
   color: var(--muted-foreground);
