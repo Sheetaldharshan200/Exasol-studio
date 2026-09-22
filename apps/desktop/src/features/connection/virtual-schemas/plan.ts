@@ -4,7 +4,7 @@
  * is decided — and tested — here.
  */
 import type { FieldValues, VsAdapter } from "./types.ts";
-import type { Prerequisite } from "./prereqs.ts";
+import { presentDriverFile, type Prerequisite } from "./prereqs.ts";
 import { adapterScriptDdl, connectionDdl, importUdfDdl, virtualSchemaDdl } from "./ddl.ts";
 import { ADAPTER_SCHEMA, adapterScriptName } from "./prereqs.ts";
 
@@ -126,4 +126,26 @@ export function readyToCreate(input: {
  */
 export function needsScriptInstall(missing: Prerequisite[], staged: boolean): boolean {
   return staged || missing.some((m) => m.kind === "adapterScript" || m.kind === "importUdf");
+}
+
+/**
+ * The driver JAR the adapter script will name: what Studio just staged, else
+ * the file the user says they uploaded, else the one already in the bucket
+ * (a Maven driver from an earlier run, under its versioned name).
+ */
+export function resolveDriverFile(input: { adapter: VsAdapter; stagedDriverFile?: string | null; userJarPath: string; bucketFiles: Iterable<string> }): string | undefined {
+  if (!input.adapter.driver) return undefined;
+  if (input.stagedDriverFile) return input.stagedDriverFile;
+  const typed = input.userJarPath.split("/").pop()?.trim();
+  if (typed) return typed;
+  return presentDriverFile(input.adapter, input.bucketFiles);
+}
+
+/** `buildPlan` without the throw: the reason it cannot be built, for the UI. */
+export function tryBuildPlan(...args: Parameters<typeof buildPlan>): { plan: PlanStep[]; error: string | null } {
+  try {
+    return { plan: buildPlan(...args), error: null };
+  } catch (e) {
+    return { plan: [], error: e instanceof Error ? e.message : String(e) };
+  }
 }

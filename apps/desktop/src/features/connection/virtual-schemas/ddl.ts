@@ -89,9 +89,13 @@ export function connectionDdl(input: { name: string; to: string; user?: string; 
  * JAR) in BucketFS; Lua adapters inline the released source, so there is
  * nothing in BucketFS to reference.
  *
- * No exaplus `/` terminator: the flow runs each statement on its own
- * (`split = false`), and a script body can legitimately contain semicolons,
- * which is exactly why it must never go through the statement splitter.
+ * Java scripts END WITH A `/` LINE. Exasol 8's script-options parser reads the
+ * `%…;` lines and needs the end-of-script marker after the last one — without
+ * it the adapter fails at first use with "Error parsing script options …
+ * Unexpected '<eof>'" (verified live on Exasol Personal 2.3). A comment does
+ * not do: anything else after the options is compiled as Java source. The
+ * flow runs each statement on its own (`split = false`), so the `/` and the
+ * semicolons never meet the statement splitter.
  */
 export function adapterScriptDdl(
   adapter: VsAdapter,
@@ -114,6 +118,7 @@ export function adapterScriptDdl(
     if (!input.driverFile) throw new Error(`${adapter.id}: a JDBC adapter needs its driver JAR`);
     lines.push(`  %jar ${driverJarPath(input.driverFile)};`);
   }
+  lines.push("/");
   return lines.join("\n");
 }
 
@@ -132,6 +137,7 @@ export function importUdfDdl(adapter: VsAdapter, input: { schema: string; adapte
     `  EMITS(...) AS`,
     `  %scriptclass ${adapter.importUdf.scriptClass};`,
     `  %jar ${adapterJarPath(input.adapterAsset)};`,
+    "/",
   ].join("\n");
 }
 

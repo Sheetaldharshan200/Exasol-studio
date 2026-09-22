@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adapterScriptName, driverFileName, missingPrerequisites, type PrereqProbe } from "./prereqs.ts";
+import { adapterScriptName, driverFileName, missingPrerequisites, type PrereqProbe, presentDriverFile } from "./prereqs.ts";
+import { adapterById } from "./adapters/index.ts";
 import { PostgresqlAdapter } from "./adapters/postgresql.ts";
 import { BigqueryAdapter } from "./adapters/bigquery.ts";
 import { S3Adapter } from "./adapters/s3.ts";
@@ -78,4 +79,23 @@ test("a JAR parked somewhere else in the bucket does not count as installed", ()
   // the adapter script would reference vs/postgresql.jar, which is not there.
   const elsewhere: PrereqProbe = { ...empty, bucketFiles: ["backup/postgresql.jar", "old/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar"] };
   assert.deepEqual(kinds(missingPrerequisites(PostgresqlAdapter, elsewhere)), ["adapterArtifact", "driverJar", "adapterScript"]);
+});
+
+test("a Maven driver staged as <artifact>-<version>.jar counts as present, and its real name is returned", () => {
+  const pg = adapterById("postgresql")!;
+  const files = ["vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar", "vs/postgresql-42.7.13.jar"];
+  assert.equal(presentDriverFile(pg, files), "postgresql-42.7.13.jar");
+  assert.equal(presentDriverFile(pg, ["/buckets/bfsdefault/default/vs/POSTGRESQL.jar"]), "POSTGRESQL.jar", "case-insensitive, bucket-absolute paths normalised");
+  assert.equal(presentDriverFile(pg, ["vs/postgresql-42.7.13.jar.bak", "drivers/postgresql-42.7.13.jar"]), undefined, "only vs/ and only .jar");
+  const missing = missingPrerequisites(pg, { adapterScripts: [], udfScripts: [], bucketFiles: files, connections: [] });
+  assert.ok(!missing.some((m) => m.kind === "driverJar"), "the versioned JAR satisfies the driver prerequisite");
+});
+
+test("a user-supplied driver (BigQuery's Simba JAR) is present only under the exact name the user gave", () => {
+  const bq = adapterById("bigquery")!;
+  assert.equal(presentDriverFile(bq, ["vs/GoogleBigQueryJDBC42.jar"], "GoogleBigQueryJDBC42.jar"), "GoogleBigQueryJDBC42.jar");
+  assert.equal(presentDriverFile(bq, ["vs/GoogleBigQueryJDBC42.jar"]), undefined, "without the user's word Studio cannot know which JAR is the driver");
+  assert.equal(presentDriverFile(bq, ["vs/other.jar"], "GoogleBigQueryJDBC42.jar"), undefined);
+  // Oracle's ojdbc11 is Maven-sourced: any version counts, no user input needed.
+  assert.equal(presentDriverFile(adapterById("oracle")!, ["vs/ojdbc11-23.5.0.24.07.jar"]), "ojdbc11-23.5.0.24.07.jar");
 });

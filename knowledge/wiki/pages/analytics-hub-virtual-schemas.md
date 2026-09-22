@@ -94,3 +94,44 @@ contents are unknown, so the flow does not pretend to know them.
 3. **"Scripts exist" must cover the import UDF.** The plan skipped script creation when only the adapter script existed, leaving a document adapter without its `IMPORT_FROM_*` UDF. Fix: pure `needsScriptInstall(missing, staged)` over both script kinds, tested with the S3 fixture.
 
 Rule of thumb that falls out of it: classify by *what gets written where* (`writes_files = java || driver`), never by the adapter's language.
+
+## Field finding (2026-09-22): the driver JAR's name is versioned
+
+Studio stages a Maven driver as `<artifact>-<version>.jar` (`postgresql-42.7.13.jar`),
+but the prerequisite check looked for `vs/postgresql.jar`, so the driver read as
+missing on every visit and, on a database where it WAS present, `buildPlan`
+threw "a JDBC adapter needs its driver JAR" straight into render — the tab error
+boundary caught it (its first real catch). Fixes: `presentDriverFile` matches
+the artifact under any version (a user-supplied JAR still matches only by the
+exact name the user typed), `resolveDriverFile` picks staged → typed → bucket,
+and `tryBuildPlan` turns a plan that cannot be built yet into a message on the
+create step. Rule: anything derived in render from probe data must not throw.
+
+## Field finding (2026-09-22): why every Java adapter failed on macOS — two causes, both proven live
+
+Reproduced headlessly against the managed Personal (8565) with the Java SLC installed
+through the launcher, the Postgres adapter + Maven driver staged by hand, and the
+flow's DDL run through pyexasol.
+
+1. **`/exa` is not where the guide says on macOS.** The 2.3 launcher runs a VM there
+   (not Podman); the database's `/exa` is shared at `local/runtime/vm-shared/exa`
+   (it carries `bucketfs/`, `jdbc/`, `slc/`, `bucketfs.conf`), while
+   `local/runtime/exa` is an EMPTY stub that also exists. The stager wrote into
+   the stub, the database never saw the JARs. `resolve_exa_dir` now picks the
+   candidate that carries `bucketfs/` (`vm-shared/exa` on macOS, `exa` on the
+   Podman runtimes), and the stager's gate is "has bucketfs/", not "is a dir".
+   Files placed under `vm-shared/exa/bucketfs/bfsdefault/default/vs/` ARE visible
+   as `/buckets/bfsdefault/default/vs/…` — proven by the adapter loading them.
+2. **Exasol 8's script-options parser needs the `/` line.** With the JARs visible,
+   `CREATE VIRTUAL SCHEMA` failed with `F-UDF-CL-SL-JAVA-1621 Error parsing script
+   options at line 3: Unexpected '<eof>'`. Tried: indentation, no `%jvmoption`,
+   colon-joined `%jar`, trailing newline/blank line/space — all fail. A trailing
+   `-- comment` line is compiled as Java source (`class, interface … expected`).
+   Only the exaplus-style `/` line after the last option works — then the adapter
+   ran and the PostgreSQL JDBC driver answered "Connection to 127.0.0.1:5432
+   refused" (no Postgres on this Mac), i.e. the whole chain loads. `ddl.ts` had
+   dropped the `/` on purpose; Java adapter scripts and import UDFs now end with
+   it (Lua adapters do not need it — proven by the live test).
+
+Also: `podman` on this Mac has no machine, so the Postgres leg was proven at the
+adapter/driver level; `tests/virtual_schema_live.rs` covers the Lua leg end to end.

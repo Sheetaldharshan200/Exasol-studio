@@ -90,7 +90,23 @@ pub struct LocalState {
 }
 
 fn exa_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(personal_deployment_dir(app)?.join("local").join("runtime").join("exa"))
+    let runtime = personal_deployment_dir(app)?.join("local").join("runtime");
+    Ok(resolve_exa_dir(&runtime))
+}
+
+/// Where the database's `/exa` really is on this host. The 2.3 guide names
+/// `local/runtime/exa`, which is what the Podman-based Linux/Windows runtime
+/// uses; on macOS the launcher runs a VM and shares the directory as
+/// `local/runtime/vm-shared/exa`, leaving `local/runtime/exa` as an empty
+/// stub. Writing into the stub is silent and useless — the database never
+/// sees the files — so pick the candidate that carries the database's own
+/// layout (`bucketfs/`), else the first that exists, else the guide's path.
+pub(crate) fn resolve_exa_dir(runtime: &Path) -> PathBuf {
+    let candidates = [runtime.join("vm-shared").join("exa"), runtime.join("exa")];
+    if let Some(live) = candidates.iter().find(|c| c.join("bucketfs").is_dir()) {
+        return live.clone();
+    }
+    candidates.iter().find(|c| c.is_dir()).cloned().unwrap_or_else(|| runtime.join("exa"))
 }
 
 /// Everything under `dir`, as paths relative to it with `/` separators.
@@ -204,12 +220,12 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
     // lands in the managed deployment's /exa and needs it to exist.
     let writes_files = req.runtime == "java" || req.driver.is_some();
     let exa = match exa_dir(&app) {
-        Ok(dir) if dir.is_dir() => Some(dir),
+        Ok(dir) if dir.join("bucketfs").is_dir() => Some(dir),
         Ok(_) if writes_files => {
             return Err(AppError::Storage(
-                "This Studio's local Exasol Personal does not expose its /exa directory yet. \
-                 Restart the local database once (Marketplace → Local Exasol → Stop, Start) so the 2.3 launcher \
-                 rebuilds it, then try again."
+                "This Studio's local Exasol Personal does not expose its /exa directory yet (no bucketfs/ under \
+                 local/runtime/vm-shared/exa or local/runtime/exa). Restart the local database once (Marketplace → \
+                 Local Exasol → Stop, Start) so the 2.3 launcher rebuilds it, then try again."
                     .into(),
             ))
         }
@@ -388,6 +404,26 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exa_dir_prefers_the_candidate_with_the_database_layout() {
+        let t = tempfile::tempdir().unwrap();
+        let rt = t.path();
+        // macOS VM: the guide's path is an empty stub, the share carries bucketfs/.
+        std::fs::create_dir_all(rt.join("exa")).unwrap();
+        std::fs::create_dir_all(rt.join("vm-shared/exa/bucketfs")).unwrap();
+        assert_eq!(resolve_exa_dir(rt), rt.join("vm-shared/exa"));
+        // Podman: only the guide's path, with the layout.
+        let t2 = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(t2.path().join("exa/bucketfs")).unwrap();
+        assert_eq!(resolve_exa_dir(t2.path()), t2.path().join("exa"));
+        // Nothing carries the layout yet: the first existing dir, else the guide's path.
+        let t3 = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(t3.path().join("exa")).unwrap();
+        assert_eq!(resolve_exa_dir(t3.path()), t3.path().join("exa"));
+        let t4 = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_exa_dir(t4.path()), t4.path().join("exa"));
+    }
     use serde_json::json;
 
     #[test]
