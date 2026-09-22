@@ -159,7 +159,7 @@ export function AddSourceFlow({
             </p>
           ) : null}
           {step === 0 ? <SourcePicker selected={adapter} onSelect={pick} /> : null}
-          {step === 1 && adapter ? <CredentialsStep adapter={adapter} values={values} onChange={setValues} managedLocal={managedLocal} /> : null}
+          {step === 1 && adapter ? <CredentialsStep adapter={adapter} values={values} onChange={setValues} managedLocal={managedLocal} hostAddress={localState?.hostAddress ?? null} /> : null}
           {step === 2 ? <OptionsStep names={names} onChange={setNames} /> : null}
           {step === 3 && adapter ? (
             <PrerequisitesStep

@@ -87,6 +87,24 @@ pub struct LocalState {
     pub bucket_files: Vec<String>,
     /// Aliases of the script language containers that are installed.
     pub slc_aliases: Vec<String>,
+    /// This machine's address AS THE DATABASE SEES IT. Inside the macOS VM
+    /// runtime, `localhost` is the VM, and the host is the guest's gateway
+    /// (`192.168.64.1` for a guest at `192.168.64.x`). None when unknown
+    /// (Podman runtimes reach the host by other names).
+    pub host_address: Option<String>,
+}
+
+/// The guest IP the VM init recorded → the host's address on that network
+/// (the `.1` of the guest's /24). Pure; None when the file or the IP is absent.
+pub(crate) fn host_address_from_init(init_output_json: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(init_output_json).ok()?;
+    let ip = v.get("ip")?.as_str()?;
+    let mut parts: Vec<&str> = ip.split('.').collect();
+    if parts.len() != 4 || parts.iter().any(|p| p.parse::<u8>().is_err()) {
+        return None;
+    }
+    parts[3] = "1";
+    Some(parts.join("."))
 }
 
 fn exa_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -162,10 +180,10 @@ pub(crate) fn slc_aliases_from(list: &Value) -> Vec<String> {
 #[tauri::command]
 pub async fn vs_local_state(app: AppHandle) -> AppResult<LocalState> {
     let Ok(exa) = exa_dir(&app) else {
-        return Ok(LocalState { managed_local: false, bucket_files: vec![], slc_aliases: vec![] });
+        return Ok(LocalState { managed_local: false, bucket_files: vec![], slc_aliases: vec![], host_address: None });
     };
     if !exa.is_dir() {
-        return Ok(LocalState { managed_local: false, bucket_files: vec![], slc_aliases: vec![] });
+        return Ok(LocalState { managed_local: false, bucket_files: vec![], slc_aliases: vec![], host_address: None });
     }
     let bucket_files = relative_files(&exa.join(BUCKET_DIR));
     let slc_aliases = match (exasol_cli(&app), personal_deployment_dir(&app)) {
@@ -176,7 +194,13 @@ pub async fn vs_local_state(app: AppHandle) -> AppResult<LocalState> {
         }
         _ => Vec::new(),
     };
-    Ok(LocalState { managed_local: true, bucket_files, slc_aliases })
+    // `<runtime>/vm-shared/init/init-output.json` exists only for the VM runtime.
+    let host_address = exa
+        .parent()
+        .map(|shared| shared.join("init").join("init-output.json"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|json| host_address_from_init(&json));
+    Ok(LocalState { managed_local: true, bucket_files, slc_aliases, host_address })
 }
 
 /// Pure: the Maven Central URLs for `group:artifact` at `version`.
@@ -404,6 +428,14 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_address_is_the_guest_networks_gateway() {
+        assert_eq!(host_address_from_init(r#"{"ip":"192.168.64.169"}"#), Some("192.168.64.1".into()));
+        assert_eq!(host_address_from_init(r#"{"ip":"unknown"}"#), None);
+        assert_eq!(host_address_from_init(r#"{}"#), None);
+        assert_eq!(host_address_from_init("not json"), None);
+    }
 
     #[test]
     fn exa_dir_prefers_the_candidate_with_the_database_layout() {

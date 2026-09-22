@@ -159,3 +159,7 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] ingest | Visualizer Build pane (aggregates, join types, 100-row preview) + component split to 843 lines; Codex round 4 (current-vs-display SQL, superseded preview, stale ORDER BY)
 
 ## [2026-09-22] fix | Virtual schemas on macOS: /exa lives at local/runtime/vm-shared/exa (VM, not Podman) and Java adapter scripts need the `/` end-of-script line under Exasol 8's options parser — both proven live on 8565
+
+## [2026-09-22] verify | PostgreSQL + MySQL virtual schemas proven end to end through the app's plan (sources as Podman containers inside the Exasol VM; Mac firewall blocks host-side servers for non-admins)
+
+## [2026-09-22] feat | Visualizer: one canvas per connection — dashed schema boxes, multiselect, cross-schema links + builder; dense/paused link rendering fixes the pan/zoom hang

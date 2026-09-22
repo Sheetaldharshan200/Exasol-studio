@@ -132,7 +132,7 @@ pub async fn get_schema_graph(
     let fks = fetch_all_rows(
         &pool,
         &format!(
-            "SELECT CONSTRAINT_TABLE, COLUMN_NAME, REFERENCED_TABLE, REFERENCED_COLUMN \
+            "SELECT CONSTRAINT_TABLE, COLUMN_NAME, REFERENCED_TABLE, REFERENCED_COLUMN, REFERENCED_SCHEMA \
              FROM SYS.EXA_ALL_CONSTRAINT_COLUMNS \
              WHERE CONSTRAINT_SCHEMA = '{lit}' AND REFERENCED_TABLE IS NOT NULL"
         ),
@@ -177,6 +177,9 @@ pub async fn get_schema_graph(
                 ("sourceColumn", cell(r, 1)),
                 ("target", cell(r, 2)),
                 ("targetColumn", cell(r, 3)),
+                // Null when the key points inside the same schema (the common case);
+                // the connection-wide diagram needs it when it points elsewhere.
+                ("targetSchema", match cell(r, 4) { Value::String(ref sch) if sch != &schema => Value::String(sch.clone()), _ => Value::Null }),
             ])
         })
         .collect();

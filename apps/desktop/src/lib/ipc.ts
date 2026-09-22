@@ -365,6 +365,8 @@ export type VsLocalState = {
   bucketFiles: string[];
   /** Aliases of the installed script language containers, upper-cased (`JAVA`, `PYTHON3`, …). */
   slcAliases: string[];
+  /** This machine as the database sees it (the VM runtime's gateway, e.g. `192.168.64.1`); null when unknown. */
+  hostAddress: string | null;
 };
 
 export type VsStageRequest = {
@@ -396,6 +398,8 @@ export type GraphLink = {
   sourceColumn: string;
   target: string;
   targetColumn: string;
+  /** The referenced table's schema when a declared FK points into another schema. */
+  targetSchema?: string | null;
 };
 export type SchemaGraph = { tables: GraphTable[]; links: GraphLink[] };
 

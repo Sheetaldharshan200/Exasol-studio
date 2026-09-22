@@ -135,3 +135,27 @@ flow's DDL run through pyexasol.
 
 Also: `podman` on this Mac has no machine, so the Postgres leg was proven at the
 adapter/driver level; `tests/virtual_schema_live.rs` covers the Lua leg end to end.
+
+## End-to-end proof (2026-09-22): PostgreSQL + MySQL through the app's own plan
+
+`buildPlan` output for both adapters (dumped with a node script, run statement by
+statement through pyexasol) created `POSTGRESQL_VS` and `MYSQL_VS` on the managed
+Personal, listed and read their tables, and one query joined PG customers with
+MySQL sales/products through Exasol. Facts worth keeping:
+
+- **Where the test sources ran.** The macOS Application Firewall blocks inbound
+  connections to unsigned daemons on the Mac and the user is not an admin, so a
+  Postgres/MySQL *on the Mac* is unreachable from the Exasol VM. The VM is Alpine
+  with Podman: the launcher's runner binary (`~/Library/Caches/.exasol/personal/
+  runtime-artifacts/…/exasol-local-runner/…/unpack/launcher run -- <cmd>`, cwd =
+  the deployment's `local/runtime`) executes commands inside it. `podman run -p
+  5433:5432 postgres:16` / `-p 3307:3306 mysql:8` there are reachable from the
+  database at the VM's own address (`192.168.64.169`).
+- **Address of the Mac from the database** = the guest's gateway (`192.168.64.1`);
+  `vs_local_state.hostAddress` derives it from `vm-shared/init/init-output.json`
+  and the credentials step offers it — but the firewall still applies to servers
+  on the Mac; the hint says so.
+- **MySQL keeps lower-case identifiers** (`"MYSQL_VS"."sales"`), PostgreSQL's
+  adapter upper-cases them (`"POSTGRESQL_VS"."CUSTOMERS"`). Always quote.
+- Host-side psql/mysql to the bridge address fail with `setsockopt(TCP_NODELAY)`
+  / "lost connection" even without the firewall — a vmnet quirk, not a signal.

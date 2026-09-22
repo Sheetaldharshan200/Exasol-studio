@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T07:06:26.344Z",
+  "generatedAt": "2026-09-22T10:43:25.223Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -115,8 +115,14 @@
       "hint": "Agent action anchor in apps/desktop/src/components/studio/TitleBar.tsx"
     },
     {
-      "id": "anchor.visualizer.add-source",
-      "label": "visualizer add source",
+      "id": "anchor.visualizer.add-source-box",
+      "label": "visualizer add source box",
+      "where": "apps/desktop/src/features/workbench/visualizer/diagram.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/visualizer/diagram.tsx"
+    },
+    {
+      "id": "anchor.visualizer.schemas",
+      "label": "visualizer schemas",
       "where": "apps/desktop/src/features/workbench/Visualizer.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/workbench/Visualizer.tsx"
     },

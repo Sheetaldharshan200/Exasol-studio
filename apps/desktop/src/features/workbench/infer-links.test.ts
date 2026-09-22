@@ -82,3 +82,15 @@ test("results are sorted strongest first, deterministic on ties", () => {
   const links = inferLinks(tables, []);
   assert.deepEqual(links.map(key), ["B.A_ID>A.A_ID", "C.A_ID>A.A_ID", "C.B_ID>B.B_ID"]);
 });
+
+test("tables carrying an id (SCHEMA.TABLE) are linked by id, so two schemas can hold the same table name", () => {
+  const tables = [
+    { ...T("CUSTOMERS", [["ID", DEC, true]]), id: "PG.CUSTOMERS" },
+    { ...T("CUSTOMERS", [["ID", DEC, true]]), id: "ARCHIVE.CUSTOMERS" },
+    { ...T("sales", [["id", DEC, true], ["customer_id", DEC]]), id: "MY.sales" },
+  ];
+  const links = inferLinks(tables, [], { minScore: 0.3 });
+  const targets = links.filter((l) => l.source === "MY.sales").map((l) => l.target).sort();
+  assert.deepEqual(targets, ["ARCHIVE.CUSTOMERS", "PG.CUSTOMERS"], "both parents found by convention, by id");
+  assert.ok(links.every((l) => l.ambiguous), "and marked ambiguous, since two parents claim the column");
+});

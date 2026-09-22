@@ -22,6 +22,9 @@
 - [x] 3.4 `workbench/infer-links.ts`: `inferLinks(tables, {minScore})` with the three rules, type gate, PK/UNIQUE gate, ambiguity penalty, `singular()`; tests in `infer-links.test.ts` with fixtures: TPC-H, energy (METER_ID), snake vs camel, generic-ID schema, no-PK schema, declared-FK dedupe
 - [x] 3.5 Edge labels show `≈ score`; confidence slider in the toggles row; hidden-link count
 
+- [x] 3.6 One canvas per connection: every schema is a dashed box (React Flow parent node), tables inside, links across schemas including virtual ones; a schema multiselect (all on by default, remembered per tab) replaces the schema dropdown; an "Add data source" box closes the row. Pure `visualizer/connection-graph.ts` (`SCHEMA.TABLE` ids, merge, box layout — tested); `build-sql`/`infer-links` work on schema-qualified ids (tested)
+- [x] 3.7 Links stay cheap on big diagrams: above 24 links only the selected link animates/carries a label, decoration pauses while panning or zooming, and the shimmer is an SVG animation instead of a JS-driven gradient per edge (the hang on move/zoom with many links)
+
 ## 4. Query builder
 
 - [x] 4.1 `workbench/build-sql.ts`: move `buildSql` + `deriveFields` verbatim; tests in `build-sql.test.ts` (quoting, lower-case identifiers, no picks, WHERE group nesting, ORDER BY)
