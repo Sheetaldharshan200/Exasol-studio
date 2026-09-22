@@ -21,7 +21,7 @@ test("a JDBC plan is connection → adapter script → virtual schema, and the p
   assert.ok(!plan[0].display.includes("s3cret"), "…but never to a log or the history display");
   for (const step of plan.slice(1)) assert.ok(!step.sql.includes("s3cret"), `${step.id} must not carry the password`);
   assert.ok(plan[1].sql.includes("%jar /buckets/bfsdefault/default/vs/postgresql-42.7.13.jar;"));
-  assert.ok(!plan[1].sql.trimEnd().endsWith("/"), "no exaplus terminator — statements run one at a time");
+  assert.ok(plan[1].sql.trimEnd().endsWith("\n/"), "Java scripts end with the end-of-script line (Exasol 8 options parser); the statement still runs unsplit");
   assert.ok(plan[2].sql.includes("USING ADAPTER.POSTGRESQL_ADAPTER") && plan[2].sql.includes("CONNECTION_NAME = 'POSTGRESQL_CONN'"));
 });
 

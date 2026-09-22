@@ -157,3 +157,5 @@ Live proof: tests/virtual_schema_live.rs attaches the local database to itself t
 New page workbench-scale-and-polish. item-state.ts is the one update decision (badge/header/page agree); hub/ pages; focusBounds + layoutRev; infer-links with type gate + ambiguity penalty + slider; build-sql extracted (+aggregates/join types); fs_read_table offset window + fs_count_rows; routeOpen size guard; git diff 1 MB cap; TabErrorBoundary per tab; complete-draft + next-actions.
 
 ## [2026-09-22] ingest | Visualizer Build pane (aggregates, join types, 100-row preview) + component split to 843 lines; Codex round 4 (current-vs-display SQL, superseded preview, stale ORDER BY)
+
+## [2026-09-22] fix | Virtual schemas on macOS: /exa lives at local/runtime/vm-shared/exa (VM, not Podman) and Java adapter scripts need the `/` end-of-script line under Exasol 8's options parser — both proven live on 8565

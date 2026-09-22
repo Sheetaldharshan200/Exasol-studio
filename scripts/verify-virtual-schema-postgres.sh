@@ -86,7 +86,8 @@ sql "$EXA_HOST" "$EXA_PORT" "$EXA_USER" "$EXA_PW" \
   "CREATE OR REPLACE JAVA ADAPTER SCRIPT ADAPTER.POSTGRESQL_JDBC_ADAPTER AS
      %scriptclass com.exasol.adapter.RequestDispatcher;
      %jar /buckets/bfsdefault/default/vs-postgres.jar;
-     %jar /buckets/bfsdefault/default/drivers/jdbc/postgresql.jar;" \
+     %jar /buckets/bfsdefault/default/drivers/jdbc/postgresql.jar;
+/" \
   "CREATE OR REPLACE CONNECTION PG_CONN TO 'jdbc:postgresql://127.0.0.1:${PG_PORT}/${PG_DB}' USER '${PG_USER}' IDENTIFIED BY '${PG_PW}'" \
   "DROP VIRTUAL SCHEMA IF EXISTS PG_VS CASCADE" \
   "CREATE VIRTUAL SCHEMA PG_VS USING ADAPTER.POSTGRESQL_JDBC_ADAPTER WITH CONNECTION_NAME = 'PG_CONN' SCHEMA_NAME = 'public'"

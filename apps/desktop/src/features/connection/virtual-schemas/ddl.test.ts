@@ -52,6 +52,9 @@ test("a Java JDBC adapter script references both JARs; a document adapter also g
     "  %jvmoption -Duser.timezone=UTC;",
     "  %jar /buckets/bfsdefault/default/vs/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar;",
     "  %jar /buckets/bfsdefault/default/vs/postgresql-42.7.4.jar;",
+    // Exasol 8's options parser needs the end-of-script line after the last
+    // option, or the adapter dies at first use with "Unexpected '<eof>'".
+    "/",
   ].join("\n"));
   assert.throws(() => adapterScriptDdl(PostgresqlAdapter, { schema: "a", name: "b", adapterAsset: "x.jar" }), /driver JAR/);
 
@@ -59,6 +62,7 @@ test("a Java JDBC adapter script references both JARs; a document adapter also g
   assert.match(udf, /^CREATE OR REPLACE JAVA SET SCRIPT ADAPTER\.IMPORT_FROM_S3_DOCUMENT_FILES\(/);
   assert.ok(udf.includes("DATA_LOADER VARCHAR(2000000)") && udf.includes("SCHEMA_MAPPING_REQUEST VARCHAR(2000000)") && udf.includes("CONNECTION_NAME VARCHAR(500))"));
   assert.ok(udf.includes("%scriptclass com.exasol.adapter.document.UdfEntryPoint;"));
+  assert.ok(udf.endsWith("\n/"), "Java UDFs end with the end-of-script line too");
   assert.throws(() => importUdfDdl(PostgresqlAdapter, { schema: "a", adapterAsset: "x.jar" }), /not a document adapter/);
 });
 
@@ -66,6 +70,7 @@ test("a Lua adapter inlines its released source and references no JAR", () => {
   const ddl = adapterScriptDdl(DatabricksAdapter, { schema: "adapter", name: "dbx", adapterAsset: "ignored.lua", luaSource: "-- adapter\nreturn {}\n" });
   assert.equal(ddl, "CREATE OR REPLACE LUA ADAPTER SCRIPT ADAPTER.DBX AS\n-- adapter\nreturn {}");
   assert.ok(!ddl.includes("%jar"));
+  assert.ok(!ddl.endsWith("/"), "Lua has no options block, so no terminator (proven live on 8565)");
   assert.throws(() => adapterScriptDdl(DatabricksAdapter, { schema: "a", name: "b", adapterAsset: "x" }), /released source/);
 });
 
