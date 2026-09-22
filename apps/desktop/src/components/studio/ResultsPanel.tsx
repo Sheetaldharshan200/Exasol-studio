@@ -12,6 +12,8 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Download, Gauge, Loader2, Pan
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
 import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
+import { formatClock, formatElapsed } from "@/lib/elapsed";
+import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
 import { GoToBox } from "./GoToBox";
 import { QueryPlanTabs } from "./QueryPlanTabs";
@@ -89,6 +91,9 @@ export function ResultsPanel({
   // The dashboard view was removed (issue #45) — tabs persisted on it land on Results.
   const view: ResultView = viewProp === "dashboard" ? "results" : viewProp;
   const busy = Boolean(runMeta && !runMeta.finishedAt);
+  // A run in flight is announced HERE — spinner on the Results tab plus a live
+  // clock — not on the Run button (issue #157), which just stays disabled.
+  const elapsedMs = useElapsedMs(runMeta?.startedAt, busy);
   // Runs before this release persisted a single Plan object — normalize.
   const plans: Plan[] = Array.isArray(planData) ? planData : planData ? [planData] : [];
   // Memoized: splitStatements is O(buffer) and this component re-renders per
@@ -129,11 +134,20 @@ export function ResultsPanel({
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            <t.icon className={cn("h-3.5 w-3.5", view === t.id && "text-primary")} />
+            {t.id === "results" && busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            ) : (
+              <t.icon className={cn("h-3.5 w-3.5", view === t.id && "text-primary")} />
+            )}
             {t.label}
           </button>
         ))}
-        {view === "results" && lastResult ? (
+        {busy ? (
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground" aria-live="polite">
+            <span className="text-foreground">Running</span>
+            {runMeta?.startedAt ? <>since {formatClock(runMeta.startedAt)} ·</> : null} {formatElapsed(elapsedMs)}
+          </span>
+        ) : view === "results" && lastResult ? (
           <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
             {lastResult.kind === "resultSet"
               ? (() => {
@@ -198,7 +212,7 @@ export function ResultsPanel({
                   <span className="ml-auto font-mono text-[11px]">
                     {pct !== null
                       ? `${pct}%`
-                      : `${((queryProgress?.elapsedMs ?? Date.now() - (runMeta?.startedAt ?? 0)) / 1000).toFixed(1)}s`}
+                      : formatElapsed(queryProgress?.elapsedMs ?? elapsedMs)}
                   </span>
                 </div>
                 <div className="relative mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">

@@ -163,3 +163,7 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] verify | PostgreSQL + MySQL virtual schemas proven end to end through the app's plan (sources as Podman containers inside the Exasol VM; Mac firewall blocks host-side servers for non-admins)
 
 ## [2026-09-22] feat | Visualizer: one canvas per connection — dashed schema boxes, multiselect, cross-schema links + builder; dense/paused link rendering fixes the pan/zoom hang
+
+## [2026-09-22] fix | Issues #156 #157 #158: PDF export via a native print window (WKWebView ignores window.print), running-state clock on the Results tab / visualizer load pill / preview / add-source steps, link-style panel layout; inferLinks indexed (1.7 s → 23 ms at 1,000 tables); per-node will-change removed
+
+## [2026-09-22] fix | Visualizer smoothness: viewport promotion scoped to the gesture (a permanently promoted layer re-rasterizes at every scale — the "hangs after some point" wall), and the far-detail tier could never fire because FAR_ZOOM 0.12 < minZoom 0.15; zoomed out is now a map of named schema boxes (zoom-lod.ts, --vs-zoom)

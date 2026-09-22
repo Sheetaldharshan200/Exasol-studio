@@ -52,6 +52,24 @@ function conventionNames(parent: string): Set<string> {
 type IdTable = GraphTable & { id?: string };
 const idOf = (t: IdTable) => t.id ?? t.name;
 
+/** A child column prepared once: every spelling a rule compares against. */
+type ColRef = {
+  table: string;
+  col: string;
+  family: Family;
+  upper: string;
+  flat: string;
+  norm: string;
+  /** The child's own sole primary key is a parent key, not a reference. */
+  soleKey: boolean;
+};
+
+const push = (m: Map<string, ColRef[]>, key: string, ref: ColRef) => {
+  const list = m.get(key);
+  if (list) list.push(ref);
+  else m.set(key, [ref]);
+};
+
 export function inferLinks(
   tables: IdTable[],
   declared: GraphLink[],
@@ -59,11 +77,43 @@ export function inferLinks(
 ): InferredLink[] {
   const minScore = options.minScore ?? 0.6;
   const declaredPairs = new Set(declared.map((l) => `${l.source}.${l.sourceColumn}>${l.target}.${l.targetColumn}`.toUpperCase()));
-  const pkOf = new Map(tables.map((t) => [idOf(t), t.columns.filter((c) => c.pk)]));
+
+  // Index every column once by the three spellings the rules match on, keyed
+  // with its type family — the work is then linear in columns, not in
+  // parents × children × columns (a 1,000-table schema took seconds).
+  //
+  // Each table is scored on its OWN columns, so table ids must be unique —
+  // they are (`SCHEMA.TABLE`, built in connection-graph.ts). Two tables
+  // sharing an id would each contribute their own candidates rather than one
+  // shadowing the other.
+  const byUpper = new Map<string, ColRef[]>();
+  const byFlat = new Map<string, ColRef[]>();
+  const byNorm = new Map<string, ColRef[]>();
+  for (const t of tables) {
+    const pks = t.columns.filter((c) => c.pk);
+    for (const c of t.columns) {
+      const family = typeFamily(c.dataType);
+      if (family === "other") continue;
+      const upper = c.name.toUpperCase();
+      const ref: ColRef = {
+        table: idOf(t),
+        col: c.name,
+        family,
+        upper,
+        flat: upper.replace(/_/g, ""),
+        norm: normaliseKey(c.name),
+        soleKey: pks.length === 1 && pks[0].name === c.name,
+      };
+      push(byUpper, `${family}|${ref.upper}`, ref);
+      push(byFlat, `${family}|${ref.flat}`, ref);
+      push(byNorm, `${family}|${ref.norm}`, ref);
+    }
+  }
 
   const candidates: InferredLink[] = [];
   for (const parent of tables) {
-    const pks = pkOf.get(idOf(parent)) ?? [];
+    const parentId = idOf(parent);
+    const pks = parent.columns.filter((c) => c.pk);
     if (pks.length === 0) continue;
     const composite = pks.length > 1 ? 0.8 : 1;
     const conv = conventionNames(parent.name);
@@ -72,32 +122,23 @@ export function inferLinks(
       const pkFamily = typeFamily(pk.dataType);
       if (pkFamily === "other") continue;
       const pkNorm = normaliseKey(pk.name);
-      for (const child of tables) {
-        if (idOf(child) === idOf(parent)) continue;
-        const childPks = pkOf.get(idOf(child)) ?? [];
-        for (const col of child.columns) {
-          if (typeFamily(col.dataType) !== pkFamily) continue;
-          // The child's own sole primary key is a parent key, not a reference.
-          if (childPks.length === 1 && childPks[0].name === col.name) continue;
-          const colUpper = col.name.toUpperCase();
-          const colFlat = colUpper.replace(/_/g, "");
-          let score = 0;
-          let reason: InferredLink["reason"] | null = null;
-          if (colUpper === pkUpper && !GENERIC.has(pkUpper)) {
-            score = 1;
-            reason = "same key name";
-          } else if (conv.has(colFlat) && (GENERIC.has(pkUpper) || conv.has(pkUpper.replace(/_/g, "")))) {
-            score = 0.9;
-            reason = "naming convention";
-          } else if (normaliseKey(col.name) === pkNorm && !GENERIC.has(pkNorm)) {
-            score = 0.7;
-            reason = "normalised name";
-          }
-          if (!reason) continue;
-          const key = `${idOf(child)}.${col.name}>${idOf(parent)}.${pk.name}`.toUpperCase();
-          if (declaredPairs.has(key)) continue;
-          candidates.push({ source: idOf(child), sourceColumn: col.name, target: idOf(parent), targetColumn: pk.name, score: score * composite, reason, ambiguous: false });
+      // The first rule that fires for a column wins, in this order.
+      const matched = new Map<ColRef, { score: number; reason: InferredLink["reason"] }>();
+      const consider = (refs: ColRef[] | undefined, score: number, reason: InferredLink["reason"]) => {
+        for (const ref of refs ?? []) {
+          if (ref.table === parentId || ref.soleKey || matched.has(ref)) continue;
+          matched.set(ref, { score, reason });
         }
+      };
+      if (!GENERIC.has(pkUpper)) consider(byUpper.get(`${pkFamily}|${pkUpper}`), 1, "same key name");
+      if (GENERIC.has(pkUpper) || conv.has(pkUpper.replace(/_/g, ""))) {
+        for (const name of conv) consider(byFlat.get(`${pkFamily}|${name}`), 0.9, "naming convention");
+      }
+      if (!GENERIC.has(pkNorm)) consider(byNorm.get(`${pkFamily}|${pkNorm}`), 0.7, "normalised name");
+      for (const [ref, { score, reason }] of matched) {
+        const key = `${ref.table}.${ref.col}>${parentId}.${pk.name}`.toUpperCase();
+        if (declaredPairs.has(key)) continue;
+        candidates.push({ source: ref.table, sourceColumn: ref.col, target: parentId, targetColumn: pk.name, score: score * composite, reason, ambiguous: false });
       }
     }
   }

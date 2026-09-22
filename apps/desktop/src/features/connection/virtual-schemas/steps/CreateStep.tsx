@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Check, CircleSlash2, Loader2 } from "lucide-react";
 import { errorMessage, ipc } from "@/lib/ipc";
+import { formatClock, formatElapsed } from "@/lib/elapsed";
+import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { cn } from "@/lib/utils";
 import type { PlanStep } from "../plan.ts";
 import { dropConnectionSql, dropVirtualSchemaSql, proveListTablesSql, proveSelectSql } from "../ddl.ts";
@@ -36,6 +38,11 @@ export function CreateStep({
   onCreated: (result: ProveResult) => void;
 }) {
   const [states, setStates] = useState<StepState[]>(() => plan.map(() => "pending"));
+  // When each statement started and how long it took — a CREATE VIRTUAL SCHEMA
+  // can sit on the adapter for a while, and the user must see that it is alive.
+  const [timing, setTiming] = useState<Record<number, { startedAt: number; ms?: number }>>({});
+  const runningIdx = states.indexOf("running");
+  const runningElapsed = useElapsedMs(timing[runningIdx]?.startedAt, runningIdx >= 0);
   const [error, setError] = useState<{ at: string; message: string } | null>(null);
   const [result, setResult] = useState<ProveResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,11 +63,15 @@ export function CreateStep({
     setDroppedAfterFailure(false);
     try {
       for (let i = 0; i < plan.length; i++) {
+        const startedAt = Date.now();
+        setTiming((t) => ({ ...t, [i]: { startedAt } }));
         setStates((s) => s.map((v, j) => (j === i ? "running" : v)));
         try {
           await run(plan[i].sql);
+          setTiming((t) => ({ ...t, [i]: { startedAt, ms: Date.now() - startedAt } }));
           setStates((s) => s.map((v, j) => (j === i ? "done" : v)));
         } catch (e) {
+          setTiming((t) => ({ ...t, [i]: { startedAt, ms: Date.now() - startedAt } }));
           setStates((s) => s.map((v, j) => (j === i ? "failed" : v)));
           setError({ at: plan[i].label, message: errorMessage(e) });
           return;
@@ -117,6 +128,15 @@ export function CreateStep({
                 <span className="inline-block h-3.5 w-3.5 rounded-full border border-border" />
               )}
               <span className={cn(states[i] === "pending" ? "text-muted-foreground" : "text-foreground")}>{step.label}</span>
+              {timing[i] ? (
+                <span className="ml-auto shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                  {states[i] === "running"
+                    ? `running since ${formatClock(timing[i].startedAt)} · ${formatElapsed(runningElapsed)}`
+                    : timing[i].ms !== undefined
+                      ? formatElapsed(timing[i].ms)
+                      : null}
+                </span>
+              ) : null}
             </div>
             <pre className="ml-5 max-h-40 overflow-auto rounded-md border border-border bg-editor p-2 font-mono text-[10.5px] leading-relaxed text-foreground/80 whitespace-pre-wrap">
               {step.display}

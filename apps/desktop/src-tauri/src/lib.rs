@@ -32,6 +32,7 @@ mod local_llm;
 mod local_runtime;
 mod market;
 mod metadata;
+mod print;
 mod profiles;
 mod shared_registry;
 mod query;
@@ -55,6 +56,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .register_uri_scheme_protocol(print::SCHEME, |ctx, req| print::respond(ctx.app_handle(), req.uri().path()))
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -68,6 +70,7 @@ pub fn run() {
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::terminal::TermRegistry::default());
+            app.manage(crate::print::PrintJobs::default());
             app.manage(crate::cloudflared::CloudflaredProc::default());
             crate::updates::start(app.handle().clone());
             crate::verified_lock::start(app.handle().clone());
@@ -129,6 +132,7 @@ pub fn run() {
             virtual_schema_install::vs_stage_adapter,
             virtual_schema_install::vs_local_state,
             files::write_text_file,
+            print::print_html,
             files::save_attachment,
             files::install_cli,
             files::append_app_log,

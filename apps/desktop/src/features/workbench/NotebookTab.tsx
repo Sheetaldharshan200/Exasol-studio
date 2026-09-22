@@ -24,6 +24,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { errorMessage, ipc, isTauri, type StatementResult } from "@/lib/ipc";
+import { printHtml } from "@/lib/print-html";
 import { SourceLogo } from "@/features/connection/SourceLogo";
 import { MermaidView } from "@/features/workbench/MermaidView";
 import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
@@ -51,7 +52,7 @@ import {
 import { dashboards } from "@/lib/agent-client";
 import { Icon } from "@/components/ui/icon";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { buildNotebookMarkdown, buildNotebookHtml, printNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
+import { buildNotebookMarkdown, buildNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
 import { dashboardDocFromCells } from "@/features/dashboard/notebook-to-dashboard";
 import { newFile, serialize } from "@/features/dashboard/store";
 import { cn } from "@/lib/utils";
@@ -494,8 +495,9 @@ export function NotebookTab({
         const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
         if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
       } else {
-        printNotebookHtml(html);
-        notify("success", "Print dialog opened", "Choose “Save as PDF”. No dialog? Export HTML and print from your browser.");
+        const dialog = await printHtml(html, title);
+        if (dialog) notify("success", "Print dialog opened", "Choose “Save as PDF” in the print dialog.");
+        else notify("success", "Print window opened", "Press ⌘P in that window, then choose “Save as PDF”.");
       }
     } catch (e) {
       notify("warning", "Export failed", errorMessage(e));

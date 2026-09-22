@@ -130,7 +130,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
     <div
       style={{ width: NODE_W }}
       className={cn(
-        "relative overflow-hidden rounded-xl border bg-panel",
+        "vs-card relative overflow-hidden rounded-xl border bg-panel",
         isSel ? "border-[#a78bfa] shadow-xl" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
       )}
     >
@@ -149,7 +149,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
         onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
-          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
+          "vs-card-head flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
           isSel ? "bg-[#a78bfa]/15" : "bg-secondary/70 hover:bg-secondary",
         )}
       >
@@ -200,7 +200,11 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
           })}
       </div>
 
-      {isSel && !build ? <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} /> : null}
+      {isSel && !build ? (
+        <span className="vs-deco">
+          <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} />
+        </span>
+      ) : null}
     </div>
   );
 });
@@ -305,7 +309,7 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   return (
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
-    <div className="vs-box pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
+    <div className="vs-box pointer-events-none relative h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
       <div className="vs-box-handle pointer-events-auto flex h-[44px] cursor-grab items-center gap-2 px-3 active:cursor-grabbing" title="Drag to move the whole schema">
         <span className="flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
@@ -330,6 +334,30 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   );
 });
 
+export type SchemaFarData = { schema: string; source?: string; total: number };
+
+/**
+ * The schema's name, drawn ONLY when the canvas is zoomed out past legibility.
+ * It is its own node, stacked above the table cards: the dashed box behind
+ * them is `zIndex: -1`, so a label living inside it would be hidden by the
+ * very cards it is meant to replace. Invisible (`display: none`) at every
+ * readable zoom, so it intercepts nothing there.
+ */
+export const SchemaFarNode = memo(function SchemaFarNode({ data }: NodeProps) {
+  const d = data as unknown as SchemaFarData;
+  return (
+    <div className="pointer-events-none relative h-full w-full">
+      <div className="vs-box-far vs-box-handle" title="Drag to move the whole schema">
+        <span>{d.schema}</span>
+        <span className="vs-box-far-sub">
+          {d.source ? `${d.source} · ` : ""}
+          {d.total} table{d.total === 1 ? "" : "s"}
+        </span>
+      </div>
+    </div>
+  );
+});
+
 /** Tables drawn per schema box before the user asks for more. */
 export const TABLE_PAGE = 20;
 
@@ -349,7 +377,10 @@ export function AddSourceNode({ data }: NodeProps) {
   );
 }
 
-export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, addSource: memo(AddSourceNode) };
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, schemaFar: SchemaFarNode, addSource: memo(AddSourceNode) };
+
+/** Node types that move a whole schema when dragged. */
+export const SCHEMA_NODE_TYPES = ["schemaGroup", "schemaFar"];
 export const edgeTypes = { beam: BeamEdge };
 
 export function ToggleRow({
@@ -364,12 +395,14 @@ export function ToggleRow({
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="flex items-center justify-between text-[12px] text-foreground"
+      role="switch"
+      aria-checked={checked}
+      className="flex w-full items-center justify-between gap-3 text-[12px] text-foreground"
     >
       <span>{label}</span>
       <span
         className={cn(
-          "relative h-4 w-7 rounded-full transition-colors",
+          "relative h-4 w-7 shrink-0 rounded-full transition-colors",
           checked ? "bg-primary" : "bg-secondary",
         )}
       >

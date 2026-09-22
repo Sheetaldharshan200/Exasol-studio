@@ -163,3 +163,89 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   minimap unmounts during a gesture, and `.is-moving .vs-deco { display: none }`
   hides pulses/labels through the cascade. Rule: nothing in the diagram may
   subscribe to the viewport transform except React Flow itself.
+  Correction (later the same day): `will-change: transform` stays on the
+  VIEWPORT only. Putting it on every node promoted 100+ cards (and the big
+  schema boxes) to their own compositing layers; WebKit re-rasterised all of
+  them on each zoom step, which is the "smooth, then hangs after some point"
+  the user kept seeing. One layer for the viewport, plain nodes.
+
+## Production fixes from the issue tracker (2026-09-22, #156 #157 #158)
+
+- **The print window is a document viewer, not a browser.** Its response
+  carries `default-src 'none'; script-src 'none'; connect-src 'none'` (a
+  notebook keeps raw markdown HTML on purpose, and dashboards inline echarts —
+  neither may execute or phone home in a trusted window; charts print from the
+  captured image the script would otherwise have replaced), and
+  `on_navigation` allows only the job's own URL, compared by scheme + host +
+  path. The print dialog runs once, for that document only.
+- **#156 exports.** `window.print()` is a silent no-op inside WKWebView, so the
+  notebook and dashboard PDF buttons did nothing on the desktop while the toast
+  claimed a dialog had opened. Now `lib/print-html.ts` hands the finished HTML
+  to Rust `print_html` (`src-tauri/src/print.rs`): the document is stored in
+  `PrintJobs`, opened in its own window on `print://localhost/<id>` (served by
+  `register_uri_scheme_protocol`; `http://print.localhost/…` on Windows), and
+  the native print dialog runs on THAT window once the page has loaded (800 ms
+  settle for inline charts); the job is dropped with the window. The web build
+  keeps the iframe. Dashboard exports also return an outcome that
+  `export-notice.ts` turns into a toast (silent on cancel), and the Share
+  popover's format buttons show a spinner on the one pressed.
+- **#157 where "running" shows.** The Run button used to spin; the Results tab
+  icon now spins and the tab strip reads `Running since 14:05:12 · 3.4s`
+  (`lib/elapsed.ts` `formatClock`/`formatElapsed`, `lib/use-elapsed-ms.ts`
+  ticking 5×/s). The same vocabulary is used by the visualizer's load pill
+  (`Loading TPCH · 3/18 schemas · since … · 1.2s`, a pill, no longer a curtain
+  over the canvas), the builder's preview button (`Running · 1.2s`) and every
+  add-source statement (`running since … · 4.1s`, then its duration).
+- **#158 link-style panel.** `w-64` with a three-column slider row overflowed;
+  now `w-72`, `ToggleRow` is `w-full`/`role="switch"`, slider rows put
+  label + value above a full-width range, and the panel scrolls when tall.
+- **Smoothness, the actual cause (2026-09-22, second pass).** Two things, both
+  measurable:
+  1. `will-change: transform` was on the viewport permanently. A promoted layer
+     is re-rasterized at every new scale, and this layer is the whole canvas —
+     at low zoom it covers an enormous area, so each wheel step costs more than
+     the last. That is precisely "smooth, then after some point it hangs". It
+     is now scoped to `.is-moving` (added on `onMoveStart`, dropped 180 ms
+     after the last `onMoveEnd`, so a wheel burst counts as one gesture): a
+     gesture transforms the existing raster, and the browser rasterizes once,
+     sharply, when it ends. xyflow discussion #4617 recommends exactly this;
+     the same discussion's `translate3d` idea is not needed once the layer
+     stops thrashing. `contain: layout style` on nodes keeps a card's layout
+     from escaping it. The per-node `will-change` is gone for the same reason.
+  2. The far-detail tier could never fire: `FAR_ZOOM` was 0.12 while React
+     Flow's `minZoom` was 0.15. Every zoom level the user could reach painted
+     every column of every card. `visualizer/zoom-lod.ts` now decides from
+     LEGIBILITY — `isFarZoom(zoom, rowHeight)` is true once a row is under
+     7 screen pixels — and `minZoom` is 0.04 so a warehouse fits on screen.
+- **Zoomed out is a map, not a thumbnail (user request).** Under `.is-far`:
+  column rows, card headers and the box's button strip all stop painting
+  (`visibility`, so every card keeps its exact geometry and every edge handle
+  stays on its column), cards become flat blocks, and each box draws a solid
+  primary outline plus its NAME and table count at a constant screen size —
+  `calc(15px / var(--vs-zoom))`, where `--vs-zoom` is written onto the pane by
+  `onMove` as a style property, never as React state.
+  - The name is its OWN node (`schemaFar`, `zIndex: 5`), not a child of the
+    dashed box: the box is `zIndex: -1` so anything inside it is painted
+    *under* the very cards it stands in for. It is `display: none` at every
+    readable zoom, so it intercepts nothing there, and it carries
+    `vs-box-handle`, so at map zoom you drag a schema by its name.
+  - Dragging any schema node moves everything of that schema — tables, the
+    backdrop and the name — whichever one you grabbed.
+  - `fitView`/`fitBounds` never raise `onMove`, so the tier is also re-read
+    after every programmatic move and on `onInit`; without that, the first
+    auto-fit stayed in detail mode and focusing a table from far out kept the
+    map tier while zoomed in.
+  - A full-box node stacked above the cards would swallow every click at
+    readable zoom, because React Flow puts `pointer-events` inline on a
+    draggable node: `.react-flow__node-schemaFar { pointer-events: none
+    !important }`, with the label itself re-enabling them only under
+    `.is-far`. The minimap paints it transparent so the table rects still show.
+  - The selected card's ShineBorder is a running animation and now sits in
+    `.vs-deco`, so it parks during a gesture with the rest of the decoration.
+- **Inference at scale.** `inferLinks` was parents × children × columns with a
+  regex per step: 1.7 s for 1,000 tables, run again on every progressive
+  publish. It now indexes every column once by (type family, exact / flat /
+  normalised spelling) and looks parents up — 23 ms for 1,000 tables, 55 ms
+  for 3,000, byte-identical output (checked against the old implementation on
+  three synthetic schemas; `infer-links.test.ts` pins rule priority and a
+  1,000-table budget).

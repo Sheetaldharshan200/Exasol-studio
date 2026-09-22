@@ -14,6 +14,7 @@ import { clearCrossFilters } from "./cross-filter";
 import { resetDrills } from "./drill-store";
 import { dashboardDocFromCells } from "./notebook-to-dashboard";
 import { exportDashboard, type ExportFormat } from "./export-dashboard";
+import { exportNotice } from "./export-notice";
 import type { DashConn } from "./useWidgetData";
 
 /** A synced (child) dashboard re-derives its CONTENT from its source notebook,
@@ -146,7 +147,10 @@ export function DashboardTab({
   };
 
   const conn: DashConn = profileId ? { profileId, connectionName } : null;
-  const onExport = (format: ExportFormat) => void exportDashboard(doc, conn, format);
+  const onExport = async (format: ExportFormat) => {
+    const notice = exportNotice(await exportDashboard(doc, conn, format), format);
+    if (notice) window.dispatchEvent(new CustomEvent("studio:notice", { detail: notice }));
+  };
   const onEditSource = doc.sourceNotebook ? () => focusNotebook(doc.sourceNotebook!) : undefined;
   return (
     <DashboardView

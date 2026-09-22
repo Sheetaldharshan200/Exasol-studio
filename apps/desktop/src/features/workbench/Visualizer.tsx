@@ -35,9 +35,12 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
 import { focusBounds } from "./visualizer-focus.ts";
 import { inferLinks } from "./infer-links.ts";
+import { formatClock, formatElapsed } from "@/lib/elapsed";
+import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
 import { GROUP_HEADER, budgetLinks, colKey, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
+import { isFarZoom, zoomVar } from "./visualizer/zoom-lod";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -45,12 +48,15 @@ import {
   EdgeStyleContext,
   NODE_W,
   PULSE_PRESETS,
+  ROW_H,
   edgeIsActive,
   edgeTypes,
   nodeHeight,
   nodeTypes,
+  SCHEMA_NODE_TYPES,
   ToggleRow,
   type BeamEdgeData,
+  type SchemaFarData,
   type EdgeStyle,
   type Mode,
   type Selection,
@@ -69,9 +75,8 @@ const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
 const ADD_SOURCE_ID = "__add_source__";
-/** Only when a whole row is ~3px tall (the schema is a thumbnail) are column
- *  labels skipped — at every zoom the diagram is read at, the names are there. */
-const FAR_ZOOM = 0.12;
+/** How long the viewport stays promoted after a gesture (see global.css). */
+const GESTURE_SETTLE_MS = 180;
 
 /** Subsequence fuzzy score (higher = better); null if not all chars match. */
 
@@ -99,7 +104,11 @@ export function Visualizer({
   const [graphs, setGraphs] = useState<Record<string, SchemaGraph>>({});
   // Tables drawn per schema box (TABLE_PAGE at first; "Show more" / "All" extend).
   const [shownPerSchema, setShownPerSchema] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
+  // The schema being fetched right now, its place in the queue and when the
+  // load began — shown as a pill, never as a curtain: loaded schemas stay usable.
+  const [loadingNow, setLoadingNow] = useState<{ schema: string; index: number; total: number; startedAt: number } | null>(null);
+  const loading = loadingNow !== null;
+  const loadElapsed = useElapsedMs(loadingNow?.startedAt, loading);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sel, setSel] = useState<Selection>(null);
@@ -115,9 +124,40 @@ export function Visualizer({
   // ref) hide link decoration and the minimap while moving, and drop column
   // text below FAR_ZOOM where a label is a couple of pixels tall anyway.
   const paneRef = useRef<HTMLDivElement>(null);
+  const pane = useCallback(() => paneRef.current?.querySelector<HTMLElement>(".visualizer-pane") ?? null, []);
   const setPaneClass = useCallback((cls: string, on: boolean) => {
-    paneRef.current?.querySelector(".visualizer-pane")?.classList.toggle(cls, on);
-  }, []);
+    pane()?.classList.toggle(cls, on);
+  }, [pane]);
+  // Every viewport change writes the live zoom into a CSS variable (so borders
+  // and the schema name keep a constant SCREEN size) and picks the detail tier.
+  const applyZoom = useCallback((zoom: number) => {
+    const el = pane();
+    if (!el) return;
+    el.style.setProperty("--vs-zoom", zoomVar(zoom));
+    el.classList.toggle("is-far", isFarZoom(zoom, ROW_H));
+  }, [pane]);
+  // The promotion outlives the gesture by a moment: a wheel zoom arrives as a
+  // burst of separate gestures, and dropping the layer between them is what
+  // made zooming out stutter and then stall.
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginGesture = useCallback(() => {
+    if (settle.current) clearTimeout(settle.current);
+    setPaneClass("is-moving", true);
+  }, [setPaneClass]);
+  const endGesture = useCallback(() => {
+    if (settle.current) clearTimeout(settle.current);
+    settle.current = setTimeout(() => setPaneClass("is-moving", false), GESTURE_SETTLE_MS);
+  }, [setPaneClass]);
+  useEffect(() => () => { if (settle.current) clearTimeout(settle.current); }, []);
+  /** Re-read the viewport after a programmatic move (fitView / fitBounds never
+   *  raise onMove), once its animation has landed. */
+  const syncZoomAfter = useCallback((ms: number) => {
+    const t = window.setTimeout(() => {
+      const vp = rfRef.current?.getViewport();
+      if (vp) applyZoom(vp.zoom);
+    }, ms + 60);
+    return () => window.clearTimeout(t);
+  }, [applyZoom]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
   // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
@@ -159,16 +199,24 @@ export function Visualizer({
 
   // Dragging a schema box moves every table in it: remember where the box and
   // its tables started, then offset them by the box's travel on each frame.
-  const groupDrag = useRef<{ id: string; schema: string; x: number; y: number; tables: Record<string, { x: number; y: number }> } | null>(null);
+  const groupDrag = useRef<{ id: string; x: number; y: number; followers: Record<string, { x: number; y: number }> } | null>(null);
   const onNodeDragStart = useCallback(
     (_e: unknown, node: Node) => {
-      if (node.type !== "schemaGroup") return;
-      const schema = (node.data as unknown as SchemaGroupData).schema;
-      const tables: Record<string, { x: number; y: number }> = {};
+      if (!SCHEMA_NODE_TYPES.includes(node.type ?? "")) return;
+      const schema = (node.data as unknown as { schema: string }).schema;
+      // Everything that belongs to this schema moves with the grab — its
+      // tables, the dashed backdrop and the zoomed-out name, whichever of the
+      // two the user actually took hold of.
+      const followers: Record<string, { x: number; y: number }> = {};
       for (const n of nodes) {
-        if (n.type === "table" && (n.data as unknown as TableNodeData).table.schema === schema) tables[n.id] = { ...n.position };
+        if (n.id === node.id) continue;
+        const mine =
+          n.type === "table"
+            ? (n.data as unknown as TableNodeData).table.schema === schema
+            : SCHEMA_NODE_TYPES.includes(n.type ?? "") && (n.data as unknown as { schema: string }).schema === schema;
+        if (mine) followers[n.id] = { ...n.position };
       }
-      groupDrag.current = { id: node.id, schema, x: node.position.x, y: node.position.y, tables };
+      groupDrag.current = { id: node.id, x: node.position.x, y: node.position.y, followers };
     },
     [nodes],
   );
@@ -180,7 +228,7 @@ export function Visualizer({
       const dy = node.position.y - start.y;
       setNodes((nds) =>
         nds.map((n) => {
-          const from = start.tables[n.id];
+          const from = start.followers[n.id];
           return from ? { ...n, position: { x: from.x + dx, y: from.y + dy } } : n;
         }),
       );
@@ -232,7 +280,11 @@ export function Visualizer({
     if (!selTable) {
       // React Flow measures the fresh nodes a frame after they mount.
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
-      return () => window.clearTimeout(t);
+      const cancelSync = syncZoomAfter(60 + 450);
+      return () => {
+        window.clearTimeout(t);
+        cancelSync();
+      };
     }
     // Read live positions: a table may have been dragged since the layout.
     const rect = focusBounds(
@@ -243,7 +295,9 @@ export function Visualizer({
       edges.map((e) => ({ source: e.source, target: e.target })),
       selTable,
     );
-    if (rect) void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
+    if (!rect) return;
+    void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
+    return syncZoomAfter(450);
     // A change of TABLE or a fresh layout moves the view; nodes/edges are read
     // at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -307,10 +361,13 @@ export function Visualizer({
     if (missing.length === 0) {
       setGraphs(Object.fromEntries(selectedList.map((name) => [name, graphCache.get(`${profileId}:${name}`)!])));
       setError(null);
+      // A load may have been abandoned mid-flight by this very change of
+      // selection: its `finally` is skipped (alive = false), so the pill is
+      // ours to clear or it stays up forever.
+      setLoadingNow(null);
       return;
     }
     let alive = true;
-    setLoading(true);
     setError(null);
     // ONE schema at a time, on purpose: the connection is a single websocket
     // session and concurrent statements on it hang or kill the driver (the
@@ -320,8 +377,11 @@ export function Visualizer({
       setGraphs(Object.fromEntries(selectedList.flatMap((name) => (graphCache.has(`${profileId}:${name}`) ? [[name, graphCache.get(`${profileId}:${name}`)!]] : []))));
     (async () => {
       let firstError: string | null = null;
-      for (const name of missing) {
+      for (const [i, name] of missing.entries()) {
         if (!alive) return;
+        // Each schema times itself: "since 14:05:02 · 3.1s" is about THIS
+        // schema, not about the batch that started five schemas ago.
+        setLoadingNow({ schema: name, index: i + 1, total: missing.length, startedAt: Date.now() });
         try {
           graphCache.set(`${profileId}:${name}`, await ipc.getSchemaGraph(profileId, name));
         } catch (e) {
@@ -330,7 +390,7 @@ export function Visualizer({
         if (alive) publish();
       }
       if (alive && firstError) setError(firstError);
-    })().finally(() => alive && setLoading(false));
+    })().finally(() => alive && setLoadingNow(null));
     return () => {
       alive = false;
     };
@@ -411,6 +471,28 @@ export function Visualizer({
         } satisfies SchemaGroupData as unknown as Record<string, unknown>,
       };
     });
+    // The zoomed-out schema name is a SEPARATE node stacked above the cards:
+    // the dashed backdrop is zIndex -1, so a label inside it would be hidden
+    // by the very cards it stands in for.
+    const farNodes: Node[] = layout.groups.map((g) => {
+      const info = perSchema.find((p) => p.schema === g.schema)!;
+      return {
+        id: `schemafar:${g.schema}`,
+        type: "schemaFar",
+        position: { x: g.box.x, y: g.box.y },
+        style: { width: g.box.width, height: g.box.height },
+        draggable: true,
+        dragHandle: ".vs-box-far",
+        selectable: false,
+        connectable: false,
+        zIndex: 5,
+        data: {
+          schema: g.schema,
+          source: schemas.find((sc) => sc.name === g.schema)?.source,
+          total: info.total,
+        } satisfies SchemaFarData as unknown as Record<string, unknown>,
+      };
+    });
     const tableNodes: Node[] = visible
       .filter((table) => drawn.has(table.id))
       .map((table) => ({
@@ -438,7 +520,7 @@ export function Visualizer({
           data: { onClick: onNewVs } as unknown as Record<string, unknown>,
         }]
       : [];
-    setNodes([...groupNodes, ...tableNodes, ...addNode]);
+    setNodes([...groupNodes, ...tableNodes, ...farNodes, ...addNode]);
     setLayoutRev((r) => r + 1);
     // Only links between drawn tables can be drawn; the rest wait for "Show more".
     const drawable = links.filter((l) => drawn.has(l.source) && drawn.has(l.target));
@@ -714,9 +796,14 @@ export function Visualizer({
       </header>
 
       <div ref={paneRef} className="relative min-h-0 flex-1">
-        {loading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-editor/60 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Building graph…
+        {loadingNow ? (
+          <div
+            className="pointer-events-none absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover/95 px-3 py-1.5 font-mono text-[11px] text-muted-foreground shadow-lg"
+            aria-live="polite"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span className="text-foreground">Loading {loadingNow.schema}</span>
+            <span>· {loadingNow.index}/{loadingNow.total} schemas · since {formatClock(loadingNow.startedAt)} · {formatElapsed(loadElapsed)}</span>
           </div>
         ) : null}
         {error ? (
@@ -739,28 +826,35 @@ export function Visualizer({
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onInit={(inst) => (rfRef.current = inst)}
+              onInit={(inst) => {
+                rfRef.current = inst;
+                // The mount-time fitView has already run: start in the right tier.
+                syncZoomAfter(0);
+              }}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => setSel(null)}
               onNodeDragStart={onNodeDragStart}
               onNodeDrag={onNodeDrag}
               onNodeDragStop={onNodeDragStop}
-              onMoveStart={() => setPaneClass("is-moving", true)}
-              onMove={(_e, vp) => setPaneClass("is-far", vp.zoom < FAR_ZOOM)}
+              onMoveStart={beginGesture}
+              onMove={(_e, vp) => applyZoom(vp.zoom)}
               onMoveEnd={(_e, vp) => {
-                setPaneClass("is-moving", false);
-                setPaneClass("is-far", vp.zoom < FAR_ZOOM);
+                applyZoom(vp.zoom);
+                endGesture();
               }}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
-              minZoom={0.15}
+              /* Far enough out that a whole warehouse fits as a map of boxes. */
+              minZoom={0.04}
               proOptions={{ hideAttribution: true }}
               className="visualizer-pane"
             >
-              <Controls className="!bottom-3 !left-3" showInteractive={false} />
-              <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
+              {/* The built-in Fit View is another programmatic move: it raises
+                  no onMove either, so the detail tier is re-read after it. */}
+              <Controls className="!bottom-3 !left-3" showInteractive={false} onFitView={() => syncZoomAfter(450)} />
+              <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={(n) => (n.type === "table" ? edgeStyle.to : "transparent")} />
             </ReactFlow>
           </EdgeStyleContext.Provider>
           </DiagramStateContext.Provider>
@@ -849,18 +943,24 @@ export function Visualizer({
         {stylePanelOpen ? (
           <>
             <div className="fixed inset-0 z-20" onClick={() => setStylePanelOpen(false)} />
-            <div className="absolute top-3 right-3 z-30 w-64 rounded-lg border border-border bg-popover p-3 shadow-2xl">
+            <div className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-1.5rem)] w-72 flex-col rounded-lg border border-border bg-popover p-3 shadow-2xl">
               <div className="mb-2 flex items-center justify-between">
                 <span className="eyebrow-muted">Link style</span>
                 <button onClick={() => setStylePanelOpen(false)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="grid gap-2.5">
+              <div className="grid min-h-0 gap-2.5 overflow-y-auto [scrollbar-width:thin]">
                 <ToggleRow label="Show links" checked={edgeStyle.show} onChange={(v) => setEdgeStyle((s) => ({ ...s, show: v }))} />
                 <ToggleRow label="Animated pulse" checked={edgeStyle.pulse} onChange={(v) => setEdgeStyle((s) => ({ ...s, pulse: v }))} />
-                <label className="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground">
-                  <span className="w-24 shrink-0">Min confidence</span>
+                <div>
+                  <p className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Min confidence</span>
+                    <span className="font-mono text-foreground">
+                      {minScore.toFixed(1)}
+                      {hiddenInferred ? <span className="text-muted-foreground"> · {hiddenInferred} hidden</span> : null}
+                    </span>
+                  </p>
                   <input
                     type="range"
                     min={0.3}
@@ -869,10 +969,9 @@ export function Visualizer({
                     value={minScore}
                     onChange={(e) => setMinScore(Number(e.target.value))}
                     aria-label="Minimum confidence for inferred links"
-                    className="h-1 flex-1 accent-primary"
+                    className="w-full accent-primary"
                   />
-                  <span className="w-14 shrink-0 text-right font-mono text-foreground">{minScore.toFixed(1)}{hiddenInferred ? ` · ${hiddenInferred} hidden` : ""}</span>
-                </label>
+                </div>
                 <div>
                   <p className="mb-1 text-[11px] text-muted-foreground">Line</p>
                   <div className="flex items-center gap-1 rounded-md border border-border p-0.5">

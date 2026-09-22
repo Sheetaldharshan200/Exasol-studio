@@ -3097,7 +3097,7 @@ export function ExasolStudio({
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
                 >
-                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4 text-primary" />}
+                  <RunScriptIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton
                   label="Execute current (⌘.)"

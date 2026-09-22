@@ -1,12 +1,12 @@
 // Export a dashboard to a portable file. Gathers each data widget's current
 // result (running its param-bound query once), builds the pure snapshot, and
-// delivers it: HTML/Markdown via a save dialog, PDF via the print path (reusing
-// the notebook exporter's print helper). The rendering is the tested pure
-// buildSnapshot; this module is just the IO around it.
+// delivers it: HTML/Markdown via a save dialog, PDF via the system print
+// dialog. The rendering is the tested pure buildSnapshot; this module is just
+// the IO around it, and exportNotice turns its outcome into the user's toast.
 
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ipc } from "@/lib/ipc";
-import { printNotebookHtml } from "@/features/workbench/notebook-export";
+import { printHtml } from "@/lib/print-html";
 import { buildChartOption, type EchartsViz } from "@/features/bi/chart-option";
 import { bindParams } from "./params";
 import { applyCrossFilters, getCrossFilters } from "./cross-filter";
@@ -19,7 +19,7 @@ import type { DashboardDoc } from "./model";
 import type { DashConn } from "./useWidgetData";
 
 export type ExportFormat = "html" | "md" | "pdf";
-export type ExportResult = { ok: boolean; path?: string; error?: string };
+export type ExportResult = { ok: boolean; path?: string; error?: string; dialog?: boolean };
 
 const EXPORT_ROWS = 500;
 // The shadcn --chart-1..5 palette, so exported charts match the in-app colors.
@@ -105,20 +105,18 @@ const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-
 
 /** Export the dashboard in the chosen format; returns where it landed. */
 export async function exportDashboard(doc: DashboardDoc, conn: DashConn, format: ExportFormat): Promise<ExportResult> {
-  const { cache, opts } = await collectForSnapshot(doc, conn);
-  const { html, md } = buildSnapshot(doc, cache, undefined, opts);
-
-  if (format === "pdf") {
-    printNotebookHtml(html);
-    return { ok: true };
-  }
-
-  const ext = format;
-  const content = format === "md" ? md : html;
+  // Everything is inside the guard: gathering the data and rendering the
+  // snapshot can fail too, and a silent failure leaves the user with a
+  // spinner that stops and no file.
   try {
+    const { cache, opts } = await collectForSnapshot(doc, conn);
+    const { html, md } = buildSnapshot(doc, cache, undefined, opts);
+    if (format === "pdf") return { ok: true, dialog: await printHtml(html, doc.title) };
+
+    const ext = format;
     const path = await saveDialog({ defaultPath: `${slugify(doc.title)}.${ext}`, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
     if (!path) return { ok: false };
-    await ipc.writeTextFile(path, content);
+    await ipc.writeTextFile(path, format === "md" ? md : html);
     return { ok: true, path };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
