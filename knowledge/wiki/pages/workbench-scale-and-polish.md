@@ -154,3 +154,12 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   reveals the whole schema); (5) draws only links between drawn tables, then
   applies `budgetLinks`; (6) loads schema graphs one at a time. Sources:
   reactflow.dev/learn/advanced-use/performance, xyflow issue #4792.
+- **Pan/zoom smoothness (2026-09-22).** With the crash gone the remaining jank
+  was paint: React Flow's `<Background>` re-renders its SVG pattern on every
+  viewport change, translucent box fills + inset shadows blend at every zoom
+  step, and toggling edge decoration through React state re-rendered every edge
+  at gesture start/end. Now: a static CSS dot grid on the pane, `will-change:
+  transform` on viewport and nodes, boxes are a dashed line plus a header, the
+  minimap unmounts during a gesture, and `.is-moving .vs-deco { display: none }`
+  hides pulses/labels through the cascade. Rule: nothing in the diagram may
+  subscribe to the viewport transform except React Flow itself.
