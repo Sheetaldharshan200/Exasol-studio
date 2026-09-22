@@ -69,8 +69,9 @@ const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
 const ADD_SOURCE_ID = "__add_source__";
-/** Below this zoom a column label is ~2px tall: rows stay, their text is not painted. */
-const FAR_ZOOM = 0.22;
+/** Only when a whole row is ~3px tall (the schema is a thumbnail) are column
+ *  labels skipped — at every zoom the diagram is read at, the names are there. */
+const FAR_ZOOM = 0.12;
 
 /** Subsequence fuzzy score (higher = better); null if not all chars match. */
 
