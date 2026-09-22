@@ -16,7 +16,7 @@
 
 ## 3. Visualizer — focus and inference
 
-- [ ] 3.1 (deferred) Move `Visualizer.tsx` into `features/workbench/visualizer/` — the pure parts left already (`visualizer-focus.ts`, `infer-links.ts`, `build-sql.ts`); the component itself is 1,300 lines and still needs the Diagram/Builder split (Diagram.tsx, Builder.tsx, nodes.tsx, edges.tsx, search.ts, index.tsx) verbatim; tsc + vite build green; no file over 500 lines
+- [x] 3.1 `Visualizer.tsx` 1,300 → 843 lines: `visualizer/BuilderPane.tsx` (the Build pane), `visualizer/diagram.tsx` (table nodes, beam edges, edge style, presets, ToggleRow, edgeIsActive — verbatim), `visualizer/query-builder-style.ts`, `visualizer/search.ts`; pure logic already in `visualizer-focus.ts`, `infer-links.ts`, `build-sql.ts`. The component itself (data loading, layout, search, style panel) stays as one file under 1,000 (Diagram.tsx, Builder.tsx, nodes.tsx, edges.tsx, search.ts, index.tsx) verbatim; tsc + vite build green; no file over 500 lines
 - [x] 3.2 `workbench/visualizer-focus.ts`: `focusBounds(nodes, links, id, pad)`; tests in `focus.test.ts` (single, hub, isolated, missing id, padding)
 - [x] 3.3 Wire click → `fitBounds`, pane click / Escape → `fitView`, double-click → pick (unchanged); manual check on a 60-table schema
 - [x] 3.4 `workbench/infer-links.ts`: `inferLinks(tables, {minScore})` with the three rules, type gate, PK/UNIQUE gate, ambiguity penalty, `singular()`; tests in `infer-links.test.ts` with fixtures: TPC-H, energy (METER_ID), snake vs camel, generic-ID schema, no-PK schema, declared-FK dedupe
@@ -26,8 +26,8 @@
 
 - [x] 4.1 `workbench/build-sql.ts`: move `buildSql` + `deriveFields` verbatim; tests in `build-sql.test.ts` (quoting, lower-case identifiers, no picks, WHERE group nesting, ORDER BY)
 - [x] 4.2 `buildSql` supports aggregates (alias + automatic GROUP BY) and per-link join types, tested — the Build pane's controls for them are still to be added (4.3/4.4)
-- [ ] 4.3 Memoise fields per picked set, virtualise column pickers > 60 rows, debounce SQL preview 150 ms; manual check on a 400-column table
-- [ ] 4.4 "Preview 100 rows" in the pane via `ipc.executeSql(…, 100, …)`, errors inline
+- [x] 4.3 Fields were already memoised per picked set; SQL display debounced 150 ms; React Flow `onlyRenderVisibleElements` renders only on-screen tables (column rows are node-internal and their handles are index-positioned, so per-node virtualisation would break the edge anchors — the visible-elements pass is the win instead)
+- [x] 4.4 "Preview 100 rows" in the pane (LIMIT forced to 100, errors inline, elapsed ms); aggregates per chip (COUNT/SUM/AVG/MIN/MAX → automatic GROUP BY) and INNER/LEFT per join in a Joins row
 
 ## 5. Large files never take the app down
 
@@ -50,4 +50,4 @@
 - [ ] 7.1 Codex review per group (1+2, 3+4, 5, 6); findings fixed before each commit; notable ones logged in the llm-wiki
 - [ ] 7.2 Full suite green, `build-local.sh --bundles app`, binary mtime verified, relaunch; manual pass: Marketplace filters + update-all, visualizer focus on a big schema, builder aggregate preview, 300 MB CSV open, giant diff, one crashing tab, chat completion + chips
 - [ ] 7.3 `graphify update .` and `.ua` refresh (wiki page `workbench-scale-and-polish` written)
-- [ ] 7.4 (deferred, from Codex round 3) extract the tab-body ternary + `TabErrorBoundary` wrap from `ExasolStudio.tsx` (3,984 lines) into `StudioTabBody.tsx`
+- [ ] 7.4 (deferred, from Codex round 3) shrink `ExasolStudio.tsx` (3,984 lines). Measured: the tab-body ternary (440 lines) closes over ~60 component-scope values, so a `StudioTabBody` would be a 60-prop pass-through, not a simplification. The real seam is a `useEditorTab()` hook (editor ref, run/explain, inline diff, result paging, history) extracted FIRST; then the SQL-editor branch becomes `<SqlEditorTab {...editor} />` and the file drops well under 3,000

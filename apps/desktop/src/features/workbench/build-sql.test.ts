@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSql, linkKey } from "./build-sql.ts";
+import { buildSql, linkKey, previewSql } from "./build-sql.ts";
 
 const link = { source: "ORDERS", sourceColumn: "CUSTOMER_ID", target: "CUSTOMERS", targetColumn: "ID" };
 const base = { schema: "RETAIL", links: [link], whereSql: "", orderKey: null, orderDir: "ASC" as const, limit: null };
@@ -43,4 +43,11 @@ test("all picks aggregated → no GROUP BY at all", () => {
   const sql = buildSql({ ...base, picked: ["ORDERS.AMOUNT"], aggregates: { "ORDERS.AMOUNT": "AVG" } });
   assert.doesNotMatch(sql, /GROUP BY/);
   assert.match(sql, /AVG\("ORDERS"."AMOUNT"\) AS "AVG_AMOUNT"/);
+});
+
+test("previewSql forces LIMIT 100 whether or not the statement already had a limit or a semicolon", () => {
+  assert.equal(previewSql('SELECT 1\nFROM "S"."T"\nLIMIT 1000;'), 'SELECT 1\nFROM "S"."T"\nLIMIT 100;');
+  assert.equal(previewSql('SELECT 1\nFROM "S"."T"'), 'SELECT 1\nFROM "S"."T"\nLIMIT 100;');
+  assert.equal(previewSql('SELECT 1\nFROM "S"."T" limit 5 ;'), 'SELECT 1\nFROM "S"."T"\nLIMIT 100;');
+  assert.equal(previewSql("SELECT 'LIMIT 9' AS X FROM DUAL;"), "SELECT 'LIMIT 9' AS X FROM DUAL\nLIMIT 100;", "a LIMIT inside a literal is not the trailing clause");
 });

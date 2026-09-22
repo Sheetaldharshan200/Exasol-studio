@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T18:45:43.632Z",
+  "generatedAt": "2026-09-22T05:52:39.971Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -47,6 +47,18 @@
       "label": "add source next",
       "where": "apps/desktop/src/features/connection/virtual-schemas/AddSourceFlow.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/connection/virtual-schemas/AddSourceFlow.tsx"
+    },
+    {
+      "id": "anchor.builder.preview",
+      "label": "builder preview",
+      "where": "apps/desktop/src/features/workbench/visualizer/BuilderPane.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/visualizer/BuilderPane.tsx"
+    },
+    {
+      "id": "anchor.chat.next-actions",
+      "label": "chat next actions",
+      "where": "apps/desktop/src/features/assistant/exa/ExaNextActions.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/assistant/exa/ExaNextActions.tsx"
     },
     {
       "id": "anchor.connection-switcher.add-source",

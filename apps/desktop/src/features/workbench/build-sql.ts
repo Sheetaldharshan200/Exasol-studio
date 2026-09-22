@@ -82,3 +82,8 @@ export function buildSql(input: BuildSqlInput): string {
   if (limit && limit > 0) sql += `\nLIMIT ${limit}`;
   return sql + ";";
 }
+
+/** The builder's statement with its LIMIT replaced by 100 — one statement, one `;`. */
+export function previewSql(sql: string): string {
+  return sql.trim().replace(/;\s*$/, "").replace(/\s*\bLIMIT\s+\d+\s*$/i, "") + "\nLIMIT 100;";
+}
