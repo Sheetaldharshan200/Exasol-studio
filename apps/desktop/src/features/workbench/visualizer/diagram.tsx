@@ -3,8 +3,8 @@
  * styling, and the edge-selection rule. Moved verbatim out of Visualizer.tsx;
  * no behaviour lives here that the component did not already have.
  */
-import { createContext, memo, useContext, useEffect } from "react";
-import { EdgeLabelRenderer, Handle, Position, getBezierPath, useStore, useUpdateNodeInternals, type EdgeProps, type NodeProps } from "@xyflow/react";
+import { createContext, memo, useContext } from "react";
+import { EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from "@xyflow/react";
 import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
@@ -42,9 +42,6 @@ export type DiagramState = {
 };
 export const EMPTY_DIAGRAM_STATE: DiagramState = { mode: "diagram", picked: new Set(), matchedTables: new Set(), matchedCols: new Set() };
 export const DiagramStateContext = createContext<DiagramState>(EMPTY_DIAGRAM_STATE);
-
-/** Below this zoom a table is its header only — the columns are unreadable anyway. */
-export const LOD_ZOOM = 0.35;
 
 export type BeamEdgeData = {
   source: string;
@@ -121,21 +118,15 @@ export const rowY = (i: number) => HEADER_H + i * ROW_H + ROW_H / 2;
 export const nodeHeight = (t: GraphTable) => HEADER_H + t.columns.length * ROW_H;
 export const colKey = (table: string, col: string) => `${table}.${col}`;
 
-export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
+/** The whole card, always — every column, at every zoom. The canvas stays
+ *  bounded by the per-box pagination and the link budget, not by hiding rows. */
+export const TableNode = memo(function TableNode({ data }: NodeProps) {
   const d = data as unknown as TableNodeData;
   const { table, sourceCols, targetCols, onSelect, onPick } = d;
   const state = useContext(DiagramStateContext);
   const isSel = state.selTable === table.id;
   const build = state.mode === "build";
   const tableMatched = state.matchedTables.has(table.id);
-  // Level of detail: zoomed out, a table is its header. The selector returns
-  // a boolean, so the node re-renders only when it crosses the threshold.
-  const compact = useStore((s) => s.transform[2] < LOD_ZOOM) && !isSel;
-  const updateInternals = useUpdateNodeInternals();
-  useEffect(() => {
-    updateInternals(id);
-  }, [compact, id, updateInternals]);
-  const handleTop = (i: number) => (compact ? HEADER_H / 2 : rowY(i));
   return (
     <div
       style={{ width: NODE_W }}
@@ -146,12 +137,12 @@ export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
     >
       {table.columns.map((col, i) =>
         targetCols.has(col.name) ? (
-          <Handle key={`t-${col.name}`} type="target" id={`${col.name}__t`} position={Position.Left} style={{ top: handleTop(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
+          <Handle key={`t-${col.name}`} type="target" id={`${col.name}__t`} position={Position.Left} style={{ top: rowY(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
         ) : null,
       )}
       {table.columns.map((col, i) =>
         sourceCols.has(col.name) ? (
-          <Handle key={`s-${col.name}`} type="source" id={`${col.name}__s`} position={Position.Right} style={{ top: handleTop(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
+          <Handle key={`s-${col.name}`} type="source" id={`${col.name}__s`} position={Position.Right} style={{ top: rowY(i) }} className="!h-2 !w-2 !border-0 !bg-[#a78bfa]" />
         ) : null,
       )}
 
@@ -159,8 +150,7 @@ export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
         onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
-          "flex w-full items-center gap-1.5 px-3 text-left",
-          !compact && "border-b border-border",
+          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
           isSel ? "bg-[#a78bfa]/15" : "bg-secondary/70 hover:bg-secondary",
         )}
       >
@@ -169,8 +159,7 @@ export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
         <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">{table.columns.length}</span>
       </button>
 
-      {compact ? null : (
-        <div>
+      <div>
           {table.columns.map((col) => {
             const key = colKey(table.id, col.name);
             const isPicked = state.picked.has(key);
@@ -210,8 +199,7 @@ export const TableNode = memo(function TableNode({ id, data }: NodeProps) {
               </div>
             );
           })}
-        </div>
-      )}
+      </div>
 
       {isSel && !build ? <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} /> : null}
     </div>

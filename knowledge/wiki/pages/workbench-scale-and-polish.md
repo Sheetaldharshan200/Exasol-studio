@@ -148,8 +148,8 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   `pointer-events: none` except their header) and tables sit at absolute
   positions from `layoutSchemas`; (2) puts selection, picks, mode and search
   matches in `DiagramStateContext` so a click re-renders memoised `TableNode`s
-  without touching the nodes array; (3) draws a table as its header only below
-  zoom 0.5 (`useStore` boolean selector + `useUpdateNodeInternals`); (4)
+  without touching the nodes array; (3) — level of detail was tried (header-only below a zoom) and REMOVED: at the fit-to-all
+  zoom it hid every column, which is what the user came to see; (4)
   paginates each box (`TABLE_PAGE = 20`, "Show N more" / "All", jump/locate
   reveals the whole schema); (5) draws only links between drawn tables, then
   applies `budgetLinks`; (6) loads schema graphs one at a time. Sources:
