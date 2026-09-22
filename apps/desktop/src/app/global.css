@@ -859,3 +859,16 @@
 .visualizer-pane.is-moving .vs-deco {
   display: none;
 }
+/* Far out, a column label is a couple of pixels tall: keep the rows (the card
+   keeps its shape and size), skip painting their glyphs. Zooming stays a
+   transform instead of re-rasterizing ~1,400 labels per wheel step. */
+.visualizer-pane.is-far .vs-row > * {
+  visibility: hidden;
+}
+.visualizer-pane.is-moving .react-flow__minimap {
+  visibility: hidden;
+}
+/* Schema boxes: a solid, cheap fill mixed from the theme (no alpha blending). */
+.visualizer-pane .vs-box {
+  background-color: color-mix(in srgb, var(--panel) 45%, var(--editor));
+}

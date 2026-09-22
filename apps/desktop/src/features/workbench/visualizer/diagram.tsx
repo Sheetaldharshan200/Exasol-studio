@@ -170,7 +170,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
                 onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
                 style={{ height: ROW_H }}
                 className={cn(
-                  "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
+                  "vs-row flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
                   colSel && "bg-[#a78bfa]/20",
                   isPicked && "bg-primary/10",
                   colMatched && !colSel && "bg-amber-400/15",
@@ -305,12 +305,14 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   return (
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
-    <div className="pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-primary/50">
-      <div className="pointer-events-auto flex h-[44px] items-center gap-2 rounded-t-2xl border-b border-dashed border-primary/30 bg-panel px-4">
+    <div className="vs-box pointer-events-none h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
+      <div className="pointer-events-auto flex h-[44px] items-center gap-2 px-3">
+        <span className="flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1">
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
-        <span className="truncate font-heading text-[16px] font-semibold tracking-tight text-foreground">{d.schema}</span>
-        {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
-        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+          <span className="truncate font-heading text-[15px] font-semibold tracking-tight text-foreground">{d.schema}</span>
+          {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
+        </span>
+        <span className="ml-auto shrink-0 rounded-md bg-panel px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
           {more > 0 ? `${d.shown} of ${d.total} tables` : `${d.total} table${d.total === 1 ? "" : "s"}`}
         </span>
         {more > 0 ? (

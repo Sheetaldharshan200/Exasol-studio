@@ -69,6 +69,8 @@ const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
 const ADD_SOURCE_ID = "__add_source__";
+/** Below this zoom a column label is ~2px tall: rows stay, their text is not painted. */
+const FAR_ZOOM = 0.22;
 
 /** Subsequence fuzzy score (higher = better); null if not all chars match. */
 
@@ -108,9 +110,13 @@ export function Visualizer({
   // Links held back by the render budget (see budgetLinks) — shown in the header.
   const [budgetHidden, setBudgetHidden] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
-  // While the user pans or zooms: a class on the pane hides link decoration
-  // (CSS, no re-render) and the minimap pauses.
-  const [interacting, setInteracting] = useState(false);
+  // Gestures never touch React state: classes on the pane (toggled through a
+  // ref) hide link decoration and the minimap while moving, and drop column
+  // text below FAR_ZOOM where a label is a couple of pixels tall anyway.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const setPaneClass = useCallback((cls: string, on: boolean) => {
+    paneRef.current?.querySelector(".visualizer-pane")?.classList.toggle(cls, on);
+  }, []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
   // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
@@ -670,7 +676,7 @@ export function Visualizer({
         </span>
       </header>
 
-      <div className="relative min-h-0 flex-1">
+      <div ref={paneRef} className="relative min-h-0 flex-1">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-editor/60 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Building graph…
@@ -700,19 +706,21 @@ export function Visualizer({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => setSel(null)}
-              onMoveStart={() => setInteracting(true)}
-              onMoveEnd={() => setInteracting(false)}
+              onMoveStart={() => setPaneClass("is-moving", true)}
+              onMove={(_e, vp) => setPaneClass("is-far", vp.zoom < FAR_ZOOM)}
+              onMoveEnd={(_e, vp) => {
+                setPaneClass("is-moving", false);
+                setPaneClass("is-far", vp.zoom < FAR_ZOOM);
+              }}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
               minZoom={0.15}
               proOptions={{ hideAttribution: true }}
-              className={cn("visualizer-pane", interacting && "is-moving")}
+              className="visualizer-pane"
             >
               <Controls className="!bottom-3 !left-3" showInteractive={false} />
-              {interacting ? null : (
-                <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
-              )}
+              <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={edgeStyle.to} />
             </ReactFlow>
           </EdgeStyleContext.Provider>
           </DiagramStateContext.Provider>
