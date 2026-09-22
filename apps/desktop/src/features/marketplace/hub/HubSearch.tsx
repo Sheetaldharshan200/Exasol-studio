@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import type { ResolvedCatalogItem } from "../catalog-data";
 import type { ItemState } from "../item-state";
 import { activeChips, filterCount, resultRange, SORTS, type HubFilters, type Sort } from "./filters";
-import { HubCard } from "./HubCard";
+import { HubCard, type CardAction } from "./HubCard";
 
 /**
  * The results page: one wide search box, a filter button with the count of
@@ -39,7 +39,7 @@ export function HubSearch({
   onSort: (s: Sort) => void;
   stateOf: (item: ResolvedCatalogItem) => ItemState;
   onOpen: (id: string) => void;
-  selection: { selectable: (item: ResolvedCatalogItem) => boolean; selected: Set<string>; toggle: (id: string) => void };
+  selection: { selectable: (item: ResolvedCatalogItem) => boolean; selected: Set<string>; toggle: (id: string) => void; primary?: (item: ResolvedCatalogItem) => CardAction | null };
   emptyText: string;
 }) {
   const chips = activeChips(filters);
@@ -124,6 +124,7 @@ export function HubSearch({
               selected={selection.selected.has(item.id)}
               onToggleSelect={() => selection.toggle(item.id)}
               onOpen={() => onOpen(item.id)}
+              primary={selection.primary?.(item) ?? null}
             />
           ))}
         </div>
