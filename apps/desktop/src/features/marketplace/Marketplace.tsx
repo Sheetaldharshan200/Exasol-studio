@@ -1216,10 +1216,35 @@ export function Marketplace() {
   }
 
   const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
+  // Every page starts at the top — a shelf scrolled halfway must not open an
+  // item page at its middle.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [page, detailId]);
+  // The one button a card carries, by state; everything else lives on the item page.
+  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline" } | null => {
+    const st = stateOf(item);
+    const did = DRIVER_RUNTIME[item.id];
+    switch (st.kind) {
+      case "install":
+        return { label: st.available ? `Install ${st.available}` : "Install", tone: "primary", onClick: () => (did ? void installDriverAndUse(item, did) : startInstall(item)) };
+      case "update":
+        return { label: `Update to ${st.available}`, tone: "primary", onClick: () => (CATALOG_TO_COMPONENT[item.id] ? void switchManaged(item, st.available) : startInstall(item)) };
+      case "reference":
+      case "unavailable":
+        return { label: "Get", tone: "outline", onClick: () => openExternal(item.homepage) };
+      case "running":
+        return item.install === "personal-local" ? { label: "Manage", tone: "outline", onClick: () => setManageLocal(true) } : null;
+      default:
+        return null;
+    }
+  };
   const selection = {
     selectable: (item: CatalogItem) => canBatchInstall(item) || batchUpdateTarget(item) !== null,
     selected,
     toggle: toggleSelected,
+    primary: primaryFor,
   };
   const crumb =
     page === "detail" && detailItem ? (detailItem.repo ?? detailItem.name)
@@ -1272,7 +1297,7 @@ export function Marketplace() {
     : "Nothing here yet.";
 
   return (
-    <div className="h-full overflow-auto bg-editor">
+    <div ref={scrollRef} className="h-full overflow-auto bg-editor">
       <div className="mx-auto w-full max-w-[1400px] px-8 py-5">
         <HubHeader
           page={page}

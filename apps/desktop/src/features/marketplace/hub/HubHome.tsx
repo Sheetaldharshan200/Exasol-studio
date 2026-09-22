@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import type { ResolvedCatalogItem } from "../catalog-data";
 import type { ItemState } from "../item-state";
 import { SECTIONS, sectionOf, type SectionKey } from "./filters";
-import { HubCard } from "./HubCard";
+import { HubCard, type CardAction } from "./HubCard";
 
 export type Featured = { eyebrow: string; title: string; body: string; art: "database" | "federation" | "mcp"; onClick: () => void };
 
@@ -62,7 +62,7 @@ export function HubHome({
   onOpenSection: (key: SectionKey) => void;
   onOpen: (id: string) => void;
   featured: Featured[];
-  selection: { selectable: (item: ResolvedCatalogItem) => boolean; selected: Set<string>; toggle: (id: string) => void };
+  selection: { selectable: (item: ResolvedCatalogItem) => boolean; selected: Set<string>; toggle: (id: string) => void; primary?: (item: ResolvedCatalogItem) => CardAction | null };
   /** Shown above the shelves when updates are waiting. */
   updatesBanner?: ReactNode;
 }) {
@@ -75,6 +75,7 @@ export function HubHome({
       selected={selection.selected.has(item.id)}
       onToggleSelect={() => selection.toggle(item.id)}
       onOpen={() => onOpen(item.id)}
+      primary={selection.primary?.(item) ?? null}
     />
   );
   const recent = [...items].filter((i) => i.pushedAt).sort((a, b) => (b.pushedAt ?? "").localeCompare(a.pushedAt ?? "")).slice(0, 4);

@@ -28,6 +28,8 @@ export function TrustMark({ labs, withLabel = false, className }: { labs?: boole
  * a two-line description, then a footer with the install fact and the stars.
  * The whole card opens the item; a checkbox in the corner joins it to a batch.
  */
+export type CardAction = { label: string; onClick: () => void; tone: "primary" | "outline" };
+
 export function HubCard({
   item,
   state,
@@ -35,6 +37,7 @@ export function HubCard({
   selected,
   onToggleSelect,
   onOpen,
+  primary,
 }: {
   item: ResolvedCatalogItem;
   state: ItemState;
@@ -42,6 +45,8 @@ export function HubCard({
   selected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
+  /** The one action the card carries (Install / Update / Get / Manage); null → none. */
+  primary?: CardAction | null;
 }) {
   const stars = compactCount(item.stars);
   const slug = item.repo ?? `exasol/${item.id}`;
@@ -90,20 +95,32 @@ export function HubCard({
         <p className="mt-3.5 line-clamp-2 text-[13px] leading-relaxed text-foreground/85">{item.description || "No description yet."}</p>
       </div>
       <div className="flex items-center gap-5 border-t border-border px-5 py-3 text-[12.5px] text-muted-foreground">
-        <span className={cn("inline-flex items-center gap-1.5", state.kind === "update" && "text-primary")}>
-          {state.kind === "installing" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : state.kind === "installed" || state.kind === "running" || state.kind === "ready" || state.kind === "onSystem" ? (
-            <Check className="h-4 w-4 text-primary" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          {stateLabel(state)}
-        </span>
+        {state.kind !== "install" && state.kind !== "reference" && state.kind !== "unavailable" ? (
+          <span className={cn("inline-flex items-center gap-1.5", state.kind === "update" && "text-primary")}>
+            {state.kind === "installing" ? <Loader2 className="h-4 w-4 animate-spin" /> : state.kind === "update" ? <Download className="h-4 w-4" /> : <Check className="h-4 w-4 text-primary" />}
+            {stateLabel(state)}
+          </span>
+        ) : null}
         {stars ? (
           <span className="inline-flex items-center gap-1.5">
             <Star className="h-4 w-4" /> {stars}
           </span>
+        ) : null}
+        {primary && state.kind !== "installing" ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              primary.onClick();
+            }}
+            data-agent-id={`market.card.${item.id}.primary`}
+            className={cn(
+              "ml-auto flex h-8 items-center gap-1.5 rounded-md px-3.5 text-[12.5px] font-semibold transition-colors",
+              primary.tone === "primary" ? "cta-glow bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-foreground hover:bg-secondary",
+            )}
+          >
+            {primary.tone === "primary" ? <Download className="h-3.5 w-3.5" /> : null}
+            {primary.label}
+          </button>
         ) : null}
       </div>
     </div>

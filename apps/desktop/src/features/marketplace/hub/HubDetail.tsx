@@ -93,7 +93,11 @@ export function HubDetail({
             <span className="rounded-full bg-syntax-function/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-syntax-function">{item.kind}</span>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-3">{actions}</div>
+        {/* The container's controls are sized for a card row; on the item page they
+            are THE call to action, so they scale up to Docker Hub's Tag | Pull | Run. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 pt-3 [&_button]:h-11 [&_button]:rounded-lg [&_button]:px-5 [&_button]:text-[14px] [&_button]:font-medium [&_button>svg]:h-4 [&_button>svg]:w-4 [&_span.flex]:h-11 [&_span.flex]:rounded-lg [&_span.flex]:px-4 [&_span.flex]:text-[14px] [&_button.max-w-\[150px\]]:max-w-[220px] [&_button.max-w-\[150px\]]:min-w-[140px] [&_button.font-mono]:text-[13px]">
+          {actions}
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => { setTab(v); if (v === "versions") onLoadVersions(); }}>
