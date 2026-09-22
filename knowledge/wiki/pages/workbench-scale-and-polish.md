@@ -54,7 +54,18 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   links are counted. Edge labels show `≈ 0.9`.
 - `workbench/build-sql.ts` — the builder's SQL, extracted verbatim and then
   extended with aggregates (alias `SUM_AMOUNT`, automatic GROUP BY) and
-  per-link join types. The pane's controls for those are still to come.
+  per-link join types; `previewSql` forces `LIMIT 100`.
+- `workbench/visualizer/BuilderPane.tsx` — the Build pane: an aggregate menu
+  on every picked chip, a Joins row (INNER ↔ LEFT per link), the WHERE
+  builder, the SQL (display lags 150 ms; Copy/Run/Preview use the CURRENT
+  SQL), and "Preview 100 rows" run in place. A preview remembers the SQL it
+  was launched for and drops a late answer for an older query. An ORDER BY on
+  a column that is no longer picked is cleared with the pick.
+- `Visualizer.tsx` 1,300 → 843 lines after moving nodes/edges/styling to
+  `visualizer/diagram.tsx`, the querybuilder classnames to
+  `query-builder-style.ts` and the fuzzy scorer to `search.ts`; React Flow
+  `onlyRenderVisibleElements` is the wide-schema win (per-node column
+  virtualisation would break the index-positioned edge handles).
 
 ## Large files never take the app down
 
