@@ -637,6 +637,12 @@ export function Marketplace() {
   const [readmes, setReadmes] = useState<Record<string, string | null>>({});
   // When every surface was last re-synced together.
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  // Every page starts at the top — a shelf scrolled halfway must not open an
+  // item page at its middle.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [page, detailId]);
   // An item page shows the repo's README — fetched once per repo (Rust caches
   // it on disk), never for repo-less items.
   useEffect(() => {
@@ -1216,12 +1222,6 @@ export function Marketplace() {
   }
 
   const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
-  // Every page starts at the top — a shelf scrolled halfway must not open an
-  // item page at its middle.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
-  }, [page, detailId]);
   // The one button a card carries, by state; everything else lives on the item page.
   const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline" } | null => {
     const st = stateOf(item);
