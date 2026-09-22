@@ -5,7 +5,7 @@
  */
 import { createContext, memo, useContext } from "react";
 import { EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from "@xyflow/react";
-import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
+import { FolderOpen, KeyRound, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -389,23 +389,7 @@ export const SchemaFarNode = memo(function SchemaFarNode({ data }: NodeProps) {
 /** Tables drawn per schema box before the user asks for more. */
 export const TABLE_PAGE = 20;
 
-/** The last box on the canvas: attach another database or bucket right here. */
-export function AddSourceNode({ data }: NodeProps) {
-  const d = data as unknown as { onClick: () => void };
-  return (
-    <button
-      onClick={d.onClick}
-      data-agent-id="visualizer.add-source-box"
-      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-teal/50 bg-teal/5 text-teal transition-colors hover:border-teal hover:bg-teal/10"
-    >
-      <Plus className="h-7 w-7" />
-      <span className="text-[13px] font-semibold">Add data source</span>
-      <span className="px-6 text-center text-[11px] text-muted-foreground">PostgreSQL, MySQL, S3, another Exasol… as a live schema here</span>
-    </button>
-  );
-}
-
-export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, schemaFar: SchemaFarNode, addSource: memo(AddSourceNode) };
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, schemaFar: SchemaFarNode };
 
 /** Node types that move a whole schema when dragged. */
 export const SCHEMA_NODE_TYPES = ["schemaGroup", "schemaFar"];

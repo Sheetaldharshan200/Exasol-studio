@@ -171,3 +171,5 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] fix | Open data ran without a runMeta so the results area looked idle for the whole wait; all execution now serialized per connection through a tested serial queue with per-connection result generations; editable grid gains duplicate/scroll-to-new-row/⌘S and a tested DML builder (a cloned NULL used to become the column DEFAULT)
 
 ## [2026-09-22] fix | Results scrollbar now starts at row 1 (header is its own table above the scroller; widths paired, scrollbar gutter compensated); schema boxes stopped swallowing pans (React Flow sets pointer-events inline on draggable nodes); tap a schema name to frame it; cards survive to much lower zoom; links bolder by default
+
+## [2026-09-22] feat | Visualizer: schema name capped to its own box and anchored at its top, in-canvas add-source card removed, a column selection now draws only its links, and a tap on empty canvas returns to the exact viewport you framed from

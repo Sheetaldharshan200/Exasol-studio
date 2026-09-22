@@ -341,7 +341,23 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   - `linkSummary` is the one source of the header's "for X · +N hidden" text,
     and the hidden count is now everything eligible but not on screen, whatever
     held it back — pagination, the selection, or the render limit.
-- **Schemas sit further apart** (`groupGap` 120 → 170) so a box's name never
+- **The map-zoom name sits at the TOP of its box**, where the title strip is
+  at a readable zoom, instead of floating in the middle over the tables. That
+  added a top margin, so the height cap dropped to 0.29 of the box (the pill is
+  ~3.31 label-heights tall once its second line, padding and margin count).
+- **The in-canvas "Add data source" card is gone.** Adding a source is a
+  toolbar action, and the floating button over the canvas already does it; the
+  canvas now holds only real schemas.
+- **A tap outside returns to exactly where you were.** Framing a schema or a
+  table used to be a one-way trip — clicking away refitted the whole diagram.
+  `visualizer/viewport-memory.ts` remembers the viewport before a framing
+  animation and gives it back on the next tap on empty canvas or Escape.
+  The rules that are easy to get wrong are the ones it holds: the FIRST
+  remember wins (so hopping from one schema to another still returns to where
+  you actually started), taking forgets, a relayout or an emptied canvas
+  clears it, and a move the user made themselves replaces it — `isUserMove`
+  distinguishes a real gesture from our own framing animation by whether
+  React Flow reports a causing event. (`groupGap` 120 → 170) so a box's name never
   crowds its neighbour.
 
 - **Inference at scale.** `inferLinks` was parents × children × columns with a

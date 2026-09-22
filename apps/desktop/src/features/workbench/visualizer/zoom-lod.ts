@@ -28,10 +28,11 @@ export const zoomVar = (zoom: number): string => String(Math.max(zoom, 0.01));
 /** How wide a character is, relative to the font size, in the bold face the
  *  map label uses. Measured against the schema names this app shows. */
 const CHAR_RATIO = 0.62;
-/** The label never takes more than this share of its box's height. The label
- *  is ~2.9 lines tall once its second line and padding are counted, so this
- *  keeps the whole pill inside the box. */
-const HEIGHT_SHARE = 0.32;
+/** The label never takes more than this share of its box's height. The pill is
+ *  ~3.3 label-heights tall once its second line, its padding and the top
+ *  margin that anchors it to the box are counted, so this keeps all of it
+ *  inside the box. */
+const HEIGHT_SHARE = 0.29;
 
 /**
  * The largest font a schema's name may take, in GRAPH units, so that the name

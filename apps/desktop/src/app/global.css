@@ -932,7 +932,9 @@
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  /* At the top of the box, where the title strip sits at a readable zoom —
+     a name floating in the middle of the box lands on the tables. */
+  align-items: flex-start;
   justify-content: center;
   /* The box is scenery. Only the label below is interactive, so a drag that
      starts on empty space inside a schema pans the canvas. */
@@ -940,6 +942,7 @@
   padding: 0 calc(8px / var(--vs-zoom));
 }
 .visualizer-pane.is-far .vs-box-far-label {
+  margin-top: 0.4em;
   pointer-events: auto;
   cursor: grab;
   display: flex;

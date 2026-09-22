@@ -42,14 +42,13 @@ test("a long name on a narrow box is capped by the box's width", () => {
 });
 
 test("a short name on a wide box is capped by the box's height instead", () => {
-  assert.equal(nameFontLimit(2000, 100, "TPCH".length), 32);
+  assert.ok(Math.abs(nameFontLimit(2000, 100, "TPCH".length) - 29) < 0.01);
 });
 
-test("the whole label, both lines and its padding, fits the box height", () => {
-  // The pill is about 2.9 label-heights tall once the second line and the
-  // padding are counted.
+test("the whole label fits the box: both lines, its padding and its top margin", () => {
+  // 1.15 (name) + 0.35 (gap) + 0.71 (sub) + 0.7 (padding) + 0.4 (top margin).
   for (const h of [56, 120, 400, 900]) {
-    assert.ok(nameFontLimit(5000, h, 4) * 2.9 <= h, `label overflows a ${h}-tall box`);
+    assert.ok(nameFontLimit(5000, h, 4) * 3.31 <= h, `label overflows a ${h}-tall box`);
   }
 });
 

@@ -9,6 +9,7 @@ import {
   type Edge,
   type Node,
   type ReactFlowInstance,
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -39,8 +40,9 @@ import { formatClock, formatElapsed } from "@/lib/elapsed";
 import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
-import { GROUP_HEADER, budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
+import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import { isFarZoom, nameFontLimit, zoomVar } from "./visualizer/zoom-lod";
+import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -74,7 +76,6 @@ type SchemaEntry = { name: string; source?: string };
 const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
-const ADD_SOURCE_ID = "__add_source__";
 /** How long the viewport stays promoted after a gesture (see global.css). */
 const GESTURE_SETTLE_MS = 180;
 
@@ -149,6 +150,23 @@ export function Visualizer({
     settle.current = setTimeout(() => setPaneClass("is-moving", false), GESTURE_SETTLE_MS);
   }, [setPaneClass]);
   useEffect(() => () => { if (settle.current) clearTimeout(settle.current); }, []);
+  // Where the canvas was before it went somewhere, so a tap on empty space
+  // comes back to it instead of refitting the whole diagram.
+  const cameFrom = useRef(createViewportMemory<Viewport>());
+  const rememberViewport = useCallback(() => {
+    const inst = rfRef.current;
+    if (inst) cameFrom.current.remember(inst.getViewport());
+  }, []);
+  /** Put the view back where it was; false if there is nowhere to go back to. */
+  const returnToViewport = useCallback(() => {
+    const inst = rfRef.current;
+    const view = cameFrom.current.take();
+    if (!inst || !view) return false;
+    void inst.setViewport(view, { duration: 450 });
+    syncZoomAfterRef.current(450);
+    return true;
+  }, []);
+
   /** Frame one schema: click its name (or its big name when zoomed out). The
    *  box is read live, so a schema that has been dragged frames where it is. */
   const focusSchema = useCallback((schema: string) => {
@@ -158,9 +176,10 @@ export function Visualizer({
     const width = Number(box.style?.width ?? 0);
     const height = Number(box.style?.height ?? 0);
     if (!width || !height) return;
+    rememberViewport();
     void inst.fitBounds({ x: box.position.x, y: box.position.y, width, height }, { duration: 450, padding: 0.08 });
     syncZoomAfterRef.current(450);
-  }, []);
+  }, [rememberViewport]);
 
   /** Re-read the viewport after a programmatic move (fitView / fitBounds never
    *  raise onMove), once its animation has landed. */
@@ -295,6 +314,8 @@ export function Visualizer({
     const inst = rfRef.current;
     if (!inst || nodes.length === 0) return;
     if (!selTable) {
+      // Deselecting goes back to where the user was before they zoomed in.
+      if (returnToViewport()) return;
       // React Flow measures the fresh nodes a frame after they mount.
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
       const cancelSync = syncZoomAfter(60 + 450);
@@ -313,6 +334,7 @@ export function Visualizer({
       selTable,
     );
     if (!rect) return;
+    rememberViewport();
     void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
     return syncZoomAfter(450);
     // A change of TABLE or a fresh layout moves the view; nodes/edges are read
@@ -321,11 +343,13 @@ export function Visualizer({
   }, [selTable, layoutRev]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSel(null);
+      if (e.key !== "Escape") return;
+      if (sel) setSel(null);
+      else returnToViewport();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [sel, returnToViewport]);
   const onPick = useCallback((table: string, column: string) => {
     setPicked((prev) => {
       const next = new Set(prev);
@@ -422,6 +446,9 @@ export function Visualizer({
   // Rebuild layout when the graph or filter changes.
   useEffect(() => {
     if (!graph) {
+      // Nothing on the canvas: the remembered view describes a diagram that
+      // is no longer here.
+      cameFrom.current.clear();
       setNodes([]);
       setEdges([]);
       return;
@@ -529,25 +556,17 @@ export function Visualizer({
           onPick,
         } satisfies TableNodeData as unknown as Record<string, unknown>,
       }));
-    // The add-source box takes the next slot after the last schema box.
-    const last = layout.groups[layout.groups.length - 1];
-    const addNode: Node[] = onNewVs
-      ? [{
-          id: ADD_SOURCE_ID,
-          type: "addSource",
-          position: last ? { x: last.box.x + last.box.width + 120, y: last.box.y } : { x: 0, y: 0 },
-          style: { width: 260, height: GROUP_HEADER + 56 + 60 },
-          draggable: false,
-          selectable: false,
-          data: { onClick: onNewVs } as unknown as Record<string, unknown>,
-        }]
-      : [];
-    setNodes([...groupNodes, ...tableNodes, ...farNodes, ...addNode]);
+    // Adding a source is a toolbar action, not a schema: it lives in the
+    // button over the canvas, so the canvas only ever holds real schemas.
+    setNodes([...groupNodes, ...tableNodes, ...farNodes]);
     setLayoutRev((r) => r + 1);
     // Only links between drawn tables can be drawn; the rest wait for "Show
     // more". Publishing them (rather than rendering here) leaves ONE place
     // that decides what is on screen — see the render plan below.
     setDrawableLinks({ links: links.filter((l) => drawn.has(l.source) && drawn.has(l.target)), eligible: links.length });
+    // The diagram was rebuilt: the remembered view describes a canvas that no
+    // longer exists, so there is nothing to go back to.
+    cameFrom.current.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, showInferred, minScore, selectedList, schemas, shownPerSchema]);
 
@@ -865,11 +884,21 @@ export function Visualizer({
               }}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              onPaneClick={() => setSel(null)}
+              onPaneClick={() => {
+                // With a table selected, deselecting does the returning; a
+                // schema tap leaves no selection, so do it here.
+                if (sel) setSel(null);
+                else returnToViewport();
+              }}
               onNodeDragStart={onNodeDragStart}
               onNodeDrag={onNodeDrag}
               onNodeDragStop={onNodeDragStop}
-              onMoveStart={beginGesture}
+              onMoveStart={(e) => {
+                // The user driving the canvas replaces where they came from:
+                // "back" must mean the last place they chose to be.
+                if (isUserMove(e)) cameFrom.current.clear();
+                beginGesture();
+              }}
               onMove={(_e, vp) => applyZoom(vp.zoom)}
               onMoveEnd={(_e, vp) => {
                 applyZoom(vp.zoom);
@@ -885,7 +914,16 @@ export function Visualizer({
             >
               {/* The built-in Fit View is another programmatic move: it raises
                   no onMove either, so the detail tier is re-read after it. */}
-              <Controls className="!bottom-3 !left-3" showInteractive={false} onFitView={() => syncZoomAfter(450)} />
+              <Controls
+                className="!bottom-3 !left-3"
+                showInteractive={false}
+                onZoomIn={() => cameFrom.current.clear()}
+                onZoomOut={() => cameFrom.current.clear()}
+                onFitView={() => {
+                  cameFrom.current.clear();
+                  syncZoomAfter(450);
+                }}
+              />
               <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={(n) => (n.type === "table" ? edgeStyle.to : "transparent")} />
             </ReactFlow>
           </EdgeStyleContext.Provider>
