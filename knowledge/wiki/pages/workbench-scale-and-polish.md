@@ -318,6 +318,29 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1
   normal). Decoration is already hidden during gestures, so the higher
   threshold costs nothing while moving.
+- **A small schema's name landed on its neighbours.** The map-zoom label is
+  sized in SCREEN pixels, which is what keeps it readable at any zoom — and
+  entirely unrelated to the size of the box it sits in. A two-table schema has
+  a small box, so its constant-size name was wider than the box and printed
+  over the schemas beside it. `nameFontLimit(boxWidth, boxHeight, nameLength)`
+  caps the font in GRAPH units (characters × 0.62 for width, 0.32 of the box
+  for height, because the pill is ~2.9 label-heights tall), and the label takes
+  `min(constant screen size, that cap)`. Everything inside it — padding, gap,
+  the second line — is in `em`, so it follows whichever size won; the second
+  line is `0.62em` rather than a second `min()`, which drifted when the two
+  picked different branches.
+- **Selecting a column now shows that column's links and nothing else**
+  (`linksForSelection`). Picking a column is how you ask where it goes, and
+  answering it on a canvas still carrying every other link answers nothing. A
+  table selection keeps the links that touch it; clicking the canvas or
+  pressing Escape brings them all back, which the header says.
+  - One place decides what is on screen: the layout effect publishes the
+    drawable links as state and the render plan applies the selection. They
+    used to be two effects, so toggling inferred links or paginating a schema
+    silently re-drew everything while a selection was still active.
+  - `linkSummary` is the one source of the header's "for X · +N hidden" text,
+    and the hidden count is now everything eligible but not on screen, whatever
+    held it back — pagination, the selection, or the render limit.
 - **Schemas sit further apart** (`groupGap` 120 → 170) so a box's name never
   crowds its neighbour.
 

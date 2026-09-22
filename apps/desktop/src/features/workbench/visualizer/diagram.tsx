@@ -9,6 +9,7 @@ import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { nameFontCss } from "./zoom-lod";
 
 export const NODE_W = 232;
 export const HEADER_H = 34;
@@ -345,7 +346,14 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   );
 });
 
-export type SchemaFarData = { schema: string; source?: string; total: number; onFocus: () => void };
+export type SchemaFarData = {
+  schema: string;
+  source?: string;
+  total: number;
+  onFocus: () => void;
+  /** Largest font the name may take without leaving its box (graph units). */
+  fontLimit: number;
+};
 
 /**
  * The schema's name, drawn ONLY when the canvas is zoomed out past legibility.
@@ -365,8 +373,9 @@ export const SchemaFarNode = memo(function SchemaFarNode({ data }: NodeProps) {
           className="vs-box-far-label"
           title="Click to zoom to this schema · drag to move it"
           onClick={d.onFocus}
+          style={{ fontSize: nameFontCss(d.fontLimit, 15) }}
         >
-          <span>{d.schema}</span>
+          <span className="vs-box-far-name">{d.schema}</span>
           <span className="vs-box-far-sub">
             {d.source ? `${d.source} · ` : ""}
             {d.total} table{d.total === 1 ? "" : "s"}

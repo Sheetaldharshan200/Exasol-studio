@@ -153,3 +153,39 @@ export function budgetLinks<L extends { source: string; target: string; inferred
   const shown = links.filter((l) => !l.inferred || l.source === selectedTable || l.target === selectedTable);
   return { shown: shown.length <= max ? shown : shown.slice(0, max), hidden: links.length - Math.min(shown.length, max) };
 }
+
+export type LinkSelection = { table: string; column?: string } | null;
+
+/**
+ * The links worth drawing for the current selection.
+ *
+ * Picking a table, and more so a column, is how you ask "where does this go?".
+ * Answering it on a canvas still carrying every other link answers nothing, so
+ * the selection narrows what is drawn: a table keeps the links that touch it,
+ * a column keeps only the links on that column. Nothing selected draws
+ * everything.
+ */
+export function linksForSelection<T extends { source: string; sourceColumn: string; target: string; targetColumn: string }>(
+  links: readonly T[],
+  sel: LinkSelection,
+): T[] {
+  if (!sel) return [...links];
+  return links.filter((l) => {
+    const onSource = l.source === sel.table && (!sel.column || l.sourceColumn === sel.column);
+    const onTarget = l.target === sel.table && (!sel.column || l.targetColumn === sel.column);
+    return onSource || onTarget;
+  });
+}
+
+/** What the header says after "N links": which selection they belong to, and
+ *  how many are not on screen. One place, so the count and the explanation
+ *  cannot disagree. */
+export function linkSummary(opts: { hidden: number; selection: string | null }): string {
+  const { hidden, selection } = opts;
+  const parts: string[] = [];
+  if (selection) parts.push(`for ${selection}`);
+  if (hidden > 0) parts.push(`+${hidden} hidden`);
+  if (!parts.length) return "";
+  const hint = selection ? "click the canvas for all" : hidden > 0 ? "select a table to see its links" : "";
+  return ` ${parts.join(" · ")}${hint ? ` — ${hint}` : ""}`;
+}

@@ -24,3 +24,30 @@ export const farZoomThreshold = (rowHeight: number): number => LEGIBLE_ROW_PX / 
 
 /** Guards the CSS divisor: `calc(2px / var(--vs-zoom))` must never divide by 0. */
 export const zoomVar = (zoom: number): string => String(Math.max(zoom, 0.01));
+
+/** How wide a character is, relative to the font size, in the bold face the
+ *  map label uses. Measured against the schema names this app shows. */
+const CHAR_RATIO = 0.62;
+/** The label never takes more than this share of its box's height. The label
+ *  is ~2.9 lines tall once its second line and padding are counted, so this
+ *  keeps the whole pill inside the box. */
+const HEIGHT_SHARE = 0.32;
+
+/**
+ * The largest font a schema's name may take, in GRAPH units, so that the name
+ * stays inside its own box.
+ *
+ * Zoomed out the label is sized in screen pixels, which is what makes it
+ * readable at any zoom — but a schema with two tables has a small box, and a
+ * constant-size name on it is wider than the box and lands on top of the
+ * schemas beside it. This is the cap that keeps every name at home.
+ */
+export function nameFontLimit(boxWidth: number, boxHeight: number, nameLength: number): number {
+  const byWidth = boxWidth / Math.max(1, nameLength * CHAR_RATIO);
+  const byHeight = boxHeight * HEIGHT_SHARE;
+  return Math.max(1, Math.min(byWidth, byHeight));
+}
+
+/** The label's font: the constant screen size, but never wider than its box. */
+export const nameFontCss = (limit: number, screenPx: number): string =>
+  `min(calc(${screenPx}px / var(--vs-zoom)), ${limit.toFixed(2)}px)`;

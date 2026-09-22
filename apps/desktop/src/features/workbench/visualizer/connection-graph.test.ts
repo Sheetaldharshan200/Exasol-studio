@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+
+const L = (source: string, sourceColumn: string, target: string, targetColumn: string) => ({ source, sourceColumn, target, targetColumn });
 
 const T = (name: string, n = 2) => ({ name, columns: Array.from({ length: n }, (_, i) => ({ name: `C${i}`, dataType: "INT", pk: i === 0 })) });
 
@@ -72,4 +74,52 @@ test("budgetLinks: everything under the cap; over it, declared links plus the se
   const tooManyDeclared = budgetLinks(Array.from({ length: 50 }, (_, i) => ({ source: `a${i}`, target: "b", inferred: false })), null, 10);
   assert.equal(tooManyDeclared.shown.length, 10);
   assert.equal(tooManyDeclared.hidden, 40);
+});
+
+test("nothing selected draws every link", () => {
+  const links = [L("S.A", "ID", "S.B", "A_ID"), L("S.C", "X", "S.D", "Y")];
+  assert.equal(linksForSelection(links, null).length, 2);
+});
+
+test("a selected table keeps only the links that touch it", () => {
+  const links = [L("S.A", "ID", "S.B", "A_ID"), L("S.C", "X", "S.D", "Y"), L("S.B", "K", "S.A", "ID")];
+  const kept = linksForSelection(links, { table: "S.A" });
+  assert.equal(kept.length, 2);
+  assert.ok(kept.every((l) => l.source === "S.A" || l.target === "S.A"));
+});
+
+test("a selected column keeps only that column's links", () => {
+  const links = [
+    L("S.ORDERS", "CUSTOMER_ID", "S.CUSTOMERS", "ID"),
+    L("S.ORDERS", "PRODUCT_ID", "S.PRODUCTS", "ID"),
+    L("S.SHIPMENTS", "ORDER_ID", "S.ORDERS", "ID"),
+  ];
+  const kept = linksForSelection(links, { table: "S.ORDERS", column: "CUSTOMER_ID" });
+  assert.deepEqual(kept.map((l) => l.sourceColumn), ["CUSTOMER_ID"]);
+});
+
+test("a column is matched at either end of a link", () => {
+  const links = [L("S.SHIPMENTS", "ORDER_ID", "S.ORDERS", "ID")];
+  assert.equal(linksForSelection(links, { table: "S.ORDERS", column: "ID" }).length, 1);
+});
+
+test("a column with no links draws none, rather than quietly showing all", () => {
+  const links = [L("S.ORDERS", "CUSTOMER_ID", "S.CUSTOMERS", "ID")];
+  assert.deepEqual(linksForSelection(links, { table: "S.ORDERS", column: "TOTAL" }), []);
+});
+
+test("with everything on screen and nothing selected the header says no more", () => {
+  assert.equal(linkSummary({ hidden: 0, selection: null }), "");
+});
+
+test("links held back are counted, with the way to see them", () => {
+  assert.equal(linkSummary({ hidden: 12, selection: null }), " +12 hidden — select a table to see its links");
+});
+
+test("a selection names itself and says how to get back", () => {
+  assert.equal(linkSummary({ hidden: 0, selection: "ORDERS.CUSTOMER_ID" }), " for ORDERS.CUSTOMER_ID — click the canvas for all");
+});
+
+test("a selection that still hides links admits it", () => {
+  assert.equal(linkSummary({ hidden: 5, selection: "ORDERS" }), " for ORDERS · +5 hidden — click the canvas for all");
 });

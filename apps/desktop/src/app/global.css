@@ -943,24 +943,38 @@
   pointer-events: auto;
   cursor: grab;
   display: flex;
+  max-width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: calc(6px / var(--vs-zoom));
-  font-size: calc(15px / var(--vs-zoom));
+  gap: 0.35em;
+  /* font-size is set per schema: the constant screen size, capped so the name
+     cannot be wider than its own box (see nameFontLimit). */
   line-height: 1.15;
   font-weight: 700;
-  letter-spacing: calc(0.5px / var(--vs-zoom));
+  letter-spacing: 0.03em;
   color: var(--foreground);
   text-align: center;
-  padding: calc(6px / var(--vs-zoom)) calc(12px / var(--vs-zoom));
-  border-radius: calc(10px / var(--vs-zoom));
+  padding: 0.35em 0.7em;
+  border-radius: 0.6em;
   background: color-mix(in srgb, var(--panel) 80%, transparent);
 }
 .visualizer-pane.is-far .vs-box-far-label:active {
   cursor: grabbing;
 }
+.visualizer-pane.is-far .vs-box-far-label .vs-box-far-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .visualizer-pane.is-far .vs-box-far-label .vs-box-far-sub {
-  font-size: calc(10px / var(--vs-zoom));
+  /* A fraction of whatever size the name settled on — computing it separately
+     drifts, because the two mins do not always pick the same branch. */
+  font-size: 0.62em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 500;
   color: var(--muted-foreground);
   letter-spacing: 0;

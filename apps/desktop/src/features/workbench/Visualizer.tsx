@@ -39,8 +39,8 @@ import { formatClock, formatElapsed } from "@/lib/elapsed";
 import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
-import { GROUP_HEADER, budgetLinks, colKey, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
-import { isFarZoom, zoomVar } from "./visualizer/zoom-lod";
+import { GROUP_HEADER, budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
+import { isFarZoom, nameFontLimit, zoomVar } from "./visualizer/zoom-lod";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -266,7 +266,9 @@ export function Visualizer({
   // Bumped by the layout effect each time a new set of nodes is committed, so
   // "show everything" also runs after a schema switch, once the new nodes exist.
   const [layoutRev, setLayoutRev] = useState(0);
-  const allLinksRef = useRef<(GraphLink & { inferred: boolean; score?: number })[]>([]);
+  // What the layout produced: the links between DRAWN tables, and how many
+  // links exist between visible tables at all (pagination holds some back).
+  const [drawableLinks, setDrawableLinks] = useState<{ links: (GraphLink & { inferred: boolean; score?: number })[]; eligible: number }>({ links: [], eligible: 0 });
   const toEdges = useCallback(
     (links: (GraphLink & { inferred: boolean; score?: number })[]): Edge[] =>
       links.map((l, i) => ({
@@ -507,6 +509,9 @@ export function Visualizer({
           source: schemas.find((sc) => sc.name === g.schema)?.source,
           total: info.total,
           onFocus: () => focusSchema(g.schema),
+          // A small schema gets a small name: a constant-size label on a
+          // two-table box is wider than the box and lands on its neighbours.
+          fontLimit: nameFontLimit(g.box.width, g.box.height, g.schema.length),
         } satisfies SchemaFarData as unknown as Record<string, unknown>,
       };
     });
@@ -539,12 +544,10 @@ export function Visualizer({
       : [];
     setNodes([...groupNodes, ...tableNodes, ...farNodes, ...addNode]);
     setLayoutRev((r) => r + 1);
-    // Only links between drawn tables can be drawn; the rest wait for "Show more".
-    const drawable = links.filter((l) => drawn.has(l.source) && drawn.has(l.target));
-    allLinksRef.current = drawable;
-    const budget = budgetLinks(drawable, null);
-    setBudgetHidden(budget.hidden + (links.length - drawable.length));
-    setEdges(toEdges(budget.shown));
+    // Only links between drawn tables can be drawn; the rest wait for "Show
+    // more". Publishing them (rather than rendering here) leaves ONE place
+    // that decides what is on screen — see the render plan below.
+    setDrawableLinks({ links: links.filter((l) => drawn.has(l.source) && drawn.has(l.target)), eligible: links.length });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, showInferred, minScore, selectedList, schemas, shownPerSchema]);
 
@@ -623,11 +626,19 @@ export function Visualizer({
     () => ({ mode, selTable: sel?.table, selColumn: sel?.column, picked, matchedTables: matches.tables, matchedCols: matches.cols }),
     [mode, sel, picked, matches],
   );
+  // The render plan: the only thing that puts edges on the canvas. It runs
+  // for a new layout AND for a new selection, so narrowing survives a change
+  // of inferred links, confidence or pagination.
   useEffect(() => {
+    // A selection narrows what is drawn — picking a column is how you ask
+    // where that column goes, and every other link on screen is in the way.
+    const chosen = linksForSelection(drawableLinks.links, sel);
     // Over budget, the selected table's links join the drawn set; then mark
     // the ones the selection lights up.
-    const budget = budgetLinks(allLinksRef.current, sel?.table ?? null);
-    setBudgetHidden(budget.hidden);
+    const budget = budgetLinks(chosen, sel?.table ?? null);
+    // Everything that exists between visible tables but is not on screen,
+    // whatever held it back: pagination, the selection, or the render limit.
+    setBudgetHidden(Math.max(0, drawableLinks.eligible - budget.shown.length));
     setEdges(
       toEdges(budget.shown).map((e) => {
         const d = e.data as unknown as BeamEdgeData;
@@ -635,7 +646,7 @@ export function Visualizer({
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, mode, picked, matches]);
+  }, [drawableLinks, sel, mode, picked, matches]);
 
   const counts = useMemo(() => ({ tables: nodes.filter((n) => n.type === "table").length, edges: edges.length }), [nodes, edges]);
   const edgeRender = useMemo(() => ({ ...edgeStyle, dense: edges.length > DENSE_EDGES }), [edgeStyle, edges.length]);
@@ -808,7 +819,11 @@ export function Visualizer({
           <Search className="h-3.5 w-3.5" />
         </button>
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-          {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links{budgetHidden ? ` (+${budgetHidden} hidden — select a table to see its links)` : ""}
+          {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links
+          {linkSummary({
+            hidden: budgetHidden,
+            selection: sel ? (sel.column ? `${splitTableId(sel.table).table}.${sel.column}` : splitTableId(sel.table).table) : null,
+          })}
         </span>
       </header>
 

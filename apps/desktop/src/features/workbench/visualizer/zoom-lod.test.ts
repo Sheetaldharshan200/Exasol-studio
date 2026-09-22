@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { farZoomThreshold, isFarZoom, LEGIBLE_ROW_PX, rowScreenPx, zoomVar } from "./zoom-lod.ts";
+import { farZoomThreshold, isFarZoom, LEGIBLE_ROW_PX, nameFontCss, nameFontLimit, rowScreenPx, zoomVar } from "./zoom-lod.ts";
 
 const ROW_H = 26;
 
@@ -32,4 +32,36 @@ test("the CSS zoom variable never divides by zero", () => {
   assert.equal(zoomVar(0.5), "0.5");
   assert.equal(zoomVar(0), "0.01");
   assert.equal(zoomVar(-1), "0.01");
+});
+
+test("a long name on a narrow box is capped by the box's width", () => {
+  // "POSTGRESQL_VS" on a two-table box: at a constant screen size this name
+  // used to run over the schemas beside it.
+  const limit = nameFontLimit(260, 400, "POSTGRESQL_VS".length);
+  assert.ok(limit * "POSTGRESQL_VS".length * 0.62 <= 260 + 0.01, `name would overflow: ${limit}`);
+});
+
+test("a short name on a wide box is capped by the box's height instead", () => {
+  assert.equal(nameFontLimit(2000, 100, "TPCH".length), 32);
+});
+
+test("the whole label, both lines and its padding, fits the box height", () => {
+  // The pill is about 2.9 label-heights tall once the second line and the
+  // padding are counted.
+  for (const h of [56, 120, 400, 900]) {
+    assert.ok(nameFontLimit(5000, h, 4) * 2.9 <= h, `label overflows a ${h}-tall box`);
+  }
+});
+
+test("a box with no room still yields a usable font, never zero or negative", () => {
+  assert.ok(nameFontLimit(0, 0, 10) >= 1);
+  assert.ok(nameFontLimit(10, 10, 0) >= 1);
+});
+
+test("a bigger box allows a bigger name", () => {
+  assert.ok(nameFontLimit(900, 900, 8) > nameFontLimit(300, 300, 8));
+});
+
+test("the font asks for the constant screen size but accepts the cap", () => {
+  assert.equal(nameFontCss(42, 15), "min(calc(15px / var(--vs-zoom)), 42.00px)");
 });
