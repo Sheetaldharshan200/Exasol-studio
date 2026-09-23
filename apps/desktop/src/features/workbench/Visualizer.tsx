@@ -74,8 +74,9 @@ type SchemaEntry = { name: string; source?: string };
 const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
-/** Space between schema boxes; a zoomed-out name tab may use most of it. */
-const SCHEMA_GAP = 170;
+/** Space between schema boxes. A zoomed-out name tab hangs in this gap, so it
+ *  is also the room that keeps a label clear of the row above. */
+const SCHEMA_GAP = 240;
 /** How long the viewport stays promoted after a gesture (see global.css). */
 const GESTURE_SETTLE_MS = 180;
 

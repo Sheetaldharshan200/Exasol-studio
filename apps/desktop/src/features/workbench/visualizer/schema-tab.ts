@@ -37,6 +37,13 @@ const CHROME_RATIO = 1.4;
 /** How far a tab may reach past its own box before it would meet the next
  *  one. Boxes are laid out a fixed gap apart; most of that gap is fair game. */
 const GAP_SHARE = 0.8;
+/** The tab's full height, as a multiple of its font size: the name's line, the
+ *  smaller line under it, the padding around both, and the margin that lifts
+ *  it off its box. */
+const TAB_HEIGHT_RATIO = 2.9;
+/** How much of the gap ABOVE a box a tab may occupy. The rest keeps it clear
+ *  of the tables belonging to the schema in the row above. */
+const HEADROOM_SHARE = 0.72;
 
 /** The second line's type size, relative to the name's (see .vs-tab-sub). */
 const SUB_RATIO = 0.7;
@@ -67,7 +74,12 @@ export function tabLabelChars(name: string, source: string | undefined, total: n
 export function tabFontLimit(boxWidth: number, labelChars: number, gap: number): number {
   const room = boxWidth + Math.max(0, gap) * GAP_SHARE;
   const perChar = Math.max(1, labelChars) * CHAR_RATIO + CHROME_RATIO;
-  return Math.max(1, room / perChar);
+  const byWidth = room / perChar;
+  // The tab hangs in the gap ABOVE its box, and that gap is all that separates
+  // it from the tables of the schema in the row above. Growing past it puts
+  // the label under those tables, where it cannot be read at all.
+  const byHeight = (Math.max(0, gap) * HEADROOM_SHARE) / TAB_HEIGHT_RATIO;
+  return Math.max(1, Math.min(byWidth, byHeight));
 }
 
 /** The tab's font: the constant screen size, but never wider than its room. */

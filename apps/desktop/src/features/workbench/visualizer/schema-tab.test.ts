@@ -45,7 +45,9 @@ test("a small box borrows the gap beside it before shrinking its type", () => {
 });
 
 test("a longer name on the same box gets smaller type, not an ellipsis", () => {
-  assert.ok(tabFontLimit(600, 20, 170) < tabFontLimit(600, 6, 170));
+  // With headroom to spare, width is what governs — and a longer label takes
+  // a smaller size rather than losing its tail.
+  assert.ok(tabFontLimit(600, 20, 900) < tabFontLimit(600, 6, 900));
 });
 
 test("a box with no room still yields a usable font", () => {
@@ -76,4 +78,24 @@ test("the widest line is what the font cap is computed from", () => {
   const chars = tabLabelChars("MYSQL_VS", "PostgreSQL", 2);
   const limit = tabFontLimit(260, chars, 170);
   assert.ok(limit * (chars * 0.62 + 1.4) <= 260 + 170 * 0.8 + 0.01);
+});
+
+test("a tab never grows taller than the gap it hangs in", () => {
+  // Above that gap are the tables of the row above; a taller tab reads as
+  // text printed under a table.
+  for (const gap of [120, 170, 200, 400]) {
+    const font = tabFontLimit(5000, 4, gap);
+    assert.ok(font * 2.9 <= gap, `a ${gap}-unit gap cannot hold this tab`);
+  }
+});
+
+test("the tighter of the two limits wins", () => {
+  // A wide box with a short name is limited by the gap above it, not by width.
+  assert.equal(tabFontLimit(5000, 3, 170), tabFontLimit(9000, 3, 170));
+  // A narrow box with a long name is limited by width instead.
+  assert.ok(tabFontLimit(200, 40, 400) < tabFontLimit(2000, 40, 400));
+});
+
+test("a bigger gap allows a bigger tab", () => {
+  assert.ok(tabFontLimit(800, 10, 300) > tabFontLimit(800, 10, 150));
 });

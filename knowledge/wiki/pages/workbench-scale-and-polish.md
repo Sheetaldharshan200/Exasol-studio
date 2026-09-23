@@ -242,6 +242,11 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
     only as far as it must: a tab may use most of the gap beside its box as
     well as the box itself. The table count sits under the name rather than
     beside it.
+  - The tab hangs in the gap ABOVE its box, and that gap is all that separates
+    it from the tables of the schema in the row above — a tab taller than the
+    gap reads as text printed under a table. So the cap takes the TIGHTER of
+    two limits, width and headroom, and the gap between schemas went 170 → 240
+    so a tab has somewhere to be before it has to shrink.
   - The cap is computed from the WIDEST line, not the name: "MYSQL_VS" is
     eight characters while "MySQL · 2 tables" beneath it is sixteen, so a cap
     taken from the name alone still let the second line run past the box and
