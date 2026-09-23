@@ -7,7 +7,7 @@
  * ~5,000-line shell. They depend on the shell only through props plus the
  * shared SqlTab type and IconButton, so they move as a unit.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -47,6 +47,7 @@ import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows, resultSummary, rowTotal } from "@/lib/result-stats";
 import { termBusReady } from "@/lib/term-bus";
 import { cn } from "@/lib/utils";
+import { scrollbarGutter } from "@/lib/table-widths";
 import { IconButton } from "./IconButton";
 import type { SqlTab } from "./tabs";
 
@@ -88,19 +89,53 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
     { key: "message", label: "Message", width: "30%" },
     { key: "sql", label: "SQL" },
   ];
+  const headScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  // A classic scrollbar narrows the body but not the header; without giving
+  // that width back, the same percentage columns land in different places.
+  const [gutter, setGutter] = useState(0);
+  const measureGutter = useCallback(() => {
+    const scroller = bodyScrollRef.current;
+    if (!scroller) return;
+    setGutter((g) => {
+      const next = scrollbarGutter(scroller.offsetWidth, scroller.clientWidth);
+      return next === g ? g : next;
+    });
+  }, []);
+  // Measured before paint, so the columns are never drawn out of step on a
+  // platform whose scrollbar takes width.
+  useLayoutEffect(measureGutter, [measureGutter]);
+  useEffect(() => {
+    const scroller = bodyScrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measureGutter);
+    ro.observe(scroller);
+    return () => ro.disconnect();
+  }, [measureGutter]);
   const ms = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v.toLocaleString()} ms`);
   const cellBtn = "block w-full cursor-pointer px-2.5 py-1.5 text-left hover:bg-accent/60";
   const openDetail = (label: string, value: string, mono = false, sql?: string) => setDetail({ label, value, mono, sql });
 
+  const cols = (
+    <colgroup>
+      {HEADERS.map((h) => (
+        <col key={h.key} style={h.width ? { width: h.width } : undefined} />
+      ))}
+    </colgroup>
+  );
+
   return (
     <>
+      {/* Header outside the scroller, as in the results grid: the scrollbar
+          then belongs to the rows and starts at the first one. Both tables are
+          fixed-layout on the same percentage columns, so they line up without
+          measuring anything — the header only gives back the width a classic
+          scrollbar takes from the body. */}
+      <div className="flex h-full min-h-0 flex-col">
+      <div ref={headScrollRef} className="shrink-0 overflow-hidden" style={gutter ? { marginRight: gutter } : undefined}>
       <table className="w-full table-fixed border-separate border-spacing-0 text-[12px]">
-        <colgroup>
-          {HEADERS.map((h) => (
-            <col key={h.key} style={h.width ? { width: h.width } : undefined} />
-          ))}
-        </colgroup>
-        <thead className="sticky top-0 z-10">
+        {cols}
+        <thead>
           <tr className="text-left text-muted-foreground">
             {HEADERS.map((h) => {
               // Status and Command are LOW-CARDINALITY columns: their header
@@ -181,6 +216,18 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
             })}
           </tr>
         </thead>
+      </table>
+      </div>
+      <div
+        ref={bodyScrollRef}
+        className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]"
+        onScroll={(e) => {
+          const head = headScrollRef.current;
+          if (head) head.scrollLeft = e.currentTarget.scrollLeft;
+        }}
+      >
+      <table className="w-full table-fixed border-separate border-spacing-0 text-[12px]">
+        {cols}
         <tbody>
           {sorted.map(({ e, k }) => {
             const rows = e.truncated ? `${e.rowCount.toLocaleString()}+` : e.rowCount.toLocaleString();
@@ -244,6 +291,8 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
           })}
         </tbody>
       </table>
+      </div>
+      </div>
 
       {detail ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setDetail(null)}>
@@ -558,7 +607,7 @@ export function HistoryDock({
         ) : mode === "gitlog" ? (
           <GitLogTab />
         ) : (
-          <div className="h-full min-h-0 overflow-auto [scrollbar-width:thin]">
+          <div className="h-full min-h-0">
             {entries.length === 0 ? (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No queries run yet.</div>
             ) : (
