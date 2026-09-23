@@ -80,10 +80,13 @@ jobs:
           mkdir -p packages/agent-core/dist/skills
           touch packages/agent-core/dist/agent-core.cjs \
                 packages/agent-core/dist/mcp-gateway.cjs \
-                packages/agent-core/dist/exa-agent.cjs
+                packages/agent-core/dist/exa-agent.cjs \
+                packages/agent-core/dist/driver-bridge.cjs
           mkdir -p apps/desktop/src-tauri/resources/runtime \
                    apps/desktop/src-tauri/resources/python-stack \
                    apps/desktop/src-tauri/resources/bridges
+          mkdir -p packages/driver-bridges/r && touch packages/driver-bridges/r/bridge.R
+          touch apps/desktop/src-tauri/resources/runtime-components.lock.json
 
       - name: cargo test
         run: cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml

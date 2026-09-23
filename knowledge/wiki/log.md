@@ -181,3 +181,5 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-23] fix | Studio now recovers a stranded Personal VM itself: when the launcher's `stop` fails it verifies the recorded pid is the runner, holds THIS deployment's port, and that no database answers in the guest, then TERM/KILLs it and starts fresh — a live database is never signalled, whatever made `stop` fail (vm_recovery.rs, 10 tests)
 
 ## [2026-09-23] fix | A confirmed schema change (drop/rename/alter) now opens in a query tab and runs there, so a refusal like "drop the virtual schemas of this adapter first" is in front of the user and re-runnable, not buried in SQL history
+
+## [2026-09-23] fix | CI's Rust job had been red on main since 2026-09-22: tauri-build verifies every bundle-resource path exists, and the stub step never created `driver-bridge.cjs`, `bridge.R` or the components lock. The stub list now covers every entry in tauri.conf.json's resources — check it whenever a resource is added.
