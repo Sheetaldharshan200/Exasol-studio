@@ -66,3 +66,33 @@ export function udfAccentClass(language: string | null | undefined): string | nu
     : [...name].map((c) => c.codePointAt(0)!.toString(36)).join("");
   return `exa-udf-lang-${safe}`;
 }
+
+/** Which part of a block a line belongs to. */
+export type UdfLineRole = "open" | "header" | "body" | "close";
+
+/**
+ * Where the language's own code starts inside a block.
+ *
+ * A block is two things stacked: a SQL header (`CREATE … SCRIPT … AS`) and,
+ * under it, a function written in another language. The split is the line the
+ * header's `AS` ends on — everything after that belongs to the language. A
+ * header still being typed has no `AS` yet, and then there is no body to
+ * frame.
+ *
+ * `lines` are the block's lines, the first being the `--/` marker.
+ */
+export function udfBodyStart(lines: readonly string[]): number | null {
+  for (let i = 1; i < lines.length; i++) {
+    // `AS` ends the header; a line that is only a comment cannot.
+    if (/\bAS\s*$/i.test(lines[i].replace(/--.*$/, "").trimEnd())) return i + 1;
+  }
+  return null;
+}
+
+/** What each line of a block is, so the renderer can frame the two cells. */
+export function udfLineRole(index: number, opts: { last: number; bodyStart: number | null }): UdfLineRole {
+  if (index === 0) return "open";
+  if (index === opts.last) return "close";
+  if (opts.bodyStart !== null && index >= opts.bodyStart) return "body";
+  return "header";
+}

@@ -90,14 +90,6 @@
       "name": "exa-postgres-interface",
       "description": "A Postgres-compatible Gateway for Exasol"
     },
-    "mongodb-vs": {
-      "repo": "exasol-labs/exasol-mongodb-vs",
-      "latest": "v0.1.0",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exasol-mongodb-vs",
-      "name": "exasol-mongodb-vs",
-      "description": "Query MongoDB collections from Exasol through a Rust Virtual Schema connector"
-    },
     "more-functions": {
       "repo": "exasol-labs/more-functions",
       "latest": null,

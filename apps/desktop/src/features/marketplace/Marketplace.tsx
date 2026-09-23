@@ -1331,7 +1331,12 @@ export function Marketplace() {
               items={CATALOG}
               stateOf={stateOf}
               query={query}
-              onQuery={setQuery}
+              onQuery={(q) => {
+                setQuery(q);
+                // Typing IS the search. Waiting for the button meant the home
+                // page sat there unchanged while the query was already typed.
+                if (q.trim()) goto("search");
+              }}
               onSearch={() => goto("search")}
               onOpenSection={openSection}
               onOpen={openDetail}

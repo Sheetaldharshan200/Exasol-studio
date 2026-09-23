@@ -110,7 +110,6 @@ export const CATALOG: CatalogItem[] = [
   { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true },
   { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
-  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "binary", labs: true },
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
   // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
   // container engine, so this links to the project instead of installing it.

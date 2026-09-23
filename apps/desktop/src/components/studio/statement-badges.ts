@@ -7,7 +7,7 @@
  */
 import { type Monaco } from "@monaco-editor/react";
 import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
-import { udfAccentClass, udfAccentRule, udfChipLabel, udfLineClasses } from "@/lib/udf-block-style";
+import { udfAccentClass, udfAccentRule, udfBodyStart, udfChipLabel, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -114,18 +114,29 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
       // has never heard of still gets one; its rule is written on first sight.
       const accentClass = udfAccentClass(block.language);
       if (accentClass && block.language) ensureAccentStyle(block.language, accentClass);
-      for (let line = from.lineNumber; line <= to.lineNumber; line++) {
+      // Two cells, one inside the other: the outer holds the SQL that declares
+      // the script, the inner holds the function itself in its own language —
+      // a notebook cell with a child cell in it.
+      const lines: string[] = [];
+      for (let line = from.lineNumber; line <= to.lineNumber; line++) lines.push(model.getLineContent(line));
+      const bodyStart = udfBodyStart(lines);
+      const last = lines.length - 1;
+      for (let i = 0; i <= last; i++) {
+        const line = from.lineNumber + i;
+        const role = udfLineRole(i, { last, bodyStart });
+        const classes = [
+          udfLineClasses({ first: i === 0, last: i === last }),
+          `exa-udf-${role}`,
+          accentClass ?? "",
+        ];
+        // The child cell closes at its own top and bottom, inside the outer one.
+        if (role === "body" && bodyStart !== null) {
+          if (i === bodyStart) classes.push("exa-udf-body-open");
+          if (i === last - 1 || udfLineRole(i + 1, { last, bodyStart }) !== "body") classes.push("exa-udf-body-close");
+        }
         decorations.push({
           range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
-          options: {
-            isWholeLine: true,
-            className: [
-              udfLineClasses({ first: line === from.lineNumber, last: line === to.lineNumber }),
-              accentClass ?? "",
-            ]
-              .filter(Boolean)
-              .join(" "),
-          },
+          options: { isWholeLine: true, className: classes.filter(Boolean).join(" ") },
         });
       }
       // The delimiters (`--/` line + closing `/`) are scaffolding: they recede
@@ -139,8 +150,11 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
       // The language pill, once the CREATE header names one.
       const chip = udfChipLabel(block.language);
       if (chip) {
+        // On the child cell's first line when there is one, so the label sits
+        // with the code it names; otherwise on the opening marker.
+        const chipLine = bodyStart !== null ? from.lineNumber + bodyStart : from.lineNumber;
         decorations.push({
-          range: new monaco.Range(from.lineNumber, model.getLineMaxColumn(from.lineNumber), from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
+          range: new monaco.Range(chipLine, model.getLineMaxColumn(chipLine), chipLine, model.getLineMaxColumn(chipLine)),
           options: {
             after: { content: chip, inlineClassName: `exa-udf-chip ${accentClass ?? ""}`.trim() },
             stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,

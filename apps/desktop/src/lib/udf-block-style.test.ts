@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { udfAccentClass, udfAccentColor, udfAccentRule, udfChipLabel, udfLineClasses } from "./udf-block-style.ts";
+import { udfAccentClass, udfAccentColor, udfAccentRule, udfBodyStart, udfChipLabel, udfLineClasses, udfLineRole } from "./udf-block-style.ts";
 
 test("any language gets an accent, including ones this app has never heard of", () => {
   for (const lang of ["lua", "python3", "java", "r", "scala", "wasm", "julia"]) {
@@ -47,4 +47,43 @@ test("the generated rule carries the accent to the line", () => {
 test("rounding closes the card at top and bottom only", () => {
   assert.equal(udfLineClasses({ first: false, last: false }), "exa-udf-block");
   assert.match(udfLineClasses({ first: true, last: true }), /exa-udf-open exa-udf-close/);
+});
+
+const BLOCK = [
+  "--/",
+  "CREATE OR REPLACE LUA SCALAR SCRIPT MY_UDF (a DOUBLE)",
+  "RETURNS DOUBLE AS",
+  "function run(ctx)",
+  "    return ctx.a",
+  "end",
+  "/",
+];
+
+test("the language's code starts after the line the header's AS ends on", () => {
+  assert.equal(udfBodyStart(BLOCK), 3);
+});
+
+test("a one-line header is handled as readily as a wrapped one", () => {
+  assert.equal(udfBodyStart(["--/", "CREATE LUA SCALAR SCRIPT F() RETURNS INT AS", "return 1", "/"]), 2);
+});
+
+test("a header still being typed has no body to frame yet", () => {
+  assert.equal(udfBodyStart(["--/", "CREATE OR REPLACE LUA SCALAR SCRIPT F("]), null);
+});
+
+test("an AS inside a trailing comment does not open the body", () => {
+  assert.equal(udfBodyStart(["--/", "CREATE LUA SCRIPT F() -- returns AS", "RETURNS INT AS", "x", "/"]), 3);
+});
+
+test("every line of a block knows which cell it is in", () => {
+  const last = BLOCK.length - 1;
+  const bodyStart = udfBodyStart(BLOCK);
+  const roles = BLOCK.map((_, i) => udfLineRole(i, { last, bodyStart }));
+  assert.deepEqual(roles, ["open", "header", "header", "body", "body", "body", "close"]);
+});
+
+test("with no body yet, the lines between the markers are all header", () => {
+  const lines = ["--/", "CREATE OR REPLACE LUA SCALAR SCRIPT F(", "/"];
+  const roles = lines.map((_, i) => udfLineRole(i, { last: 2, bodyStart: null }));
+  assert.deepEqual(roles, ["open", "header", "close"]);
 });
