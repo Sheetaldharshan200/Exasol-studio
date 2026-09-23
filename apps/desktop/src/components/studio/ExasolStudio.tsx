@@ -54,6 +54,7 @@ import { DesktopOnly } from "@/features/workbench/DesktopOnly";
 import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { installUdfEmbedding } from "@/lib/sql-udf-embedding";
 import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
 import { describeTabForContext, readActiveNotebook } from "./tab-context";
@@ -3568,7 +3569,12 @@ export function ExasolStudio({
                 ) : null}
                 <div className="min-h-0 flex-1">
                 <Editor
-                  beforeMount={applyMonacoThemes}
+                  beforeMount={(m) => {
+                    applyMonacoThemes(m);
+                    // A UDF body is Lua, Python, Java or R — tokenize it as
+                    // such instead of colouring it as if it were SQL.
+                    void installUdfEmbedding(m);
+                  }}
                   defaultLanguage="sql"
                   path={`${connKey}/${activeTab.id}.sql`}
                   height="100%"
