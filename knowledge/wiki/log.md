@@ -173,3 +173,5 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] fix | Results scrollbar now starts at row 1 (header is its own table above the scroller; widths paired, scrollbar gutter compensated); schema boxes stopped swallowing pans (React Flow sets pointer-events inline on draggable nodes); tap a schema name to frame it; cards survive to much lower zoom; links bolder by default
 
 ## [2026-09-22] feat | Visualizer: schema name capped to its own box and anchored at its top, in-canvas add-source card removed, a column selection now draws only its links, and a tap on empty canvas returns to the exact viewport you framed from
+
+## [2026-09-23] fix | Visualizer: the zoom level-of-detail tier is removed at the user's request — full cards at every zoom, smoothness carried by gesture-scoped layer promotion, containment, parked decoration, the link budget and pagination; search is now a permanent floating box on the canvas (⌘F focuses it)

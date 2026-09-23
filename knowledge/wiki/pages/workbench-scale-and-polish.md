@@ -212,123 +212,25 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
      the same discussion's `translate3d` idea is not needed once the layer
      stops thrashing. `contain: layout style` on nodes keeps a card's layout
      from escaping it. The per-node `will-change` is gone for the same reason.
-  2. The far-detail tier could never fire: `FAR_ZOOM` was 0.12 while React
-     Flow's `minZoom` was 0.15. Every zoom level the user could reach painted
-     every column of every card. `visualizer/zoom-lod.ts` now decides from
-     LEGIBILITY — `isFarZoom(zoom, rowHeight)` is true once a row is under
-     7 screen pixels — and `minZoom` is 0.04 so a warehouse fits on screen.
-- **Zoomed out is a map, not a thumbnail (user request).** Under `.is-far`:
-  column rows, card headers and the box's button strip all stop painting
-  (`visibility`, so every card keeps its exact geometry and every edge handle
-  stays on its column), cards become flat blocks, and each box draws a solid
-  primary outline plus its NAME and table count at a constant screen size —
-  `calc(15px / var(--vs-zoom))`, where `--vs-zoom` is written onto the pane by
-  `onMove` as a style property, never as React state.
-  - The name is its OWN node (`schemaFar`, `zIndex: 5`), not a child of the
-    dashed box: the box is `zIndex: -1` so anything inside it is painted
-    *under* the very cards it stands in for. It is `display: none` at every
-    readable zoom, so it intercepts nothing there, and it carries
-    `vs-box-handle`, so at map zoom you drag a schema by its name.
-  - Dragging any schema node moves everything of that schema — tables, the
-    backdrop and the name — whichever one you grabbed.
-  - `fitView`/`fitBounds` never raise `onMove`, so the tier is also re-read
-    after every programmatic move and on `onInit`; without that, the first
-    auto-fit stayed in detail mode and focusing a table from far out kept the
-    map tier while zoomed in.
-  - A full-box node stacked above the cards would swallow every click at
-    readable zoom, because React Flow puts `pointer-events` inline on a
-    draggable node: `.react-flow__node-schemaFar { pointer-events: none
-    !important }`, with the label itself re-enabling them only under
-    `.is-far`. The minimap paints it transparent so the table rects still show.
-  - The selected card's ShineBorder is a running animation and now sits in
-    `.vs-deco`, so it parks during a gesture with the rest of the decoration.
-## Running state, one session, and an editable grid (2026-09-22)
-
-- **"Open data" never said it was running.** The object tab's Open data button
-  goes through `openBuiltSql`, which executed the query and set the app-wide
-  `running` flag but never wrote the tab's `runMeta` — and `ResultsPanel`
-  derives `busy` from `runMeta`. So the results area showed "Run a statement to
-  see results here." for the whole wait, which against a virtual schema is
-  most of the wait. It now writes the same run record the Run button does.
-  A finished `runMeta` also keeps its `sql`: without it, `ranSql` fell back to
-  the live buffer, so result labels and paging followed the editor rather than
-  the statement that produced the rows.
-- **One statement at a time, per connection.** `running` is React state and
-  therefore a render behind: `run()` checked it, `openBuiltSql` did not, and
-  paging, prefetch and editor saves called `ipc.executeSql` directly. Two
-  statements on one websocket session hang or kill the driver. Everything in
-  `ExasolStudio.tsx` now executes through `lib/serial-queue.ts`
-  (`createSerialQueue`, keyed by connection profile, tested for ordering,
-  rejection isolation and leak-freedom); the `acquireRun` ref lease stays on
-  top of it as the UI's one-run-at-a-time gate.
-  - A result page carries a generation per connection (`runGens`/`genOf`,
-    bumped by `acquireRun`). A queued page job re-checks it before touching
-    the database and drops its answer if a newer run has started, so a late
-    page of the previous query can never replace the current one's rows, and
-    DDL on another database does not invalidate a page of this one.
-- **The editable grid.** `Add row` now scrolls the staged row into view and
-  puts the caret in it; rows carry ids so two added in one tick cannot collide;
-  a row can be duplicated; the toolbar shows what is staged ("2 edited · 1 new");
-  ⌘S / ⌘↵ saves and Escape leaves only when nothing is staged.
-  - `edit-grid-model.ts` distinguishes three cell states, which the generated
-    INSERT depends on: a string, an explicit `null` (SQL NULL), and an absent
-    or empty cell (left out, so the column takes its DEFAULT). A duplicated
-    NULL used to come through as "empty" and silently became the default.
-  - `edit-dml.ts` is the generated SQL, extracted from the component and
-    tested (quote escaping, typed literals, catalog identifier case, no-PK
-    identity, ordering, a row staged against rows that are gone). An empty
-    staged row emits `INSERT INTO t DEFAULT VALUES` — verified live on
-    Exasol 8 — instead of silently producing no statement.
-- **`use-result-paging.ts`** holds the page cache, prefetch and generation
-  guard; `ExasolStudio.tsx` came back down to 3,966 lines. Every path that
-  caches a page evicts through `cachePage`, so walking a large result cannot
-  grow the cache without limit (only the prefetch path used to evict).
-
-## The results table and the schema map (2026-09-22, evening)
-
-- **The scrollbar started above row 1.** The column names lived inside the
-  `overflow-auto` container as a sticky `thead`, so the vertical scrollbar ran
-  the full height of the panel, past the header. Both results grids now put the
-  header in its OWN table above the scroller, with the body table inside it.
-  Two tables need one set of widths: `lib/table-widths.ts` measures each at its
-  natural size and fixes both to the wider of each pair (`pairWidths`), the
-  header mirrors the body's `scrollLeft`, and `scrollbarGutter` gives the
-  header back exactly what a classic scrollbar takes from the body — zero on
-  macOS overlay scrollbars, re-measured by a `ResizeObserver` on the scroller
-  because a window resize adds or removes that scrollbar with no React update.
-  Border ownership is split (header `border-t`, body `border-b`) so the seam is
-  not drawn twice, and the "Show more" footer takes the table's width so it
-  does not slide away when the grid is scrolled sideways.
-  `ResultsGrid` moved to its own module; HistoryDock.tsx went 854 → 576 lines.
-- **A schema box swallowed every pan started inside it.** React Flow puts
-  `pointer-events` inline on a draggable node, and the schema backdrop is a
-  full-box draggable node — so dragging anywhere inside a schema hit the
-  backdrop and did nothing, instead of panning the canvas. Both schema nodes
-  are now `pointer-events: none !important`, with only the title strip and (at
-  map zoom) the name label re-enabling them. The map-zoom label is a
-  content-sized button, not the `inset: 0` wrapper: an overlay that fills the
-  box is the same bug in a different coat.
-- **Click a schema's name to frame it** (`focusSchema` → `fitBounds` from the
-  box's live position, so a dragged schema frames where it is), at either zoom.
-- **Detail survives much further out** — `LEGIBLE_ROW_PX` 7 → 4, so the cards
-  are still drawn at a zoom where a row is a hairline. The map tier is for
-  genuinely far out, not for "slightly zoomed".
+  2. A far-detail tier was added here and REMOVED on 2026-09-23 — see below.
+- **Zoomed out is still the diagram (2026-09-23).** A level-of-detail tier
+  lived here for a day: past a zoom threshold the cards became blocks and each
+  schema drew a big name instead. The user rejected it outright ("i dont like
+  that zoom to see the table thing"), and they were right — the diagram exists
+  to show tables, and a mode that hides them to go faster is answering a
+  different question. `zoom-lod.ts`, the `schemaFar` node, `--vs-zoom` and
+  every `.is-far` rule are gone; the cards are drawn in full at every zoom.
+  What keeps it smooth is everything that is NOT a detail tier: the viewport
+  promoted only for the duration of a gesture, `contain: layout style` on
+  nodes, link decoration and the minimap parked during a gesture, the link
+  budget, per-schema pagination, memoised nodes and selection through context.
+  `minZoom` is 0.05 — React Flow clamps the zoom Fit View computes to that
+  floor, so a high floor quietly leaves part of a large diagram off the pane.
 - **Links read as links** — default width 2.5, and the "dense" threshold that
   strips decoration went 24 → 60 links, with the faint opacities lifted
   (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1
   normal). Decoration is already hidden during gestures, so the higher
   threshold costs nothing while moving.
-- **A small schema's name landed on its neighbours.** The map-zoom label is
-  sized in SCREEN pixels, which is what keeps it readable at any zoom — and
-  entirely unrelated to the size of the box it sits in. A two-table schema has
-  a small box, so its constant-size name was wider than the box and printed
-  over the schemas beside it. `nameFontLimit(boxWidth, boxHeight, nameLength)`
-  caps the font in GRAPH units (characters × 0.62 for width, 0.32 of the box
-  for height, because the pill is ~2.9 label-heights tall), and the label takes
-  `min(constant screen size, that cap)`. Everything inside it — padding, gap,
-  the second line — is in `em`, so it follows whichever size won; the second
-  line is `0.62em` rather than a second `min()`, which drifted when the two
-  picked different branches.
 - **Selecting a column now shows that column's links and nothing else**
   (`linksForSelection`). Picking a column is how you ask where it goes, and
   answering it on a canvas still carrying every other link answers nothing. A
@@ -341,10 +243,6 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   - `linkSummary` is the one source of the header's "for X · +N hidden" text,
     and the hidden count is now everything eligible but not on screen, whatever
     held it back — pagination, the selection, or the render limit.
-- **The map-zoom name sits at the TOP of its box**, where the title strip is
-  at a readable zoom, instead of floating in the middle over the tables. That
-  added a top margin, so the height cap dropped to 0.29 of the box (the pill is
-  ~3.31 label-heights tall once its second line, padding and margin count).
 - **The in-canvas "Add data source" card is gone.** Adding a source is a
   toolbar action, and the floating button over the canvas already does it; the
   canvas now holds only real schemas.

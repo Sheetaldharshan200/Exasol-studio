@@ -846,10 +846,6 @@
   background-color: var(--editor);
   background-image: radial-gradient(color-mix(in srgb, var(--border) 85%, transparent) 1px, transparent 1px);
   background-size: 22px 22px;
-  /* Set from the pane on every viewport change (a style write, never React
-     state): the zoom-independent sizes below divide by it, so a border or a
-     label keeps the same SCREEN size however far out the canvas is. */
-  --vs-zoom: 1;
 }
 /* The viewport is promoted for the DURATION OF A GESTURE only. A permanently
    promoted layer is re-rasterized at each new scale, and the canvas layer at
@@ -876,109 +872,13 @@
 .visualizer-pane .vs-box {
   background-color: color-mix(in srgb, var(--panel) 45%, var(--editor));
 }
-/* ── Zoomed out: the canvas becomes a map of schemas ──────────────────────
-   Below `.is-far` a table card is a block and its rows are unreadable, so the
-   thing that has to read clearly is WHICH SCHEMA you are looking at. The box
-   outline and its name are drawn at a constant screen size (divided by the
-   live zoom), the card interiors stop painting, and the header strip — a row
-   of buttons nobody can hit at this scale — goes away. */
-.visualizer-pane.is-far .vs-box {
-  border-width: calc(2px / var(--vs-zoom));
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-  border-radius: calc(16px / var(--vs-zoom));
-  background-color: color-mix(in srgb, var(--panel) 70%, var(--editor));
-}
-.visualizer-pane.is-far .vs-box-handle {
-  display: none;
-}
-/* Far out, a column row is a couple of pixels tall: the rows stay (the card
-   keeps its shape, so every edge handle stays where its column is), they just
-   stop painting. Zooming is then a transform instead of re-rasterizing
-   thousands of labels per wheel step. */
-.visualizer-pane.is-far .vs-row {
-  visibility: hidden;
-}
-/* The card's own header is text and icons too: at this zoom it is raster work
-   that competes with the schema name for attention. Hidden, not removed, so
-   the card keeps its exact geometry. */
-.visualizer-pane.is-far .vs-card-head {
-  visibility: hidden;
-}
-.visualizer-pane.is-far .vs-card {
-  background-color: color-mix(in srgb, var(--foreground) 22%, var(--panel));
-  border-color: transparent;
-}
-/* The schema's name, sized in screen pixels, centred over its box.
-   Its node covers the whole box and sits ABOVE the cards, so the wrapper must
-   never take pointer events — only the label itself does, and only at map
-   zoom, where it is the grab handle. React Flow sets `pointer-events` inline
-   on a draggable node, hence the override. */
-/* Neither schema node may take pointer events across its whole box: React
-   Flow puts `pointer-events` inline on a draggable node, and a full-box node
-   that swallows them makes the canvas un-pannable wherever a schema is. Only
-   the title strip (and, zoomed out, the big name) are grabbable. */
-.visualizer-pane .react-flow__node-schemaFar,
+/* The schema backdrop must not take pointer events across its whole box:
+   React Flow puts `pointer-events` inline on a draggable node, and a full-box
+   node that swallows them makes the canvas un-pannable wherever a schema is.
+   Only the title strip is grabbable. */
 .visualizer-pane .react-flow__node-schemaGroup {
   pointer-events: none !important;
 }
 .visualizer-pane .vs-box-handle {
   pointer-events: auto;
-}
-.vs-box-far {
-  display: none;
-}
-.visualizer-pane.is-far .vs-box-far {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  /* At the top of the box, where the title strip sits at a readable zoom —
-     a name floating in the middle of the box lands on the tables. */
-  align-items: flex-start;
-  justify-content: center;
-  /* The box is scenery. Only the label below is interactive, so a drag that
-     starts on empty space inside a schema pans the canvas. */
-  pointer-events: none;
-  padding: 0 calc(8px / var(--vs-zoom));
-}
-.visualizer-pane.is-far .vs-box-far-label {
-  margin-top: 0.4em;
-  pointer-events: auto;
-  cursor: grab;
-  display: flex;
-  max-width: 100%;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35em;
-  /* font-size is set per schema: the constant screen size, capped so the name
-     cannot be wider than its own box (see nameFontLimit). */
-  line-height: 1.15;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--foreground);
-  text-align: center;
-  padding: 0.35em 0.7em;
-  border-radius: 0.6em;
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
-}
-.visualizer-pane.is-far .vs-box-far-label:active {
-  cursor: grabbing;
-}
-.visualizer-pane.is-far .vs-box-far-label .vs-box-far-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.visualizer-pane.is-far .vs-box-far-label .vs-box-far-sub {
-  /* A fraction of whatever size the name settled on — computing it separately
-     drifts, because the two mins do not always pick the same branch. */
-  font-size: 0.62em;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-  color: var(--muted-foreground);
-  letter-spacing: 0;
 }

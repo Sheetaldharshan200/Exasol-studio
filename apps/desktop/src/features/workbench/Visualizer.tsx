@@ -41,7 +41,6 @@ import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
 import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
-import { isFarZoom, nameFontLimit, zoomVar } from "./visualizer/zoom-lod";
 import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
 import {
   COLOR_PRESETS,
@@ -50,7 +49,6 @@ import {
   EdgeStyleContext,
   NODE_W,
   PULSE_PRESETS,
-  ROW_H,
   edgeIsActive,
   edgeTypes,
   nodeHeight,
@@ -58,7 +56,6 @@ import {
   SCHEMA_NODE_TYPES,
   ToggleRow,
   type BeamEdgeData,
-  type SchemaFarData,
   type EdgeStyle,
   type Mode,
   type Selection,
@@ -122,20 +119,12 @@ export function Visualizer({
   const [budgetHidden, setBudgetHidden] = useState(0);
   const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(DEFAULT_EDGE_STYLE);
   // Gestures never touch React state: classes on the pane (toggled through a
-  // ref) hide link decoration and the minimap while moving, and drop column
-  // text below FAR_ZOOM where a label is a couple of pixels tall anyway.
+  // ref) hide link decoration and the minimap while moving, and promote the
+  // viewport for as long as the gesture lasts.
   const paneRef = useRef<HTMLDivElement>(null);
   const pane = useCallback(() => paneRef.current?.querySelector<HTMLElement>(".visualizer-pane") ?? null, []);
   const setPaneClass = useCallback((cls: string, on: boolean) => {
     pane()?.classList.toggle(cls, on);
-  }, [pane]);
-  // Every viewport change writes the live zoom into a CSS variable (so borders
-  // and the schema name keep a constant SCREEN size) and picks the detail tier.
-  const applyZoom = useCallback((zoom: number) => {
-    const el = pane();
-    if (!el) return;
-    el.style.setProperty("--vs-zoom", zoomVar(zoom));
-    el.classList.toggle("is-far", isFarZoom(zoom, ROW_H));
   }, [pane]);
   // The promotion outlives the gesture by a moment: a wheel zoom arrives as a
   // burst of separate gestures, and dropping the layer between them is what
@@ -163,12 +152,11 @@ export function Visualizer({
     const view = cameFrom.current.take();
     if (!inst || !view) return false;
     void inst.setViewport(view, { duration: 450 });
-    syncZoomAfterRef.current(450);
     return true;
   }, []);
 
-  /** Frame one schema: click its name (or its big name when zoomed out). The
-   *  box is read live, so a schema that has been dragged frames where it is. */
+  /** Frame one schema: click its name in the box's title strip. The box is
+   *  read live, so a schema that has been dragged frames where it is. */
   const focusSchema = useCallback((schema: string) => {
     const inst = rfRef.current;
     const box = inst?.getNodes().find((n) => n.id === `schema:${schema}`);
@@ -178,21 +166,9 @@ export function Visualizer({
     if (!width || !height) return;
     rememberViewport();
     void inst.fitBounds({ x: box.position.x, y: box.position.y, width, height }, { duration: 450, padding: 0.08 });
-    syncZoomAfterRef.current(450);
   }, [rememberViewport]);
 
-  /** Re-read the viewport after a programmatic move (fitView / fitBounds never
-   *  raise onMove), once its animation has landed. */
-  const syncZoomAfterRef = useRef<(ms: number) => void>(() => {});
-  const syncZoomAfter = useCallback((ms: number) => {
-    const t = window.setTimeout(() => {
-      const vp = rfRef.current?.getViewport();
-      if (vp) applyZoom(vp.zoom);
-    }, ms + 60);
-    return () => window.clearTimeout(t);
-  }, [applyZoom]);
-  syncZoomAfterRef.current = syncZoomAfter;
-  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [stylePanelOpen, setStylePanelOpen] = useState(false);
   // Bumped to force a cache-bypassing re-fetch (manual refresh, or a catalog
   // change elsewhere in the app — new schema/table).
@@ -238,9 +214,8 @@ export function Visualizer({
     (_e: unknown, node: Node) => {
       if (!SCHEMA_NODE_TYPES.includes(node.type ?? "")) return;
       const schema = (node.data as unknown as { schema: string }).schema;
-      // Everything that belongs to this schema moves with the grab — its
-      // tables, the dashed backdrop and the zoomed-out name, whichever of the
-      // two the user actually took hold of.
+      // Everything that belongs to this schema moves with the grab: its
+      // tables follow the box.
       const followers: Record<string, { x: number; y: number }> = {};
       for (const n of nodes) {
         if (n.id === node.id) continue;
@@ -318,11 +293,7 @@ export function Visualizer({
       if (returnToViewport()) return;
       // React Flow measures the fresh nodes a frame after they mount.
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
-      const cancelSync = syncZoomAfter(60 + 450);
-      return () => {
-        window.clearTimeout(t);
-        cancelSync();
-      };
+      return () => window.clearTimeout(t);
     }
     // Read live positions: a table may have been dragged since the layout.
     const rect = focusBounds(
@@ -336,13 +307,20 @@ export function Visualizer({
     if (!rect) return;
     rememberViewport();
     void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
-    return syncZoomAfter(450);
     // A change of TABLE or a fresh layout moves the view; nodes/edges are read
     // at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selTable, layoutRev]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The search box is always on the canvas; the shortcut puts the caret
+      // in it, which is what ⌘F does everywhere else.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
       if (e.key !== "Escape") return;
       if (sel) setSel(null);
       else returnToViewport();
@@ -516,32 +494,6 @@ export function Visualizer({
         } satisfies SchemaGroupData as unknown as Record<string, unknown>,
       };
     });
-    // The zoomed-out schema name is a SEPARATE node stacked above the cards:
-    // the dashed backdrop is zIndex -1, so a label inside it would be hidden
-    // by the very cards it stands in for.
-    const farNodes: Node[] = layout.groups.map((g) => {
-      const info = perSchema.find((p) => p.schema === g.schema)!;
-      return {
-        id: `schemafar:${g.schema}`,
-        type: "schemaFar",
-        position: { x: g.box.x, y: g.box.y },
-        style: { width: g.box.width, height: g.box.height },
-        draggable: true,
-        dragHandle: ".vs-box-far-label",
-        selectable: false,
-        connectable: false,
-        zIndex: 5,
-        data: {
-          schema: g.schema,
-          source: schemas.find((sc) => sc.name === g.schema)?.source,
-          total: info.total,
-          onFocus: () => focusSchema(g.schema),
-          // A small schema gets a small name: a constant-size label on a
-          // two-table box is wider than the box and lands on its neighbours.
-          fontLimit: nameFontLimit(g.box.width, g.box.height, g.schema.length),
-        } satisfies SchemaFarData as unknown as Record<string, unknown>,
-      };
-    });
     const tableNodes: Node[] = visible
       .filter((table) => drawn.has(table.id))
       .map((table) => ({
@@ -558,7 +510,7 @@ export function Visualizer({
       }));
     // Adding a source is a toolbar action, not a schema: it lives in the
     // button over the canvas, so the canvas only ever holds real schemas.
-    setNodes([...groupNodes, ...tableNodes, ...farNodes]);
+    setNodes([...groupNodes, ...tableNodes]);
     setLayoutRev((r) => r + 1);
     // Only links between drawn tables can be drawn; the rest wait for "Show
     // more". Publishing them (rather than rendering here) leaves ONE place
@@ -827,16 +779,6 @@ export function Visualizer({
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />
         </button>
-        <button
-          onClick={() => setSearchOpen((s) => !s)}
-          title="Search tables (⌘F)"
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
-            searchOpen ? "text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-          )}
-        >
-          <Search className="h-3.5 w-3.5" />
-        </button>
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
           {selectedList.length} schema{selectedList.length === 1 ? "" : "s"} · {counts.tables} tables · {counts.edges} links
           {linkSummary({
@@ -877,11 +819,7 @@ export function Visualizer({
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onInit={(inst) => {
-                rfRef.current = inst;
-                // The mount-time fitView has already run: start in the right tier.
-                syncZoomAfter(0);
-              }}
+              onInit={(inst) => (rfRef.current = inst)}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => {
@@ -899,30 +837,25 @@ export function Visualizer({
                 if (isUserMove(e)) cameFrom.current.clear();
                 beginGesture();
               }}
-              onMove={(_e, vp) => applyZoom(vp.zoom)}
-              onMoveEnd={(_e, vp) => {
-                applyZoom(vp.zoom);
-                endGesture();
-              }}
+              onMoveEnd={endGesture}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
-              /* Far enough out that a whole warehouse fits as a map of boxes. */
-              minZoom={0.04}
+              /* Low enough that Fit View can genuinely fit a whole warehouse:
+                 React Flow clamps the zoom it computes to this floor, so a
+                 high floor silently leaves part of the diagram off the pane. */
+              minZoom={0.05}
               proOptions={{ hideAttribution: true }}
               className="visualizer-pane"
             >
-              {/* The built-in Fit View is another programmatic move: it raises
-                  no onMove either, so the detail tier is re-read after it. */}
+              {/* Zooming or fitting by hand is the user choosing where to be,
+                  so it replaces the view a tap outside would return to. */}
               <Controls
                 className="!bottom-3 !left-3"
                 showInteractive={false}
                 onZoomIn={() => cameFrom.current.clear()}
                 onZoomOut={() => cameFrom.current.clear()}
-                onFitView={() => {
-                  cameFrom.current.clear();
-                  syncZoomAfter(450);
-                }}
+                onFitView={() => cameFrom.current.clear()}
               />
               <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={(n) => (n.type === "table" ? edgeStyle.to : "transparent")} />
             </ReactFlow>
@@ -930,27 +863,29 @@ export function Visualizer({
           </DiagramStateContext.Provider>
         )}
 
-        {/* Floating "add" — the same door as the box at the end of the row, always in view */}
-        {onNewVs ? (
-          <button
-            onClick={onNewVs}
-            data-agent-id="visualizer.add-source"
-            title="Add a data source — attach another database or bucket as a virtual schema"
-            className="absolute top-3 left-3 z-20 flex h-8 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <Waypoints className="h-3.5 w-3.5 text-teal" />
-            Add data source
-          </button>
-        ) : null}
+        {/* The canvas's own toolbar: the two things you reach for without
+            hunting in the header — attach a source, and find a table. */}
+        <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
+          {onNewVs ? (
+            <button
+              onClick={onNewVs}
+              data-agent-id="visualizer.add-source"
+              title="Add a data source — attach another database or bucket as a virtual schema"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <Waypoints className="h-3.5 w-3.5 text-teal" />
+              Add data source
+            </button>
+          ) : null}
 
-        {/* Floating VS Code-style fuzzy search over tables + columns */}
-        {searchOpen ? (
-          <div className="absolute top-3 right-3 z-20 flex w-80 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-2xl">
-            <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
+          {/* Always here, never behind a button: a diagram you cannot search is
+              a diagram you pan around hoping. */}
+          <div className="flex w-72 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+            <div className="flex h-8 items-center gap-1.5 px-2">
               <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <input
-                autoFocus
+                ref={searchRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
@@ -958,28 +893,33 @@ export function Visualizer({
                     jumpTo(matches.results[0].table, matches.results[0].column);
                   } else if (e.key === "Escape") {
                     setSearch("");
-                    setSearchOpen(false);
+                    e.currentTarget.blur();
                   }
                 }}
-                placeholder="Find tables & columns…"
+                placeholder="Find a table or column…"
+                data-agent-id="visualizer.search"
                 className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
               />
               {searchTerm ? (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{matches.results.length}</span>
-              ) : null}
-              <button
-                aria-label="Close search"
-                onClick={() => {
-                  setSearch("");
-                  setSearchOpen(false);
-                }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+                <>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{matches.results.length}</span>
+                  <button
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setSearch("");
+                      searchRef.current?.focus();
+                    }}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              ) : (
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">⌘F</span>
+              )}
             </div>
             {searchTerm ? (
-              <div className="max-h-64 overflow-auto py-1">
+              <div className="max-h-64 overflow-auto border-t border-border py-1">
                 {matches.results.length === 0 ? (
                   <p className="px-3 py-4 text-center text-xs text-muted-foreground">No matches.</p>
                 ) : (
@@ -1007,7 +947,7 @@ export function Visualizer({
               </div>
             ) : null}
           </div>
-        ) : null}
+        </div>
 
         {/* Link style panel */}
         {stylePanelOpen ? (

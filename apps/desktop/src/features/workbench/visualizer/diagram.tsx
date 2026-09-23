@@ -9,7 +9,6 @@ import { FolderOpen, KeyRound, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { nameFontCss } from "./zoom-lod";
 
 export const NODE_W = 232;
 export const HEADER_H = 34;
@@ -133,7 +132,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
     <div
       style={{ width: NODE_W }}
       className={cn(
-        "vs-card relative overflow-hidden rounded-xl border bg-panel",
+        "relative overflow-hidden rounded-xl border bg-panel",
         isSel ? "border-[#a78bfa] shadow-xl" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
       )}
     >
@@ -152,7 +151,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
         onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
-          "vs-card-head flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
+          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
           isSel ? "bg-[#a78bfa]/15" : "bg-secondary/70 hover:bg-secondary",
         )}
       >
@@ -173,7 +172,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps) {
                 onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
                 style={{ height: ROW_H }}
                 className={cn(
-                  "vs-row flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
+                  "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
                   colSel && "bg-[#a78bfa]/20",
                   isPicked && "bg-primary/10",
                   colMatched && !colSel && "bg-amber-400/15",
@@ -346,53 +345,13 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
   );
 });
 
-export type SchemaFarData = {
-  schema: string;
-  source?: string;
-  total: number;
-  onFocus: () => void;
-  /** Largest font the name may take without leaving its box (graph units). */
-  fontLimit: number;
-};
-
-/**
- * The schema's name, drawn ONLY when the canvas is zoomed out past legibility.
- * It is its own node, stacked above the table cards: the dashed box behind
- * them is `zIndex: -1`, so a label living inside it would be hidden by the
- * very cards it is meant to replace. Invisible (`display: none`) at every
- * readable zoom, so it intercepts nothing there.
- */
-export const SchemaFarNode = memo(function SchemaFarNode({ data }: NodeProps) {
-  const d = data as unknown as SchemaFarData;
-  return (
-    <div className="pointer-events-none relative h-full w-full">
-      {/* The wrapper only centres the label; it must never take pointer events,
-          or panning inside a schema would grab the schema instead of the canvas. */}
-      <div className="vs-box-far">
-        <button
-          className="vs-box-far-label"
-          title="Click to zoom to this schema · drag to move it"
-          onClick={d.onFocus}
-          style={{ fontSize: nameFontCss(d.fontLimit, 15) }}
-        >
-          <span className="vs-box-far-name">{d.schema}</span>
-          <span className="vs-box-far-sub">
-            {d.source ? `${d.source} · ` : ""}
-            {d.total} table{d.total === 1 ? "" : "s"}
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-});
-
 /** Tables drawn per schema box before the user asks for more. */
 export const TABLE_PAGE = 20;
 
-export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, schemaFar: SchemaFarNode };
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode };
 
 /** Node types that move a whole schema when dragged. */
-export const SCHEMA_NODE_TYPES = ["schemaGroup", "schemaFar"];
+export const SCHEMA_NODE_TYPES = ["schemaGroup"];
 export const edgeTypes = { beam: BeamEdge };
 
 export function ToggleRow({
