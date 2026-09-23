@@ -66,6 +66,7 @@ import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { installStatementBadges } from "./statement-badges";
+import { installUdfCells } from "./udf-cells";
 import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
@@ -304,6 +305,8 @@ export function ExasolStudio({
     defineMonacoThemes(m, syntaxOverridesRef.current);
   }, []);
   // Statement-number badges in the editor margin — Settings toggle, on by default.
+  const udfCellsRef = useRef<{ dispose: () => void } | null>(null);
+  useEffect(() => () => udfCellsRef.current?.dispose(), []);
   const stmtBadgesRef = useRef<{ setEnabled: (on: boolean) => void } | null>(null);
   const stmtNumbersRef = useRef(true);
   // progressId of the query currently executing (for the Stop button to cancel).
@@ -3592,6 +3595,9 @@ export function ExasolStudio({
                     setStatusEditor(editor);
                     registerExasolCompletion(monaco, () => sqlCatalogRef.current);
                     stmtBadgesRef.current = installStatementBadges(editor, monaco);
+                    // The notebook cell bar above each `--/ … /` block.
+                    udfCellsRef.current?.dispose();
+                    udfCellsRef.current = installUdfCells(editor, monaco);
                     stmtBadgesRef.current.setEnabled(stmtNumbersRef.current);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {

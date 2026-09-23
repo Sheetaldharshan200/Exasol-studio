@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { udfAccentClass, udfAccentColor, udfAccentRule, udfBodyStart, udfChipLabel, udfLineClasses, udfLineRole } from "./udf-block-style.ts";
+import { udfAccentClass, udfAccentColor, udfAccentRule, udfBodyStart, udfCellHeading, udfChipLabel, udfLineClasses, udfLineRole } from "./udf-block-style.ts";
 
 test("any language gets an accent, including ones this app has never heard of", () => {
   for (const lang of ["lua", "python3", "java", "r", "scala", "wasm", "julia"]) {
@@ -86,4 +86,40 @@ test("with no body yet, the lines between the markers are all header", () => {
   const lines = ["--/", "CREATE OR REPLACE LUA SCALAR SCRIPT F(", "/"];
   const roles = lines.map((_, i) => udfLineRole(i, { last: 2, bodyStart: null }));
   assert.deepEqual(roles, ["open", "header", "close"]);
+});
+
+test("the cell header reads the script's language, name and kind", () => {
+  assert.deepEqual(udfCellHeading("CREATE OR REPLACE LUA SCALAR SCRIPT MY_UDF (a DOUBLE) RETURNS DOUBLE AS"), {
+    language: "LUA",
+    name: "MY_UDF",
+    kind: "SCALAR",
+  });
+});
+
+test("a SET script and a qualified name read as well", () => {
+  const h = udfCellHeading("CREATE PYTHON3 SET SCRIPT ANALYTICS.AGG(a INT) EMITS (b INT) AS");
+  assert.equal(h.language, "PYTHON3");
+  assert.equal(h.kind, "SET");
+  assert.equal(h.name, "ANALYTICS.AGG");
+});
+
+test("an adapter script is named as one", () => {
+  assert.equal(udfCellHeading("CREATE OR REPLACE JAVA ADAPTER SCRIPT VS.ADAPTER AS").kind, "ADAPTER");
+});
+
+test("a header wrapped over lines still reads", () => {
+  const h = udfCellHeading("CREATE OR REPLACE\n  LUA SCALAR SCRIPT\n  MY_UDF (a DOUBLE)\nRETURNS DOUBLE AS");
+  assert.equal(h.language, "LUA");
+  assert.equal(h.name, "MY_UDF");
+});
+
+test("a header still being typed yields what is there, not nothing", () => {
+  const h = udfCellHeading("CREATE OR REPLACE LUA SCALAR SCRIPT");
+  assert.equal(h.language, "LUA");
+  assert.equal(h.kind, "SCALAR");
+  assert.equal(h.name, null);
+});
+
+test("a line that is not a script header yields nothing to show", () => {
+  assert.deepEqual(udfCellHeading("SELECT * FROM T"), { language: null, name: null, kind: null });
 });

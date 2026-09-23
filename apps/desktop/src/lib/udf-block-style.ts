@@ -96,3 +96,23 @@ export function udfLineRole(index: number, opts: { last: number; bodyStart: numb
   if (opts.bodyStart !== null && index >= opts.bodyStart) return "body";
   return "header";
 }
+
+/** What a cell's header bar says about the script it holds. */
+export type UdfCellHeading = { language: string | null; name: string | null; kind: string | null };
+
+/**
+ * Read a block's CREATE header for the things a cell header shows: which
+ * language, what the script is called, and whether it is SCALAR or SET.
+ *
+ * Deliberately forgiving — the header is being typed while this runs, so
+ * every part is optional and a half-written header simply yields fewer
+ * fields rather than nothing at all.
+ */
+export function udfCellHeading(header: string): UdfCellHeading {
+  const flat = header.replace(/\s+/g, " ").trim();
+  const language = /\bCREATE\s+(?:OR\s+REPLACE\s+)?([A-Za-z][A-Za-z0-9]*)\s+(?:SCALAR|SET|ADAPTER)?\s*SCRIPT\b/i.exec(flat)?.[1] ?? null;
+  const kind = /\b(SCALAR|SET|ADAPTER)\s+SCRIPT\b/i.exec(flat)?.[1]?.toUpperCase() ?? null;
+  // The name follows SCRIPT, up to the parameter list or the end.
+  const name = /\bSCRIPT\s+("?[\w.]+"?(?:\."?[\w]+"?)?)/i.exec(flat)?.[1] ?? null;
+  return { language, name, kind };
+}

@@ -7,7 +7,7 @@
  */
 import { type Monaco } from "@monaco-editor/react";
 import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
-import { udfAccentClass, udfAccentRule, udfBodyStart, udfChipLabel, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
+import { udfAccentClass, udfAccentRule, udfBodyStart, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -148,19 +148,6 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         });
       }
       // The language pill, once the CREATE header names one.
-      const chip = udfChipLabel(block.language);
-      if (chip) {
-        // On the child cell's first line when there is one, so the label sits
-        // with the code it names; otherwise on the opening marker.
-        const chipLine = bodyStart !== null ? from.lineNumber + bodyStart : from.lineNumber;
-        decorations.push({
-          range: new monaco.Range(chipLine, model.getLineMaxColumn(chipLine), chipLine, model.getLineMaxColumn(chipLine)),
-          options: {
-            after: { content: chip, inlineClassName: `exa-udf-chip ${accentClass ?? ""}`.trim() },
-            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-          },
-        });
-      }
     }
     // Re-apply ONLY on structural change — replacing identical decorations on
     // every keystroke made the margin and block tint visibly push around.
