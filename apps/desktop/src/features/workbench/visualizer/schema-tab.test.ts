@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COMFORTABLE_PX, nameScreenPx, showSchemaTab, tabFontCss, tabFontLimit, tabThreshold, TABLE_NAME_PX, zoomVar } from "./schema-tab.ts";
+import { COMFORTABLE_PX, nameScreenPx, showSchemaTab, tabFontCss, tabFontLimit, tabLabelChars, tabThreshold, TABLE_NAME_PX, zoomVar } from "./schema-tab.ts";
 
 test("zoomed in, the cards carry their own names and the tab stands down", () => {
   assert.equal(showSchemaTab(1), false);
@@ -55,4 +55,25 @@ test("a box with no room still yields a usable font", () => {
 
 test("the tab asks for the constant screen size and accepts the cap", () => {
   assert.equal(tabFontCss(28), "min(calc(13px / var(--vs-zoom)), 28.00px)");
+});
+
+test("the tab is measured by its widest line, not just its name", () => {
+  // "MYSQL_VS" is 8 characters; "MySQL · 2 tables" is 16 at 0.7 size = 11.2.
+  // Sizing by the name alone let the second line run into the next schema.
+  assert.ok(tabLabelChars("MYSQL_VS", "MySQL", 2) > "MYSQL_VS".length);
+  assert.equal(tabLabelChars("MYSQL_VS", "MySQL", 2), 16 * 0.7);
+});
+
+test("a long name still wins over a short second line", () => {
+  assert.equal(tabLabelChars("SEMANTIC_CATALOG", undefined, 45), "SEMANTIC_CATALOG".length);
+});
+
+test("one table reads in the singular", () => {
+  assert.equal(tabLabelChars("X", undefined, 1), "1 table".length * 0.7);
+});
+
+test("the widest line is what the font cap is computed from", () => {
+  const chars = tabLabelChars("MYSQL_VS", "PostgreSQL", 2);
+  const limit = tabFontLimit(260, chars, 170);
+  assert.ok(limit * (chars * 0.62 + 1.4) <= 260 + 170 * 0.8 + 0.01);
 });

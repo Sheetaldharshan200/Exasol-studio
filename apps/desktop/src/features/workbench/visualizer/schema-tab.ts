@@ -38,8 +38,25 @@ const CHROME_RATIO = 1.4;
  *  one. Boxes are laid out a fixed gap apart; most of that gap is fair game. */
 const GAP_SHARE = 0.8;
 
+/** The second line's type size, relative to the name's (see .vs-tab-sub). */
+const SUB_RATIO = 0.7;
+
 /**
- * The largest font the tab may use, in GRAPH units, so the WHOLE name fits.
+ * How wide the tab's widest line is, counted in name-sized characters.
+ *
+ * The tab carries two lines: the schema's name, and under it its source and
+ * table count. The SECOND line is often the longer of the two — "MYSQL_VS" is
+ * eight characters while "MySQL · 2 tables" is sixteen — so sizing the tab by
+ * the name alone lets the line beneath it run past the box and into the next
+ * schema's tab, which is exactly what it did.
+ */
+export function tabLabelChars(name: string, source: string | undefined, total: number): number {
+  const sub = `${source ? `${source} · ` : ""}${total} table${total === 1 ? "" : "s"}`;
+  return Math.max(name.length, sub.length * SUB_RATIO);
+}
+
+/**
+ * The largest font the tab may use, in GRAPH units, so the WHOLE tab fits.
  *
  * Truncating is not an option here: "SEMANTI…" is the same label on
  * SEMANTIC_AGENT and SEMANTIC_CATALOG, which is worse than a small name — the
@@ -47,9 +64,9 @@ const GAP_SHARE = 0.8;
  * shrinks instead, and only as far as it must, because a tab may use the gap
  * beside its box as well as the box itself.
  */
-export function tabFontLimit(boxWidth: number, nameLength: number, gap: number): number {
+export function tabFontLimit(boxWidth: number, labelChars: number, gap: number): number {
   const room = boxWidth + Math.max(0, gap) * GAP_SHARE;
-  const perChar = Math.max(1, nameLength) * CHAR_RATIO + CHROME_RATIO;
+  const perChar = Math.max(1, labelChars) * CHAR_RATIO + CHROME_RATIO;
   return Math.max(1, room / perChar);
 }
 

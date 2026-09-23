@@ -42,7 +42,7 @@ import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
 import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
-import { showSchemaTab, tabFontLimit, zoomVar } from "./visualizer/schema-tab";
+import { showSchemaTab, tabFontLimit, tabLabelChars, zoomVar } from "./visualizer/schema-tab";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -517,7 +517,11 @@ export function Visualizer({
           onFocus: () => focusSchema(g.schema),
           // A long name on a small box shrinks rather than truncating: two
           // schemas that both read "SEMANTI…" name nothing.
-          tabFont: tabFontLimit(g.box.width, g.schema.length, SCHEMA_GAP),
+          tabFont: tabFontLimit(
+            g.box.width,
+            tabLabelChars(g.schema, schemas.find((sc) => sc.name === g.schema)?.source, info.total),
+            SCHEMA_GAP,
+          ),
           source: schemas.find((sc) => sc.name === g.schema)?.source,
           shown: info.tables.length,
           total: info.total,

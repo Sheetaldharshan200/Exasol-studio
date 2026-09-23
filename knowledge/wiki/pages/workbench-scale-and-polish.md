@@ -241,7 +241,11 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
     `tabFontLimit(boxWidth, nameLength, gap)` shrinks the TYPE instead, and
     only as far as it must: a tab may use most of the gap beside its box as
     well as the box itself. The table count sits under the name rather than
-    beside it, so the width is the name's alone.
+    beside it.
+  - The cap is computed from the WIDEST line, not the name: "MYSQL_VS" is
+    eight characters while "MySQL · 2 tables" beneath it is sixteen, so a cap
+    taken from the name alone still let the second line run past the box and
+    into the next schema's tab (`tabLabelChars`).
 - **Links read as links** — default width 2.5, and the "dense" threshold that
   strips decoration went 24 → 60 links, with the faint opacities lifted
   (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1
