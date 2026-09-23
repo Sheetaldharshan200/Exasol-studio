@@ -163,3 +163,23 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] verify | PostgreSQL + MySQL virtual schemas proven end to end through the app's plan (sources as Podman containers inside the Exasol VM; Mac firewall blocks host-side servers for non-admins)
 
 ## [2026-09-22] feat | Visualizer: one canvas per connection — dashed schema boxes, multiselect, cross-schema links + builder; dense/paused link rendering fixes the pan/zoom hang
+
+## [2026-09-22] fix | Issues #156 #157 #158: PDF export via a native print window (WKWebView ignores window.print), running-state clock on the Results tab / visualizer load pill / preview / add-source steps, link-style panel layout; inferLinks indexed (1.7 s → 23 ms at 1,000 tables); per-node will-change removed
+
+## [2026-09-22] fix | Visualizer smoothness: viewport promotion scoped to the gesture (a permanently promoted layer re-rasterizes at every scale — the "hangs after some point" wall), and the far-detail tier could never fire because FAR_ZOOM 0.12 < minZoom 0.15; zoomed out is now a map of named schema boxes (zoom-lod.ts, --vs-zoom)
+
+## [2026-09-22] fix | Open data ran without a runMeta so the results area looked idle for the whole wait; all execution now serialized per connection through a tested serial queue with per-connection result generations; editable grid gains duplicate/scroll-to-new-row/⌘S and a tested DML builder (a cloned NULL used to become the column DEFAULT)
+
+## [2026-09-22] fix | Results scrollbar now starts at row 1 (header is its own table above the scroller; widths paired, scrollbar gutter compensated); schema boxes stopped swallowing pans (React Flow sets pointer-events inline on draggable nodes); tap a schema name to frame it; cards survive to much lower zoom; links bolder by default
+
+## [2026-09-22] feat | Visualizer: schema name capped to its own box and anchored at its top, in-canvas add-source card removed, a column selection now draws only its links, and a tap on empty canvas returns to the exact viewport you framed from
+
+## [2026-09-23] fix | Visualizer: the zoom level-of-detail tier is removed at the user's request — full cards at every zoom, smoothness carried by gesture-scoped layer promotion, containment, parked decoration, the link budget and pagination; search is now a permanent floating box on the canvas (⌘F focuses it)
+
+## [2026-09-23] gotcha | Personal local setup can deadlock: a VM host process left from an earlier session keeps holding 8565 with no database behind it, so probes get "connection reset" and `exasol stop` fails with ssh exit 255 (`failed to remove Nano container`) — its recovery needs the guest it cannot reach. Fix: kill the stale VM pid from `local/runtime/vm-state.json`, then `exasol start`; a fresh VM comes up on a new guest IP.
+
+## [2026-09-23] fix | Studio now recovers a stranded Personal VM itself: when the launcher's `stop` fails it verifies the recorded pid is the runner, holds THIS deployment's port, and that no database answers in the guest, then TERM/KILLs it and starts fresh — a live database is never signalled, whatever made `stop` fail (vm_recovery.rs, 10 tests)
+
+## [2026-09-23] fix | A confirmed schema change (drop/rename/alter) now opens in a query tab and runs there, so a refusal like "drop the virtual schemas of this adapter first" is in front of the user and re-runnable, not buried in SQL history
+
+## [2026-09-23] fix | CI's Rust job had been red on main since 2026-09-22: tauri-build verifies every bundle-resource path exists, and the stub step never created `driver-bridge.cjs`, `bridge.R` or the components lock. The stub list now covers every entry in tauri.conf.json's resources — check it whenever a resource is added.

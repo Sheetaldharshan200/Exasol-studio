@@ -89,7 +89,9 @@ export function layoutSchemas(
       x: GROUP_PAD + (i % cols) * (nodeWidth + gapX),
       y: GROUP_HEADER + GROUP_PAD + rowTop[Math.floor(i / cols)],
     }));
-    return { schema, width: Math.max(width, 260), height: Math.max(height, GROUP_HEADER + GROUP_PAD * 2 + 60), rel };
+    // An empty schema is a slim labelled box, not a hole in the canvas.
+    const minHeight = list.length ? GROUP_HEADER + GROUP_PAD * 2 + 60 : GROUP_HEADER + 12;
+    return { schema, width: Math.max(width, 260), height: Math.max(list.length ? height : 0, minHeight), rel };
   });
   let x = 0;
   let y = 0;
@@ -130,4 +132,60 @@ export function whereSchemas(group: { rules: unknown[] }): string[] {
   };
   walk(group.rules);
   return [...out];
+}
+
+/** Above this many links the canvas draws only what the user can read. */
+export const MAX_EDGES = 400;
+
+/**
+ * A render budget for links, so a schema with a million relationships stays
+ * a diagram and not a hang: under `max`, everything; over it, every declared
+ * key plus every link touching the selected table — inferred links between
+ * unselected tables wait until the user picks one. Returns what to draw and
+ * how many were held back.
+ */
+export function budgetLinks<L extends { source: string; target: string; inferred?: boolean }>(
+  links: L[],
+  selectedTable: string | null,
+  max = MAX_EDGES,
+): { shown: L[]; hidden: number } {
+  if (links.length <= max) return { shown: links, hidden: 0 };
+  const shown = links.filter((l) => !l.inferred || l.source === selectedTable || l.target === selectedTable);
+  return { shown: shown.length <= max ? shown : shown.slice(0, max), hidden: links.length - Math.min(shown.length, max) };
+}
+
+export type LinkSelection = { table: string; column?: string } | null;
+
+/**
+ * The links worth drawing for the current selection.
+ *
+ * Picking a table, and more so a column, is how you ask "where does this go?".
+ * Answering it on a canvas still carrying every other link answers nothing, so
+ * the selection narrows what is drawn: a table keeps the links that touch it,
+ * a column keeps only the links on that column. Nothing selected draws
+ * everything.
+ */
+export function linksForSelection<T extends { source: string; sourceColumn: string; target: string; targetColumn: string }>(
+  links: readonly T[],
+  sel: LinkSelection,
+): T[] {
+  if (!sel) return [...links];
+  return links.filter((l) => {
+    const onSource = l.source === sel.table && (!sel.column || l.sourceColumn === sel.column);
+    const onTarget = l.target === sel.table && (!sel.column || l.targetColumn === sel.column);
+    return onSource || onTarget;
+  });
+}
+
+/** What the header says after "N links": which selection they belong to, and
+ *  how many are not on screen. One place, so the count and the explanation
+ *  cannot disagree. */
+export function linkSummary(opts: { hidden: number; selection: string | null }): string {
+  const { hidden, selection } = opts;
+  const parts: string[] = [];
+  if (selection) parts.push(`for ${selection}`);
+  if (hidden > 0) parts.push(`+${hidden} hidden`);
+  if (!parts.length) return "";
+  const hint = selection ? "click the canvas for all" : hidden > 0 ? "select a table to see its links" : "";
+  return ` ${parts.join(" · ")}${hint ? ` — ${hint}` : ""}`;
 }

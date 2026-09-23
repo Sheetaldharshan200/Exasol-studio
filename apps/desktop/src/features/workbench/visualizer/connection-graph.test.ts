@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GROUP_HEADER, GROUP_PAD, layoutSchemas, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+
+const L = (source: string, sourceColumn: string, target: string, targetColumn: string) => ({ source, sourceColumn, target, targetColumn });
 
 const T = (name: string, n = 2) => ({ name, columns: Array.from({ length: n }, (_, i) => ({ name: `C${i}`, dataType: "INT", pk: i === 0 })) });
 
@@ -42,9 +44,10 @@ test("layout: tables sit inside their box with header and padding; boxes go left
   assert.equal(Object.keys(L.absolute).length, 7);
 });
 
-test("layout of an empty schema still yields a box", () => {
+test("layout of an empty schema still yields a box — a slim one", () => {
   const L = layoutSchemas([{ schema: "EMPTY", tables: [] }], 200, () => 50);
   assert.equal(L.groups[0].box.width, 260);
+  assert.equal(L.groups[0].box.height, GROUP_HEADER + 12);
   assert.deepEqual(L.tables, {});
 });
 
@@ -55,4 +58,68 @@ test("whereSchemas finds every schema a nested WHERE group names, and nothing el
   ] };
   assert.deepEqual(whereSchemas(group).sort(), ["MYSQL_VS", "RETAIL"]);
   assert.deepEqual(whereSchemas({ rules: [] }), []);
+});
+
+test("budgetLinks: everything under the cap; over it, declared links plus the selected table's, the rest counted", () => {
+  const declared = Array.from({ length: 3 }, (_, i) => ({ source: `S.D${i}`, target: `S.P${i}`, inferred: false }));
+  const inferred = Array.from({ length: 10 }, (_, i) => ({ source: `S.I${i}`, target: `S.P0`, inferred: true }));
+  const all = [...declared, ...inferred];
+  assert.deepEqual(budgetLinks(all, null, 20), { shown: all, hidden: 0 });
+  const over = budgetLinks(all, null, 5);
+  assert.deepEqual(over.shown, declared);
+  assert.equal(over.hidden, 10);
+  const withSel = budgetLinks(all, "S.I4", 5);
+  assert.deepEqual(withSel.shown.map((l) => l.source), ["S.D0", "S.D1", "S.D2", "S.I4"]);
+  assert.equal(withSel.hidden, 9);
+  const tooManyDeclared = budgetLinks(Array.from({ length: 50 }, (_, i) => ({ source: `a${i}`, target: "b", inferred: false })), null, 10);
+  assert.equal(tooManyDeclared.shown.length, 10);
+  assert.equal(tooManyDeclared.hidden, 40);
+});
+
+test("nothing selected draws every link", () => {
+  const links = [L("S.A", "ID", "S.B", "A_ID"), L("S.C", "X", "S.D", "Y")];
+  assert.equal(linksForSelection(links, null).length, 2);
+});
+
+test("a selected table keeps only the links that touch it", () => {
+  const links = [L("S.A", "ID", "S.B", "A_ID"), L("S.C", "X", "S.D", "Y"), L("S.B", "K", "S.A", "ID")];
+  const kept = linksForSelection(links, { table: "S.A" });
+  assert.equal(kept.length, 2);
+  assert.ok(kept.every((l) => l.source === "S.A" || l.target === "S.A"));
+});
+
+test("a selected column keeps only that column's links", () => {
+  const links = [
+    L("S.ORDERS", "CUSTOMER_ID", "S.CUSTOMERS", "ID"),
+    L("S.ORDERS", "PRODUCT_ID", "S.PRODUCTS", "ID"),
+    L("S.SHIPMENTS", "ORDER_ID", "S.ORDERS", "ID"),
+  ];
+  const kept = linksForSelection(links, { table: "S.ORDERS", column: "CUSTOMER_ID" });
+  assert.deepEqual(kept.map((l) => l.sourceColumn), ["CUSTOMER_ID"]);
+});
+
+test("a column is matched at either end of a link", () => {
+  const links = [L("S.SHIPMENTS", "ORDER_ID", "S.ORDERS", "ID")];
+  assert.equal(linksForSelection(links, { table: "S.ORDERS", column: "ID" }).length, 1);
+});
+
+test("a column with no links draws none, rather than quietly showing all", () => {
+  const links = [L("S.ORDERS", "CUSTOMER_ID", "S.CUSTOMERS", "ID")];
+  assert.deepEqual(linksForSelection(links, { table: "S.ORDERS", column: "TOTAL" }), []);
+});
+
+test("with everything on screen and nothing selected the header says no more", () => {
+  assert.equal(linkSummary({ hidden: 0, selection: null }), "");
+});
+
+test("links held back are counted, with the way to see them", () => {
+  assert.equal(linkSummary({ hidden: 12, selection: null }), " +12 hidden — select a table to see its links");
+});
+
+test("a selection names itself and says how to get back", () => {
+  assert.equal(linkSummary({ hidden: 0, selection: "ORDERS.CUSTOMER_ID" }), " for ORDERS.CUSTOMER_ID — click the canvas for all");
+});
+
+test("a selection that still hides links admits it", () => {
+  assert.equal(linkSummary({ hidden: 5, selection: "ORDERS" }), " for ORDERS · +5 hidden — click the canvas for all");
 });

@@ -3,12 +3,13 @@
  * styling, and the edge-selection rule. Moved verbatim out of Visualizer.tsx;
  * no behaviour lives here that the component did not already have.
  */
-import { createContext, useContext } from "react";
+import { createContext, memo, useContext } from "react";
 import { EdgeLabelRenderer, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from "@xyflow/react";
-import { FolderOpen, KeyRound, Plus, Table2, Waypoints } from "lucide-react";
+import { FolderOpen, KeyRound, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { tabFontCss } from "./schema-tab";
 
 export const NODE_W = 232;
 export const HEADER_H = 34;
@@ -17,20 +18,31 @@ export const ROW_H = 26;
 export type Selection = { table: string; column?: string } | null;
 export type Mode = "diagram" | "build";
 
+/**
+ * What a table node is given ONCE, at layout time. Everything that changes
+ * with a click (selection, picks, search matches, mode) travels through
+ * `DiagramStateContext` instead, so a click re-renders nodes without rebuilding
+ * a single node object — React Flow's first performance rule.
+ */
 export type TableNodeData = {
   /** `id` is `SCHEMA.TABLE` — what selection, picks and links refer to. */
   table: GraphTable & { id: string; schema: string };
-  mode: Mode;
-  selTable?: string;
-  selColumn?: string;
-  picked: Set<string>; // `${table}.${col}` chosen for SELECT
   sourceCols: Set<string>;
   targetCols: Set<string>;
-  matchedTables: Set<string>;
-  matchedCols: Set<string>;
   onSelect: (table: string, column?: string) => void;
   onPick: (table: string, column: string) => void;
 };
+
+export type DiagramState = {
+  mode: Mode;
+  selTable?: string;
+  selColumn?: string;
+  picked: Set<string>; // `${SCHEMA.TABLE}.${col}` chosen for SELECT
+  matchedTables: Set<string>;
+  matchedCols: Set<string>;
+};
+export const EMPTY_DIAGRAM_STATE: DiagramState = { mode: "diagram", picked: new Set(), matchedTables: new Set(), matchedCols: new Set() };
+export const DiagramStateContext = createContext<DiagramState>(EMPTY_DIAGRAM_STATE);
 
 export type BeamEdgeData = {
   source: string;
@@ -59,7 +71,7 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
   show: true,
   pulse: true,
   line: "solid",
-  width: 2,
+  width: 2.5,
   from: "#a78bfa",
   to: "#7c3aed",
   // Cyan pulse over the purple link — reads clearly as "flow" vs. the link.
@@ -67,16 +79,17 @@ export const DEFAULT_EDGE_STYLE: EdgeStyle = {
 };
 
 /**
- * Style plus two performance facts the diagram derives: `dense` (many links —
- * only the selected link animates or carries a label) and `paused` (the user
- * is panning/zooming — every link draws as a plain line until they stop).
- * A hundred links each running a JS-driven gradient was what made a big
- * schema stutter on every move.
+ * Style plus one performance fact the diagram derives: `dense` (many links —
+ * only the selected link animates or carries a label). Panning/zooming hides
+ * decoration through a CSS class on the pane, not through React state, so a
+ * gesture never re-renders an edge.
  */
-export type EdgeRenderContext = EdgeStyle & { dense?: boolean; paused?: boolean };
+export type EdgeRenderContext = EdgeStyle & { dense?: boolean };
 export const EdgeStyleContext = createContext<EdgeRenderContext>(DEFAULT_EDGE_STYLE);
-/** Above this many links the diagram is "dense": decoration only on the selected link. */
-export const DENSE_EDGES = 24;
+/** Above this many links the diagram is "dense": decoration only on the
+ *  selected link. Set high enough that an ordinary schema keeps its pulses —
+ *  below it the links are meant to be the thing you notice. */
+export const DENSE_EDGES = 60;
 
 export const COLOR_PRESETS: { label: string; from: string; to: string }[] = [
   { label: "Purple", from: "#a78bfa", to: "#7c3aed" },
@@ -107,18 +120,21 @@ export const rowY = (i: number) => HEADER_H + i * ROW_H + ROW_H / 2;
 export const nodeHeight = (t: GraphTable) => HEADER_H + t.columns.length * ROW_H;
 export const colKey = (table: string, col: string) => `${table}.${col}`;
 
-export function TableNode({ data }: NodeProps) {
+/** The whole card, always — every column, at every zoom. The canvas stays
+ *  bounded by the per-box pagination and the link budget, not by hiding rows. */
+export const TableNode = memo(function TableNode({ data }: NodeProps) {
   const d = data as unknown as TableNodeData;
-  const { table, mode, selTable, selColumn, picked, sourceCols, targetCols, matchedTables, matchedCols, onSelect, onPick } = d;
-  const isSel = selTable === table.id;
-  const build = mode === "build";
-  const tableMatched = matchedTables?.has(table.id);
+  const { table, sourceCols, targetCols, onSelect, onPick } = d;
+  const state = useContext(DiagramStateContext);
+  const isSel = state.selTable === table.id;
+  const build = state.mode === "build";
+  const tableMatched = state.matchedTables.has(table.id);
   return (
     <div
       style={{ width: NODE_W }}
       className={cn(
-        "relative overflow-hidden rounded-xl border bg-panel shadow-xl transition-colors",
-        isSel ? "border-[#a78bfa]" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
+        "relative overflow-hidden rounded-xl border bg-panel",
+        isSel ? "border-[#a78bfa] shadow-xl" : tableMatched ? "border-amber-400 ring-2 ring-amber-400/40" : "border-border",
       )}
     >
       {table.columns.map((col, i) =>
@@ -136,7 +152,7 @@ export function TableNode({ data }: NodeProps) {
         onClick={() => onSelect(table.id)}
         style={{ height: HEADER_H }}
         className={cn(
-          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left transition-colors",
+          "flex w-full items-center gap-1.5 border-b border-border px-3 text-left",
           isSel ? "bg-[#a78bfa]/15" : "bg-secondary/70 hover:bg-secondary",
         )}
       >
@@ -146,62 +162,55 @@ export function TableNode({ data }: NodeProps) {
       </button>
 
       <div>
-        {table.columns.map((col) => {
-          const key = colKey(table.id, col.name);
-          const isPicked = picked.has(key);
-          const colSel = isSel && selColumn === col.name;
-          const colMatched = matchedCols?.has(key);
-          return (
-            <div
-              key={col.name}
-              onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
-              style={{ height: ROW_H }}
-              className={cn(
-                "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] transition-colors last:border-0 hover:bg-secondary/50",
-                colSel && "bg-[#a78bfa]/20",
-                isPicked && "bg-primary/10",
-                colMatched && !colSel && "bg-amber-400/15",
-              )}
-            >
-              {build ? (
-                <span
-                  className={cn(
-                    "flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] border",
-                    isPicked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
-                  )}
-                >
-                  {isPicked ? <span className="text-[8px] leading-none">✓</span> : null}
-                </span>
-              ) : col.pk ? (
-                <KeyRound className="h-3 w-3 shrink-0 text-warning" />
-              ) : (
-                <span className="w-3 shrink-0" />
-              )}
-              <span
+          {table.columns.map((col) => {
+            const key = colKey(table.id, col.name);
+            const isPicked = state.picked.has(key);
+            const colSel = isSel && state.selColumn === col.name;
+            const colMatched = state.matchedCols.has(key);
+            return (
+              <div
+                key={col.name}
+                onClick={() => (build ? onPick(table.id, col.name) : onSelect(table.id, col.name))}
+                style={{ height: ROW_H }}
                 className={cn(
-                  "truncate",
-                  colMatched ? "font-semibold text-amber-300" : col.pk ? "text-foreground" : "text-muted-foreground",
+                  "flex cursor-pointer items-center gap-1.5 border-b border-border/40 px-3 font-mono text-[11px] last:border-0 hover:bg-secondary/50",
+                  colSel && "bg-[#a78bfa]/20",
+                  isPicked && "bg-primary/10",
+                  colMatched && !colSel && "bg-amber-400/15",
                 )}
               >
-                {col.name}
-              </span>
-              {colMatched ? (
-                <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[8px] font-semibold tracking-wide text-amber-300 uppercase">
-                  match
-                </span>
-              ) : null}
-              <span className="ml-auto shrink-0 truncate text-syntax-type/70">{col.dataType}</span>
-            </div>
-          );
-        })}
+                {build ? (
+                  <span
+                    className={cn(
+                      "flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] border",
+                      isPicked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
+                    )}
+                  >
+                    {isPicked ? <span className="text-[8px] leading-none">✓</span> : null}
+                  </span>
+                ) : col.pk ? (
+                  <KeyRound className="h-3 w-3 shrink-0 text-warning" />
+                ) : (
+                  <span className="w-3 shrink-0" />
+                )}
+                <span className={cn("truncate", colMatched ? "font-semibold text-amber-300" : col.pk ? "text-foreground" : "text-muted-foreground")}>{col.name}</span>
+                {colMatched ? (
+                  <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[8px] font-semibold tracking-wide text-amber-300 uppercase">match</span>
+                ) : null}
+                <span className="ml-auto shrink-0 truncate text-syntax-type/70">{col.dataType}</span>
+              </div>
+            );
+          })}
       </div>
 
       {isSel && !build ? (
-        <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} />
+        <span className="vs-deco">
+          <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} borderWidth={2} duration={8} />
+        </span>
       ) : null}
     </div>
   );
-}
+});
 
 export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps) {
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
@@ -216,10 +225,13 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
   const width = active ? cfg.width + 1.25 : cfg.width;
   const dash = dashFor(cfg.line, width);
-  const opacity = active ? 1 : inferred ? 0.55 : 0.85;
-  // Decoration is for the link the user is looking at. Everything animates
-  // only on a small diagram at rest.
-  const decorate = !cfg.paused && (active || (!cfg.dense && !inferred));
+  // Even at their faintest a link has to be followable across the canvas; an
+  // inferred one reads as weaker than a declared one, never as invisible.
+  const opacity = active ? 1 : cfg.dense ? (inferred ? 0.55 : 0.85) : inferred ? 0.75 : 1;
+  // Decoration is for the link the user is looking at; on a small diagram every
+  // declared link gets it. While the user pans or zooms, CSS hides `.vs-deco`
+  // (see global.css) — no edge re-renders on a gesture.
+  const decorate = active || (!cfg.dense && !inferred);
   const animate = cfg.pulse && decorate;
   const showLabel = Boolean(d?.label) && decorate;
   // Empty pulseColor means "match the link color".
@@ -241,7 +253,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
         style={{ opacity }}
       />
       {animate ? (
-        <>
+        <g className="vs-deco">
           {/* Brighter moving highlight + travelling dot on top of the pulse line. */}
           <path d={path} fill="none" stroke={`url(#${gid})`} strokeWidth={width + 1.5} strokeLinecap="round" />
           <circle r={width + 2} fill={pulse}>
@@ -259,7 +271,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
               <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
             </linearGradient>
           </defs>
-        </>
+        </g>
       ) : null}
       {showLabel ? (
         <EdgeLabelRenderer>
@@ -270,7 +282,7 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
               background: `${cfg.to}1f`,
               color: cfg.from,
             }}
-            className="pointer-events-none absolute rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] whitespace-nowrap"
+            className="vs-deco pointer-events-none absolute rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] whitespace-nowrap"
           >
             {inferred ? `≈ ${d.score !== undefined ? d.score.toFixed(1) + " " : ""}` : ""}
             {d.label}
@@ -283,46 +295,77 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
 export type SchemaGroupData = {
   schema: string;
+  /** Largest font the zoomed-out tab may use without running into its
+   *  neighbour, in graph units (see tabFontLimit). */
+  tabFont: number;
+  /** Frame this whole schema (click its name). */
+  onFocus: () => void;
   /** The federated source for a virtual schema (PostgreSQL, MySQL, …). */
   source?: string;
-  tableCount: number;
+  /** Tables drawn now vs. tables in the schema — the box paginates. */
+  shown: number;
+  total: number;
+  onShowMore: () => void;
+  onShowAll: () => void;
 };
 
 /**
  * The dashed box a schema's tables live in. Its size comes from the layout
  * (`style.width/height`), so this only draws the frame and the title strip.
  */
-export function SchemaGroupNode({ data }: NodeProps) {
+export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps) {
   const d = data as unknown as SchemaGroupData;
+  const more = d.total - d.shown;
   return (
-    <div className="h-full w-full rounded-2xl border-2 border-dashed border-border/80 bg-panel/20">
-      <div className="flex h-[44px] items-center gap-2 px-4">
+    // The box is a backdrop: only its header takes pointer events, so dragging
+    // and clicking the canvas work straight through it.
+    <div className="vs-box pointer-events-none relative h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
+      {/* Zoomed out, the strip below shrinks past reading. This tab sits ABOVE
+          the box — the one place no card occupies — and carries the name at a
+          constant screen size until the cards' own names are readable. */}
+      <button className="vs-tab" onClick={d.onFocus} title={`Zoom to ${d.schema}`} style={{ fontSize: tabFontCss(d.tabFont) }}>
+        <span className="vs-tab-name">{d.schema}</span>
+        <span className="vs-tab-sub">
+          {d.source ? `${d.source} · ` : ""}
+          {d.total} table{d.total === 1 ? "" : "s"}
+        </span>
+      </button>
+      <div className="vs-box-handle pointer-events-auto flex h-[44px] cursor-grab items-center gap-2 px-3 active:cursor-grabbing" title="Drag to move the whole schema">
+        <button
+          onClick={d.onFocus}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={`Zoom to ${d.schema}`}
+          className="nodrag flex items-center gap-2 rounded-lg border border-border bg-panel px-2.5 py-1 transition-colors hover:border-primary/60 hover:bg-secondary"
+        >
         {d.source ? <Waypoints className="h-4 w-4 shrink-0 text-teal" /> : <FolderOpen className="h-4 w-4 shrink-0 text-primary" />}
-        <span className="truncate font-heading text-[15px] font-semibold text-foreground">{d.schema}</span>
-        {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
-        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{d.tableCount} table{d.tableCount === 1 ? "" : "s"}</span>
+          <span className="truncate font-heading text-[15px] font-semibold tracking-tight text-foreground">{d.schema}</span>
+          {d.source ? <span className="rounded-full bg-teal/15 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-teal">{d.source}</span> : null}
+        </button>
+        <span className="ml-auto shrink-0 rounded-md bg-panel px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+          {more > 0 ? `${d.shown} of ${d.total} tables` : `${d.total} table${d.total === 1 ? "" : "s"}`}
+        </span>
+        {more > 0 ? (
+          <>
+            <button onClick={d.onShowMore} onPointerDown={(e) => e.stopPropagation()} className="nodrag shrink-0 rounded-md border border-border bg-panel px-2 py-0.5 text-[11px] text-foreground hover:bg-secondary">
+              Show {Math.min(more, TABLE_PAGE)} more
+            </button>
+            <button onClick={d.onShowAll} onPointerDown={(e) => e.stopPropagation()} className="nodrag shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground">
+              All
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );
-}
+});
 
-/** The last box on the canvas: attach another database or bucket right here. */
-export function AddSourceNode({ data }: NodeProps) {
-  const d = data as unknown as { onClick: () => void };
-  return (
-    <button
-      onClick={d.onClick}
-      data-agent-id="visualizer.add-source-box"
-      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-teal/50 bg-teal/5 text-teal transition-colors hover:border-teal hover:bg-teal/10"
-    >
-      <Plus className="h-7 w-7" />
-      <span className="text-[13px] font-semibold">Add data source</span>
-      <span className="px-6 text-center text-[11px] text-muted-foreground">PostgreSQL, MySQL, S3, another Exasol… as a live schema here</span>
-    </button>
-  );
-}
+/** Tables drawn per schema box before the user asks for more. */
+export const TABLE_PAGE = 20;
 
-export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode, addSource: AddSourceNode };
+export const nodeTypes = { table: TableNode, schemaGroup: SchemaGroupNode };
+
+/** Node types that move a whole schema when dragged. */
+export const SCHEMA_NODE_TYPES = ["schemaGroup"];
 export const edgeTypes = { beam: BeamEdge };
 
 export function ToggleRow({
@@ -337,12 +380,14 @@ export function ToggleRow({
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="flex items-center justify-between text-[12px] text-foreground"
+      role="switch"
+      aria-checked={checked}
+      className="flex w-full items-center justify-between gap-3 text-[12px] text-foreground"
     >
       <span>{label}</span>
       <span
         className={cn(
-          "relative h-4 w-7 rounded-full transition-colors",
+          "relative h-4 w-7 shrink-0 rounded-full transition-colors",
           checked ? "bg-primary" : "bg-secondary",
         )}
       >

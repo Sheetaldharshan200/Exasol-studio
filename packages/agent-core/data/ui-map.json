@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T10:43:25.223Z",
+  "generatedAt": "2026-09-23T16:04:20.847Z",
   "entries": [
     {
       "id": "ai.model-picker",
@@ -115,14 +115,20 @@
       "hint": "Agent action anchor in apps/desktop/src/components/studio/TitleBar.tsx"
     },
     {
-      "id": "anchor.visualizer.add-source-box",
-      "label": "visualizer add source box",
-      "where": "apps/desktop/src/features/workbench/visualizer/diagram.tsx",
-      "hint": "Agent action anchor in apps/desktop/src/features/workbench/visualizer/diagram.tsx"
+      "id": "anchor.visualizer.add-source",
+      "label": "visualizer add source",
+      "where": "apps/desktop/src/features/workbench/Visualizer.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/Visualizer.tsx"
     },
     {
       "id": "anchor.visualizer.schemas",
       "label": "visualizer schemas",
+      "where": "apps/desktop/src/features/workbench/Visualizer.tsx",
+      "hint": "Agent action anchor in apps/desktop/src/features/workbench/Visualizer.tsx"
+    },
+    {
+      "id": "anchor.visualizer.search",
+      "label": "visualizer search",
       "where": "apps/desktop/src/features/workbench/Visualizer.tsx",
       "hint": "Agent action anchor in apps/desktop/src/features/workbench/Visualizer.tsx"
     },

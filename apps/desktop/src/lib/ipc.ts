@@ -712,6 +712,9 @@ export const ipc = {
   revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  /** Open `html` in a print window and run the system print dialog on it;
+   *  false when the window opened but the dialog did not. */
+  printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),
   saveAttachment: (name: string, base64Data: string) =>
     call<string>("save_attachment", { name, base64Data }),
   installCli: () => call<string>("install_cli"),

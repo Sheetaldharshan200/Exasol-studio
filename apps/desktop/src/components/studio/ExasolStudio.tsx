@@ -73,6 +73,8 @@ import { ResultsPanel } from "./ResultsPanel";
 import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
+import { createSerialQueue } from "@/lib/serial-queue";
+import { useResultPaging } from "./use-result-paging";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 
@@ -190,6 +192,44 @@ export function ExasolStudio({
   // Right-click menu on a tab (group operations).
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const [running, setRunning] = useState(false);
+  // Concurrent statements on one websocket session hang or kill the driver, so
+  // execution is serialized. `running` is React state and therefore a render
+  // behind — two paths can both read `false` and both start. The ref is the
+  // actual lock; `running` only mirrors it for the UI.
+  const runLease = useRef(false);
+  // Bumped per connection by every execution that starts. A page fetch
+  // captures its connection's number before awaiting and drops its answer if a
+  // newer run has begun on THAT connection meanwhile — a late page of the
+  // previous query must never replace the current one's rows, and work on one
+  // database must not invalidate a page of another.
+  const runGens = useRef(new Map<string, number>());
+  const genOf = useCallback((profileId: string) => runGens.current.get(profileId) ?? 0, []);
+  // One statement at a time per connection — the session is a single websocket
+  // and overlapping statements hang or kill the driver. Everything in this
+  // component executes through here, paging and prefetching included.
+  const session = useRef(createSerialQueue());
+  const execSql = useCallback(
+    (...args: Parameters<typeof ipc.executeSql>) => session.current.run(args[0], () => ipc.executeSql(...args)),
+    [],
+  );
+  /** Queue a statement that is only still worth running if nothing newer has
+   *  started on that connection by the time its turn comes. */
+  const execSqlIfCurrent = useCallback(
+    (gen: number, ...args: Parameters<typeof ipc.executeSql>) =>
+      session.current.run(args[0], async () => (genOf(args[0]) === gen ? ipc.executeSql(...args) : null)),
+    [genOf],
+  );
+  const acquireRun = useCallback((profileId: string) => {
+    if (runLease.current) return false;
+    runLease.current = true;
+    runGens.current.set(profileId, genOf(profileId) + 1);
+    setRunning(true);
+    return true;
+  }, [genOf]);
+  const releaseRun = useCallback(() => {
+    runLease.current = false;
+    setRunning(false);
+  }, []);
   // Inline tab rename (double-click a tab title).
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [maxRows, setMaxRows] = useState(1000);
@@ -220,8 +260,7 @@ export function ExasolStudio({
     const conn = connectionRef.current;
     if (!conn) { setUdfLangs(DEFAULT_UDF_LANGS); return; }
     let alive = true;
-    ipc
-      .executeSql(conn.profile.id, conn.profile.name, "SELECT SYSTEM_VALUE FROM SYS.EXA_PARAMETERS WHERE PARAMETER_NAME = 'SCRIPT_LANGUAGES'", 1, false, false)
+    execSql(conn.profile.id, conn.profile.name, "SELECT SYSTEM_VALUE FROM SYS.EXA_PARAMETERS WHERE PARAMETER_NAME = 'SCRIPT_LANGUAGES'", 1, false, false)
       .then((res) => {
         if (!alive) return;
         const row = res.results.find((r) => r.kind === "resultSet")?.rows?.[0];
@@ -280,7 +319,7 @@ export function ExasolStudio({
     if (!conn) return;
     const token = ++catalogReq.current;
     const rowsOf = async (sql: string, cap: number): Promise<unknown[][]> => {
-      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, sql, cap, false, false).catch(() => null);
+      const res = await execSql(conn.profile.id, conn.profile.name, sql, cap, false, false).catch(() => null);
       const t = res?.results.find((r) => r.kind === "resultSet");
       return (t?.rows as unknown[][]) ?? [];
     };
@@ -727,14 +766,14 @@ export function ExasolStudio({
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     try {
       for (const st of statements) {
-        const r = await ipc.executeSql(connection.profile.id, connection.profile.name, st, 1, false);
+        const r = await execSql(connection.profile.id, connection.profile.name, st, 1, false);
         const errored = r.results.find((x) => x.error);
         if (errored?.error) {
           loadHistory();
           return { ok: false, error: errored.error, failedSql: st };
         }
       }
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
+      const res = await execSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       void refreshSqlCatalog();
@@ -754,7 +793,7 @@ export function ExasolStudio({
     if (!conn || !statements.length) return { ok: false, error: "No active connection." };
     try {
       for (const st of statements) {
-        const r = await ipc.executeSql(conn.profile.id, conn.profile.name, st, 1, false);
+        const r = await execSql(conn.profile.id, conn.profile.name, st, 1, false);
         const errored = r.results.find((x) => x.error);
         if (errored?.error) {
           loadHistory();
@@ -773,21 +812,34 @@ export function ExasolStudio({
 
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
+  /// A confirmed schema change — drop, rename, alter — runs in a query tab.
+  /// It used to run invisibly behind the dialog, so when the database refused
+  /// it (a virtual schema still on an adapter, a dependency in the way) the
+  /// reason was only findable in the SQL history. In a tab the statement, its
+  /// result and its error are all in front of the user, and the statement can
+  /// be edited and re-run without rebuilding it by hand.
   async function runDdl(profileId: string, sql: string) {
     const conn = connections.find((c) => c.profile.id === profileId);
     if (!conn) return;
-    setRunning(true);
+    setObjAction(null);
+    // A query tab belongs to the connection it is open on. When the object
+    // lives on another connection, run it directly rather than against the
+    // wrong database.
+    if (connection && connection.profile.id === profileId) {
+      await openBuiltSql(sql, true);
+      setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
+      return;
+    }
+    if (!acquireRun(profileId)) return;
     try {
-      await ipc.executeSql(profileId, conn.profile.name, sql, 1, false);
+      await execSql(profileId, conn.profile.name, sql, 1, false);
       setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
       loadHistory();
       void refreshSqlCatalog();
-      setObjAction(null);
     } catch (e) {
-      patchTab(activeTab.id, { execError: errorMessage(e), resultView: "results" });
-      setObjAction(null);
+      pushNotification("warning", `Could not change ${conn.profile.name}`, errorMessage(e));
     } finally {
-      setRunning(false);
+      releaseRun();
     }
   }
 
@@ -1589,10 +1641,19 @@ export function ExasolStudio({
     updateTabs(key, (list) => [...list, tab]);
     setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
     if (runNow && connection) {
-      setRunning(true);
-      patchTab(tab.id, { resultView: "results", planData: undefined });
+      if (!acquireRun(connection.profile.id)) {
+        // The tab still opens with its SQL — it just waits for the session.
+        patchTab(tab.id, { execError: "Another statement is running on this connection. Press Run when it finishes.", resultView: "results" });
+        return;
+      }
+      // The same run record the Run button writes. Without it the results
+      // area shows its empty state for the whole wait — which is most of the
+      // wait when the table lives in a virtual schema.
+      const startedAt = Date.now();
+      const scope = "script";
+      patchTab(tab.id, { resultView: "results", planData: undefined, runMeta: { startedAt, scope, sql } });
       try {
-        const result = await ipc.executeSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
+        const result = await execSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
         updateTabs(key, (list) =>
           list.map((t) =>
             t.id === tab.id
@@ -1601,6 +1662,7 @@ export function ExasolStudio({
                   response: result,
                   resultPage: 0,
                   execError: result.success ? null : result.results.find((r) => r.error)?.error ?? "Statement failed.",
+                  runMeta: { startedAt, finishedAt: Date.now(), scope, ok: result.success, sql },
                   profileSession: result.profileSession,
                   profileBaseStmt: result.profileBaseStmt,
                 }
@@ -1610,9 +1672,13 @@ export function ExasolStudio({
         loadHistory();
       void refreshSqlCatalog();
       } catch (e) {
-        updateTabs(key, (list) => list.map((t) => (t.id === tab.id ? { ...t, execError: errorMessage(e) } : t)));
+        updateTabs(key, (list) =>
+          list.map((t) =>
+            t.id === tab.id ? { ...t, execError: errorMessage(e), runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false, sql } } : t,
+          ),
+        );
       } finally {
-        setRunning(false);
+        releaseRun();
       }
     }
   }
@@ -2141,7 +2207,7 @@ export function ExasolStudio({
       // "buffer" runs everything as a single statement; others split.
       const split = scope !== "buffer";
 
-      setRunning(true);
+      if (!acquireRun(connection.profile.id)) return;
       const startedAt = Date.now();
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
@@ -2169,7 +2235,7 @@ export function ExasolStudio({
         });
       }
       try {
-        const result = await ipc.executeSql(
+        const result = await execSql(
           connection.profile.id,
           connection.profile.name,
           sqlToRun,
@@ -2184,14 +2250,14 @@ export function ExasolStudio({
             response: result,
                   resultPage: 0,
             execError: failed?.error ?? "Statement failed.",
-            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
+            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false, sql: sqlToRun },
           });
         } else {
           patchTab(activeTab.id, {
             response: result,
                   resultPage: 0,
             execError: null,
-            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true },
+            runMeta: { startedAt, finishedAt: Date.now(), scope, ok: true, sql: sqlToRun },
             // Anchor for reading this run's profile without re-executing.
             profileSession: result.profileSession,
             profileBaseStmt: result.profileBaseStmt,
@@ -2202,14 +2268,14 @@ export function ExasolStudio({
       } catch (err) {
         patchTab(activeTab.id, {
           execError: errorMessage(err),
-          runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false },
+          runMeta: { startedAt, finishedAt: Date.now(), scope, ok: false, sql: sqlToRun },
         });
       } finally {
         progressDone = true;
         unlistenProgress?.();
         runningProgressId.current = null;
         patchTab(tabId, { queryProgress: undefined });
-        setRunning(false);
+        releaseRun();
       }
     },
     [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
@@ -2345,9 +2411,9 @@ export function ExasolStudio({
     }
     let planBlock = "";
     try {
-      await ipc.executeSql(conn.profile.id, conn.profile.name, "FLUSH STATISTICS", 1, false, false).catch(() => null);
+      await execSql(conn.profile.id, conn.profile.name, "FLUSH STATISTICS", 1, false, false).catch(() => null);
       const planSql = `SELECT PART_ID, PART_NAME, PART_INFO, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_ROWS, OUT_ROWS, DURATION, CPU, TEMP_DB_RAM_PEAK FROM EXA_STATISTICS.EXA_USER_PROFILE_LAST_DAY WHERE SESSION_ID = ${tab.profileSession} AND STMT_ID > ${tab.profileBaseStmt} AND COMMAND_NAME NOT IN ('COMMIT', 'ROLLBACK') ORDER BY STMT_ID, PART_ID LIMIT 60`;
-      const res = await ipc.executeSql(conn.profile.id, conn.profile.name, planSql, 60, false, false);
+      const res = await execSql(conn.profile.id, conn.profile.name, planSql, 60, false, false);
       const r = res.results[0];
       if (r && r.kind === "resultSet" && r.rows.length) {
         // The window covers every statement since the baseline, including
@@ -2483,7 +2549,7 @@ export function ExasolStudio({
     setProfiling(true);
     try {
       // Flush so the just-run profile is queryable immediately (no re-run).
-      await ipc.executeSql(cid, cname, "FLUSH STATISTICS", 1, false, false).catch(() => null);
+      await execSql(cid, cname, "FLUSH STATISTICS", 1, false, false).catch(() => null);
 
       // The run's statements are the first N distinct non-transaction
       // statements after the baseline on that session (N = executed results).
@@ -2510,7 +2576,7 @@ export function ExasolStudio({
       for (let round = 0; round < 8 && rows.length === 0; round++) {
         if (round > 0) await sleep(350);
         for (const attempt of attempts) {
-          const res = await ipc.executeSql(cid, cname, attempt.sql, 2000, false, false).catch((e) => {
+          const res = await execSql(cid, cname, attempt.sql, 2000, false, false).catch((e) => {
             lastError = errorMessage(e);
             return null;
           });
@@ -2604,93 +2670,17 @@ export function ExasolStudio({
     }
   }
 
-  // Server-side result paging for single-SELECT tabs: page 0 is the plain run
-  // (the truncated flag = "has next"); later pages wrap the query with
-  // ORDER BY 1 + LIMIT/OFFSET — Exasol requires a deterministic order for
-  // OFFSET, so pages beyond the first are ordered by the first column.
-  //
-  // Pages are PREFETCHED: as soon as a page is on screen the next one loads
-  // in the background (and visited pages stay cached), so ▸ is instant. The
-  // cache is stamped with the tab's SQL — a re-run or edit invalidates it —
-  // and prefetches skip the execution log (addHistory=false).
-  const [paging, setPaging] = useState(false);
-  const pageCache = useRef<Map<string, { sql: string; pages: Map<number, ExecuteResponse> }>>(new Map());
-  const prefetching = useRef<Set<string>>(new Set());
-
-  function pagedSql(base: string, page: number): string {
-    return page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
-  }
-  function pageBase(sql: string): string | null {
-    const stmts = splitStatements(sql);
-    if (stmts.length !== 1) return null;
-    const base = stmts[0].text.trim().replace(/;\s*$/, "");
-    return /^select|^with/i.test(base) ? base : null;
-  }
-  async function prefetchPage(tabId: string, base: string, page: number) {
-    if (!connection || page < 0) return;
-    const key = `${tabId}:${page}`;
-    const entry = pageCache.current.get(tabId);
-    if (prefetching.current.has(key) || !entry || entry.sql !== base || entry.pages.has(page)) return;
-    prefetching.current.add(key);
-    try {
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false, false);
-      const cur = pageCache.current.get(tabId);
-      if (res.success && cur && cur.sql === base) {
-        cur.pages.set(page, res);
-        // Keep memory bounded: hold at most 8 pages, dropping the farthest.
-        while (cur.pages.size > 8) {
-          const far = [...cur.pages.keys()].reduce((a2, b2) => (Math.abs(a2 - page) >= Math.abs(b2 - page) ? a2 : b2));
-          cur.pages.delete(far);
-        }
-      }
-    } catch {
-      /* prefetch is best-effort — the click path fetches live on a miss */
-    } finally {
-      prefetching.current.delete(key);
-    }
-  }
-  // A fresh run (page-0 response we didn't serve from cache) seeds the cache
-  // and warms page 1 immediately.
-  useEffect(() => {
-    const res = activeTab.response;
-    if (!res || (activeTab.resultPage ?? 0) !== 0 || !res.success) return;
-    const base = pageBase(activeTab.sql);
-    if (!base) return;
-    const entry = pageCache.current.get(activeTab.id);
-    if (entry && entry.sql === base && entry.pages.get(0) === res) return; // cache-served, not a new run
-    pageCache.current.set(activeTab.id, { sql: base, pages: new Map([[0, res]]) });
-    if (res.results[0]?.truncated) void prefetchPage(activeTab.id, base, 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab.id, activeTab.response, activeTab.resultPage]);
-
-  async function loadResultPage(page: number) {
-    if (!connection || page < 0) return;
-    const base = pageBase(activeTab.sql);
-    if (!base) return;
-    const entry = pageCache.current.get(activeTab.id);
-    const cached = entry && entry.sql === base ? entry.pages.get(page) : undefined;
-    if (cached) {
-      patchTab(activeTab.id, { response: cached, execError: null, resultPage: page });
-      if (cached.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
-      if (page > 0) void prefetchPage(activeTab.id, base, page - 1);
-      return;
-    }
-    if (paging) return;
-    setPaging(true);
-    try {
-      // Page turns are navigation, not new work — keep the LIMIT/OFFSET
-      // wrappers out of the execution log (the original run is already there).
-      const res = await ipc.executeSql(connection.profile.id, connection.profile.name, pagedSql(base, page), maxRows, false, false);
-      const cur = pageCache.current.get(activeTab.id);
-      if (res.success && cur && cur.sql === base) cur.pages.set(page, res);
-      patchTab(activeTab.id, { response: res, execError: res.success ? null : res.results.find((r) => r.error)?.error ?? null, resultPage: page });
-      if (res.success && res.results[0]?.truncated) void prefetchPage(activeTab.id, base, page + 1);
-    } catch (e) {
-      pushNotification("warning", "Page load failed", errorMessage(e));
-    } finally {
-      setPaging(false);
-    }
-  }
+  // Server-side result paging for single-SELECT tabs lives in its own hook
+  // (cache, prefetch, generation guard) — see use-result-paging.ts.
+  const { paging, loadResultPage, pageBase } = useResultPaging({
+    connection,
+    activeTab,
+    maxRows,
+    execIfCurrent: (gen, pid, name, sql, rows) => execSqlIfCurrent(gen, pid, name, sql, rows, false, false),
+    genOf,
+    patchTab,
+    onError: (message) => pushNotification("warning", "Page load failed", message),
+  });
 
   // Step through SQL history into the current editor.
   // Step through executed-SQL history. Index -1 is the user's live draft;
@@ -2724,7 +2714,7 @@ export function ExasolStudio({
   async function txn(action: "COMMIT" | "ROLLBACK") {
     if (!connection) return;
     try {
-      await ipc.executeSql(connection.profile.id, connection.profile.name, action, maxRows, false);
+      await execSql(connection.profile.id, connection.profile.name, action, maxRows, false);
       loadHistory();
       void refreshSqlCatalog();
     } catch {
@@ -3097,7 +3087,7 @@ export function ExasolStudio({
                   onMouseDown={(e) => e.preventDefault()}
                   disabled={running}
                 >
-                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RunScriptIcon className="h-4 w-4 text-primary" />}
+                  <RunScriptIcon className="h-4 w-4 text-primary" />
                 </IconButton>
                 <IconButton
                   label="Execute current (⌘.)"
@@ -3488,6 +3478,7 @@ export function ExasolStudio({
                 connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
                 object={activeTab.objectRef}
                 onOpenData={(sql) => void openBuiltSql(sql, true)}
+                busy={running}
                 onOpenSql={openSqlTab}
                 onApplyDdl={commitDdl}
                 navTab={activeTab.objNavTab}

@@ -839,3 +839,87 @@
 [data-hide-tools] [class*="aui-tool-"] {
   display: none !important;
 }
+
+/* Schema visualizer. The dot grid is static CSS instead of React Flow's
+   <Background>, which re-renders on every viewport change. */
+.visualizer-pane {
+  background-color: var(--editor);
+  background-image: radial-gradient(color-mix(in srgb, var(--border) 85%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  /* The live zoom, written by onMove as a style property (never React state).
+     The schema tab divides by it to keep a constant SCREEN size. */
+  --vs-zoom: 1;
+}
+/* The viewport is promoted for the DURATION OF A GESTURE only. A permanently
+   promoted layer is re-rasterized at each new scale, and the canvas layer at
+   low zoom covers an enormous area — that is the "smooth, then it hangs" wall.
+   While `.is-moving` is on, a pan/zoom is a pure transform of the existing
+   raster; the class is dropped ~180 ms after the gesture, and the browser
+   rasterizes once, sharply. (xyflow discussion #4617.) */
+.visualizer-pane.is-moving .react-flow__viewport {
+  will-change: transform;
+}
+/* A node's paint and layout never escape its own card. */
+.visualizer-pane .react-flow__node {
+  contain: layout style;
+}
+/* A gesture in progress: link decoration (pulse, shimmer, labels) goes away
+   through the cascade — the edges themselves never re-render. */
+.visualizer-pane.is-moving .vs-deco {
+  display: none;
+}
+.visualizer-pane.is-moving .react-flow__minimap {
+  visibility: hidden;
+}
+/* Schema boxes: a solid, cheap fill mixed from the theme (no alpha blending). */
+.visualizer-pane .vs-box {
+  background-color: color-mix(in srgb, var(--panel) 45%, var(--editor));
+}
+/* The schema backdrop must not take pointer events across its whole box:
+   React Flow puts `pointer-events` inline on a draggable node, and a full-box
+   node that swallows them makes the canvas un-pannable wherever a schema is.
+   Only the title strip is grabbable. */
+.visualizer-pane .react-flow__node-schemaGroup {
+  pointer-events: none !important;
+}
+.visualizer-pane .vs-box-handle {
+  pointer-events: auto;
+}
+/* The schema tab: a label above the box while the cards' own names are too
+   small to read, sized in screen pixels so it stays legible at any zoom. */
+.vs-tab {
+  display: none;
+}
+.visualizer-pane.is-far .vs-tab {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  /* Stacked, so the width is the name's and not the name plus its count —
+     and never capped to the box, because a cut name names nothing. The type
+     shrinks to fit instead; font-size is set per schema (see tabFontLimit). */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 0.35em;
+  padding: 0.3em 0.6em;
+  border: 0.08em solid var(--border);
+  border-radius: 0.45em;
+  background-color: var(--panel);
+  color: var(--foreground);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.visualizer-pane.is-far .vs-tab:hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+.visualizer-pane.is-far .vs-tab-name {
+  letter-spacing: 0.01em;
+}
+.visualizer-pane.is-far .vs-tab-sub {
+  font-size: 0.7em;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}

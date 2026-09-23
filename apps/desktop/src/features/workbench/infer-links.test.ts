@@ -94,3 +94,38 @@ test("tables carrying an id (SCHEMA.TABLE) are linked by id, so two schemas can 
   assert.deepEqual(targets, ["ARCHIVE.CUSTOMERS", "PG.CUSTOMERS"], "both parents found by convention, by id");
   assert.ok(links.every((l) => l.ambiguous), "and marked ambiguous, since two parents claim the column");
 });
+
+test("the first rule to fire wins per column, and a column is never matched twice against one key", () => {
+  // CUSTOMER_ID is both the exact key name AND the CUSTOMERS naming convention:
+  // one link, scored by the exact rule, not two.
+  const customers = T("CUSTOMERS", [["CUSTOMER_ID", DEC, true]]);
+  const orders = T("ORDERS", [["ORDER_ID", DEC, true], ["CUSTOMER_ID", DEC]]);
+  const links = inferLinks([customers, orders], []);
+  assert.deepEqual(links.map((l) => [key(l), l.score, l.reason]), [["ORDERS.CUSTOMER_ID>CUSTOMERS.CUSTOMER_ID", 1, "same key name"]]);
+});
+
+test("a thousand tables infer in tens of milliseconds, not seconds", () => {
+  const tables: GraphTable[] = [];
+  for (let i = 0; i < 1000; i++) {
+    const name = `TABLE_${i}S`;
+    const columns = [{ name: `${name}_ID`, dataType: DEC, pk: true }];
+    for (let j = 1; j < 12; j++) columns.push({ name: j % 3 === 0 ? `TABLE_${(i * 7 + j) % 1000}S_ID` : `COL_${j}`, dataType: j % 2 ? "VARCHAR(100)" : DEC, pk: false });
+    tables.push({ name, columns });
+  }
+  const t0 = performance.now();
+  const links = inferLinks(tables, [], { minScore: 0 });
+  const ms = performance.now() - t0;
+  assert.ok(links.length > 900, `expected the convention links, got ${links.length}`);
+  assert.ok(ms < 1000, `inference took ${Math.round(ms)} ms`);
+});
+
+test("two tables sharing an id each contribute their own columns", () => {
+  // Ids are unique in practice (SCHEMA.TABLE); this pins what happens if they
+  // are not, so the behaviour is a decision and not an accident.
+  const parent = { ...T("CUSTOMERS", [["CUSTOMER_ID", DEC, true]]), id: "S.CUSTOMERS" };
+  const a = { ...T("ORDERS", [["ORDER_ID", DEC, true], ["CUSTOMER_ID", DEC]]), id: "S.DUP" };
+  const b = { ...T("SHIPMENTS", [["SHIPMENT_ID", DEC, true], ["CUSTOMER_ID", DEC]]), id: "S.DUP" };
+  const links = inferLinks([parent, a, b], []);
+  assert.equal(links.length, 2);
+  assert.ok(links.every((l) => key(l) === "S.DUP.CUSTOMER_ID>S.CUSTOMERS.CUSTOMER_ID"));
+});

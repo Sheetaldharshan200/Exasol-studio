@@ -13,7 +13,7 @@ import { startShare, publishShare, rotateShare, stopShare, shareUrl, type ShareS
 
 const PUBLISH_INTERVAL_MS = 15_000;
 
-export function ShareControl({ doc, conn, onExport }: { doc: DashboardDoc; conn: DashConn; onExport?: (format: ExportFormat) => void }) {
+export function ShareControl({ doc, conn, onExport }: { doc: DashboardDoc; conn: DashConn; onExport?: (format: ExportFormat) => void | Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<ShareSession | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,6 +21,17 @@ export function ShareControl({ doc, conn, onExport }: { doc: DashboardDoc; conn:
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Gathering every widget's data takes a moment — show it on the button pressed.
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+  const doExport = async (format: ExportFormat) => {
+    if (!onExport || exporting) return;
+    setExporting(format);
+    try {
+      await onExport(format);
+    } finally {
+      setExporting(null);
+    }
+  };
   const flash = (msg: string) => {
     setNote(msg);
     setTimeout(() => setNote((n) => (n === msg ? null : n)), 2500);
@@ -116,7 +127,15 @@ export function ShareControl({ doc, conn, onExport }: { doc: DashboardDoc; conn:
                   <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"><Download className="h-3 w-3" /> Download a copy</div>
                   <div className="flex gap-1">
                     {(["html", "md", "pdf"] as ExportFormat[]).map((f) => (
-                      <button key={f} onClick={() => onExport(f)} className="flex-1 rounded-md border border-border px-2 py-1 text-[11px] uppercase text-foreground hover:bg-muted">{f}</button>
+                      <button
+                        key={f}
+                        onClick={() => void doExport(f)}
+                        disabled={exporting !== null}
+                        className="flex flex-1 items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] uppercase text-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        {exporting === f ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        {f}
+                      </button>
                     ))}
                   </div>
                 </div>

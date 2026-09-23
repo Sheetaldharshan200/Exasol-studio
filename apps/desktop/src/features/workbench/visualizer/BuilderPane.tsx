@@ -7,6 +7,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { errorMessage, ipc, type GraphLink } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { linkKey, previewSql, type Aggregate, type JoinType } from "../build-sql";
+import { formatElapsed } from "@/lib/elapsed";
+import { useElapsedMs } from "@/lib/use-elapsed-ms";
 
 const AGGREGATES: Aggregate[] = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
 
@@ -52,6 +54,8 @@ export function BuilderPane(p: BuilderPaneProps) {
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [previewStartedAt, setPreviewStartedAt] = useState<number | null>(null);
+  const previewElapsed = useElapsedMs(previewStartedAt, previewing);
   // The SQL each preview was launched for — a late answer for an older query
   // is dropped, and a new SQL invalidates the rows on screen.
   const previewFor = useRef<string | null>(null);
@@ -64,6 +68,7 @@ export function BuilderPane(p: BuilderPaneProps) {
     const launched = p.sql;
     previewFor.current = launched;
     setPreviewing(true);
+    setPreviewStartedAt(Date.now());
     const started = performance.now();
     try {
       // The builder's SQL is one statement with LIMIT 100 forced on top; never split.
@@ -240,7 +245,13 @@ export function BuilderPane(p: BuilderPaneProps) {
               data-agent-id="builder.preview"
               className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40"
             >
-              {previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Preview 100 rows
+              {previewing ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Running · {formatElapsed(previewElapsed)}
+                </>
+              ) : (
+                "Preview 100 rows"
+              )}
             </button>
             <button onClick={() => p.onOpenSql?.(p.sql, false)} disabled={disabled} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40">
               Open in editor

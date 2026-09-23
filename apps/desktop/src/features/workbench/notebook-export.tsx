@@ -148,20 +148,3 @@ export async function buildNotebookHtml(title: string, cells: ExportCell[]): Pro
 ${sections.join("\n")}
 </body></html>`;
 }
-
-/** Print an HTML document via a hidden iframe (system dialog → Save as PDF). */
-export function printNotebookHtml(html: string) {
-  const frame = document.createElement("iframe");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
-  document.body.appendChild(frame);
-  frame.onload = () => {
-    try {
-      frame.contentWindow?.focus();
-      frame.contentWindow?.print();
-    } catch {
-      /* surfaced via the export note */
-    }
-    setTimeout(() => frame.remove(), 120_000);
-  };
-  frame.srcdoc = html;
-}

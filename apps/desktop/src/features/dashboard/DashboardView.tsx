@@ -67,7 +67,7 @@ export function DashboardView({
   refreshConfig?: RefreshConfig;
   onChange?: (doc: DashboardDoc) => void;
   onRefreshChange?: (config: RefreshConfig) => void;
-  onExport?: (format: ExportFormat) => void;
+  onExport?: (format: ExportFormat) => void | Promise<void>;
   /** When set, this dashboard is synced from a notebook — "Edit" opens it there. */
   onEditSource?: () => void;
 }) {

@@ -1,26 +1,17 @@
-import { useMemo, useState } from "react";
-import { Code2, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Code2, CopyPlus, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { pendingSummary, rowToDraft, type Draft } from "./edit-grid-model";
+import { buildDml, qualify } from "./edit-dml";
+import { pairWidths, scrollbarGutter, totalWidth } from "@/lib/table-widths";
 import type { ColumnMeta } from "@/lib/ipc";
 
 type Cell = unknown;
 
-function isNumericType(typeName: string): boolean {
-  return /DECIMAL|INT|DOUBLE|NUMBER|FLOAT|BIGINT|SMALLINT/i.test(typeName);
-}
-
-/** Render a SQL literal for a value, given the column type. */
-function lit(v: Cell, typeName: string): string {
-  if (v === null || v === undefined || v === "") return "NULL";
-  const s = String(v);
-  if (isNumericType(typeName) && /^-?\d+(\.\d+)?$/.test(s)) return s;
-  if (/BOOL/i.test(typeName) && /^(true|false)$/i.test(s)) return s.toUpperCase();
-  return `'${s.replace(/'/g, "''")}'`;
-}
-
-function qualify(schema: string | undefined, table: string): string {
-  return schema ? `"${schema}"."${table}"` : `"${table}"`;
-}
+/** A row the user has staged for INSERT, with an id of its own. */
+type StagedInsert = { id: string; values: Draft };
+let insertSeq = 0;
+const newInsert = (values: Draft = {}): StagedInsert => ({ id: `new-${++insertSeq}`, values });
 
 /**
  * Editable data grid for a single-table result. Stages cell edits, row inserts
@@ -35,6 +26,7 @@ export function EditableResultGrid({
   pk,
   catalogColumns,
   initialFocus,
+  autoAddRow,
   colWidths,
   onOpenSql,
   onApply,
@@ -51,6 +43,8 @@ export function EditableResultGrid({
   catalogColumns?: string[];
   /** Cell to focus when the grid opens (the one the user double-tapped). */
   initialFocus?: { row: number; col: number } | null;
+  /** Open with one empty row already staged (entered via "Add row"). */
+  autoAddRow?: boolean;
   /** Column widths (px) captured from the read-only table — keeps geometry stable. */
   colWidths?: number[] | null;
   /** Open the generated DML in a new query tab (the review/run surface). */
@@ -64,72 +58,106 @@ export function EditableResultGrid({
   const [saving, setSaving] = useState(false);
   // edits: rowIndex -> colIndex -> new value (string)
   const [edits, setEdits] = useState<Record<number, Record<number, string>>>({});
-  // Focus + select the double-tapped cell once, when the grid mounts.
-  const focusOnce = (el: HTMLInputElement | null) => {
-    if (el) {
-      el.focus();
-      // Place the caret at the end instead of selecting all — so typing edits
-      // the existing value rather than replacing it on the first keypress.
-      const n = el.value.length;
-      el.setSelectionRange(n, n);
-    }
-  };
+  // Focus the double-tapped cell once, when the grid mounts. The guard is what
+  // makes it once: a callback ref is re-attached on every render, so without
+  // it each keystroke would drag the caret back to the end of the cell.
+  const focusedInitial = useRef(false);
+  const focusOnce = useCallback((el: HTMLInputElement | null) => {
+    if (!el || focusedInitial.current) return;
+    focusedInitial.current = true;
+    el.focus();
+    // Place the caret at the end instead of selecting all — so typing edits
+    // the existing value rather than replacing it on the first keypress.
+    const n = el.value.length;
+    el.setSelectionRange(n, n);
+  }, []);
+  // The widths the read-only grid was using, so entering edit mode does not
+  // shift the columns; measured here if it could not supply them.
+  const [widths, setWidths] = useState<number[] | null>(colWidths?.length ? colWidths : null);
+  const headRef = useRef<HTMLTableSectionElement | null>(null);
+  const bodyRef = useRef<HTMLTableSectionElement | null>(null);
+  const headScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const [gutter, setGutter] = useState(0);
+  useLayoutEffect(() => {
+    const scroller = bodyScrollRef.current;
+    if (scroller) setGutter((g) => { const next = scrollbarGutter(scroller.offsetWidth, scroller.clientWidth); return next === g ? g : next; });
+    if (widths) return;
+    const cells = (el: Element | null | undefined) => (el ? Array.from(el.children).map((c) => (c as HTMLElement).offsetWidth) : []);
+    const paired = pairWidths(cells(headRef.current?.querySelector("tr")), cells(bodyRef.current?.querySelector("tr")));
+    if (paired) setWidths(paired);
+  }, [widths, columns, rows]);
+  // A resize can add or remove the scrollbar with no React update at all, and
+  // the header has to give back exactly what the body loses.
+  useEffect(() => {
+    const scroller = bodyScrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const measure = () =>
+      setGutter((g) => {
+        const next = scrollbarGutter(scroller.offsetWidth, scroller.clientWidth);
+        return next === g ? g : next;
+      });
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  const tableFix = widths
+    ? { className: "table-fixed", style: { width: totalWidth(widths) } }
+    : { className: "w-full", style: undefined };
   const [deleted, setDeleted] = useState<Set<number>>(new Set());
-  const [inserts, setInserts] = useState<Record<string, string>[]>([]);
+  // Staged rows carry an id: two rows added in one tick would otherwise both
+  // be "the last index", and removing one would shift every ref after it.
+  const firstRows = useRef<StagedInsert[]>(autoAddRow ? [newInsert()] : []);
+  const [inserts, setInserts] = useState<StagedInsert[]>(firstRows.current);
+  // A staged row appears at the bottom of the table, which is usually off
+  // screen: the grid goes to it and puts the caret in its first cell, so
+  // "Add row" lands you where you type rather than leaving you where you were.
+  const [focusInsert, setFocusInsert] = useState<string | null>(firstRows.current[0]?.id ?? null);
+  const newRowRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  useEffect(() => {
+    if (focusInsert === null) return;
+    const el = newRowRefs.current.get(focusInsert);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el?.focus();
+    setFocusInsert(null);
+  }, [focusInsert]);
+  const addRow = (values: Draft = {}) => {
+    const row = newInsert(values);
+    setInserts((v) => [...v, row]);
+    setFocusInsert(row.id);
+  };
 
   // Row identity for UPDATE/DELETE WHERE clauses. Prefer the primary key; when
   // the table has none (common in Exasol), fall back to matching on every
   // selected column value.
   const noPk = pk.length === 0;
   const identity = useMemo(() => (noPk ? columns.map((c) => c.name) : pk), [noPk, pk, columns]);
-  const pkIdx = useMemo(() => identity.map((n) => columns.findIndex((c) => c.name === n)), [identity, columns]);
   const t = qualify(schema, table);
-  // Map a result column name to the table's real (catalog) identifier so the
-  // generated SQL uses the exact stored case Exasol expects.
-  const colId = (name: string): string => {
-    const hit = (catalogColumns ?? []).find((c) => c.toLowerCase() === name.toLowerCase());
-    return hit ?? name;
-  };
 
   const dirty =
     Object.keys(edits).length > 0 || deleted.size > 0 || inserts.length > 0;
+  const summary = pendingSummary({ edits, deleted, inserts });
 
   function setCell(r: number, c: number, v: string) {
     setEdits((prev) => ({ ...prev, [r]: { ...(prev[r] ?? {}), [c]: v } }));
   }
 
-  function where(row: Cell[]): string {
-    return identity
-      .map((name, i) => `"${colId(name)}" = ${lit(row[pkIdx[i]], columns[pkIdx[i]]?.typeName ?? "")}`)
-      .join(" AND ");
+  async function save() {
+    if (!onApply || !dirty || saving) return;
+    const dml = build();
+    if (!dml.length) return;
+    setApplyError(null);
+    setSaving(true);
+    const r = await onApply(dml);
+    setSaving(false);
+    // Keep edits on failure; clear them only when the DB accepted them.
+    if (r?.ok) reset();
+    else setApplyError({ message: r?.error ?? "The update failed.", sql: r?.failedSql });
   }
 
-  function build(): string[] {
-    const out: string[] = [];
-    // UPDATEs
-    for (const [rStr, cols] of Object.entries(edits)) {
-      const r = Number(rStr);
-      if (deleted.has(r)) continue;
-      const sets = Object.entries(cols)
-        .map(([cStr, val]) => {
-          const c = Number(cStr);
-          return `"${colId(columns[c].name)}" = ${lit(val, columns[c].typeName)}`;
-        })
-        .join(", ");
-      if (sets) out.push(`UPDATE ${t} SET ${sets} WHERE ${where(rows[r])};`);
-    }
-    // DELETEs
-    for (const r of deleted) out.push(`DELETE FROM ${t} WHERE ${where(rows[r])};`);
-    // INSERTs
-    for (const rec of inserts) {
-      const cols = columns.filter((c) => (rec[c.name] ?? "") !== "");
-      if (!cols.length) continue;
-      const names = cols.map((c) => `"${colId(c.name)}"`).join(", ");
-      const vals = cols.map((c) => lit(rec[c.name], c.typeName)).join(", ");
-      out.push(`INSERT INTO ${t} (${names}) VALUES (${vals});`);
-    }
-    return out;
-  }
+  const build = (): string[] =>
+    buildDml({ schema, table, columns, rows, identity, catalogColumns, edits, deleted, inserts });
 
   function reset() {
     setEdits({});
@@ -138,7 +166,19 @@ export function EditableResultGrid({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      onKeyDown={(e) => {
+        // Save with the shortcut every editor uses; leave only when there is
+        // nothing to lose, so Escape can never discard staged work.
+        if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "Enter")) {
+          e.preventDefault();
+          void save();
+        } else if (e.key === "Escape" && !dirty) {
+          onExit();
+        }
+      }}
+    >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-1">
         <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">Editing</span>
         <span className="font-mono text-[11px] text-muted-foreground">{t}</span>
@@ -151,11 +191,13 @@ export function EditableResultGrid({
           </span>
         ) : null}
         <button
-          onClick={() => setInserts((v) => [...v, {}])}
+          onClick={() => addRow()}
+          title="Stage a new row (⌘↵ saves, ⌘S too)"
           className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
         >
           <Plus className="h-3.5 w-3.5" /> Add row
         </button>
+        {summary ? <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-mono text-[10.5px] text-foreground">{summary}</span> : null}
         <button
           onClick={reset}
           disabled={!dirty}
@@ -173,18 +215,7 @@ export function EditableResultGrid({
             <Code2 className="h-3.5 w-3.5" /> Review SQL
           </button>
           <button
-            onClick={async () => {
-              if (!onApply) return;
-              const dml = build();
-              if (!dml.length) return;
-              setApplyError(null);
-              setSaving(true);
-              const r = await onApply(dml);
-              setSaving(false);
-              // Keep edits on failure; clear them only when the DB accepted them.
-              if (r?.ok) reset();
-              else setApplyError({ message: r?.error ?? "The update failed.", sql: r?.failedSql });
-            }}
+            onClick={() => void save()}
             disabled={!dirty || saving || !onApply}
             title="Run these changes now"
             className="cta-glow flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
@@ -209,21 +240,23 @@ export function EditableResultGrid({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto p-px">
-        <table
-          className={"w-full border-collapse border border-border text-[12px]" + (colWidths?.length ? " table-fixed" : "")}
-          style={colWidths?.length ? { width: colWidths.reduce((a, b) => a + b, 0) } : undefined}
-        >
-          {colWidths?.length ? (
+      {/* Column names sit outside the scroller, as in the read-only grid, so
+          the scrollbar starts at the first row instead of running up beside
+          the header. Both tables are fixed to the same widths. */}
+      <div ref={headScrollRef} className="shrink-0 overflow-hidden px-px pt-px" style={gutter ? { marginRight: gutter } : undefined}>
+        {/* The seam between the two tables is the header's own bottom border:
+            each table draws only the edges it owns, so it is not doubled. */}
+        <table className={cn("border-collapse border-x border-t border-border text-[12px]", tableFix.className)} style={tableFix.style}>
+          {widths ? (
             <colgroup>
-              {colWidths.map((w, i) => (
+              {widths.map((w, i) => (
                 <col key={i} style={{ width: w }} />
               ))}
             </colgroup>
           ) : null}
-          <thead className="sticky top-0 z-10">
+          <thead ref={headRef}>
             <tr className="bg-secondary">
-              <th className="w-8 border-b border-r border-border px-1 py-1.5" />
+              <th className="w-14 border-b border-r border-border px-1 py-1.5" />
               {columns.map((col) => (
                 <th key={col.name} className="border-b border-r border-border px-3 py-1.5 text-left font-medium text-foreground">
                   {col.name}
@@ -232,25 +265,52 @@ export function EditableResultGrid({
               ))}
             </tr>
           </thead>
-          <tbody className="font-mono">
+        </table>
+      </div>
+      <div
+        ref={bodyScrollRef}
+        className="min-h-0 flex-1 overflow-auto px-px pb-px"
+        onScroll={(e) => {
+          const head = headScrollRef.current;
+          if (head) head.scrollLeft = e.currentTarget.scrollLeft;
+        }}
+      >
+        <table className={cn("border-collapse border-x border-b border-border text-[12px]", tableFix.className)} style={tableFix.style}>
+          {widths ? (
+            <colgroup>
+              {widths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
+          ) : null}
+          <tbody ref={bodyRef} className="font-mono">
             {rows.map((row, r) => {
               const del = deleted.has(r);
               return (
                 <tr key={r} className={cn("even:bg-secondary/30", del && "opacity-40 line-through")}>
-                  <td className="border-b border-r border-border px-1 text-center">
-                    <button
-                      onClick={() =>
-                        setDeleted((s) => {
-                          const n = new Set(s);
-                          n.has(r) ? n.delete(r) : n.add(r);
-                          return n;
-                        })
-                      }
-                      className="text-muted-foreground hover:text-destructive"
-                      title={del ? "Keep row" : "Delete row"}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                  <td className="border-b border-r border-border px-1">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() =>
+                          setDeleted((s) => {
+                            const n = new Set(s);
+                            n.has(r) ? n.delete(r) : n.add(r);
+                            return n;
+                          })
+                        }
+                        className="text-muted-foreground hover:text-destructive"
+                        title={del ? "Keep row" : "Delete row"}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => addRow(rowToDraft(row, columns))}
+                        className="text-muted-foreground hover:text-primary"
+                        title="Duplicate this row as a new one"
+                      >
+                        <CopyPlus className="h-3 w-3" />
+                      </button>
+                    </div>
                   </td>
                   {columns.map((col, c) => {
                     const edited = edits[r]?.[c];
@@ -270,20 +330,35 @@ export function EditableResultGrid({
                 </tr>
               );
             })}
-            {inserts.map((rec, i) => (
-              <tr key={`new-${i}`} className="bg-primary/8">
+            {inserts.map(({ id, values: rec }) => (
+              <tr key={id} className="bg-primary/8">
                 <td className="border-b border-r border-border px-1 text-center">
-                  <button onClick={() => setInserts((v) => v.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive">
+                  <button
+                    onClick={() => {
+                      newRowRefs.current.delete(id);
+                      setInserts((v) => v.filter((x) => x.id !== id));
+                    }}
+                    title="Discard this staged row"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
                     <X className="h-3 w-3" />
                   </button>
                 </td>
                 {columns.map((col, c) => (
                   <td key={c} className="border-b border-r border-border p-0.5">
                     <input
+                      ref={
+                        c === 0
+                          ? (el) => {
+                              if (el) newRowRefs.current.set(id, el);
+                              else newRowRefs.current.delete(id);
+                            }
+                          : undefined
+                      }
                       value={rec[col.name] ?? ""}
-                      placeholder="NULL"
+                      placeholder={rec[col.name] === null ? "NULL" : "default"}
                       onChange={(e) =>
-                        setInserts((v) => v.map((x, j) => (j === i ? { ...x, [col.name]: e.target.value } : x)))
+                        setInserts((v) => v.map((x) => (x.id === id ? { ...x, values: { ...x.values, [col.name]: e.target.value } } : x)))
                       }
                       className="w-full min-w-[80px] max-w-[380px] rounded-sm border border-border/50 bg-background/40 px-2.5 py-0.5 text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-border focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary/30"
                     />
