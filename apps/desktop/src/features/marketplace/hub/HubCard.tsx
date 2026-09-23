@@ -51,7 +51,10 @@ export function HubCard({
   const stars = compactCount(item.stars);
   const slug = item.repo ?? `exasol/${item.id}`;
   return (
-    <div className="relative">
+    // The grid row stretches this wrapper to the tallest card in it; `h-full`
+    // on both it and the card below is what makes the card follow, so a row
+    // of cards shares one height however long their descriptions are.
+    <div className="relative h-full">
       {selectable ? (
         <button
           role="checkbox"
@@ -78,7 +81,7 @@ export function HubCard({
       }}
       data-agent-id={`market.card.${item.id}`}
       className={cn(
-        "group relative flex min-h-[188px] cursor-pointer flex-col rounded-xl border bg-panel text-left transition-colors hover:border-foreground/25",
+        "group relative flex h-full min-h-[188px] cursor-pointer flex-col rounded-xl border bg-panel text-left transition-colors hover:border-foreground/25",
         selected ? "border-primary" : "border-border",
       )}
     >

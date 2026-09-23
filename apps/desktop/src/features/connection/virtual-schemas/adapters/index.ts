@@ -26,6 +26,7 @@ import { AzureBlobAdapter } from "./azure-blob.ts";
 import { AzureDataLakeAdapter } from "./azure-data-lake.ts";
 import { BucketFsAdapter } from "./bucketfs.ts";
 import { DynamoDbAdapter } from "./dynamodb.ts";
+import { MongodbAdapter } from "./mongodb.ts";
 import { ExasolLuaAdapter } from "./exasol-lua.ts";
 import { ExasolAdapter } from "./exasol.ts";
 
@@ -51,6 +52,7 @@ export const VS_ADAPTERS: readonly VsAdapter[] = [
   AzureDataLakeAdapter,
   BucketFsAdapter,
   DynamoDbAdapter,
+  MongodbAdapter,
   ExasolLuaAdapter,
   ExasolAdapter,
 ];

@@ -106,6 +106,16 @@ export function adapterScriptDdl(
     if (!input.luaSource?.trim()) throw new Error(`${adapter.id}: a Lua adapter needs its released source`);
     return `CREATE OR REPLACE LUA ADAPTER SCRIPT ${target} AS\n${input.luaSource.trimEnd()}`;
   }
+  if (adapter.runtime === "rust") {
+    if (!adapter.rust) throw new Error(`${adapter.id}: a Rust adapter needs its library details`);
+    // A Rust adapter is a shared object, not a JAR: the script points at it
+    // with %udf_object and takes the same end-of-script `/` the Java ones do.
+    return [
+      `CREATE OR REPLACE ${adapter.rust.languageAlias} ADAPTER SCRIPT ${target} AS`,
+      `  %udf_object ${adapter.rust.bucketPath};`,
+      "/",
+    ].join("\n");
+  }
   const lines = [
     `CREATE OR REPLACE JAVA ADAPTER SCRIPT ${target} AS`,
     `  %scriptclass ${adapter.scriptClass};`,
@@ -128,6 +138,16 @@ export function adapterScriptDdl(
  * differ per adapter.
  */
 export function importUdfDdl(adapter: VsAdapter, input: { schema: string; adapterAsset: string }): string {
+  if (adapter.runtime === "rust" && adapter.rust) {
+    // The Rust connector's streaming scan UDF, beside its adapter script and
+    // pointing at the same library.
+    return [
+      `CREATE OR REPLACE ${adapter.rust.languageAlias} SCALAR SCRIPT ${qualified(input.schema, adapter.rust.scanUdf.name)}(${adapter.rust.scanUdf.signature})`,
+      `  EMITS(...) AS`,
+      `  %udf_object ${adapter.rust.bucketPath};`,
+      "/",
+    ].join("\n");
+  }
   if (!adapter.importUdf) throw new Error(`${adapter.id}: not a document adapter`);
   return [
     `CREATE OR REPLACE JAVA SET SCRIPT ${qualified(input.schema, adapter.importUdf.name)}(`,

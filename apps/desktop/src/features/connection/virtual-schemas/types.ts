@@ -43,8 +43,10 @@ export type VsAdapter = {
    * document store mapped through EDML. `exasol`: another Exasol database.
    */
   kind: "jdbc" | "document" | "exasol";
-  /** Java adapters are JARs in BucketFS; Lua adapters are source inlined in DDL. */
-  runtime: "java" | "lua";
+  /** Java adapters are JARs in BucketFS; Lua adapters are source inlined in
+   *  DDL; Rust adapters are a shared object in BucketFS, loaded through a
+   *  Rust Script Language Container. */
+  runtime: "java" | "lua" | "rust";
   /** Simple Icons slug for the source's logo; omit for a generic database glyph. */
   logo?: string;
   /** GitHub repository, `owner/name`. */
@@ -55,6 +57,17 @@ export type VsAdapter = {
   release: { tag: string; asset: string };
   /** Java only: the `%scriptclass` of the adapter script. */
   scriptClass?: string;
+  /**
+   * Rust only. The shared object is uploaded to BucketFS and referenced by
+   * `%udf_object`, and the adapter comes with a scan UDF beside the adapter
+   * script. `bucketPath` is where the library is expected to live, and
+   * `languageAlias` the `SCRIPT_LANGUAGES` alias that selects its container.
+   */
+  rust?: {
+    bucketPath: string;
+    languageAlias: string;
+    scanUdf: { name: string; signature: string };
+  };
   /**
    * Document adapters only: the `CREATE JAVA SET SCRIPT` the adapter needs
    * beside the adapter script — its name and `%scriptclass`.

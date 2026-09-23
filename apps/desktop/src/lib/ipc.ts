@@ -373,7 +373,7 @@ export type VsStageRequest = {
   jobId: string;
   repo: string;
   assetPattern: string;
-  runtime: "java" | "lua";
+  runtime: "java" | "lua" | "rust";
   driver: {
     name: string;
     maven?: string;
