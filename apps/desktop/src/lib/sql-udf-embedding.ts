@@ -104,4 +104,39 @@ export async function installUdfEmbedding(monaco: MonacoApi): Promise<void> {
   const loaded = await sql.loader();
   if (!loaded.language) return;
   monaco.languages.setMonarchTokensProvider("sql", withUdfEmbedding(loaded.language) as never);
+  // The same languages' configurations drive indentation inside a block.
+  await loadEmbeddedConfigs(monaco);
+}
+
+/** Monaco's own configuration for each language it can embed, keyed by the
+ *  word a CREATE header would use. Loaded from Monaco, never written here, so
+ *  a language's indentation and brackets stay whatever upstream says. */
+const configs = new Map<string, unknown>();
+
+/** The configuration for the language a block declares, or null. */
+export function embeddedConfig(language: string | null | undefined): unknown {
+  const name = language?.trim().toLowerCase();
+  if (!name) return null;
+  const base = /^python\d*$/.test(name) ? "python" : name;
+  return configs.get(base) ?? null;
+}
+
+/** Load and remember the configurations of every language Monaco can embed. */
+export async function loadEmbeddedConfigs(monaco: MonacoApi): Promise<void> {
+  const languages = monaco.languages.getLanguages() as {
+    id: string;
+    loader?: () => Promise<{ conf?: unknown }>;
+  }[];
+  await Promise.all(
+    languages.map(async (entry) => {
+      if (configs.has(entry.id) || !entry.loader) return;
+      try {
+        const loaded = await entry.loader();
+        if (loaded.conf) configs.set(entry.id, loaded.conf);
+      } catch {
+        // A language that will not load simply has no configuration; the body
+        // then keeps the editor's default behaviour.
+      }
+    }),
+  );
 }

@@ -7,7 +7,7 @@
  */
 import { type Monaco } from "@monaco-editor/react";
 import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
-import { udfAccentClass, udfAccentRule, udfBodyStart, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
+import { udfBodyStart, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -23,24 +23,6 @@ function badgeAnchor(sql: string, s: { text: string; start: number; end: number 
   const letter = /[A-Za-z]/.exec(span);
   if (letter) return s.start + letter.index;
   return s.start + (span.length - span.trimStart().length);
-}
-
-// One accent rule per language actually seen. Monaco decorations name a
-// class, so a language's colour has to reach the line through a stylesheet
-// rule; these are written once, the first time a language turns up.
-const accentStyled = new Set<string>();
-function ensureAccentStyle(language: string, className: string) {
-  if (accentStyled.has(className)) return;
-  accentStyled.add(className);
-  const rule = udfAccentRule(language, className);
-  if (!rule) return;
-  let el = document.getElementById("exa-udf-accent-styles");
-  if (!el) {
-    el = document.createElement("style");
-    el.id = "exa-udf-accent-styles";
-    document.head.appendChild(el);
-  }
-  el.appendChild(document.createTextNode(`${rule}\n`));
 }
 
 // The numbers render via CSS content — one tiny rule per number, generated on
@@ -110,10 +92,6 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
       if (!block.closed) continue;
       const from = model.getPositionAt(block.start);
       const to = model.getPositionAt(block.end);
-      // The accent comes from the language's own name, so a language this app
-      // has never heard of still gets one; its rule is written on first sight.
-      const accentClass = udfAccentClass(block.language);
-      if (accentClass && block.language) ensureAccentStyle(block.language, accentClass);
       // Two cells, one inside the other: the outer holds the SQL that declares
       // the script, the inner holds the function itself in its own language —
       // a notebook cell with a child cell in it.
@@ -127,7 +105,6 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         const classes = [
           udfLineClasses({ first: i === 0, last: i === last }),
           `exa-udf-${role}`,
-          accentClass ?? "",
         ];
         // The child cell closes at its own top and bottom, inside the outer one.
         if (role === "body" && bodyStart !== null) {
