@@ -290,3 +290,27 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   for 3,000, byte-identical output (checked against the old implementation on
   three synthetic schemas; `infer-links.test.ts` pins rule priority and a
   1,000-table budget).
+
+## The results and history tables (2026-09-22 evening, extended 2026-09-23)
+
+- **The scrollbar started above row 1.** The column names lived inside the
+  `overflow-auto` container as a sticky `thead`, so the vertical scrollbar ran
+  the full height of the panel, past the header. Both results grids now put the
+  header in its OWN table above the scroller, with the body table inside it.
+  Two tables need one set of widths: `lib/table-widths.ts` measures each at its
+  natural size and fixes both to the wider of each pair (`pairWidths`), the
+  header mirrors the body's `scrollLeft`, and `scrollbarGutter` gives the
+  header back exactly what a classic scrollbar takes from the body — zero on
+  macOS overlay scrollbars, re-measured by a `ResizeObserver` on the scroller
+  because a window resize adds or removes that scrollbar with no React update.
+  Border ownership is split (header `border-t`, body `border-b`) so the seam is
+  not drawn twice, and the "Show more" footer takes the table's width so it
+  does not slide away when the grid is scrolled sideways.
+  `ResultsGrid` moved to its own module; HistoryDock.tsx went 854 → 576 lines.
+  The SQL history table got the same treatment on 2026-09-23, and it is
+  simpler there: that table is already fixed-layout on a percentage colgroup,
+  so its header and body tables share one `cols` element and line up with no
+  measurement at all. Only the scrollbar gutter is measured, before paint, so
+  the columns are never drawn out of step on a platform whose scrollbar takes
+  width.
+
