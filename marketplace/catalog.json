@@ -1,30 +1,22 @@
 {
-  "generatedAt": "2026-09-06T17:38:14Z",
+  "generatedAt": "2026-09-23T13:26:21Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
       "repo": "exasol/exasol-personal",
-      "latest": "v2.2.0",
-      "verified": "v2.2.0",
+      "latest": "v2.3.0",
+      "verified": "v2.3.0",
       "homepage": "https://github.com/exasol/exasol-personal",
       "name": "exasol-personal",
       "description": "The Analytics Database for Agentic AI — Free for Personal Use"
     },
     "exasol-cloud": {
       "repo": "exasol/exasol-personal",
-      "latest": "v2.2.0",
-      "verified": "v2.2.0",
+      "latest": "v2.3.0",
+      "verified": "v2.3.0",
       "homepage": "https://github.com/exasol/exasol-personal",
       "name": "exasol-personal",
       "description": "The Analytics Database for Agentic AI — Free for Personal Use"
-    },
-    "exasol-community": {
-      "repo": "exasol/docker-db",
-      "latest": null,
-      "verified": null,
-      "homepage": "https://github.com/exasol/docker-db",
-      "name": "docker-db",
-      "description": "Documentation for the Docker version of Exasol"
     },
     "notebook-connector": {
       "repo": "exasol/notebook-connector",
@@ -36,7 +28,7 @@
     },
     "dbt-exasol": {
       "repo": "exasol/dbt-exasol",
-      "latest": "v1.12.1",
+      "latest": "v1.12.2",
       "verified": null,
       "homepage": "https://github.com/exasol/dbt-exasol",
       "name": "dbt-exasol",
@@ -76,7 +68,7 @@
     },
     "terraform-provider": {
       "repo": "exasol-labs/terraform-provider-exasol",
-      "latest": "v0.2.3",
+      "latest": "v0.2.5",
       "verified": null,
       "homepage": "https://github.com/exasol-labs/terraform-provider-exasol",
       "name": "terraform-provider-exasol",
@@ -108,23 +100,31 @@
     },
     "exapump": {
       "repo": "exasol-labs/exapump",
-      "latest": "v0.12.0",
-      "verified": "v0.12.0",
+      "latest": "v0.13.0",
+      "verified": "v0.13.0",
       "homepage": "https://github.com/exasol-labs/exapump",
       "name": "exapump",
       "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust 🦀"
     },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.85",
+      "verified": null,
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
+      "name": "exa-engine",
+      "description": "exa — the Exasol data agent: terminal-native AI for schema-grounded SQL, verified answers and multi-agent data teams"
+    },
     "mcp-server": {
       "repo": "exasol/mcp-server",
       "latest": "2.2.0",
-      "verified": "2.0.0",
+      "verified": "2.2.0",
       "homepage": "https://github.com/exasol/mcp-server",
       "name": "mcp-server",
       "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
     },
     "pyexasol": {
       "repo": "exasol/pyexasol",
-      "latest": "2.3.2",
+      "latest": "2.4.1",
       "verified": null,
       "homepage": "https://github.com/exasol/pyexasol",
       "name": "pyexasol",
@@ -132,7 +132,7 @@
     },
     "sqlalchemy-exasol": {
       "repo": "exasol/sqlalchemy-exasol",
-      "latest": "7.1.3",
+      "latest": "7.1.4",
       "verified": null,
       "homepage": "https://github.com/exasol/sqlalchemy-exasol",
       "name": "sqlalchemy-exasol",
@@ -180,7 +180,7 @@
     },
     "driver-ts": {
       "repo": "exasol/exasol-driver-ts",
-      "latest": "0.7.0",
+      "latest": "0.8.0",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-ts",
       "name": "exasol-driver-ts",
@@ -188,7 +188,7 @@
     },
     "driver-go": {
       "repo": "exasol/exasol-driver-go",
-      "latest": "v1.1.0",
+      "latest": "v1.1.1",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-go",
       "name": "exasol-driver-go",
