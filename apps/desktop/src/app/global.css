@@ -399,23 +399,47 @@
 /* `--/ … /` UDF script blocks in the SQL editor: an embedded code block —
    tinted lines with a left rule, plus a language chip on the marker line
    (statement-badges.ts). */
+/* ── UDF script blocks ────────────────────────────────────────────────────
+   A `--/ … /` block is Lua, Python, Java or R sitting inside a SQL buffer. It
+   reads as its own card: a raised surface, a rail in the language's accent,
+   and a pill naming it. The accent is what tells two blocks apart at a
+   glance. Everything here is color and background only — weight, size and
+   style changes alter glyph metrics, which made the code shift as a block
+   opened or closed. */
 .exa-udf-block {
-  background: color-mix(in srgb, var(--primary) 6%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+  --exa-udf-accent: var(--primary);
+  background: color-mix(in srgb, var(--exa-udf-accent) 7%, var(--editor));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--exa-udf-accent) 70%, transparent);
 }
-.exa-udf-lang {
-  color: color-mix(in srgb, var(--primary) 80%, var(--muted-foreground));
-  font-size: 0.8em;
-  font-style: italic;
-  opacity: 0.9;
+/* The card closes at top and bottom; the middle lines stay square so the
+   surface is continuous. */
+.exa-udf-open {
+  border-top: 1px solid color-mix(in srgb, var(--exa-udf-accent) 35%, transparent);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
 }
-/* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
-   tokenizer's comment/operator colors (!important beats the .mtk* rules). */
+.exa-udf-close {
+  border-bottom: 1px solid color-mix(in srgb, var(--exa-udf-accent) 35%, transparent);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+/* The `--/` and `/` delimiters are scaffolding: they recede so the code
+   between them is what the eye lands on (!important beats the .mtk* rules
+   the SQL tokenizer applies). */
 .exa-udf-marker {
-  /* Color only — weight/style changes alter glyph metrics and made the
-     content shift when a block appeared or disappeared. */
-  color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
+  color: color-mix(in srgb, var(--muted-foreground) 55%, transparent) !important;
   font-style: normal !important;
+}
+/* The language pill on the opening line. */
+.exa-udf-chip {
+  margin-left: 0.8em;
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, var(--exa-udf-accent, var(--primary)) 22%, transparent);
+  color: color-mix(in srgb, var(--exa-udf-accent, var(--primary)) 80%, var(--foreground));
 }
 
 @layer components {

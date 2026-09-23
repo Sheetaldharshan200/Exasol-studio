@@ -7,6 +7,7 @@
  */
 import { type Monaco } from "@monaco-editor/react";
 import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
+import { udfAccentClass, udfAccentRule, udfChipLabel, udfLineClasses } from "@/lib/udf-block-style";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -22,6 +23,24 @@ function badgeAnchor(sql: string, s: { text: string; start: number; end: number 
   const letter = /[A-Za-z]/.exec(span);
   if (letter) return s.start + letter.index;
   return s.start + (span.length - span.trimStart().length);
+}
+
+// One accent rule per language actually seen. Monaco decorations name a
+// class, so a language's colour has to reach the line through a stylesheet
+// rule; these are written once, the first time a language turns up.
+const accentStyled = new Set<string>();
+function ensureAccentStyle(language: string, className: string) {
+  if (accentStyled.has(className)) return;
+  accentStyled.add(className);
+  const rule = udfAccentRule(language, className);
+  if (!rule) return;
+  let el = document.getElementById("exa-udf-accent-styles");
+  if (!el) {
+    el = document.createElement("style");
+    el.id = "exa-udf-accent-styles";
+    document.head.appendChild(el);
+  }
+  el.appendChild(document.createTextNode(`${rule}\n`));
 }
 
 // The numbers render via CSS content — one tiny rule per number, generated on
@@ -80,34 +99,50 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         },
       };
     });
-    // `--/ … /` UDF script blocks render as an embedded code block: a tinted
-    // whole-line background plus a language chip on the marker line. Blocks
-    // still being typed (no closing "/") stay unpainted — tinting the whole
+    // `--/ … /` UDF script blocks render as an embedded card: this is Lua,
+    // Python, Java or R sitting inside a SQL buffer, and it should read as a
+    // different thing rather than as faintly tinted SQL. Each line carries the
+    // block surface and the language's accent; the first and last close the
+    // card; the delimiters recede and the header carries a language pill.
+    // Blocks still being typed (no closing "/") stay unpainted — tinting the
     // rest of the buffer mid-keystroke reads as the editor jumping around.
     for (const block of findScriptBlocks(sql)) {
       if (!block.closed) continue;
       const from = model.getPositionAt(block.start);
       const to = model.getPositionAt(block.end);
-      decorations.push({
-        range: new monaco.Range(from.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
-        options: { isWholeLine: true, className: "exa-udf-block" },
-      });
-      // The delimiters (`--/` line + closing `/`) style as block markers, not
-      // as the comment / operator colors the SQL tokenizer would give them.
-      decorations.push({
-        range: new monaco.Range(from.lineNumber, 1, from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
-        options: { inlineClassName: "exa-udf-marker" },
-      });
-      decorations.push({
-        range: new monaco.Range(to.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
-        options: { inlineClassName: "exa-udf-marker" },
-      });
-      // Language chip only once the CREATE header names a language.
-      if (block.language) {
+      // The accent comes from the language's own name, so a language this app
+      // has never heard of still gets one; its rule is written on first sight.
+      const accentClass = udfAccentClass(block.language);
+      if (accentClass && block.language) ensureAccentStyle(block.language, accentClass);
+      for (let line = from.lineNumber; line <= to.lineNumber; line++) {
+        decorations.push({
+          range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+          options: {
+            isWholeLine: true,
+            className: [
+              udfLineClasses({ first: line === from.lineNumber, last: line === to.lineNumber }),
+              accentClass ?? "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          },
+        });
+      }
+      // The delimiters (`--/` line + closing `/`) are scaffolding: they recede
+      // so the code between them is what the eye lands on.
+      for (const line of [from.lineNumber, to.lineNumber]) {
+        decorations.push({
+          range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+          options: { inlineClassName: "exa-udf-marker" },
+        });
+      }
+      // The language pill, once the CREATE header names one.
+      const chip = udfChipLabel(block.language);
+      if (chip) {
         decorations.push({
           range: new monaco.Range(from.lineNumber, model.getLineMaxColumn(from.lineNumber), from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
           options: {
-            after: { content: `  ${block.language} script`, inlineClassName: "exa-udf-lang" },
+            after: { content: chip, inlineClassName: `exa-udf-chip ${accentClass ?? ""}`.trim() },
             stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
           },
         });
