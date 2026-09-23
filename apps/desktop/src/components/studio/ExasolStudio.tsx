@@ -812,19 +812,32 @@ export function ExasolStudio({
 
   // Run a reviewed DDL/DCL statement from the tree context menu, then refresh
   // that connection's object tree.
+  /// A confirmed schema change — drop, rename, alter — runs in a query tab.
+  /// It used to run invisibly behind the dialog, so when the database refused
+  /// it (a virtual schema still on an adapter, a dependency in the way) the
+  /// reason was only findable in the SQL history. In a tab the statement, its
+  /// result and its error are all in front of the user, and the statement can
+  /// be edited and re-run without rebuilding it by hand.
   async function runDdl(profileId: string, sql: string) {
     const conn = connections.find((c) => c.profile.id === profileId);
     if (!conn) return;
+    setObjAction(null);
+    // A query tab belongs to the connection it is open on. When the object
+    // lives on another connection, run it directly rather than against the
+    // wrong database.
+    if (connection && connection.profile.id === profileId) {
+      await openBuiltSql(sql, true);
+      setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
+      return;
+    }
     if (!acquireRun(profileId)) return;
     try {
       await execSql(profileId, conn.profile.name, sql, 1, false);
       setTreeKeys((k) => ({ ...k, [profileId]: (k[profileId] ?? 0) + 1 }));
       loadHistory();
       void refreshSqlCatalog();
-      setObjAction(null);
     } catch (e) {
-      patchTab(activeTab.id, { execError: errorMessage(e), resultView: "results" });
-      setObjAction(null);
+      pushNotification("warning", `Could not change ${conn.profile.name}`, errorMessage(e));
     } finally {
       releaseRun();
     }

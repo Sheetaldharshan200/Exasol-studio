@@ -42,6 +42,7 @@ import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
 import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
+import { showSchemaTab, zoomVar } from "./visualizer/schema-tab";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -126,6 +127,26 @@ export function Visualizer({
   const setPaneClass = useCallback((cls: string, on: boolean) => {
     pane()?.classList.toggle(cls, on);
   }, [pane]);
+  // Every viewport change writes the live zoom onto the pane and decides
+  // whether the schema tabs are still needed. A style write and a class
+  // toggle through a ref — no React render is involved in a gesture.
+  const applyZoom = useCallback((zoom: number) => {
+    const el = pane();
+    if (!el) return;
+    el.style.setProperty("--vs-zoom", zoomVar(zoom));
+    el.classList.toggle("is-far", showSchemaTab(zoom));
+  }, [pane]);
+  /** Re-read the viewport after a programmatic move; fitView and fitBounds
+   *  raise no onMove of their own. */
+  const syncZoomAfter = useCallback((ms: number) => {
+    const t = window.setTimeout(() => {
+      const vp = rfRef.current?.getViewport();
+      if (vp) applyZoom(vp.zoom);
+    }, ms + 60);
+    return () => window.clearTimeout(t);
+  }, [applyZoom]);
+  const syncZoomAfterRef = useRef<(ms: number) => void>(() => {});
+  syncZoomAfterRef.current = syncZoomAfter;
   // The promotion outlives the gesture by a moment: a wheel zoom arrives as a
   // burst of separate gestures, and dropping the layer between them is what
   // made zooming out stutter and then stall.
@@ -166,6 +187,7 @@ export function Visualizer({
     if (!width || !height) return;
     rememberViewport();
     void inst.fitBounds({ x: box.position.x, y: box.position.y, width, height }, { duration: 450, padding: 0.08 });
+    syncZoomAfterRef.current(450);
   }, [rememberViewport]);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -293,7 +315,11 @@ export function Visualizer({
       if (returnToViewport()) return;
       // React Flow measures the fresh nodes a frame after they mount.
       const t = window.setTimeout(() => void inst.fitView({ duration: 450, padding: 0.15 }), 60);
-      return () => window.clearTimeout(t);
+      const cancelSync = syncZoomAfter(60 + 450);
+      return () => {
+        window.clearTimeout(t);
+        cancelSync();
+      };
     }
     // Read live positions: a table may have been dragged since the layout.
     const rect = focusBounds(
@@ -307,6 +333,7 @@ export function Visualizer({
     if (!rect) return;
     rememberViewport();
     void inst.fitBounds(rect, { duration: 450, padding: 0.2 });
+    return syncZoomAfter(450);
     // A change of TABLE or a fresh layout moves the view; nodes/edges are read
     // at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -819,7 +846,11 @@ export function Visualizer({
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onInit={(inst) => (rfRef.current = inst)}
+              onInit={(inst) => {
+                rfRef.current = inst;
+                // The mount-time fitView has already run: start in the right state.
+                syncZoomAfter(0);
+              }}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onPaneClick={() => {
@@ -837,7 +868,11 @@ export function Visualizer({
                 if (isUserMove(e)) cameFrom.current.clear();
                 beginGesture();
               }}
-              onMoveEnd={endGesture}
+              onMove={(_e, vp) => applyZoom(vp.zoom)}
+              onMoveEnd={(_e, vp) => {
+                applyZoom(vp.zoom);
+                endGesture();
+              }}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
@@ -855,7 +890,10 @@ export function Visualizer({
                 showInteractive={false}
                 onZoomIn={() => cameFrom.current.clear()}
                 onZoomOut={() => cameFrom.current.clear()}
-                onFitView={() => cameFrom.current.clear()}
+                onFitView={() => {
+                  cameFrom.current.clear();
+                  syncZoomAfter(450);
+                }}
               />
               <MiniMap pannable zoomable className="!right-3 !bottom-3" maskColor="color-mix(in srgb, var(--background) 55%, transparent)" nodeColor={(n) => (n.type === "table" ? edgeStyle.to : "transparent")} />
             </ReactFlow>
@@ -863,25 +901,28 @@ export function Visualizer({
           </DiagramStateContext.Provider>
         )}
 
-        {/* The canvas's own toolbar: the two things you reach for without
-            hunting in the header — attach a source, and find a table. */}
-        <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
-          {onNewVs ? (
-            <button
-              onClick={onNewVs}
-              data-agent-id="visualizer.add-source"
-              title="Add a data source — attach another database or bucket as a virtual schema"
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <Waypoints className="h-3.5 w-3.5 text-teal" />
-              Add data source
-            </button>
-          ) : null}
+        {/* The canvas's own toolbar. Attaching a source is a left-hand action
+            like the tree it extends; finding a table sits on the right, out of
+            the way of the first schema. */}
+        {onNewVs ? (
+          <button
+            onClick={onNewVs}
+            data-agent-id="visualizer.add-source"
+            title="Add a data source — attach another database or bucket as a virtual schema"
+            className="absolute top-3 left-3 z-20 flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-popover px-2.5 text-[12px] font-medium text-foreground shadow-lg transition-colors hover:border-teal/50 hover:text-teal"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <Waypoints className="h-3.5 w-3.5 text-teal" />
+            Add data source
+          </button>
+        ) : null}
 
-          {/* Always here, never behind a button: a diagram you cannot search is
-              a diagram you pan around hoping. */}
-          <div className="flex w-72 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+        {/* The right-hand column. Search is always here, never behind a
+            button — a diagram you cannot search is a diagram you pan around
+            hoping — and the link-style panel stacks under it rather than over
+            its results. */}
+        <div className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-1.5rem)] w-72 flex-col gap-2">
+        <div className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg transition-colors focus-within:border-primary/60">
             <div className="flex h-8 items-center gap-1.5 px-2">
               <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <input
@@ -897,6 +938,7 @@ export function Visualizer({
                   }
                 }}
                 placeholder="Find a table or column…"
+                data-bare
                 data-agent-id="visualizer.search"
                 className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
               />
@@ -946,14 +988,13 @@ export function Visualizer({
                 )}
               </div>
             ) : null}
-          </div>
         </div>
 
-        {/* Link style panel */}
+        {/* Link style panel — same column, stacked under the search box. */}
         {stylePanelOpen ? (
           <>
-            <div className="fixed inset-0 z-20" onClick={() => setStylePanelOpen(false)} />
-            <div className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-1.5rem)] w-72 flex-col rounded-lg border border-border bg-popover p-3 shadow-2xl">
+            <div className="fixed inset-0 -z-10" onClick={() => setStylePanelOpen(false)} />
+            <div className="flex min-h-0 flex-col rounded-lg border border-border bg-popover p-3 shadow-2xl">
               <div className="mb-2 flex items-center justify-between">
                 <span className="eyebrow-muted">Link style</span>
                 <button onClick={() => setStylePanelOpen(false)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
@@ -1066,6 +1107,7 @@ export function Visualizer({
             </div>
           </>
         ) : null}
+        </div>
       </div>
 
       {mode === "build" ? (

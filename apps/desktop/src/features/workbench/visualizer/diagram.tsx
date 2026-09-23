@@ -316,6 +316,16 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
     // The box is a backdrop: only its header takes pointer events, so dragging
     // and clicking the canvas work straight through it.
     <div className="vs-box pointer-events-none relative h-full w-full rounded-2xl border-2 border-dashed border-foreground/25">
+      {/* Zoomed out, the strip below shrinks past reading. This tab sits ABOVE
+          the box — the one place no card occupies — and carries the name at a
+          constant screen size until the cards' own names are readable. */}
+      <button className="vs-tab" onClick={d.onFocus} title={`Zoom to ${d.schema}`}>
+        <span className="vs-tab-name">{d.schema}</span>
+        <span className="vs-tab-sub">
+          {d.source ? `${d.source} · ` : ""}
+          {d.total} table{d.total === 1 ? "" : "s"}
+        </span>
+      </button>
       <div className="vs-box-handle pointer-events-auto flex h-[44px] cursor-grab items-center gap-2 px-3 active:cursor-grabbing" title="Drag to move the whole schema">
         <button
           onClick={d.onFocus}

@@ -846,6 +846,9 @@
   background-color: var(--editor);
   background-image: radial-gradient(color-mix(in srgb, var(--border) 85%, transparent) 1px, transparent 1px);
   background-size: 22px 22px;
+  /* The live zoom, written by onMove as a style property (never React state).
+     The schema tab divides by it to keep a constant SCREEN size. */
+  --vs-zoom: 1;
 }
 /* The viewport is promoted for the DURATION OF A GESTURE only. A permanently
    promoted layer is re-rasterized at each new scale, and the canvas layer at
@@ -881,4 +884,42 @@
 }
 .visualizer-pane .vs-box-handle {
   pointer-events: auto;
+}
+/* The schema tab: a label above the box while the cards' own names are too
+   small to read, sized in screen pixels so it stays legible at any zoom. */
+.vs-tab {
+  display: none;
+}
+.visualizer-pane.is-far .vs-tab {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  max-width: 100%;
+  align-items: baseline;
+  gap: 0.5em;
+  margin-bottom: calc(6px / var(--vs-zoom));
+  padding: 0.3em 0.7em;
+  border: calc(1px / var(--vs-zoom)) solid var(--border);
+  border-radius: 0.5em;
+  background-color: var(--panel);
+  color: var(--foreground);
+  font-size: calc(13px / var(--vs-zoom));
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.visualizer-pane.is-far .vs-tab:hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+.visualizer-pane.is-far .vs-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.visualizer-pane.is-far .vs-tab-sub {
+  font-size: 0.7em;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }

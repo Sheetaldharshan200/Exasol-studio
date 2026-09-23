@@ -175,3 +175,9 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-22] feat | Visualizer: schema name capped to its own box and anchored at its top, in-canvas add-source card removed, a column selection now draws only its links, and a tap on empty canvas returns to the exact viewport you framed from
 
 ## [2026-09-23] fix | Visualizer: the zoom level-of-detail tier is removed at the user's request — full cards at every zoom, smoothness carried by gesture-scoped layer promotion, containment, parked decoration, the link budget and pagination; search is now a permanent floating box on the canvas (⌘F focuses it)
+
+## [2026-09-23] gotcha | Personal local setup can deadlock: a VM host process left from an earlier session keeps holding 8565 with no database behind it, so probes get "connection reset" and `exasol stop` fails with ssh exit 255 (`failed to remove Nano container`) — its recovery needs the guest it cannot reach. Fix: kill the stale VM pid from `local/runtime/vm-state.json`, then `exasol start`; a fresh VM comes up on a new guest IP.
+
+## [2026-09-23] fix | Studio now recovers a stranded Personal VM itself: when the launcher's `stop` fails it verifies the recorded pid is the runner, holds THIS deployment's port, and that no database answers in the guest, then TERM/KILLs it and starts fresh — a live database is never signalled, whatever made `stop` fail (vm_recovery.rs, 10 tests)
+
+## [2026-09-23] fix | A confirmed schema change (drop/rename/alter) now opens in a query tab and runs there, so a refusal like "drop the virtual schemas of this adapter first" is in front of the user and re-runnable, not buried in SQL history

@@ -226,6 +226,14 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   budget, per-schema pagination, memoised nodes and selection through context.
   `minZoom` is 0.05 — React Flow clamps the zoom Fit View computes to that
   floor, so a high floor quietly leaves part of a large diagram off the pane.
+- **The schema name tab (2026-09-23).** The cards are always drawn, but far
+  enough out a table's own name is a few pixels tall, so you can see a
+  schema's shape without knowing which schema it is. `schema-tab.ts` decides
+  from the same legibility rule the deleted tier used, only now it governs a
+  LABEL and hides nothing: while a table name renders under 7 screen pixels,
+  each box carries a tab ABOVE it — the one place no card occupies — sized as
+  `calc(13px / var(--vs-zoom))`, and it stands down the moment the cards can
+  be read. Clicking it frames that schema.
 - **Links read as links** — default width 2.5, and the "dense" threshold that
   strips decoration went 24 → 60 links, with the faint opacities lifted
   (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1

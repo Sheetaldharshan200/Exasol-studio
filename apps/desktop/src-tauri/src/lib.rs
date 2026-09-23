@@ -15,6 +15,7 @@ mod component_lock;
 mod components_update;
 mod skills_market;
 mod verified_lock;
+mod vm_recovery;
 mod driver_exec;
 mod exarrow_exec;
 mod virtual_schema_install;

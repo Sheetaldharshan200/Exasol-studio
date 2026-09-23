@@ -757,6 +757,152 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// Poll until `port` stops accepting connections (the DB has fully shut down),
 /// or the timeout elapses. Returns whether the port is closed.
+/// Is something accepting connections at this guest endpoint right now?
+fn endpoint_ready(ip: &str, port: u16) -> bool {
+    let Ok(addr) = format!("{ip}:{port}").parse::<SocketAddr>() else {
+        return false;
+    };
+    TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok()
+}
+
+/// The pids listening on a local port — how recovery confirms that the VM the
+/// launcher recorded is the one actually holding THIS deployment's port.
+#[cfg(unix)]
+fn listeners_on_port(port: u16) -> Vec<u32> {
+    Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+        .ok()
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter_map(|l| l.trim().parse::<u32>().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(not(unix))]
+fn listeners_on_port(_port: u16) -> Vec<u32> {
+    Vec::new()
+}
+
+/// Wait for a pid to stop being the runner — it exited, or (pid reuse) became
+/// something else entirely, and either way it is no longer our VM.
+fn wait_for_runner_exit(pid: u32, timeout: Duration) -> bool {
+    let started = Instant::now();
+    loop {
+        let still_ours = process_cmdline(pid)
+            .as_deref()
+            .is_some_and(crate::vm_recovery::is_local_runner);
+        if !still_ours {
+            return true;
+        }
+        if started.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// The command line of a running process, or None if it is not running.
+#[cfg(unix)]
+fn process_cmdline(pid: u32) -> Option<String> {
+    let out = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!line.is_empty()).then_some(line)
+}
+
+#[cfg(not(unix))]
+fn process_cmdline(_pid: u32) -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
+fn signal_process(pid: u32, signal: &str) -> bool {
+    Command::new("kill")
+        .args([signal, &pid.to_string()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn signal_process(_pid: u32, _signal: &str) -> bool {
+    false
+}
+
+/// Take down a VM the launcher can no longer reach, so recovery can proceed.
+///
+/// Returns false when there is nothing we can confidently identify as our own
+/// stranded VM — the caller then reports the launcher's original failure
+/// rather than signalling a process on a guess.
+fn force_stranded_vm_down(app: &AppHandle, id: &str) -> AppResult<bool> {
+    let state_path = personal_deployment_dir(app)?
+        .join("local")
+        .join("runtime")
+        .join("vm-state.json");
+    let runtime_dir = state_path.parent().unwrap_or(&state_path).to_path_buf();
+    let state = std::fs::read_to_string(&state_path).unwrap_or_default();
+    let runtime = std::fs::read_to_string(runtime_dir.join("vm-runtime.json")).unwrap_or_default();
+    let pid = crate::vm_recovery::vm_pid_from_state(&state);
+    let cmdline = pid.and_then(process_cmdline);
+    let port = expected_db_port(app);
+    // The guard that matters: if a database is answering inside the guest, the
+    // VM is doing its job and `stop` failed for some other reason. Never
+    // signal then — that would pull the power on a running database.
+    let guest_db_reachable = crate::vm_recovery::guest_db_endpoint(&state, &runtime)
+        .map(|(ip, guest_port)| endpoint_ready(&ip, guest_port))
+        .unwrap_or(true);
+    let check = crate::vm_recovery::StrandedCheck {
+        vm_pid: pid,
+        cmdline: cmdline.as_deref(),
+        owns_forwarded_port: pid.is_some_and(|p| listeners_on_port(port).contains(&p)),
+        guest_db_reachable,
+    };
+    let pid = match crate::vm_recovery::stop_fallback(check) {
+        crate::vm_recovery::StopFallback::ForceDown(pid) => pid,
+        crate::vm_recovery::StopFallback::Report => return Ok(false),
+    };
+
+    emit_log(
+        app,
+        id,
+        "Exasol Personal could not be stopped through its guest — a virtual machine from an earlier session is holding the port with no database behind it. Taking it down…",
+        "info",
+    );
+    if !signal_process(pid, "-TERM") {
+        return Ok(false);
+    }
+    // Wait for THAT process to go, not merely for the port to free: a closed
+    // port would also be satisfied by something else letting go of it.
+    if !wait_for_runner_exit(pid, Duration::from_secs(15)) {
+        // Re-check identity before escalating — 15 seconds is long enough for
+        // the pid to have exited and been reused by something else.
+        if process_cmdline(pid).as_deref().is_some_and(crate::vm_recovery::is_local_runner) {
+            signal_process(pid, "-KILL");
+        }
+        if !wait_for_runner_exit(pid, Duration::from_secs(10)) {
+            return Err(AppError::Storage(format!(
+                "A stranded Exasol Personal virtual machine (process {pid}) is still holding port {port}. Quit it and try again."
+            )));
+        }
+    }
+    if !wait_for_port_closed(port, Duration::from_secs(10)) {
+        return Err(AppError::Storage(format!(
+            "Port {port} is still in use after the stranded virtual machine ended. Something else is holding it."
+        )));
+    }
+    emit_log(app, id, "The stranded virtual machine is down; starting a fresh one…", "info");
+    Ok(true)
+}
+
 fn wait_for_port_closed(port: u16, timeout: Duration) -> bool {
     let started = Instant::now();
     while started.elapsed() < timeout {
@@ -1201,9 +1347,17 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
         "info",
     );
     if run_streamed(app, id, &cli, &["stop", "--deployment-dir", &deployment])? != 0 {
-        return Err(AppError::Storage(
-            "Could not stop Exasol Personal during query-readiness recovery.".into(),
-        ));
+        // `stop` removes the database container by talking to the VM's guest.
+        // A VM left over from an earlier session outlives its database: the
+        // host process still holds the forwarded port while the guest no
+        // longer answers, so `stop` can never succeed and every retry
+        // reports the same error. Take that VM down from the host side —
+        // there is no database inside it to lose — and carry on to `start`.
+        if !force_stranded_vm_down(app, id)? {
+            return Err(AppError::Storage(
+                "Could not stop Exasol Personal during query-readiness recovery.".into(),
+            ));
+        }
     }
     if run_streamed(app, id, &cli, &host_prep_args(&cli, &["start", "--deployment-dir", &deployment]))? != 0 {
         return Err(AppError::Storage(
