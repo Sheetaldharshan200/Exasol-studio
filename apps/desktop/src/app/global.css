@@ -894,17 +894,18 @@
   position: absolute;
   bottom: 100%;
   left: 0;
+  /* Stacked, so the width is the name's and not the name plus its count —
+     and never capped to the box, because a cut name names nothing. The type
+     shrinks to fit instead; font-size is set per schema (see tabFontLimit). */
   display: flex;
-  max-width: 100%;
-  align-items: baseline;
-  gap: 0.5em;
-  margin-bottom: calc(6px / var(--vs-zoom));
-  padding: 0.3em 0.7em;
-  border: calc(1px / var(--vs-zoom)) solid var(--border);
-  border-radius: 0.5em;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 0.35em;
+  padding: 0.3em 0.6em;
+  border: 0.08em solid var(--border);
+  border-radius: 0.45em;
   background-color: var(--panel);
   color: var(--foreground);
-  font-size: calc(13px / var(--vs-zoom));
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
@@ -915,8 +916,7 @@
   border-color: color-mix(in srgb, var(--primary) 60%, transparent);
 }
 .visualizer-pane.is-far .vs-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
 }
 .visualizer-pane.is-far .vs-tab-sub {
   font-size: 0.7em;

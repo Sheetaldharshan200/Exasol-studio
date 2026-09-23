@@ -234,6 +234,14 @@ from freezing the app, and gave the chat completion + next-step chips. Spec:
   each box carries a tab ABOVE it — the one place no card occupies — sized as
   `calc(13px / var(--vs-zoom))`, and it stands down the moment the cards can
   be read. Clicking it frames that schema.
+  - The name is never truncated. Capping the tab to its box produced
+    "SEMANTI…" on both SEMANTIC_AGENT and SEMANTIC_CATALOG — the same label on
+    two schemas, which is exactly what the tab exists to prevent — and small
+    boxes lost their name entirely while their tabs overlapped each other.
+    `tabFontLimit(boxWidth, nameLength, gap)` shrinks the TYPE instead, and
+    only as far as it must: a tab may use most of the gap beside its box as
+    well as the box itself. The table count sits under the name rather than
+    beside it, so the width is the name's alone.
 - **Links read as links** — default width 2.5, and the "dense" threshold that
   strips decoration went 24 → 60 links, with the faint opacities lifted
   (inferred 0.28 → 0.55 dense, 0.75 normal; declared 0.6 → 0.85 dense, 1

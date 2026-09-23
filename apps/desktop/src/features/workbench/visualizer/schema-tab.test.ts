@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COMFORTABLE_PX, nameScreenPx, showSchemaTab, tabThreshold, TABLE_NAME_PX, zoomVar } from "./schema-tab.ts";
+import { COMFORTABLE_PX, nameScreenPx, showSchemaTab, tabFontCss, tabFontLimit, tabThreshold, TABLE_NAME_PX, zoomVar } from "./schema-tab.ts";
 
 test("zoomed in, the cards carry their own names and the tab stands down", () => {
   assert.equal(showSchemaTab(1), false);
@@ -29,4 +29,30 @@ test("the CSS zoom variable never divides by zero", () => {
   assert.equal(zoomVar(0.5), "0.5");
   assert.equal(zoomVar(0), "0.01");
   assert.equal(zoomVar(-3), "0.01");
+});
+
+test("the whole name fits, because half a name names nothing", () => {
+  // SEMANTIC_AGENT and SEMANTIC_CATALOG both truncate to "SEMANTI…".
+  const name = "SEMANTIC_CATALOG";
+  const limit = tabFontLimit(900, name.length, 170);
+  assert.ok(limit * (name.length * 0.62 + 1.4) <= 900 + 170 * 0.8 + 0.01);
+});
+
+test("a small box borrows the gap beside it before shrinking its type", () => {
+  const cramped = tabFontLimit(260, "SEMANTIC_ADMIN".length, 0);
+  const roomy = tabFontLimit(260, "SEMANTIC_ADMIN".length, 170);
+  assert.ok(roomy > cramped, "the gap should buy a larger name");
+});
+
+test("a longer name on the same box gets smaller type, not an ellipsis", () => {
+  assert.ok(tabFontLimit(600, 20, 170) < tabFontLimit(600, 6, 170));
+});
+
+test("a box with no room still yields a usable font", () => {
+  assert.ok(tabFontLimit(0, 30, 0) >= 1);
+  assert.ok(tabFontLimit(-50, 0, -10) >= 1);
+});
+
+test("the tab asks for the constant screen size and accepts the cap", () => {
+  assert.equal(tabFontCss(28), "min(calc(13px / var(--vs-zoom)), 28.00px)");
 });

@@ -9,6 +9,7 @@ import { FolderOpen, KeyRound, Table2, Waypoints } from "lucide-react";
 import { ShineBorder } from "@/components/ui/shine-border";
 import type { GraphTable } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { tabFontCss } from "./schema-tab";
 
 export const NODE_W = 232;
 export const HEADER_H = 34;
@@ -294,6 +295,9 @@ export function BeamEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
 
 export type SchemaGroupData = {
   schema: string;
+  /** Largest font the zoomed-out tab may use without running into its
+   *  neighbour, in graph units (see tabFontLimit). */
+  tabFont: number;
   /** Frame this whole schema (click its name). */
   onFocus: () => void;
   /** The federated source for a virtual schema (PostgreSQL, MySQL, …). */
@@ -319,7 +323,7 @@ export const SchemaGroupNode = memo(function SchemaGroupNode({ data }: NodeProps
       {/* Zoomed out, the strip below shrinks past reading. This tab sits ABOVE
           the box — the one place no card occupies — and carries the name at a
           constant screen size until the cards' own names are readable. */}
-      <button className="vs-tab" onClick={d.onFocus} title={`Zoom to ${d.schema}`}>
+      <button className="vs-tab" onClick={d.onFocus} title={`Zoom to ${d.schema}`} style={{ fontSize: tabFontCss(d.tabFont) }}>
         <span className="vs-tab-name">{d.schema}</span>
         <span className="vs-tab-sub">
           {d.source ? `${d.source} · ` : ""}

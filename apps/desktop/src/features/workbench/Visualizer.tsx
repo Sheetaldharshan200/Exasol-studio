@@ -42,7 +42,7 @@ import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
 import { BuilderPane } from "./visualizer/BuilderPane";
 import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
 import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
-import { showSchemaTab, zoomVar } from "./visualizer/schema-tab";
+import { showSchemaTab, tabFontLimit, zoomVar } from "./visualizer/schema-tab";
 import {
   COLOR_PRESETS,
   DEFAULT_EDGE_STYLE,
@@ -74,6 +74,8 @@ type SchemaEntry = { name: string; source?: string };
 const schemaCache = new Map<string, SchemaEntry[]>();
 /** Which schemas a tab shows; a new tab shows all of them. */
 const lastSelection = new Map<string, string[]>();
+/** Space between schema boxes; a zoomed-out name tab may use most of it. */
+const SCHEMA_GAP = 170;
 /** How long the viewport stays promoted after a gesture (see global.css). */
 const GESTURE_SETTLE_MS = 180;
 
@@ -493,7 +495,7 @@ export function Visualizer({
       return { schema: name, tables: all.slice(0, shown), total: all.length };
     });
     const drawn = new Set(perSchema.flatMap((g) => g.tables.map((t) => t.id)));
-    const layout = layoutSchemas(perSchema.map(({ schema, tables }) => ({ schema, tables })), NODE_W, nodeHeight, { groupGap: 170 });
+    const layout = layoutSchemas(perSchema.map(({ schema, tables }) => ({ schema, tables })), NODE_W, nodeHeight, { groupGap: SCHEMA_GAP });
     // Boxes are plain backdrop nodes and tables are absolutely positioned — no
     // sub-flow parent/child machinery (its measure→render loop killed the
     // renderer). The box only shows where a schema's tables were laid out.
@@ -513,6 +515,9 @@ export function Visualizer({
         data: {
           schema: g.schema,
           onFocus: () => focusSchema(g.schema),
+          // A long name on a small box shrinks rather than truncating: two
+          // schemas that both read "SEMANTI…" name nothing.
+          tabFont: tabFontLimit(g.box.width, g.schema.length, SCHEMA_GAP),
           source: schemas.find((sc) => sc.name === g.schema)?.source,
           shown: info.tables.length,
           total: info.total,
