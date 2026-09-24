@@ -93,11 +93,13 @@ style guides, specs. They publish real releases and people look for them, so
 they are listed; they are depended on rather than installed, so they get their
 own shelf rather than being mixed in with the things you install.
 
-# The rate limit a bigger catalog walks into
+# The GitHub rate limit, and the fix that actually addressed it
 
 `market_repo_meta` fetches GitHub **unauthenticated** — 60 requests an hour per
-IP, for everything the app does — and used to refetch **every** repo whenever
-any one of them was missing from the cache:
+IP, for everything the app does.
+
+**The original bug.** It refetched *every* repo whenever any one of them was
+missing from the cache:
 
 ```rust
 if !(fresh && wanted.iter().all(|r| entries.contains_key(r))) { /* fetch ALL */ }
@@ -108,16 +110,38 @@ not a slowdown: the call spends the whole allowance, the tail gets 403s, those
 repos never reach the cache, so `all(...)` stays false and the *next* call
 repeats it. The marketplace would sit permanently without descriptions.
 
-Fixed with per-repo timestamps and a budget: `repos_to_fetch` returns only
-entries that are missing or a day old, capped at `MAX_REPO_FETCH` (40), so a
-large registry fills over successive opens instead of never converging. An
-entry written by an older build has no stamp of its own and inherits the
-whole-cache timestamp, so an existing cache is not thrown away on first run.
+**The first attempt was damage control, not a fix.** Per-repo timestamps plus
+a 40-request cap stopped the spiral, but the cause was untouched: the app was
+still asking about each repo one at a time, so a large catalog simply filled
+in over several openings. A nicer failure, not a working one. Worth
+remembering as a pattern — a cap that makes a bad strategy survivable can read
+like a fix and hide the real question, which was *why are we making 149
+requests at all*.
 
-Because the head of the list fills first, `catalogRepos()` returns libraries
-**last** — otherwise the shelves someone opened the marketplace for would be
-the last to get their About lines. This only affects how fast a card fills in:
-`catalog.json` is refreshed authenticated by CI and carries all of them.
+**The fix.** `GET /orgs/{owner}/repos?per_page=100` returns the same fields as
+the per-repo endpoint — name, description, `stargazers_count`, `pushed_at`,
+`html_url` — so one request answers for a hundred repos. Practically every
+entry belongs to `exasol` (2 pages) or `exasol-labs` (1 page), so the whole
+catalog costs **four requests**: those three plus one for
+`Sheetaldharshan200/exa-engine`.
+
+`fetch_plan` groups the stale repos by owner and lists an org only at
+`ORG_LISTING_THRESHOLD` (3) or more — listing an entire org to learn about one
+repo costs more than it saves — leaving the rest as individual requests under
+a budget that is now a safety net rather than load-bearing. A listing caches
+**every** repo the org owns, including ones the catalog has not asked about,
+so adding an entry later usually costs no request at all.
+
+Two things were removed once the cause was fixed, rather than left behind:
+`MAX_REPO_FETCH`, and the library-last ordering in `catalogRepos()` that
+existed only so the visible shelves would fill before the long tail. With a
+whole org answered in one request there is no tail, and an ordering whose
+stated reason is no longer true is worse than none.
+
+**Not done, deliberately:** conditional requests (`If-None-Match`). GitHub
+does not count `304 Not Modified` against the limit, so ETags would make
+refreshes free — but at four requests a day that optimises something that no
+longer hurts. Worth revisiting only if the catalog spans many more orgs.
 
 # Invariants the tests hold
 
@@ -125,11 +149,12 @@ the last to get their About lines. This only affects how fast a card fills in:
 `owner/name` in an official org; no repo appears twice (two cards on one repo
 render the same name and About line twice — what a bad merge of this list
 looks like); a repo-less item carries its own name, description and homepage;
-the VS shelf equals the adapter registry; every declared `kind` is actually
-used; and non-library repos are requested before library ones.
+the VS shelf equals the adapter registry; and every declared `kind` is
+actually used.
 
-`market.rs`: six tests on `repos_to_fetch`, including the convergence case
-that the spiral bug failed.
+`market.rs`: seven tests on `stale_repos` and `fetch_plan`, including one
+built on the real shape of the catalog that asserts it costs two org listings
+and a single request rather than one per repo.
 
 Two network checks, kept out of the offline suite and run by hand or on a
 schedule:
