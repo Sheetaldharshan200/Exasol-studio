@@ -197,3 +197,9 @@ Filed pages/ecosystem-catalog-source-of-truth.md.
 Enumerated exasol + exasol-labs: 229 non-archived repos, 183 publishing releases.
 Virtual-schema coverage is complete (24 adapters); salesforce-virtual-schema excluded because it has no release.
 
+
+## [2026-09-24] ingest | Virtual Schemas shelf, full ecosystem listing, and the unauthenticated GitHub rate limit
+Updated pages/ecosystem-catalog-source-of-truth.md.
+All 143 release-bearing repos are now listed: 24 on a derived Virtual Schemas shelf, 34 installable, 64 on Libraries & tooling.
+market_repo_meta refetched every repo whenever one was missing — at 149 repos that never converges against GitHub's 60/hr unauthenticated limit. Now per-repo stamps, capped at 40 a call.
+
