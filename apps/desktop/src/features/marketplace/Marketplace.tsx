@@ -1376,7 +1376,7 @@ export function Marketplace() {
               item={detailItem}
               state={stateOf(detailItem)}
               actions={renderActions(detailItem)}
-              versions={versionSource(detailItem) ? verLists[detailItem.id] : []}
+              versions={versionSource(detailItem) ? verLists[detailItem.id] : "unsupported"}
               pickedVersion={verPick[detailItem.id]}
               onPickVersion={(v) => setVerPick(({ [detailItem.id]: _drop, ...rest }) => (v ? { ...rest, [detailItem.id]: v } : rest))}
               onLoadVersions={() => loadVersions(detailItem)}
