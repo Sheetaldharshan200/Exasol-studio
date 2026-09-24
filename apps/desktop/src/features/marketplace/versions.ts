@@ -54,6 +54,10 @@ export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install">
     return { source: "pypi", reference: PYPI_PACKAGE[item.id] };
   }
   if (item.install === "binary" && item.repo) return { source: "github", reference: item.repo };
+  // A virtual schema adapter is installed from its repository's releases, the
+  // same as a binary — the difference is where it lands (the database's
+  // BucketFS), not where it comes from.
+  if (item.install === "vs-adapter" && item.repo) return { source: "github", reference: item.repo };
   return null;
 }
 

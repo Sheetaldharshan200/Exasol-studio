@@ -45,6 +45,7 @@ import {
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
 import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
 import { pickAsset } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
@@ -90,6 +91,12 @@ function openExternal(url: string) {
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
+    case "vs-adapter":
+      return [
+        "Resolve the adapter's newest release on GitHub",
+        "Download its artifact and verify the digest GitHub publishes for it",
+        "Upload it into the connected Exasol's BucketFS, replacing the older copy",
+      ];
     case "binary":
       return asset
         ? [
@@ -150,6 +157,9 @@ type LogLine = { level: string; text: string };
 
 export function Marketplace() {
   const [env, setEnv] = useState<MarketEnv | null>(null);
+  // Per-adapter staging progress for the Virtual Schemas shelf; the install
+  // queue is for things that land on this machine, and these do not.
+  const [vsStaging, setVsStaging] = useState<Record<string, { busy: boolean; failed: boolean; message: string | null }>>({});
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
   // Display metadata (name, About, homepage) straight from each item's GitHub
   // repo: last-known snapshot for instant paint, then the live fetch (Rust
@@ -551,7 +561,42 @@ export function Marketplace() {
       openExternal(item.homepage);
       return;
     }
+    // A virtual schema adapter is staged into the connected database rather
+    // than installed onto this machine, so it does not go through the install
+    // queue — it runs the same command the add-data-source flow runs.
+    if (item.install === "vs-adapter") {
+      void stageVsAdapter(item);
+      return;
+    }
     enqueue([item]);
+  }
+
+  /**
+   * Put an adapter's newest release into the connected database's BucketFS.
+   *
+   * Idempotent: staging an adapter that is already current re-uploads the same
+   * artifact. It needs a managed local Exasol to stage into, and says so
+   * plainly when there is none rather than failing silently.
+   */
+  async function stageVsAdapter(item: CatalogItem) {
+    const adapter = vsAdapterFor(item.id);
+    if (!adapter) return;
+    setVsStaging((m) => ({ ...m, [item.id]: { busy: true, message: null, failed: false } }));
+    try {
+      const result = await ipc.vsStageAdapter({
+        jobId: `vs-update-${item.id}-${Date.now()}`,
+        repo: adapter.repo,
+        assetPattern: adapter.release.asset,
+        runtime: adapter.runtime,
+        driver: null,
+      });
+      setVsStaging((m) => ({
+        ...m,
+        [item.id]: { busy: false, failed: false, message: `Staged ${result.adapterAsset} (${result.releaseTag}).` },
+      }));
+    } catch (e) {
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message: errorMessage(e) } }));
+    }
   }
 
   // Install every item in a recommended pack, in parallel — skipping what the
@@ -1223,9 +1268,25 @@ export function Marketplace() {
 
   const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
   // The one button a card carries, by state; everything else lives on the item page.
-  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline" } | null => {
+  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline"; title?: string } | null => {
     const st = stateOf(item);
     const did = DRIVER_RUNTIME[item.id];
+    // A virtual schema adapter reports its own progress: it is staged into the
+    // connected database, so it never enters the install queue the other
+    // states are derived from.
+    if (item.install === "vs-adapter") {
+      const vs = vsStaging[item.id];
+      if (vs?.busy) return { label: "Staging…", tone: "outline", onClick: () => undefined };
+      const version = st.kind === "install" && st.available ? ` ${st.available}` : "";
+      return {
+        label: vs?.failed ? "Retry staging" : vs?.message ? `Staged${version}` : `Stage${version}`,
+        tone: vs?.message && !vs.failed ? "outline" : "primary",
+        // What happened last time — a staging failure says why (usually that
+        // there is no managed local Exasol to stage into).
+        title: vs?.message ?? undefined,
+        onClick: () => startInstall(item),
+      };
+    }
     switch (st.kind) {
       case "install":
         return { label: st.available ? `Install ${st.available}` : "Install", tone: "primary", onClick: () => (did ? void installDriverAndUse(item, did) : startInstall(item)) };

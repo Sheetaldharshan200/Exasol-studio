@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { VS_ADAPTERS } from "../connection/virtual-schemas/adapters/index.ts";
 import {
   CATALOG,
   catalogRepos,
@@ -120,5 +121,31 @@ test("items without a repo carry their own display text, since nothing can resol
   for (const item of CATALOG) {
     if (item.repo) continue;
     assert.ok(item.name && item.description && item.homepage, `${item.id}: repo-less item needs name/description/homepage`);
+  }
+});
+
+test("the Virtual Schemas shelf is exactly the adapters, derived not listed", () => {
+  const vs = CATALOG.filter((i) => i.kind === "vs");
+  assert.equal(vs.length, VS_ADAPTERS.length, "one catalog item per adapter");
+  assert.deepEqual(
+    vs.map((i) => i.repo).sort(),
+    VS_ADAPTERS.map((a) => a.repo).sort(),
+    "the shelf cannot drift from the registry the add-source flow uses",
+  );
+});
+
+test("a Lua adapter has nothing to stage, so it links instead of installing", () => {
+  for (const a of VS_ADAPTERS) {
+    const item = CATALOG.find((i) => i.id === `vs-${a.id}`)!;
+    assert.ok(item, `${a.id} is on the shelf`);
+    // Lua adapter source is inlined into the CREATE ADAPTER SCRIPT — there is
+    // no artifact in BucketFS to update.
+    assert.equal(item.install, a.runtime === "lua" ? "reference" : "vs-adapter", a.id);
+  }
+});
+
+test("every release-bearing shelf gets used — no kind is declared and left empty", () => {
+  for (const kind of ["vs", "library", "extension", "driver", "cli", "bi"] as const) {
+    assert.ok(CATALOG.some((i) => i.kind === kind), `nothing is filed under "${kind}"`);
   }
 });

@@ -3,14 +3,16 @@ import type { ItemState } from "../item-state.ts";
 import { fuzzyRank } from "../../../lib/fuzzy.ts";
 
 /** The catalog's shelves — one per Docker-Hub-style "category". */
-export type SectionKey = "database" | "load" | "drivers" | "extension" | "ai" | "bi";
+export type SectionKey = "database" | "load" | "drivers" | "extension" | "vs" | "ai" | "bi" | "library";
 export const SECTIONS: { key: SectionKey; label: string; hint: string }[] = [
   { key: "database", label: "Databases", hint: "Run Exasol locally or in the cloud" },
   { key: "load", label: "Data loading & tools", hint: "Move data in and out" },
   { key: "drivers", label: "Drivers", hint: "Connect your apps and scripts to Exasol" },
   { key: "extension", label: "Extensions", hint: "Extend what Exasol can store and query" },
+  { key: "vs", label: "Virtual Schemas", hint: "Query other databases and files as if they were Exasol tables" },
   { key: "ai", label: "AI & Agents", hint: "MCP, agent skills, LLM workflows" },
   { key: "bi", label: "BI & Analytics", hint: "Dashboards and visual analytics" },
+  { key: "library", label: "Libraries & tooling", hint: "Published libraries, plugins and test tooling for building on Exasol" },
 ];
 export function sectionOf(kind: Kind): SectionKey {
   switch (kind) {
@@ -28,6 +30,10 @@ export function sectionOf(kind: Kind): SectionKey {
       return "ai";
     case "bi":
       return "bi";
+    case "vs":
+      return "vs";
+    case "library":
+      return "library";
   }
 }
 export function sectionLabel(key: SectionKey): string {

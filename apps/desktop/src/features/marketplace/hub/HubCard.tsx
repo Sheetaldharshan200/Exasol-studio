@@ -28,7 +28,14 @@ export function TrustMark({ labs, withLabel = false, className }: { labs?: boole
  * a two-line description, then a footer with the install fact and the stars.
  * The whole card opens the item; a checkbox in the corner joins it to a batch.
  */
-export type CardAction = { label: string; onClick: () => void; tone: "primary" | "outline" };
+export type CardAction = {
+  label: string;
+  onClick: () => void;
+  tone: "primary" | "outline";
+  /** Hover text — where an action's outcome does not fit on the button, such
+   *  as why staging a virtual schema adapter failed. */
+  title?: string;
+};
 
 export function HubCard({
   item,
@@ -116,6 +123,7 @@ export function HubCard({
               primary.onClick();
             }}
             data-agent-id={`market.card.${item.id}.primary`}
+            title={primary.title}
             className={cn(
               "ml-auto flex h-8 items-center gap-1.5 rounded-md px-3.5 text-[12.5px] font-semibold transition-colors",
               primary.tone === "primary" ? "cta-glow bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-foreground hover:bg-secondary",

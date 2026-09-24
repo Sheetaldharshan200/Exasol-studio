@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Cloud, Cpu, Database, FileCode2, Plug, Server, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Cloud, Cpu, Database, FileCode2, Layers, Library, Plug, Server, type LucideIcon } from "lucide-react";
 import { McpMark } from "@/components/brand/McpMark";
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,8 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   skills: FileCode2,
   cloud: Cloud,
   bi: BarChart3,
+  vs: Layers,
+  library: Library,
 };
 
 /**

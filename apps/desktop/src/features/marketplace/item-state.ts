@@ -49,6 +49,11 @@ export type ItemLike = Pick<ResolvedCatalogItem, "id" | "install">;
 export function itemState(item: ItemLike, s: ItemSources): ItemState {
   if (s.installing.has(item.id) || s.driverRuntime?.busy) return { kind: "installing" };
   if (item.install === "reference") return { kind: "reference" };
+  // A virtual schema adapter lives in the CONNECTED DATABASE's BucketFS, not
+  // on this machine, so there is no local install to report. The action is
+  // always "stage the newest release", which is idempotent — re-running it on
+  // an up-to-date database simply re-uploads the same artifact.
+  if (item.install === "vs-adapter") return { kind: "install", available: s.latestFor(item.id) };
 
   const managedId = CATALOG_TO_COMPONENT[item.id];
   const inst = s.installed[item.id];
