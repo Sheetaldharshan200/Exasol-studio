@@ -51,7 +51,11 @@ test("every published adapter is in the catalog exactly once, and nothing else i
 test("an entry carries what the flow needs, and nothing that must be guessed", () => {
   for (const a of VS_ADAPTERS) {
     assert.ok(a.docs.startsWith("https://"), `${a.id}: docs link`);
-    assert.ok(a.release.tag && a.release.asset, `${a.id}: pinned release`);
+    // No pinned tag by design — the latest release is resolved at install
+    // time — but the asset pattern must be there and must compile.
+    assert.ok(a.release.asset, `${a.id}: asset pattern`);
+    assert.doesNotThrow(() => new RegExp(a.release.asset), `${a.id}: asset pattern compiles`);
+    assert.equal((a.release as { tag?: string }).tag, undefined, `${a.id}: no pinned tag`);
     assert.doesNotThrow(() => new RegExp(a.release.asset), `${a.id}: asset pattern is a regex`);
     assert.ok(a.fields.length > 0, `${a.id}: asks for something`);
     const keys = a.fields.map((f) => f.key);

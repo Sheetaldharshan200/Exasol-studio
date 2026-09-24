@@ -6,7 +6,7 @@
  * share one definition instead of the shell owning the type everything else
  * needs.
  */
-import { type IconName } from "@/components/ui/icon";
+import type { IconName } from "@/components/ui/icon";
 import type { ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse } from "@/lib/ipc";
@@ -174,3 +174,51 @@ export const WELCOME_TAB: SqlTab = {
 
 /** Sentinel key for the not-connected tab bucket. */
 export const NO_CONNECTION = "__none__";
+
+/** The SQL a fresh first tab is seeded with, so an untouched one is known. */
+const STARTER_SQL = newTab(1).sql;
+
+/**
+ * Has anything been done in this tab worth carrying to a connection?
+ *
+ * A tab opened and never touched is not work: adopting it would pile empty
+ * Untitled tabs onto every connect. A tab whose SQL was edited, or which is
+ * anything other than a plain SQL tab, is.
+ */
+export function tabHasWork(tab: SqlTab): boolean {
+  if (tab.view !== "sql") return true;
+  const sql = tab.sql.trim();
+  if (!sql) return false;
+  return sql !== STARTER_SQL.trim();
+}
+
+/**
+ * The tabs a connection should show once it opens.
+ *
+ * Everything written before connecting lives under the not-connected key, and
+ * used to simply stop being shown the moment a connection came up — a buffer
+ * full of half-written queries, apparently gone. It is carried over instead:
+ * the connection's own tabs first, then whatever was drafted while
+ * disconnected, minus the untouched ones.
+ */
+export function adoptPendingTabs(existing: readonly SqlTab[], pending: readonly SqlTab[]): SqlTab[] {
+  const byId = new Map(existing.map((t) => [t.id, t]));
+  const taken = new Set(byId.keys());
+  const carried: SqlTab[] = [];
+  for (const tab of pending) {
+    if (!tabHasWork(tab)) continue;
+    // The connection may already be showing this very tab — same id, same
+    // text — and then there is nothing to carry.
+    const clash = byId.get(tab.id);
+    if (clash && clash.sql === tab.sql) continue;
+    // A DIFFERENT tab with the same id is an id collision, not the same tab:
+    // ids are clock-derived, so two lists built in the same millisecond can
+    // produce one. Dropping it would throw away the SQL this function exists
+    // to rescue, so it is given a fresh id instead.
+    let id = tab.id;
+    for (let n = 2; taken.has(id); n++) id = `${tab.id}-${n}`;
+    taken.add(id);
+    carried.push(id === tab.id ? tab : { ...tab, id });
+  }
+  return [...existing, ...carried];
+}

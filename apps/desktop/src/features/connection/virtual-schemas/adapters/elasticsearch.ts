@@ -12,7 +12,7 @@ export const ElasticsearchAdapter: VsAdapter = {
   logo: "elasticsearch",
   repo: "exasol/elasticsearch-virtual-schema",
   docs: "https://github.com/exasol/elasticsearch-virtual-schema/blob/main/doc/user_guide/elasticsearch_sql_user_guide.md",
-  release: { tag: "4.0.1", asset: "^virtual-schema-dist-[\\d.]+-elasticsearch-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-elasticsearch-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "ELASTICSEARCH", class: "org.elasticsearch.xpack.sql.jdbc.EsDriver", source: { maven: "org.elasticsearch.plugin:x-pack-sql-jdbc" } },
   fields: [

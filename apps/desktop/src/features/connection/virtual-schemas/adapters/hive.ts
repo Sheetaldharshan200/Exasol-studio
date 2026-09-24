@@ -12,7 +12,7 @@ export const HiveAdapter: VsAdapter = {
   logo: "apachehive",
   repo: "exasol/hive-virtual-schema",
   docs: "https://github.com/exasol/hive-virtual-schema/blob/main/doc/user_guide/hive_user_guide.md",
-  release: { tag: "4.0.1", asset: "^virtual-schema-dist-[\\d.]+-hive-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-hive-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "HIVE", class: "org.apache.hive.jdbc.HiveDriver", source: { maven: "org.apache.hive:hive-jdbc" } },
   fields: [

@@ -24,6 +24,7 @@ type NodeState = { status: "loading" | "done" | "error"; children: TreeNode[]; e
 export function DatabaseTree({
   roots,
   onOpenObject,
+  onOpenSource,
   onOpenDetails,
   onContext,
   initialExpandedItems,
@@ -32,6 +33,8 @@ export function DatabaseTree({
 }: {
   roots: TreeNode[];
   onOpenObject: (schema: string, name: string) => void;
+  /** A stored script or function: open its source in an editor tab. */
+  onOpenSource?: (kind: "script" | "function", schema: string, name: string) => void;
   /** Double-click a schema/table/view → open its detail tab. */
   onOpenDetails?: (node: TreeNode) => void;
   /** Right-click on a node → open the context menu at (x, y). */
@@ -166,6 +169,10 @@ export function DatabaseTree({
         !!onOpenDetails &&
         !!c &&
         (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user");
+      const source =
+        onOpenSource && c && (c.type === "script" || c.type === "function") && c.schema && c.name
+          ? { kind: c.type as "script" | "function", schema: c.schema, name: c.name }
+          : null;
       rows.push(
         <Row
           key={node.id}
@@ -184,7 +191,9 @@ export function DatabaseTree({
           // otherwise run the object, else fall back to expanding.
           onOpen={() => {
             setSelected(node.id);
-            if (hasDetails) {
+            if (source) {
+              onOpenSource!(source.kind, source.schema, source.name);
+            } else if (hasDetails) {
               onOpenDetails!(node);
             } else if (node.selectable) {
               onOpenObject(node.selectable.schema, node.selectable.name);
@@ -196,6 +205,7 @@ export function DatabaseTree({
           onExpand={() => {
             setSelected(node.id);
             if (node.expandable) toggle(node);
+            else if (source) onOpenSource!(source.kind, source.schema, source.name);
             else if (node.selectable) onOpenObject(node.selectable.schema, node.selectable.name);
           }}
           onContext={

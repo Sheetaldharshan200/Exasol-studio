@@ -12,7 +12,7 @@ export const AthenaAdapter: VsAdapter = {
   logo: "amazonwebservices",
   repo: "exasol/athena-virtual-schema",
   docs: "https://github.com/exasol/athena-virtual-schema/blob/main/doc/user_guide/athena_user_guide.md",
-  release: { tag: "3.0.0", asset: "^virtual-schema-dist-[\\d.]+-athena-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-athena-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "ATHENA", class: "com.simba.athena.jdbc.Driver", source: { manualUrl: "https://docs.aws.amazon.com/athena/latest/ug/connect-with-jdbc.html" } },
   fields: [

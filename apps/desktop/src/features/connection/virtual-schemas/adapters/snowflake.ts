@@ -12,7 +12,7 @@ export const SnowflakeAdapter: VsAdapter = {
   logo: "snowflake",
   repo: "exasol/snowflake-virtual-schema",
   docs: "https://github.com/exasol/snowflake-virtual-schema/blob/main/doc/user_guide/snowflake_user_guide.md",
-  release: { tag: "1.0.1", asset: "^virtual-schema-dist-[\\d.]+-snowflake-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-snowflake-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "SNOWFLAKE", class: "net.snowflake.client.jdbc.SnowflakeDriver", source: { maven: "net.snowflake:snowflake-jdbc" } },
   fields: [

@@ -18,7 +18,7 @@ export const AzureDataLakeAdapter: VsAdapter = {
   logo: "microsoftazure",
   repo: "exasol/azure-data-lake-storage-gen2-document-files-virtual-schema",
   docs: "https://github.com/exasol/azure-data-lake-storage-gen2-document-files-virtual-schema/blob/main/doc/user_guide/user_guide.md",
-  release: { tag: "3.1.0", asset: "^document-files-virtual-schema-dist-[\\d.]+-azure-datalake-storage-gen2-[\\d.]+\\.jar$" },
+  release: { asset: "^document-files-virtual-schema-dist-[\\d.]+-azure-datalake-storage-gen2-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   importUdf: { name: "IMPORT_FROM_AZURE_DATA_LAKE_STORAGE_GEN2_DOCUMENT_FILES", scriptClass: DOCUMENT_UDF_CLASS },
   fields: [

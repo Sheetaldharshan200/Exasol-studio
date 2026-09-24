@@ -16,7 +16,7 @@ export const DatabricksAdapter: VsAdapter = {
   logo: "databricks",
   repo: "exasol/databricks-virtual-schema",
   docs: "https://github.com/exasol/databricks-virtual-schema/blob/main/doc/user_guide/user_guide.md",
-  release: { tag: "1.0.2", asset: "^databricks-virtual-schema-dist-[\\d.]+\\.lua$" },
+  release: { asset: "^databricks-virtual-schema-dist-[\\d.]+\\.lua$" },
   driver: {
     name: "DATABRICKS",
     class: "com.databricks.client.jdbc.Driver",

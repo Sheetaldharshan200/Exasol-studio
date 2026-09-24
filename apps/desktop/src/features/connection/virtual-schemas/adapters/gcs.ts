@@ -18,7 +18,7 @@ export const GcsAdapter: VsAdapter = {
   logo: "googlecloud",
   repo: "exasol/google-cloud-storage-document-files-virtual-schema",
   docs: "https://github.com/exasol/google-cloud-storage-document-files-virtual-schema/blob/main/doc/user_guide/user_guide.md",
-  release: { tag: "3.1.0", asset: "^document-files-virtual-schema-dist-[\\d.]+-google-cloud-storage-[\\d.]+\\.jar$" },
+  release: { asset: "^document-files-virtual-schema-dist-[\\d.]+-google-cloud-storage-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   importUdf: { name: "IMPORT_FROM_GOOGLE_CLOUD_STORAGE_DOCUMENT_FILES", scriptClass: DOCUMENT_UDF_CLASS },
   fields: [

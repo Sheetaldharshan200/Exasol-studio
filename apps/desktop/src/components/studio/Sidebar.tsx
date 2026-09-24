@@ -74,6 +74,7 @@ function ConnectionSection({
   onToggleCollapse,
   onFocus,
   onOpenObject,
+  onOpenSource,
   onRefresh,
   onDisconnect,
   onRemove,
@@ -102,6 +103,7 @@ function ConnectionSection({
   onUploadDriver: () => void;
   onContext?: (node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onOpenDetails?: (node: import("@/features/workbench/tree-model").TreeNode) => void;
+  onOpenSource?: (kind: "script" | "function", schema: string, name: string) => void;
 }) {
   // Stable across refreshes: a refresh reloads IN PLACE via refreshSignal, so
   // roots must NOT change identity (that would remount/flicker the tree).
@@ -225,6 +227,7 @@ function ConnectionSection({
           roots={roots}
           onOpenObject={onOpenObject}
           onOpenDetails={onOpenDetails}
+          onOpenSource={onOpenSource}
           onContext={onContext}
           initialExpandedItems={["schemas"]}
           collapseSignal={collapseSignal}
@@ -346,6 +349,7 @@ export function Sidebar({
   onUploadDriver,
   onContext,
   onOpenDetails,
+  onOpenSource,
   onOpenFavorite,
   onOpenMcpConfig,
   onCollapse,
@@ -379,6 +383,7 @@ export function Sidebar({
   onUploadDriver: (profileId: string) => void;
   onContext: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode, x: number, y: number) => void;
   onOpenDetails: (profileId: string, node: import("@/features/workbench/tree-model").TreeNode) => void;
+  onOpenSource: (profileId: string, kind: "script" | "function", schema: string, name: string) => void;
   onOpenFavorite?: (fav: Favorite) => void;
   onOpenMcpConfig?: (presetId: string, presetName: string) => void;
   onCollapse: () => void;
@@ -750,6 +755,7 @@ export function Sidebar({
                 });
               }}
               onOpenObject={(schema, name) => onOpenObject(conn.profile.id, schema, name)}
+              onOpenSource={(kind, schema, name) => onOpenSource(conn.profile.id, kind, schema, name)}
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
               onRemove={() => onRemoveConnection(conn.profile.id)}

@@ -6,8 +6,7 @@
  * Toggled from Settings → SQL Editor (on by default).
  */
 import { type Monaco } from "@monaco-editor/react";
-import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
-import { udfBodyStart, udfLineClasses, udfLineRole } from "@/lib/udf-block-style";
+import { splitStatements } from "@/lib/sql-text";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -81,51 +80,6 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         },
       };
     });
-    // `--/ … /` UDF script blocks render as an embedded card: this is Lua,
-    // Python, Java or R sitting inside a SQL buffer, and it should read as a
-    // different thing rather than as faintly tinted SQL. Each line carries the
-    // block surface and the language's accent; the first and last close the
-    // card; the delimiters recede and the header carries a language pill.
-    // Blocks still being typed (no closing "/") stay unpainted — tinting the
-    // rest of the buffer mid-keystroke reads as the editor jumping around.
-    for (const block of findScriptBlocks(sql)) {
-      if (!block.closed) continue;
-      const from = model.getPositionAt(block.start);
-      const to = model.getPositionAt(block.end);
-      // Two cells, one inside the other: the outer holds the SQL that declares
-      // the script, the inner holds the function itself in its own language —
-      // a notebook cell with a child cell in it.
-      const lines: string[] = [];
-      for (let line = from.lineNumber; line <= to.lineNumber; line++) lines.push(model.getLineContent(line));
-      const bodyStart = udfBodyStart(lines);
-      const last = lines.length - 1;
-      for (let i = 0; i <= last; i++) {
-        const line = from.lineNumber + i;
-        const role = udfLineRole(i, { last, bodyStart });
-        const classes = [
-          udfLineClasses({ first: i === 0, last: i === last }),
-          `exa-udf-${role}`,
-        ];
-        // The child cell closes at its own top and bottom, inside the outer one.
-        if (role === "body" && bodyStart !== null) {
-          if (i === bodyStart) classes.push("exa-udf-body-open");
-          if (i === last - 1 || udfLineRole(i + 1, { last, bodyStart }) !== "body") classes.push("exa-udf-body-close");
-        }
-        decorations.push({
-          range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
-          options: { isWholeLine: true, className: classes.filter(Boolean).join(" ") },
-        });
-      }
-      // The delimiters (`--/` line + closing `/`) are scaffolding: they recede
-      // so the code between them is what the eye lands on.
-      for (const line of [from.lineNumber, to.lineNumber]) {
-        decorations.push({
-          range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
-          options: { inlineClassName: "exa-udf-marker" },
-        });
-      }
-      // The language pill, once the CREATE header names one.
-    }
     // Re-apply ONLY on structural change — replacing identical decorations on
     // every keystroke made the margin and block tint visibly push around.
     const key = decorations

@@ -15,7 +15,7 @@ export const ExasolLuaAdapter: VsAdapter = {
   runtime: "lua",
   repo: "exasol/exasol-virtual-schema-lua",
   docs: "https://github.com/exasol/exasol-virtual-schema-lua/blob/main/doc/evsl/user_guide/user_guide.md",
-  release: { tag: "1.0.0", asset: "^exasol-virtual-schema-dist-[\\d.]+\\.lua$" },
+  release: { asset: "^exasol-virtual-schema-dist-[\\d.]+\\.lua$" },
   fields: [
     { key: "host", label: "Host", kind: "text", placeholder: "other-exasol.example.com", required: true },
     { key: "port", label: "Port", kind: "number", required: true, default: "8563" },

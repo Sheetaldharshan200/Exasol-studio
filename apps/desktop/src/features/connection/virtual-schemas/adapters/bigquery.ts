@@ -12,7 +12,7 @@ export const BigqueryAdapter: VsAdapter = {
   logo: "googlebigquery",
   repo: "exasol/bigquery-virtual-schema",
   docs: "https://github.com/exasol/bigquery-virtual-schema/blob/main/doc/user_guide/bigquery_user_guide.md",
-  release: { tag: "4.0.1", asset: "^virtual-schema-dist-[\\d.]+-bigquery-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-bigquery-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "BIGQUERY", class: "com.simba.googlebigquery.jdbc.Driver", source: { manualUrl: "https://cloud.google.com/bigquery/docs/reference/odbc-jdbc-drivers" } },
   fields: [

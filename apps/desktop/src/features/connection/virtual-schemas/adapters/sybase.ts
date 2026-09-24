@@ -11,7 +11,7 @@ export const SybaseAdapter: VsAdapter = {
   runtime: "java",
   repo: "exasol/sybase-virtual-schema",
   docs: "https://github.com/exasol/sybase-virtual-schema/blob/main/doc/user_guide/sybase_user_guide.md",
-  release: { tag: "4.0.0", asset: "^virtual-schema-dist-[\\d.]+-sybase-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-sybase-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "SYBASE", class: "com.sybase.jdbc4.jdbc.SybDriver", source: { manualUrl: "https://help.sap.com/docs/SAP_ASE_SDK" } },
   fields: [

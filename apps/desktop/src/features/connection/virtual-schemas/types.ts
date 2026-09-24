@@ -53,8 +53,18 @@ export type VsAdapter = {
   repo: string;
   /** The adapter's user guide. */
   docs: string;
-  /** The release Studio installs from, pinned; `asset` is a regex over asset names. */
-  release: { tag: string; asset: string };
+  /**
+   * How to recognise the adapter's artifact among a release's assets.
+   *
+   * There is deliberately NO version here. Studio installs from the repo's
+   * LATEST release, resolved from GitHub at install time, so an adapter
+   * released upstream is installable the same day without an edit in this
+   * file — the same rule the rest of the app follows, where the database and
+   * its ecosystem are the source of truth rather than a table we maintain.
+   * The pattern describes the artifact's SHAPE, which is what stays stable
+   * across releases.
+   */
+  release: { asset: string };
   /** Java only: the `%scriptclass` of the adapter script. */
   scriptClass?: string;
   /**

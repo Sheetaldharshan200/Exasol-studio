@@ -12,7 +12,7 @@ export const SqlserverAdapter: VsAdapter = {
   logo: "microsoftsqlserver",
   repo: "exasol/sqlserver-virtual-schema",
   docs: "https://github.com/exasol/sqlserver-virtual-schema/blob/main/doc/user_guide/sqlserver_user_guide.md",
-  release: { tag: "3.0.1", asset: "^virtual-schema-dist-[\\d.]+-sqlserver-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-sqlserver-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "SQLSERVER", class: "com.microsoft.sqlserver.jdbc.SQLServerDriver", source: { maven: "com.microsoft.sqlserver:mssql-jdbc" } },
   fields: [

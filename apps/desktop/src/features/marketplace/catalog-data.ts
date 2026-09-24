@@ -118,6 +118,38 @@ export const CATALOG: CatalogItem[] = [
   // The AI panel's engine — a managed component (updates via update_component,
   // digest-verified; the sidecar restarts after a switch). Shown as a card so
   // ALL components live in one place, no separate panel.
+  // ── The rest of the published Exasol ecosystem ─────────────────────────
+  // Every non-archived exasol / exasol-labs repository that publishes
+  // releases and is something a person USES (rather than build plumbing,
+  // test fixtures or shared libraries). They carry `install: "reference"`:
+  // Studio shows each one's real name, About line, stars and latest release
+  // straight from GitHub and links to it, because these install into the tool
+  // they extend — Power BI, Tableau, Metabase, a Python environment — not
+  // into Studio. Promote one to a real installer by changing its `install`.
+  { id: "cloud-storage-extension", repo: "exasol/cloud-storage-extension", kind: "extension", install: "reference" },
+  { id: "kinesis-connector", repo: "exasol/kinesis-connector-extension", kind: "extension", install: "reference" },
+  { id: "transformers-extension", repo: "exasol/transformers-extension", kind: "extension", install: "reference" },
+  { id: "advanced-analytics", repo: "exasol/advanced-analytics-framework", kind: "extension", install: "reference" },
+  { id: "mlflow-plugin", repo: "exasol/mlflow-plugin", kind: "extension", install: "reference" },
+  { id: "script-languages-release", repo: "exasol/script-languages-release", kind: "extension", install: "reference" },
+  { id: "language-container-rs", repo: "exasol-labs/language-container-rs", kind: "extension", install: "reference", labs: true },
+  { id: "preprocessor-library", repo: "exasol-labs/preprocessor-library", kind: "extension", install: "reference", labs: true },
+  { id: "lakehouse-engine-rs", repo: "exasol-labs/lakehouse-engine-rs", kind: "extension", install: "reference", labs: true },
+  { id: "vscode-extension", repo: "exasol-labs/exasol-vscode", kind: "extension", install: "reference", labs: true },
+  { id: "powerbi-connector", repo: "exasol/powerbi-exasol", kind: "bi", install: "reference" },
+  { id: "metabase-driver", repo: "exasol/metabase-driver", kind: "bi", install: "reference" },
+  { id: "power-apps-connector", repo: "exasol/power-apps-connector", kind: "bi", install: "reference" },
+  { id: "n8n-nodes", repo: "exasol/n8n-nodes", kind: "bi", install: "reference" },
+  { id: "azure-data-factory", repo: "exasol/azure-data-factory-functions", kind: "bi", install: "reference" },
+  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "reference", labs: true },
+  { id: "driver-lua", repo: "exasol/exasol-driver-lua", kind: "driver", install: "reference" },
+  { id: "bucketfs-python", repo: "exasol/bucketfs-python", kind: "driver", install: "reference" },
+  { id: "saas-api-python", repo: "exasol/saas-api-python", kind: "driver", install: "reference" },
+  { id: "rest-api", repo: "exasol/exasol-rest-api", kind: "server", install: "reference" },
+  { id: "saas-cli", repo: "exasol-labs/saas-cli", kind: "cli", install: "reference", labs: true },
+  { id: "exaplus-lua", repo: "exasol-labs/exaplus-lua", kind: "cli", install: "reference", labs: true },
+  { id: "starter-kit", repo: "exasol-labs/exasol-personal-local-starterkit", kind: "cli", install: "reference", labs: true },
+  { id: "community-edition", repo: "exasol-labs/exasol-labs-community-edition", kind: "database", install: "reference", labs: true },
   {
     id: "exa-agent",
     repo: "Sheetaldharshan200/exa-engine",

@@ -12,7 +12,7 @@ export const OracleAdapter: VsAdapter = {
   logo: "oracle",
   repo: "exasol/oracle-virtual-schema",
   docs: "https://github.com/exasol/oracle-virtual-schema/blob/main/doc/user_guide/oracle_user_guide.md",
-  release: { tag: "5.0.2", asset: "^virtual-schema-dist-[\\d.]+-oracle-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-oracle-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "ORACLE", class: "oracle.jdbc.OracleDriver", source: { maven: "com.oracle.database.jdbc:ojdbc11" } },
   fields: [

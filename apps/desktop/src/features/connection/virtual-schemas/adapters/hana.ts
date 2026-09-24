@@ -12,7 +12,7 @@ export const HanaAdapter: VsAdapter = {
   logo: "sap",
   repo: "exasol/hana-virtual-schema",
   docs: "https://github.com/exasol/hana-virtual-schema/blob/main/doc/user_guide/hana_user_guide.md",
-  release: { tag: "4.0.1", asset: "^virtual-schema-dist-[\\d.]+-hana-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-hana-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "HANA", class: "com.sap.db.jdbc.Driver", source: { maven: "com.sap.cloud.db.jdbc:ngdbc" } },
   fields: [

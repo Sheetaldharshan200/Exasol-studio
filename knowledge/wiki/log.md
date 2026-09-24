@@ -185,3 +185,9 @@ New page workbench-scale-and-polish. item-state.ts is the one update decision (b
 ## [2026-09-23] fix | CI's Rust job had been red on main since 2026-09-22: tauri-build verifies every bundle-resource path exists, and the stub step never created `driver-bridge.cjs`, `bridge.R` or the components lock. The stub list now covers every entry in tauri.conf.json's resources — check it whenever a resource is added.
 
 ## [2026-09-23] release | Studio v2026.9.0 — green on all 5 targets (run 35888272932, 21 assets); STUDIO_REF in exa-engine moved v2026.8.1 → v2026.9.0. Carries the visualizer rework (no level-of-detail tier, schema name tabs, tap-to-zoom with return, column-selection link narrowing), the results grid split header/scrollbar and editable-grid work, per-connection statement serialization, native PDF export, and the stranded-VM self-heal.
+
+## [2026-09-24] ingest | Editor intelligence: dynamic UDF hints, context linting, AI ghost text; 8 MB chunk build failure
+Filed pages/editor-intelligence-and-the-8mb-chunk.md.
+Root cause of the 'Parse error @:1:1' production build failure: vite's es-module-lexer WASM cannot lex a chunk past ~8 MiB; fixed with manualChunks.
+11 Codex review findings fixed before shipping; the recurring one is that Monaco markers and decorations belong to the MODEL, not the editor.
+

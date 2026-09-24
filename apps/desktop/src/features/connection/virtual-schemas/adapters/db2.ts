@@ -11,7 +11,7 @@ export const Db2Adapter: VsAdapter = {
   runtime: "java",
   repo: "exasol/db2-virtual-schema",
   docs: "https://github.com/exasol/db2-virtual-schema/blob/main/doc/user_guide/db2_user_guide.md",
-  release: { tag: "4.0.1", asset: "^virtual-schema-dist-[\\d.]+-db2-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-db2-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "DB2", class: "com.ibm.db2.jcc.DB2Driver", source: { maven: "com.ibm.db2:jcc" } },
   fields: [

@@ -21,7 +21,7 @@ export const MongodbAdapter: VsAdapter = {
   logo: "mongodb",
   repo: "exasol-labs/exasol-mongodb-vs",
   docs: "https://github.com/exasol-labs/exasol-mongodb-vs#readme",
-  release: { tag: "v0.1.0", asset: "^exasol-mongodb-vs-[\\d.]+-linux-x86_64\\.so$" },
+  release: { asset: "^exasol-mongodb-vs-[\\d.]+-linux-x86_64\\.so$" },
   rust: {
     bucketPath: "/buckets/bfsdefault/rust/libmongodb_vs.so",
     languageAlias: "RUST",

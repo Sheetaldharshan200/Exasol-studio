@@ -168,6 +168,36 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { providers, defaultModel: config.get().model ?? null });
       }
 
+      // POST /v1/complete {prefix, suffix, language?, schema?} → {text}
+      // Inline completion for the SQL editor's ghost text. Deliberately thin:
+      // the editor decides WHEN to ask and cuts the answer down (see
+      // apps/desktop/src/lib/inline-completion.ts); this only runs it. No
+      // model configured is a normal, quiet answer — the editor must not show
+      // an error banner on every keystroke — so it returns an empty string
+      // rather than a failure.
+      if (req.method === "POST" && parts[1] === "complete") {
+        const b = await readBody<{ prefix?: string; suffix?: string; system?: string; prompt?: string }>(req);
+        const modelRef = config.get().model;
+        if (!modelRef || !b.prompt) return json(res, 200, { text: "" });
+        // A keystroke pause that is overtaken by the next one should not keep
+        // a model call alive; the client closing the socket cancels it.
+        const ac = new AbortController();
+        req.on("close", () => ac.abort());
+        try {
+          const { generateText } = await import("./llm.ts");
+          const out = await generateText({
+            model: registry.resolve(modelRef, { temperature: 0 }),
+            system: b.system ?? "",
+            prompt: b.prompt,
+            maxSteps: 1,
+            abortSignal: ac.signal,
+          });
+          return json(res, 200, { text: out.text });
+        } catch {
+          return json(res, 200, { text: "" });
+        }
+      }
+
       // ── Exa engine (opencode) ───────────────────────────────────────────
       if (parts[1] === "engine") {
         // GET /v1/engine/status

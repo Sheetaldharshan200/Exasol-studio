@@ -93,3 +93,32 @@ test("repoDisplayName handles odd shapes", () => {
   assert.equal(repoDisplayName("plain"), "plain");
   assert.equal(repoDisplayName("trailing/"), "trailing/");
 });
+
+test("every catalog id is unique — a duplicate would render two identical cards", () => {
+  const ids = CATALOG.map((i) => i.id);
+  assert.equal(new Set(ids).size, ids.length, `duplicate id in CATALOG: ${ids.filter((id, n) => ids.indexOf(id) !== n)}`);
+});
+
+test("every repo is a well-formed owner/name in an official org", () => {
+  for (const item of CATALOG) {
+    if (!item.repo) continue;
+    assert.match(item.repo, /^[\w.-]+\/[\w.-]+$/, `${item.id}: repo shape`);
+    const owner = item.repo.split("/")[0];
+    assert.ok(["exasol", "exasol-labs", "Sheetaldharshan200"].includes(owner), `${item.id}: unofficial owner ${owner}`);
+  }
+});
+
+test("a repo appears once, so the ecosystem list cannot drift into duplicates", () => {
+  // Two cards on the same repo would show the same name and About line
+  // twice, which is how a mis-merge of the ecosystem list would look.
+  const repos = CATALOG.flatMap((i) => (i.repo ? [i.repo] : []));
+  const dupes = repos.filter((r, n) => repos.indexOf(r) !== n);
+  assert.deepEqual(dupes, [], `repo listed more than once: ${dupes}`);
+});
+
+test("items without a repo carry their own display text, since nothing can resolve it", () => {
+  for (const item of CATALOG) {
+    if (item.repo) continue;
+    assert.ok(item.name && item.description && item.homepage, `${item.id}: repo-less item needs name/description/homepage`);
+  }
+});
