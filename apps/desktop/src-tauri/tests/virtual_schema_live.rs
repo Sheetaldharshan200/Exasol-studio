@@ -26,8 +26,11 @@ use exarrow_rs::adbc::Database;
 use exarrow_rs::connection::ConnectionBuilder;
 use std::path::PathBuf;
 
-/// Pinned exactly like `adapters/exasol-lua.ts`; `catalog_pin_matches` fails
-/// when the two drift apart.
+/// The exact release this proof downloads. Pinned HERE and only here: a live
+/// proof has to be reproducible, so it must not move when upstream publishes.
+/// The catalog deliberately pins nothing — it installs the newest release —
+/// so what the two must still agree on is that this artifact is one the
+/// catalog would select. `catalog_pattern_selects_this_asset` checks that.
 const EVSL_TAG: &str = "1.0.0";
 const EVSL_ASSET: &str = "exasol-virtual-schema-dist-1.0.0.lua";
 const EVSL_SHA256: &str = "6c9f5560f51f5bc7d280052c0ab73f27f6e087e245250bb728e56148a606ea37";
@@ -109,17 +112,47 @@ async fn evsl_source() -> String {
     String::from_utf8(bytes.to_vec()).expect("lua source is utf-8")
 }
 
-/// The Lua adapter pin in this test and in the TS catalog must agree, or the
-/// proof runs against a different adapter than the one Studio installs.
+/// The artifact this proof runs against must be one Studio would actually
+/// install, or the proof proves nothing about the shipped flow.
+///
+/// Studio installs from the repository's LATEST release and picks the file by
+/// the catalog's `release.asset` pattern, so there is no version to compare.
+/// What has to hold is that the pattern selects THIS asset: if upstream
+/// renames the artifact, the catalog's pattern is what breaks, and this fails
+/// alongside it rather than quietly testing a file nobody installs.
 #[test]
-fn catalog_pin_matches() {
+fn catalog_pattern_selects_this_asset() {
     let catalog = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../src/features/connection/virtual-schemas/adapters/exasol-lua.ts");
     let text = std::fs::read_to_string(&catalog).expect("exasol-lua.ts exists");
+
+    let pattern = asset_pattern(&text).expect("exasol-lua.ts declares release.asset");
+    let re = regex::Regex::new(&pattern).expect("the catalog's asset pattern compiles");
     assert!(
-        text.contains(&format!("tag: \"{EVSL_TAG}\"")),
-        "adapters/exasol-lua.ts pins a different release than this test ({EVSL_TAG})"
+        re.is_match(EVSL_ASSET),
+        "adapters/exasol-lua.ts would not install {EVSL_ASSET} (pattern /{pattern}/)"
     );
+
+    // Nothing in the catalog may pin a version: installation resolves the
+    // newest release, and a pinned tag is a label that goes stale silently.
+    assert!(
+        !text.contains("tag:"),
+        "adapters/exasol-lua.ts pins a release tag; adapters install from the latest release"
+    );
+}
+
+/// The `release.asset` regex out of an adapter's TypeScript source.
+///
+/// The file holds a TS string literal, so a `\d` in the pattern is written
+/// `\\d` on disk; reading it literally yields a pattern that matches nothing.
+fn asset_pattern(source: &str) -> Option<String> {
+    let after = source.split("release:").nth(1)?;
+    let after = after.split("asset:").nth(1)?;
+    let start = after.find('"')? + 1;
+    let rest = &after[start..];
+    // The patterns use no quote escapes, so the next quote ends the literal.
+    let end = rest.find('"')?;
+    Some(rest[..end].replace(r"\\", r"\"))
 }
 
 #[tokio::test]
