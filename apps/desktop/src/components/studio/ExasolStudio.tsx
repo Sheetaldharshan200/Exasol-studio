@@ -3685,8 +3685,9 @@ export function ExasolStudio({
                     // rejects). Both sources read live state per pass.
                     sqlMarkersRef.current?.dispose();
                     sqlMarkersRef.current = installSqlMarkers(editor, monaco, {
-                      catalog: () => (lintOnRef.current ? sqlCatalogRef.current : undefined),
-                      languages: () => (lintOnRef.current ? udfLangsRef.current.map((l) => l.id) : undefined),
+                      enabled: () => lintOnRef.current,
+                      catalog: () => sqlCatalogRef.current,
+                      languages: () => udfLangsRef.current.map((l) => l.id),
                     });
                     // "your Python code goes here" on an empty UDF body — the
                     // language comes from the CREATE header as it is typed.

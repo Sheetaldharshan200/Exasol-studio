@@ -23,6 +23,9 @@ type Marker = import("monaco-editor").editor.IMarkerData;
 const OWNER = "exa-sql";
 
 export type MarkerDeps = {
+  /** Whether the user wants underlines at all (Settings). Read per pass, so
+   *  switching it off clears what is already drawn. */
+  enabled: () => boolean;
   /** The connected database's catalog, or undefined before one is loaded. */
   catalog: () => LintCatalog | undefined;
   /** Script-language aliases the server offers, or undefined when unknown. */
@@ -46,6 +49,14 @@ export function installSqlMarkers(editor: StudioEditor, monaco: Monaco, deps: Ma
     const model = editor.getModel();
     if (marked && marked !== model) clear();
     if (!model) return;
+    // Switched off means no underlines at all, not just the contextual ones —
+    // the setting says "Problem underlines", and half of them staying would
+    // read as the toggle being broken.
+    if (!deps.enabled()) {
+      monaco.editor.setModelMarkers(model, OWNER, []);
+      marked = model;
+      return;
+    }
     const sql = model.getValue();
     const span = (start: number, end: number) => {
       const from = model.getPositionAt(start);
