@@ -150,6 +150,19 @@ export const CATALOG: CatalogItem[] = [
   { id: "exaplus-lua", repo: "exasol-labs/exaplus-lua", kind: "cli", install: "reference", labs: true },
   { id: "starter-kit", repo: "exasol-labs/exasol-personal-local-starterkit", kind: "cli", install: "reference", labs: true },
   { id: "community-edition", repo: "exasol-labs/exasol-labs-community-edition", kind: "database", install: "reference", labs: true },
+  // Second pass over the release-bearing repositories: these are deployed or
+  // installed by a person, unlike the Maven plugins, pytest fixtures and
+  // shared libraries that make up most of what is left.
+  { id: "kafka-connector", repo: "exasol/kafka-connector-extension", kind: "extension", install: "reference" },
+  { id: "spark-connector", repo: "exasol/spark-connector", kind: "extension", install: "reference" },
+  { id: "cloudwatch-adapter", repo: "exasol/cloudwatch-adapter", kind: "extension", install: "reference" },
+  { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "reference" },
+  { id: "udf-api-java", repo: "exasol/udf-api-java", kind: "extension", install: "reference" },
+  { id: "dbt-exasol-utils", repo: "exasol/dbt-exasol-utils", kind: "extension", install: "reference" },
+  { id: "bucketfs-client", repo: "exasol/bucketfs-client", kind: "cli", install: "reference" },
+  { id: "parquet-edml-generator", repo: "exasol/parquet-edml-generator", kind: "cli", install: "reference" },
+  { id: "slc-tool", repo: "exasol/script-languages-container-tool", kind: "cli", install: "reference" },
+  { id: "bucketfs-java", repo: "exasol/bucketfs-java", kind: "driver", install: "reference" },
   {
     id: "exa-agent",
     repo: "Sheetaldharshan200/exa-engine",
