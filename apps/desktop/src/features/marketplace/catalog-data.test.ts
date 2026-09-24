@@ -149,3 +149,16 @@ test("every release-bearing shelf gets used — no kind is declared and left emp
     assert.ok(CATALOG.some((i) => i.kind === kind), `nothing is filed under "${kind}"`);
   }
 });
+
+test("metadata is requested for the installable things before the libraries", () => {
+  // The fetch behind this is budgeted, so a cold cache fills the head of the
+  // list first; the long tail of libraries must not push the shelves someone
+  // actually came for out of the first round.
+  const repos = catalogRepos();
+  const libraryRepos = new Set(CATALOG.filter((i) => i.kind === "library").map((i) => i.repo));
+  const firstLibrary = repos.findIndex((r) => libraryRepos.has(r));
+  const lastNonLibrary = repos.map((r) => libraryRepos.has(r)).lastIndexOf(false);
+  assert.ok(firstLibrary > lastNonLibrary, "every non-library repo comes before every library one");
+  assert.equal(repos.length, CATALOG.filter((i) => i.repo).length, "no repo is dropped by the ordering");
+  assert.equal(new Set(repos).size, repos.length, "no repo is requested twice");
+});

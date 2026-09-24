@@ -274,9 +274,23 @@ export const CATALOG: CatalogItem[] = [
  */
 CATALOG.push(...VS_CATALOG);
 
-/** The repos whose metadata the marketplace needs. */
+/**
+ * The repos whose metadata the marketplace needs, most useful first.
+ *
+ * Order matters because the fetch behind this is unauthenticated and
+ * therefore budgeted (see `repos_to_fetch` in market.rs): a cold cache fills
+ * the head of this list first and the tail over later opens. So the things
+ * someone came to the marketplace to install lead, and the libraries — which
+ * are listed for completeness and rarely opened — come last.
+ *
+ * This only affects how quickly a card gets its About line. catalog.json,
+ * refreshed authenticated by CI, carries all of them regardless.
+ */
 export function catalogRepos(): string[] {
-  return CATALOG.flatMap((i) => (i.repo ? [i.repo] : []));
+  const repos = (items: CatalogItem[]) => items.flatMap((i) => (i.repo ? [i.repo] : []));
+  const libraries = CATALOG.filter((i) => i.kind === "library");
+  const rest = CATALOG.filter((i) => i.kind !== "library");
+  return [...repos(rest), ...repos(libraries)];
 }
 
 /** The repo's own name ("owner/repo-name" → "repo-name") — the loading-state
