@@ -191,3 +191,9 @@ Filed pages/editor-intelligence-and-the-8mb-chunk.md.
 Root cause of the 'Parse error @:1:1' production build failure: vite's es-module-lexer WASM cannot lex a chunk past ~8 MiB; fixed with manualChunks.
 11 Codex review findings fixed before shipping; the recurring one is that Monaco markers and decorations belong to the MODEL, not the editor.
 
+
+## [2026-09-24] ingest | Ecosystem catalog: unpinned adapter releases, 24 new marketplace entries from the 183 release-bearing repos
+Filed pages/ecosystem-catalog-source-of-truth.md.
+Enumerated exasol + exasol-labs: 229 non-archived repos, 183 publishing releases.
+Virtual-schema coverage is complete (24 adapters); salesforce-virtual-schema excluded because it has no release.
+
