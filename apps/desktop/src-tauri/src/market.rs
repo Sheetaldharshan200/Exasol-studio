@@ -394,45 +394,48 @@ pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<V
         .cloned()
         .unwrap_or_default();
     let wanted: Vec<String> = repos.into_iter().filter(|r| valid_repo(r)).collect();
-    let needed = repos_to_fetch(&wanted, &entries, now, fetched_at, MAX_REPO_FETCH);
-    if !needed.is_empty() {
+    let stale = stale_repos(&wanted, &entries, now, fetched_at);
+    if !stale.is_empty() {
+        let plan = fetch_plan(&stale, MAX_SINGLE_FETCH);
         let client = reqwest::Client::new();
-        let fetches = needed.iter().map(|repo| {
+
+        // One request per 100 repos instead of one per repo. The listing
+        // carries the same fields the per-repo endpoint does, so everything
+        // the org owns is answered at once — including repos the catalog has
+        // not asked about yet, which is why a later addition costs nothing.
+        for owner in &plan.orgs {
+            for page in 1..=MAX_ORG_PAGES {
+                let url =
+                    format!("https://api.github.com/orgs/{owner}/repos?per_page=100&page={page}");
+                let Some(list) = get_json(&client, &url).await else { break };
+                let Some(items) = list.as_array() else { break };
+                let count = items.len();
+                for v in items {
+                    if let Some(full) = v.get("full_name").and_then(|f| f.as_str()) {
+                        entries.insert(full.to_string(), repo_meta_entry(v, now));
+                    }
+                }
+                // A short page is the last one.
+                if count < 100 {
+                    break;
+                }
+            }
+        }
+
+        // Owners with too few repos to be worth a listing.
+        let fetches = plan.singles.iter().map(|repo| {
             let client = client.clone();
             let url = format!("https://api.github.com/repos/{repo}");
-            async move {
-                let resp = client
-                    .get(&url)
-                    .header("User-Agent", "exasol-studio")
-                    .header("Accept", "application/vnd.github+json")
-                    .timeout(std::time::Duration::from_secs(6))
-                    .send()
-                    .await
-                    .ok()?;
-                if !resp.status().is_success() {
-                    return None;
-                }
-                let v: Value = resp.json().await.ok()?;
-                Some(json!({
-                    "name": v.get("name"),
-                    "description": v.get("description"),
-                    "htmlUrl": v.get("html_url"),
-                    // Social proof for the catalog cards (Docker Hub shows pulls + stars).
-                    "stars": v.get("stargazers_count"),
-                    "pushedAt": v.get("pushed_at"),
-                    // Per-repo, so one that failed is retried without dragging
-                    // every other repo into another sweep.
-                    "fetchedAt": now,
-                }))
-            }
+            async move { get_json(&client, &url).await.map(|v| repo_meta_entry(&v, now)) }
         });
         let results = futures_util::future::join_all(fetches).await;
-        for (repo, meta) in needed.iter().zip(results) {
+        for (repo, meta) in plan.singles.iter().zip(results) {
             // Failure keeps the previous cached entry rather than erasing it.
             if let Some(m) = meta {
                 entries.insert(repo.clone(), m);
             }
         }
+
         let _ = std::fs::write(
             &cache_path,
             serde_json::to_string(&json!({ "fetchedAt": now, "repos": entries })).unwrap_or_default(),
@@ -453,38 +456,118 @@ pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<V
 /// allowance, the tail gets 403s, and because those repos never reach the
 /// cache the next call repeats it. It fills over successive opens instead,
 /// serving whatever is already on disk meanwhile.
-const MAX_REPO_FETCH: usize = 40;
+/// One GitHub GET, decoded, or None on any failure.
+async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
+    let resp = client
+        .get(url)
+        .header("User-Agent", "exasol-studio")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json().await.ok()
+}
 
-/// The repos a call should actually ask about: those with nothing cached, and
-/// those whose entry has aged out, capped at the request budget.
+/// The cached shape of one repo. The org listing and the per-repo endpoint
+/// return the same fields, so both paths build the entry the same way.
+fn repo_meta_entry(v: &Value, now: u64) -> Value {
+    json!({
+        "name": v.get("name"),
+        "description": v.get("description"),
+        "htmlUrl": v.get("html_url"),
+        // Social proof for the catalog cards (Docker Hub shows pulls + stars).
+        "stars": v.get("stargazers_count"),
+        "pushedAt": v.get("pushed_at"),
+        // Per-repo, so one that failed is retried without dragging every
+        // other repo into another sweep.
+        "fetchedAt": now,
+    })
+}
+
+/// How many repos under one owner make a whole-org listing worth it.
+///
+/// `GET /orgs/{owner}/repos?per_page=100` returns full repo objects — name,
+/// About line, stars, last push — so one request can answer for a hundred
+/// repos. Below this many it is cheaper to ask for them individually.
+const ORG_LISTING_THRESHOLD: usize = 3;
+
+/// Pages of an org listing one refresh will walk. 100 repos a page; this is a
+/// stop, not an expectation.
+const MAX_ORG_PAGES: u32 = 5;
+
+/// Individual repo requests one refresh will make, after org listings have
+/// covered what they can. A safety net, not the normal path.
+const MAX_SINGLE_FETCH: usize = 20;
+
+/// What one refresh should ask GitHub for.
+#[derive(Debug, PartialEq)]
+pub(crate) struct FetchPlan {
+    /// Owners to list wholesale — a few requests each, covering every repo
+    /// they own.
+    pub orgs: Vec<String>,
+    /// Repos to ask about one at a time, for owners with too few to list.
+    pub singles: Vec<String>,
+}
+
+/// The repos whose cached entry is missing or has aged out.
 ///
 /// `legacy_fetched_at` is the whole-cache timestamp written by older versions;
 /// an entry with no stamp of its own inherits it, so an existing cache is not
 /// thrown away wholesale on first run of this code.
-fn repos_to_fetch(
+pub(crate) fn stale_repos(
     wanted: &[String],
     entries: &serde_json::Map<String, Value>,
     now: u64,
     legacy_fetched_at: u64,
-    max: usize,
 ) -> Vec<String> {
-    let mut out = Vec::new();
-    for repo in wanted {
-        let stamp = match entries.get(repo) {
-            None => 0,
-            Some(e) => e
-                .get("fetchedAt")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(legacy_fetched_at),
-        };
-        if now.saturating_sub(stamp) >= 24 * 3600 {
-            out.push(repo.clone());
-            if out.len() >= max {
-                break;
-            }
+    wanted
+        .iter()
+        .filter(|repo| {
+            let stamp = match entries.get(*repo) {
+                None => 0,
+                Some(e) => e
+                    .get("fetchedAt")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(legacy_fetched_at),
+            };
+            now.saturating_sub(stamp) >= 24 * 3600
+        })
+        .cloned()
+        .collect()
+}
+
+/// How to fetch a set of stale repos in as few requests as possible.
+///
+/// Asking about each repo separately is what made a large catalog impossible:
+/// these calls are unauthenticated, GitHub allows 60 an hour per IP for
+/// everything the app does, and a catalog of 150 repos cannot be answered one
+/// at a time. Almost all of them belong to two organizations, and an org
+/// listing answers for all of that org's repos at once — so the normal refresh
+/// is a handful of requests rather than one per card.
+pub(crate) fn fetch_plan(stale: &[String], max_singles: usize) -> FetchPlan {
+    let mut by_owner: Vec<(String, Vec<String>)> = Vec::new();
+    for repo in stale {
+        let owner = repo.split('/').next().unwrap_or_default().to_string();
+        match by_owner.iter_mut().find(|(o, _)| *o == owner) {
+            Some((_, list)) => list.push(repo.clone()),
+            None => by_owner.push((owner, vec![repo.clone()])),
         }
     }
-    out
+    let mut orgs = Vec::new();
+    let mut singles = Vec::new();
+    for (owner, repos) in by_owner {
+        if repos.len() >= ORG_LISTING_THRESHOLD {
+            orgs.push(owner);
+        } else {
+            singles.extend(repos);
+        }
+    }
+    singles.truncate(max_singles);
+    FetchPlan { orgs, singles }
 }
 
 /// Fetch a repo's README as raw markdown (any filename/branch). Null on error.
@@ -2441,7 +2524,7 @@ pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> App
 
 #[cfg(test)]
 mod tests {
-    use super::{repos_to_fetch, MAX_REPO_FETCH};
+    use super::{fetch_plan, stale_repos, FetchPlan, MAX_SINGLE_FETCH};
     use serde_json::{json, Value};
 
     fn cache(pairs: &[(&str, Option<u64>)]) -> serde_json::Map<String, Value> {
@@ -2458,61 +2541,65 @@ mod tests {
         m
     }
     const DAY: u64 = 24 * 3600;
-    fn names(v: Vec<String>) -> Vec<String> { v }
+    fn owned(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
 
     #[test]
-    fn a_repo_with_nothing_cached_is_always_fetched() {
-        let wanted = vec!["a/b".to_string()];
-        assert_eq!(names(repos_to_fetch(&wanted, &cache(&[]), 10 * DAY, 0, 40)), ["a/b"]);
+    fn a_repo_with_nothing_cached_is_always_stale() {
+        assert_eq!(stale_repos(&owned(&["a/b"]), &cache(&[]), 10 * DAY, 0), ["a/b"]);
     }
 
     #[test]
     fn a_fresh_entry_is_left_alone_and_a_stale_one_is_refetched() {
-        let wanted = vec!["a/fresh".to_string(), "a/stale".to_string()];
         let now = 10 * DAY;
         let entries = cache(&[("a/fresh", Some(now - 60)), ("a/stale", Some(now - DAY - 1))]);
-        assert_eq!(names(repos_to_fetch(&wanted, &entries, now, 0, 40)), ["a/stale"]);
+        assert_eq!(stale_repos(&owned(&["a/fresh", "a/stale"]), &entries, now, 0), ["a/stale"]);
     }
 
     #[test]
     fn an_entry_from_an_older_cache_inherits_the_whole_cache_timestamp() {
         // Entries written before per-repo stamps existed must not all be
         // treated as missing, which would refetch the entire registry once.
-        let wanted = vec!["a/b".to_string()];
         let now = 10 * DAY;
         let entries = cache(&[("a/b", None)]);
-        assert!(repos_to_fetch(&wanted, &entries, now, now - 60, 40).is_empty());
-        assert_eq!(names(repos_to_fetch(&wanted, &entries, now, now - DAY - 1, 40)), ["a/b"]);
+        assert!(stale_repos(&owned(&["a/b"]), &entries, now, now - 60).is_empty());
+        assert_eq!(stale_repos(&owned(&["a/b"]), &entries, now, now - DAY - 1), ["a/b"]);
     }
 
     #[test]
-    fn a_registry_larger_than_the_budget_is_fetched_over_several_calls() {
-        // The bug this guards: asking about every repo at once spent the whole
-        // unauthenticated allowance, the tail 403'd, and because those repos
-        // never reached the cache the next call repeated it forever.
-        let wanted: Vec<String> = (0..100).map(|i| format!("org/r{i}")).collect();
-        let first = repos_to_fetch(&wanted, &cache(&[]), 10 * DAY, 0, MAX_REPO_FETCH);
-        assert_eq!(first.len(), MAX_REPO_FETCH);
-        assert_eq!(first[0], "org/r0");
+    fn a_real_catalog_costs_a_handful_of_requests_not_one_per_repo() {
+        // The bug this guards: asking about each repo separately cannot answer
+        // a 150-repo catalog inside GitHub's 60-an-hour unauthenticated limit,
+        // so the marketplace never filled in. Almost every repo belongs to one
+        // of two orgs, and an org listing answers for all of them at once.
+        let mut wanted: Vec<String> = (0..125).map(|i| format!("exasol/r{i}")).collect();
+        wanted.extend((0..21).map(|i| format!("exasol-labs/l{i}")));
+        wanted.push("Sheetaldharshan200/exa-engine".into());
 
-        // Once those land, the next call picks up where it left off.
-        let landed: Vec<(&str, Option<u64>)> = first.iter().map(|r| (r.as_str(), Some(10 * DAY))).collect();
-        let second = repos_to_fetch(&wanted, &cache(&landed), 10 * DAY, 0, MAX_REPO_FETCH);
-        assert_eq!(second.len(), MAX_REPO_FETCH);
-        assert_eq!(second[0], format!("org/r{MAX_REPO_FETCH}"));
+        let plan = fetch_plan(&stale_repos(&wanted, &cache(&[]), 10 * DAY, 0), MAX_SINGLE_FETCH);
+        assert_eq!(plan.orgs, ["exasol", "exasol-labs"]);
+        assert_eq!(plan.singles, ["Sheetaldharshan200/exa-engine"]);
     }
 
     #[test]
-    fn nothing_to_do_when_everything_is_cached_and_fresh() {
-        let wanted = vec!["a/b".to_string(), "c/d".to_string()];
-        let now = 10 * DAY;
-        let entries = cache(&[("a/b", Some(now)), ("c/d", Some(now))]);
-        assert!(repos_to_fetch(&wanted, &entries, now, 0, 40).is_empty());
+    fn an_owner_with_only_a_repo_or_two_is_asked_about_directly() {
+        // Listing a whole org to learn about one repo would cost more requests
+        // than it saves.
+        let plan = fetch_plan(&owned(&["solo/one", "pair/a", "pair/b"]), MAX_SINGLE_FETCH);
+        assert!(plan.orgs.is_empty());
+        assert_eq!(plan.singles, ["solo/one", "pair/a", "pair/b"]);
     }
 
     #[test]
-    fn an_empty_registry_asks_for_nothing() {
-        assert!(repos_to_fetch(&[], &cache(&[]), 10 * DAY, 0, 40).is_empty());
+    fn individual_requests_stay_within_a_budget() {
+        let many: Vec<String> = (0..50).map(|i| format!("owner{i}/repo")).collect();
+        let plan = fetch_plan(&many, MAX_SINGLE_FETCH);
+        assert!(plan.orgs.is_empty());
+        assert_eq!(plan.singles.len(), MAX_SINGLE_FETCH);
+    }
+
+    #[test]
+    fn nothing_stale_means_no_requests_at_all() {
+        assert_eq!(fetch_plan(&[], MAX_SINGLE_FETCH), FetchPlan { orgs: vec![], singles: vec![] });
     }
 
     use super::{maven_all_versions, maven_latest_version, sort_versions_desc, valid_version_tag};
