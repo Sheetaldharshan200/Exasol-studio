@@ -44,6 +44,29 @@ export type ItemSources = {
   driverRuntime?: { id: string; ready: boolean; busy: boolean };
 };
 
+/**
+ * Whether a MANAGED component counts as present.
+ *
+ * Presence normally comes from real detection — `market_detect` looks for the
+ * runtime, binary or marker on disk — because `list_components` reports the
+ * verified version as a fallback even when nothing is installed, so a version
+ * alone cannot answer it.
+ *
+ * A **bundled** component is the exception. It ships inside the app, so there
+ * is nothing separate on disk to find and nothing to install; `market_detect`
+ * has no probe for one and never will. Requiring detection left the Exa Agent
+ * Engine card offering "Install" forever while the engine it describes was
+ * running, and hid every update behind that wrong state.
+ */
+export function managedIsPresent(
+  install: ResolvedCatalogItem["install"],
+  detected: boolean,
+  componentVersion: string | null | undefined,
+): boolean {
+  if (!componentVersion) return false;
+  return install === "bundled" || detected;
+}
+
 export type ItemLike = Pick<ResolvedCatalogItem, "id" | "install">;
 
 export function itemState(item: ItemLike, s: ItemSources): ItemState {

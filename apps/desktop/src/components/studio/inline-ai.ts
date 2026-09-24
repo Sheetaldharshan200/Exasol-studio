@@ -88,7 +88,13 @@ export function installInlineAi(monaco: Monaco, deps: InlineAiDeps): { dispose: 
       cached = suggestion;
       return suggestion ? { items: [{ insertText: suggestion, range: rangeAt(position) }] } : { items: [] };
     },
+    // Monaco has renamed this hook across versions and calls whichever it
+    // knows: the older build asks for freeInlineCompletions, the current one
+    // for disposeInlineCompletions. Missing the one it wants throws on EVERY
+    // suggestion — an unhandled rejection per keystroke. Nothing needs
+    // releasing either way; the items are plain objects.
     freeInlineCompletions: () => undefined,
+    disposeInlineCompletions: () => undefined,
   });
 
   return { dispose: () => provider.dispose() };

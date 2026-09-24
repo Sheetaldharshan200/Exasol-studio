@@ -50,7 +50,7 @@ import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/upd
 import { pickAsset } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
-import { itemState, type ItemSources } from "@/features/marketplace/item-state";
+import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
 import { applyFilters, emptyFilters, sectionOf, type HubFilters, type SectionKey, type Sort } from "@/features/marketplace/hub/filters";
 import { HubHeader, type HubPage } from "@/features/marketplace/hub/HubHeader";
 import { HubHome, type Featured } from "@/features/marketplace/hub/HubHome";
@@ -370,7 +370,8 @@ export function Marketplace() {
       for (const [catalogId, compId] of Object.entries(CATALOG_TO_COMPONENT)) {
         const comp = components.find((c) => c.id === compId);
         if (!comp) continue;
-        if (detected[catalogId] && comp.installed) {
+        const install = CATALOG.find((c) => c.id === catalogId)?.install;
+        if (install && comp.installed && managedIsPresent(install, Boolean(detected[catalogId]), comp.installed)) {
           m[catalogId] = { id: catalogId, version: comp.installed, path: "", filename: "" };
         } else {
           delete m[catalogId]; // not actually present → not installed
@@ -378,7 +379,7 @@ export function Marketplace() {
       }
     }
     return m;
-  }, [installed, components, detected]);
+  }, [installed, components, detected, CATALOG]);
 
   // Displayed "latest" is LIVE-first: the repo's actual newest GitHub release
   // (fetched per repo at mount), falling back to the weekly catalog when the
@@ -595,7 +596,11 @@ export function Marketplace() {
         [item.id]: { busy: false, failed: false, message: `Staged ${result.adapterAsset} (${result.releaseTag}).` },
       }));
     } catch (e) {
-      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message: errorMessage(e) } }));
+      const message = errorMessage(e);
+      // Also to the log: a message on a card is gone as soon as the page is,
+      // and this is the kind of failure someone reports afterwards.
+      console.error(`[marketplace] staging ${adapter.repo} failed: ${message}`);
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message } }));
     }
   }
 
@@ -1268,7 +1273,7 @@ export function Marketplace() {
 
   const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
   // The one button a card carries, by state; everything else lives on the item page.
-  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline"; title?: string } | null => {
+  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline"; title?: string; note?: { text: string; failed: boolean } } | null => {
     const st = stateOf(item);
     const did = DRIVER_RUNTIME[item.id];
     // A virtual schema adapter reports its own progress: it is staged into the
@@ -1281,9 +1286,10 @@ export function Marketplace() {
       return {
         label: vs?.failed ? "Retry staging" : vs?.message ? `Staged${version}` : `Stage${version}`,
         tone: vs?.message && !vs.failed ? "outline" : "primary",
-        // What happened last time — a staging failure says why (usually that
-        // there is no managed local Exasol to stage into).
         title: vs?.message ?? undefined,
+        // Shown, not just hovered: "Retry staging" on its own tells nobody
+        // what went wrong.
+        note: vs?.message ? { text: vs.message, failed: vs.failed } : undefined,
         onClick: () => startInstall(item),
       };
     }

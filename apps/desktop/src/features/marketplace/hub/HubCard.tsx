@@ -32,9 +32,12 @@ export type CardAction = {
   label: string;
   onClick: () => void;
   tone: "primary" | "outline";
-  /** Hover text — where an action's outcome does not fit on the button, such
-   *  as why staging a virtual schema adapter failed. */
+  /** Hover text for the button itself. */
   title?: string;
+  /** What happened last time, shown UNDER the row. A failure has to be
+   *  readable without hovering — a button that says "Retry" and nothing else
+   *  leaves no way to find out why. */
+  note?: { text: string; failed: boolean };
 };
 
 export function HubCard({
@@ -134,6 +137,11 @@ export function HubCard({
           </button>
         ) : null}
       </div>
+      {primary?.note ? (
+        <p className={cn("border-t border-border px-5 py-2.5 text-[12px] leading-relaxed", primary.note.failed ? "text-destructive" : "text-muted-foreground")}>
+          {primary.note.text}
+        </p>
+      ) : null}
     </div>
     </div>
   );
