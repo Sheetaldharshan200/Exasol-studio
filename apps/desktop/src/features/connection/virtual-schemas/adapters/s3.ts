@@ -18,7 +18,7 @@ export const S3Adapter: VsAdapter = {
   logo: "amazonwebservices",
   repo: "exasol/s3-document-files-virtual-schema",
   docs: "https://github.com/exasol/s3-document-files-virtual-schema/blob/main/doc/user_guide/user_guide.md",
-  release: { tag: "4.1.1", asset: "^document-files-virtual-schema-dist-[\\d.]+-s3-[\\d.]+\\.jar$" },
+  release: { asset: "^document-files-virtual-schema-dist-[\\d.]+-s3-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   importUdf: { name: "IMPORT_FROM_S3_DOCUMENT_FILES", scriptClass: DOCUMENT_UDF_CLASS },
   fields: [

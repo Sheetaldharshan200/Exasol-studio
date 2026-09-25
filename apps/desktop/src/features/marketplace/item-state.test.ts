@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { countUpdates, itemState, stateLabel, type ItemSources } from "./item-state.ts";
+import { countUpdates, itemState, stateLabel, type ItemSources, managedIsPresent } from "./item-state.ts";
 import type { ResolvedCatalogItem } from "./catalog-data.ts";
 
 const item = (over: Partial<ResolvedCatalogItem>): ResolvedCatalogItem => ({
@@ -95,4 +95,24 @@ test("countUpdates is the same decision, summed", () => {
     latestFor: (id) => (id === "json-tables" ? "1.1.0" : null),
   });
   assert.equal(countUpdates(items, s), 2);
+});
+
+test("a bundled component is present without any on-disk detection", () => {
+  // market_detect has no probe for something that ships inside the app, so
+  // requiring detection left the Exa Agent Engine card offering "Install"
+  // while the engine it describes was running — and hid its updates.
+  assert.equal(managedIsPresent("bundled", false, "v2026.1.84"), true);
+});
+
+test("a separately-installed component still has to be found on disk", () => {
+  // list_components reports the verified version as a fallback even when
+  // nothing is installed, so a version alone cannot answer presence.
+  assert.equal(managedIsPresent("binary", false, "2.2.0"), false);
+  assert.equal(managedIsPresent("binary", true, "2.2.0"), true);
+});
+
+test("no version from list_components means not installed, bundled or not", () => {
+  assert.equal(managedIsPresent("bundled", true, null), false);
+  assert.equal(managedIsPresent("bundled", true, undefined), false);
+  assert.equal(managedIsPresent("binary", true, ""), false);
 });

@@ -159,6 +159,23 @@ export const agent = {
     return api("/models");
   },
 
+  /**
+   * One inline completion for the editor's ghost text.
+   *
+   * The caller owns the prompt (lib/inline-completion.ts builds it) so the
+   * rules the model is held to are reviewable next to the code that trims its
+   * answer. Never throws: a sidecar that is not up, or a model that is not
+   * configured, means no suggestion, not an error on every keystroke.
+   */
+  async complete(system: string, prompt: string): Promise<string> {
+    try {
+      const { text } = await api<{ text?: string }>("/complete", "POST", { system, prompt });
+      return text ?? "";
+    } catch {
+      return "";
+    }
+  },
+
   /** P3 run observability: usage totals + recent agent activity. */
   async tracesSummary(days = 7): Promise<TraceSummary> {
     return api(`/traces/summary?days=${days}`);

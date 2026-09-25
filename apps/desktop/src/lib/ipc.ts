@@ -334,6 +334,17 @@ export type CatalogEntry = {
   name?: string | null;
   description?: string | null;
 };
+/** What GitHub reports about this machine's request allowance. */
+export type GithubStatus = {
+  connected: boolean;
+  login: string | null;
+  limit: number | null;
+  remaining: number | null;
+  resetsInSecs: number | null;
+  /** Where to create a token. It needs no scopes. */
+  tokenUrl: string;
+};
+
 export type MarketCatalog = {
   generatedAt: string | null;
   mirrorRepo: string;
@@ -373,7 +384,7 @@ export type VsStageRequest = {
   jobId: string;
   repo: string;
   assetPattern: string;
-  runtime: "java" | "lua";
+  runtime: "java" | "lua" | "rust";
   driver: {
     name: string;
     maven?: string;
@@ -570,6 +581,11 @@ export const ipc = {
   vsStageAdapter: (req: VsStageRequest) => call<VsStageResult>("vs_stage_adapter", { req }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
+
+  /** GitHub's rate allowance, and whether a token is raising it. */
+  githubStatus: () => call<GithubStatus>("github_status"),
+  githubConnect: (token: string) => call<GithubStatus>("github_connect", { token }),
+  githubDisconnect: () => call<GithubStatus>("github_disconnect"),
   marketRepoMeta: (repos: string[]) =>
     call<Record<string, { name: string; description: string | null; htmlUrl: string; stars?: number | null; pushedAt?: string | null }>>(
       "market_repo_meta",

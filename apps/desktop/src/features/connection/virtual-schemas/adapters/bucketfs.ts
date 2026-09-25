@@ -17,7 +17,7 @@ export const BucketFsAdapter: VsAdapter = {
   runtime: "java",
   repo: "exasol/bucketfs-document-files-virtual-schema",
   docs: "https://github.com/exasol/bucketfs-document-files-virtual-schema/blob/main/doc/user_guide/user_guide.md",
-  release: { tag: "2.1.0", asset: "^document-files-virtual-schema-dist-[\\d.]+-bucketfs-[\\d.]+\\.jar$" },
+  release: { asset: "^document-files-virtual-schema-dist-[\\d.]+-bucketfs-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   importUdf: { name: "IMPORT_FROM_BUCKETFS_DOCUMENT_FILES", scriptClass: DOCUMENT_UDF_CLASS },
   fields: [

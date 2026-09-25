@@ -6,7 +6,7 @@
  * Toggled from Settings → SQL Editor (on by default).
  */
 import { type Monaco } from "@monaco-editor/react";
-import { findScriptBlocks, splitStatements } from "@/lib/sql-text";
+import { splitStatements } from "@/lib/sql-text";
 
 type StudioEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type Decoration = import("monaco-editor").editor.IModelDeltaDecoration;
@@ -80,39 +80,6 @@ export function installStatementBadges(editor: StudioEditor, monaco: Monaco): { 
         },
       };
     });
-    // `--/ … /` UDF script blocks render as an embedded code block: a tinted
-    // whole-line background plus a language chip on the marker line. Blocks
-    // still being typed (no closing "/") stay unpainted — tinting the whole
-    // rest of the buffer mid-keystroke reads as the editor jumping around.
-    for (const block of findScriptBlocks(sql)) {
-      if (!block.closed) continue;
-      const from = model.getPositionAt(block.start);
-      const to = model.getPositionAt(block.end);
-      decorations.push({
-        range: new monaco.Range(from.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
-        options: { isWholeLine: true, className: "exa-udf-block" },
-      });
-      // The delimiters (`--/` line + closing `/`) style as block markers, not
-      // as the comment / operator colors the SQL tokenizer would give them.
-      decorations.push({
-        range: new monaco.Range(from.lineNumber, 1, from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
-        options: { inlineClassName: "exa-udf-marker" },
-      });
-      decorations.push({
-        range: new monaco.Range(to.lineNumber, 1, to.lineNumber, model.getLineMaxColumn(to.lineNumber)),
-        options: { inlineClassName: "exa-udf-marker" },
-      });
-      // Language chip only once the CREATE header names a language.
-      if (block.language) {
-        decorations.push({
-          range: new monaco.Range(from.lineNumber, model.getLineMaxColumn(from.lineNumber), from.lineNumber, model.getLineMaxColumn(from.lineNumber)),
-          options: {
-            after: { content: `  ${block.language} script`, inlineClassName: "exa-udf-lang" },
-            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-          },
-        });
-      }
-    }
     // Re-apply ONLY on structural change — replacing identical decorations on
     // every keystroke made the margin and block tint visibly push around.
     const key = decorations

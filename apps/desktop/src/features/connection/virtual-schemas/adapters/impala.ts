@@ -11,7 +11,7 @@ export const ImpalaAdapter: VsAdapter = {
   runtime: "java",
   repo: "exasol/impala-virtual-schema",
   docs: "https://github.com/exasol/impala-virtual-schema/blob/main/doc/user_guide/impala_user_guide.md",
-  release: { tag: "4.0.0", asset: "^virtual-schema-dist-[\\d.]+-impala-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-impala-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "IMPALA", class: "com.cloudera.impala.jdbc.Driver", source: { manualUrl: "https://www.cloudera.com/downloads/connectors/impala/jdbc.html" } },
   fields: [

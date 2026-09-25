@@ -54,6 +54,7 @@ import { DesktopOnly } from "@/features/workbench/DesktopOnly";
 import { GlobalSearch, type SearchItem } from "@/components/studio/GlobalSearch";
 
 import { findScriptBlocks, parseSingleTable, pickRunSql, splitStatements, stripSqlComments, tabTitleFromSql } from "@/lib/sql-text";
+import { installUdfEmbedding } from "@/lib/sql-udf-embedding";
 import { buildPlanBlock, heaviestStatement } from "@/lib/plan-block";
 import { IconButton } from "./IconButton";
 import { describeTabForContext, readActiveNotebook } from "./tab-context";
@@ -65,12 +66,18 @@ import { ConnectionSwitcher, Selector } from "./ConnectionSwitcher";
 import { defineMonacoThemes, syntaxOverridesFromSettings, type SyntaxOverrides } from "./monaco-theme";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { installStatementBadges } from "./statement-badges";
+import { installUdfTyping } from "./udf-typing";
+import { installSqlMarkers, type SqlMarkers } from "./sql-markers";
+import { installUdfHints } from "./udf-hints";
+import { installInlineAi } from "./inline-ai";
+import { schemaContextLines } from "@/lib/schema-context";
+import { openableSource, sourceQuery, sourceTitle } from "@/lib/script-source";
 import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
-import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, newTab, type SqlTab, type TabGroup } from "./tabs";
+import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { createSerialQueue } from "@/lib/serial-queue";
@@ -256,6 +263,17 @@ export function ExasolStudio({
   // SCRIPT_LANGUAGES parameter so a newly-installed SLC shows up with no code
   // change (Lua is always included by the parser).
   const [udfLangs, setUdfLangs] = useState<UdfLangOption[]>(DEFAULT_UDF_LANGS);
+  // The same list the linter uses to say "this database does not offer X".
+  const udfLangsRef = useRef<UdfLangOption[]>(DEFAULT_UDF_LANGS);
+  useEffect(() => {
+    udfLangsRef.current = udfLangs;
+    sqlMarkersRef.current?.refresh();
+    // The grammar is built from this list, so a server with a language
+    // container we did not know about re-patches it rather than waiting for
+    // the next editor mount.
+    const m = monacoRef.current;
+    if (m) void installUdfEmbedding(m as never, udfLangs.map((l) => l.id));
+  }, [udfLangs]);
   useEffect(() => {
     const conn = connectionRef.current;
     if (!conn) { setUdfLangs(DEFAULT_UDF_LANGS); return; }
@@ -303,8 +321,23 @@ export function ExasolStudio({
     defineMonacoThemes(m, syntaxOverridesRef.current);
   }, []);
   // Statement-number badges in the editor margin — Settings toggle, on by default.
+  const udfTypingRef = useRef<{ dispose: () => void } | null>(null);
+  const sqlMarkersRef = useRef<SqlMarkers | null>(null);
+  const udfHintsRef = useRef<{ dispose: () => void } | null>(null);
+  // One provider for the whole app, so it outlives any single editor mount.
+  const inlineAiRef = useRef<{ dispose: () => void } | null>(null);
+  useEffect(() => () => {
+    udfTypingRef.current?.dispose();
+    sqlMarkersRef.current?.dispose();
+    udfHintsRef.current?.dispose();
+    inlineAiRef.current?.dispose();
+  }, []);
   const stmtBadgesRef = useRef<{ setEnabled: (on: boolean) => void } | null>(null);
   const stmtNumbersRef = useRef(true);
+  // Editor intelligence, all switchable from Settings. Held in refs because
+  // the Monaco providers below are registered once and read them per call.
+  const lintOnRef = useRef(true);
+  const aiGhostRef = useRef(true);
   // progressId of the query currently executing (for the Stop button to cancel).
   const runningProgressId = useRef<string | null>(null);
   // Live schema catalog feeding the editor's autocompletion (per connection).
@@ -366,6 +399,28 @@ export function ExasolStudio({
   // A bucket may legitimately have zero tabs — the workspace then shows the
   // Welcome start page (VS Code style). No tab is forced open.
   const tabsFor = useCallback((key: string): SqlTab[] => tabsByConn[key] ?? [], [tabsByConn]);
+
+  // Everything written before connecting lives in the not-connected bucket.
+  // It used to stop being shown the moment a connection came up — a buffer
+  // full of half-written queries, apparently gone. Carry it over instead, and
+  // empty the bucket so it is adopted once and not duplicated onto the next
+  // connection as well.
+  useEffect(() => {
+    if (!connection) return;
+    const key = connection.profile.id;
+    setTabsByConn((prev) => {
+      const pending = prev[NO_CONNECTION] ?? [];
+      if (!pending.some(tabHasWork)) return prev;
+      const adopted = adoptPendingTabs(prev[key] ?? [], pending);
+      if (adopted.length === (prev[key] ?? []).length) return prev;
+      // The tab the user was last on comes with them.
+      setActiveIdByConn((a) => {
+        const was = a[NO_CONNECTION];
+        return was && adopted.some((t) => t.id === was) ? { ...a, [key]: was } : a;
+      });
+      return { ...prev, [key]: adopted, [NO_CONNECTION]: [] };
+    });
+  }, [connection]);
 
   const tabs = tabsFor(connKey);
   // Connection accent (Properties → Color and Border → SQL tabs): tints the
@@ -706,6 +761,11 @@ export function ExasolStudio({
         stmtNumbersRef.current = s.stmtNumbers;
         stmtBadgesRef.current?.setEnabled(s.stmtNumbers);
       }
+      if (typeof s.sqlLinting === "boolean") {
+        lintOnRef.current = s.sqlLinting;
+        sqlMarkersRef.current?.refresh();
+      }
+      if (typeof s.aiGhostText === "boolean") aiGhostRef.current = s.aiGhostText;
     };
     ipc.getAppSettings().then(apply).catch(() => undefined);
     if (!isTauri()) return;
@@ -840,6 +900,28 @@ export function ExasolStudio({
       pushNotification("warning", `Could not change ${conn.profile.name}`, errorMessage(e));
     } finally {
       releaseRun();
+    }
+  }
+
+  /// A stored script or function is the closest thing the database has to a
+  /// file: its whole CREATE statement, body and all, lives in the catalog.
+  /// Clicking one in the tree opens that source in an editor tab — in
+  /// whatever language it is written in — rather than doing nothing.
+  async function openSource(profileId: string, kind: "script" | "function", schema: string, name: string) {
+    const conn = connections.find((c) => c.profile.id === profileId);
+    if (!conn) return;
+    const title = sourceTitle(schema, name);
+    try {
+      const res = await execSql(profileId, conn.profile.name, sourceQuery(kind, schema, name), 1, false, false);
+      const text = String(res.results.find((r) => r.kind === "resultSet")?.rows?.[0]?.[0] ?? "");
+      const source = openableSource(kind, text);
+      if (!source) {
+        pushNotification("warning", `No source for ${title}`, "The database returned no text for this object.");
+        return;
+      }
+      await openBuiltSql(source, false, title);
+    } catch (e) {
+      pushNotification("warning", `Could not open ${title}`, errorMessage(e));
     }
   }
 
@@ -2892,6 +2974,7 @@ export function ExasolStudio({
               }}
               onContext={(pid, node, x, y) => node.ctx && setCtxMenu({ profileId: pid, node, x, y })}
               onOpenDetails={(pid, node) => node.ctx && openObjectDetails(pid, node.ctx)}
+              onOpenSource={(pid, kind, schema, name) => void openSource(pid, kind, schema, name)}
               onOpenFavorite={(fav) => {
                 if (["schema", "virtual-schema", "table", "view", "user"].includes(fav.type)) {
                   openObjectDetails(fav.profileId, { type: fav.type, schema: fav.schema, name: fav.name });
@@ -3568,7 +3651,13 @@ export function ExasolStudio({
                 ) : null}
                 <div className="min-h-0 flex-1">
                 <Editor
-                  beforeMount={applyMonacoThemes}
+                  beforeMount={(m) => {
+                    applyMonacoThemes(m);
+                    // A UDF body is written in whatever language its header
+                    // names — tokenize it as that, not as SQL. Which
+                    // languages exist comes from the server (SCRIPT_LANGUAGES).
+                    void installUdfEmbedding(m, udfLangsRef.current.map((l) => l.id));
+                  }}
                   defaultLanguage="sql"
                   path={`${connKey}/${activeTab.id}.sql`}
                   height="100%"
@@ -3584,8 +3673,34 @@ export function ExasolStudio({
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
                     setStatusEditor(editor);
-                    registerExasolCompletion(monaco, () => sqlCatalogRef.current);
+                    registerExasolCompletion(monaco, () => sqlCatalogRef.current, () => udfLangsRef.current.map((l) => l.id));
                     stmtBadgesRef.current = installStatementBadges(editor, monaco);
+                    // Typing inside a script block follows its language.
+                    udfTypingRef.current?.dispose();
+                    udfTypingRef.current = installUdfTyping(editor, monaco);
+                    // Underline what is certainly wrong (unclosed string,
+                    // comment, bracket, script block) and what is wrong for
+                    // THIS connection (unknown schema or table, a script
+                    // language the server does not offer, a shape Exasol
+                    // rejects). Both sources read live state per pass.
+                    sqlMarkersRef.current?.dispose();
+                    sqlMarkersRef.current = installSqlMarkers(editor, monaco, {
+                      enabled: () => lintOnRef.current,
+                      catalog: () => sqlCatalogRef.current,
+                      languages: () => udfLangsRef.current.map((l) => l.id),
+                    });
+                    // "your Python code goes here" on an empty UDF body — the
+                    // language comes from the CREATE header as it is typed.
+                    udfHintsRef.current?.dispose();
+                    udfHintsRef.current = installUdfHints(editor);
+                    // AI ghost text. A language provider is global, so it is
+                    // registered once for the whole app, not per editor.
+                    if (!inlineAiRef.current) {
+                      inlineAiRef.current = installInlineAi(monaco, {
+                        enabled: () => aiGhostRef.current,
+                        schemaContext: () => schemaContextLines(sqlCatalogRef.current),
+                      });
+                    }
                     stmtBadgesRef.current.setEnabled(stmtNumbersRef.current);
                     // Lightbulb AI actions on the current line/selection.
                     if (!(window as unknown as Record<string, unknown>).__exaSqlAiActions) {
@@ -3673,7 +3788,7 @@ export function ExasolStudio({
                       label: "Insert UDF script template (--/ … /)",
                       run: (ed) => {
                         const snippet =
-                          "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/\n";
+                          "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- your Lua code goes here — return a value}\nend\n/\n";
                         const snippets = ed.getContribution("snippetController2") as unknown as { insert?: (s: string) => void } | null;
                         if (snippets?.insert) snippets.insert(snippet);
                         else {
@@ -3713,6 +3828,9 @@ export function ExasolStudio({
                     padding: { top: 10 },
                     renderLineHighlight: "all",
                     smoothScrolling: true,
+                    // Tab accepts the AI suggestion; the toolbar on hover lets
+                    // it be dismissed without reaching for the mouse first.
+                    inlineSuggest: { enabled: true, showToolbar: "onHover" },
                   }}
                 />
                 </div>

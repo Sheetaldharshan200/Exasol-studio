@@ -18,7 +18,7 @@ export const DynamoDbAdapter: VsAdapter = {
   logo: "amazondynamodb",
   repo: "exasol/dynamodb-virtual-schema",
   docs: "https://github.com/exasol/dynamodb-virtual-schema/blob/main/doc/user-guide/user_guide.md",
-  release: { tag: "4.0.2", asset: "^document-virtual-schema-dist-[\\d.]+-dynamodb-[\\d.]+\\.jar$" },
+  release: { asset: "^document-virtual-schema-dist-[\\d.]+-dynamodb-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   importUdf: { name: "IMPORT_FROM_DYNAMO_DB", scriptClass: DOCUMENT_UDF_CLASS },
   fields: [

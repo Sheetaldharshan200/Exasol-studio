@@ -31,41 +31,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # scripts/catalog-items.mjs imports the registry straight from
+      # catalog-data.ts, so the runner needs a Node that strips TypeScript
+      # without a flag (24+). The rest of the repo builds on 22; this job is
+      # the only place that reads a .ts file from a plain script.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
       - name: Build catalog.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # id|upstream repo|homepage
-          items=$(cat <<'EOF'
-          exasol-personal|exasol/exasol-personal|https://github.com/exasol/exasol-personal
-          exasol-cloud|exasol/exasol-personal|https://github.com/exasol/exasol-personal
-          notebook-connector|exasol/notebook-connector|https://github.com/exasol/notebook-connector
-          dbt-exasol|exasol/dbt-exasol|https://github.com/exasol/dbt-exasol
-          exasol-scheduler|exasol-labs/exasol-scheduler|https://github.com/exasol-labs/exasol-scheduler
-          dash-server|exasol-labs/dash-server|https://github.com/exasol-labs/dash-server
-          grafana-datasource|exasol-labs/grafana-datasource|https://github.com/exasol-labs/grafana-datasource
-          tableau-connector|exasol/tableau-connector|https://github.com/exasol/tableau-connector
-          terraform-provider|exasol-labs/terraform-provider-exasol|https://github.com/exasol-labs/terraform-provider-exasol
-          postgres-interface|exasol-labs/exa-postgres-interface|https://github.com/exasol-labs/exa-postgres-interface
-          mongodb-vs|exasol-labs/exasol-mongodb-vs|https://github.com/exasol-labs/exasol-mongodb-vs
-          more-functions|exasol-labs/more-functions|https://github.com/exasol-labs/more-functions
-          exapump|exasol-labs/exapump|https://github.com/exasol-labs/exapump
-          exa-agent|Sheetaldharshan200/exa-engine|https://github.com/Sheetaldharshan200/exa-engine
-          mcp-server|exasol/mcp-server|https://github.com/exasol/mcp-server
-          pyexasol|exasol/pyexasol|https://github.com/exasol/pyexasol
-          sqlalchemy-exasol|exasol/sqlalchemy-exasol|https://github.com/exasol/sqlalchemy-exasol
-          json-tables|exasol-labs/exasol-json-tables|https://github.com/exasol-labs/exasol-json-tables
-          ai-lab|exasol/ai-lab|https://github.com/exasol/ai-lab
-          agent-skills|exasol-labs/exasol-agent-skills|https://github.com/exasol-labs/exasol-agent-skills
-          semantic-views|exasol-labs/exasol-semantic-views|https://github.com/exasol-labs/exasol-semantic-views
-          exarrow-rs|exasol-labs/exarrow-rs|https://github.com/exasol-labs/exarrow-rs
-          driver-ts|exasol/exasol-driver-ts|https://github.com/exasol/exasol-driver-ts
-          driver-go|exasol/exasol-driver-go|https://github.com/exasol/exasol-driver-go
-          driver-websocket|exasol/websocket-api|https://github.com/exasol/websocket-api
-          superset|apache/superset|https://github.com/apache/superset
-          EOF
-          )
+          # The item list comes from the app's own registry
+          # (apps/desktop/src/features/marketplace/catalog-data.ts) via
+          # scripts/catalog-items.mjs. It used to be a heredoc here, which
+          # meant every marketplace change had to be made twice — and it had
+          # drifted: still refreshing mongodb-vs after the app dropped it, and
+          # apache/superset, which the app never listed.
+          items=$(node scripts/catalog-items.mjs)
           echo '{' > catalog.json
           echo "  \"generatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> catalog.json
           echo "  \"mirrorRepo\": \"${{ github.repository }}\"," >> catalog.json
@@ -96,17 +81,22 @@ jobs:
             # Repo name + About line, fetched authenticated (the app's own
             # unauthenticated calls rate-limit at 60/hr, so the catalog is the
             # reliable source of display metadata for marketplace cards).
-            meta='{"name":null,"description":null}'
+            # stars and pushedAt are here so a card is COMPLETE from the
+            # mirror alone. The app's own metadata call is unauthenticated (60
+            # an hour for everything it does) and returns nothing once that is
+            # spent — which is how cards ended up reading "No description yet".
+            meta='{"name":null,"description":null,"stars":null,"pushedAt":null}'
             if [ -n "$repo" ]; then
               meta=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
-                "https://api.github.com/repos/$repo" | jq -c '{name: (.name // null), description: (.description // null)}') || meta='{"name":null,"description":null}'
+                "https://api.github.com/repos/$repo" | jq -c '{name: (.name // null), description: (.description // null), stars: (.stargazers_count // null), pushedAt: (.pushed_at // null)}') || meta='{"name":null,"description":null,"stars":null,"pushedAt":null}'
             fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0
-            printf '    "%s": { "repo": "%s", "latest": %s, "verified": %s, "homepage": "%s", "name": %s, "description": %s }' \
+            printf '    "%s": { "repo": "%s", "latest": %s, "verified": %s, "homepage": "%s", "name": %s, "description": %s, "stars": %s, "pushedAt": %s }' \
               "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" \
               "$(jq -Rn --arg v "$verified" 'if $v=="" or $v=="null" then null else $v end')" "$homepage" \
-              "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" >> catalog.json
+              "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" \
+              "$(echo "$meta" | jq -c '.stars')" "$(echo "$meta" | jq -c '.pushedAt')" >> catalog.json
           done <<< "$items"
           echo '' >> catalog.json
           echo '  }' >> catalog.json

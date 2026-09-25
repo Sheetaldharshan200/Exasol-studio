@@ -399,23 +399,540 @@
 /* `--/ … /` UDF script blocks in the SQL editor: an embedded code block —
    tinted lines with a left rule, plus a language chip on the marker line
    (statement-badges.ts). */
-.exa-udf-block {
-  background: color-mix(in srgb, var(--primary) 6%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
 }
-.exa-udf-lang {
-  color: color-mix(in srgb, var(--primary) 80%, var(--muted-foreground));
-  font-size: 0.8em;
-  font-style: italic;
-  opacity: 0.9;
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
-/* The `--/` and `/` delimiter lines — one marker color, overriding the SQL
-   tokenizer's comment/operator colors (!important beats the .mtk* rules). */
-.exa-udf-marker {
-  /* Color only — weight/style changes alter glyph metrics and made the
-     content shift when a block appeared or disappeared. */
-  color: color-mix(in srgb, var(--primary) 62%, var(--muted-foreground)) !important;
-  font-style: normal !important;
+.exa-logo-instant {
+  /* Transient loads: the mark is filled and visible from the FIRST frame —
+     the pulsing glow (exa-glow) carries the motion. */
+  animation: none;
+  fill-opacity: 1;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+}
+
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+}
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.exa-logo-instant {
+  /* Transient loads: the mark is filled and visible from the FIRST frame —
+     the pulsing glow (exa-glow) carries the motion. */
+  animation: none;
+  fill-opacity: 1;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+}
+
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+}
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.exa-logo-instant {
+  /* Transient loads: the mark is filled and visible from the FIRST frame —
+     the pulsing glow (exa-glow) carries the motion. */
+  animation: none;
+  fill-opacity: 1;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
+}
+
+@layer components {
+  /* Signature Exasol eyebrow label - mono, uppercase, tracked wide */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+
+  .eyebrow-muted {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* Black hero surface with a soft green glow and a faint dot grid */
+  .hero-black {
+    background:
+      radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, rgba(95, 195, 59, 0.1), transparent 60%),
+      linear-gradient(160deg, #141416, #0a0a0b 55%, #000000);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* Theme-aware hero surface — adapts to light/dark via tokens */
+  .hero-surface {
+    background:
+      radial-gradient(color-mix(in oklch, var(--foreground), transparent 95%) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 25% 15%, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%),
+      var(--background);
+    background-size:
+      22px 22px,
+      100% 100%,
+      100% 100%;
+  }
+}
+
+/* Branded loader: the real Exasol X mark draws, fills, glows, and erases. */
+.exa-logo-path {
+  --l: 720;
+  stroke-dasharray: var(--l);
+  stroke-dashoffset: var(--l);
+  fill-opacity: 0;
+  animation: exa-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.exa-logo-instant {
+  /* Transient loads: the mark is filled and visible from the FIRST frame —
+     the pulsing glow (exa-glow) carries the motion. */
+  animation: none;
+  fill-opacity: 1;
+}
+.exa-logo-lead {
+  animation-delay: 0s;
+  filter: drop-shadow(0 0 6px color-mix(in oklch, var(--primary), transparent 45%));
+}
+.exa-logo-trail {
+  animation-delay: 0.4s;
+}
+@keyframes exa-draw {
+  0% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 0;
+    fill-opacity: 0;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+    fill-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: var(--l);
+    fill-opacity: 0;
+  }
+}
+
+/* Soft green glow that breathes behind the mark */
+.exa-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary), transparent 55%), transparent 68%);
+  filter: blur(18px);
+  animation: exa-glow-pulse 3.4s ease-in-out infinite;
+}
+@keyframes exa-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exa-logo-path,
+  .exa-glow {
+    animation-duration: 5.5s;
+  }
+}
+
+/* Statement-number badges in the SQL editor's left (glyph) margin — the
+   number itself comes from a generated `.exa-stmt-badge-<n>::after` rule
+   (statement-badges.ts). */
+.exa-stmt-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.exa-stmt-badge::after {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--primary) 72%, var(--muted-foreground));
 }
 
 @layer components {
@@ -833,7 +1350,6 @@
   background: color-mix(in oklab, var(--primary) 12%, transparent);
 }
 
-
 /* /details — hide tool-execution chips in the Exa thread. */
 [data-hide-tools] [data-slot^="aui_tool"],
 [data-hide-tools] [class*="aui-tool-"] {
@@ -922,4 +1438,14 @@
   font-size: 0.7em;
   font-weight: 500;
   color: var(--muted-foreground);
+}
+
+/* The dim "your Python code goes here" on an empty UDF body. Injected text,
+   so it is never part of the buffer — it only has to look like a hint and
+   stay out of the way. Italic rather than a second colour, so it reads as an
+   annotation in every editor theme. */
+.exa-udf-hint {
+  color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  font-style: italic;
+  opacity: 0.85;
 }

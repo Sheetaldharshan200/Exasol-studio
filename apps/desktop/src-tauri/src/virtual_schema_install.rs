@@ -271,10 +271,13 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
     // 1. The adapter release.
     emit_log(&app, &id, format!("Resolving the latest {} release…", req.repo), "info");
     let repo = req.repo.clone();
-    let release = tauri::async_runtime::spawn_blocking(move || crate::upstream::latest(&repo))
+    let release = tauri::async_runtime::spawn_blocking(move || crate::upstream::latest_detailed(&repo))
         .await
         .map_err(|e| AppError::Storage(e.to_string()))?
-        .ok_or_else(|| AppError::Storage(format!("Could not read the latest release of {}.", req.repo)))?;
+        // Say WHY. Staging every adapter fails at once when the rate limit is
+        // spent, and "could not read the latest release" sent people hunting
+        // for a broken repository instead of a clock.
+        .map_err(|e| AppError::Storage(format!("Could not read the latest release of {}. {e}", req.repo)))?;
     let pattern = regex::Regex::new(&req.asset_pattern)
         .map_err(|e| AppError::Storage(format!("Bad asset pattern for {}: {e}", req.repo)))?;
     let matches: Vec<_> = release.assets.iter().filter(|a| pattern.is_match(&a.name)).collect();
@@ -296,8 +299,27 @@ pub async fn vs_stage_adapter(app: AppHandle, req: StageRequest) -> AppResult<St
     };
     emit_log(&app, &id, format!("Downloading {} ({})…", asset.name, release.tag), "info");
     let downloaded = download_only(&app, &id, &asset.url, &asset.name).await?;
-    // GitHub publishes a per-asset digest for recent releases; refuse a mismatch.
-    if let Some(expected) = asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")) {
+    // GitHub publishes a per-asset digest for recent releases. When the API
+    // did not supply one — an older release, or the release was read from
+    // github.com because the API allowance was spent — the project's own
+    // `<asset>.sha256` beside the file serves the same purpose, so an install
+    // stays verified either way.
+    let sibling = match asset.digest {
+        Some(_) => None,
+        None => {
+            let url = asset.url.clone();
+            tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&url))
+                .await
+                .ok()
+                .flatten()
+        }
+    };
+    let declared = asset
+        .digest
+        .as_deref()
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .or(sibling.as_deref());
+    if let Some(expected) = declared {
         let actual = crate::local_runtime::sha256_file(Path::new(&downloaded))?;
         if !actual.eq_ignore_ascii_case(expected) {
             let _ = std::fs::remove_file(&downloaded);

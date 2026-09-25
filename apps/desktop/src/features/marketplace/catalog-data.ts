@@ -1,3 +1,4 @@
+import { VS_CATALOG } from "./vs-catalog.ts";
 /**
  * The marketplace catalog registry — deliberately minimal so adding an addon
  * is ONE entry: `{ id, repo, kind, install }`. Everything the user sees —
@@ -7,7 +8,23 @@
  * repo (docs-hosted drivers) carry their own `name`/`description`/`homepage`.
  */
 
-export type Kind = "database" | "cli" | "driver" | "server" | "extension" | "skills" | "cloud" | "bi";
+export type Kind =
+  | "database"
+  | "cli"
+  | "driver"
+  | "server"
+  | "extension"
+  | "skills"
+  | "cloud"
+  | "bi"
+  /** A virtual schema adapter — its own shelf, because these are updated and
+   *  applied against a connected database rather than installed onto this
+   *  machine. Built from the adapter registry, never listed by hand. */
+  | "vs"
+  /** Published libraries and developer tooling: real releases people depend
+   *  on, but not something you install from a database client. They get their
+   *  own shelf so the ecosystem is complete without burying the rest. */
+  | "library";
 export type Install =
   | "personal-local"
   | "personal-cloud"
@@ -22,6 +39,9 @@ export type Install =
    *  GitHub tags) at any version — independent of Studio, usable by your own
    *  tools (see versions.ts PACKAGE_SOURCE + Rust install_registry_package). */
   | "package"
+  /** Staged into BucketFS from the repo's newest release, by the same command
+   *  the add-data-source flow runs. */
+  | "vs-adapter"
   | "reference";
 
 export type CatalogItem = {
@@ -110,7 +130,6 @@ export const CATALOG: CatalogItem[] = [
   { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true },
   { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
-  { id: "mongodb-vs", repo: "exasol-labs/exasol-mongodb-vs", kind: "extension", install: "binary", labs: true },
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
   // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
   // container engine, so this links to the project instead of installing it.
@@ -119,6 +138,123 @@ export const CATALOG: CatalogItem[] = [
   // The AI panel's engine — a managed component (updates via update_component,
   // digest-verified; the sidecar restarts after a switch). Shown as a card so
   // ALL components live in one place, no separate panel.
+  // ── The rest of the published Exasol ecosystem ─────────────────────────
+  // Every non-archived exasol / exasol-labs repository that publishes
+  // releases and is something a person USES (rather than build plumbing,
+  // test fixtures or shared libraries). They carry `install: "reference"`:
+  // Studio shows each one's real name, About line, stars and latest release
+  // straight from GitHub and links to it, because these install into the tool
+  // they extend — Power BI, Tableau, Metabase, a Python environment — not
+  // into Studio. Promote one to a real installer by changing its `install`.
+  { id: "cloud-storage-extension", repo: "exasol/cloud-storage-extension", kind: "extension", install: "reference" },
+  { id: "kinesis-connector", repo: "exasol/kinesis-connector-extension", kind: "extension", install: "reference" },
+  { id: "transformers-extension", repo: "exasol/transformers-extension", kind: "extension", install: "reference" },
+  { id: "advanced-analytics", repo: "exasol/advanced-analytics-framework", kind: "extension", install: "reference" },
+  { id: "mlflow-plugin", repo: "exasol/mlflow-plugin", kind: "extension", install: "reference" },
+  { id: "script-languages-release", repo: "exasol/script-languages-release", kind: "extension", install: "reference" },
+  { id: "language-container-rs", repo: "exasol-labs/language-container-rs", kind: "extension", install: "reference", labs: true },
+  { id: "preprocessor-library", repo: "exasol-labs/preprocessor-library", kind: "extension", install: "reference", labs: true },
+  { id: "lakehouse-engine-rs", repo: "exasol-labs/lakehouse-engine-rs", kind: "extension", install: "reference", labs: true },
+  { id: "vscode-extension", repo: "exasol-labs/exasol-vscode", kind: "extension", install: "reference", labs: true },
+  { id: "powerbi-connector", repo: "exasol/powerbi-exasol", kind: "bi", install: "reference" },
+  { id: "metabase-driver", repo: "exasol/metabase-driver", kind: "bi", install: "reference" },
+  { id: "power-apps-connector", repo: "exasol/power-apps-connector", kind: "bi", install: "reference" },
+  { id: "n8n-nodes", repo: "exasol/n8n-nodes", kind: "bi", install: "reference" },
+  { id: "azure-data-factory", repo: "exasol/azure-data-factory-functions", kind: "bi", install: "reference" },
+  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "reference", labs: true },
+  { id: "driver-lua", repo: "exasol/exasol-driver-lua", kind: "driver", install: "reference" },
+  { id: "bucketfs-python", repo: "exasol/bucketfs-python", kind: "driver", install: "reference" },
+  { id: "saas-api-python", repo: "exasol/saas-api-python", kind: "driver", install: "reference" },
+  { id: "rest-api", repo: "exasol/exasol-rest-api", kind: "server", install: "reference" },
+  { id: "saas-cli", repo: "exasol-labs/saas-cli", kind: "cli", install: "reference", labs: true },
+  { id: "exaplus-lua", repo: "exasol-labs/exaplus-lua", kind: "cli", install: "reference", labs: true },
+  { id: "starter-kit", repo: "exasol-labs/exasol-personal-local-starterkit", kind: "cli", install: "reference", labs: true },
+  { id: "community-edition", repo: "exasol-labs/exasol-labs-community-edition", kind: "database", install: "reference", labs: true },
+  // Second pass over the release-bearing repositories: these are deployed or
+  // installed by a person, unlike the Maven plugins, pytest fixtures and
+  // shared libraries that make up most of what is left.
+  { id: "kafka-connector", repo: "exasol/kafka-connector-extension", kind: "extension", install: "reference" },
+  { id: "spark-connector", repo: "exasol/spark-connector", kind: "extension", install: "reference" },
+  { id: "cloudwatch-adapter", repo: "exasol/cloudwatch-adapter", kind: "extension", install: "reference" },
+  { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "reference" },
+  { id: "udf-api-java", repo: "exasol/udf-api-java", kind: "extension", install: "reference" },
+  { id: "dbt-exasol-utils", repo: "exasol/dbt-exasol-utils", kind: "extension", install: "reference" },
+  { id: "bucketfs-client", repo: "exasol/bucketfs-client", kind: "cli", install: "reference" },
+  { id: "parquet-edml-generator", repo: "exasol/parquet-edml-generator", kind: "cli", install: "reference" },
+  { id: "slc-tool", repo: "exasol/script-languages-container-tool", kind: "cli", install: "reference" },
+  { id: "bucketfs-java", repo: "exasol/bucketfs-java", kind: "driver", install: "reference" },
+  // ── Libraries & tooling ────────────────────────────────────────────────
+  // The remainder of the published ecosystem: every other non-archived
+  // exasol / exasol-labs repository that ships releases. These are depended
+  // on rather than installed — Maven plugins, pytest fixtures, test
+  // frameworks, error-reporting builders, shared virtual-schema libraries —
+  // so they sit on their own shelf instead of among the things you install.
+  // Listed because they are part of the ecosystem and people look for them,
+  // and generated from the repository list rather than chosen by hand.
+  { id: "ansible-collection", repo: "exasol/ansible-collection", kind: "library", install: "reference" },
+  { id: "ansible-runner-wrapper", repo: "exasol/ansible-runner-wrapper", kind: "library", install: "reference" },
+  { id: "artifact-reference-checker-maven-plugin", repo: "exasol/artifact-reference-checker-maven-plugin", kind: "library", install: "reference" },
+  { id: "autogenerated-resource-verifier-java", repo: "exasol/autogenerated-resource-verifier-java", kind: "library", install: "reference" },
+  { id: "ci-isolation-aws", repo: "exasol/ci-isolation-aws", kind: "library", install: "reference" },
+  { id: "cloudwatch-dashboard-examples", repo: "exasol/cloudwatch-dashboard-examples", kind: "library", install: "reference" },
+  { id: "compatibility-test-suite", repo: "exasol/compatibility-test-suite", kind: "library", install: "reference" },
+  { id: "connection-parameter-specification", repo: "exasol/connection-parameter-specification", kind: "library", install: "reference" },
+  { id: "database-cleaner", repo: "exasol/database-cleaner", kind: "library", install: "reference" },
+  { id: "db-fundamentals-java", repo: "exasol/db-fundamentals-java", kind: "library", install: "reference" },
+  { id: "edml-java", repo: "exasol/edml-java", kind: "library", install: "reference" },
+  { id: "error-catalog", repo: "exasol/error-catalog", kind: "library", install: "reference" },
+  { id: "error-code-crawler-maven-plugin", repo: "exasol/error-code-crawler-maven-plugin", kind: "library", install: "reference" },
+  { id: "error-code-model-java", repo: "exasol/error-code-model-java", kind: "library", install: "reference" },
+  { id: "error-reporting-go", repo: "exasol/error-reporting-go", kind: "library", install: "reference" },
+  { id: "error-reporting-java", repo: "exasol/error-reporting-java", kind: "library", install: "reference" },
+  { id: "error-reporting-lua", repo: "exasol/error-reporting-lua", kind: "library", install: "reference" },
+  { id: "error-reporting-python", repo: "exasol/error-reporting-python", kind: "library", install: "reference" },
+  { id: "exasol-java-tutorial", repo: "exasol/exasol-java-tutorial", kind: "library", install: "reference" },
+  { id: "exasol-local-vm", repo: "exasol/exasol-local-vm", kind: "library", install: "reference" },
+  { id: "exasol-python-test-framework", repo: "exasol/exasol-python-test-framework", kind: "library", install: "reference" },
+  { id: "exasol-test-setup-abstraction-java", repo: "exasol/exasol-test-setup-abstraction-java", kind: "library", install: "reference" },
+  { id: "exasol-test-setup-abstraction-server", repo: "exasol/exasol-test-setup-abstraction-server", kind: "library", install: "reference" },
+  { id: "exasol-testcontainers", repo: "exasol/exasol-testcontainers", kind: "library", install: "reference" },
+  { id: "hamcrest-resultset-matcher", repo: "exasol/hamcrest-resultset-matcher", kind: "library", install: "reference" },
+  { id: "import-export-udf-common-scala", repo: "exasol/import-export-udf-common-scala", kind: "library", install: "reference" },
+  { id: "integration-test-docker-environment", repo: "exasol/integration-test-docker-environment", kind: "library", install: "reference" },
+  { id: "java-util-logging-testing", repo: "exasol/java-util-logging-testing", kind: "library", install: "reference" },
+  { id: "lua-styleguide", repo: "exasol/lua-styleguide", kind: "library", install: "reference" },
+  { id: "maven-plugin-integration-testing", repo: "exasol/maven-plugin-integration-testing", kind: "library", install: "reference" },
+  { id: "maven-project-version-getter", repo: "exasol/maven-project-version-getter", kind: "library", install: "reference" },
+  { id: "parquet-io-java", repo: "exasol/parquet-io-java", kind: "library", install: "reference" },
+  { id: "performance-test-recorder-java", repo: "exasol/performance-test-recorder-java", kind: "library", install: "reference" },
+  { id: "project-keeper", repo: "exasol/project-keeper", kind: "library", install: "reference" },
+  { id: "pytest-backend", repo: "exasol/pytest-backend", kind: "library", install: "reference" },
+  { id: "pytest-exasol-benchmark", repo: "exasol/pytest-exasol-benchmark", kind: "library", install: "reference" },
+  { id: "pytest-extension", repo: "exasol/pytest-extension", kind: "library", install: "reference" },
+  { id: "pytest-slc", repo: "exasol/pytest-slc", kind: "library", install: "reference" },
+  { id: "python-extension-common", repo: "exasol/python-extension-common", kind: "library", install: "reference" },
+  { id: "python-toolbox", repo: "exasol/python-toolbox", kind: "library", install: "reference" },
+  { id: "release-droid", repo: "exasol/release-droid", kind: "library", install: "reference" },
+  { id: "remotelog-lua", repo: "exasol/remotelog-lua", kind: "library", install: "reference" },
+  { id: "schemas", repo: "exasol/schemas", kind: "library", install: "reference" },
+  { id: "script-languages", repo: "exasol/script-languages", kind: "library", install: "reference" },
+  { id: "script-languages-container-ci", repo: "exasol/script-languages-container-ci", kind: "library", install: "reference" },
+  { id: "script-languages-container-ci-setup", repo: "exasol/script-languages-container-ci-setup", kind: "library", install: "reference" },
+  { id: "script-languages-package-management", repo: "exasol/script-languages-package-management", kind: "library", install: "reference" },
+  { id: "small-json-files-test-fixture", repo: "exasol/small-json-files-test-fixture", kind: "library", install: "reference" },
+  { id: "spark-connector-common-java", repo: "exasol/spark-connector-common-java", kind: "library", install: "reference" },
+  { id: "sql-statement-builder", repo: "exasol/sql-statement-builder", kind: "library", install: "reference" },
+  { id: "telemetry-client-python", repo: "exasol/telemetry-client-python", kind: "library", install: "reference" },
+  { id: "telemetry-java", repo: "exasol/telemetry-java", kind: "library", install: "reference" },
+  { id: "test-db-builder-java", repo: "exasol/test-db-builder-java", kind: "library", install: "reference" },
+  { id: "test-db-builder-python", repo: "exasol/test-db-builder-python", kind: "library", install: "reference" },
+  { id: "tutorials", repo: "exasol/tutorials", kind: "library", install: "reference" },
+  { id: "udf-debugging-java", repo: "exasol/udf-debugging-java", kind: "library", install: "reference" },
+  { id: "udf-mock-python", repo: "exasol/udf-mock-python", kind: "library", install: "reference" },
+  { id: "udf-runner-cpp", repo: "exasol/udf-runner-cpp", kind: "library", install: "reference" },
+  { id: "virtual-schema-common-document", repo: "exasol/virtual-schema-common-document", kind: "library", install: "reference" },
+  { id: "virtual-schema-common-document-files", repo: "exasol/virtual-schema-common-document-files", kind: "library", install: "reference" },
+  { id: "virtual-schema-common-java", repo: "exasol/virtual-schema-common-java", kind: "library", install: "reference" },
+  { id: "virtual-schema-common-jdbc", repo: "exasol/virtual-schema-common-jdbc", kind: "library", install: "reference" },
+  { id: "virtual-schema-shared-integration-tests", repo: "exasol/virtual-schema-shared-integration-tests", kind: "library", install: "reference" },
+  { id: "virtual-schemas", repo: "exasol/virtual-schemas", kind: "library", install: "reference" },
   {
     id: "exa-agent",
     repo: "Sheetaldharshan200/exa-engine",
@@ -128,6 +264,15 @@ export const CATALOG: CatalogItem[] = [
     description: "The engine behind Studio's AI panel. Updates independently of Studio releases; sessions are kept across engine switches.",
   },
 ];
+
+/**
+ * The virtual schema adapters, as catalog items.
+ *
+ * Appended rather than written out: they are derived from the adapter
+ * registry (see vs-catalog.ts), so the shelf is always exactly the adapters
+ * the add-data-source flow can install.
+ */
+CATALOG.push(...VS_CATALOG);
 
 /** The repos whose metadata the marketplace needs. */
 export function catalogRepos(): string[] {
@@ -173,7 +318,20 @@ export function resolveCatalog(meta: Record<string, RepoMeta> | null): ResolvedC
  * layer under live metadata.
  */
 export function metaFromCatalogItems(
-  items: Record<string, { repo?: string; homepage?: string; name?: string | null; description?: string | null }> | null | undefined,
+  items:
+    | Record<
+        string,
+        {
+          repo?: string;
+          homepage?: string;
+          name?: string | null;
+          description?: string | null;
+          stars?: number | null;
+          pushedAt?: string | null;
+        }
+      >
+    | null
+    | undefined,
 ): Record<string, RepoMeta> {
   const out: Record<string, RepoMeta> = {};
   for (const entry of Object.values(items ?? {})) {
@@ -182,6 +340,11 @@ export function metaFromCatalogItems(
       name: entry.name,
       description: entry.description ?? null,
       htmlUrl: entry.homepage || `https://github.com/${entry.repo}`,
+      // Carried by the mirror so a card is complete WITHOUT the app's own
+      // unauthenticated call, which returns nothing once the hour's 60
+      // requests are gone — the reason cards read "No description yet".
+      stars: entry.stars ?? null,
+      pushedAt: entry.pushedAt ?? null,
     };
   }
   return out;

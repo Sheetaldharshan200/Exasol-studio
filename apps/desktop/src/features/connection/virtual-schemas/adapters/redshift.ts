@@ -12,7 +12,7 @@ export const RedshiftAdapter: VsAdapter = {
   logo: "amazonredshift",
   repo: "exasol/redshift-virtual-schema",
   docs: "https://github.com/exasol/redshift-virtual-schema/blob/main/doc/user_guide/redshift_user_guide.md",
-  release: { tag: "4.0.0", asset: "^virtual-schema-dist-[\\d.]+-redshift-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-redshift-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "REDSHIFT", class: "com.amazon.redshift.jdbc42.Driver", source: { maven: "com.amazon.redshift:redshift-jdbc42" } },
   fields: [

@@ -28,7 +28,17 @@ export function TrustMark({ labs, withLabel = false, className }: { labs?: boole
  * a two-line description, then a footer with the install fact and the stars.
  * The whole card opens the item; a checkbox in the corner joins it to a batch.
  */
-export type CardAction = { label: string; onClick: () => void; tone: "primary" | "outline" };
+export type CardAction = {
+  label: string;
+  onClick: () => void;
+  tone: "primary" | "outline";
+  /** Hover text for the button itself. */
+  title?: string;
+  /** What happened last time, shown UNDER the row. A failure has to be
+   *  readable without hovering — a button that says "Retry" and nothing else
+   *  leaves no way to find out why. */
+  note?: { text: string; failed: boolean };
+};
 
 export function HubCard({
   item,
@@ -51,7 +61,10 @@ export function HubCard({
   const stars = compactCount(item.stars);
   const slug = item.repo ?? `exasol/${item.id}`;
   return (
-    <div className="relative">
+    // The grid row stretches this wrapper to the tallest card in it; `h-full`
+    // on both it and the card below is what makes the card follow, so a row
+    // of cards shares one height however long their descriptions are.
+    <div className="relative h-full">
       {selectable ? (
         <button
           role="checkbox"
@@ -78,7 +91,7 @@ export function HubCard({
       }}
       data-agent-id={`market.card.${item.id}`}
       className={cn(
-        "group relative flex min-h-[188px] cursor-pointer flex-col rounded-xl border bg-panel text-left transition-colors hover:border-foreground/25",
+        "group relative flex h-full min-h-[188px] cursor-pointer flex-col rounded-xl border bg-panel text-left transition-colors hover:border-foreground/25",
         selected ? "border-primary" : "border-border",
       )}
     >
@@ -113,6 +126,7 @@ export function HubCard({
               primary.onClick();
             }}
             data-agent-id={`market.card.${item.id}.primary`}
+            title={primary.title}
             className={cn(
               "ml-auto flex h-8 items-center gap-1.5 rounded-md px-3.5 text-[12.5px] font-semibold transition-colors",
               primary.tone === "primary" ? "cta-glow bg-primary text-primary-foreground hover:bg-primary/85" : "border border-border text-foreground hover:bg-secondary",
@@ -123,6 +137,11 @@ export function HubCard({
           </button>
         ) : null}
       </div>
+      {primary?.note ? (
+        <p className={cn("border-t border-border px-5 py-2.5 text-[12px] leading-relaxed", primary.note.failed ? "text-destructive" : "text-muted-foreground")}>
+          {primary.note.text}
+        </p>
+      ) : null}
     </div>
     </div>
   );

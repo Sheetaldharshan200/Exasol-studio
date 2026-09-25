@@ -1,6 +1,6 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { languages } from "monaco-editor";
-import { findScriptBlocks } from "./sql-text";
+import { findScriptBlocks } from "./sql-text.ts";
 
 /**
  * Schema-aware Exasol autocompletion for the Monaco SQL editor.
@@ -30,11 +30,11 @@ const SNIPPETS: { label: string; text: string }[] = [
   // treats as ONE statement (the body may contain semicolons).
   {
     label: "udf CREATE LUA UDF",
-    text: "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- return ctx.a}\nend\n/",
+    text: "--/\nCREATE OR REPLACE LUA SCALAR SCRIPT ${1:MY_UDF} (${2:a DOUBLE, b DOUBLE})\nRETURNS ${3:DOUBLE} AS\nfunction run(ctx)\n    ${0:-- your Lua code goes here — return a value}\nend\n/",
   },
   {
     label: "udf CREATE PYTHON3 UDF",
-    text: "--/\nCREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\ndef run(ctx):\n    ${0:return ctx.x}\n/",
+    text: "--/\nCREATE OR REPLACE PYTHON3 SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\ndef run(ctx):\n    ${0:# your Python code goes here — return a value}\n/",
   },
   {
     label: "udf CREATE JAVA UDF",
@@ -42,11 +42,11 @@ const SNIPPETS: { label: string; text: string }[] = [
   },
   {
     label: "udf CREATE R UDF",
-    text: "--/\nCREATE OR REPLACE R SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nrun <- function(ctx) {\n    ${0:ctx$x}\n}\n/",
+    text: "--/\nCREATE OR REPLACE R SCALAR SCRIPT ${1:MY_UDF} (${2:x DOUBLE})\nRETURNS ${3:DOUBLE} AS\nrun <- function(ctx) {\n    ${0:# your R code goes here — return a value}\n}\n/",
   },
   {
     label: "udf CREATE LUA SET-EMITS UDF",
-    text: "--/\nCREATE OR REPLACE LUA SET SCRIPT ${1:MY_UDF} (${2:a DOUBLE})\nEMITS (${3:b DOUBLE}) AS\nfunction run(ctx)\n    repeat\n        ctx.emit(${0:ctx.a})\n    until not ctx.next()\nend\n/",
+    text: "--/\nCREATE OR REPLACE LUA SET SCRIPT ${1:MY_UDF} (${2:a DOUBLE})\nEMITS (${3:b DOUBLE}) AS\nfunction run(ctx)\n    repeat\n        ctx.emit(${0:ctx.a}) -- your Lua code goes here\n    until not ctx.next()\nend\n/",
   },
   { label: "CREATE VIRTUAL SCHEMA", text: "CREATE VIRTUAL SCHEMA ${1:VS_NAME} USING ${2:ADAPTER.SCRIPT} WITH ${3:CONNECTION_NAME = '…'}" },
   { label: "CREATE CONNECTION", text: "CREATE OR REPLACE CONNECTION ${1:CONN_NAME} TO '${2:https://…}' USER '${3:user}' IDENTIFIED BY '${4:secret}'" },
@@ -156,7 +156,26 @@ async function grammarHints(sql: string, pos: { lineNumber: number; column: numb
   }
 }
 
-export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCatalog): void {
+/**
+ * The choice list in the UDF snippet, built from what the SERVER offers.
+ *
+ * Monaco's `${1|a,b,c|}` takes a comma-separated list, and a comma or pipe in
+ * an alias would break the snippet, so aliases carrying either are dropped
+ * rather than silently corrupting the insertion. An empty list falls back to
+ * a plain placeholder — a snippet with no choices is not a snippet.
+ */
+export function languageChoice(languages: readonly string[] | undefined): string {
+  const safe = [...new Set((languages ?? []).map((l) => l.trim().toUpperCase()).filter((l) => l && !/[,|$}]/.test(l)))];
+  return safe.length > 0 ? `\${1|${safe.join(",")}|}` : "${1:LUA}";
+}
+
+export function registerExasolCompletion(
+  monaco: Monaco,
+  getCatalog: () => SqlCatalog,
+  /** Script-language aliases the connected server offers (SCRIPT_LANGUAGES).
+   *  Omitted, the snippet offers a plain placeholder rather than a guess. */
+  getLanguages: () => readonly string[] = () => [],
+): void {
   if (registered) return;
   registered = true;
   void getParser(); // warm the grammar in the background
@@ -263,7 +282,12 @@ export function registerExasolCompletion(monaco: Monaco, getCatalog: () => SqlCa
               label: "--/ UDF script block",
               kind: monaco.languages.CompletionItemKind.Snippet,
               insertText:
-                "--/\nCREATE OR REPLACE ${1|LUA,PYTHON3,JAVA,R|} SCALAR SCRIPT ${2:MY_UDF} (${3:a DOUBLE})\nRETURNS ${4:DOUBLE} AS\n${0:-- body}\n/",
+                // The body is left EMPTY on purpose: the editor draws a dim
+                // "your Python code goes here" on it, naming whichever
+                // language the header ends up carrying (components/studio/
+                // udf-hints.ts). A fixed placeholder could not do that, and
+                // would have to be deleted before typing.
+                `--/\nCREATE OR REPLACE ${languageChoice(getLanguages())} SCALAR SCRIPT \${2:MY_UDF} (\${3:a DOUBLE})\nRETURNS \${4:DOUBLE} AS\n\${0}\n/`,
               insertTextRules: snippet,
               range: dashRange,
               detail: "Exasol UDF — one statement, body may contain semicolons",

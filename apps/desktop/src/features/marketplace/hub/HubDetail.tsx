@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, Download, ExternalLink, Loader2, Star } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BrandLoader } from "@/components/brand/BrandLoader";
 import { cn } from "@/lib/utils";
 import type { ResolvedCatalogItem } from "../catalog-data";
 import { stateLabel, type ItemState } from "../item-state";
@@ -41,7 +42,11 @@ export function HubDetail({
   state: ItemState;
   /** The install / update / manage controls the container owns. */
   actions: ReactNode;
-  versions: string[] | null | "error" | undefined;
+  /** undefined = not requested, null = loading, "error" = fetch failed,
+   *  "unsupported" = this item has no version-addressable install, so there is
+   *  no list to offer (an empty array would read as "this project has never
+   *  released", which is usually false). */
+  versions: string[] | null | "error" | "unsupported" | undefined;
   pickedVersion: string | undefined;
   onPickVersion: (v: string | undefined) => void;
   onLoadVersions: () => void;
@@ -54,19 +59,36 @@ export function HubDetail({
   onOpenExternal: (url: string) => void;
 }) {
   const [tab, setTab] = useState("overview");
+  // Ask for the versions as soon as the page opens, not when the tab is first
+  // clicked. Waiting made the page look stuck: the Versions tab and the
+  // sidebar both had nothing to show and nothing in flight to explain it.
+  useEffect(() => {
+    onLoadVersions();
+    // Re-runs per item, not per render — onLoadVersions is a fresh closure each
+    // time and is a no-op once a fetch is under way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
   const slug = item.repo ?? `exasol/${item.id}`;
   const publisher = slug.split("/")[0];
   const stars = compactCount(item.stars);
   const list = Array.isArray(versions) ? versions : [];
   const pills = list.slice(0, 10);
+  // One loader for the whole page body until BOTH halves have settled, rather
+  // than two spinners racing in different places.
+  const settling = readme === undefined || versions === undefined || versions === null;
   return (
     <div className="grid gap-6">
-      <div className="flex items-start gap-5">
+      {/* The action bar cannot shrink and is wide (version picker, state,
+          docs, manage, back up). Without a real minimum on the text column,
+          flex satisfied it by squeezing the description to nothing — one word
+          per line, with the buttons overflowing across the title. A minimum
+          plus a wrapping row makes the bar drop to its own line instead. */}
+      <div className="flex flex-wrap items-start gap-5">
         <button onClick={onBack} aria-label="Back" className="mt-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-primary hover:bg-secondary/60">
           <ChevronLeft className="h-5 w-5" />
         </button>
         <HubLogo item={item} size="lg" className="mt-1" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[min(100%,20rem)] flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="font-heading text-[24px] font-bold leading-tight text-foreground">{slug}</h1>
             <TrustMark labs={item.labs} withLabel />
@@ -95,7 +117,7 @@ export function HubDetail({
         </div>
         {/* The container's controls are sized for a card row; on the item page they
             are THE call to action, so they scale up to Docker Hub's Tag | Pull | Run. */}
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 pt-3 [&_button]:h-11 [&_button]:rounded-lg [&_button]:px-5 [&_button]:text-[14px] [&_button]:font-medium [&_button>svg]:h-4 [&_button>svg]:w-4 [&_span.flex]:h-11 [&_span.flex]:rounded-lg [&_span.flex]:px-4 [&_span.flex]:text-[14px] [&_button.max-w-\[150px\]]:max-w-[220px] [&_button.max-w-\[150px\]]:min-w-[140px] [&_button.font-mono]:text-[13px]">
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2.5 pt-3 lg:w-auto lg:justify-end [&_button]:h-11 [&_button]:rounded-lg [&_button]:px-5 [&_button]:text-[14px] [&_button]:font-medium [&_button>svg]:h-4 [&_button>svg]:w-4 [&_span.flex]:h-11 [&_span.flex]:rounded-lg [&_span.flex]:px-4 [&_span.flex]:text-[14px] [&_button.max-w-\[150px\]]:max-w-[220px] [&_button.max-w-\[150px\]]:min-w-[140px] [&_button.font-mono]:text-[13px]">
           {actions}
         </div>
       </div>
@@ -107,11 +129,16 @@ export function HubDetail({
         </TabsList>
 
         <TabsContent value="overview" className="pt-6">
+          {settling ? (
+            <div className="flex min-h-[320px] items-center justify-center">
+              <BrandLoader label="Loading the project" />
+            </div>
+          ) : (
           <div className="grid gap-10 lg:[grid-template-columns:minmax(0,1fr)_320px]">
             <div className="min-w-0">
-              {readme === undefined ? (
-                <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading the README…</div>
-              ) : readme ? (
+              {/* `settling` above already covers readme === undefined, so the
+                  only cases left are "here it is" and "there is none". */}
+              {readme ? (
                 <div
                   className="md-body max-w-3xl"
                   onClick={(e) => {
@@ -148,10 +175,8 @@ export function HubDetail({
             <aside className="min-w-0">
               <h2 className="font-heading text-[18px] font-semibold text-foreground">Recent versions</h2>
               <div className="mt-3 border-t border-border pt-4">
-                {versions === undefined ? (
-                  <button onClick={onLoadVersions} className="text-[13px] text-primary hover:underline">Load the version list</button>
-                ) : versions === null ? (
-                  <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+                {versions === "unsupported" ? (
+                  <p className="text-[13px] text-muted-foreground">Installed from the project, not by version.</p>
                 ) : versions === "error" ? (
                   <p className="text-[13px] text-muted-foreground">Couldn't load versions (offline or rate-limited).</p>
                 ) : pills.length === 0 ? (
@@ -172,11 +197,18 @@ export function HubDetail({
               ) : null}
             </aside>
           </div>
+          )}
         </TabsContent>
 
         <TabsContent value="versions" className="pt-6">
-          {versions === null || versions === undefined ? (
-            <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading versions…</div>
+          {settling ? (
+            <div className="flex min-h-[320px] items-center justify-center">
+              <BrandLoader label="Loading versions" />
+            </div>
+          ) : versions === "unsupported" ? (
+            <p className="text-[13px] text-muted-foreground">
+              Studio installs this one from its project rather than by version, so there is no list to pick from. Its releases are on the project page.
+            </p>
           ) : versions === "error" ? (
             <p className="text-[13px] text-muted-foreground">Couldn't load versions (offline or rate-limited).</p>
           ) : list.length === 0 ? (

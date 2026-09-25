@@ -1,166 +1,26 @@
 {
-  "generatedAt": "2026-09-06T17:38:14Z",
+  "generatedAt": "2026-09-24T17:46:10Z",
   "mirrorRepo": "Sheetaldharshan200/Exasol-studio",
   "items": {
     "exasol-personal": {
       "repo": "exasol/exasol-personal",
-      "latest": "v2.2.0",
-      "verified": "v2.2.0",
+      "latest": "v2.3.0",
+      "verified": "v2.3.0",
       "homepage": "https://github.com/exasol/exasol-personal",
       "name": "exasol-personal",
-      "description": "The Analytics Database for Agentic AI — Free for Personal Use"
-    },
-    "exasol-cloud": {
-      "repo": "exasol/exasol-personal",
-      "latest": "v2.2.0",
-      "verified": "v2.2.0",
-      "homepage": "https://github.com/exasol/exasol-personal",
-      "name": "exasol-personal",
-      "description": "The Analytics Database for Agentic AI — Free for Personal Use"
-    },
-    "exasol-community": {
-      "repo": "exasol/docker-db",
-      "latest": null,
-      "verified": null,
-      "homepage": "https://github.com/exasol/docker-db",
-      "name": "docker-db",
-      "description": "Documentation for the Docker version of Exasol"
-    },
-    "notebook-connector": {
-      "repo": "exasol/notebook-connector",
-      "latest": "3.0.0",
-      "verified": null,
-      "homepage": "https://github.com/exasol/notebook-connector",
-      "name": "notebook-connector",
-      "description": "Connection configuration management and additional tools for Jupyter notebooks."
-    },
-    "dbt-exasol": {
-      "repo": "exasol/dbt-exasol",
-      "latest": "v1.12.1",
-      "verified": null,
-      "homepage": "https://github.com/exasol/dbt-exasol",
-      "name": "dbt-exasol",
-      "description": "Data Build Tool adapter for Exasol"
-    },
-    "exasol-scheduler": {
-      "repo": "exasol-labs/exasol-scheduler",
-      "latest": "v0.2",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exasol-scheduler",
-      "name": "exasol-scheduler",
-      "description": "Lightweight table-driven SQL job scheduling for Exasol"
-    },
-    "dash-server": {
-      "repo": "exasol-labs/dash-server",
-      "latest": "v0.1.0",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/dash-server",
-      "name": "dash-server",
-      "description": "Agent-operated Dash hosting for live analytical apps"
-    },
-    "grafana-datasource": {
-      "repo": "exasol-labs/grafana-datasource",
-      "latest": "v1.0.1",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/grafana-datasource",
-      "name": "grafana-datasource",
-      "description": "Exasol Datasource Plugin for Grafana"
-    },
-    "tableau-connector": {
-      "repo": "exasol/tableau-connector",
-      "latest": "1.0.12",
-      "verified": null,
-      "homepage": "https://github.com/exasol/tableau-connector",
-      "name": "tableau-connector",
-      "description": "Tableau plug-in for Exasol database connection"
-    },
-    "terraform-provider": {
-      "repo": "exasol-labs/terraform-provider-exasol",
-      "latest": "v0.2.3",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/terraform-provider-exasol",
-      "name": "terraform-provider-exasol",
-      "description": "Manage Exasol database resources (users, roles, schemas, connections, and privileges) with Terraform."
-    },
-    "postgres-interface": {
-      "repo": "exasol-labs/exa-postgres-interface",
-      "latest": "v0.2.12",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exa-postgres-interface",
-      "name": "exa-postgres-interface",
-      "description": "A Postgres-compatible Gateway for Exasol"
-    },
-    "mongodb-vs": {
-      "repo": "exasol-labs/exasol-mongodb-vs",
-      "latest": "v0.1.0",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exasol-mongodb-vs",
-      "name": "exasol-mongodb-vs",
-      "description": "Query MongoDB collections from Exasol through a Rust Virtual Schema connector"
-    },
-    "more-functions": {
-      "repo": "exasol-labs/more-functions",
-      "latest": null,
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/more-functions",
-      "name": "more-functions",
-      "description": "Project that provides popular SQL functions that are not built-in directly into Exasol."
+      "description": "The Analytics Database for Agentic AI \u2014 Free for Personal Use",
+      "stars": 15,
+      "pushedAt": "2026-09-23T15:06:40Z"
     },
     "exapump": {
       "repo": "exasol-labs/exapump",
-      "latest": "v0.12.0",
-      "verified": "v0.12.0",
+      "latest": "v0.13.0",
+      "verified": "v0.13.0",
       "homepage": "https://github.com/exasol-labs/exapump",
       "name": "exapump",
-      "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust 🦀"
-    },
-    "mcp-server": {
-      "repo": "exasol/mcp-server",
-      "latest": "2.2.0",
-      "verified": "2.0.0",
-      "homepage": "https://github.com/exasol/mcp-server",
-      "name": "mcp-server",
-      "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol."
-    },
-    "pyexasol": {
-      "repo": "exasol/pyexasol",
-      "latest": "2.3.2",
-      "verified": null,
-      "homepage": "https://github.com/exasol/pyexasol",
-      "name": "pyexasol",
-      "description": "Exasol Python driver with low overhead, fast HTTP transport and compression"
-    },
-    "sqlalchemy-exasol": {
-      "repo": "exasol/sqlalchemy-exasol",
-      "latest": "7.1.3",
-      "verified": null,
-      "homepage": "https://github.com/exasol/sqlalchemy-exasol",
-      "name": "sqlalchemy-exasol",
-      "description": "SQLAlchemy dialect for EXASOL"
-    },
-    "json-tables": {
-      "repo": "exasol-labs/exasol-json-tables",
-      "latest": "v0.3",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exasol-json-tables",
-      "name": "exasol-json-tables",
-      "description": "Exasol JSON Tables: ingest, query, and reshape JSON-shaped data in Exasol."
-    },
-    "ai-lab": {
-      "repo": "exasol/ai-lab",
-      "latest": "6.0.0",
-      "verified": null,
-      "homepage": "https://github.com/exasol/ai-lab",
-      "name": "ai-lab",
-      "description": "Development environment for data science developers"
-    },
-    "agent-skills": {
-      "repo": "exasol-labs/exasol-agent-skills",
-      "latest": "v0.24.1",
-      "verified": null,
-      "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
-      "name": "exasol-agent-skills",
-      "description": "Exasol skills for AI agents. Optimized for Claude Code and OpenAI Codex 🤖"
+      "description": "CLI for fast CSV and Parquet import, export, and SQL execution against Exasol databases. Written in Rust \ud83e\udd80",
+      "stars": 6,
+      "pushedAt": "2026-09-22T12:45:54Z"
     },
     "semantic-views": {
       "repo": "exasol-labs/exasol-semantic-views",
@@ -168,7 +28,49 @@
       "verified": null,
       "homepage": "https://github.com/exasol-labs/exasol-semantic-views",
       "name": "exasol-semantic-views",
-      "description": "A database-native semantic layer for Exasol"
+      "description": "A database-native semantic layer for Exasol",
+      "stars": 3,
+      "pushedAt": "2026-09-02T14:47:38Z"
+    },
+    "json-tables": {
+      "repo": "exasol-labs/exasol-json-tables",
+      "latest": "v0.3.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-json-tables",
+      "name": "exasol-json-tables",
+      "description": "Exasol JSON Tables: ingest, query, and reshape JSON-shaped data in Exasol.",
+      "stars": 7,
+      "pushedAt": "2026-09-24T11:55:00Z"
+    },
+    "mcp-server": {
+      "repo": "exasol/mcp-server",
+      "latest": "2.2.0",
+      "verified": "2.2.0",
+      "homepage": "https://github.com/exasol/mcp-server",
+      "name": "mcp-server",
+      "description": "Exasol MCP server. Provides knowledge about the Exasol database to an LLM through the Model Context Protocol.",
+      "stars": 18,
+      "pushedAt": "2026-09-09T07:10:36Z"
+    },
+    "pyexasol": {
+      "repo": "exasol/pyexasol",
+      "latest": "2.4.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/pyexasol",
+      "name": "pyexasol",
+      "description": "Exasol Python driver with low overhead, fast HTTP transport and compression",
+      "stars": 82,
+      "pushedAt": "2026-09-24T09:37:57Z"
+    },
+    "sqlalchemy-exasol": {
+      "repo": "exasol/sqlalchemy-exasol",
+      "latest": "7.1.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/sqlalchemy-exasol",
+      "name": "sqlalchemy-exasol",
+      "description": "SQLAlchemy dialect for EXASOL",
+      "stars": 37,
+      "pushedAt": "2026-09-24T09:59:37Z"
     },
     "exarrow-rs": {
       "repo": "exasol-labs/exarrow-rs",
@@ -176,23 +78,39 @@
       "verified": null,
       "homepage": "https://github.com/exasol-labs/exarrow-rs",
       "name": "exarrow-rs",
-      "description": "ADBC-compatible driver for Exasol with Apache Arrow data format support. Written in Rust 🦀"
+      "description": "ADBC-compatible driver for Exasol with Apache Arrow data format support. Written in Rust \ud83e\udd80",
+      "stars": 10,
+      "pushedAt": "2026-08-10T07:17:41Z"
     },
     "driver-ts": {
       "repo": "exasol/exasol-driver-ts",
-      "latest": "0.7.0",
+      "latest": "0.8.0",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-ts",
       "name": "exasol-driver-ts",
-      "description": "Exasol Typescript / Javascript Driver for Node and the Browser"
+      "description": "Exasol Typescript / Javascript Driver for Node and the Browser",
+      "stars": 2,
+      "pushedAt": "2026-09-14T14:24:55Z"
     },
     "driver-go": {
       "repo": "exasol/exasol-driver-go",
-      "latest": "v1.1.0",
+      "latest": "v1.1.1",
       "verified": null,
       "homepage": "https://github.com/exasol/exasol-driver-go",
       "name": "exasol-driver-go",
-      "description": "Exasol SQL driver for Golang"
+      "description": "Exasol SQL driver for Golang",
+      "stars": 11,
+      "pushedAt": "2026-09-24T14:41:54Z"
+    },
+    "driver-r": {
+      "repo": "exasol/r-exasol",
+      "latest": "7.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/r-exasol",
+      "name": "r-exasol",
+      "description": "The EXASOL package for R provides an interface to the EXASOL database.",
+      "stars": 22,
+      "pushedAt": "2026-05-27T11:49:07Z"
     },
     "driver-websocket": {
       "repo": "exasol/websocket-api",
@@ -200,15 +118,1359 @@
       "verified": null,
       "homepage": "https://github.com/exasol/websocket-api",
       "name": "websocket-api",
-      "description": "WebSocket API description and implementations for several programming languages"
+      "description": "WebSocket API description and implementations for several programming languages",
+      "stars": 13,
+      "pushedAt": "2026-08-18T10:33:55Z"
     },
-    "superset": {
-      "repo": "apache/superset",
-      "latest": "6.1.0",
+    "notebook-connector": {
+      "repo": "exasol/notebook-connector",
+      "latest": "3.0.0",
       "verified": null,
-      "homepage": "https://github.com/apache/superset",
-      "name": "superset",
-      "description": "Apache Superset is a Data Visualization and Data Exploration Platform"
+      "homepage": "https://github.com/exasol/notebook-connector",
+      "name": "notebook-connector",
+      "description": "Connection configuration management and additional tools for Jupyter notebooks.",
+      "stars": 0,
+      "pushedAt": "2026-09-23T12:47:08Z"
+    },
+    "dbt-exasol": {
+      "repo": "exasol/dbt-exasol",
+      "latest": "v1.12.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/dbt-exasol",
+      "name": "dbt-exasol",
+      "description": "Data Build Tool adapter for Exasol",
+      "stars": 27,
+      "pushedAt": "2026-09-17T23:44:52Z"
+    },
+    "exasol-scheduler": {
+      "repo": "exasol-labs/exasol-scheduler",
+      "latest": "v0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-scheduler",
+      "name": "exasol-scheduler",
+      "description": "Lightweight table-driven SQL job scheduling for Exasol",
+      "stars": 1,
+      "pushedAt": "2026-08-19T09:38:32Z"
+    },
+    "dash-server": {
+      "repo": "exasol-labs/dash-server",
+      "latest": "v0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/dash-server",
+      "name": "dash-server",
+      "description": "Agent-operated Dash hosting for live analytical apps",
+      "stars": 1,
+      "pushedAt": "2026-09-01T21:18:23Z"
+    },
+    "grafana-datasource": {
+      "repo": "exasol-labs/grafana-datasource",
+      "latest": "v1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/grafana-datasource",
+      "name": "grafana-datasource",
+      "description": "Exasol Datasource Plugin for Grafana",
+      "stars": 0,
+      "pushedAt": "2026-09-24T07:45:07Z"
+    },
+    "tableau-connector": {
+      "repo": "exasol/tableau-connector",
+      "latest": "1.0.12",
+      "verified": null,
+      "homepage": "https://github.com/exasol/tableau-connector",
+      "name": "tableau-connector",
+      "description": "Tableau plug-in for Exasol database connection",
+      "stars": 2,
+      "pushedAt": "2026-09-20T22:44:52Z"
+    },
+    "terraform-provider": {
+      "repo": "exasol-labs/terraform-provider-exasol",
+      "latest": "v0.2.5",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/terraform-provider-exasol",
+      "name": "terraform-provider-exasol",
+      "description": "Manage Exasol database resources (users, roles, schemas, connections, and privileges) with Terraform.",
+      "stars": 0,
+      "pushedAt": "2026-09-16T15:54:10Z"
+    },
+    "postgres-interface": {
+      "repo": "exasol-labs/exa-postgres-interface",
+      "latest": "v0.2.12",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exa-postgres-interface",
+      "name": "exa-postgres-interface",
+      "description": "A Postgres-compatible Gateway for Exasol",
+      "stars": 1,
+      "pushedAt": "2026-06-19T12:18:40Z"
+    },
+    "more-functions": {
+      "repo": "exasol-labs/more-functions",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/more-functions",
+      "name": "more-functions",
+      "description": "Project that provides popular SQL functions that are not built-in directly into Exasol.",
+      "stars": 0,
+      "pushedAt": "2026-09-21T03:03:09Z"
+    },
+    "ai-lab": {
+      "repo": "exasol/ai-lab",
+      "latest": "6.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/ai-lab",
+      "name": "ai-lab",
+      "description": "Development environment for data science developers",
+      "stars": 11,
+      "pushedAt": "2026-09-15T15:20:56Z"
+    },
+    "agent-skills": {
+      "repo": "exasol-labs/exasol-agent-skills",
+      "latest": "v0.24.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-agent-skills",
+      "name": "exasol-agent-skills",
+      "description": "Exasol skills for AI agents. Optimized for Claude Code and OpenAI Codex \ud83e\udd16",
+      "stars": 10,
+      "pushedAt": "2026-09-24T14:06:06Z"
+    },
+    "cloud-storage-extension": {
+      "repo": "exasol/cloud-storage-extension",
+      "latest": "2.9.6",
+      "verified": null,
+      "homepage": "https://github.com/exasol/cloud-storage-extension",
+      "name": "cloud-storage-extension",
+      "description": "Exasol Cloud Storage Extension for accessing formatted data Avro, Orc and Parquet, on public cloud storage systems",
+      "stars": 8,
+      "pushedAt": "2026-08-07T16:12:14Z"
+    },
+    "kinesis-connector": {
+      "repo": "exasol/kinesis-connector-extension",
+      "latest": "1.1.9",
+      "verified": null,
+      "homepage": "https://github.com/exasol/kinesis-connector-extension",
+      "name": "kinesis-connector-extension",
+      "description": "Exasol Kinesis Extension for accessing Amazon Kinesis Data Streams ",
+      "stars": 0,
+      "pushedAt": "2025-08-27T11:47:11Z"
+    },
+    "transformers-extension": {
+      "repo": "exasol/transformers-extension",
+      "latest": "5.2.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/transformers-extension",
+      "name": "transformers-extension",
+      "description": "An Exasol extension for using state-of-the-art pretrained machine learning models via the Hugging Face Transformers API.",
+      "stars": 2,
+      "pushedAt": "2026-09-22T14:13:27Z"
+    },
+    "advanced-analytics": {
+      "repo": "exasol/advanced-analytics-framework",
+      "latest": "0.9.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/advanced-analytics-framework",
+      "name": "advanced-analytics-framework",
+      "description": "Framework for building complex data analysis algorithms with Exasol",
+      "stars": 2,
+      "pushedAt": "2026-09-23T12:09:42Z"
+    },
+    "mlflow-plugin": {
+      "repo": "exasol/mlflow-plugin",
+      "latest": "1.2.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/mlflow-plugin",
+      "name": "mlflow-plugin",
+      "description": "Plugin for MLflow supporting artifact repository Exasol BucketFS",
+      "stars": 0,
+      "pushedAt": "2026-09-11T09:25:22Z"
+    },
+    "script-languages-release": {
+      "repo": "exasol/script-languages-release",
+      "latest": "11.3.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages-release",
+      "name": "script-languages-release",
+      "description": "Release Repository for Script Language Container for user defined functions (UDF's) that can be used in the EXASOL database.",
+      "stars": 11,
+      "pushedAt": "2026-09-23T14:55:47Z"
+    },
+    "language-container-rs": {
+      "repo": "exasol-labs/language-container-rs",
+      "latest": "v0.30.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/language-container-rs",
+      "name": "language-container-rs",
+      "description": "Exasol Language Container for the Rust programming language \ud83e\udd80",
+      "stars": 3,
+      "pushedAt": "2026-09-24T10:54:02Z"
+    },
+    "preprocessor-library": {
+      "repo": "exasol-labs/preprocessor-library",
+      "latest": "v0.3.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/preprocessor-library",
+      "name": "preprocessor-library",
+      "description": "Library containing Preprocessor scripts which can be used with Exasol's Preprocessor Framework",
+      "stars": 0,
+      "pushedAt": "2026-07-31T16:10:29Z"
+    },
+    "lakehouse-engine-rs": {
+      "repo": "exasol-labs/lakehouse-engine-rs",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/lakehouse-engine-rs",
+      "name": "lakehouse-engine-rs",
+      "description": "In-place query engine for Lakehouses (Iceberg and Delta Lake) for Exasol. Written in Rust \ud83e\udd80",
+      "stars": 8,
+      "pushedAt": "2026-09-24T14:26:42Z"
+    },
+    "vscode-extension": {
+      "repo": "exasol-labs/exasol-vscode",
+      "latest": "v1.8.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-vscode",
+      "name": "exasol-vscode",
+      "description": "A Visual Studio Code extension for working with Exasol databases. Provides comprehensive database management, intelligent SQL editing, and powerful query execution capabilities.",
+      "stars": 7,
+      "pushedAt": "2026-09-15T14:15:21Z"
+    },
+    "powerbi-connector": {
+      "repo": "exasol/powerbi-exasol",
+      "latest": "1.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/powerbi-exasol",
+      "name": "powerbi-exasol",
+      "description": "Microsoft Power BI Connector",
+      "stars": 10,
+      "pushedAt": "2025-07-25T09:15:23Z"
+    },
+    "metabase-driver": {
+      "repo": "exasol/metabase-driver",
+      "latest": "1.0.8",
+      "verified": null,
+      "homepage": "https://github.com/exasol/metabase-driver",
+      "name": "metabase-driver",
+      "description": "Exasol driver for Metabase",
+      "stars": 5,
+      "pushedAt": "2025-08-01T14:05:23Z"
+    },
+    "power-apps-connector": {
+      "repo": "exasol/power-apps-connector",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/power-apps-connector",
+      "name": "power-apps-connector",
+      "description": "Power Apps Connector for Exasol",
+      "stars": 1,
+      "pushedAt": "2025-02-26T14:40:36Z"
+    },
+    "n8n-nodes": {
+      "repo": "exasol/n8n-nodes",
+      "latest": "0.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/n8n-nodes",
+      "name": "n8n-nodes",
+      "description": "n8n community node that provides integration with Exasol Database",
+      "stars": 0,
+      "pushedAt": "2026-09-01T19:22:18Z"
+    },
+    "azure-data-factory": {
+      "repo": "exasol/azure-data-factory-functions",
+      "latest": "2.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/azure-data-factory-functions",
+      "name": "azure-data-factory-functions",
+      "description": "Exasol Azure Functions for use in Azure Data Factory",
+      "stars": 1,
+      "pushedAt": "2026-06-25T11:37:34Z"
+    },
+    "panorama": {
+      "repo": "exasol-labs/exasol-panorama",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-panorama",
+      "name": "exasol-panorama",
+      "description": "A spatial visual environment for exploring data in Exasol: GPU-rendered tables, queries and charts on one canvas.",
+      "stars": 0,
+      "pushedAt": "2026-09-02T13:59:23Z"
+    },
+    "driver-lua": {
+      "repo": "exasol/exasol-driver-lua",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-driver-lua",
+      "name": "exasol-driver-lua",
+      "description": "Exasol SQL driver for Lua",
+      "stars": 2,
+      "pushedAt": "2026-09-18T13:07:12Z"
+    },
+    "bucketfs-python": {
+      "repo": "exasol/bucketfs-python",
+      "latest": "2.3.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/bucketfs-python",
+      "name": "bucketfs-python",
+      "description": "BucketFS utilities for the Python programming language",
+      "stars": 4,
+      "pushedAt": "2026-09-16T09:01:26Z"
+    },
+    "saas-api-python": {
+      "repo": "exasol/saas-api-python",
+      "latest": "2.10.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/saas-api-python",
+      "name": "saas-api-python",
+      "description": "API to enable python applications connecting to Exasol database SaaS instances and using their SaaS services",
+      "stars": 0,
+      "pushedAt": "2026-08-05T04:44:09Z"
+    },
+    "rest-api": {
+      "repo": "exasol/exasol-rest-api",
+      "latest": "v1.0.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-rest-api",
+      "name": "exasol-rest-api",
+      "description": "REST API for Exasol",
+      "stars": 3,
+      "pushedAt": "2026-09-11T11:51:59Z"
+    },
+    "saas-cli": {
+      "repo": "exasol-labs/saas-cli",
+      "latest": "v0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/saas-cli",
+      "name": "saas-cli",
+      "description": "A command-line interface for managing Exasol SaaS resources \u2014 databases, clusters, and account security.",
+      "stars": 4,
+      "pushedAt": "2026-03-30T14:51:55Z"
+    },
+    "exaplus-lua": {
+      "repo": "exasol-labs/exaplus-lua",
+      "latest": "0.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exaplus-lua",
+      "name": "exaplus-lua",
+      "description": "Minimal Lua console client for the Exasol WebSocket API (v5)",
+      "stars": 0,
+      "pushedAt": "2026-05-28T17:08:22Z"
+    },
+    "starter-kit": {
+      "repo": "exasol-labs/exasol-personal-local-starterkit",
+      "latest": "v0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-personal-local-starterkit",
+      "name": "exasol-personal-local-starterkit",
+      "description": "Starter kit for Exasol Personal Local - the analytics database for agentic AI.",
+      "stars": 11,
+      "pushedAt": "2026-08-17T12:17:54Z"
+    },
+    "community-edition": {
+      "repo": "exasol-labs/exasol-labs-community-edition",
+      "latest": "2025.2.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-labs-community-edition",
+      "name": "exasol-labs-community-edition",
+      "description": "Exasol Community Edition - a fully functional Exasol v8 database, packaged for easy installation and non-production use on your desktop or laptop. Your high-performance toolkit for testing and self-evaluation designed to supercharge your innovation, data, and AI projects while giving you a hands-on introduction to Exasol\u2019s powerful capabilities.",
+      "stars": 3,
+      "pushedAt": "2026-04-07T13:11:32Z"
+    },
+    "kafka-connector": {
+      "repo": "exasol/kafka-connector-extension",
+      "latest": "2.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/kafka-connector-extension",
+      "name": "kafka-connector-extension",
+      "description": "Exasol Kafka Extension for accessing Apache Kafka",
+      "stars": 6,
+      "pushedAt": "2026-09-20T22:48:30Z"
+    },
+    "spark-connector": {
+      "repo": "exasol/spark-connector",
+      "latest": "2.2.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/spark-connector",
+      "name": "spark-connector",
+      "description": "A connector for Apache Spark to access Exasol",
+      "stars": 13,
+      "pushedAt": "2026-06-12T12:44:34Z"
+    },
+    "cloudwatch-adapter": {
+      "repo": "exasol/cloudwatch-adapter",
+      "latest": "2.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/cloudwatch-adapter",
+      "name": "cloudwatch-adapter",
+      "description": "Makes Exasol database monitoring data available in AWS CloudWatch",
+      "stars": 2,
+      "pushedAt": "2026-09-13T22:44:56Z"
+    },
+    "row-level-security": {
+      "repo": "exasol/row-level-security-lua",
+      "latest": "1.5.8",
+      "verified": null,
+      "homepage": "https://github.com/exasol/row-level-security-lua",
+      "name": "row-level-security-lua",
+      "description": "Lua implementation of Exasol's row-level-security",
+      "stars": 3,
+      "pushedAt": "2025-08-28T10:27:49Z"
+    },
+    "udf-api-java": {
+      "repo": "exasol/udf-api-java",
+      "latest": "1.0.12",
+      "verified": null,
+      "homepage": "https://github.com/exasol/udf-api-java",
+      "name": "udf-api-java",
+      "description": "API for writing User Defined Functions (UDFs) for Exasol in the Java programming language",
+      "stars": 1,
+      "pushedAt": "2026-09-16T04:47:11Z"
+    },
+    "dbt-exasol-utils": {
+      "repo": "exasol/dbt-exasol-utils",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/dbt-exasol-utils",
+      "name": "dbt-exasol-utils",
+      "description": "Exasol-specific overrides for dbt-utils and dbt-date macros",
+      "stars": 0,
+      "pushedAt": "2026-09-23T14:25:51Z"
+    },
+    "bucketfs-client": {
+      "repo": "exasol/bucketfs-client",
+      "latest": "2.2.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/bucketfs-client",
+      "name": "bucketfs-client",
+      "description": "Command line client for BucketFS",
+      "stars": 2,
+      "pushedAt": "2025-08-29T09:10:31Z"
+    },
+    "parquet-edml-generator": {
+      "repo": "exasol/parquet-edml-generator",
+      "latest": "2.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/parquet-edml-generator",
+      "name": "parquet-edml-generator",
+      "description": "Tool that generates EDML definitions for Parquet files",
+      "stars": 1,
+      "pushedAt": "2026-09-18T18:50:35Z"
+    },
+    "slc-tool": {
+      "repo": "exasol/script-languages-container-tool",
+      "latest": "4.4.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages-container-tool",
+      "name": "script-languages-container-tool",
+      "description": "The script-languages-container-tool is responsible for building script-language container for extending Exasol UDFs",
+      "stars": 1,
+      "pushedAt": "2026-09-21T16:41:11Z"
+    },
+    "bucketfs-java": {
+      "repo": "exasol/bucketfs-java",
+      "latest": "5.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/bucketfs-java",
+      "name": "bucketfs-java",
+      "description": "Bucket FS client library in Java",
+      "stars": 4,
+      "pushedAt": "2026-09-16T10:09:45Z"
+    },
+    "ansible-collection": {
+      "repo": "exasol/ansible-collection",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/ansible-collection",
+      "name": "ansible-collection",
+      "description": "Ansible Collection for installing Exasol.",
+      "stars": 1,
+      "pushedAt": "2026-08-31T10:32:06Z"
+    },
+    "ansible-runner-wrapper": {
+      "repo": "exasol/ansible-runner-wrapper",
+      "latest": "3.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/ansible-runner-wrapper",
+      "name": "ansible-runner-wrapper",
+      "description": "Python wrapper for running Ansible.",
+      "stars": 0,
+      "pushedAt": "2026-08-11T08:41:58Z"
+    },
+    "artifact-reference-checker-maven-plugin": {
+      "repo": "exasol/artifact-reference-checker-maven-plugin",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/artifact-reference-checker-maven-plugin",
+      "name": "artifact-reference-checker-maven-plugin",
+      "description": "This Maven-Plugin helps you not to forget to change references to your artifacts. For example, if you reference your binary in the README.md file, this plugin will break the build, if you forgot to update the version number there.",
+      "stars": 2,
+      "pushedAt": "2026-07-06T11:20:25Z"
+    },
+    "autogenerated-resource-verifier-java": {
+      "repo": "exasol/autogenerated-resource-verifier-java",
+      "latest": "0.1.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol/autogenerated-resource-verifier-java",
+      "name": "autogenerated-resource-verifier-java",
+      "description": "Java library that allows you to define autogenerated resources in Java.",
+      "stars": 0,
+      "pushedAt": "2026-06-25T10:40:55Z"
+    },
+    "ci-isolation-aws": {
+      "repo": "exasol/ci-isolation-aws",
+      "latest": "3.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/ci-isolation-aws",
+      "name": "ci-isolation-aws",
+      "description": "AWS account setup for isolating CI builds",
+      "stars": 1,
+      "pushedAt": "2026-09-20T22:44:39Z"
+    },
+    "cloudwatch-dashboard-examples": {
+      "repo": "exasol/cloudwatch-dashboard-examples",
+      "latest": "2.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/cloudwatch-dashboard-examples",
+      "name": "cloudwatch-dashboard-examples",
+      "description": "Template for an Exasol \u2013 CouldWatch dashboard",
+      "stars": 1,
+      "pushedAt": "2026-09-20T22:47:18Z"
+    },
+    "compatibility-test-suite": {
+      "repo": "exasol/compatibility-test-suite",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/compatibility-test-suite",
+      "name": "compatibility-test-suite",
+      "description": "Test suite to enable ETL and database client makers to check compatibility with the Exasol DB",
+      "stars": 2,
+      "pushedAt": "2025-03-14T09:46:19Z"
+    },
+    "connection-parameter-specification": {
+      "repo": "exasol/connection-parameter-specification",
+      "latest": "1.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/connection-parameter-specification",
+      "name": "connection-parameter-specification",
+      "description": "Specification for unified parameters for connection definitions",
+      "stars": 1,
+      "pushedAt": "2025-03-14T09:44:16Z"
+    },
+    "database-cleaner": {
+      "repo": "exasol/database-cleaner",
+      "latest": "2.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/database-cleaner",
+      "name": "database-cleaner",
+      "description": "Java library that allows you to delete all objects from an Exasol database. You can use it for example to isolate your tests.",
+      "stars": 1,
+      "pushedAt": "2026-09-16T06:20:04Z"
+    },
+    "db-fundamentals-java": {
+      "repo": "exasol/db-fundamentals-java",
+      "latest": "0.1.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/db-fundamentals-java",
+      "name": "db-fundamentals-java",
+      "description": "Base objects and ground rules for Exasol",
+      "stars": 0,
+      "pushedAt": "2025-10-30T10:10:06Z"
+    },
+    "edml-java": {
+      "repo": "exasol/edml-java",
+      "latest": "2.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/edml-java",
+      "name": "edml-java",
+      "description": "Library for reading and writing EDML definitions.",
+      "stars": 0,
+      "pushedAt": "2025-10-30T09:55:51Z"
+    },
+    "error-catalog": {
+      "repo": "exasol/error-catalog",
+      "latest": "0.3.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-catalog",
+      "name": "error-catalog",
+      "description": "Error Catalog",
+      "stars": 1,
+      "pushedAt": "2026-05-08T06:57:24Z"
+    },
+    "error-code-crawler-maven-plugin": {
+      "repo": "exasol/error-code-crawler-maven-plugin",
+      "latest": "2.1.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-code-crawler-maven-plugin",
+      "name": "error-code-crawler-maven-plugin",
+      "description": "Validator and crawler for exasol-error-codes in Java code",
+      "stars": 2,
+      "pushedAt": "2026-09-20T22:44:04Z"
+    },
+    "error-code-model-java": {
+      "repo": "exasol/error-code-model-java",
+      "latest": "2.1.5",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-code-model-java",
+      "name": "error-code-model-java",
+      "description": "Library for describing error message declarations in Java",
+      "stars": 1,
+      "pushedAt": "2026-07-27T14:28:12Z"
+    },
+    "error-reporting-go": {
+      "repo": "exasol/error-reporting-go",
+      "latest": "v0.2.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-reporting-go",
+      "name": "error-reporting-go",
+      "description": "Go builder for error messages",
+      "stars": 1,
+      "pushedAt": "2026-06-25T08:35:30Z"
+    },
+    "error-reporting-java": {
+      "repo": "exasol/error-reporting-java",
+      "latest": "1.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-reporting-java",
+      "name": "error-reporting-java",
+      "description": "Java builder for error messages",
+      "stars": 0,
+      "pushedAt": "2025-10-30T10:49:54Z"
+    },
+    "error-reporting-lua": {
+      "repo": "exasol/error-reporting-lua",
+      "latest": "2.0.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-reporting-lua",
+      "name": "error-reporting-lua",
+      "description": "Lua builder for error message",
+      "stars": 1,
+      "pushedAt": "2025-02-26T15:00:22Z"
+    },
+    "error-reporting-python": {
+      "repo": "exasol/error-reporting-python",
+      "latest": "1.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/error-reporting-python",
+      "name": "error-reporting-python",
+      "description": "Python builder for error messages",
+      "stars": 3,
+      "pushedAt": "2026-08-10T07:40:10Z"
+    },
+    "exasol-java-tutorial": {
+      "repo": "exasol/exasol-java-tutorial",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-java-tutorial",
+      "name": "exasol-java-tutorial",
+      "description": "Learn how to extend Exasol with Java",
+      "stars": 2,
+      "pushedAt": "2026-09-13T22:46:35Z"
+    },
+    "exasol-local-vm": {
+      "repo": "exasol/exasol-local-vm",
+      "latest": "v2.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-local-vm",
+      "name": "exasol-local-vm",
+      "description": "Repository for building an Exasol Local VM image used by the Exasol Personal Launcher on MacOS",
+      "stars": 0,
+      "pushedAt": "2026-09-10T09:11:38Z"
+    },
+    "exasol-python-test-framework": {
+      "repo": "exasol/exasol-python-test-framework",
+      "latest": "0.6.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-python-test-framework",
+      "name": "exasol-python-test-framework",
+      "description": "This project is shared among other Exasol projects, and provides a test framework to execute integration tests on the database.",
+      "stars": 1,
+      "pushedAt": "2026-09-16T07:00:34Z"
+    },
+    "exasol-test-setup-abstraction-java": {
+      "repo": "exasol/exasol-test-setup-abstraction-java",
+      "latest": "3.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-test-setup-abstraction-java",
+      "name": "exasol-test-setup-abstraction-java",
+      "description": "Common interface for testing with an Exasol database in local and AWS environments using Java.",
+      "stars": 1,
+      "pushedAt": "2026-09-14T08:32:27Z"
+    },
+    "exasol-test-setup-abstraction-server": {
+      "repo": "exasol/exasol-test-setup-abstraction-server",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-test-setup-abstraction-server",
+      "name": "exasol-test-setup-abstraction-server",
+      "description": "REST-API for exasol-test-setup-abstraction-java that allow using it from different languages",
+      "stars": 2,
+      "pushedAt": "2026-07-03T22:38:05Z"
+    },
+    "exasol-testcontainers": {
+      "repo": "exasol/exasol-testcontainers",
+      "latest": "8.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-testcontainers",
+      "name": "exasol-testcontainers",
+      "description": "Test container for Exasol on Docker",
+      "stars": 11,
+      "pushedAt": "2026-09-18T09:06:37Z"
+    },
+    "hamcrest-resultset-matcher": {
+      "repo": "exasol/hamcrest-resultset-matcher",
+      "latest": "1.7.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/hamcrest-resultset-matcher",
+      "name": "hamcrest-resultset-matcher",
+      "description": "Matcher for JDBC ResultSet objects",
+      "stars": 5,
+      "pushedAt": "2026-09-15T09:59:30Z"
+    },
+    "import-export-udf-common-scala": {
+      "repo": "exasol/import-export-udf-common-scala",
+      "latest": "2.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/import-export-udf-common-scala",
+      "name": "import-export-udf-common-scala",
+      "description": "Common libraries for Exasol import and export UDFs",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:45:18Z"
+    },
+    "integration-test-docker-environment": {
+      "repo": "exasol/integration-test-docker-environment",
+      "latest": "6.5.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/integration-test-docker-environment",
+      "name": "integration-test-docker-environment",
+      "description": "A docker-based environment for integration tests with the EXASOL DB.",
+      "stars": 6,
+      "pushedAt": "2026-09-24T21:44:03Z"
+    },
+    "java-util-logging-testing": {
+      "repo": "exasol/java-util-logging-testing",
+      "latest": "2.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/java-util-logging-testing",
+      "name": "java-util-logging-testing",
+      "description": "Test utilities around `java.util.logging`",
+      "stars": 0,
+      "pushedAt": "2026-06-23T07:34:33Z"
+    },
+    "lua-styleguide": {
+      "repo": "exasol/lua-styleguide",
+      "latest": "1.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/lua-styleguide",
+      "name": "lua-styleguide",
+      "description": "Lua style guide, examples and tutorials",
+      "stars": 1,
+      "pushedAt": "2025-02-27T15:51:48Z"
+    },
+    "maven-plugin-integration-testing": {
+      "repo": "exasol/maven-plugin-integration-testing",
+      "latest": "1.1.5",
+      "verified": null,
+      "homepage": "https://github.com/exasol/maven-plugin-integration-testing",
+      "name": "maven-plugin-integration-testing",
+      "description": "Library for writing integration tests for maven plugins.",
+      "stars": 1,
+      "pushedAt": "2026-03-30T11:25:26Z"
+    },
+    "maven-project-version-getter": {
+      "repo": "exasol/maven-project-version-getter",
+      "latest": "1.2.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/maven-project-version-getter",
+      "name": "maven-project-version-getter",
+      "description": "Java helper for getting the current project's version from test code.",
+      "stars": 1,
+      "pushedAt": "2025-10-31T13:55:45Z"
+    },
+    "parquet-io-java": {
+      "repo": "exasol/parquet-io-java",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/parquet-io-java",
+      "name": "parquet-io-java",
+      "description": "Java library to read Parquet files.",
+      "stars": 21,
+      "pushedAt": "2026-09-15T15:16:25Z"
+    },
+    "performance-test-recorder-java": {
+      "repo": "exasol/performance-test-recorder-java",
+      "latest": "0.1.6",
+      "verified": null,
+      "homepage": "https://github.com/exasol/performance-test-recorder-java",
+      "name": "performance-test-recorder-java",
+      "description": "Java library for writing performance test records",
+      "stars": 2,
+      "pushedAt": "2026-06-10T11:08:19Z"
+    },
+    "project-keeper": {
+      "repo": "exasol/project-keeper",
+      "latest": "5.7.6",
+      "verified": null,
+      "homepage": "https://github.com/exasol/project-keeper",
+      "name": "project-keeper",
+      "description": "This maven plugin checks and unifies a project's structure according to the Exasol integration team's repository standards.",
+      "stars": 4,
+      "pushedAt": "2026-09-17T15:35:46Z"
+    },
+    "pytest-backend": {
+      "repo": "exasol/pytest-backend",
+      "latest": "1.5.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/pytest-backend",
+      "name": "pytest-backend",
+      "description": "Abstraction for different Exasol backends used in pytest (SaaS, dockerdb, \u2026)",
+      "stars": 1,
+      "pushedAt": "2026-09-21T08:03:43Z"
+    },
+    "pytest-exasol-benchmark": {
+      "repo": "exasol/pytest-exasol-benchmark",
+      "latest": "0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/pytest-exasol-benchmark",
+      "name": "pytest-exasol-benchmark",
+      "description": "Fixtures for benchmarking script language containers",
+      "stars": 1,
+      "pushedAt": "2026-09-24T07:29:09Z"
+    },
+    "pytest-extension": {
+      "repo": "exasol/pytest-extension",
+      "latest": "1.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/pytest-extension",
+      "name": "pytest-extension",
+      "description": "Pytest fixtures for preparing an Exasol database for extension tests. The fixtures are backend agnostic.",
+      "stars": 1,
+      "pushedAt": "2026-09-16T09:50:49Z"
+    },
+    "pytest-slc": {
+      "repo": "exasol/pytest-slc",
+      "latest": "1.2.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/pytest-slc",
+      "name": "pytest-slc",
+      "description": "Fixtures for managing script language containers",
+      "stars": 1,
+      "pushedAt": "2026-09-21T03:20:07Z"
+    },
+    "python-extension-common": {
+      "repo": "exasol/python-extension-common",
+      "latest": "1.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/python-extension-common",
+      "name": "python-extension-common",
+      "description": "Common functionality, shared by Exasol Python Extensions.",
+      "stars": 1,
+      "pushedAt": "2026-09-16T09:14:28Z"
+    },
+    "python-toolbox": {
+      "repo": "exasol/python-toolbox",
+      "latest": "11.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/python-toolbox",
+      "name": "python-toolbox",
+      "description": "Infrastructure & Automation Tooling for Python Projects",
+      "stars": 8,
+      "pushedAt": "2026-09-24T14:13:00Z"
+    },
+    "release-droid": {
+      "repo": "exasol/release-droid",
+      "latest": "2.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/release-droid",
+      "name": "release-droid",
+      "description": "Release Droid automates release process steps on widely used platforms like GitHub and Maven. \"Release Droid is exactly the droid you're looking for\" (Obi Wan)",
+      "stars": 4,
+      "pushedAt": "2026-09-20T22:48:24Z"
+    },
+    "remotelog-lua": {
+      "repo": "exasol/remotelog-lua",
+      "latest": "1.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/remotelog-lua",
+      "name": "remotelog-lua",
+      "description": "Remote socket logging for Lua",
+      "stars": 1,
+      "pushedAt": "2025-02-26T10:43:12Z"
+    },
+    "schemas": {
+      "repo": "exasol/schemas",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/schemas",
+      "name": "schemas",
+      "description": "XML and JSON schemas for validators",
+      "stars": 3,
+      "pushedAt": "2026-04-20T06:43:13Z"
+    },
+    "script-languages": {
+      "repo": "exasol/script-languages",
+      "latest": "20190726",
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages",
+      "name": "script-languages",
+      "description": "Base Repository for the Script Language Container for user defined functions (UDF's) that can be used in the EXASOL database. You can find the release repository under https://github.com/exasol/script-languages-release",
+      "stars": 14,
+      "pushedAt": "2026-09-23T08:41:08Z"
+    },
+    "script-languages-container-ci": {
+      "repo": "exasol/script-languages-container-ci",
+      "latest": "5.3.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages-container-ci",
+      "name": "script-languages-container-ci",
+      "description": "Contains Python project to run Script-Languages-Container CI Builds",
+      "stars": 0,
+      "pushedAt": "2026-09-16T07:10:58Z"
+    },
+    "script-languages-container-ci-setup": {
+      "repo": "exasol/script-languages-container-ci-setup",
+      "latest": "4.4.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages-container-ci-setup",
+      "name": "script-languages-container-ci-setup",
+      "description": "Contains AWS Cloudformation files used for deployment of stacks which run Script-Languages-Container CI Builds",
+      "stars": 2,
+      "pushedAt": "2026-09-16T10:58:41Z"
+    },
+    "script-languages-package-management": {
+      "repo": "exasol/script-languages-package-management",
+      "latest": null,
+      "verified": null,
+      "homepage": "https://github.com/exasol/script-languages-package-management",
+      "name": "script-languages-package-management",
+      "description": "The script-languages-package-management is responsible for installing and updating packages in script-language containers.",
+      "stars": 1,
+      "pushedAt": "2026-09-22T11:22:45Z"
+    },
+    "small-json-files-test-fixture": {
+      "repo": "exasol/small-json-files-test-fixture",
+      "latest": "0.1.16",
+      "verified": null,
+      "homepage": "https://github.com/exasol/small-json-files-test-fixture",
+      "name": "small-json-files-test-fixture",
+      "description": "Test fixture with many small JSON files on S3",
+      "stars": 1,
+      "pushedAt": "2026-09-15T15:36:53Z"
+    },
+    "spark-connector-common-java": {
+      "repo": "exasol/spark-connector-common-java",
+      "latest": "4.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/spark-connector-common-java",
+      "name": "spark-connector-common-java",
+      "description": "Common library for Exasol Apache Spark based connectors",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:47:49Z"
+    },
+    "sql-statement-builder": {
+      "repo": "exasol/sql-statement-builder",
+      "latest": "4.6.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/sql-statement-builder",
+      "name": "sql-statement-builder",
+      "description": "Build SQL statements safely without string concatenation",
+      "stars": 28,
+      "pushedAt": "2026-08-04T09:21:45Z"
+    },
+    "telemetry-client-python": {
+      "repo": "exasol/telemetry-client-python",
+      "latest": "0.2.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/telemetry-client-python",
+      "name": "telemetry-client-python",
+      "description": "Telemetry client library for python",
+      "stars": 0,
+      "pushedAt": "2026-09-21T04:11:03Z"
+    },
+    "telemetry-java": {
+      "repo": "exasol/telemetry-java",
+      "latest": "0.2.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/telemetry-java",
+      "name": "telemetry-java",
+      "description": "Client-side telemetry counters for Java",
+      "stars": 0,
+      "pushedAt": "2026-07-28T10:45:11Z"
+    },
+    "test-db-builder-java": {
+      "repo": "exasol/test-db-builder-java",
+      "latest": "4.0.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol/test-db-builder-java",
+      "name": "test-db-builder-java",
+      "description": "Java library for creating and cleaning up test database structures and contents for integration tests",
+      "stars": 2,
+      "pushedAt": "2026-09-16T04:48:40Z"
+    },
+    "test-db-builder-python": {
+      "repo": "exasol/test-db-builder-python",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/test-db-builder-python",
+      "name": "test-db-builder-python",
+      "description": "Build test databases for integration tests in a compact and convenient way.",
+      "stars": 0,
+      "pushedAt": "2026-09-16T08:33:23Z"
+    },
+    "tutorials": {
+      "repo": "exasol/tutorials",
+      "latest": "1.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/tutorials",
+      "name": "tutorials",
+      "description": "Tutorials around Exasol products",
+      "stars": 0,
+      "pushedAt": "2026-04-30T08:44:47Z"
+    },
+    "udf-debugging-java": {
+      "repo": "exasol/udf-debugging-java",
+      "latest": "0.6.20",
+      "verified": null,
+      "homepage": "https://github.com/exasol/udf-debugging-java",
+      "name": "udf-debugging-java",
+      "description": "Utilities for debugging, profiling and code coverage measure for UDFs.",
+      "stars": 2,
+      "pushedAt": "2026-09-14T13:19:17Z"
+    },
+    "udf-mock-python": {
+      "repo": "exasol/udf-mock-python",
+      "latest": "0.5.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/udf-mock-python",
+      "name": "udf-mock-python",
+      "description": "This projects provides a mock runner for Exasol Python3 UDFs which allows you to test your UDFs locally without a database.",
+      "stars": 1,
+      "pushedAt": "2026-08-11T08:55:45Z"
+    },
+    "udf-runner-cpp": {
+      "repo": "exasol/udf-runner-cpp",
+      "latest": "0.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/udf-runner-cpp",
+      "name": "udf-runner-cpp",
+      "description": "C++ Runner for Exasol UDFs.",
+      "stars": 1,
+      "pushedAt": "2026-09-24T20:46:16Z"
+    },
+    "virtual-schema-common-document": {
+      "repo": "exasol/virtual-schema-common-document",
+      "latest": "12.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schema-common-document",
+      "name": "virtual-schema-common-document",
+      "description": "This repository contains common parts for Virtual Schema adapters for document data sources",
+      "stars": 0,
+      "pushedAt": "2026-09-14T14:06:19Z"
+    },
+    "virtual-schema-common-document-files": {
+      "repo": "exasol/virtual-schema-common-document-files",
+      "latest": "9.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schema-common-document-files",
+      "name": "virtual-schema-common-document-files",
+      "description": "This Virtual Schemas allows you to access documents, stored in files, like any regular Exasol table.",
+      "stars": 2,
+      "pushedAt": "2026-09-16T06:00:56Z"
+    },
+    "virtual-schema-common-java": {
+      "repo": "exasol/virtual-schema-common-java",
+      "latest": "18.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schema-common-java",
+      "name": "virtual-schema-common-java",
+      "description": "Common part of all Exasol Virtual Schema",
+      "stars": 1,
+      "pushedAt": "2026-08-03T06:07:19Z"
+    },
+    "virtual-schema-common-jdbc": {
+      "repo": "exasol/virtual-schema-common-jdbc",
+      "latest": "14.0.5",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schema-common-jdbc",
+      "name": "virtual-schema-common-jdbc",
+      "description": "Common module for JDBC-based access from Virtual Schemas",
+      "stars": 0,
+      "pushedAt": "2026-08-03T12:50:08Z"
+    },
+    "virtual-schema-shared-integration-tests": {
+      "repo": "exasol/virtual-schema-shared-integration-tests",
+      "latest": "3.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schema-shared-integration-tests",
+      "name": "virtual-schema-shared-integration-tests",
+      "description": "Common parts shared by all integration test for Exasol virtual schemas",
+      "stars": 0,
+      "pushedAt": "2026-09-14T11:00:35Z"
+    },
+    "virtual-schemas": {
+      "repo": "exasol/virtual-schemas",
+      "latest": "6.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/virtual-schemas",
+      "name": "virtual-schemas",
+      "description": "Entry point repository for the EXASOL Virtual Schemas ",
+      "stars": 26,
+      "pushedAt": "2026-05-28T07:40:25Z"
+    },
+    "exa-agent": {
+      "repo": "Sheetaldharshan200/exa-engine",
+      "latest": "v2026.1.85",
+      "verified": null,
+      "homepage": "https://github.com/Sheetaldharshan200/exa-engine",
+      "name": "exa-engine",
+      "description": "exa \u2014 the Exasol data agent: terminal-native AI for schema-grounded SQL, verified answers and multi-agent data teams",
+      "stars": 0,
+      "pushedAt": "2026-09-01T18:23:12Z"
+    },
+    "vs-postgresql": {
+      "repo": "exasol/postgresql-virtual-schema",
+      "latest": "4.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/postgresql-virtual-schema",
+      "name": "postgresql-virtual-schema",
+      "description": "Virtual Schema for connecting PostgreSQL as data source to Exasol",
+      "stars": 2,
+      "pushedAt": "2026-09-13T22:45:05Z"
+    },
+    "vs-mysql": {
+      "repo": "exasol/mysql-virtual-schema",
+      "latest": "6.0.3",
+      "verified": null,
+      "homepage": "https://github.com/exasol/mysql-virtual-schema",
+      "name": "mysql-virtual-schema",
+      "description": "Virtual Schema for connecting MySQL as a data source to Exasol",
+      "stars": 2,
+      "pushedAt": "2026-09-13T22:45:52Z"
+    },
+    "vs-oracle": {
+      "repo": "exasol/oracle-virtual-schema",
+      "latest": "5.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/oracle-virtual-schema",
+      "name": "oracle-virtual-schema",
+      "description": "Virtual Schema for connecting Oracle as a data source to Exasol",
+      "stars": 2,
+      "pushedAt": "2026-09-09T13:14:22Z"
+    },
+    "vs-sqlserver": {
+      "repo": "exasol/sqlserver-virtual-schema",
+      "latest": "3.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/sqlserver-virtual-schema",
+      "name": "sqlserver-virtual-schema",
+      "description": "Abstraction layer that makes an external Microsoft SQL Server database accessible from an Exasol database through regular SQL commands",
+      "stars": 0,
+      "pushedAt": "2026-09-13T22:45:56Z"
+    },
+    "vs-snowflake": {
+      "repo": "exasol/snowflake-virtual-schema",
+      "latest": "1.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/snowflake-virtual-schema",
+      "name": "snowflake-virtual-schema",
+      "description": "Exasol virtual schema with Snowflake as data source",
+      "stars": 0,
+      "pushedAt": "2026-09-13T22:45:19Z"
+    },
+    "vs-bigquery": {
+      "repo": "exasol/bigquery-virtual-schema",
+      "latest": "4.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/bigquery-virtual-schema",
+      "name": "bigquery-virtual-schema",
+      "description": "Virtual Schema for connecting Big Query as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:46:45Z"
+    },
+    "vs-redshift": {
+      "repo": "exasol/redshift-virtual-schema",
+      "latest": "4.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/redshift-virtual-schema",
+      "name": "redshift-virtual-schema",
+      "description": "Virtual Schema for connecting Redshift as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-05-26T14:45:35Z"
+    },
+    "vs-databricks": {
+      "repo": "exasol/databricks-virtual-schema",
+      "latest": "1.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/databricks-virtual-schema",
+      "name": "databricks-virtual-schema",
+      "description": "Virtual Schema for connecting Databricks as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2025-07-31T12:52:34Z"
+    },
+    "vs-db2": {
+      "repo": "exasol/db2-virtual-schema",
+      "latest": "4.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/db2-virtual-schema",
+      "name": "db2-virtual-schema",
+      "description": "Virtual Schema for connecting DB2 as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-09-13T22:45:53Z"
+    },
+    "vs-hana": {
+      "repo": "exasol/hana-virtual-schema",
+      "latest": "4.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/hana-virtual-schema",
+      "name": "hana-virtual-schema",
+      "description": "Virtual Schema for SAP HANA",
+      "stars": 1,
+      "pushedAt": "2026-09-13T22:44:36Z"
+    },
+    "vs-hive": {
+      "repo": "exasol/hive-virtual-schema",
+      "latest": "4.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/hive-virtual-schema",
+      "name": "hive-virtual-schema",
+      "description": "Virtual Schema for connecting Hive as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-09-13T22:47:39Z"
+    },
+    "vs-impala": {
+      "repo": "exasol/impala-virtual-schema",
+      "latest": "4.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/impala-virtual-schema",
+      "name": "impala-virtual-schema",
+      "description": "Virtual Schema for connecting Impala as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-05-26T09:39:55Z"
+    },
+    "vs-athena": {
+      "repo": "exasol/athena-virtual-schema",
+      "latest": "3.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/athena-virtual-schema",
+      "name": "athena-virtual-schema",
+      "description": "Virtual Schema for connecting Athena as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-09-19T16:30:03Z"
+    },
+    "vs-sybase": {
+      "repo": "exasol/sybase-virtual-schema",
+      "latest": "4.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/sybase-virtual-schema",
+      "name": "sybase-virtual-schema",
+      "description": "Virtual Schema for connecting Sybase as a data source to Exasol",
+      "stars": 0,
+      "pushedAt": "2026-05-28T08:57:14Z"
+    },
+    "vs-elasticsearch": {
+      "repo": "exasol/elasticsearch-virtual-schema",
+      "latest": "4.0.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/elasticsearch-virtual-schema",
+      "name": "elasticsearch-virtual-schema",
+      "description": "Virtual Schema that allows accessing content on an Elasticsearch data source as if it were part of the Exasol database",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:44:03Z"
+    },
+    "vs-s3": {
+      "repo": "exasol/s3-document-files-virtual-schema",
+      "latest": "4.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol/s3-document-files-virtual-schema",
+      "name": "s3-document-files-virtual-schema",
+      "description": "Virtual Schema for document files on AWS S3",
+      "stars": 5,
+      "pushedAt": "2026-09-20T22:48:02Z"
+    },
+    "vs-gcs": {
+      "repo": "exasol/google-cloud-storage-document-files-virtual-schema",
+      "latest": "3.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/google-cloud-storage-document-files-virtual-schema",
+      "name": "google-cloud-storage-document-files-virtual-schema",
+      "description": "Virtual Schema for document files on Google Cloud Storage.",
+      "stars": 1,
+      "pushedAt": "2026-09-20T22:46:59Z"
+    },
+    "vs-azure-blob": {
+      "repo": "exasol/azure-blob-storage-document-files-virtual-schema",
+      "latest": "3.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/azure-blob-storage-document-files-virtual-schema",
+      "name": "azure-blob-storage-document-files-virtual-schema",
+      "description": "Virtual Schema for document files on Azure Blob Storage.",
+      "stars": 1,
+      "pushedAt": "2026-09-20T22:47:50Z"
+    },
+    "vs-azure-data-lake": {
+      "repo": "exasol/azure-data-lake-storage-gen2-document-files-virtual-schema",
+      "latest": "3.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/azure-data-lake-storage-gen2-document-files-virtual-schema",
+      "name": "azure-data-lake-storage-gen2-document-files-virtual-schema",
+      "description": "Virtual Schema for document files on Azure Data Lake Storage Gen2",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:46:51Z"
+    },
+    "vs-bucketfs": {
+      "repo": "exasol/bucketfs-document-files-virtual-schema",
+      "latest": "2.1.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/bucketfs-document-files-virtual-schema",
+      "name": "bucketfs-document-files-virtual-schema",
+      "description": "Virtual Schemas that allows you to access document files stored in BucketFS like any regular Exasol table.",
+      "stars": 0,
+      "pushedAt": "2026-09-20T22:44:14Z"
+    },
+    "vs-dynamodb": {
+      "repo": "exasol/dynamodb-virtual-schema",
+      "latest": "4.0.2",
+      "verified": null,
+      "homepage": "https://github.com/exasol/dynamodb-virtual-schema",
+      "name": "dynamodb-virtual-schema",
+      "description": "Virtual Schema for accessing Amazon AWS DynamoDB through Exasol",
+      "stars": 1,
+      "pushedAt": "2026-09-13T22:46:29Z"
+    },
+    "vs-mongodb": {
+      "repo": "exasol-labs/exasol-mongodb-vs",
+      "latest": "v0.1.1",
+      "verified": null,
+      "homepage": "https://github.com/exasol-labs/exasol-mongodb-vs",
+      "name": "exasol-mongodb-vs",
+      "description": "Query MongoDB collections from Exasol through a Rust Virtual Schema connector",
+      "stars": 0,
+      "pushedAt": "2026-09-24T12:41:04Z"
+    },
+    "vs-exasol-lua": {
+      "repo": "exasol/exasol-virtual-schema-lua",
+      "latest": "1.0.0",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-virtual-schema-lua",
+      "name": "exasol-virtual-schema-lua",
+      "description": "Virtual Schema from Exasol to Exasol implemented in Lua",
+      "stars": 1,
+      "pushedAt": "2026-09-15T08:51:31Z"
+    },
+    "vs-exasol": {
+      "repo": "exasol/exasol-virtual-schema",
+      "latest": "9.0.4",
+      "verified": null,
+      "homepage": "https://github.com/exasol/exasol-virtual-schema",
+      "name": "exasol-virtual-schema",
+      "description": "Virtual Schema from Exasol to Exasol",
+      "stars": 2,
+      "pushedAt": "2026-09-11T12:19:17Z"
+    },
+    "exasol-cloud": {
+      "repo": "exasol/exasol-personal",
+      "latest": "v2.3.0",
+      "verified": "v2.3.0",
+      "homepage": "https://github.com/exasol/exasol-personal",
+      "name": "exasol-personal",
+      "description": "The Analytics Database for Agentic AI \u2014 Free for Personal Use",
+      "stars": 15,
+      "pushedAt": "2026-09-23T15:06:40Z"
     }
   }
 }

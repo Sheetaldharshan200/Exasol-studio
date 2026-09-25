@@ -107,7 +107,10 @@ export function missingPrerequisites(
   const assetPattern = new RegExp(adapter.release.asset);
   const artifactPresent = adapter.runtime === "lua" || [...files].some((f) => f.startsWith(`${VS_DIR}/`) && assetPattern.test(f.slice(VS_DIR.length + 1)));
   if (!artifactPresent) {
-    missing.push({ kind: "adapterArtifact", label: `${adapter.name} adapter ${adapter.release.tag}`, asset: adapter.release.asset });
+    // No version in the label: the artifact comes from the repo's latest
+    // release, resolved when it is staged. Naming a pinned one here was wrong
+    // the moment upstream published again.
+    missing.push({ kind: "adapterArtifact", label: `${adapter.name} adapter`, asset: adapter.release.asset });
   }
 
   if (adapter.driver) {

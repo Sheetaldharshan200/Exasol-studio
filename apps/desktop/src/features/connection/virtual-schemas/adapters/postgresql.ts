@@ -12,7 +12,7 @@ export const PostgresqlAdapter: VsAdapter = {
   logo: "postgresql",
   repo: "exasol/postgresql-virtual-schema",
   docs: "https://github.com/exasol/postgresql-virtual-schema/blob/main/doc/user_guide/postgresql_user_guide.md",
-  release: { tag: "4.0.2", asset: "^virtual-schema-dist-[\\d.]+-postgresql-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-postgresql-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "POSTGRESQL", class: "org.postgresql.Driver", source: { maven: "org.postgresql:postgresql" } },
   fields: [

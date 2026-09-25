@@ -27,6 +27,7 @@ import {
   type MarketEnv,
   type Release,
   type ReleaseAsset,
+  type GithubStatus,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Icon as BxIcon } from "@/components/ui/icon";
@@ -45,11 +46,13 @@ import {
   writeMetaSnapshot,
 } from "@/features/marketplace/catalog-data";
 import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
+import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
+import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
 import { pickAsset } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
-import { itemState, type ItemSources } from "@/features/marketplace/item-state";
+import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
 import { applyFilters, emptyFilters, sectionOf, type HubFilters, type SectionKey, type Sort } from "@/features/marketplace/hub/filters";
 import { HubHeader, type HubPage } from "@/features/marketplace/hub/HubHeader";
 import { HubHome, type Featured } from "@/features/marketplace/hub/HubHome";
@@ -90,6 +93,12 @@ function openExternal(url: string) {
 /** Plain-language steps shown on the permission screen before anything runs. */
 function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset | null): string[] {
   switch (item.install) {
+    case "vs-adapter":
+      return [
+        "Resolve the adapter's newest release on GitHub",
+        "Download its artifact and verify the digest GitHub publishes for it",
+        "Upload it into the connected Exasol's BucketFS, replacing the older copy",
+      ];
     case "binary":
       return asset
         ? [
@@ -150,6 +159,15 @@ type LogLine = { level: string; text: string };
 
 export function Marketplace() {
   const [env, setEnv] = useState<MarketEnv | null>(null);
+  // GitHub's allowance for this machine. /rate_limit does not itself consume
+  // one, so asking is free even when everything else is refusing.
+  const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
+  useEffect(() => {
+    ipc.githubStatus().then(setGithubStatus).catch(() => undefined);
+  }, []);
+  // Per-adapter staging progress for the Virtual Schemas shelf; the install
+  // queue is for things that land on this machine, and these do not.
+  const [vsStaging, setVsStaging] = useState<Record<string, { busy: boolean; failed: boolean; message: string | null }>>({});
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
   // Display metadata (name, About, homepage) straight from each item's GitHub
   // repo: last-known snapshot for instant paint, then the live fetch (Rust
@@ -360,7 +378,8 @@ export function Marketplace() {
       for (const [catalogId, compId] of Object.entries(CATALOG_TO_COMPONENT)) {
         const comp = components.find((c) => c.id === compId);
         if (!comp) continue;
-        if (detected[catalogId] && comp.installed) {
+        const install = CATALOG.find((c) => c.id === catalogId)?.install;
+        if (install && comp.installed && managedIsPresent(install, Boolean(detected[catalogId]), comp.installed)) {
           m[catalogId] = { id: catalogId, version: comp.installed, path: "", filename: "" };
         } else {
           delete m[catalogId]; // not actually present → not installed
@@ -368,7 +387,7 @@ export function Marketplace() {
       }
     }
     return m;
-  }, [installed, components, detected]);
+  }, [installed, components, detected, CATALOG]);
 
   // Displayed "latest" is LIVE-first: the repo's actual newest GitHub release
   // (fetched per repo at mount), falling back to the weekly catalog when the
@@ -551,7 +570,46 @@ export function Marketplace() {
       openExternal(item.homepage);
       return;
     }
+    // A virtual schema adapter is staged into the connected database rather
+    // than installed onto this machine, so it does not go through the install
+    // queue — it runs the same command the add-data-source flow runs.
+    if (item.install === "vs-adapter") {
+      void stageVsAdapter(item);
+      return;
+    }
     enqueue([item]);
+  }
+
+  /**
+   * Put an adapter's newest release into the connected database's BucketFS.
+   *
+   * Idempotent: staging an adapter that is already current re-uploads the same
+   * artifact. It needs a managed local Exasol to stage into, and says so
+   * plainly when there is none rather than failing silently.
+   */
+  async function stageVsAdapter(item: CatalogItem) {
+    const adapter = vsAdapterFor(item.id);
+    if (!adapter) return;
+    setVsStaging((m) => ({ ...m, [item.id]: { busy: true, message: null, failed: false } }));
+    try {
+      const result = await ipc.vsStageAdapter({
+        jobId: `vs-update-${item.id}-${Date.now()}`,
+        repo: adapter.repo,
+        assetPattern: adapter.release.asset,
+        runtime: adapter.runtime,
+        driver: null,
+      });
+      setVsStaging((m) => ({
+        ...m,
+        [item.id]: { busy: false, failed: false, message: `Staged ${result.adapterAsset} (${result.releaseTag}).` },
+      }));
+    } catch (e) {
+      const message = errorMessage(e);
+      // Also to the log: a message on a card is gone as soon as the page is,
+      // and this is the kind of failure someone reports afterwards.
+      console.error(`[marketplace] staging ${adapter.repo} failed: ${message}`);
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message } }));
+    }
   }
 
   // Install every item in a recommended pack, in parallel — skipping what the
@@ -1223,9 +1281,26 @@ export function Marketplace() {
 
   const detailItem = detailId ? CATALOG.find((c) => c.id === detailId) ?? null : null;
   // The one button a card carries, by state; everything else lives on the item page.
-  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline" } | null => {
+  const primaryFor = (item: CatalogItem): { label: string; onClick: () => void; tone: "primary" | "outline"; title?: string; note?: { text: string; failed: boolean } } | null => {
     const st = stateOf(item);
     const did = DRIVER_RUNTIME[item.id];
+    // A virtual schema adapter reports its own progress: it is staged into the
+    // connected database, so it never enters the install queue the other
+    // states are derived from.
+    if (item.install === "vs-adapter") {
+      const vs = vsStaging[item.id];
+      if (vs?.busy) return { label: "Staging…", tone: "outline", onClick: () => undefined };
+      const version = st.kind === "install" && st.available ? ` ${st.available}` : "";
+      return {
+        label: vs?.failed ? "Retry staging" : vs?.message ? `Staged${version}` : `Stage${version}`,
+        tone: vs?.message && !vs.failed ? "outline" : "primary",
+        title: vs?.message ?? undefined,
+        // Shown, not just hovered: "Retry staging" on its own tells nobody
+        // what went wrong.
+        note: vs?.message ? { text: vs.message, failed: vs.failed } : undefined,
+        onClick: () => startInstall(item),
+      };
+    }
     switch (st.kind) {
       case "install":
         return { label: st.available ? `Install ${st.available}` : "Install", tone: "primary", onClick: () => (did ? void installDriverAndUse(item, did) : startInstall(item)) };
@@ -1308,6 +1383,11 @@ export function Marketplace() {
           onNavigate={goto}
           onRefresh={refreshAll}
         />
+        {/* Shown only when the allowance is spent or a token is connected —
+            nobody is asked to authenticate merely to browse. */}
+        <div className="mt-4 empty:mt-0">
+          <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
+        </div>
         <div ref={contentRef} className={cn("pt-6 transition-opacity", navPending && "opacity-60")}>
           {page === "detail" && detailItem ? (
             <HubDetail
@@ -1315,7 +1395,7 @@ export function Marketplace() {
               item={detailItem}
               state={stateOf(detailItem)}
               actions={renderActions(detailItem)}
-              versions={versionSource(detailItem) ? verLists[detailItem.id] : []}
+              versions={versionSource(detailItem) ? verLists[detailItem.id] : "unsupported"}
               pickedVersion={verPick[detailItem.id]}
               onPickVersion={(v) => setVerPick(({ [detailItem.id]: _drop, ...rest }) => (v ? { ...rest, [detailItem.id]: v } : rest))}
               onLoadVersions={() => loadVersions(detailItem)}
@@ -1331,7 +1411,12 @@ export function Marketplace() {
               items={CATALOG}
               stateOf={stateOf}
               query={query}
-              onQuery={setQuery}
+              onQuery={(q) => {
+                setQuery(q);
+                // Typing IS the search. Waiting for the button meant the home
+                // page sat there unchanged while the query was already typed.
+                if (q.trim()) goto("search");
+              }}
               onSearch={() => goto("search")}
               onOpenSection={openSection}
               onOpen={openDetail}

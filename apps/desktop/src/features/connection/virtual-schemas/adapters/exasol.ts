@@ -11,7 +11,7 @@ export const ExasolAdapter: VsAdapter = {
   runtime: "java",
   repo: "exasol/exasol-virtual-schema",
   docs: "https://github.com/exasol/exasol-virtual-schema/blob/main/doc/dialects/exasol.md",
-  release: { tag: "9.0.4", asset: "^virtual-schema-dist-[\\d.]+-exasol-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-exasol-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "EXASOL", class: "com.exasol.jdbc.EXADriver", source: { maven: "com.exasol:exasol-jdbc" } },
   fields: [

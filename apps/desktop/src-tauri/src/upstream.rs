@@ -25,39 +25,220 @@ pub struct UpstreamRelease {
     pub assets: Vec<UpstreamAsset>,
 }
 
-fn fetch_release(repo: &str, release_path: &str) -> Option<UpstreamRelease> {
-    let response = reqwest::blocking::Client::new()
-        .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
+/// Why a release could not be read.
+///
+/// It used to be `None` for everything, so the only thing the app could say
+/// was "Could not read the latest release of X" — which sent people looking
+/// for a typo or a network problem when the real answer was almost always a
+/// rate limit with twenty minutes left on it.
+#[derive(Debug, PartialEq)]
+pub enum ReleaseError {
+    /// GitHub's unauthenticated allowance for this machine is spent.
+    RateLimited { resets_in_secs: Option<u64> },
+    NotFound,
+    Unavailable(String),
+}
+
+impl std::fmt::Display for ReleaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReleaseError::RateLimited { resets_in_secs } => {
+                write!(f, "GitHub's hourly limit for this machine is used up. It allows 60 requests an hour without a sign-in, and reading a release costs one")?;
+                match resets_in_secs {
+                    Some(secs) => write!(f, "; it resets in about {} minute(s).", secs.div_ceil(60)),
+                    None => write!(f, "; it resets within the hour."),
+                }
+            }
+            ReleaseError::NotFound => write!(f, "GitHub has no such release — the repository may have been renamed, or it has never published one."),
+            ReleaseError::Unavailable(why) => write!(f, "GitHub could not be reached ({why})."),
+        }
+    }
+}
+
+/// What a response means, from its status and headers alone.
+///
+/// Separated from the request so the rule is testable: a 403 with the rate
+/// limit exhausted and a 403 for anything else are very different messages.
+pub(crate) fn classify_failure(status: u16, remaining: Option<&str>, reset_epoch: Option<&str>, now: u64) -> ReleaseError {
+    if status == 404 {
+        return ReleaseError::NotFound;
+    }
+    if (status == 403 || status == 429) && remaining.map(|r| r.trim() == "0").unwrap_or(false) {
+        let resets_in_secs = reset_epoch
+            .and_then(|r| r.trim().parse::<u64>().ok())
+            .map(|at| at.saturating_sub(now));
+        return ReleaseError::RateLimited { resets_in_secs };
+    }
+    ReleaseError::Unavailable(format!("HTTP {status}"))
+}
+
+fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let response = crate::github_auth::authorize(
+        reqwest::blocking::Client::new()
+            .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
+            .header("User-Agent", "exasol-studio")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(Duration::from_secs(20)),
+    )
+    .send()
+        .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let header = |k: &str| response.headers().get(k).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        return Err(classify_failure(
+            response.status().as_u16(),
+            header("x-ratelimit-remaining").as_deref(),
+            header("x-ratelimit-reset").as_deref(),
+            now,
+        ));
+    }
+
+    let body: Value = response.json().map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
+    let parse = || -> Option<UpstreamRelease> {
+        let tag = body.get("tag_name")?.as_str()?.to_string();
+        let assets = body
+            .get("assets")?
+            .as_array()?
+            .iter()
+            .filter_map(|a| {
+                Some(UpstreamAsset {
+                    name: a.get("name")?.as_str()?.to_string(),
+                    url: a.get("browser_download_url")?.as_str()?.to_string(),
+                    digest: a.get("digest").and_then(Value::as_str).map(str::to_string),
+                })
+            })
+            .collect();
+        Some(UpstreamRelease { tag, assets })
+    };
+    parse().ok_or_else(|| ReleaseError::Unavailable("the release GitHub returned had no tag".into()))
+}
+
+/// The newest tag from a repository's releases Atom feed.
+///
+/// Entry ids look like `tag:github.com,2008:Repository/<id>/<tag>`; the feed
+/// is newest-first.
+pub(crate) fn parse_atom_tag(xml: &str) -> Option<String> {
+    let at = xml.find("tag:github.com,2008:Repository/")?;
+    let rest = &xml[at..];
+    let after_repo = rest.find('/').map(|i| &rest[i + 1..])?;
+    let tag = after_repo.split('/').nth(1)?.split('<').next()?.trim();
+    (!tag.is_empty()).then(|| tag.to_string())
+}
+
+/// Asset file names from a release's asset fragment, in page order.
+pub(crate) fn parse_expanded_assets(html: &str, tag: &str) -> Vec<String> {
+    let needle = format!("releases/download/{tag}/");
+    let mut out = Vec::new();
+    for part in html.split(&needle).skip(1) {
+        let name = part.split(['"', '\'', '<', '?', '#']).next().unwrap_or_default().trim();
+        if !name.is_empty() && !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// The newest release read from github.com instead of the API.
+///
+/// api.github.com allows 60 requests an hour without a sign-in — for
+/// everything the app does — and reading one release costs one, so a machine
+/// that has browsed the marketplace can have nothing left when it comes to
+/// install something. These pages are NOT the API and are not counted against
+/// that allowance: the Atom feed carries the newest tag, the release's asset
+/// fragment carries the file names, and a download URL is
+/// `releases/download/<tag>/<name>` by construction.
+///
+/// Digests are left None here and resolved per asset by `sha256_sibling`,
+/// so only the file actually being installed costs a request.
+fn fetch_latest_without_api(repo: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let feed = github_page(format!("https://github.com/{repo}/releases.atom"))?;
+    let tag = parse_atom_tag(&feed).ok_or(ReleaseError::NotFound)?;
+    assets_without_api(repo, &tag)
+}
+
+/// One release's assets, read from github.com rather than the API.
+fn assets_without_api(repo: &str, tag: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let fragment = github_page(format!("https://github.com/{repo}/releases/expanded_assets/{tag}"))?;
+    let assets = parse_expanded_assets(&fragment, tag)
+        .into_iter()
+        .map(|name| UpstreamAsset {
+            url: format!("https://github.com/{repo}/releases/download/{tag}/{name}"),
+            name,
+            digest: None,
+        })
+        .collect();
+    Ok(UpstreamRelease { tag: tag.to_string(), assets })
+}
+
+/// One github.com page as text. Not the API, so not rate limited.
+fn github_page(url: String) -> Result<String, ReleaseError> {
+    let r = reqwest::blocking::Client::new()
+        .get(&url)
         .header("User-Agent", "exasol-studio")
-        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(20))
+        .send()
+        .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
+    if r.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(ReleaseError::NotFound);
+    }
+    if !r.status().is_success() {
+        return Err(ReleaseError::Unavailable(format!("HTTP {}", r.status().as_u16())));
+    }
+    r.text().map_err(|e| ReleaseError::Unavailable(e.to_string()))
+}
+
+/// The `sha256` GitHub serves beside an asset, when the project publishes one.
+///
+/// The file holds `<hex>  <filename>`; only the hash is taken. Also on
+/// github.com, so it costs nothing against the API allowance — which is what
+/// lets an install stay verified when the API itself is unreachable.
+pub fn sha256_sibling(asset_url: &str) -> Option<String> {
+    let body = reqwest::blocking::Client::new()
+        .get(format!("{asset_url}.sha256"))
+        .header("User-Agent", "exasol-studio")
         .timeout(Duration::from_secs(20))
         .send()
         .ok()?
         .error_for_status()
+        .ok()?
+        .text()
         .ok()?;
-    let body: Value = response.json().ok()?;
-    let tag = body.get("tag_name")?.as_str()?.to_string();
-    let assets = body
-        .get("assets")?
-        .as_array()?
-        .iter()
-        .filter_map(|a| {
-            Some(UpstreamAsset {
-                name: a.get("name")?.as_str()?.to_string(),
-                url: a.get("browser_download_url")?.as_str()?.to_string(),
-                digest: a.get("digest").and_then(Value::as_str).map(str::to_string),
-            })
-        })
-        .collect();
-    Some(UpstreamRelease { tag, assets })
+    let hex = body.split_whitespace().next()?;
+    (hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit())).then(|| hex.to_lowercase())
 }
 
+/// The newest release, or None.
+///
+/// Goes through `latest_detailed`, so every caller — the engine, the local
+/// database, the runtime, the marketplace's component check — gets the
+/// github.com fallback when the API allowance is spent, instead of quietly
+/// reporting "no release" and offering nothing.
 pub fn latest(repo: &str) -> Option<UpstreamRelease> {
-    fetch_release(repo, "latest")
+    latest_detailed(repo).ok()
 }
 
+/// The newest release, or WHY not — for the paths that show the reason to a
+/// person rather than quietly degrading.
+pub fn latest_detailed(repo: &str) -> Result<UpstreamRelease, ReleaseError> {
+    match fetch_release_detailed(repo, "latest") {
+        // A spent allowance is not a reason to fail: the same release is
+        // readable from github.com, which is not rate limited.
+        Err(ReleaseError::RateLimited { .. }) => fetch_latest_without_api(repo),
+        other => other,
+    }
+}
+
+/// One named release. Falls back the same way `latest` does: a pinned
+/// install must not become impossible because the hour's requests are gone.
 pub fn by_tag(repo: &str, tag: &str) -> Option<UpstreamRelease> {
-    fetch_release(repo, &format!("tags/{tag}"))
+    match fetch_release_detailed(repo, &format!("tags/{tag}")) {
+        Err(ReleaseError::RateLimited { .. }) => assets_without_api(repo, tag).ok(),
+        other => other.ok(),
+    }
 }
 
 fn common_suffix_len(a: &str, b: &str) -> usize {
@@ -293,6 +474,95 @@ pub(crate) fn sha_from_commits_atom(atom: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::{classify_failure, parse_atom_tag, parse_expanded_assets, ReleaseError};
+
+    #[test]
+    fn the_newest_tag_comes_off_the_atom_feed() {
+        // The feed is newest-first, and an entry id is
+        // tag:github.com,2008:Repository/<repo id>/<tag>.
+        let xml = "<feed><entry><id>tag:github.com,2008:Repository/305597227/4.0.2</id></entry>\
+                   <entry><id>tag:github.com,2008:Repository/305597227/4.0.1</id></entry></feed>";
+        assert_eq!(parse_atom_tag(xml).as_deref(), Some("4.0.2"));
+    }
+
+    #[test]
+    fn a_tag_with_a_v_prefix_or_dots_survives_intact() {
+        let one = |t: &str| format!("<id>tag:github.com,2008:Repository/1/{t}</id>");
+        assert_eq!(parse_atom_tag(&one("v0.1.1")).as_deref(), Some("v0.1.1"));
+        assert_eq!(parse_atom_tag(&one("2026.10.0")).as_deref(), Some("2026.10.0"));
+    }
+
+    #[test]
+    fn a_feed_with_no_releases_yields_no_tag() {
+        assert_eq!(parse_atom_tag("<feed></feed>"), None);
+        assert_eq!(parse_atom_tag(""), None);
+    }
+
+    #[test]
+    fn asset_names_come_off_the_release_fragment_without_duplicates() {
+        // GitHub links each asset twice in that fragment (name and icon).
+        let html = r#"<a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar">x</a>
+                      <a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar">y</a>
+                      <a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/error_code_report.json">z</a>"#;
+        assert_eq!(
+            parse_expanded_assets(html, "4.0.2"),
+            ["virtual-schema-dist-14.0.5-postgresql-4.0.2.jar", "error_code_report.json"]
+        );
+    }
+
+    #[test]
+    fn a_release_with_no_assets_yields_none() {
+        assert!(parse_expanded_assets("<div>no downloads</div>", "1.0.0").is_empty());
+    }
+
+    #[test]
+    fn only_this_tags_assets_are_taken() {
+        let html = r#"<a href="/o/r/releases/download/1.0.0/old.jar"></a>
+                      <a href="/o/r/releases/download/2.0.0/new.jar"></a>"#;
+        assert_eq!(parse_expanded_assets(html, "2.0.0"), ["new.jar"]);
+    }
+
+    #[test]
+    fn a_spent_rate_limit_is_named_as_one_with_its_reset() {
+        // The failure every virtual schema hits at the same moment. Reporting
+        // it as "could not read the release" sent people looking for a broken
+        // repository instead of a clock.
+        let e = classify_failure(403, Some("0"), Some("1000"), 700);
+        assert_eq!(e, ReleaseError::RateLimited { resets_in_secs: Some(300) });
+        assert!(e.to_string().contains("5 minute"));
+        assert!(e.to_string().contains("60 requests an hour"));
+    }
+
+    #[test]
+    fn a_429_with_the_allowance_gone_is_also_a_rate_limit() {
+        assert_eq!(
+            classify_failure(429, Some("0"), None, 0),
+            ReleaseError::RateLimited { resets_in_secs: None }
+        );
+    }
+
+    #[test]
+    fn a_403_with_requests_left_is_not_a_rate_limit() {
+        // Private, blocked or otherwise forbidden — saying "rate limit" there
+        // would send someone off to wait for nothing.
+        assert_eq!(classify_failure(403, Some("57"), None, 0), ReleaseError::Unavailable("HTTP 403".into()));
+        assert_eq!(classify_failure(403, None, None, 0), ReleaseError::Unavailable("HTTP 403".into()));
+    }
+
+    #[test]
+    fn a_missing_release_says_so() {
+        assert_eq!(classify_failure(404, Some("59"), None, 0), ReleaseError::NotFound);
+        assert!(classify_failure(404, None, None, 0).to_string().contains("never published"));
+    }
+
+    #[test]
+    fn a_reset_already_past_reads_as_zero_rather_than_underflowing() {
+        assert_eq!(
+            classify_failure(403, Some("0"), Some("100"), 500),
+            ReleaseError::RateLimited { resets_in_secs: Some(0) }
+        );
+    }
+
     use super::*;
 
     #[test]

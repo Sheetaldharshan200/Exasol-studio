@@ -12,6 +12,9 @@ import { VS_ADAPTERS, adapterById, adapterForScript } from "./index.ts";
  * the test below is what tells you the catalog has drifted from it.
  */
 const UPSTREAM_ADAPTER_REPOS = [
+  // Exasol Labs publishes adapters too; one can only be listed once it has a
+  // release to pin (salesforce-virtual-schema has none as of 2026-09-23).
+  "exasol-labs/exasol-mongodb-vs",
   "exasol/athena-virtual-schema",
   "exasol/azure-blob-storage-document-files-virtual-schema",
   "exasol/azure-data-lake-storage-gen2-document-files-virtual-schema",
@@ -48,7 +51,11 @@ test("every published adapter is in the catalog exactly once, and nothing else i
 test("an entry carries what the flow needs, and nothing that must be guessed", () => {
   for (const a of VS_ADAPTERS) {
     assert.ok(a.docs.startsWith("https://"), `${a.id}: docs link`);
-    assert.ok(a.release.tag && a.release.asset, `${a.id}: pinned release`);
+    // No pinned tag by design — the latest release is resolved at install
+    // time — but the asset pattern must be there and must compile.
+    assert.ok(a.release.asset, `${a.id}: asset pattern`);
+    assert.doesNotThrow(() => new RegExp(a.release.asset), `${a.id}: asset pattern compiles`);
+    assert.equal((a.release as { tag?: string }).tag, undefined, `${a.id}: no pinned tag`);
     assert.doesNotThrow(() => new RegExp(a.release.asset), `${a.id}: asset pattern is a regex`);
     assert.ok(a.fields.length > 0, `${a.id}: asks for something`);
     const keys = a.fields.map((f) => f.key);
@@ -57,10 +64,19 @@ test("an entry carries what the flow needs, and nothing that must be guessed", (
     if (a.runtime === "java") {
       assert.ok(a.scriptClass, `${a.id}: Java adapters name their %scriptclass`);
       assert.match(a.release.asset, /\\.jar\$$/, `${a.id}: Java adapters ship a JAR`);
+    } else if (a.runtime === "rust") {
+      assert.ok(a.rust, `${a.id}: Rust adapters name their library`);
+      assert.match(a.rust!.bucketPath, /^\/buckets\//, `${a.id}: the library lives in BucketFS`);
+      assert.ok(a.rust!.languageAlias, `${a.id}: Rust adapters name the language alias that loads them`);
+      assert.ok(a.rust!.scanUdf.name && a.rust!.scanUdf.signature, `${a.id}: Rust adapters ship a scan UDF`);
+      assert.match(a.release.asset, /\\.so\$$/, `${a.id}: Rust adapters ship a shared object`);
+      assert.ok(a.note, `${a.id}: a Rust adapter's prerequisites are not obvious — say them`);
     } else {
       assert.match(a.release.asset, /\\.lua\$$/, `${a.id}: Lua adapters ship a .lua`);
     }
-    if (a.kind === "document") {
+    // A document adapter needs the UDF that reads it in parallel: a Java one
+    // declares importUdf, a Rust one carries its own scan UDF.
+    if (a.kind === "document" && a.runtime !== "rust") {
       assert.ok(a.importUdf?.name && a.importUdf.scriptClass, `${a.id}: document adapters need their import UDF`);
     }
   }
@@ -89,8 +105,11 @@ test("a password never leaks into the connection target or the schema properties
       assert.ok(!conn.to.includes(secret), `${a.id}: secret in TO`);
       for (const v of Object.values(props)) assert.ok(!v.includes(secret), `${a.id}: secret in WITH`);
     }
-    // Document adapters carry credentials as JSON in IDENTIFIED BY and nothing in TO/USER.
-    if (a.kind === "document") {
+    // The EDML document family carries credentials as JSON in IDENTIFIED BY
+    // with nothing in TO/USER. That is a property of those Java adapters, not
+    // of document sources generally: the Rust MongoDB connector takes an
+    // ordinary URI, user and password.
+    if (a.kind === "document" && a.runtime === "java") {
       assert.equal(conn.to, "", `${a.id}: TO must be empty`);
       assert.doesNotThrow(() => JSON.parse(conn.password ?? ""), `${a.id}: IDENTIFIED BY is JSON`);
     }

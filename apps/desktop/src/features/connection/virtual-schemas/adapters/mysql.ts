@@ -12,7 +12,7 @@ export const MysqlAdapter: VsAdapter = {
   logo: "mysql",
   repo: "exasol/mysql-virtual-schema",
   docs: "https://github.com/exasol/mysql-virtual-schema/blob/main/doc/user_guide/mysql_user_guide.md",
-  release: { tag: "6.0.3", asset: "^virtual-schema-dist-[\\d.]+-mysql-[\\d.]+\\.jar$" },
+  release: { asset: "^virtual-schema-dist-[\\d.]+-mysql-[\\d.]+\\.jar$" },
   scriptClass: JAVA_ADAPTER_CLASS,
   driver: { name: "MYSQL", class: "com.mysql.cj.jdbc.Driver", source: { maven: "com.mysql:mysql-connector-j" } },
   fields: [
