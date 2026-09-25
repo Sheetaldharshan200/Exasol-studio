@@ -134,13 +134,14 @@ test("the Virtual Schemas shelf is exactly the adapters, derived not listed", ()
   );
 });
 
-test("a Lua adapter has nothing to stage, so it links instead of installing", () => {
+test("every adapter on the shelf is actionable, Lua ones included", () => {
+  // The Lua pair uploads nothing — their source is inlined at attach time —
+  // but the same command fetches and digest-checks their release, so leaving
+  // them as bare links made them look second-class beside their neighbours.
   for (const a of VS_ADAPTERS) {
     const item = CATALOG.find((i) => i.id === `vs-${a.id}`)!;
     assert.ok(item, `${a.id} is on the shelf`);
-    // Lua adapter source is inlined into the CREATE ADAPTER SCRIPT — there is
-    // no artifact in BucketFS to update.
-    assert.equal(item.install, a.runtime === "lua" ? "reference" : "vs-adapter", a.id);
+    assert.equal(item.install, "vs-adapter", a.id);
   }
 });
 

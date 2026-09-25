@@ -599,10 +599,13 @@ export function Marketplace() {
         runtime: adapter.runtime,
         driver: null,
       });
-      setVsStaging((m) => ({
-        ...m,
-        [item.id]: { busy: false, failed: false, message: `Staged ${result.adapterAsset} (${result.releaseTag}).` },
-      }));
+      // A Lua adapter uploads nothing: its source is inlined into the CREATE
+      // statement when a schema is attached, so say what actually happened
+      // rather than claiming a file landed somewhere.
+      const message = result.luaSource
+        ? `Verified ${result.adapterAsset} (${result.releaseTag}). Lua adapters are written into the CREATE statement when you attach a schema, so there is nothing to upload.`
+        : `Staged ${result.adapterAsset} (${result.releaseTag}) into the database's BucketFS.`;
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: false, message } }));
     } catch (e) {
       const message = errorMessage(e);
       // Also to the log: a message on a card is gone as soon as the page is,
@@ -921,6 +924,39 @@ export function Marketplace() {
   // Every state decision the buttons need is derived here, from the same
   // sources `stateOf` reads.
   const renderActions = (item: CatalogItem) => {
+    // A virtual schema adapter is staged into the CONNECTED DATABASE, not
+    // installed onto this machine, so none of the states below apply to it —
+    // and the generic Install button they produce looked like it did nothing,
+    // because the staging it started was never reflected anywhere on this page.
+    if (item.install === "vs-adapter") {
+      const vs = vsStaging[item.id];
+      const version = latestFor(item.id);
+      return (
+        <div className="grid gap-2">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => startInstall(item)}
+              disabled={vs?.busy}
+              data-agent-id={`market.detail.${item.id}.stage`}
+              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+            >
+              {vs?.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+              {vs?.busy ? "Staging…" : vs?.failed ? "Retry staging" : `Stage${version ? ` ${version}` : ""} into the database`}
+            </button>
+          </div>
+          {vs?.message ? (
+            <p className={cn("max-w-[420px] text-[12px] leading-relaxed", vs.failed ? "text-destructive" : "text-muted-foreground")}>
+              {vs.message}
+            </p>
+          ) : (
+            <p className="max-w-[420px] text-[12px] leading-relaxed text-muted-foreground">
+              Puts the adapter's newest release into the connected Exasol's BucketFS. Attaching a schema with it happens
+              in Add data source, where its connection details and driver are asked for.
+            </p>
+          )}
+        </div>
+      );
+    }
     const managedCompId = CATALOG_TO_COMPONENT[item.id];
     const managedComp = managedCompId ? components.find((c) => c.id === managedCompId) : undefined;
     // Managed components (Personal, ExaPump, MCP, Exa Agent) are installed the
