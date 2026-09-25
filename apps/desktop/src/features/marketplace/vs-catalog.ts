@@ -19,17 +19,19 @@ import type { CatalogItem } from "./catalog-data.ts";
 export const vsItemId = (adapterId: string): string => `vs-${adapterId}`;
 
 /**
- * One catalog item per adapter.
+ * One catalog item per adapter, all of them actionable.
  *
- * A Lua adapter has no artifact to stage — its source is inlined into the
- * `CREATE ADAPTER SCRIPT` when a schema is attached — so there is nothing to
- * update and it links to its guide instead.
+ * A Lua adapter uploads nothing — its source is inlined into the
+ * `CREATE ADAPTER SCRIPT` when a schema is attached — but the same command
+ * still fetches its release and checks the digest, so it gets the same button
+ * and reports what it verified. Leaving those two as bare links made them look
+ * like second-class entries beside the adapters they sit next to.
  */
 export const VS_CATALOG: CatalogItem[] = VS_ADAPTERS.map((a) => ({
   id: vsItemId(a.id),
   repo: a.repo,
   kind: "vs" as const,
-  install: a.runtime === "lua" ? ("reference" as const) : ("vs-adapter" as const),
+  install: "vs-adapter" as const,
 }));
 
 /** The adapter behind a catalog id, or undefined for any other item. */
