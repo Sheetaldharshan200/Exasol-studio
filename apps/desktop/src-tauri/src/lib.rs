@@ -1,4 +1,5 @@
 mod agent;
+mod github_auth;
 mod semantic_sync;
 mod backup;
 pub mod confd;
@@ -154,6 +155,9 @@ pub fn run() {
             fs::fs_delete,
             market::market_env,
             market::market_catalog,
+            github_auth::github_status,
+            github_auth::github_connect,
+            github_auth::github_disconnect,
             market::market_doc,
             market::market_doc_save,
             market::market_doc_load,

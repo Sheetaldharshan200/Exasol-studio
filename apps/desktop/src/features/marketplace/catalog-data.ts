@@ -318,7 +318,20 @@ export function resolveCatalog(meta: Record<string, RepoMeta> | null): ResolvedC
  * layer under live metadata.
  */
 export function metaFromCatalogItems(
-  items: Record<string, { repo?: string; homepage?: string; name?: string | null; description?: string | null }> | null | undefined,
+  items:
+    | Record<
+        string,
+        {
+          repo?: string;
+          homepage?: string;
+          name?: string | null;
+          description?: string | null;
+          stars?: number | null;
+          pushedAt?: string | null;
+        }
+      >
+    | null
+    | undefined,
 ): Record<string, RepoMeta> {
   const out: Record<string, RepoMeta> = {};
   for (const entry of Object.values(items ?? {})) {
@@ -327,6 +340,11 @@ export function metaFromCatalogItems(
       name: entry.name,
       description: entry.description ?? null,
       htmlUrl: entry.homepage || `https://github.com/${entry.repo}`,
+      // Carried by the mirror so a card is complete WITHOUT the app's own
+      // unauthenticated call, which returns nothing once the hour's 60
+      // requests are gone — the reason cards read "No description yet".
+      stars: entry.stars ?? null,
+      pushedAt: entry.pushedAt ?? null,
     };
   }
   return out;

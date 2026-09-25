@@ -81,17 +81,22 @@ jobs:
             # Repo name + About line, fetched authenticated (the app's own
             # unauthenticated calls rate-limit at 60/hr, so the catalog is the
             # reliable source of display metadata for marketplace cards).
-            meta='{"name":null,"description":null}'
+            # stars and pushedAt are here so a card is COMPLETE from the
+            # mirror alone. The app's own metadata call is unauthenticated (60
+            # an hour for everything it does) and returns nothing once that is
+            # spent — which is how cards ended up reading "No description yet".
+            meta='{"name":null,"description":null,"stars":null,"pushedAt":null}'
             if [ -n "$repo" ]; then
               meta=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
-                "https://api.github.com/repos/$repo" | jq -c '{name: (.name // null), description: (.description // null)}') || meta='{"name":null,"description":null}'
+                "https://api.github.com/repos/$repo" | jq -c '{name: (.name // null), description: (.description // null), stars: (.stargazers_count // null), pushedAt: (.pushed_at // null)}') || meta='{"name":null,"description":null,"stars":null,"pushedAt":null}'
             fi
             [ "$first" -eq 0 ] && echo ',' >> catalog.json
             first=0
-            printf '    "%s": { "repo": "%s", "latest": %s, "verified": %s, "homepage": "%s", "name": %s, "description": %s }' \
+            printf '    "%s": { "repo": "%s", "latest": %s, "verified": %s, "homepage": "%s", "name": %s, "description": %s, "stars": %s, "pushedAt": %s }' \
               "$id" "$repo" "$(jq -Rn --arg v "$latest" 'if $v=="null" then null else $v end')" \
               "$(jq -Rn --arg v "$verified" 'if $v=="" or $v=="null" then null else $v end')" "$homepage" \
-              "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" >> catalog.json
+              "$(echo "$meta" | jq -c '.name')" "$(echo "$meta" | jq -c '.description')" \
+              "$(echo "$meta" | jq -c '.stars')" "$(echo "$meta" | jq -c '.pushedAt')" >> catalog.json
           done <<< "$items"
           echo '' >> catalog.json
           echo '  }' >> catalog.json

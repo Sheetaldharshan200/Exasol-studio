@@ -27,6 +27,7 @@ import {
   type MarketEnv,
   type Release,
   type ReleaseAsset,
+  type GithubStatus,
 } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Icon as BxIcon } from "@/components/ui/icon";
@@ -46,6 +47,7 @@ import {
 } from "@/features/marketplace/catalog-data";
 import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
+import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
 import { pickAsset } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
@@ -157,6 +159,12 @@ type LogLine = { level: string; text: string };
 
 export function Marketplace() {
   const [env, setEnv] = useState<MarketEnv | null>(null);
+  // GitHub's allowance for this machine. /rate_limit does not itself consume
+  // one, so asking is free even when everything else is refusing.
+  const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
+  useEffect(() => {
+    ipc.githubStatus().then(setGithubStatus).catch(() => undefined);
+  }, []);
   // Per-adapter staging progress for the Virtual Schemas shelf; the install
   // queue is for things that land on this machine, and these do not.
   const [vsStaging, setVsStaging] = useState<Record<string, { busy: boolean; failed: boolean; message: string | null }>>({});
@@ -1375,6 +1383,11 @@ export function Marketplace() {
           onNavigate={goto}
           onRefresh={refreshAll}
         />
+        {/* Shown only when the allowance is spent or a token is connected —
+            nobody is asked to authenticate merely to browse. */}
+        <div className="mt-4 empty:mt-0">
+          <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
+        </div>
         <div ref={contentRef} className={cn("pt-6 transition-opacity", navPending && "opacity-60")}>
           {page === "detail" && detailItem ? (
             <HubDetail

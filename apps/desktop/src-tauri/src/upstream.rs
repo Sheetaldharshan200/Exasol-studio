@@ -73,12 +73,14 @@ pub(crate) fn classify_failure(status: u16, remaining: Option<&str>, reset_epoch
 }
 
 fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRelease, ReleaseError> {
-    let response = reqwest::blocking::Client::new()
-        .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
-        .header("User-Agent", "exasol-studio")
-        .header("Accept", "application/vnd.github+json")
-        .timeout(Duration::from_secs(20))
-        .send()
+    let response = crate::github_auth::authorize(
+        reqwest::blocking::Client::new()
+            .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
+            .header("User-Agent", "exasol-studio")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(Duration::from_secs(20)),
+    )
+    .send()
         .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
 
     if !response.status().is_success() {
@@ -113,10 +115,6 @@ fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRele
         Some(UpstreamRelease { tag, assets })
     };
     parse().ok_or_else(|| ReleaseError::Unavailable("the release GitHub returned had no tag".into()))
-}
-
-fn fetch_release(repo: &str, release_path: &str) -> Option<UpstreamRelease> {
-    fetch_release_detailed(repo, release_path).ok()
 }
 
 /// The newest tag from a repository's releases Atom feed.
@@ -157,27 +155,15 @@ pub(crate) fn parse_expanded_assets(html: &str, tag: &str) -> Vec<String> {
 /// Digests are left None here and resolved per asset by `sha256_sibling`,
 /// so only the file actually being installed costs a request.
 fn fetch_latest_without_api(repo: &str) -> Result<UpstreamRelease, ReleaseError> {
-    let client = reqwest::blocking::Client::new();
-    let get = |url: String| -> Result<String, ReleaseError> {
-        let r = client
-            .get(&url)
-            .header("User-Agent", "exasol-studio")
-            .timeout(Duration::from_secs(20))
-            .send()
-            .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
-        if r.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(ReleaseError::NotFound);
-        }
-        if !r.status().is_success() {
-            return Err(ReleaseError::Unavailable(format!("HTTP {}", r.status().as_u16())));
-        }
-        r.text().map_err(|e| ReleaseError::Unavailable(e.to_string()))
-    };
-
-    let feed = get(format!("https://github.com/{repo}/releases.atom"))?;
+    let feed = github_page(format!("https://github.com/{repo}/releases.atom"))?;
     let tag = parse_atom_tag(&feed).ok_or(ReleaseError::NotFound)?;
-    let fragment = get(format!("https://github.com/{repo}/releases/expanded_assets/{tag}"))?;
-    let assets = parse_expanded_assets(&fragment, &tag)
+    assets_without_api(repo, &tag)
+}
+
+/// One release's assets, read from github.com rather than the API.
+fn assets_without_api(repo: &str, tag: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let fragment = github_page(format!("https://github.com/{repo}/releases/expanded_assets/{tag}"))?;
+    let assets = parse_expanded_assets(&fragment, tag)
         .into_iter()
         .map(|name| UpstreamAsset {
             url: format!("https://github.com/{repo}/releases/download/{tag}/{name}"),
@@ -185,7 +171,24 @@ fn fetch_latest_without_api(repo: &str) -> Result<UpstreamRelease, ReleaseError>
             digest: None,
         })
         .collect();
-    Ok(UpstreamRelease { tag, assets })
+    Ok(UpstreamRelease { tag: tag.to_string(), assets })
+}
+
+/// One github.com page as text. Not the API, so not rate limited.
+fn github_page(url: String) -> Result<String, ReleaseError> {
+    let r = reqwest::blocking::Client::new()
+        .get(&url)
+        .header("User-Agent", "exasol-studio")
+        .timeout(Duration::from_secs(20))
+        .send()
+        .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
+    if r.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(ReleaseError::NotFound);
+    }
+    if !r.status().is_success() {
+        return Err(ReleaseError::Unavailable(format!("HTTP {}", r.status().as_u16())));
+    }
+    r.text().map_err(|e| ReleaseError::Unavailable(e.to_string()))
 }
 
 /// The `sha256` GitHub serves beside an asset, when the project publishes one.
@@ -208,8 +211,14 @@ pub fn sha256_sibling(asset_url: &str) -> Option<String> {
     (hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit())).then(|| hex.to_lowercase())
 }
 
+/// The newest release, or None.
+///
+/// Goes through `latest_detailed`, so every caller — the engine, the local
+/// database, the runtime, the marketplace's component check — gets the
+/// github.com fallback when the API allowance is spent, instead of quietly
+/// reporting "no release" and offering nothing.
 pub fn latest(repo: &str) -> Option<UpstreamRelease> {
-    fetch_release(repo, "latest")
+    latest_detailed(repo).ok()
 }
 
 /// The newest release, or WHY not — for the paths that show the reason to a
@@ -223,8 +232,13 @@ pub fn latest_detailed(repo: &str) -> Result<UpstreamRelease, ReleaseError> {
     }
 }
 
+/// One named release. Falls back the same way `latest` does: a pinned
+/// install must not become impossible because the hour's requests are gone.
 pub fn by_tag(repo: &str, tag: &str) -> Option<UpstreamRelease> {
-    fetch_release(repo, &format!("tags/{tag}"))
+    match fetch_release_detailed(repo, &format!("tags/{tag}")) {
+        Err(ReleaseError::RateLimited { .. }) => assets_without_api(repo, tag).ok(),
+        other => other.ok(),
+    }
 }
 
 fn common_suffix_len(a: &str, b: &str) -> usize {

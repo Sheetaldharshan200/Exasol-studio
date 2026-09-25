@@ -462,6 +462,20 @@ export async function mockInvoke(
     case "market_repo_meta":
       return {};
 
+    // On the web build there is no token store and no rate limit to raise —
+    // report the signed-out allowance as healthy so the notice stays hidden.
+    case "github_status":
+    case "github_connect":
+    case "github_disconnect":
+      return {
+        connected: false,
+        login: null,
+        limit: 60,
+        remaining: 60,
+        resetsInSecs: null,
+        tokenUrl: "https://github.com/settings/tokens/new?description=Exasol%20Studio&scopes=",
+      };
+
     case "market_catalog":
       return {
         generatedAt: "2026-07-01T08:00:00Z",

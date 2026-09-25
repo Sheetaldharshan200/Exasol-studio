@@ -458,14 +458,16 @@ pub async fn market_repo_meta(app: AppHandle, repos: Vec<String>) -> AppResult<V
 /// serving whatever is already on disk meanwhile.
 /// One GitHub GET, decoded, or None on any failure.
 async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
-    let resp = client
-        .get(url)
-        .header("User-Agent", "exasol-studio")
-        .header("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(8))
-        .send()
-        .await
-        .ok()?;
+    let resp = crate::github_auth::authorize_async(
+        client
+            .get(url)
+            .header("User-Agent", "exasol-studio")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(std::time::Duration::from_secs(8)),
+    )
+    .send()
+    .await
+    .ok()?;
     if !resp.status().is_success() {
         return None;
     }
