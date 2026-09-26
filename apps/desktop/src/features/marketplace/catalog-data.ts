@@ -37,7 +37,7 @@ export type Install =
   | "maven"
   /** Downloaded from the driver's NATIVE registry (npm / Go proxy / crates.io /
    *  GitHub tags) at any version — independent of Studio, usable by your own
-   *  tools (see versions.ts PACKAGE_SOURCE + Rust install_registry_package). */
+   *  tools (its coordinate is the item's own `source`). */
   | "package"
   /** Staged into BucketFS from the repo's newest release, by the same command
    *  the add-data-source flow runs. */
@@ -59,13 +59,14 @@ export type InstallSource =
   /** A JAR from Maven Central, verified against the published .sha1. */
   | { kind: "maven"; group: string; artifact: string }
   /**
-   * A file from the repository's newest GitHub release, chosen by a pattern
-   * over asset names and verified against its published digest. `onPath`
-   * marks an executable, which is linked into Studio's bin.
+   * A file from the repository's newest GitHub release, verified against its
+   * published digest. `assetPattern` picks it by name; without one the
+   * installer picks the build for this platform. `onPath` marks an
+   * executable, which is linked into Studio's bin.
    */
-  | { kind: "gh-asset"; assetPattern: string; onPath?: boolean }
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean }
   /** A package from a native registry (npm, the Go proxy, crates.io). */
-  | { kind: "registry"; registry: "npm" | "goproxy" | "crates"; package: string }
+  | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string }
   /**
    * A plugin belonging to another application. Studio fetches and verifies it
    * and opens the folder it belongs in — it does not write into another
@@ -117,10 +118,10 @@ export const CATALOG: CatalogItem[] = [
   { id: "exapump", repo: "exasol-labs/exapump", kind: "cli", install: "binary", labs: true },
   { id: "semantic-views", repo: "exasol-labs/exasol-semantic-views", kind: "extension", install: "semantic-views", labs: true },
   { id: "json-tables", repo: "exasol-labs/exasol-json-tables", kind: "extension", install: "source-build", labs: true },
-  { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool" },
-  { id: "pyexasol", repo: "exasol/pyexasol", kind: "driver", install: "uv-pip" },
-  { id: "sqlalchemy-exasol", repo: "exasol/sqlalchemy-exasol", kind: "driver", install: "uv-pip" },
-  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "package", labs: true },
+  { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool", source: { kind: "pypi", package: "exasol-mcp-server" } },
+  { id: "pyexasol", repo: "exasol/pyexasol", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "pyexasol" } },
+  { id: "sqlalchemy-exasol", repo: "exasol/sqlalchemy-exasol", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "sqlalchemy-exasol" } },
+  { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "package", labs: true, source: { kind: "registry", registry: "crates", package: "exarrow-rs" } },
   {
     id: "driver-jdbc",
     kind: "driver",
@@ -131,16 +132,18 @@ export const CATALOG: CatalogItem[] = [
   },
   {
     id: "driver-odbc",
+    source: { kind: "registry", registry: "exasol-downloads", package: "ODBC" },
     kind: "driver",
     install: "package",
     name: "ODBC Driver",
     description: "ODBC driver for apps and BI tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/odbc.htm",
   },
-  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "package" },
-  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "package" },
+  { id: "driver-ts", repo: "exasol/exasol-driver-ts", kind: "driver", install: "package", source: { kind: "registry", registry: "npm", package: "@exasol/exasol-driver-ts" } },
+  { id: "driver-go", repo: "exasol/exasol-driver-go", kind: "driver", install: "package", source: { kind: "registry", registry: "goproxy", package: "github.com/exasol/exasol-driver-go" } },
   {
     id: "driver-adonet",
+    source: { kind: "registry", registry: "exasol-downloads", package: "ADO.NET" },
     kind: "driver",
     install: "package",
     name: "ADO.NET Provider",
@@ -149,6 +152,7 @@ export const CATALOG: CatalogItem[] = [
   },
   {
     id: "driver-r",
+    source: { kind: "gh-asset" },
     repo: "exasol/r-exasol",
     kind: "driver",
     install: "package",
@@ -157,10 +161,10 @@ export const CATALOG: CatalogItem[] = [
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
   { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "package" },
-  { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip" },
-  { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip" },
+  { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-notebook-connector" } },
+  { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip", source: { kind: "pypi", package: "dbt-exasol" } },
   { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "binary", labs: true },
-  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "package", labs: true },
+  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "package", labs: true, source: { kind: "gh-asset" } },
   { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "binary", labs: true },
   { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true },

@@ -103,6 +103,65 @@ pub fn verify(name: &str, expected: Option<&str>, bytes: &[u8], sha1: bool) -> A
     )))
 }
 
+/// Where to ask a registry for a package's newest version.
+///
+/// npm needs the scope slash percent-encoded in the metadata path but NOT in
+/// the tarball path, which is the kind of detail that was previously spelled
+/// out once per package inside a match arm.
+pub fn registry_latest_url(registry: &str, package: &str) -> Option<String> {
+    Some(match registry {
+        "npm" => format!("https://registry.npmjs.org/{}/latest", package.replace('/', "%2F")),
+        "goproxy" => format!("https://proxy.golang.org/{package}/@latest"),
+        "crates" => format!("https://crates.io/api/v1/crates/{package}"),
+        _ => return None,
+    })
+}
+
+/// Where that version's artifact is.
+pub fn registry_download_url(registry: &str, package: &str, version: &str) -> Option<String> {
+    Some(match registry {
+        // The tarball is named for the UNSCOPED package, under the scoped path.
+        "npm" => {
+            let bare = package.rsplit('/').next().unwrap_or(package);
+            format!("https://registry.npmjs.org/{package}/-/{bare}-{version}.tgz")
+        }
+        "goproxy" => format!("https://proxy.golang.org/{package}/@v/{version}.zip"),
+        "crates" => format!("https://crates.io/api/v1/crates/{package}/{version}/download"),
+        _ => return None,
+    })
+}
+
+/// The file an artifact lands under.
+pub fn registry_file_name(registry: &str, package: &str, version: &str) -> Option<String> {
+    let bare = package.rsplit('/').next().unwrap_or(package);
+    Some(match registry {
+        "npm" => format!("{bare}-{version}.tgz"),
+        "goproxy" => format!("{bare}-{version}.zip"),
+        "crates" => format!("{bare}-{version}.crate"),
+        _ => return None,
+    })
+}
+
+/// Where in a registry's "latest" response the version sits.
+pub fn registry_version_path(registry: &str) -> Option<&'static [&'static str]> {
+    Some(match registry {
+        "npm" => &["version"],
+        "goproxy" => &["Version"],
+        "crates" => &["crate", "max_stable_version"],
+        _ => return None,
+    })
+}
+
+/// How to add the package to a project instead, for the hint on the card.
+pub fn registry_hint(registry: &str, package: &str) -> Option<String> {
+    Some(match registry {
+        "npm" => format!("npm package — or add it to a project with `npm i {package}`"),
+        "goproxy" => format!("Go module zip — or add it to a project with `go get {package}`"),
+        "crates" => format!("crates.io package — or add it to a project with `cargo add {package}`"),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +224,53 @@ mod tests {
         assert!(sha1_ok(Some(&hex), body));
         assert!(sha1_ok(Some(&format!("{hex}  thing.jar")), body));
         assert!(!sha1_ok(Some(&"0".repeat(40)), body));
+    }
+
+    #[test]
+    fn npm_encodes_the_scope_for_metadata_but_not_for_the_tarball() {
+        // The one asymmetry that made these worth spelling out once rather
+        // than once per package.
+        assert_eq!(
+            registry_latest_url("npm", "@exasol/exasol-driver-ts").unwrap(),
+            "https://registry.npmjs.org/@exasol%2Fexasol-driver-ts/latest"
+        );
+        assert_eq!(
+            registry_download_url("npm", "@exasol/exasol-driver-ts", "1.2.3").unwrap(),
+            "https://registry.npmjs.org/@exasol/exasol-driver-ts/-/exasol-driver-ts-1.2.3.tgz"
+        );
+        assert_eq!(registry_file_name("npm", "@exasol/exasol-driver-ts", "1.2.3").unwrap(), "exasol-driver-ts-1.2.3.tgz");
+    }
+
+    #[test]
+    fn go_and_crates_build_the_urls_their_proxies_use() {
+        assert_eq!(
+            registry_latest_url("goproxy", "github.com/exasol/exasol-driver-go").unwrap(),
+            "https://proxy.golang.org/github.com/exasol/exasol-driver-go/@latest"
+        );
+        assert_eq!(
+            registry_download_url("goproxy", "github.com/exasol/exasol-driver-go", "v1.0.0").unwrap(),
+            "https://proxy.golang.org/github.com/exasol/exasol-driver-go/@v/v1.0.0.zip"
+        );
+        assert_eq!(
+            registry_download_url("crates", "exarrow-rs", "0.3.0").unwrap(),
+            "https://crates.io/api/v1/crates/exarrow-rs/0.3.0/download"
+        );
+    }
+
+    #[test]
+    fn each_registry_says_where_its_version_field_lives() {
+        assert_eq!(registry_version_path("npm"), Some(&["version"][..]));
+        assert_eq!(registry_version_path("goproxy"), Some(&["Version"][..]));
+        assert_eq!(registry_version_path("crates"), Some(&["crate", "max_stable_version"][..]));
+    }
+
+    #[test]
+    fn an_unknown_registry_resolves_to_nothing_rather_than_a_wrong_url() {
+        assert_eq!(registry_latest_url("pypi-ish", "x"), None);
+        assert_eq!(registry_download_url("pypi-ish", "x", "1"), None);
+        assert_eq!(registry_file_name("pypi-ish", "x", "1"), None);
+        assert_eq!(registry_version_path("pypi-ish"), None);
+        assert_eq!(registry_hint("pypi-ish", "x"), None);
     }
 
     #[test]
