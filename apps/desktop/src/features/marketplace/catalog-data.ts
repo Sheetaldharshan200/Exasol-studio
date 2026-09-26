@@ -44,12 +44,47 @@ export type Install =
   | "vs-adapter"
   | "reference";
 
+/**
+ * Where an item's artifact comes from — the coordinate for its install kind.
+ *
+ * This is what lets the installer be dispatched by KIND rather than by item
+ * id. The Rust side used to `match id { "pyexasol" => …, "dbt-exasol" => … }`,
+ * eight branches deep, which is why a catalogue of 147 had installers for 8:
+ * every new one needed its own branch. Naming the mechanism and its
+ * coordinate here keeps adding an item to a single line.
+ */
+export type InstallSource =
+  /** A Python distribution, installed into Studio's managed environment. */
+  | { kind: "pypi"; package: string }
+  /** A JAR from Maven Central, verified against the published .sha1. */
+  | { kind: "maven"; group: string; artifact: string }
+  /**
+   * A file from the repository's newest GitHub release, chosen by a pattern
+   * over asset names and verified against its published digest. `onPath`
+   * marks an executable, which is linked into Studio's bin.
+   */
+  | { kind: "gh-asset"; assetPattern: string; onPath?: boolean }
+  /** A package from a native registry (npm, the Go proxy, crates.io). */
+  | { kind: "registry"; registry: "npm" | "goproxy" | "crates"; package: string }
+  /**
+   * A plugin belonging to another application. Studio fetches and verifies it
+   * and opens the folder it belongs in — it does not write into another
+   * product's installation. See the change proposal's non-goals.
+   */
+  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" };
+
 export type CatalogItem = {
   id: string;
   repo?: string;
   kind: Kind;
   install: Install;
   labs?: boolean;
+  /**
+   * Where the artifact comes from. Absent for items Studio installs through a
+   * path of their own (the managed components) and for `reference` items,
+   * which have nothing to fetch.
+   */
+  source?: InstallSource;
   /** Only for repo-less items — repo items resolve these from GitHub. */
   name?: string;
   description?: string;
