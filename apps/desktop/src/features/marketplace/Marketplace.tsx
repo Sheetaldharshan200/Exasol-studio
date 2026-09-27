@@ -142,6 +142,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Resolve the chosen version from the official source (registry or Exasol downloads portal)",
         "Download and extract it — usable immediately, no manual steps (the ODBC driver is wired straight into Studio's connections)",
       ];
+    case "host-plugin":
+      return [
+        "Download the plugin file from its newest release",
+        "Verify it against the checksum the project publishes",
+        "Reveal it in Studio's folder and say where it belongs — Studio does not write into another application's installation",
+      ];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
@@ -884,7 +890,7 @@ export function Marketplace() {
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
     const assets = releases[item.id]?.assets ?? [];
-    return !(item.install === "binary" && assets.length > 0 && pickAssetFor(item, assets, env) === null);
+    return !((item.install === "binary" || item.install === "host-plugin") && assets.length > 0 && pickAssetFor(item, assets, env) === null);
   };
   // A card is also batch-selectable when it has an UPDATE available — installs
   // and updates are the same gesture ("everything is same"): managed

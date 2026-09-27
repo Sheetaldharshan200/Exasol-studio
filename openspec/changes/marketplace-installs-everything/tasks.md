@@ -16,9 +16,9 @@
       Tests: `market.rs` (coordinate → URL, checksum mismatch refused)
 - [x] `pypi` — into the managed venv. Tests: `market.rs` (spec building)
 - [x] `npm` — existing registry installer, reached by kind
-- [ ] `host-plugin` — download, verify, reveal the destination. Tests:
-      `apps/desktop/src/features/marketplace/host-plugin.test.ts` (destination
-      per host and platform)
+- [x] `host-plugin` — download, verify, reveal the destination. Tests:
+      `installers.rs` (destination per host and platform; Windows-only hosts
+      say so elsewhere)
 
 ## 3. Lifecycle
 
@@ -44,4 +44,5 @@ and `language-container-rs` are containers for BucketFS, not files for this
 machine; the `.rockspec` pair wants LuaRocks; `row-level-security` and
 `preprocessor-library` install into a database; `grafana-datasource`,
 `power-apps-connector` and `azure-data-factory` ship through other products'
-catalogues. Host plugins (`.vsix`, `.mez`) await their installer.
+catalogues. Host plugins (`.vsix`, `.mez`) are fetched, verified and revealed; Studio
+never writes into another application's installation.

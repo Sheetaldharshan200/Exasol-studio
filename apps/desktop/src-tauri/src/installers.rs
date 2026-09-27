@@ -182,6 +182,25 @@ pub fn valid_package_name(name: &str) -> bool {
         && !name.contains("..")
 }
 
+/// Where a plugin for another application belongs, as a sentence for the
+/// person to act on. Studio downloads and verifies the file into its own
+/// folder and reveals it; putting it where the host wants it is the person's
+/// step, because writing into another product's installation means owning
+/// its upgrades and its breakage. None on a host/OS pair the product does
+/// not exist for (Power BI Desktop is Windows-only).
+pub fn host_plugin_destination(host: &str, os: &str) -> Option<String> {
+    Some(match (host, os) {
+        ("vscode", _) => "Install it in VS Code: Extensions → ··· → Install from VSIX…, or run `code --install-extension <file>`.".into(),
+        ("powerbi", "windows") => "Copy it to Documents\\Power BI Desktop\\Custom Connectors, then allow uncertified connectors under File → Options → Security.".into(),
+        ("powerbi", _) => "Power BI Desktop runs on Windows: copy the file to that machine's Documents\\Power BI Desktop\\Custom Connectors folder.".into(),
+        ("tableau", "windows") => "Copy it to Documents\\My Tableau Repository\\Connectors and restart Tableau.".into(),
+        ("tableau", _) => "Copy it to ~/Documents/My Tableau Repository/Connectors and restart Tableau.".into(),
+        ("metabase", _) => "Copy it into the plugins/ directory beside your Metabase jar and restart Metabase.".into(),
+        ("powerapps", _) => "Upload it in Power Apps: Data → Custom connectors → Import an OpenAPI file.".into(),
+        _ => return None,
+    })
+}
+
 /// Where to ask a registry for a package's newest version.
 ///
 /// npm needs the scope slash percent-encoded in the metadata path but NOT in
@@ -423,6 +442,19 @@ mod tests {
         ];
         assert_eq!(stale_links(&links, Path::new("/data/marketplace/bucketfs-client")), ["bfsc"]);
         assert!(stale_links(&links, Path::new("/data/marketplace/nothing-here")).is_empty());
+    }
+
+    #[test]
+    fn every_host_has_a_destination_and_windows_only_hosts_say_so_elsewhere() {
+        for host in ["vscode", "powerbi", "tableau", "metabase", "powerapps"] {
+            for os in ["macos", "windows", "linux"] {
+                assert!(host_plugin_destination(host, os).is_some(), "{host}/{os}");
+            }
+        }
+        assert!(host_plugin_destination("powerbi", "macos").unwrap().contains("runs on Windows"));
+        assert!(host_plugin_destination("powerbi", "windows").unwrap().contains("Custom Connectors"));
+        assert!(host_plugin_destination("vscode", "linux").unwrap().contains("--install-extension"));
+        assert_eq!(host_plugin_destination("excel", "macos"), None);
     }
 
     #[test]

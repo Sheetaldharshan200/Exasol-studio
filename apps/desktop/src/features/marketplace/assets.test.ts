@@ -87,3 +87,11 @@ test("win- and win_ names are Windows builds, not platform-neutral files", () =>
   assert.equal(pickAsset([a("tool-win-x64.zip")], linux), null);
   assert.equal(pickAsset([a("tool-win-x64.zip"), a("tool-linux-x86_64.tar.gz")], linux)?.name, "tool-linux-x86_64.tar.gz");
 });
+
+test("a host plugin's pattern picks its file the same way a jar's does", () => {
+  const assets = [a("exasol-vscode-1.8.0.vsix"), a("exasol-vscode-1.8.0.vsix.sha256"), a("error_code_report.json")];
+  assert.equal(
+    pickAssetFor({ source: { kind: "host-plugin", assetPattern: "^exasol-vscode-[\\d.]+\\.vsix$", host: "vscode" } }, assets, mac)?.name,
+    "exasol-vscode-1.8.0.vsix",
+  );
+});
