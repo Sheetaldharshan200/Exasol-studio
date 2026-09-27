@@ -74,3 +74,16 @@ test("pickAssetFor reads the pattern off the item and falls back to platform rul
   assert.equal(pickAssetFor({ source: { kind: "gh-asset", onPath: true } }, assets, mac)?.name, "tool-macos-arm64");
   assert.equal(pickAssetFor({}, assets, mac)?.name, "tool-macos-arm64");
 });
+
+test("the same OS in another architecture is unavailable, not a fallback", () => {
+  // An aarch64 Mac used to be handed the x86_64 build when no arm64 one
+  // existed. A universal or unarched OS build may still stand in.
+  assert.equal(pickAsset([a("tool-macos-x86_64.zip")], mac), null);
+  assert.equal(pickAsset([a("tool-macos-x86_64.zip"), a("tool-macos.zip")], mac)?.name, "tool-macos.zip");
+  assert.equal(pickAsset([a("tool-macos-x86_64.zip"), a("tool-macos-arm64.zip")], mac)?.name, "tool-macos-arm64.zip");
+});
+
+test("win- and win_ names are Windows builds, not platform-neutral files", () => {
+  assert.equal(pickAsset([a("tool-win-x64.zip")], linux), null);
+  assert.equal(pickAsset([a("tool-win-x64.zip"), a("tool-linux-x86_64.tar.gz")], linux)?.name, "tool-linux-x86_64.tar.gz");
+});

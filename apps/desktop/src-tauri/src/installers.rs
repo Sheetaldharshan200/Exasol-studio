@@ -91,12 +91,6 @@ pub fn maven_jar_name(artifact: &str, version: &str) -> String {
     format!("{artifact}-{version}.jar")
 }
 
-/// A version string as Maven Central addresses it — release tags often carry
-/// a `v` prefix that the repository path does not.
-pub fn maven_version(tag: &str) -> String {
-    tag.trim().trim_start_matches('v').trim_start_matches('V').to_string()
-}
-
 /// Whether a published digest matches what was downloaded.
 ///
 /// `None` for the expectation means the publisher published none, which is
@@ -105,9 +99,14 @@ pub fn maven_version(tag: &str) -> String {
 /// refusal, whatever its case or `sha256:` prefix.
 pub fn digest_ok(expected: Option<&str>, bytes: &[u8]) -> bool {
     let Some(expected) = expected else { return true };
-    let want = expected.trim().trim_start_matches("sha256:").to_ascii_lowercase();
-    if want.len() != 64 {
-        return true; // not a sha256 — nothing to compare against
+    let lower = expected.trim().to_ascii_lowercase();
+    let want = lower.strip_prefix("sha256:").unwrap_or(&lower);
+    // A digest the publisher DID publish but that does not read as a sha256
+    // is a refusal, not a pass. Accepting it would let a stray prefix or a
+    // truncated value switch verification off — which is a bypass wearing a
+    // checksum's clothes.
+    if want.len() != 64 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
     }
     format!("{:x}", Sha256::digest(bytes)) == want
 }
@@ -116,8 +115,9 @@ pub fn digest_ok(expected: Option<&str>, bytes: &[u8]) -> bool {
 pub fn sha1_ok(expected: Option<&str>, bytes: &[u8]) -> bool {
     let Some(expected) = expected else { return true };
     let want = expected.split_whitespace().next().unwrap_or_default().to_ascii_lowercase();
-    if want.len() != 40 {
-        return true;
+    // Same rule as sha256: published and unreadable is a refusal.
+    if want.len() != 40 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
     }
     use sha1::Sha1;
     format!("{:x}", Sha1::digest(bytes)) == want
@@ -134,6 +134,54 @@ pub fn verify(name: &str, expected: Option<&str>, bytes: &[u8], sha1: bool) -> A
     )))
 }
 
+/// A Go module path as the proxy addresses it: every upper-case letter becomes
+/// `!` plus its lower-case form, because module paths are case-sensitive and
+/// the proxy serves them from case-insensitive storage.
+/// `github.com/Azure/x` → `github.com/!azure/x`.
+pub fn goproxy_escape(module: &str) -> String {
+    let mut out = String::with_capacity(module.len() + 4);
+    for c in module.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('!');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Whether a request may carry the GitHub token: only GitHub's own hosts.
+/// Attaching it to any URL a caller happened to build would send it to whoever
+/// that URL points at.
+pub fn is_github_host(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    matches!(host, "api.github.com" | "github.com" | "raw.githubusercontent.com" | "objects.githubusercontent.com" | "uploads.github.com")
+}
+
+/// A catalogue item id that is safe to become a directory name: one path
+/// segment, no separators, nothing that walks. The id names a folder under the
+/// marketplace directory that gets deleted on uninstall, so this is what stands
+/// between `market_uninstall("../other")` and someone else's files.
+pub fn valid_item_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 100
+        && id != "."
+        && id != ".."
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+}
+
+/// A package name that cannot be mistaken for an option or a path when handed
+/// to uv, npm, or a URL: PEP 508-shaped, no leading dash.
+pub fn valid_package_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '@')
+        && name.len() <= 200
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | '@'))
+        && !name.contains("..")
+}
+
 /// Where to ask a registry for a package's newest version.
 ///
 /// npm needs the scope slash percent-encoded in the metadata path but NOT in
@@ -142,7 +190,7 @@ pub fn verify(name: &str, expected: Option<&str>, bytes: &[u8], sha1: bool) -> A
 pub fn registry_latest_url(registry: &str, package: &str) -> Option<String> {
     Some(match registry {
         "npm" => format!("https://registry.npmjs.org/{}/latest", package.replace('/', "%2F")),
-        "goproxy" => format!("https://proxy.golang.org/{package}/@latest"),
+        "goproxy" => format!("https://proxy.golang.org/{}/@latest", goproxy_escape(package)),
         "crates" => format!("https://crates.io/api/v1/crates/{package}"),
         _ => return None,
     })
@@ -156,7 +204,7 @@ pub fn registry_download_url(registry: &str, package: &str, version: &str) -> Op
             let bare = package.rsplit('/').next().unwrap_or(package);
             format!("https://registry.npmjs.org/{package}/-/{bare}-{version}.tgz")
         }
-        "goproxy" => format!("https://proxy.golang.org/{package}/@v/{version}.zip"),
+        "goproxy" => format!("https://proxy.golang.org/{}/@v/{version}.zip", goproxy_escape(package)),
         "crates" => format!("https://crates.io/api/v1/crates/{package}/{version}/download"),
         _ => return None,
     })
@@ -226,13 +274,6 @@ mod tests {
     }
 
     #[test]
-    fn a_release_tags_v_prefix_is_not_part_of_the_maven_version() {
-        assert_eq!(maven_version("v2.0.4"), "2.0.4");
-        assert_eq!(maven_version("2.0.4"), "2.0.4");
-        assert_eq!(maven_version(" V1.0 "), "1.0");
-    }
-
-    #[test]
     fn a_matching_digest_passes_whatever_its_shape() {
         let body = b"hello";
         let hex = format!("{:x}", Sha256::digest(body));
@@ -257,11 +298,57 @@ mod tests {
     }
 
     #[test]
-    fn something_that_is_not_a_sha256_is_not_treated_as_one() {
-        // A digest GitHub reports in another algorithm must not be compared
-        // as if it were sha256 and fail everything.
-        assert!(digest_ok(Some("md5:abc"), b"hello"));
-        assert!(digest_ok(Some(""), b"hello"));
+    fn a_published_digest_that_cannot_be_read_is_a_refusal_not_a_pass() {
+        // Review found the old rule accepted anything that was not 64 chars —
+        // so `SHA256:` in upper case (71 chars after a case-sensitive strip)
+        // or a truncated value switched verification OFF. Published and
+        // unreadable now fails closed; only "nothing published" passes.
+        assert!(!digest_ok(Some("md5:abc"), b"hello"));
+        assert!(!digest_ok(Some(""), b"hello"));
+        assert!(!digest_ok(Some(&format!("SHA256:{}", "0".repeat(64))), b"hello"));
+        assert!(!digest_ok(Some(&"z".repeat(64)), b"hello"));
+        // …while a correct one in upper case or with the prefix still passes.
+        let hex = format!("{:x}", Sha256::digest(b"hello"));
+        assert!(digest_ok(Some(&format!("SHA256:{}", hex.to_uppercase())), b"hello"));
+        assert!(!sha1_ok(Some("deadbeef"), b"jar bytes"));
+    }
+
+    #[test]
+    fn go_module_paths_are_case_encoded_for_the_proxy() {
+        assert_eq!(goproxy_escape("github.com/Azure/azure-sdk-for-go"), "github.com/!azure/azure-sdk-for-go");
+        assert_eq!(goproxy_escape("github.com/exasol/exasol-driver-go"), "github.com/exasol/exasol-driver-go");
+        assert!(registry_latest_url("goproxy", "github.com/Azure/x").unwrap().contains("/!azure/"));
+    }
+
+    #[test]
+    fn the_token_goes_only_to_github() {
+        assert!(is_github_host("https://api.github.com/repos/x/y"));
+        assert!(is_github_host("https://github.com/x/y/releases.atom"));
+        assert!(is_github_host("https://raw.githubusercontent.com/x/y/HEAD/f"));
+        assert!(!is_github_host("https://attacker.example/collect"));
+        assert!(!is_github_host("https://api.github.com.evil.example/"));
+        assert!(!is_github_host("http://api.github.com/insecure"));
+        assert!(!is_github_host("https://evil.example/?u=api.github.com"));
+    }
+
+    #[test]
+    fn an_item_id_is_one_safe_directory_name() {
+        for ok in ["pyexasol", "driver-jdbc", "vs-exasol-lua", "exa_agent", "a.b"] {
+            assert!(valid_item_id(ok), "{ok}");
+        }
+        for bad in ["", "..", ".", "../other", "a/b", "a\\b", "/tmp/x", "a b", &"x".repeat(101)] {
+            assert!(!valid_item_id(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_package_name_cannot_pose_as_an_option_or_a_path() {
+        for ok in ["pyexasol", "exasol-mcp-server", "@exasol/exasol-driver-ts", "github.com/exasol/exasol-driver-go", "n8n-nodes-exasol"] {
+            assert!(valid_package_name(ok), "{ok}");
+        }
+        for bad in ["--all", "-x", "", "a b", "../x", "a;rm", "$(x)"] {
+            assert!(!valid_package_name(bad), "{bad:?}");
+        }
     }
 
     #[test]

@@ -12,7 +12,7 @@ const METADATA = /(\.sha256|\.sha1|\.md5|\.asc|\.sig|\.txt|\.json|(^|[^a-z])sha2
 
 const OS_TOKENS: Record<string, string[]> = {
   macos: ["darwin", "macos", "apple", "osx"],
-  windows: ["windows", "win32", "win64", ".exe", ".msi"],
+  windows: ["windows", "win32", "win64", "win-", "win_", ".exe", ".msi"],
   linux: ["linux"],
 };
 const ALL_OS_TOKENS = [...new Set(Object.values(OS_TOKENS).flat())];
@@ -44,8 +44,13 @@ export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern
   const has = (name: string, tokens: string[]) => tokens.some((t) => name.includes(t));
   const byOsArch = artifacts.find((a) => has(a.name.toLowerCase(), osTokens) && has(a.name.toLowerCase(), archTokens));
   if (byOsArch) return byOsArch;
-  const byOs = artifacts.find((a) => has(a.name.toLowerCase(), osTokens));
+  // Same OS but another architecture is not a fallback — review found this
+  // handing an aarch64 host the x86_64 build. Only an OS build that names no
+  // architecture at all (a universal binary, a script) may stand in.
+  const ANY_ARCH = ["arm64", "aarch64", "x86_64", "amd64", "x64", "i386", "i686"];
+  const byOs = artifacts.find((a) => has(a.name.toLowerCase(), osTokens) && !has(a.name.toLowerCase(), ANY_ARCH));
   if (byOs) return byOs;
+  if (artifacts.some((a) => has(a.name.toLowerCase(), osTokens))) return null;
   // Platform-tagged release with nothing for this host → no honest pick.
   const platformSpecific = artifacts.some((a) => has(a.name.toLowerCase(), ALL_OS_TOKENS));
   if (platformSpecific) return null;

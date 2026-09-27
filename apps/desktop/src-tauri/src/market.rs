@@ -464,6 +464,7 @@ async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
             .header("User-Agent", "exasol-studio")
             .header("Accept", "application/vnd.github+json")
             .timeout(std::time::Duration::from_secs(8)),
+        url,
     )
     .send()
     .await
@@ -1870,7 +1871,9 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
 /// 3.2.3 on Maven Central), and the tag would 404.
 async fn install_from_maven(app: &AppHandle, id: &str, group: &str, artifact: &str, requested: Option<&str>) -> AppResult<(String, String)> {
     let v = match requested {
-        Some(v) if valid_version_tag(v) => crate::installers::maven_version(v),
+        // Verbatim: it came from Maven's own version list, and a version that
+        // genuinely begins with "v" is addressed with it.
+        Some(v) if valid_version_tag(v) => v.to_string(),
         Some(v) => return Err(AppError::Storage(format!("Invalid {artifact} version: {v}"))),
         None => {
             emit_log(app, id, format!("Resolving the latest {artifact} from Maven Central…"), "info");
@@ -1893,8 +1896,36 @@ async fn install_from_maven(app: &AppHandle, id: &str, group: &str, artifact: &s
     let jar = crate::installers::maven_jar_name(artifact, &v);
     let url = crate::installers::maven_jar_url(group, artifact, &v);
     let path = download_and_place(app, id, &url, &jar).await?;
+    // Maven Central publishes `<jar>.sha1` beside every artifact. Verify the
+    // file that landed against it, and discard on a mismatch — a jar is code
+    // that will run inside a database or a tool.
+    let published = reqwest::Client::new()
+        .get(format!("{url}.sha1"))
+        .header("User-Agent", "exasol-studio")
+        .send()
+        .await
+        .ok()
+        .filter(|r| r.status().is_success());
+    let expected = match published {
+        Some(r) => r.text().await.ok(),
+        None => None,
+    };
+    verify_placed(&path, expected.as_deref(), true)?;
+    emit_log(app, id, "Checksum verified against Maven Central.", "info");
     let note = format!("{artifact} {v} downloaded to {path}. Put this jar on the classpath of the tool that needs it.");
     Ok((v, note))
+}
+
+/// Check a file that download_and_place wrote against a publisher's digest,
+/// deleting it on a mismatch so nothing unverified stays on disk.
+fn verify_placed(path: &str, expected: Option<&str>, sha1: bool) -> AppResult<()> {
+    let bytes = std::fs::read(path)?;
+    let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+    if let Err(e) = crate::installers::verify(name, expected, &bytes, sha1) {
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// One artifact choice from Exasol's official downloads index.
@@ -2025,16 +2056,19 @@ async fn install_from_source(
             install_from_downloads_portal(app, id, package, driver_runtime.as_deref(), requested).await
         }
         InstallSource::Registry { registry, package, .. } => {
+            if !inst::valid_package_name(package) {
+                return Err(AppError::Storage(format!("{package} is not a package name Studio will pass on.")));
+            }
             let latest_url = inst::registry_latest_url(registry, package)
                 .ok_or_else(|| AppError::Storage(format!("{registry} is not a registry Studio installs from.")))?;
+            // The registry's reply carries the newest version AND, for npm and
+            // crates.io, the digest of that version's artifact — read both.
+            let body = fetch_json(&latest_url).await?;
             let version = match requested {
                 Some(v) => v.to_string(),
-                None => {
-                    let body = fetch_json(&latest_url).await?;
-                    inst::json_at(&body, inst::registry_version_path(registry).unwrap_or(&[]))
-                        .map(str::to_string)
-                        .ok_or_else(|| AppError::Storage(format!("{registry} returned no latest version for {package}.")))?
-                }
+                None => inst::json_at(&body, inst::registry_version_path(registry).unwrap_or(&[]))
+                    .map(str::to_string)
+                    .ok_or_else(|| AppError::Storage(format!("{registry} returned no latest version for {package}.")))?,
             };
             if !valid_version_tag(&version) {
                 return Err(AppError::Storage(format!("Invalid package version: {version}")));
@@ -2043,9 +2077,32 @@ async fn install_from_source(
             let filename = inst::registry_file_name(registry, package, &version).unwrap_or_default();
             let hint = inst::registry_hint(registry, package).unwrap_or_default();
             let path = download_and_place(app, id, &url, &filename).await?;
+            // npm publishes dist.shasum (sha1) for the tarball; crates.io a
+            // sha256 per version. The Go proxy's go.sum hashes are over the
+            // module tree, not the zip, and `go` verifies those itself.
+            match registry.as_str() {
+                "npm" if requested.is_none() => {
+                    verify_placed(&path, inst::json_at(&body, &["dist", "shasum"]), true)?;
+                    emit_log(app, id, "Checksum verified against the npm registry.", "info");
+                }
+                "crates" => {
+                    let checksum = body
+                        .get("versions")
+                        .and_then(|v| v.as_array())
+                        .and_then(|vs| vs.iter().find(|v| v.get("num").and_then(|n| n.as_str()) == Some(version.as_str())))
+                        .and_then(|v| v.get("checksum"))
+                        .and_then(|c| c.as_str());
+                    verify_placed(&path, checksum, false)?;
+                    emit_log(app, id, "Checksum verified against crates.io.", "info");
+                }
+                _ => {}
+            }
             Ok((version.clone(), format!("Version {version} downloaded to {path}. {hint}.")))
         }
         InstallSource::Pypi { package, tool } => {
+            if !inst::valid_package_name(package) {
+                return Err(AppError::Storage(format!("{package} is not a package name Studio will pass on.")));
+            }
             // The requested version, else the verified pin the lock carries
             // for this package, else the package's newest.
             let pinned = requested.map(str::to_string).or_else(|| crate::component_lock::verified_pin(package));
@@ -2187,6 +2244,9 @@ pub async fn market_install_run(
     repo: Option<String>,
     source: Option<crate::installers::InstallSource>,
 ) -> AppResult<Value> {
+    if !crate::installers::valid_item_id(&id) {
+        return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
+    }
     emit_log(&app, &id, "Starting installation…", "info");
     // Validated before it can reach a package spec or URL.
     let requested = requested.filter(|v| valid_version_tag(v));
@@ -2333,14 +2393,24 @@ pub fn market_uninstall(
     // The item's coordinate: what "remove" means depends on the mechanism.
     source: Option<crate::installers::InstallSource>,
 ) -> AppResult<()> {
-    use crate::installers::{points_into, stale_links, InstallSource};
+    use crate::installers::{points_into, stale_links, valid_item_id, valid_package_name, InstallSource};
+    // The id becomes a directory that is recursively deleted below. Anything
+    // that is not one plain segment — `../other`, an absolute path — is
+    // refused before it can name someone else's files.
+    if !valid_item_id(&id) {
+        return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
+    }
     let dir = market_dir(&app)?.join(&id);
 
     // A uv tool lives in uv's own tool directory, not under the item's, so
     // deleting the folder would leave the command on PATH pointing at nothing.
+    // `--` keeps a package name from being read as an option (`--all` would
+    // remove every tool), and the name is validated as well.
     if let Some(InstallSource::Pypi { package, tool: true }) = &source {
-        if let Ok(uv) = ensure_uv(&app, &id) {
-            let _ = std::process::Command::new(uv).args(["tool", "uninstall", package]).status();
+        if valid_package_name(package) {
+            if let Ok(uv) = ensure_uv(&app, &id) {
+                let _ = std::process::Command::new(uv).args(["tool", "uninstall", "--", package]).status();
+            }
         }
     }
 
@@ -2361,15 +2431,21 @@ pub fn market_uninstall(
     // in this item's directory go; a real file or another item's link stays.
     let bin = studio_bin_dir(&app);
     if let Ok(entries) = std::fs::read_dir(&bin) {
+        // A link's target may be relative to the bin directory; resolve it
+        // (and the item directory) before asking whether one is inside the
+        // other, or a relative target never matches an absolute directory
+        // and the stale link stays behind.
+        let dir_abs = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
         let links: Vec<(String, std::path::PathBuf)> = entries
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().to_str()?.to_string();
                 let target = std::fs::read_link(e.path()).ok()?;
-                Some((name, target))
+                let joined = if target.is_absolute() { target } else { bin.join(target) };
+                Some((name, std::fs::canonicalize(&joined).unwrap_or(joined)))
             })
             .collect();
-        for name in stale_links(&links, &dir) {
+        for name in stale_links(&links, &dir_abs) {
             let _ = std::fs::remove_file(bin.join(name));
         }
     }

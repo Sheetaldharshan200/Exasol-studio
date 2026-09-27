@@ -34,20 +34,22 @@ pub fn token() -> Option<String> {
     cache().lock().ok().and_then(|t| t.clone())
 }
 
-/// Add the `Authorization` header when a token is connected. Every GitHub
-/// request in the app goes through this, so connecting lifts them all at once.
-pub fn authorize(req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
+/// Add the `Authorization` header when a token is connected — and only for a
+/// request bound for GitHub. Every GitHub request in the app goes through
+/// this, so connecting lifts them all at once; the host check is what keeps a
+/// future caller from handing the token to whatever URL it happened to build.
+pub fn authorize(req: reqwest::blocking::RequestBuilder, url: &str) -> reqwest::blocking::RequestBuilder {
     match token() {
-        Some(t) => req.header("Authorization", format!("Bearer {t}")),
-        None => req,
+        Some(t) if crate::installers::is_github_host(url) => req.header("Authorization", format!("Bearer {t}")),
+        _ => req,
     }
 }
 
 /// Same, for the async client.
-pub fn authorize_async(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+pub fn authorize_async(req: reqwest::RequestBuilder, url: &str) -> reqwest::RequestBuilder {
     match token() {
-        Some(t) => req.header("Authorization", format!("Bearer {t}")),
-        None => req,
+        Some(t) if crate::installers::is_github_host(url) => req.header("Authorization", format!("Bearer {t}")),
+        _ => req,
     }
 }
 
@@ -64,7 +66,11 @@ fn token_path(app: &AppHandle) -> AppResult<PathBuf> {
 /// call this first, and the marketplace asks for status before it does
 /// anything with GitHub, so a stored token is in place by the time it matters.
 pub fn ensure_loaded(app: &AppHandle, state: &AppState) {
-    if cache().lock().map(|t| t.is_some()).unwrap_or(false) {
+    // One lock held across check-and-fill: a connect that lands between an
+    // empty check and this fill would otherwise be overwritten by the older
+    // token read from disk.
+    let mut slot = cache().lock().unwrap();
+    if slot.is_some() {
         return;
     }
     let Ok(path) = token_path(app) else { return };
@@ -72,7 +78,7 @@ pub fn ensure_loaded(app: &AppHandle, state: &AppState) {
     let key = *state.vault_key.read().unwrap();
     if let Ok(plain) = security::decrypt_secret(key.as_ref(), stored.trim()) {
         if !plain.is_empty() {
-            *cache().lock().unwrap() = Some(plain);
+            *slot = Some(plain);
         }
     }
 }
@@ -178,8 +184,13 @@ pub fn github_connect(
         ));
     }
     let key = *state.vault_key.read().unwrap();
-    std::fs::write(token_path(&app)?, security::encrypt_secret(key.as_ref(), &token))?;
-    *cache().lock().unwrap() = Some(token);
+    // Disk and memory change under one lock, so two connects cannot leave
+    // them disagreeing about which token is current.
+    {
+        let mut slot = cache().lock().unwrap();
+        std::fs::write(token_path(&app)?, security::encrypt_secret(key.as_ref(), &token))?;
+        *slot = Some(token);
+    }
     status_now()
 }
 

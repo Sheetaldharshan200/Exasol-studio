@@ -73,12 +73,14 @@ pub(crate) fn classify_failure(status: u16, remaining: Option<&str>, reset_epoch
 }
 
 fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/{release_path}");
     let response = crate::github_auth::authorize(
         reqwest::blocking::Client::new()
-            .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
+            .get(&url)
             .header("User-Agent", "exasol-studio")
             .header("Accept", "application/vnd.github+json")
             .timeout(Duration::from_secs(20)),
+        &url,
     )
     .send()
         .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
