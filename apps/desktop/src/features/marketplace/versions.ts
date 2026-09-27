@@ -26,7 +26,12 @@ export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install" 
         return { source: src.registry, reference: src.package };
       case "gh-asset":
       case "host-plugin":
+      case "pip-release":
+      case "driver-runtime":
         return item.repo ? { source: "github", reference: item.repo } : null;
+      // No releases to list — the current snapshot is all there is.
+      case "repo-snapshot":
+        return null;
       case "maven":
         // Maven versions come from Maven Central's own metadata, never from
         // the repo's release tags — the two drift badly (bucketfs-java is

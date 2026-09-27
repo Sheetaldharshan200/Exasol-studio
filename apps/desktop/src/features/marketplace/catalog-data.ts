@@ -44,35 +44,8 @@ export type Install =
   | "vs-adapter"
   | "reference";
 
-/**
- * Where an item's artifact comes from — the coordinate for its install kind.
- *
- * This is what lets the installer be dispatched by KIND rather than by item
- * id. The Rust side used to `match id { "pyexasol" => …, "dbt-exasol" => … }`,
- * eight branches deep, which is why a catalogue of 147 had installers for 8:
- * every new one needed its own branch. Naming the mechanism and its
- * coordinate here keeps adding an item to a single line.
- */
-export type InstallSource =
-  /** A Python distribution, installed into Studio's managed environment. */
-  | { kind: "pypi"; package: string }
-  /** A JAR from Maven Central, verified against the published .sha1. */
-  | { kind: "maven"; group: string; artifact: string }
-  /**
-   * A file from the repository's newest GitHub release, verified against its
-   * published digest. `assetPattern` picks it by name; without one the
-   * installer picks the build for this platform. `onPath` marks an
-   * executable, which is linked into Studio's bin.
-   */
-  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean }
-  /** A package from a native registry (npm, the Go proxy, crates.io). */
-  | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string }
-  /**
-   * A plugin belonging to another application. Studio fetches and verifies it
-   * and opens the folder it belongs in — it does not write into another
-   * product's installation. See the change proposal's non-goals.
-   */
-  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" };
+import type { InstallSource } from "@/lib/ipc";
+export type { InstallSource };
 
 export type CatalogItem = {
   id: string;
@@ -118,7 +91,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "exapump", repo: "exasol-labs/exapump", kind: "cli", install: "binary", labs: true },
   { id: "semantic-views", repo: "exasol-labs/exasol-semantic-views", kind: "extension", install: "semantic-views", labs: true },
   { id: "json-tables", repo: "exasol-labs/exasol-json-tables", kind: "extension", install: "source-build", labs: true },
-  { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool", source: { kind: "pypi", package: "exasol-mcp-server" } },
+  { id: "mcp-server", repo: "exasol/mcp-server", kind: "server", install: "uv-tool", source: { kind: "pypi", package: "exasol-mcp-server", tool: true } },
   { id: "pyexasol", repo: "exasol/pyexasol", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "pyexasol" } },
   { id: "sqlalchemy-exasol", repo: "exasol/sqlalchemy-exasol", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "sqlalchemy-exasol" } },
   { id: "exarrow-rs", repo: "exasol-labs/exarrow-rs", kind: "driver", install: "package", labs: true, source: { kind: "registry", registry: "crates", package: "exarrow-rs" } },
@@ -126,13 +99,14 @@ export const CATALOG: CatalogItem[] = [
     id: "driver-jdbc",
     kind: "driver",
     install: "maven",
+    source: { kind: "maven", group: "com.exasol", artifact: "exasol-jdbc" },
     name: "JDBC Driver",
     description: "JDBC driver for Java tools.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/jdbc.htm",
   },
   {
     id: "driver-odbc",
-    source: { kind: "registry", registry: "exasol-downloads", package: "ODBC" },
+    source: { kind: "registry", registry: "exasol-downloads", package: "ODBC", driverRuntime: "odbc" },
     kind: "driver",
     install: "package",
     name: "ODBC Driver",
@@ -152,7 +126,7 @@ export const CATALOG: CatalogItem[] = [
   },
   {
     id: "driver-r",
-    source: { kind: "gh-asset" },
+    source: { kind: "driver-runtime", driver: "r" },
     repo: "exasol/r-exasol",
     kind: "driver",
     install: "package",
@@ -160,16 +134,16 @@ export const CATALOG: CatalogItem[] = [
     description: "R integration for Exasol.",
     homepage: "https://docs.exasol.com/db/latest/connect_exasol/drivers/r.htm",
   },
-  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "package" },
+  { id: "driver-websocket", repo: "exasol/websocket-api", kind: "driver", install: "package", source: { kind: "repo-snapshot" } },
   { id: "notebook-connector", repo: "exasol/notebook-connector", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-notebook-connector" } },
   { id: "dbt-exasol", repo: "exasol/dbt-exasol", kind: "extension", install: "uv-pip", source: { kind: "pypi", package: "dbt-exasol" } },
   { id: "exasol-scheduler", repo: "exasol-labs/exasol-scheduler", kind: "cli", install: "binary", labs: true },
-  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "package", labs: true, source: { kind: "gh-asset" } },
+  { id: "dash-server", repo: "exasol-labs/dash-server", kind: "bi", install: "package", labs: true, source: { kind: "pip-release" } },
   { id: "grafana-datasource", repo: "exasol-labs/grafana-datasource", kind: "bi", install: "binary", labs: true },
   { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary" },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true },
   { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true },
-  { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true },
+  { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true, source: { kind: "repo-snapshot" } },
   // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
   // container engine, so this links to the project instead of installing it.
   { id: "ai-lab", repo: "exasol/ai-lab", kind: "extension", install: "reference" },
