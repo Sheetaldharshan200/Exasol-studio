@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pickAsset } from "./assets.ts";
+import { pickAsset, pickAssetFor } from "./assets.ts";
 import type { MarketEnv, ReleaseAsset } from "@/lib/ipc";
 
 const a = (name: string): ReleaseAsset => ({ name, url: `https://x/${name}`, size: 1 });
@@ -43,4 +43,34 @@ test("platform-neutral artifact falls back to first (grafana plugin zip)", () =>
 test("empty or metadata-only releases return null", () => {
   assert.equal(pickAsset([], mac), null);
   assert.equal(pickAsset([a("SHA256SUMS"), a("report.json")], mac), null);
+});
+
+test("a pattern picks exactly the named artifact, ignoring the platform", () => {
+  const assets = [
+    a("error_code_report.json"),
+    a("exasol-kafka-connector-extension-2.0.0.jar"),
+    a("exasol-kafka-connector-extension-2.0.0.jar.sha256"),
+  ];
+  assert.equal(pickAsset(assets, mac, "^exasol-kafka-connector-extension-[\\d.]+\\.jar$")?.name, "exasol-kafka-connector-extension-2.0.0.jar");
+  // Same answer on every host — a jar has no platform.
+  assert.equal(pickAsset(assets, linux, "^exasol-kafka-connector-extension-[\\d.]+\\.jar$")?.name, "exasol-kafka-connector-extension-2.0.0.jar");
+});
+
+test("a pattern that matches nothing or several is not a pick", () => {
+  // Zero: upstream renamed the file. Many: an ambiguous release. Either way
+  // the card says unavailable rather than installing a guess.
+  const assets = [a("spark-connector-jdbc_2.12-2.2.1-spark-3.3.2-assembly.jar"), a("spark-connector-jdbc_2.13-2.2.1-spark-3.4.1-assembly.jar")];
+  assert.equal(pickAsset(assets, mac, "^spark-connector-jdbc_[\\d.]+-[\\d.]+-spark-[\\d.]+-assembly\\.jar$"), null);
+  assert.equal(pickAsset(assets, mac, "^renamed-.*\\.jar$"), null);
+});
+
+test("a pattern that does not compile is not a pick either", () => {
+  assert.equal(pickAsset([a("x.jar")], mac, "^(unclosed"), null);
+});
+
+test("pickAssetFor reads the pattern off the item and falls back to platform rules", () => {
+  const assets = [a("tool-linux-x86_64"), a("tool-macos-arm64"), a("lib-1.0.jar")];
+  assert.equal(pickAssetFor({ source: { kind: "gh-asset", assetPattern: "^lib-[\\d.]+\\.jar$" } }, assets, mac)?.name, "lib-1.0.jar");
+  assert.equal(pickAssetFor({ source: { kind: "gh-asset", onPath: true } }, assets, mac)?.name, "tool-macos-arm64");
+  assert.equal(pickAssetFor({}, assets, mac)?.name, "tool-macos-arm64");
 });
