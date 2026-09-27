@@ -193,6 +193,23 @@ pub fn registry_hint(registry: &str, package: &str) -> Option<String> {
     })
 }
 
+/// Whether a path (a driver override, a symlink target) lives inside an
+/// item's directory — i.e. would dangle once that directory is removed.
+///
+/// A plain prefix test, on purpose: both sides are paths Studio wrote itself,
+/// so no canonicalising is needed and none is done (the target may already be
+/// gone by the time this is asked).
+pub fn points_into(path: &std::path::Path, dir: &std::path::Path) -> bool {
+    path.starts_with(dir)
+}
+
+/// Of the `(link name, target)` pairs in Studio's bin directory, the links
+/// whose target lives in the directory being removed. Anything else in that
+/// directory — a real file, a link into another item — is left alone.
+pub fn stale_links<'a>(links: &'a [(String, std::path::PathBuf)], dir: &std::path::Path) -> Vec<&'a str> {
+    links.iter().filter(|(_, target)| points_into(target, dir)).map(|(name, _)| name.as_str()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +319,23 @@ mod tests {
         assert_eq!(registry_file_name("pypi-ish", "x", "1"), None);
         assert_eq!(registry_version_path("pypi-ish"), None);
         assert_eq!(registry_hint("pypi-ish", "x"), None);
+    }
+
+    #[test]
+    fn an_override_or_link_into_the_removed_directory_is_stale_and_nothing_else_is() {
+        use std::path::{Path, PathBuf};
+        let dir = Path::new("/data/marketplace/driver-jdbc");
+        assert!(points_into(Path::new("/data/marketplace/driver-jdbc/exasol-jdbc-7.1.jar"), dir));
+        // A sibling item that merely shares a prefix is NOT inside.
+        assert!(!points_into(Path::new("/data/marketplace/driver-jdbc-extra/x.jar"), dir));
+        assert!(!points_into(Path::new("/data/marketplace/exapump/exapump"), dir));
+
+        let links = vec![
+            ("bfsc".to_string(), PathBuf::from("/data/marketplace/bucketfs-client/unpacked/bfsc")),
+            ("exapump".to_string(), PathBuf::from("/data/marketplace/exapump/unpacked/exapump")),
+        ];
+        assert_eq!(stale_links(&links, Path::new("/data/marketplace/bucketfs-client")), ["bfsc"]);
+        assert!(stale_links(&links, Path::new("/data/marketplace/nothing-here")).is_empty());
     }
 
     #[test]

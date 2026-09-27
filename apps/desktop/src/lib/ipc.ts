@@ -662,7 +662,10 @@ export const ipc = {
       profileId,
       requested,
     }),
-  marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
+  /** Remove an install — by its coordinate, since what "remove" means depends
+   *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
+  marketUninstall: (target: InstallTarget) =>
+    call<void>("market_uninstall", { id: target.id, source: target.source ?? null }),
   personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
   // Independent, isolated component management.

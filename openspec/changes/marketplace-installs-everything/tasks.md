@@ -24,8 +24,8 @@
 
 - [ ] Installed version per kind, so the Installed view and the update badge
       agree across all of them
-- [ ] Uninstall per kind. Tests: `market.rs` (manifest and PATH cleanup; a
-      file another item owns is never removed)
+- [x] Uninstall per kind. Tests: `installers.rs` (an override or link into the
+      removed directory is stale; a sibling item's is never touched)
 
 ## 4. The catalogue
 
@@ -44,5 +44,4 @@ and `language-container-rs` are containers for BucketFS, not files for this
 machine; the `.rockspec` pair wants LuaRocks; `row-level-security` and
 `preprocessor-library` install into a database; `grafana-datasource`,
 `power-apps-connector` and `azure-data-factory` ship through other products'
-catalogues. Host plugins (`.vsix`, `.mez`) await their installer; uninstall per
-kind is still open.
+catalogues. Host plugins (`.vsix`, `.mez`) await their installer.

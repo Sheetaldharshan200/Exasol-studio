@@ -664,7 +664,7 @@ export function Marketplace() {
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
     try {
-      await ipc.marketUninstall(item.id);
+      await ipc.marketUninstall({ id: item.id, source: item.source });
       refreshInstalled();
     } finally {
       setBusy((b) => ({ ...b, [item.id]: false }));
