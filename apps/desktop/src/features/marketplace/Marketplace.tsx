@@ -478,7 +478,7 @@ export function Marketplace() {
               if (e.payload.id === item.id) finish(e.payload.ok);
             });
             await ipc.marketInstallRun(
-              item.id,
+              { id: item.id, install: item.install, repo: item.repo, source: item.source },
               version,
               asset?.url,
               asset?.name,
@@ -1759,7 +1759,7 @@ export function InstallConsole({
       });
       unlisteners.current.push(onLog, onProg, onEnd);
       try {
-        await ipc.marketInstallRun(item.id, version, asset?.url, asset?.name);
+        await ipc.marketInstallRun({ id: item.id, install: item.install, repo: item.repo, source: item.source }, version, asset?.url, asset?.name);
       } catch (err) {
         // The backend also emits market:done on failure; guard against a hard throw.
         push("err", errorMessage(err));

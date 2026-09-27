@@ -41,6 +41,22 @@ pub struct PythonStack {
     pub lock_sha256: String,
 }
 
+/// The verified baseline version for a Python package, when the lock pins
+/// one.
+///
+/// The lock is the compatibility matrix CI validated, so a pinned package
+/// installs at that version unless the person explicitly picks another. Keyed
+/// by the PACKAGE, not by a catalogue item: the lock's shape is the lock's
+/// business, and the installer only has to ask.
+pub fn verified_pin(package: &str) -> Option<String> {
+    let stack = &components().python_stack;
+    match package {
+        "pyexasol" => Some(stack.pyexasol_version.clone()),
+        "exasol-mcp-server" => Some(stack.mcp_server_version.clone()),
+        _ => None,
+    }
+}
+
 pub fn platform_key() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
 }

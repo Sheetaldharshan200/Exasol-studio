@@ -150,3 +150,25 @@ test("every release-bearing shelf gets used — no kind is declared and left emp
     assert.ok(CATALOG.some((i) => i.kind === kind), `nothing is filed under "${kind}"`);
   }
 });
+
+test("every package-installed item carries its coordinate — none is installed by name any more", () => {
+  // These install kinds used to reach a `match id { … }` with one arm per
+  // item. The installer now dispatches on the item's `source`; an item of one
+  // of these kinds WITHOUT a source would fail on click with "no coordinate",
+  // which is a regression this catches before it ships.
+  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven"]);
+  for (const item of CATALOG) {
+    if (!byCoordinate.has(item.install)) continue;
+    assert.ok(item.source, `${item.id} (${item.install}) has no install coordinate`);
+  }
+});
+
+test("the mechanisms that are not a package are dispatched by install kind, and need no coordinate", () => {
+  // A managed runtime, an in-database add-on, a source build, a skills sync:
+  // none of these is an artifact at a coordinate, and the installer routes
+  // them by `install` — which is still not by name.
+  const byKind = new Set(["personal-local", "personal-cloud", "semantic-views", "source-build", "bundled"]);
+  const found = CATALOG.filter((i) => byKind.has(i.install));
+  assert.ok(found.length >= 4, "the bespoke kinds are still in the catalogue");
+  for (const item of found) assert.equal(item.source, undefined, `${item.id} should not claim a coordinate`);
+});

@@ -143,8 +143,11 @@ export function DriversSection({
       // JDBC jar gets wired in by that flow), then the runtime is ensured.
       const catalogId = DRIVER_TO_CATALOG[driverId];
       const chosen = pick[driverId];
-      if (catalogId && chosen) {
-        await ipc.marketInstallRun(catalogId, chosen, undefined, undefined, undefined, chosen);
+      // The installer dispatches on the item's coordinate, not its id, so the
+      // whole catalogue entry goes across — the same call the Marketplace makes.
+      const target = CATALOG.find((c) => c.id === catalogId);
+      if (catalogId && chosen && target) {
+        await ipc.marketInstallRun({ id: target.id, install: target.install, repo: target.repo, source: target.source }, chosen, undefined, undefined, undefined, chosen);
         if (catalogId === "driver-jdbc") {
           // Same seamless behavior as the Marketplace card: the picked jar
           // becomes the SQL editor's driver.

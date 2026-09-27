@@ -21,28 +21,59 @@ use crate::error::{AppError, AppResult};
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InstallSource {
+    /// A Python distribution into Studio's managed environment; `tool` means
+    /// `uv tool` (a command on PATH) rather than a library.
     Pypi {
         package: String,
+        #[serde(default)]
+        tool: bool,
     },
+    /// `uv pip` from the repository's release tarball — for a project that
+    /// publishes releases but is not on PyPI.
+    PipRelease,
     Maven {
         group: String,
         artifact: String,
     },
     #[serde(rename_all = "camelCase")]
     GhAsset {
-        asset_pattern: String,
+        #[serde(default)]
+        asset_pattern: Option<String>,
         #[serde(default)]
         on_path: bool,
     },
+    /// A native registry (npm, the Go proxy, crates.io) or Exasol's downloads
+    /// portal. `driver_runtime` names a Studio driver runtime to wire the
+    /// result into afterwards — the ODBC library becomes usable from
+    /// connections the moment it lands.
+    #[serde(rename_all = "camelCase")]
     Registry {
         registry: String,
         package: String,
+        #[serde(default)]
+        driver_runtime: Option<String>,
+    },
+    /// The repository's current tarball, for a project with no releases.
+    RepoSnapshot,
+    /// Built into one of Studio's own driver runtimes (R today).
+    DriverRuntime {
+        driver: String,
     },
     #[serde(rename_all = "camelCase")]
     HostPlugin {
         asset_pattern: String,
         host: String,
     },
+}
+
+/// A value at a path through a JSON reply, as a string.
+pub fn json_at<'a>(v: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
+    path.iter().try_fold(v, |cur, key| cur.get(key))?.as_str()
+}
+
+/// Maven Central's version list for an artifact.
+pub fn maven_metadata_url(group: &str, artifact: &str) -> String {
+    format!("https://repo1.maven.org/maven2/{}/{artifact}/maven-metadata.xml", group.replace('.', "/"))
 }
 
 /// Maven Central's path for one release of one artifact.
@@ -274,12 +305,52 @@ mod tests {
     }
 
     #[test]
+    fn json_at_walks_a_reply_and_stops_at_the_first_gap() {
+        let v: serde_json::Value = serde_json::json!({"crate": {"max_stable_version": "0.3.0"}, "version": "1"});
+        assert_eq!(json_at(&v, &["crate", "max_stable_version"]), Some("0.3.0"));
+        assert_eq!(json_at(&v, &["version"]), Some("1"));
+        assert_eq!(json_at(&v, &["crate", "missing"]), None);
+        assert_eq!(json_at(&v, &["nope", "deeper"]), None);
+    }
+
+    #[test]
+    fn maven_metadata_lives_beside_the_artifact() {
+        assert_eq!(
+            maven_metadata_url("com.exasol", "exasol-jdbc"),
+            "https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml"
+        );
+    }
+
+    #[test]
+    fn every_mechanism_deserializes_from_what_the_catalogue_writes() {
+        let cases: Vec<(&str, InstallSource)> = vec![
+            (r#"{"kind":"pypi","package":"pyexasol"}"#, InstallSource::Pypi { package: "pyexasol".into(), tool: false }),
+            (r#"{"kind":"pypi","package":"exasol-mcp-server","tool":true}"#, InstallSource::Pypi { package: "exasol-mcp-server".into(), tool: true }),
+            (r#"{"kind":"pip-release"}"#, InstallSource::PipRelease),
+            (r#"{"kind":"repo-snapshot"}"#, InstallSource::RepoSnapshot),
+            (r#"{"kind":"driver-runtime","driver":"r"}"#, InstallSource::DriverRuntime { driver: "r".into() }),
+            (
+                r#"{"kind":"registry","registry":"exasol-downloads","package":"ODBC","driverRuntime":"odbc"}"#,
+                InstallSource::Registry { registry: "exasol-downloads".into(), package: "ODBC".into(), driver_runtime: Some("odbc".into()) },
+            ),
+            (
+                r#"{"kind":"registry","registry":"npm","package":"@exasol/exasol-driver-ts"}"#,
+                InstallSource::Registry { registry: "npm".into(), package: "@exasol/exasol-driver-ts".into(), driver_runtime: None },
+            ),
+        ];
+        for (json, want) in cases {
+            let got: InstallSource = serde_json::from_str(json).unwrap_or_else(|e| panic!("{json}: {e}"));
+            assert_eq!(got, want, "{json}");
+        }
+    }
+
+    #[test]
     fn a_source_deserializes_from_what_the_catalogue_writes() {
         let gh: InstallSource = serde_json::from_str(
             r#"{"kind":"gh-asset","assetPattern":"\\.jar$","onPath":true}"#,
         )
         .unwrap();
-        assert_eq!(gh, InstallSource::GhAsset { asset_pattern: "\\.jar$".into(), on_path: true });
+        assert_eq!(gh, InstallSource::GhAsset { asset_pattern: Some("\\.jar$".into()), on_path: true });
 
         let mv: InstallSource =
             serde_json::from_str(r#"{"kind":"maven","group":"com.exasol","artifact":"bucketfs-java"}"#).unwrap();
@@ -288,6 +359,9 @@ mod tests {
         // onPath defaults to false — a library must not land on PATH because
         // someone forgot the flag.
         let lib: InstallSource = serde_json::from_str(r#"{"kind":"gh-asset","assetPattern":"x"}"#).unwrap();
-        assert_eq!(lib, InstallSource::GhAsset { asset_pattern: "x".into(), on_path: false });
+        assert_eq!(lib, InstallSource::GhAsset { asset_pattern: Some("x".into()), on_path: false });
+        // No pattern at all means "the build for this platform".
+        let plat: InstallSource = serde_json::from_str(r#"{"kind":"gh-asset"}"#).unwrap();
+        assert_eq!(plat, InstallSource::GhAsset { asset_pattern: None, on_path: false });
     }
 }

@@ -1861,15 +1861,18 @@ pub async fn market_versions(app: AppHandle, source: String, reference: String) 
 /// point Java tools (DBeaver, DataGrip…) at. Returns (resolved version, note)
 /// so the manifest records the REAL version — the repo-less catalog card may
 /// pass none, and "latest" would break update detection forever.
-async fn install_jdbc_from_maven(app: &AppHandle, id: &str, requested: Option<&str>) -> AppResult<(String, String)> {
-    const META: &str = "https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/maven-metadata.xml";
+/// A JAR from Maven Central, at the newest version its metadata lists or the
+/// one the person picked. Versions come from Maven's OWN metadata, never a
+/// GitHub release tag: the two drift (bucketfs-java is 5.0.1 on GitHub and
+/// 3.2.3 on Maven Central), and the tag would 404.
+async fn install_from_maven(app: &AppHandle, id: &str, group: &str, artifact: &str, requested: Option<&str>) -> AppResult<(String, String)> {
     let v = match requested {
-        Some(v) if valid_version_tag(v) => v.to_string(),
-        Some(v) => return Err(AppError::Storage(format!("Invalid JDBC driver version: {v}"))),
+        Some(v) if valid_version_tag(v) => crate::installers::maven_version(v),
+        Some(v) => return Err(AppError::Storage(format!("Invalid {artifact} version: {v}"))),
         None => {
-            emit_log(app, id, "Resolving the latest exasol-jdbc from Maven Central…", "info");
+            emit_log(app, id, format!("Resolving the latest {artifact} from Maven Central…"), "info");
             let xml = reqwest::Client::new()
-                .get(META)
+                .get(crate::installers::maven_metadata_url(group, artifact))
                 .header("User-Agent", "exasol-studio")
                 .send()
                 .await
@@ -1880,14 +1883,14 @@ async fn install_jdbc_from_maven(app: &AppHandle, id: &str, requested: Option<&s
                 .await
                 .map_err(|e| AppError::Storage(e.to_string()))?;
             maven_latest_version(&xml).ok_or_else(|| {
-                AppError::Storage("Could not read the latest exasol-jdbc version from Maven Central.".into())
+                AppError::Storage(format!("Could not read the latest {artifact} version from Maven Central."))
             })?
         }
     };
-    let jar = format!("exasol-jdbc-{v}.jar");
-    let url = format!("https://repo1.maven.org/maven2/com/exasol/exasol-jdbc/{v}/{jar}");
+    let jar = crate::installers::maven_jar_name(artifact, &v);
+    let url = crate::installers::maven_jar_url(group, artifact, &v);
     let path = download_and_place(app, id, &url, &jar).await?;
-    let note = format!("Exasol JDBC driver {v} downloaded to {path}. Point your Java tool's driver path at this jar.");
+    let note = format!("{artifact} {v} downloaded to {path}. Put this jar on the classpath of the tool that needs it.");
     Ok((v, note))
 }
 
@@ -1999,189 +2002,162 @@ async fn fetch_json(url: &str) -> AppResult<Value> {
 /// crates.io / GitHub tags) into the managed marketplace folder — independent
 /// of any Studio-pinned runtime, at the requested version or the registry's
 /// latest. Returns (resolved version, note).
-async fn install_registry_package(
+/// Install an item from its coordinate.
+///
+/// Nothing here knows an item's name. The catalogue says which mechanism and
+/// where; this performs the mechanism. It used to be a match on item id with
+/// one arm per package — which is exactly why a catalogue of 147 items had
+/// installers for eight: every new one needed its own arm.
+async fn install_from_source(
     app: &AppHandle,
     id: &str,
+    repo: Option<&str>,
+    source: &crate::installers::InstallSource,
     requested: Option<&str>,
 ) -> AppResult<(String, String)> {
-    let (version, url, filename, hint) = match id {
-        "driver-ts" => {
-            let v = match requested {
-                Some(v) => v.to_string(),
-                None => fetch_json("https://registry.npmjs.org/@exasol%2Fexasol-driver-ts/latest")
-                    .await?
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| AppError::Storage("npm returned no latest version.".into()))?
-                    .to_string(),
-            };
-            (
-                v.clone(),
-                format!("https://registry.npmjs.org/@exasol/exasol-driver-ts/-/exasol-driver-ts-{v}.tgz"),
-                format!("exasol-driver-ts-{v}.tgz"),
-                "npm package tarball — or add it to a project with `npm install @exasol/exasol-driver-ts`",
-            )
+    use crate::installers::{self as inst, InstallSource};
+    let need_repo = || repo.ok_or_else(|| AppError::Storage(format!("{id} has no repository to install from.")));
+    match source {
+        InstallSource::Registry { registry, package, driver_runtime } if registry == "exasol-downloads" => {
+            install_from_downloads_portal(app, id, package, driver_runtime.as_deref(), requested).await
         }
-        "driver-go" => {
-            let v = match requested {
-                Some(v) => v.to_string(),
-                None => fetch_json("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@latest")
-                    .await?
-                    .get("Version")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| AppError::Storage("The Go proxy returned no latest version.".into()))?
-                    .to_string(),
-            };
-            (
-                v.clone(),
-                format!("https://proxy.golang.org/github.com/exasol/exasol-driver-go/@v/{v}.zip"),
-                format!("exasol-driver-go-{v}.zip"),
-                "Go module zip — or add it to a project with `go get github.com/exasol/exasol-driver-go`",
-            )
-        }
-        "exarrow-rs" => {
-            let v = match requested {
+        InstallSource::Registry { registry, package, .. } => {
+            let latest_url = inst::registry_latest_url(registry, package)
+                .ok_or_else(|| AppError::Storage(format!("{registry} is not a registry Studio installs from.")))?;
+            let version = match requested {
                 Some(v) => v.to_string(),
                 None => {
-                    let body = fetch_json("https://crates.io/api/v1/crates/exarrow-rs").await?;
-                    body.get("crate")
-                        .and_then(|c| c.get("max_stable_version").or_else(|| c.get("max_version")))
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| AppError::Storage("crates.io returned no latest version.".into()))?
-                        .to_string()
+                    let body = fetch_json(&latest_url).await?;
+                    inst::json_at(&body, inst::registry_version_path(registry).unwrap_or(&[]))
+                        .map(str::to_string)
+                        .ok_or_else(|| AppError::Storage(format!("{registry} returned no latest version for {package}.")))?
                 }
             };
-            (
-                v.clone(),
-                format!("https://crates.io/api/v1/crates/exarrow-rs/{v}/download"),
-                format!("exarrow-rs-{v}.crate"),
-                "crates.io package — or add it to a project with `cargo add exarrow-rs`",
-            )
-        }
-        "driver-r" => {
-            // One install = usable, like the ODBC tile: build the official
-            // Exasol R package into Studio's OWN R library and leave the
-            // user's library untouched. Downloading a tarball and telling them
-            // to install it themselves is not an install.
-            let v = crate::upstream::latest("exasol/r-exasol")
-                .map(|r| r.tag)
-                .unwrap_or_else(|| "latest".into());
-            crate::driver_exec::driver_setup(app.clone(), "r".into()).await?;
-            return Ok((
-                v,
-                "Installed into Studio’s R library. Pick the R driver on any connection — \
-                 it reaches Exasol through the ODBC driver Studio manages, so install that too if you haven’t."
-                    .into(),
-            ));
-        }
-        "driver-odbc" | "driver-adonet" => {
-            let artifact_name = if id == "driver-odbc" { "ODBC" } else { "ADO.NET" };
-            let index = exasol_downloads_index().await?;
-            let artifacts = portal_artifacts(&index, artifact_name, std::env::consts::OS, std::env::consts::ARCH);
-            let chosen = match requested {
-                Some(v) => artifacts.into_iter().find(|a| a.version == v).ok_or_else(|| {
-                    AppError::Storage(format!("{artifact_name} {v} is not published for this platform."))
-                })?,
-                None => artifacts.into_iter().next().ok_or_else(|| {
-                    AppError::Storage(format!("{artifact_name} has no build for this platform on the Exasol downloads portal."))
-                })?,
-            };
-            // Verify BEFORE extracting/linking — nothing derived from an
-            // unverified file may ever exist (not even a dangling symlink).
-            let path = download_only(app, id, &chosen.url, &chosen.filename).await?;
-            if let Some(expected) = &chosen.sha256 {
-                let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
-                if !actual.eq_ignore_ascii_case(expected) {
-                    let _ = std::fs::remove_file(&path);
-                    return Err(AppError::Storage(format!(
-                        "{} failed checksum verification — the download was discarded.",
-                        chosen.filename
-                    )));
-                }
-                emit_log(app, id, "Checksum verified against the Exasol downloads portal.", "info");
+            if !valid_version_tag(&version) {
+                return Err(AppError::Storage(format!("Invalid package version: {version}")));
             }
-            auto_extract_and_link(app, id, std::path::Path::new(&path));
-            let mut hint = if id == "driver-odbc" {
-                "ODBC driver files extracted".to_string()
-            } else {
-                "Windows driver package for your .NET projects".to_string()
-            };
-            // One install = usable: wire the extracted ODBC library straight
-            // into Studio's connection runtime (pyodbc takes a driver PATH, so
-            // no OS-level registration is needed) and ensure the runtime venv.
-            if id == "driver-odbc" {
-                let unpacked = market_dir(app)?.join(id).join("unpacked");
-                if let Some(lib) = find_file(&unpacked, 0, &|name: &str| {
-                    let lower = name.to_ascii_lowercase();
-                    lower.contains("exaodbc")
-                        && (lower.ends_with(".dylib") || lower.ends_with(".so") || lower.ends_with(".dll"))
-                }) {
-                    // Propagate: claiming "wired into Studio" on a failed
-                    // override write would be a lie.
-                    crate::driver_exec::driver_override_set(
-                        app.clone(),
-                        "odbc".into(),
-                        Some(lib.to_string_lossy().to_string()),
-                    )?;
-                    crate::driver_exec::driver_setup(app.clone(), "odbc".into()).await?;
-                    hint = "wired into Studio's connections — pick the ODBC driver on any connection and it just works".to_string();
-                }
-            }
-            return Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)));
+            let url = inst::registry_download_url(registry, package, &version).unwrap_or_default();
+            let filename = inst::registry_file_name(registry, package, &version).unwrap_or_default();
+            let hint = inst::registry_hint(registry, package).unwrap_or_default();
+            let path = download_and_place(app, id, &url, &filename).await?;
+            Ok((version.clone(), format!("Version {version} downloaded to {path}. {hint}.")))
         }
-        "dash-server" => {
-            // Not on PyPI — pip-install straight from the GitHub tag tarball
+        InstallSource::Pypi { package, tool } => {
+            // The requested version, else the verified pin the lock carries
+            // for this package, else the package's newest.
+            let pinned = requested.map(str::to_string).or_else(|| crate::component_lock::verified_pin(package));
+            let spec = match &pinned {
+                Some(v) => format!("{package}=={}", v.trim_start_matches(['v', 'V'])),
+                None => package.clone(),
+            };
+            let note = if *tool { install_uv_tool(app, id, &spec)? } else { install_uv_pip(app, id, &spec)? };
+            Ok((pinned.unwrap_or_else(|| "latest".into()), note))
+        }
+        InstallSource::PipRelease => {
+            // Not on PyPI — pip-install straight from the release tarball
             // into its own managed environment, so it runs from Studio.
+            let repo = need_repo()?;
             let v = match requested {
                 Some(v) => v.to_string(),
-                None => crate::upstream::latest("exasol-labs/dash-server")
+                None => crate::upstream::latest(repo)
                     .map(|r| r.tag)
-                    .ok_or_else(|| AppError::Storage("Could not resolve the latest dash-server release.".into()))?,
+                    .ok_or_else(|| AppError::Storage(format!("Could not resolve the latest {repo} release.")))?,
             };
             if !valid_version_tag(&v) {
-                return Err(AppError::Storage(format!("Invalid dash-server version: {v}")));
+                return Err(AppError::Storage(format!("Invalid version: {v}")));
             }
-            let spec = format!("https://github.com/exasol-labs/dash-server/archive/refs/tags/{v}.tar.gz");
+            let spec = format!("https://github.com/{repo}/archive/refs/tags/{v}.tar.gz");
             let note = install_uv_pip(app, id, &spec)?;
-            return Ok((v.clone(), format!("dash-server {v} installed into a managed environment. {note}")));
+            Ok((v.clone(), format!("{v} installed into a managed environment. {note}")))
         }
-        "more-functions" => {
-            // A SQL function library with no releases: download the current
-            // scripts snapshot, ready to run in the SQL editor.
+        InstallSource::RepoSnapshot => {
+            // A project with no releases: the current tarball is what there is.
+            let repo = need_repo()?;
+            let name = repo.rsplit('/').next().unwrap_or(repo);
             let path = download_and_place(
                 app,
                 id,
-                "https://api.github.com/repos/exasol-labs/more-functions/tarball",
-                "more-functions-snapshot.tar.gz",
+                &format!("https://api.github.com/repos/{repo}/tarball"),
+                &format!("{name}-snapshot.tar.gz"),
             )
             .await?;
-            return Ok((
-                "snapshot".into(),
-                format!("SQL function library downloaded to {path} — unpack it and run the scripts in the SQL editor against your database."),
-            ));
+            Ok(("snapshot".into(), format!("Current snapshot of {repo} downloaded to {path} — unpack it to use its contents.")))
         }
-        "driver-websocket" => {
-            // A living protocol spec (no releases): download the current
-            // snapshot — the API description plus client implementations.
-            let path = download_and_place(
-                app,
-                id,
-                "https://api.github.com/repos/exasol/websocket-api/tarball",
-                "websocket-api-snapshot.tar.gz",
-            )
-            .await?;
-            return Ok((
-                "snapshot".into(),
-                format!("Current WebSocket API spec snapshot downloaded to {path} — the protocol description plus client implementations."),
-            ));
+        InstallSource::DriverRuntime { driver } => {
+            // One install = usable: built into Studio's OWN runtime for that
+            // language, leaving the person's own library untouched.
+            let v = repo.and_then(crate::upstream::latest).map(|r| r.tag).unwrap_or_else(|| "latest".into());
+            crate::driver_exec::driver_setup(app.clone(), driver.clone()).await?;
+            let via_odbc = if driver == "r" {
+                " It reaches Exasol through the ODBC driver Studio manages, so install that too if you haven’t."
+            } else {
+                ""
+            };
+            Ok((v, format!("Installed into Studio’s {driver} runtime. Pick the {driver} driver on any connection.{via_odbc}")))
         }
-        other => return Err(AppError::Storage(format!("{other} has no registry package install."))),
-    };
-    if !valid_version_tag(&version) {
-        return Err(AppError::Storage(format!("Invalid package version: {version}")));
+        InstallSource::Maven { group, artifact } => install_from_maven(app, id, group, artifact, requested).await,
+        // A release asset is chosen for this platform by the frontend and
+        // arrives as url + filename; the caller handles it before getting here.
+        InstallSource::GhAsset { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this platform."))),
+        InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!(
+            "{id} belongs to another application; Studio does not install into it yet."
+        ))),
     }
-    let path = download_and_place(app, id, &url, &filename).await?;
-    Ok((version.clone(), format!("Version {version} downloaded to {path}. {hint}.")))
+}
+
+/// A build from Exasol's official downloads portal, verified against the
+/// checksum the portal publishes, extracted, and — when the coordinate names a
+/// driver runtime — wired into Studio's connections so it is usable at once.
+async fn install_from_downloads_portal(
+    app: &AppHandle,
+    id: &str,
+    artifact_name: &str,
+    driver_runtime: Option<&str>,
+    requested: Option<&str>,
+) -> AppResult<(String, String)> {
+    let index = exasol_downloads_index().await?;
+    let artifacts = portal_artifacts(&index, artifact_name, std::env::consts::OS, std::env::consts::ARCH);
+    let chosen = match requested {
+        Some(v) => artifacts.into_iter().find(|a| a.version == v).ok_or_else(|| {
+            AppError::Storage(format!("{artifact_name} {v} is not published for this platform."))
+        })?,
+        None => artifacts.into_iter().next().ok_or_else(|| {
+            AppError::Storage(format!("{artifact_name} has no build for this platform on the Exasol downloads portal."))
+        })?,
+    };
+    // Verify BEFORE extracting/linking — nothing derived from an unverified
+    // file may ever exist (not even a dangling symlink).
+    let path = download_only(app, id, &chosen.url, &chosen.filename).await?;
+    if let Some(expected) = &chosen.sha256 {
+        let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
+        if !actual.eq_ignore_ascii_case(expected) {
+            let _ = std::fs::remove_file(&path);
+            return Err(AppError::Storage(format!(
+                "{} failed checksum verification — the download was discarded.",
+                chosen.filename
+            )));
+        }
+        emit_log(app, id, "Checksum verified against the Exasol downloads portal.", "info");
+    }
+    auto_extract_and_link(app, id, std::path::Path::new(&path));
+    let mut hint = format!("{artifact_name} files extracted");
+    if let Some(runtime) = driver_runtime {
+        // pyodbc takes a driver PATH, so no OS-level registration is needed;
+        // the extracted library is pointed at directly.
+        let unpacked = market_dir(app)?.join(id).join("unpacked");
+        if let Some(lib) = find_file(&unpacked, 0, &|name: &str| {
+            let lower = name.to_ascii_lowercase();
+            lower.contains("exaodbc")
+                && (lower.ends_with(".dylib") || lower.ends_with(".so") || lower.ends_with(".dll"))
+        }) {
+            // Propagate: claiming "wired into Studio" on a failed override
+            // write would be a lie.
+            crate::driver_exec::driver_override_set(app.clone(), runtime.into(), Some(lib.to_string_lossy().to_string()))?;
+            crate::driver_exec::driver_setup(app.clone(), runtime.into()).await?;
+            hint = format!("wired into Studio's connections — pick the {runtime} driver on any connection and it just works");
+        }
+    }
+    Ok((chosen.version.clone(), format!("Version {} downloaded to {path}. {hint}.", chosen.version)))
 }
 
 /// Perform a real installation for an item, streaming logs over `market:log`
@@ -2200,54 +2176,55 @@ pub async fn market_install_run(
     // `version` (the display/manifest value, usually the catalog latest),
     // which must never silently override a verified pip pin.
     requested: Option<String>,
+    // The item's install KIND, for the mechanisms that are not a package at
+    // all (a managed runtime, an in-database add-on, a skills sync).
+    install: Option<String>,
+    // The item's repository and its coordinate — what the installer dispatches
+    // on, in place of the item's name.
+    repo: Option<String>,
+    source: Option<crate::installers::InstallSource>,
 ) -> AppResult<Value> {
     emit_log(&app, &id, "Starting installation…", "info");
-    let stack = &crate::component_lock::components().python_stack;
     // Validated before it can reach a package spec or URL.
     let requested = requested.filter(|v| valid_version_tag(v));
-    // The pip spec for a PyPI-backed item: the requested version, else the
-    // verified pin where one exists, else the package's latest.
-    let pip_spec = |package: &str, pin: Option<&str>| -> String {
-        match requested.as_deref().or(pin) {
-            Some(v) => format!("{package}=={}", v.trim_start_matches(['v', 'V'])),
-            None => package.to_string(),
-        }
-    };
     // Installers that resolve the real version themselves (Maven) report it
     // here so the manifest never records a meaningless "latest".
     let mut resolved_version: Option<String> = None;
-    let result: AppResult<String> = match id.as_str() {
-        "mcp-server" => install_uv_tool(&app, &id, &pip_spec("exasol-mcp-server", Some(&stack.mcp_server_version))),
-        "agent-skills" => {
-            let dir = app.state::<crate::state::AppState>().data_dir.clone();
-            crate::local_database::ensure_agent_skills(&app, &dir)
-                .map(|revision| format!("Exasol agent skills synced from exasol-labs ({revision})."))
+    let from_asset = |url: Option<String>, filename: Option<String>| async {
+        match (url, filename) {
+            (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
+            _ => Err(AppError::Storage("No downloadable asset was provided for this item.".into())),
         }
-        "pyexasol" => install_uv_pip(&app, &id, &pip_spec("pyexasol", Some(&stack.pyexasol_version))),
-        "sqlalchemy-exasol" => install_uv_pip(&app, &id, &pip_spec("sqlalchemy-exasol", None)),
-        "dbt-exasol" => install_uv_pip(&app, &id, &pip_spec("dbt-exasol", None)),
-        "notebook-connector" => install_uv_pip(&app, &id, &pip_spec("exasol-notebook-connector", None)),        "json-tables" => install_json_tables(&app, &id).await,
-        "exasol-personal" => install_personal_local(&app, &id),
-        "exasol-cloud" => install_personal_cloud(&app, &id),
-        "driver-jdbc" => install_jdbc_from_maven(&app, &id, requested.as_deref()).await.map(|(v, note)| {
-            resolved_version = Some(v);
-            note
-        }),
-        "driver-ts" | "driver-go" | "exarrow-rs" | "driver-r" | "driver-odbc" | "driver-adonet" | "driver-websocket"
-        | "dash-server" | "more-functions" => {
-            install_registry_package(&app, &id, requested.as_deref()).await.map(|(v, note)| {
+    };
+    let result: AppResult<String> = match source.as_ref() {
+        // A release asset for this platform is chosen by the frontend, which
+        // knows the platform, and arrives as url + filename.
+        Some(crate::installers::InstallSource::GhAsset { .. }) => from_asset(url, filename).await,
+        Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
+            .await
+            .map(|(v, note)| {
                 resolved_version = Some(v);
                 note
-            })
-        }
-        "semantic-views" => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
-            .await
-            .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
-        _ => match (url, filename) {
-            (Some(u), Some(f)) => download_and_place(&app, &id, &u, &f).await,
-            _ => Err(AppError::Storage(
-                "No downloadable asset was provided for this item.".into(),
-            )),
+            }),
+        // No coordinate: the mechanisms that are not a package at all. They
+        // install into a database or a managed runtime and are dispatched by
+        // the item's install KIND — still not by its name.
+        None => match install.as_deref() {
+            Some("personal-local") => install_personal_local(&app, &id),
+            Some("personal-cloud") => install_personal_cloud(&app, &id),
+            Some("source-build") => install_json_tables(&app, &id).await,
+            Some("semantic-views") => crate::local_database::personal_install_semantic_views(app.clone(), profile_id)
+                .await
+                .map(|install| format!("Exasol Semantic Views {} is installed in {}.", install.revision, install.database)),
+            // The vendored agent skills. The other bundled item, the Exa Agent
+            // engine, never reaches this command — it updates through
+            // update_component.
+            Some("bundled") => {
+                let dir = app.state::<crate::state::AppState>().data_dir.clone();
+                crate::local_database::ensure_agent_skills(&app, &dir)
+                    .map(|revision| format!("Exasol agent skills synced from exasol-labs ({revision})."))
+            }
+            _ => from_asset(url, filename).await,
         },
     };
 
