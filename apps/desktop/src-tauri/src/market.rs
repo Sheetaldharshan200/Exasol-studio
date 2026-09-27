@@ -1105,6 +1105,13 @@ fn find_file(dir: &std::path::Path, depth: u8, matches: &dyn Fn(&str) -> bool) -
     None
 }
 
+/// The directory on Studio's PATH (terminal and agent) that installed
+/// executables are linked into. One definition, so installing and
+/// uninstalling can never disagree about where a link lives.
+pub(crate) fn studio_bin_dir(app: &AppHandle) -> std::path::PathBuf {
+    app.state::<crate::state::AppState>().data_dir.join("personal-local").join("bin")
+}
+
 pub(crate) fn auto_extract_and_link(app: &AppHandle, id: &str, archive: &std::path::Path) {
     let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let Some(kind) = archive_kind(name) else { return };
@@ -1125,11 +1132,7 @@ pub(crate) fn auto_extract_and_link(app: &AppHandle, id: &str, archive: &std::pa
     emit_log(app, id, format!("Extracted to {}.", dir.display()), "info");
     #[cfg(unix)]
     {
-        let bin_dir = app
-            .state::<crate::state::AppState>()
-            .data_dir
-            .join("personal-local")
-            .join("bin");
+        let bin_dir = studio_bin_dir(app);
         if std::fs::create_dir_all(&bin_dir).is_ok() {
             let mut linked: Vec<String> = Vec::new();
             link_executables(&dir, &dir, &bin_dir, 0, &mut linked);
@@ -2324,18 +2327,55 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
 
 /// Remove an installed item's files and manifest entry.
 #[tauri::command]
-pub fn market_uninstall(app: AppHandle, id: String) -> AppResult<()> {
+pub fn market_uninstall(
+    app: AppHandle,
+    id: String,
+    // The item's coordinate: what "remove" means depends on the mechanism.
+    source: Option<crate::installers::InstallSource>,
+) -> AppResult<()> {
+    use crate::installers::{points_into, stale_links, InstallSource};
     let dir = market_dir(&app)?.join(&id);
-    // A JDBC override pointing INTO the directory being deleted would leave
-    // the Drivers UI showing a custom jar that no longer exists (the runtime
-    // itself falls back safely, but the display would lie). Clear it first.
-    if id == "driver-jdbc" {
-        if let Some(current) = crate::driver_exec::driver_override(&app, "jdbc") {
-            if std::path::Path::new(&current).starts_with(&dir) {
-                let _ = crate::driver_exec::driver_override_set(app.clone(), "jdbc".into(), None);
+
+    // A uv tool lives in uv's own tool directory, not under the item's, so
+    // deleting the folder would leave the command on PATH pointing at nothing.
+    if let Some(InstallSource::Pypi { package, tool: true }) = &source {
+        if let Ok(uv) = ensure_uv(&app, &id) {
+            let _ = std::process::Command::new(uv).args(["tool", "uninstall", package]).status();
+        }
+    }
+
+    // Any driver override pointing INTO the directory being deleted would
+    // leave the Drivers UI showing a jar or library that no longer exists (the
+    // runtime falls back safely; the display would lie). Every runtime that
+    // can carry an override is checked — this used to look only at the JDBC
+    // one, by matching the item's id.
+    for runtime in ["jdbc", "odbc", "pyexasol"] {
+        if let Some(current) = crate::driver_exec::driver_override(&app, runtime) {
+            if points_into(std::path::Path::new(&current), &dir) {
+                let _ = crate::driver_exec::driver_override_set(app.clone(), runtime.into(), None);
             }
         }
     }
+
+    // Executables this item linked onto PATH. Only links whose target lives
+    // in this item's directory go; a real file or another item's link stays.
+    let bin = studio_bin_dir(&app);
+    if let Ok(entries) = std::fs::read_dir(&bin) {
+        let links: Vec<(String, std::path::PathBuf)> = entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_str()?.to_string();
+                let target = std::fs::read_link(e.path()).ok()?;
+                Some((name, target))
+            })
+            .collect();
+        for name in stale_links(&links, &dir) {
+            let _ = std::fs::remove_file(bin.join(name));
+        }
+    }
+
+    // The item's own directory holds everything else: downloaded artifacts,
+    // the unpacked tree, and — for a Python package — its whole venv.
     let _ = std::fs::remove_dir_all(&dir);
     let mut items = read_manifest(&app);
     items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
