@@ -60,7 +60,8 @@ export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern
 
 /** The pattern an item's coordinate names, if it names one. */
 export function assetPatternOf(source: InstallSource | undefined): string | undefined {
-  return source?.kind === "gh-asset" ? source.assetPattern : undefined;
+  if (source?.kind === "gh-asset" || source?.kind === "host-plugin") return source.assetPattern;
+  return undefined;
 }
 
 /** `pickAsset` for a catalogue item: its own pattern if it has one, else the

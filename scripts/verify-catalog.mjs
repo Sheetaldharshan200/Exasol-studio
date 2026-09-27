@@ -64,6 +64,7 @@ async function coordinateProblem(item) {
       if (!url) return null; // the downloads portal has its own index
       return (await ok(url)) ? null : `${s.registry} has no package ${s.package}`;
     }
+    case "host-plugin":
     case "gh-asset": {
       if (!item.repo) return "a release asset needs a repository";
       const rel = await latestAssets(item.repo);

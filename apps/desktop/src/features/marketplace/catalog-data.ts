@@ -42,6 +42,10 @@ export type Install =
   /** Staged into BucketFS from the repo's newest release, by the same command
    *  the add-data-source flow runs. */
   | "vs-adapter"
+  /** A plugin for another application: fetched and verified into Studio's
+   *  folder and revealed, with where it belongs spelled out. Studio never
+   *  writes into another product's installation. */
+  | "host-plugin"
   | "reference";
 
 import type { InstallSource } from "@/lib/ipc";
@@ -171,8 +175,8 @@ export const CATALOG: CatalogItem[] = [
   { id: "language-container-rs", repo: "exasol-labs/language-container-rs", kind: "extension", install: "reference", labs: true },
   { id: "preprocessor-library", repo: "exasol-labs/preprocessor-library", kind: "extension", install: "reference", labs: true },
   { id: "lakehouse-engine-rs", repo: "exasol-labs/lakehouse-engine-rs", kind: "extension", install: "reference", labs: true },
-  { id: "vscode-extension", repo: "exasol-labs/exasol-vscode", kind: "extension", install: "reference", labs: true },
-  { id: "powerbi-connector", repo: "exasol/powerbi-exasol", kind: "bi", install: "reference" },
+  { id: "vscode-extension", repo: "exasol-labs/exasol-vscode", kind: "extension", install: "host-plugin", labs: true, source: { kind: "host-plugin", assetPattern: "^exasol-vscode-[\\d.]+\\.vsix$", host: "vscode" } },
+  { id: "powerbi-connector", repo: "exasol/powerbi-exasol", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^Exasol\\.mez$", host: "powerbi" } },
   { id: "metabase-driver", repo: "exasol/metabase-driver", kind: "bi", install: "binary", source: { kind: "gh-asset", assetPattern: "^exasol\\.metabase-driver\\.jar$" } },
   { id: "power-apps-connector", repo: "exasol/power-apps-connector", kind: "bi", install: "reference" },
   { id: "n8n-nodes", repo: "exasol/n8n-nodes", kind: "bi", install: "package", source: { kind: "registry", registry: "npm", package: "n8n-nodes-exasol" } },
