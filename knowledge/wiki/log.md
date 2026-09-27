@@ -203,3 +203,10 @@ Updated pages/ecosystem-catalog-source-of-truth.md.
 All 143 release-bearing repos are now listed: 24 on a derived Virtual Schemas shelf, 34 installable, 64 on Libraries & tooling.
 market_repo_meta refetched every repo whenever one was missing — at 149 repos that never converges against GitHub's 60/hr unauthenticated limit. Now per-repo stamps, capped at 40 a call.
 
+
+## [2026-09-27] ingest | Marketplace installs by coordinate: id switches removed, 121 of 149 installable, review fixes, the Rust-source guard
+Filed pages/marketplace-installs-by-coordinate.md.
+Maven versions come from Maven's own metadata, never a GitHub tag (bucketfs-java 5.0.1 vs 3.2.3); coordinates read from each repo's manifest and confirmed against repo1/PyPI/npm — the Maven SEARCH api throttles and misfiles.
+The runtime-components guard forbids releases/download/<digit> in src-tauri/src/*.rs, test fixtures included; it had failed daily on main since #161 merged.
+PR #161 merged as 4a9e425 with version 2026.10.0 in main but no v2026.10.0 tag; follow-up work is PR #162 from a fresh branch off main.
+

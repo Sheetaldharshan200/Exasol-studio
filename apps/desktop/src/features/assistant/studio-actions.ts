@@ -5,6 +5,7 @@
 // gracefully with a message rather than throwing into the app.
 
 import { ipc } from "@/lib/ipc";
+import { CATALOG } from "@/features/marketplace/catalog-data";
 import { dashboardBus } from "@/features/dashboard/dashboard-bus";
 import type { Op } from "@/features/dashboard/model";
 
@@ -134,7 +135,11 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
       case "uninstall_component": {
         const id = await resolveComponentId(str(args.id));
         if (!id) return { ok: false, error: "Which component? Pass its id or name." };
-        await ipc.marketUninstall(id);
+        // Uninstall dispatches on the item's coordinate (a uv tool lives in
+        // uv's own directory, not the item's), so the catalogue entry goes
+        // across — the same call the Marketplace makes.
+        const target = CATALOG.find((c) => c.id === id);
+        await ipc.marketUninstall({ id, source: target?.source });
         return { ok: true, data: `Uninstalled ${id}.` };
       }
       case "connect": {

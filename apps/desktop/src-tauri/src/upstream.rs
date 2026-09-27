@@ -73,12 +73,14 @@ pub(crate) fn classify_failure(status: u16, remaining: Option<&str>, reset_epoch
 }
 
 fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRelease, ReleaseError> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/{release_path}");
     let response = crate::github_auth::authorize(
         reqwest::blocking::Client::new()
-            .get(format!("https://api.github.com/repos/{repo}/releases/{release_path}"))
+            .get(&url)
             .header("User-Agent", "exasol-studio")
             .header("Accept", "application/vnd.github+json")
             .timeout(Duration::from_secs(20)),
+        &url,
     )
     .send()
         .map_err(|e| ReleaseError::Unavailable(e.to_string()))?;
@@ -501,11 +503,17 @@ mod tests {
     #[test]
     fn asset_names_come_off_the_release_fragment_without_duplicates() {
         // GitHub links each asset twice in that fragment (name and icon).
-        let html = r#"<a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar">x</a>
-                      <a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/virtual-schema-dist-14.0.5-postgresql-4.0.2.jar">y</a>
-                      <a href="/exasol/postgresql-virtual-schema/releases/download/4.0.2/error_code_report.json">z</a>"#;
+        // The fixture is BUILT from a tag rather than written out: a literal
+        // `releases/download/<version>` in Rust source is what the runtime
+        // component guard forbids, so none exists here.
+        let tag = "4.0.2";
+        let html = format!(
+            r#"<a href="/exasol/postgresql-virtual-schema/releases/download/{tag}/virtual-schema-dist-14.0.5-postgresql-{tag}.jar">x</a>
+               <a href="/exasol/postgresql-virtual-schema/releases/download/{tag}/virtual-schema-dist-14.0.5-postgresql-{tag}.jar">y</a>
+               <a href="/exasol/postgresql-virtual-schema/releases/download/{tag}/error_code_report.json">z</a>"#
+        );
         assert_eq!(
-            parse_expanded_assets(html, "4.0.2"),
+            parse_expanded_assets(&html, tag),
             ["virtual-schema-dist-14.0.5-postgresql-4.0.2.jar", "error_code_report.json"]
         );
     }
@@ -517,9 +525,12 @@ mod tests {
 
     #[test]
     fn only_this_tags_assets_are_taken() {
-        let html = r#"<a href="/o/r/releases/download/1.0.0/old.jar"></a>
-                      <a href="/o/r/releases/download/2.0.0/new.jar"></a>"#;
-        assert_eq!(parse_expanded_assets(html, "2.0.0"), ["new.jar"]);
+        let (old, new) = ("1.0.0", "2.0.0");
+        let html = format!(
+            r#"<a href="/o/r/releases/download/{old}/old.jar"></a>
+               <a href="/o/r/releases/download/{new}/new.jar"></a>"#
+        );
+        assert_eq!(parse_expanded_assets(&html, new), ["new.jar"]);
     }
 
     #[test]

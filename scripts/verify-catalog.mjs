@@ -1,33 +1,97 @@
 #!/usr/bin/env node
 /**
- * Check that every marketplace item still points at a real repository.
+ * Check that every marketplace item still points at something real.
  *
- * Marketplace cards carry no display text of their own: the name, About line,
- * stars and homepage are resolved from GitHub at runtime. That keeps the
- * catalog honest, but it also means a typo in a `repo` field does not fail
- * anything — it renders a blank card. Nothing else would notice.
+ * Two things can rot silently. A card resolves its name, About line and stars
+ * from GitHub at runtime, so a typo in a `repo` field fails nothing — it
+ * renders a blank card. And an install dispatches on the item's coordinate,
+ * so a PyPI name that does not exist, a Maven artifact that was never
+ * published, or an asset pattern that upstream renamed away from fails
+ * nothing either — until someone clicks Install. This makes both fail a run
+ * instead of a click.
  *
- * So this asks GitHub about every repo in the registry and fails on one that
- * does not exist, has been archived (users should not be sent to a dead
- * project), or has no About line to show.
- *
- * Needs network and the `gh` CLI (for the API token). Run it manually, or on
- * a schedule — not in the unit-test suite, which is offline by design.
+ * Needs network and the `gh` CLI (for the repo check's token). Coordinate
+ * checks go to the registries directly, and release assets are read from
+ * github.com rather than the API, so they cost nothing against GitHub's
+ * signed-out allowance. Run it by hand or on a schedule — not in the unit
+ * suite, which is offline by design.
  *
  *   node scripts/verify-catalog.mjs
  */
 import { execFileSync } from "node:child_process";
 import { CATALOG } from "../apps/desktop/src/features/marketplace/catalog-data.ts";
 
-const problems = [];
+const METADATA = /(\.sha256|\.sha1|\.md5|\.asc|\.sig|\.txt|\.json|(^|[^a-z])sha256sums?)$/i;
 
-for (const item of CATALOG) {
-  // Repo-less items (the JDBC/ODBC/ADO.NET drivers) carry their own display
-  // text precisely because there is no repository to resolve it from.
-  if (!item.repo) {
-    if (!item.name || !item.description || !item.homepage) {
-      problems.push(`${item.id}: repo-less item is missing name/description/homepage`);
+async function ok(url) {
+  try {
+    const r = await fetch(url, { headers: { "User-Agent": "exasol-studio-verify" }, redirect: "follow" });
+    return r.ok ? await r.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The newest tag and its asset names, from github.com — not the API. */
+async function latestAssets(repo) {
+  const feed = await ok(`https://github.com/${repo}/releases.atom`);
+  const tag = feed?.match(/tag:github\.com,2008:Repository\/\d+\/([^<]+)</)?.[1]?.trim();
+  if (!tag) return null;
+  const page = await ok(`https://github.com/${repo}/releases/expanded_assets/${tag}`);
+  if (page === null) return null;
+  const names = [...new Set([...page.matchAll(/releases\/download\/[^"]+/g)].map((m) => m[0].split("/").pop()))];
+  return { tag, assets: names.filter((n) => !METADATA.test(n)) };
+}
+
+/** Why an item's coordinate does not resolve, or null when it does. */
+async function coordinateProblem(item) {
+  const s = item.source;
+  if (!s) return null;
+  switch (s.kind) {
+    case "pypi":
+      return (await ok(`https://pypi.org/pypi/${s.package}/json`)) ? null : `PyPI has no package ${s.package}`;
+    case "maven": {
+      const xml = await ok(`https://repo1.maven.org/maven2/${s.group.replace(/\./g, "/")}/${s.artifact}/maven-metadata.xml`);
+      if (!xml) return `Maven Central has no ${s.group}:${s.artifact}`;
+      return /<(latest|release)>/.test(xml) ? null : `Maven Central lists no versions for ${s.group}:${s.artifact}`;
     }
+    case "registry": {
+      const url = {
+        npm: `https://registry.npmjs.org/${s.package.replace("/", "%2F")}`,
+        goproxy: `https://proxy.golang.org/${s.package}/@latest`,
+        crates: `https://crates.io/api/v1/crates/${s.package}`,
+      }[s.registry];
+      if (!url) return null; // the downloads portal has its own index
+      return (await ok(url)) ? null : `${s.registry} has no package ${s.package}`;
+    }
+    case "gh-asset": {
+      if (!item.repo) return "a release asset needs a repository";
+      const rel = await latestAssets(item.repo);
+      if (!rel) return `${item.repo} has no release to read`;
+      // A newest release with NO assets yet is upstream's state, not ours: a
+      // tag cut before the files were uploaded (bucketfs-client 2.2.1 shipped
+      // source-only for a while). The card already shows "unavailable" for
+      // it. Only a pattern that disagrees with assets that DO exist is a
+      // coordinate problem on our side.
+      if (rel.assets.length === 0) {
+        warnings.push(`${item.id}: ${item.repo} ${rel.tag} has no downloadable asset yet (source-only release upstream)`);
+        return null;
+      }
+      if (!s.assetPattern) return null;
+      const hits = rel.assets.filter((n) => new RegExp(s.assetPattern).test(n));
+      return hits.length === 1 ? null : `pattern /${s.assetPattern}/ matched ${hits.length} of ${rel.assets.length} assets in ${rel.tag}: ${rel.assets.join(", ")}`;
+    }
+    default:
+      return null; // pip-release, repo-snapshot, driver-runtime, host-plugin: the repo check is the check
+  }
+}
+
+const problems = [];
+const warnings = [];
+let coordinates = 0;
+for (const item of CATALOG) {
+  if (!item.repo) {
+    if (!item.name || !item.description || !item.homepage) problems.push(`${item.id}: repo-less item is missing name/description/homepage`);
     continue;
   }
   let meta;
@@ -46,16 +110,20 @@ for (const item of CATALOG) {
     problems.push(`${item.id}: ${item.repo} is archived — the card points at a dead project`);
     continue;
   }
-  if (!meta.description) {
-    problems.push(`${item.id}: ${item.repo} has no About line, so the card renders without a description`);
-    continue;
-  }
-  console.log(`ok   ${item.id} → ${item.repo}`);
+  if (!meta.description) problems.push(`${item.id}: ${item.repo} has no About line, so the card renders without a description`);
+  const why = await coordinateProblem(item);
+  if (item.source) coordinates++;
+  if (why) problems.push(`${item.id}: ${why}`);
+  else console.log(`ok   ${item.id} → ${item.repo}${item.source ? ` [${item.source.kind}]` : ""}`);
 }
 
-if (problems.length > 0) {
+if (warnings.length) {
+  console.warn(`\n${warnings.length} upstream warning(s) — nothing to fix here:`);
+  for (const w of warnings) console.warn(` ~ ${w}`);
+}
+if (problems.length) {
   console.error(`\n${problems.length} problem(s):`);
   for (const p of problems) console.error(` - ${p}`);
   process.exit(1);
 }
-console.log(`\nAll ${CATALOG.length} catalog items resolve.`);
+console.log(`\nAll ${CATALOG.length} catalog items resolve; ${coordinates} install coordinates confirmed against their registries.`);

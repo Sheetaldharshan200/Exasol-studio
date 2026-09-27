@@ -1,5 +1,6 @@
 mod agent;
 mod github_auth;
+mod installers;
 mod semantic_sync;
 mod backup;
 pub mod confd;

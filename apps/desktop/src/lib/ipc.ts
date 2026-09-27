@@ -334,6 +334,36 @@ export type CatalogEntry = {
   name?: string | null;
   description?: string | null;
 };
+/**
+ * Where a marketplace item's artifact comes from — the coordinate for its
+ * install mechanism. Mirrored by `InstallSource` in
+ * src-tauri/src/installers.rs; the two must stay in step.
+ *
+ * This is what lets the installer be dispatched by MECHANISM rather than by
+ * item id, which is why it lives with the IPC contract rather than in the
+ * catalogue: it is what crosses the boundary.
+ */
+export type InstallSource =
+  /** A Python distribution into Studio's managed environment; `tool` means a command on PATH rather than a library. */
+  | { kind: "pypi"; package: string; tool?: boolean }
+  /** `uv pip` from the repository's release tarball, for a project that releases but is not on PyPI. */
+  | { kind: "pip-release" }
+  /** A JAR from Maven Central. Its versions come from Maven's own metadata, never a release tag. */
+  | { kind: "maven"; group: string; artifact: string }
+  /** A file from the repository's newest release. Without `assetPattern` the build for this platform is picked. */
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean }
+  /** A native registry or Exasol's downloads portal; `driverRuntime` wires the result into a Studio driver runtime. */
+  | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string; driverRuntime?: "odbc" }
+  /** The repository's current tarball, for a project with no releases. */
+  | { kind: "repo-snapshot" }
+  /** Built into one of Studio's own driver runtimes. */
+  | { kind: "driver-runtime"; driver: "r" | "odbc" }
+  /** A plugin for another application. Studio fetches and verifies it and reveals the folder; it does not write there. */
+  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" };
+
+/** What an install needs to know about its item — never just the id. */
+export type InstallTarget = { id: string; install?: string; repo?: string; source?: InstallSource };
+
 /** What GitHub reports about this machine's request allowance. */
 export type GithubStatus = {
   connected: boolean;
@@ -611,7 +641,7 @@ export const ipc = {
   marketInstall: (id: string, version: string, url: string, filename: string) =>
     call<{ ok: boolean; path: string }>("market_install", { id, version, url, filename }),
   marketInstallRun: (
-    id: string,
+    target: InstallTarget,
     version?: string,
     url?: string,
     filename?: string,
@@ -620,8 +650,22 @@ export const ipc = {
     // display/manifest value (often the catalog latest) and must never
     // override a verified pip pin — `requested` is what does that, on purpose.
     requested?: string,
-  ) => call<{ ok: boolean }>("market_install_run", { id, version, url, filename, profileId, requested }),
-  marketUninstall: (id: string) => call<void>("market_uninstall", { id }),
+  ) =>
+    call<{ ok: boolean }>("market_install_run", {
+      id: target.id,
+      install: target.install ?? null,
+      repo: target.repo ?? null,
+      source: target.source ?? null,
+      version,
+      url,
+      filename,
+      profileId,
+      requested,
+    }),
+  /** Remove an install — by its coordinate, since what "remove" means depends
+   *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
+  marketUninstall: (target: InstallTarget) =>
+    call<void>("market_uninstall", { id: target.id, source: target.source ?? null }),
   personalLocalBootstrap: () => call<{ started: boolean; reason?: string }>("personal_local_bootstrap"),
   personalLocalStatus: () => call<PersonalLocalStatus>("personal_local_status"),
   // Independent, isolated component management.

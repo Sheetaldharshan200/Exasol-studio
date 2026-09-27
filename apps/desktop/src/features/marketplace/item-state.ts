@@ -1,7 +1,7 @@
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "./updates.ts";
 import type { InstalledItem, ReleaseAsset, MarketEnv } from "@/lib/ipc";
 import type { ResolvedCatalogItem } from "./catalog-data.ts";
-import { pickAsset } from "./assets.ts";
+import { pickAssetFor } from "./assets.ts";
 
 /**
  * What one catalog item IS right now — the single decision the card, the
@@ -67,7 +67,7 @@ export function managedIsPresent(
   return install === "bundled" || detected;
 }
 
-export type ItemLike = Pick<ResolvedCatalogItem, "id" | "install">;
+export type ItemLike = Pick<ResolvedCatalogItem, "id" | "install" | "source">;
 
 export function itemState(item: ItemLike, s: ItemSources): ItemState {
   if (s.installing.has(item.id) || s.driverRuntime?.busy) return { kind: "installing" };
@@ -102,7 +102,7 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
     return { kind: "onSystem" };
   }
   const assets = s.releaseAssets(item.id);
-  if (item.install === "binary" && assets.length > 0 && pickAsset(assets, s.env) === null) {
+  if (item.install === "binary" && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
     return { kind: "unavailable", platform: s.env?.os === "macos" ? "macOS" : (s.env?.os ?? "this platform") };
   }
   return { kind: "install", available: s.latestFor(item.id) };

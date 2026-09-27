@@ -49,7 +49,7 @@ import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
 import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
-import { pickAsset } from "@/features/marketplace/assets";
+import { pickAssetFor } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
@@ -110,7 +110,7 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
     case "uv-tool":
       return [
         "Ensure the uv Python package manager (install it if missing)",
-        `Install ${item.id === "mcp-server" ? "exasol-mcp-server" : "exasol-agent-skills"} as a uv tool`,
+        `Install ${item.source?.kind === "pypi" ? item.source.package : "the package"} as a uv tool`,
       ];
     case "uv-pip":
       return [
@@ -135,7 +135,7 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
     case "maven":
       return [
         "Resolve the latest exasol-jdbc version from Maven Central (live)",
-        "Download the driver jar into Studio's marketplace folder for your Java tools",
+        "Download the jar from Maven Central into Studio's marketplace folder, verified against its published checksum",
       ];
     case "package":
       return [
@@ -472,13 +472,13 @@ export function Marketplace() {
             if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
               release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
             }
-            const asset = pickAsset(release?.assets ?? [], env);
+            const asset = pickAssetFor(item, release?.assets ?? [], env);
             const version = chosen ?? latestFor(item.id) ?? undefined;
             un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
               if (e.payload.id === item.id) finish(e.payload.ok);
             });
             await ipc.marketInstallRun(
-              item.id,
+              { id: item.id, install: item.install, repo: item.repo, source: item.source },
               version,
               asset?.url,
               asset?.name,
@@ -599,10 +599,13 @@ export function Marketplace() {
         runtime: adapter.runtime,
         driver: null,
       });
-      setVsStaging((m) => ({
-        ...m,
-        [item.id]: { busy: false, failed: false, message: `Staged ${result.adapterAsset} (${result.releaseTag}).` },
-      }));
+      // A Lua adapter uploads nothing: its source is inlined into the CREATE
+      // statement when a schema is attached, so say what actually happened
+      // rather than claiming a file landed somewhere.
+      const message = result.luaSource
+        ? `Verified ${result.adapterAsset} (${result.releaseTag}). Lua adapters are written into the CREATE statement when you attach a schema, so there is nothing to upload.`
+        : `Staged ${result.adapterAsset} (${result.releaseTag}) into the database's BucketFS.`;
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: false, message } }));
     } catch (e) {
       const message = errorMessage(e);
       // Also to the log: a message on a card is gone as soon as the page is,
@@ -661,7 +664,7 @@ export function Marketplace() {
   async function uninstall(item: CatalogItem) {
     setBusy((b) => ({ ...b, [item.id]: true }));
     try {
-      await ipc.marketUninstall(item.id);
+      await ipc.marketUninstall({ id: item.id, source: item.source });
       refreshInstalled();
     } finally {
       setBusy((b) => ({ ...b, [item.id]: false }));
@@ -881,7 +884,7 @@ export function Marketplace() {
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
     const assets = releases[item.id]?.assets ?? [];
-    return !(item.install === "binary" && assets.length > 0 && pickAsset(assets, env) === null);
+    return !(item.install === "binary" && assets.length > 0 && pickAssetFor(item, assets, env) === null);
   };
   // A card is also batch-selectable when it has an UPDATE available — installs
   // and updates are the same gesture ("everything is same"): managed
@@ -921,6 +924,39 @@ export function Marketplace() {
   // Every state decision the buttons need is derived here, from the same
   // sources `stateOf` reads.
   const renderActions = (item: CatalogItem) => {
+    // A virtual schema adapter is staged into the CONNECTED DATABASE, not
+    // installed onto this machine, so none of the states below apply to it —
+    // and the generic Install button they produce looked like it did nothing,
+    // because the staging it started was never reflected anywhere on this page.
+    if (item.install === "vs-adapter") {
+      const vs = vsStaging[item.id];
+      const version = latestFor(item.id);
+      return (
+        <div className="grid gap-2">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => startInstall(item)}
+              disabled={vs?.busy}
+              data-agent-id={`market.detail.${item.id}.stage`}
+              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+            >
+              {vs?.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
+              {vs?.busy ? "Staging…" : vs?.failed ? "Retry staging" : `Stage${version ? ` ${version}` : ""} into the database`}
+            </button>
+          </div>
+          {vs?.message ? (
+            <p className={cn("max-w-[420px] text-[12px] leading-relaxed", vs.failed ? "text-destructive" : "text-muted-foreground")}>
+              {vs.message}
+            </p>
+          ) : (
+            <p className="max-w-[420px] text-[12px] leading-relaxed text-muted-foreground">
+              Puts the adapter's newest release into the connected Exasol's BucketFS. Attaching a schema with it happens
+              in Add data source, where its connection details and driver are asked for.
+            </p>
+          )}
+        </div>
+      );
+    }
     const managedCompId = CATALOG_TO_COMPONENT[item.id];
     const managedComp = managedCompId ? components.find((c) => c.id === managedCompId) : undefined;
     // Managed components (Personal, ExaPump, MCP, Exa Agent) are installed the
@@ -954,7 +990,7 @@ export function Marketplace() {
       !onSystem &&
       !did &&
       (releases[item.id]?.assets?.length ?? 0) > 0 &&
-      pickAsset(releases[item.id]?.assets ?? [], env) === null;
+      pickAssetFor(item, releases[item.id]?.assets ?? [], env) === null;
 
     // Live any-version picker: list fetched on first open (GitHub tags / PyPI
     // versions / Maven Central), newest first. Shared by the
@@ -1723,7 +1759,7 @@ export function InstallConsole({
       });
       unlisteners.current.push(onLog, onProg, onEnd);
       try {
-        await ipc.marketInstallRun(item.id, version, asset?.url, asset?.name);
+        await ipc.marketInstallRun({ id: item.id, install: item.install, repo: item.repo, source: item.source }, version, asset?.url, asset?.name);
       } catch (err) {
         // The backend also emits market:done on failure; guard against a hard throw.
         push("err", errorMessage(err));
