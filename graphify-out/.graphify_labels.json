@@ -1490,5 +1490,19 @@
   "1488": "@opentui/solid",
   "1489": "semver",
   "1490": "@silvia-odwyer/photon-node",
-  "1491": "@solid-primitives/scheduled"
+  "1491": "@solid-primitives/scheduled",
+  "1492": "init-projectors.ts",
+  "1493": "references",
+  "1494": "snapshot",
+  "1495": "@ai-sdk/amazon-bedrock",
+  "1496": "@ai-sdk/deepinfra",
+  "1497": "@ai-sdk/provider",
+  "1498": "@effect/platform-node",
+  "1499": "@exa/sdk",
+  "1500": "fuzzysort",
+  "1501": "gray-matter",
+  "1502": "@opentelemetry/sdk-trace-base",
+  "1503": "opentui-spinner",
+  "1504": "@types/ws",
+  "1505": "effect"
 }

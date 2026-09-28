@@ -42,6 +42,10 @@ is genuinely nothing to install, and they say so rather than pretending.
 Every installed item then reports its version, offers an update when a newer
 release exists, and can be removed — one Installed view across every kind.
 
+## Capabilities
+
+- `marketplace-installs` — installing, updating and removing ecosystem components from their own registries, verified, with no item handled by name.
+
 ## Non-goals
 
 - **Studio does not write into other applications' directories.** For a Power
