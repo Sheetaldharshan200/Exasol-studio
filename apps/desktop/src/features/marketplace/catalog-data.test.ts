@@ -156,7 +156,7 @@ test("every package-installed item carries its coordinate — none is installed 
   // item. The installer now dispatches on the item's `source`; an item of one
   // of these kinds WITHOUT a source would fail on click with "no coordinate",
   // which is a regression this catches before it ships.
-  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary"]);
+  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary", "host-plugin"]);
   for (const item of CATALOG) {
     if (!byCoordinate.has(item.install)) continue;
     assert.ok(item.source, `${item.id} (${item.install}) has no install coordinate`);
@@ -175,7 +175,7 @@ test("the mechanisms that are not a package are dispatched by install kind, and 
 
 test("every asset pattern compiles and anchors, so it cannot match a stray file by accident", () => {
   for (const item of CATALOG) {
-    if (item.source?.kind !== "gh-asset" || !item.source.assetPattern) continue;
+    if ((item.source?.kind !== "gh-asset" && item.source?.kind !== "host-plugin") || !item.source.assetPattern) continue;
     const p = item.source.assetPattern;
     assert.doesNotThrow(() => new RegExp(p), `${item.id}: pattern compiles`);
     assert.ok(p.startsWith("^") && p.endsWith("$"), `${item.id}: pattern is anchored (${p})`);

@@ -210,3 +210,9 @@ Maven versions come from Maven's own metadata, never a GitHub tag (bucketfs-java
 The runtime-components guard forbids releases/download/<digit> in src-tauri/src/*.rs, test fixtures included; it had failed daily on main since #161 merged.
 PR #161 merged as 4a9e425 with version 2026.10.0 in main but no v2026.10.0 tag; follow-up work is PR #162 from a fresh branch off main.
 
+
+## [2026-09-28] archive | marketplace-installs-everything archived; its spec is now the marketplace-installs capability
+openspec/specs/marketplace-installs/spec.md holds the 7 requirements (coordinate-driven installs, publisher-digest verification that fails closed, unambiguous asset choice, registry-sourced versions, uninstall that undoes only its own work, host plugins delivered not installed, confirmable coordinates).
+Change record: openspec/changes/archive/2026-09-28-marketplace-installs-everything/. Riding on PR #163 with the host-plugin installer and the graphify refresh.
+v2026.10.0 released from 4a9e425 (21 assets); STUDIO_REF -> v2026.10.0.
+

@@ -2159,9 +2159,8 @@ async fn install_from_source(
         // A release asset is chosen for this platform by the frontend and
         // arrives as url + filename; the caller handles it before getting here.
         InstallSource::GhAsset { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this platform."))),
-        InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!(
-            "{id} belongs to another application; Studio does not install into it yet."
-        ))),
+        // Handled by market_install_run, which has the chosen asset's url.
+        InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this plugin."))),
     }
 }
 
@@ -2263,6 +2262,28 @@ pub async fn market_install_run(
         // A release asset for this platform is chosen by the frontend, which
         // knows the platform, and arrives as url + filename.
         Some(crate::installers::InstallSource::GhAsset { .. }) => from_asset(url, filename).await,
+        // A plugin for another application: fetched and verified into Studio's
+        // own folder, never extracted or linked, then revealed — with where it
+        // belongs spelled out. Studio does not write into another product's
+        // installation (see the change proposal's non-goals).
+        Some(crate::installers::InstallSource::HostPlugin { host, .. }) => match (url, filename) {
+            (Some(u), Some(f)) => {
+                let path = download_and_place_inner(&app, &id, &u, &f, false).await?;
+                let sibling = {
+                    let u = u.clone();
+                    tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&u)).await.ok().flatten()
+                };
+                verify_placed(&path, sibling.as_deref(), false)?;
+                if sibling.is_some() {
+                    emit_log(&app, &id, "Checksum verified against the published .sha256.", "info");
+                }
+                let _ = reveal_path(path.clone());
+                let where_to = crate::installers::host_plugin_destination(host, std::env::consts::OS)
+                    .unwrap_or_else(|| "Install it with the application it belongs to.".into());
+                Ok(format!("{f} downloaded to {path} and verified. {where_to}"))
+            }
+            _ => Err(AppError::Storage("No downloadable asset was provided for this plugin.".into())),
+        },
         Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
             .await
             .map(|(v, note)| {

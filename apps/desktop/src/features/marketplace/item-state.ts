@@ -102,7 +102,7 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
     return { kind: "onSystem" };
   }
   const assets = s.releaseAssets(item.id);
-  if (item.install === "binary" && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
+  if ((item.install === "binary" || item.install === "host-plugin") && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
     return { kind: "unavailable", platform: s.env?.os === "macos" ? "macOS" : (s.env?.os ?? "this platform") };
   }
   return { kind: "install", available: s.latestFor(item.id) };
