@@ -128,3 +128,15 @@ test("a plural release is 'choose a variant' until one is picked, then installab
   assert.equal(itemState(spark, sources({ releaseAssets: () => [assets[0], assets[2]] })).kind, "install", "one match needs no choice");
   assert.equal(itemState(spark, sources({ installed: present("spark-connector", "2.2.1") })).kind, "installed", "installed outranks the choice");
 });
+
+test("database-side items say where they live; a container the launcher lists is on this system", () => {
+  const rls = item({ id: "row-level-security", install: "db-scripts", source: { kind: "db-scripts", schema: "EXA_RLS" } });
+  const withRecord = sources({ installed: { "row-level-security": { id: "row-level-security", version: "1.5.8", path: "", filename: "", connection: { id: "p1", name: "Prod warehouse" } } } });
+  assert.deepEqual(itemState(rls, withRecord), { kind: "installed", installed: "1.5.8", available: null, where: "Prod warehouse" });
+  assert.equal(stateLabel(itemState(rls, withRecord)), "Installed in Prod warehouse");
+  const rust = item({ id: "language-container-rs", install: "slc", source: { kind: "slc", alias: "rust" } });
+  assert.equal(itemState(rust, sources({ detected: { "slc:RUST": true } })).kind, "onSystem");
+  assert.equal(itemState(rust, sources()).kind, "install");
+  const any = item({ id: "script-languages-release", install: "slc", source: { kind: "slc" } });
+  assert.equal(itemState(any, sources({ detected: { "slc:PYTHON3": true } })).kind, "install", "without an alias nothing is claimed");
+});

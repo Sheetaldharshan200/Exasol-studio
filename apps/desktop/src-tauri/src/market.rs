@@ -1252,6 +1252,116 @@ fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// The launcher and deployment a language container goes into. Containers
+/// live in the managed local Exasol Personal; the launcher owns them.
+fn slc_launcher(app: &AppHandle) -> AppResult<(String, String)> {
+    let cli = crate::local_runtime::exasol_cli(app)?;
+    let dep = crate::local_runtime::personal_deployment_dir(app)?;
+    if !dep.is_dir() {
+        return Err(AppError::Storage(
+            "Set up the local database first — language containers are installed into Studio's managed Exasol Personal.".into(),
+        ));
+    }
+    Ok((cli.to_string_lossy().into_owned(), dep.to_string_lossy().into_owned()))
+}
+
+/// `exasol slc install <alias>`: the launcher downloads the official container
+/// for this machine, registers the alias and restarts the local database.
+fn install_slc(app: &AppHandle, id: &str, alias: &str, repo: Option<&str>) -> AppResult<(String, String)> {
+    if !crate::installers::valid_alias(alias) {
+        return Err(AppError::Storage(format!("{alias:?} is not a language alias Studio will pass to the launcher.")));
+    }
+    let (cli, dep) = slc_launcher(app)?;
+    emit_log(
+        app,
+        id,
+        format!("Installing the {alias} language container through the official Exasol launcher — the local database restarts once…"),
+        "info",
+    );
+    let code = run_streamed(app, id, &cli, &["--auto-approve", "slc", "install", alias, "--deployment-dir", &dep])?;
+    if code != 0 {
+        return Err(AppError::Storage(format!("`exasol slc install {alias}` exited with code {code}. See the log above.")));
+    }
+    let version = repo.and_then(crate::upstream::latest).map(|r| r.tag).unwrap_or_else(|| "latest".into());
+    Ok((
+        version,
+        format!("{} language container installed in the local database — UDFs in that language run now.", alias.to_ascii_uppercase()),
+    ))
+}
+
+/// `exasol slc remove <alias>`: the launcher drops the alias and the container.
+fn remove_slc(app: &AppHandle, id: &str, alias: &str) -> AppResult<()> {
+    if !crate::installers::valid_alias(alias) {
+        return Err(AppError::Storage(format!("{alias:?} is not a language alias Studio will pass to the launcher.")));
+    }
+    let (cli, dep) = slc_launcher(app)?;
+    emit_log(app, id, format!("Removing the {alias} language container through the official Exasol launcher…"), "info");
+    let code = run_streamed(app, id, &cli, &["--auto-approve", "slc", "remove", alias, "--deployment-dir", &dep])?;
+    if code != 0 {
+        return Err(AppError::Storage(format!("`exasol slc remove {alias}` exited with code {code}. See the log above.")));
+    }
+    Ok(())
+}
+
+/// One container the launcher offers, and whether it is installed.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlcChoice {
+    pub alias: String,
+    pub installed: bool,
+}
+
+/// Pure: the launcher's `slc list --json` as choices, first alias per container.
+pub(crate) fn slc_choices_from(list: &Value) -> Vec<SlcChoice> {
+    list.as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|c| {
+                    let alias = c.get("aliases")?.as_array()?.first()?.as_str()?.to_ascii_uppercase();
+                    Some(SlcChoice { alias, installed: c.get("installed").and_then(Value::as_bool).unwrap_or(false) })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The language containers the official launcher can install into the
+/// managed local database, for the variant menu of a container item that
+/// names no alias.
+#[tauri::command]
+pub async fn market_slc_catalog(app: AppHandle) -> AppResult<Vec<SlcChoice>> {
+    let (cli, dep) = slc_launcher(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = Command::new(&cli)
+            .args(["slc", "list", "--json", "--deployment-dir", &dep])
+            .output()
+            .map_err(|e| AppError::Storage(format!("Could not run the Exasol launcher: {e}")))?;
+        let list: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|_| AppError::Storage("The launcher's container list could not be read.".into()))?;
+        Ok(slc_choices_from(&list))
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+/// What a script library's install would run into `schema` — downloaded and
+/// verified, shown on the permission screen, run by nothing here.
+#[tauri::command]
+pub async fn market_db_scripts_plan(
+    app: AppHandle,
+    id: String,
+    repo: String,
+    requested: Option<String>,
+    schema: String,
+) -> AppResult<crate::db_scripts::ScriptPlan> {
+    if !crate::installers::valid_item_id(&id) {
+        return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
+    }
+    let requested = requested.filter(|v| valid_version_tag(v));
+    crate::db_scripts::plan(&app, &id, &repo, requested.as_deref(), &schema).await
+}
+
 /// Local database: Exasol Personal through the official launcher, every platform.
 fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
     let runtime = crate::local_runtime::ensure_runtime(app, id)?;
@@ -2217,6 +2327,9 @@ async fn install_from_source(
         // Handled by market_install_run, which has the chosen asset's url.
         InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this plugin."))),
         InstallSource::Deliver { .. } => Err(AppError::Storage(format!("{id}: nothing to deliver was chosen."))),
+        InstallSource::Slc { .. } | InstallSource::DbScripts { .. } => {
+            Err(AppError::Storage(format!("{id}: a database-side install is dispatched by market_install_run.")))
+        }
     }
 }
 
@@ -2298,11 +2411,19 @@ pub async fn market_install_run(
     // on, in place of the item's name.
     repo: Option<String>,
     source: Option<crate::installers::InstallSource>,
+    // The schema a script library goes into, when the person changed the
+    // coordinate's default; the alias picked for a language container whose
+    // coordinate names none.
+    schema: Option<String>,
+    alias: Option<String>,
 ) -> AppResult<Value> {
     if !crate::installers::valid_item_id(&id) {
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
     }
     emit_log(&app, &id, "Starting installation…", "info");
+    // What a database-side install must remember for its removal.
+    let mut db_record: Option<crate::db_scripts::DbRecord> = None;
+    let mut slc_alias: Option<String> = None;
     // Validated before it can reach a package spec or URL.
     let requested = requested.filter(|v| valid_version_tag(v));
     // Installers that resolve the real version themselves (Maven) report it
@@ -2337,6 +2458,32 @@ pub async fn market_install_run(
             let tag = requested.clone().or_else(|| version.clone().filter(|v| valid_version_tag(v)));
             deliver_from_source(&app, &id, *format, repo.as_deref(), tag.as_deref(), url, filename).await
         }
+        // Scripts into a schema on the connection the person picked — they
+        // saw the statements on the permission screen (market_db_scripts_plan).
+        Some(crate::installers::InstallSource::DbScripts { schema: default_schema }) => {
+            let schema = schema.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| default_schema.clone());
+            match (repo.as_deref(), profile_id.as_deref().filter(|p| !p.is_empty())) {
+                (Some(repo), Some(profile)) => crate::db_scripts::install(&app, &id, repo, requested.as_deref(), profile, &schema)
+                    .await
+                    .map(|(v, record, note)| {
+                        resolved_version = Some(v);
+                        db_record = Some(record);
+                        note
+                    }),
+                (None, _) => Err(AppError::Storage(format!("{id} has no repository to install from."))),
+                (_, None) => Err(AppError::Storage("Pick the connection to install into first.".into())),
+            }
+        }
+        // A language container for the managed local database, through the
+        // official launcher.
+        Some(crate::installers::InstallSource::Slc { alias: default_alias }) => match alias.clone().or_else(|| default_alias.clone()) {
+            Some(a) => install_slc(&app, &id, &a, repo.as_deref()).map(|(v, note)| {
+                resolved_version = Some(v);
+                slc_alias = Some(a);
+                note
+            }),
+            None => Err(AppError::Storage("Pick which language container to install first.".into())),
+        },
         Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
             .await
             .map(|(v, note)| {
@@ -2369,7 +2516,7 @@ pub async fn market_install_run(
         Ok(note) => {
             let mut items = read_manifest(&app);
             items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
-            items.push(json!({
+            let mut entry = json!({
                 "id": id,
                 // Record only what was actually installed: installer-resolved
                 // first, then the validated pick, then the display version IF
@@ -2379,7 +2526,18 @@ pub async fn market_install_run(
                     .or(version.filter(|v| valid_version_tag(v)))
                     .unwrap_or_else(|| "latest".into()),
                 "note": note,
-            }));
+            });
+            // Where a database-side item lives — what its removal needs and
+            // what the Installed view shows.
+            if let Some(record) = &db_record {
+                let json_err = |e: serde_json::Error| AppError::Storage(e.to_string());
+                entry["db"] = serde_json::to_value(record).map_err(json_err)?;
+                entry["connection"] = serde_json::to_value(&record.connection).map_err(json_err)?;
+            }
+            if let Some(a) = &slc_alias {
+                entry["alias"] = json!(a.to_ascii_uppercase());
+            }
+            items.push(entry);
             write_manifest(&app, &items)?;
             emit_log(&app, &id, "✓ Installation complete.", "success");
             let _ = app.emit("market:done", json!({ "id": id, "ok": true }));
@@ -2461,7 +2619,7 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
 
 /// Remove an installed item's files and manifest entry.
 #[tauri::command]
-pub fn market_uninstall(
+pub async fn market_uninstall(
     app: AppHandle,
     id: String,
     // The item's coordinate: what "remove" means depends on the mechanism.
@@ -2475,6 +2633,32 @@ pub fn market_uninstall(
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
     }
     let dir = market_dir(&app)?.join(&id);
+
+    // What lives in a database is undone first, from the install's own
+    // record, on the connection it named. Without a record nothing is
+    // guessed — and nothing is dropped.
+    let entry = read_manifest(&app).into_iter().find(|it| it.get("id").and_then(|v| v.as_str()) == Some(id.as_str()));
+    match &source {
+        Some(InstallSource::DbScripts { .. }) => {
+            let record = entry
+                .as_ref()
+                .and_then(|e| e.get("db").cloned())
+                .and_then(|v| serde_json::from_value::<crate::db_scripts::DbRecord>(v).ok())
+                .ok_or_else(|| AppError::Storage("No record of where this was installed — nothing was dropped.".into()))?;
+            crate::db_scripts::uninstall(&app, &record).await?;
+        }
+        Some(InstallSource::Slc { alias }) => {
+            let alias = entry
+                .as_ref()
+                .and_then(|e| e.get("alias"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .or_else(|| alias.clone())
+                .ok_or_else(|| AppError::Storage("No record of which language container this installed.".into()))?;
+            remove_slc(&app, &id, &alias)?;
+        }
+        _ => {}
+    }
 
     // A uv tool lives in uv's own tool directory, not under the item's, so
     // deleting the folder would leave the command on PATH pointing at nothing.
@@ -2633,6 +2817,15 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
 
     // Semantic Views is OPT-IN — installed ONLY when its readiness marker exists.
     map.insert("semantic-views".into(), json!(db::semantic_views_installed(&app)));
+    // Installed language containers, by alias, so a container item whose
+    // coordinate names one shows "on this system" — whoever installed it.
+    if let (Ok(cli), Ok(dep)) = (crate::local_runtime::exasol_cli(&app), crate::local_runtime::personal_deployment_dir(&app)) {
+        if dep.is_dir() {
+            for alias in crate::virtual_schema_install::installed_slc_aliases(&cli, &dep) {
+                map.insert(format!("slc:{alias}"), json!(true));
+            }
+        }
+    }
 
     // Bundled agent skills are always present in the app; the manifest confirms.
     map.insert(
@@ -2693,8 +2886,25 @@ pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> App
 
 #[cfg(test)]
 mod tests {
-    use super::{fetch_plan, stale_repos, FetchPlan, MAX_SINGLE_FETCH};
+    use super::{fetch_plan, slc_choices_from, stale_repos, FetchPlan, SlcChoice, MAX_SINGLE_FETCH};
     use serde_json::{json, Value};
+
+    #[test]
+    fn the_launcher_listing_becomes_choices_by_first_alias() {
+        let list = json!([
+            { "flavor": "python-3.10", "aliases": ["python3", "PYTHON3_10"], "installed": true },
+            { "flavor": "java-17", "aliases": ["java"], "installed": false },
+            { "flavor": "broken" },
+        ]);
+        assert_eq!(
+            slc_choices_from(&list),
+            vec![
+                SlcChoice { alias: "PYTHON3".into(), installed: true },
+                SlcChoice { alias: "JAVA".into(), installed: false },
+            ]
+        );
+        assert!(slc_choices_from(&json!({})).is_empty(), "not a list → nothing offered");
+    }
 
     fn cache(pairs: &[(&str, Option<u64>)]) -> serde_json::Map<String, Value> {
         let mut m = serde_json::Map::new();

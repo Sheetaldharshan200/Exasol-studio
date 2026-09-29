@@ -318,7 +318,17 @@ export type Release = {
   htmlUrl: string | null;
   assets: ReleaseAsset[];
 } | null;
-export type InstalledItem = { id: string; version: string; path: string; filename: string; note?: string };
+export type InstalledItem = {
+  id: string;
+  version: string;
+  path: string;
+  filename: string;
+  note?: string;
+  /** Where a database-side item lives. */
+  connection?: { id: string; name: string };
+  /** The language alias a container install registered. */
+  alias?: string;
+};
 
 export type CatalogEntry = {
   repo: string;
@@ -360,7 +370,17 @@ export type InstallSource =
   | { kind: "driver-runtime"; driver: "r" | "odbc" }
   /** A plugin for another application. Studio fetches and verifies it and reveals the folder; it does not write there. */
   | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" | "azure-functions" }
-  | { kind: "deliver"; format: DeliverFormat; assetPattern?: string };
+  | { kind: "deliver"; format: DeliverFormat; assetPattern?: string }
+  /** A script language container for the managed local database, through the
+   *  official launcher; without an alias the person picks one it offers. */
+  | { kind: "slc"; alias?: string }
+  /** SQL and Lua scripts run into a schema on a chosen connection; `schema`
+   *  is the default the person may change. */
+  | { kind: "db-scripts"; schema: string };
+/** What a script library's install would run, for review before it does. */
+export type ScriptPlan = { version: string; files: string[]; statements: string[] };
+/** One language container the launcher offers, and whether it is installed. */
+export type SlcChoice = { alias: string; installed: boolean };
 /** Formats of a delivered file; the next step is stated from the format. A
  *  rockspec and a desktop build come from the release; the other two are the
  *  tag's source archive. */
@@ -655,6 +675,10 @@ export const ipc = {
     // display/manifest value (often the catalog latest) and must never
     // override a verified pip pin — `requested` is what does that, on purpose.
     requested?: string,
+    // The schema a script library goes into and the alias picked for a
+    // language container, when the person chose them.
+    schema?: string,
+    alias?: string,
   ) =>
     call<{ ok: boolean }>("market_install_run", {
       id: target.id,
@@ -666,7 +690,14 @@ export const ipc = {
       filename,
       profileId,
       requested,
+      schema,
+      alias,
     }),
+  /** What a script library would run into `schema` — read and verified, run by nothing. */
+  marketDbScriptsPlan: (id: string, repo: string, requested: string | undefined, schema: string) =>
+    call<ScriptPlan>("market_db_scripts_plan", { id, repo, requested, schema }),
+  /** The language containers the official launcher can install locally. */
+  marketSlcCatalog: () => call<SlcChoice[]>("market_slc_catalog"),
   /** Remove an install — by its coordinate, since what "remove" means depends
    *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
   marketUninstall: (target: InstallTarget) =>

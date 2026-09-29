@@ -147,7 +147,7 @@ fn relative_files(dir: &Path) -> Vec<String> {
 }
 
 /// Installed SLC aliases from `exasol slc list --json`.
-fn installed_slc_aliases(cli: &Path, deployment: &Path) -> Vec<String> {
+pub(crate) fn installed_slc_aliases(cli: &Path, deployment: &Path) -> Vec<String> {
     let Ok(output) = Command::new(cli)
         .args(["slc", "list", "--json", "--deployment-dir"])
         .arg(deployment)

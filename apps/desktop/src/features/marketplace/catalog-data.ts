@@ -50,6 +50,12 @@ export type Install =
    *  source archive, a desktop build): fetched and verified into Studio's
    *  folder and revealed, with the next step stated from its format. */
   | "deliver"
+  /** A script language container for the managed local database, installed
+   *  and removed through the official launcher, which owns them. */
+  | "slc"
+  /** SQL and Lua scripts run into a schema on a connection the person chose,
+   *  after they have reviewed every statement. */
+  | "db-scripts"
   | "reference";
 
 import type { InstallSource } from "@/lib/ipc";
@@ -175,10 +181,10 @@ export const CATALOG: CatalogItem[] = [
   { id: "transformers-extension", repo: "exasol/transformers-extension", kind: "extension", install: "uv-pip", source: { kind: "pypi", package: "exasol-transformers-extension" } },
   { id: "advanced-analytics", repo: "exasol/advanced-analytics-framework", kind: "extension", install: "uv-pip", source: { kind: "pypi", package: "exasol-advanced-analytics-framework" } },
   { id: "mlflow-plugin", repo: "exasol/mlflow-plugin", kind: "extension", install: "uv-pip", source: { kind: "pypi", package: "exasol-mlflow-plugin" } },
-  { id: "script-languages-release", repo: "exasol/script-languages-release", kind: "extension", install: "reference" },
-  { id: "language-container-rs", repo: "exasol-labs/language-container-rs", kind: "extension", install: "reference", labs: true },
-  { id: "preprocessor-library", repo: "exasol-labs/preprocessor-library", kind: "extension", install: "reference", labs: true },
-  { id: "lakehouse-engine-rs", repo: "exasol-labs/lakehouse-engine-rs", kind: "extension", install: "reference", labs: true },
+  { id: "script-languages-release", repo: "exasol/script-languages-release", kind: "extension", install: "slc", source: { kind: "slc" } },
+  { id: "language-container-rs", repo: "exasol-labs/language-container-rs", kind: "extension", install: "slc", labs: true, source: { kind: "slc", alias: "rust" } },
+  { id: "preprocessor-library", repo: "exasol-labs/preprocessor-library", kind: "extension", install: "deliver", labs: true, source: { kind: "deliver", format: "source" } },
+  { id: "lakehouse-engine-rs", repo: "exasol-labs/lakehouse-engine-rs", kind: "extension", install: "deliver", labs: true, source: { kind: "deliver", format: "source" } },
   { id: "vscode-extension", repo: "exasol-labs/exasol-vscode", kind: "extension", install: "host-plugin", labs: true, source: { kind: "host-plugin", assetPattern: "^exasol-vscode-[\\d.]+\\.vsix$", host: "vscode" } },
   { id: "powerbi-connector", repo: "exasol/powerbi-exasol", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^Exasol\\.mez$", host: "powerbi" } },
   { id: "metabase-driver", repo: "exasol/metabase-driver", kind: "bi", install: "binary", source: { kind: "gh-asset", assetPattern: "^exasol\\.metabase-driver\\.jar$" } },
@@ -200,7 +206,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "kafka-connector", repo: "exasol/kafka-connector-extension", kind: "extension", install: "binary", source: { kind: "gh-asset", assetPattern: "^exasol-kafka-connector-extension-[\\d.]+\\.jar$" } },
   { id: "spark-connector", repo: "exasol/spark-connector", kind: "extension", install: "binary", source: { kind: "gh-asset", assetPattern: "^spark-connector-(jdbc|s3)_[\\d.]+-[\\d.]+-spark-[\\d.]+-assembly\\.jar$", choose: true } },
   { id: "cloudwatch-adapter", repo: "exasol/cloudwatch-adapter", kind: "extension", install: "reference" },
-  { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "reference" },
+  { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "db-scripts", source: { kind: "db-scripts", schema: "EXA_RLS" } },
   { id: "udf-api-java", repo: "exasol/udf-api-java", kind: "extension", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "udf-api-java" } },
   { id: "dbt-exasol-utils", repo: "exasol/dbt-exasol-utils", kind: "extension", install: "deliver", source: { kind: "deliver", format: "dbt-package" } },
   { id: "bucketfs-client", repo: "exasol/bucketfs-client", kind: "cli", install: "binary", source: { kind: "gh-asset", assetPattern: "^bfsc-[\\d.]+\\.jar$" } },

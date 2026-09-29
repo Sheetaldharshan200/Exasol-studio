@@ -10,6 +10,7 @@ mod terminal;
 mod updates;
 mod upstream;
 mod bucketfs;
+mod db_scripts;
 mod catalog;
 mod connection;
 mod connection_settings;
@@ -171,6 +172,8 @@ pub fn run() {
             market::market_install,
             market::market_install_run,
             market::market_uninstall,
+            market::market_db_scripts_plan,
+            market::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
             market::reveal_path,

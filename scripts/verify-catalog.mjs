@@ -100,6 +100,16 @@ async function coordinateProblem(item) {
     case "host-plugin":
     case "gh-asset":
       return releaseAssetProblem(item, s.assetPattern);
+    case "db-scripts": {
+      // The install runs the release's .sql and .lua files; a release without any has nothing to run.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.schema ?? "")) return `schema ${JSON.stringify(s.schema)} is not one plain identifier`;
+      const rel = item.repo ? await latestAssets(item.repo) : null;
+      if (!rel) return `${item.repo} has no release to read`;
+      return rel.assets.some((n) => /\.(sql|lua)$/.test(n)) ? null : `${rel.tag} of ${item.repo} ships no .sql or .lua file to run`;
+    }
+    case "slc":
+      // The official launcher owns these; an alias must be one word it accepts.
+      return s.alias === undefined || /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(s.alias) ? null : `alias ${JSON.stringify(s.alias)} is not one word`;
     default:
       return null; // pip-release, repo-snapshot, driver-runtime: the repo check is the check
   }

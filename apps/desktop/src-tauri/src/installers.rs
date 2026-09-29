@@ -73,6 +73,24 @@ pub enum InstallSource {
         #[serde(default)]
         asset_pattern: Option<String>,
     },
+    /// A script language container for the managed local database, installed
+    /// and removed through the official launcher, which owns them. Without an
+    /// alias the person picks one from the launcher's own catalogue.
+    Slc {
+        #[serde(default)]
+        alias: Option<String>,
+    },
+    /// SQL and Lua scripts run into a schema on a connection the person
+    /// chose; `schema` is the default they may change.
+    DbScripts {
+        schema: String,
+    },
+}
+
+/// A language alias the launcher accepts: one plain word.
+pub fn valid_alias(alias: &str) -> bool {
+    let mut chars = alias.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_') && alias.len() <= 32
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
@@ -336,6 +354,18 @@ pub fn stale_links<'a>(links: &'a [(String, std::path::PathBuf)], dir: &std::pat
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn database_side_coordinates_deserialize_and_aliases_are_one_word() {
+        let slc: super::InstallSource = serde_json::from_str(r#"{"kind":"slc"}"#).unwrap();
+        assert_eq!(slc, super::InstallSource::Slc { alias: None });
+        let rust: super::InstallSource = serde_json::from_str(r#"{"kind":"slc","alias":"rust"}"#).unwrap();
+        assert_eq!(rust, super::InstallSource::Slc { alias: Some("rust".into()) });
+        let db: super::InstallSource = serde_json::from_str(r#"{"kind":"db-scripts","schema":"EXA_RLS"}"#).unwrap();
+        assert_eq!(db, super::InstallSource::DbScripts { schema: "EXA_RLS".into() });
+        assert!(super::valid_alias("rust") && super::valid_alias("PYTHON3") && super::valid_alias("java_17"));
+        assert!(!super::valid_alias("") && !super::valid_alias("3py") && !super::valid_alias("py thon") && !super::valid_alias("--all"));
+    }
+
     #[test]
     fn deliver_formats_split_release_files_from_source_archives() {
         use super::DeliverFormat::*;

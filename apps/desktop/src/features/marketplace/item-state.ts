@@ -98,9 +98,15 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
 
   if (inst) {
     if (item.id === "exasol-personal" && s.detected["exasol-personal:running"]) return { kind: "running", installed: inst.version ?? null, available };
-    const where = item.id === "semantic-views" && inst.note?.includes(" in ") ? inst.note.split(" in ").pop()?.replace(/\.$/, "") : undefined;
+    // Where a database-side item lives: the install's own record, else (the
+    // Semantic Views install that predates records) its note.
+    const where =
+      inst.connection?.name ??
+      (item.id === "semantic-views" && inst.note?.includes(" in ") ? inst.note.split(" in ").pop()?.replace(/\.$/, "") : undefined);
     return { kind: "installed", installed: inst.version ?? null, available, where };
   }
+  // A language container registered by whoever: the launcher lists it.
+  if (item.source?.kind === "slc" && item.source.alias && s.detected[`slc:${item.source.alias.toUpperCase()}`]) return { kind: "onSystem" };
   if (s.detected[item.id]) {
     if (item.id === "exasol-personal" && s.detected["exasol-personal:running"]) return { kind: "running", installed: null, available: null };
     return { kind: "onSystem" };
