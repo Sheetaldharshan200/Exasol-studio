@@ -2,7 +2,7 @@
 title: The marketplace installs by coordinate — how 48 installable items became 121
 category: marketplace
 type: design+gotcha
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # The structural finding
@@ -127,3 +127,48 @@ release version or digest may be embedded in Rust source. Two `upstream.rs`
 out — tripped it from the moment #161 merged. The fixtures are built from a
 `tag` variable now (`releases/download/{tag}` in source). The guard is right;
 remember it applies to test code too.
+
+# The rest: what "install" truthfully means for the last seventeen (2026-09-29)
+
+After the coordinate rewrite, seventeen items were still links. Each fits one
+of a few **mechanisms**, none of which existed; `marketplace-installs-the-rest`
+added them. The rule did not change: an item declares a mechanism and a
+coordinate, nothing dispatches on an id.
+
+| Mechanism | What it truthfully does | Items |
+|---|---|---|
+| `deliver { format }` | download, verify (`.sha256` sibling when published), reveal, and state the next step **from the format**: `rockspec` → `luarocks install`, `dbt-package` → `packages.yml` + `dbt deps`, `source` → the tag's archive from github.com (uncounted by the API), `desktop-app` → the platform build (`.dmg`/`.AppImage`/`.msi` tokens) | Lua driver + libraries, dbt-exasol-utils, Panorama, parquet-edml-generator, udf-runner-cpp, preprocessor-library, lakehouse-engine-rs |
+| `gh-asset { choose: true }` | a plural release: the pattern's matches are offered by name, only the pick installs; one match needs no pick; a pick is renamed for another chosen release by its tag | spark-connector (8 assembly jars) |
+| `slc { alias? }` | **the official launcher owns containers**: `exasol slc install|remove <alias>`, `slc list --json` as the menu — no BucketFS upload, no `SCRIPT_LANGUAGES` string editing by Studio | script-languages-release, language-container-rs (`rust`) |
+| `db-scripts { schema }` | the release's `.sql`/`.lua` files, reviewed (connection, editable schema, every statement's head + body), then run on one connection; record = connection + schema + created-schema + created objects | row-level-security |
+| `vm-appliance` | x86-64 only, image is the person's sign-up download found in Downloads, `VBoxManage import`/`startvm`, VMware gets the file; no digest published and the log says so | community-edition |
+| `host-plugin`, `registry` | as before, two new destinations (`powerapps`, `azure-functions`) and the Go proxy | power-apps-connector, azure-data-factory, error-reporting-go |
+
+## Gotchas that shaped it
+
+- **Exasol script bundles are slash-terminated.** `administration-sql-scripts-<v>.sql`
+  ends each `CREATE SCRIPT` body with a line holding only `/`, with filler `;`
+  lines between. Splitting on `;` would cut Lua bodies; `split_bundle` splits
+  on `/` lines and only the tail without a `/` on `;`.
+- **Scripts that run inside a database fail closed.** No published digest → no
+  install (the general policy lets an unverifiable *file* through; code that
+  runs as the connection's user does not get that).
+- **Review must pin what runs.** The plan carries the release tag and a
+  SHA-256 fingerprint over the statements; install refetches by tag and
+  refuses a different fingerprint. Without this, "latest" could change
+  between review and run.
+- **Removal drops exactly the recorded objects, newest first, never CASCADE**;
+  the schema only if the install created it. Objects already present in an
+  existing schema refuse the install (CREATE OR REPLACE would take them over
+  and removal would later drop the person's object). Only tracked `CREATE`
+  kinds run — a `CREATE SCHEMA`/`GRANT`/`ALTER SYSTEM`/`DROP` in a bundle
+  refuses the whole install. A record read back from disk is validated before
+  any name enters a `DROP`.
+- **A downloaded file's name is one plain name** (`safe_file_name`) wherever
+  it came from — a release asset named `../x.sql` used to be joinable.
+- **Community Edition** is a 10 GB `.ova` behind a sign-up form, x86-64 only
+  (the dev Mac is arm64, so it shows *Not for Apple Silicon / ARM* there).
+- Codex review, two passes: 13 + 9 findings, then 6 more on the new modules;
+  all fixed except two deliberate policies (the OVA import without a
+  publisher digest, and forgetting a VMware machine's record on removal since
+  Studio never reaches into VMware).

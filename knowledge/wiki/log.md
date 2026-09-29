@@ -216,3 +216,8 @@ openspec/specs/marketplace-installs/spec.md holds the 7 requirements (coordinate
 Change record: openspec/changes/archive/2026-09-28-marketplace-installs-everything/. Riding on PR #163 with the host-plugin installer and the graphify refresh.
 v2026.10.0 released from 4a9e425 (21 assets); STUDIO_REF -> v2026.10.0.
 
+
+## [2026-09-29] marketplace | marketplace-installs-the-rest — 17 link-only items become installs (deliver, choose, slc, db-scripts, vm-appliance)
+Branch feat/marketplace-installs-the-rest. 149 items: 135 installable, 14 links left (docs/spec/tutorial repos, grafana-datasource, starter-kit, ai-lab, cloudwatch-adapter, exasol-local-vm). 103 coordinates confirmed live.
+New Rust modules db_scripts.rs / slc.rs / vm_appliance.rs; slc goes through the official launcher (`exasol slc install|remove|list --json`), not BucketFS. Row-Level Security = reviewed slash-terminated bundle into a chosen schema, fingerprint-pinned, fail-closed on digests, rollback midway, drop exactly what was created.
+Codex: 13+9 findings first pass, 6 second pass — fixed (see page marketplace-installs-by-coordinate). Community Edition VM install is x86-64 only; untestable end-to-end on the arm64 dev Mac.
