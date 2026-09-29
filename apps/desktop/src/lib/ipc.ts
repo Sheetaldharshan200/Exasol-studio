@@ -351,7 +351,7 @@ export type InstallSource =
   /** A JAR from Maven Central. Its versions come from Maven's own metadata, never a release tag. */
   | { kind: "maven"; group: string; artifact: string }
   /** A file from the repository's newest release. Without `assetPattern` the build for this platform is picked. */
-  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean }
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean }
   /** A native registry or Exasol's downloads portal; `driverRuntime` wires the result into a Studio driver runtime. */
   | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string; driverRuntime?: "odbc" }
   /** The repository's current tarball, for a project with no releases. */

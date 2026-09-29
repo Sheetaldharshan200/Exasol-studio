@@ -72,9 +72,41 @@ export function needsReleaseAsset(item: { install: string; source?: InstallSourc
   return item.source?.kind === "deliver" && item.source.format !== "source" && item.source.format !== "dbt-package";
 }
 
+/** Whether the item's pattern is EXPECTED to match several files, one of which
+ *  the person picks (spark-connector ships one jar per Scala × Spark version). */
+export function expectsChoice(source: InstallSource | undefined): boolean {
+  return source?.kind === "gh-asset" && source.choose === true;
+}
+
+/** The artifacts an item's pattern matches — the variants a choosing item offers. */
+export function variantsOf(item: { source?: InstallSource }, assets: ReleaseAsset[]): ReleaseAsset[] {
+  const pattern = assetPatternOf(item.source);
+  if (!pattern) return [];
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern);
+  } catch {
+    return [];
+  }
+  return assets.filter((a) => !METADATA.test(a.name.toLowerCase()) && re.test(a.name));
+}
+
+/** A variant picked from one release, named for another: the release tag is
+ *  the only part of the file name that changes between versions. */
+export function variantForRelease(variant: string, fromTag: string, toTag: string): string {
+  const strip = (t: string) => t.replace(/^v/, "");
+  return variant.split(strip(fromTag)).join(strip(toTag));
+}
+
 /** `pickAsset` for a catalogue item: its own pattern if it has one, else the
  *  platform rules. Every caller goes through this so an item cannot be picked
- *  for by platform when its coordinate said which file. */
-export function pickAssetFor(item: { source?: InstallSource }, assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset | null {
+ *  for by platform when its coordinate said which file. An item that expects
+ *  a choice yields the one match, or the picked variant, or nothing. */
+export function pickAssetFor(item: { source?: InstallSource }, assets: ReleaseAsset[], env: MarketEnv | null, variant?: string): ReleaseAsset | null {
+  if (expectsChoice(item.source)) {
+    const hits = variantsOf(item, assets);
+    if (hits.length === 1) return hits[0];
+    return hits.find((a) => a.name === variant) ?? null;
+  }
   return pickAsset(assets, env, assetPatternOf(item.source));
 }

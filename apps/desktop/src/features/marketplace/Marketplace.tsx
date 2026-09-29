@@ -49,7 +49,7 @@ import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
 import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
-import { needsReleaseAsset, pickAssetFor } from "@/features/marketplace/assets";
+import { expectsChoice, needsReleaseAsset, pickAssetFor, variantForRelease, variantsOf } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
@@ -484,7 +484,12 @@ export function Marketplace() {
             if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
               release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
             }
-            const asset = pickAssetFor(item, release?.assets ?? [], env);
+            // A variant was picked from the release the card shows; another
+            // chosen release names the same file with its own tag.
+            const picked = variantPickRef.current[item.id];
+            const shownTag = releases[item.id]?.tag;
+            const variant = picked && chosen && shownTag && chosen !== shownTag ? variantForRelease(picked, shownTag, chosen) : picked;
+            const asset = pickAssetFor(item, release?.assets ?? [], env, variant);
             const version = chosen ?? latestFor(item.id) ?? undefined;
             un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
               if (e.payload.id === item.id) finish(e.payload.ok);
@@ -515,6 +520,13 @@ export function Marketplace() {
   useEffect(() => {
     verPickRef.current = verPick;
   }, [verPick]);
+  // The variant picked for an item whose release is plural (one file per
+  // Scala × Spark version); the asset chosen at install time is that file.
+  const [variantPick, setVariantPick] = useState<Record<string, string>>({});
+  const variantPickRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    variantPickRef.current = variantPick;
+  }, [variantPick]);
   // undefined = not fetched, null = loading, "error" = fetch failed (rate
   // limit / offline — NOT the same as "this project has no versions").
   const [verLists, setVerLists] = useState<Record<string, string[] | null | "error" | undefined>>({});
@@ -780,10 +792,11 @@ export function Marketplace() {
         releaseAssets: (id) => releases[id]?.assets ?? [],
         env,
         driverRuntime: did ? { id: did, ready: Boolean(driverReady[did]), busy: Boolean(driverBusy[did]) } : undefined,
+        variantPick: (id) => variantPick[id],
       };
       return itemState(item, sources);
     },
-    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy],
+    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy, variantPick],
   );
   const updateItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "update"), [CATALOG, stateOf]);
   // The header count IS the Updates page's length — one decision, one number.
@@ -896,7 +909,7 @@ export function Marketplace() {
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
     const assets = releases[item.id]?.assets ?? [];
-    return !(needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, env) === null);
+    return !(needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, env, variantPick[item.id]) === null);
   };
   // A card is also batch-selectable when it has an UPDATE available — installs
   // and updates are the same gesture ("everything is same"): managed
@@ -996,13 +1009,41 @@ export function Marketplace() {
     // A binary release that ships builds — but none for THIS host (e.g. the
     // linux-only exa-postgres-interface on macOS) — gets an honest state
     // instead of an Install button that can only fail.
+    const variants = variantsOf(item, releases[item.id]?.assets ?? []);
+    const needsPick = expectsChoice(item.source) && variants.length > 1 && !variants.some((v) => v.name === variantPick[item.id]);
     const noHostBuild =
       item.install === "binary" &&
       !inst &&
       !onSystem &&
       !did &&
+      !needsPick &&
       (releases[item.id]?.assets?.length ?? 0) > 0 &&
-      pickAssetFor(item, releases[item.id]?.assets ?? [], env) === null;
+      pickAssetFor(item, releases[item.id]?.assets ?? [], env, variantPick[item.id]) === null;
+    // The variant menu of a plural release: the files the pattern matches in
+    // the release the card shows, by their own names.
+    const variantMenu =
+      expectsChoice(item.source) && variants.length > 1 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              disabled={isInstalling}
+              aria-label={`${item.name} variant to install`}
+              className="flex h-7 max-w-[260px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+            >
+              <span className="truncate">{variantPick[item.id] ?? "Choose a variant"}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            {variants.map((v) => (
+              <DropdownMenuItem key={v.name} onClick={() => setVariantPick((m) => ({ ...m, [item.id]: v.name }))} className="font-mono text-[12px]">
+                {v.name}
+                {variantPick[item.id] === v.name ? <Check className="ml-auto h-3 w-3" /> : null}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null;
 
     // Live any-version picker: list fetched on first open (GitHub tags / PyPI
     // versions / Maven Central), newest first. Shared by the
@@ -1228,11 +1269,19 @@ export function Marketplace() {
               </DropdownMenu>
             ) : null}
             {versionMenu}
-            <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+            {variantMenu}
+            <button
+              onClick={() => startInstall(item)}
+              disabled={isInstalling || needsPick}
+              title={needsPick ? "Pick which variant to install first." : undefined}
+              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+            >
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {isInstalling
                 ? "Installing…"
-                : item.id === "semantic-views"
+                : needsPick
+                  ? "Choose a variant"
+                  : item.id === "semantic-views"
                   ? `Install in ${semanticTarget ? (profiles.find((p) => p.id === semanticTarget)?.name ?? "database") : "local database"}`
                   : verPick[item.id]
                     ? `Install ${verPick[item.id]}`
@@ -1354,6 +1403,8 @@ export function Marketplace() {
         return { label: st.available ? `Install ${st.available}` : "Install", tone: "primary", onClick: () => (did ? void installDriverAndUse(item, did) : startInstall(item)) };
       case "update":
         return { label: `Update to ${st.available}`, tone: "primary", onClick: () => (CATALOG_TO_COMPONENT[item.id] ? void switchManaged(item, st.available) : startInstall(item)) };
+      case "choose":
+        return { label: "Choose a variant", tone: "primary", onClick: () => openDetail(item.id) };
       case "reference":
       case "unavailable":
         return { label: "Get", tone: "outline", onClick: () => openExternal(item.homepage) };

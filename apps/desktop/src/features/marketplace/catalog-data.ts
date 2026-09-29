@@ -198,7 +198,7 @@ export const CATALOG: CatalogItem[] = [
   // installed by a person, unlike the Maven plugins, pytest fixtures and
   // shared libraries that make up most of what is left.
   { id: "kafka-connector", repo: "exasol/kafka-connector-extension", kind: "extension", install: "binary", source: { kind: "gh-asset", assetPattern: "^exasol-kafka-connector-extension-[\\d.]+\\.jar$" } },
-  { id: "spark-connector", repo: "exasol/spark-connector", kind: "extension", install: "reference" },
+  { id: "spark-connector", repo: "exasol/spark-connector", kind: "extension", install: "binary", source: { kind: "gh-asset", assetPattern: "^spark-connector-(jdbc|s3)_[\\d.]+-[\\d.]+-spark-[\\d.]+-assembly\\.jar$", choose: true } },
   { id: "cloudwatch-adapter", repo: "exasol/cloudwatch-adapter", kind: "extension", install: "reference" },
   { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "reference" },
   { id: "udf-api-java", repo: "exasol/udf-api-java", kind: "extension", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "udf-api-java" } },

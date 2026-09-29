@@ -1,7 +1,7 @@
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "./updates.ts";
 import type { InstalledItem, ReleaseAsset, MarketEnv } from "@/lib/ipc";
 import type { ResolvedCatalogItem } from "./catalog-data.ts";
-import { needsReleaseAsset, pickAssetFor } from "./assets.ts";
+import { expectsChoice, needsReleaseAsset, pickAssetFor, variantsOf } from "./assets.ts";
 
 /**
  * What one catalog item IS right now — the single decision the card, the
@@ -23,6 +23,8 @@ export type ItemState =
   | { kind: "unavailable"; platform: string }
   /** Documentation-hosted: nothing to install, only a link. */
   | { kind: "reference" }
+  /** The release is plural (one file per variant) and no variant is picked yet. */
+  | { kind: "choose"; available: string | null }
   | { kind: "install"; available: string | null };
 
 export type ItemSources = {
@@ -42,6 +44,8 @@ export type ItemSources = {
   env: MarketEnv | null;
   /** Runs-inside-Studio driver runtime readiness, by driver id. */
   driverRuntime?: { id: string; ready: boolean; busy: boolean };
+  /** The variant picked for an item whose release is plural. */
+  variantPick?: (id: string) => string | undefined;
 };
 
 /**
@@ -102,7 +106,11 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
     return { kind: "onSystem" };
   }
   const assets = s.releaseAssets(item.id);
-  if (needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
+  const variant = s.variantPick?.(item.id);
+  if (expectsChoice(item.source) && variantsOf(item, assets).length > 1 && pickAssetFor(item, assets, s.env, variant) === null) {
+    return { kind: "choose", available: s.latestFor(item.id) };
+  }
+  if (needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, s.env, variant) === null) {
     return { kind: "unavailable", platform: s.env?.os === "macos" ? "macOS" : (s.env?.os ?? "this platform") };
   }
   return { kind: "install", available: s.latestFor(item.id) };
@@ -132,6 +140,8 @@ export function stateLabel(state: ItemState): string {
       return `No ${state.platform} build`;
     case "reference":
       return "Docs";
+    case "choose":
+      return "Choose a variant";
     case "install":
       return state.available ? `Install ${state.available}` : "Install";
   }

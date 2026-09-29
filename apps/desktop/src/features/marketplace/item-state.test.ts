@@ -116,3 +116,15 @@ test("no version from list_components means not installed, bundled or not", () =
   assert.equal(managedIsPresent("bundled", true, undefined), false);
   assert.equal(managedIsPresent("binary", true, ""), false);
 });
+
+test("a plural release is 'choose a variant' until one is picked, then installable — never unavailable", () => {
+  const spark = item({ id: "spark-connector", install: "binary", source: { kind: "gh-asset", assetPattern: "^sc-.*-assembly\\.jar$", choose: true } });
+  const assets = ["sc-2.12-assembly.jar", "sc-2.13-assembly.jar", "sc-2.13.jar"].map((name) => ({ name, url: `https://x/${name}`, size: 1 }));
+  const base = sources({ releaseAssets: () => assets, latestFor: () => "2.2.1" });
+  assert.deepEqual(itemState(spark, base), { kind: "choose", available: "2.2.1" });
+  assert.equal(stateLabel({ kind: "choose", available: "2.2.1" }), "Choose a variant");
+  assert.deepEqual(itemState(spark, { ...base, variantPick: () => "sc-2.13-assembly.jar" }), { kind: "install", available: "2.2.1" });
+  assert.equal(itemState(spark, { ...base, variantPick: () => "elsewhere.jar" }).kind, "choose", "a stale pick is a missing pick");
+  assert.equal(itemState(spark, sources({ releaseAssets: () => [assets[0], assets[2]] })).kind, "install", "one match needs no choice");
+  assert.equal(itemState(spark, sources({ installed: present("spark-connector", "2.2.1") })).kind, "installed", "installed outranks the choice");
+});

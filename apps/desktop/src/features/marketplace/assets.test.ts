@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { needsReleaseAsset, pickAsset, pickAssetFor } from "./assets.ts";
+import { expectsChoice, needsReleaseAsset, pickAsset, pickAssetFor, variantForRelease, variantsOf } from "./assets.ts";
 import type { MarketEnv, ReleaseAsset } from "@/lib/ipc";
 
 const a = (name: string): ReleaseAsset => ({ name, url: `https://x/${name}`, size: 1 });
@@ -121,4 +121,41 @@ test("only formats the release publishes need a release file", () => {
   assert.equal(needsReleaseAsset({ install: "deliver", source: { kind: "deliver", format: "dbt-package" } }), false);
   assert.equal(needsReleaseAsset({ install: "binary" }), true);
   assert.equal(needsReleaseAsset({ install: "package", source: { kind: "repo-snapshot" } }), false);
+});
+
+const SPARK = [
+  "spark-connector-jdbc_2.12-2.2.1-spark-3.3.2-assembly.jar",
+  "spark-connector-jdbc_2.12-2.2.1-spark-3.3.2-assembly.jar.sha256",
+  "spark-connector-jdbc_2.12-2.2.1-spark-3.3.2.jar",
+  "spark-connector-jdbc_2.13-2.2.1-spark-3.5.1-assembly.jar",
+  "spark-connector-s3_2.13-2.2.1-spark-3.5.1-assembly.jar",
+  "error_code_report.zip",
+].map(a);
+const spark = { source: { kind: "gh-asset", assetPattern: "^spark-connector-(jdbc|s3)_[\\d.]+-[\\d.]+-spark-[\\d.]+-assembly\\.jar$", choose: true } as const };
+
+test("a choosing item offers the pattern's matches and installs only the pick (spark layout)", () => {
+  assert.deepEqual(
+    variantsOf(spark, SPARK).map((v) => v.name),
+    ["spark-connector-jdbc_2.12-2.2.1-spark-3.3.2-assembly.jar", "spark-connector-jdbc_2.13-2.2.1-spark-3.5.1-assembly.jar", "spark-connector-s3_2.13-2.2.1-spark-3.5.1-assembly.jar"],
+  );
+  assert.equal(pickAssetFor(spark, SPARK, linux), null, "no pick, nothing installs");
+  assert.equal(pickAssetFor(spark, SPARK, linux, "spark-connector-s3_2.13-2.2.1-spark-3.5.1-assembly.jar")?.name, "spark-connector-s3_2.13-2.2.1-spark-3.5.1-assembly.jar");
+  assert.equal(pickAssetFor(spark, SPARK, linux, "not-a-variant.jar"), null, "a pick outside the matches is not honoured");
+  assert.equal(expectsChoice(spark.source), true);
+  assert.equal(expectsChoice({ kind: "gh-asset", assetPattern: "^x$" }), false);
+});
+
+test("a single match needs no choice", () => {
+  const one = [a("spark-connector-jdbc_2.13-2.2.1-spark-3.5.1-assembly.jar"), a("error_code_report.zip")];
+  assert.equal(pickAssetFor(spark, one, linux)?.name, "spark-connector-jdbc_2.13-2.2.1-spark-3.5.1-assembly.jar");
+  assert.equal(variantsOf(spark, []).length, 0);
+});
+
+test("a variant picked from one release is named for another by its tag", () => {
+  assert.equal(
+    variantForRelease("spark-connector-jdbc_2.13-2.2.1-spark-3.5.1-assembly.jar", "2.2.1", "2.2.0"),
+    "spark-connector-jdbc_2.13-2.2.0-spark-3.5.1-assembly.jar",
+  );
+  assert.equal(variantForRelease("Tool_1.2.0.jar", "v1.2.0", "v1.3.0"), "Tool_1.3.0.jar", "a leading v on the tag is not in the file name");
+  assert.equal(variantForRelease("plain.jar", "1.0", "2.0"), "plain.jar", "a name without the tag is unchanged");
 });

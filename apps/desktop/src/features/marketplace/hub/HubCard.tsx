@@ -108,7 +108,7 @@ export function HubCard({
         <p className="mt-3.5 line-clamp-2 text-[13px] leading-relaxed text-foreground/85">{item.description || "No description yet."}</p>
       </div>
       <div className="flex items-center gap-5 border-t border-border px-5 py-3 text-[12.5px] text-muted-foreground">
-        {state.kind !== "install" && state.kind !== "reference" && state.kind !== "unavailable" ? (
+        {state.kind !== "install" && state.kind !== "reference" && state.kind !== "unavailable" && state.kind !== "choose" ? (
           <span className={cn("inline-flex items-center gap-1.5", state.kind === "update" && "text-primary")}>
             {state.kind === "installing" ? <Loader2 className="h-4 w-4 animate-spin" /> : state.kind === "update" ? <Download className="h-4 w-4" /> : <Check className="h-4 w-4 text-primary" />}
             {stateLabel(state)}
