@@ -138,7 +138,8 @@ test("database-side items say where they live; a container the launcher lists is
   assert.equal(itemState(rust, sources({ detected: { "slc:RUST": true } })).kind, "onSystem");
   assert.equal(itemState(rust, sources()).kind, "install");
   const any = item({ id: "script-languages-release", install: "slc", source: { kind: "slc" } });
-  assert.equal(itemState(any, sources({ detected: { "slc:PYTHON3": true } })).kind, "install", "without an alias nothing is claimed");
+  assert.equal(itemState(any, sources({ detected: { "slc:PYTHON3": true } })).kind, "choose", "without an alias nothing is claimed and a language must be picked");
+  assert.equal(itemState(any, sources({ variantPick: () => "JAVA" })).kind, "install", "a picked language makes it installable");
 });
 
 test("a virtual-machine image is unavailable on ARM, on this system when VirtualBox lists it, else installable", () => {

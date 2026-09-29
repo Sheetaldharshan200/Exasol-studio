@@ -189,6 +189,12 @@ pub fn vbox_import_args(ova: &str, vm_name: &str) -> Vec<String> {
     vec!["import".into(), ova.into(), "--vsys".into(), "0".into(), "--vmname".into(), vm_name.into()]
 }
 
+/// A file name Studio will write into an item's folder: one plain name, no
+/// path separators, not a dot entry — wherever the name came from.
+pub fn safe_file_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0']) && name.len() <= 255
+}
+
 /// A language alias the launcher accepts: one plain word.
 pub fn valid_alias(alias: &str) -> bool {
     let mut chars = alias.chars();
@@ -495,6 +501,10 @@ mod tests {
         let db: super::InstallSource = serde_json::from_str(r#"{"kind":"db-scripts","schema":"EXA_RLS"}"#).unwrap();
         assert_eq!(db, super::InstallSource::DbScripts { schema: "EXA_RLS".into() });
         assert!(super::valid_alias("rust") && super::valid_alias("PYTHON3") && super::valid_alias("java_17"));
+        assert!(super::safe_file_name("exaerror-2.0.3-1.rockspec") && super::safe_file_name("Exasol-Panorama_0.2.0_universal.dmg"));
+        for bad in ["", ".", "..", "../x.sql", "a/b.sql", "a\\b.sql", "x\0y"] {
+            assert!(!super::safe_file_name(bad), "{bad:?} must be refused");
+        }
         assert!(!super::valid_alias("") && !super::valid_alias("3py") && !super::valid_alias("py thon") && !super::valid_alias("--all"));
     }
 

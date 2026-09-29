@@ -382,8 +382,10 @@ export type InstallSource =
   /** A database image imported into the hypervisor on this machine: x86-64
    *  only, downloaded by the person from a sign-up page, no digest published. */
   | { kind: "vm-appliance"; imagePattern: string; downloadPage: string; vmName: string };
-/** What a script library's install would run, for review before it does. */
-export type ScriptPlan = { version: string; files: string[]; statements: string[] };
+/** What a script library's install would run, for review before it does: each
+ *  statement's head and whole body, and a fingerprint over all of them that
+ *  the install refuses to deviate from. */
+export type ScriptPlan = { version: string; files: string[]; statements: { head: string; body: string }[]; fingerprint: string };
 /** One language container the launcher offers, and whether it is installed. */
 export type SlcChoice = { alias: string; installed: boolean };
 /** Formats of a delivered file; the next step is stated from the format. A
@@ -686,6 +688,8 @@ export const ipc = {
     // language container, when the person chose them.
     schema?: string,
     alias?: string,
+    // The fingerprint of the statements reviewed; the install runs nothing else.
+    fingerprint?: string,
   ) =>
     call<{ ok: boolean }>("market_install_run", {
       id: target.id,
@@ -699,6 +703,7 @@ export const ipc = {
       requested,
       schema,
       alias,
+      fingerprint,
     }),
   /** What a script library would run into `schema` — read and verified, run by nothing. */
   marketDbScriptsPlan: (id: string, repo: string, requested: string | undefined, schema: string) =>

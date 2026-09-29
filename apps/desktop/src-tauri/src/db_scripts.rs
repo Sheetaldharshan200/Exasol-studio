@@ -1,20 +1,30 @@
 //! Script libraries installed INTO a database: the release's SQL and Lua
 //! files, run into a schema on a connection the person chose — after they
-//! have seen every statement. The parsing is pure and tested here; the
+//! have reviewed every statement. The parsing is pure and tested here; the
 //! database side goes through the same pool the SQL editor uses.
 
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
-/// What an install would run, shown on the permission screen before it does.
+/// One statement as the review shows it: its head, and the whole body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Statement {
+    pub head: String,
+    pub body: String,
+}
+
+/// What an install would run, shown for review before it does. The
+/// fingerprint is over the statements; the install refuses anything else.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptPlan {
     pub version: String,
     pub files: Vec<String>,
-    /// One line per statement: its head, not its body.
-    pub statements: Vec<String>,
+    pub statements: Vec<Statement>,
+    pub fingerprint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +32,8 @@ pub struct ScriptPlan {
 pub struct DbObject {
     /// `SCRIPT`, `ADAPTER SCRIPT`, `FUNCTION`, `TABLE`, `VIEW` — the word `DROP` takes.
     pub kind: String,
+    /// The exact identifier, as `"…"` will quote it: uppercased when the
+    /// statement left it unquoted, kept as written when it quoted it.
     pub name: String,
 }
 
@@ -45,7 +57,7 @@ pub struct DbRecord {
 }
 
 /// A schema or object name Studio will put into a statement: one plain
-/// identifier, uppercased the way Exasol treats an unquoted one.
+/// identifier, treated the way Exasol treats an unquoted one.
 pub fn valid_identifier(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
@@ -53,8 +65,9 @@ pub fn valid_identifier(s: &str) -> bool {
         && s.len() <= 128
 }
 
-fn quoted(s: &str) -> String {
-    format!("\"{}\"", s.to_ascii_uppercase())
+/// An exact identifier, quoted. Callers pass names already normalised.
+fn quoted(exact: &str) -> String {
+    format!("\"{exact}\"")
 }
 
 /// Split a bundle of scripts into statements. Exasol's convention for such a
@@ -99,40 +112,65 @@ fn filler_free(chunk: &str) -> String {
     }
 }
 
-/// The objects a list of statements creates, as `DROP` will need them.
-pub fn created_objects(statements: &[String]) -> Vec<DbObject> {
+/// The CREATE target of one statement: `(kind, schema qualifier if any, exact name)`.
+fn create_target(statement: &str) -> Option<(String, Option<String>, String)> {
     let re = regex::Regex::new(
-        r#"(?is)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:LUA|PYTHON3?|PYTHON|JAVA|R)\s+)?(?:(?:SCALAR|SET)\s+)?(ADAPTER\s+SCRIPT|SCRIPT|FUNCTION|TABLE|VIEW)\s+("?[A-Za-z_][A-Za-z0-9_]*"?(?:\s*\.\s*"?[A-Za-z_][A-Za-z0-9_]*"?)?)"#,
+        r#"(?is)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:LUA|PYTHON3?|PYTHON|JAVA|R)\s+)?(?:(?:SCALAR|SET)\s+)?(ADAPTER\s+SCRIPT|SCRIPT|FUNCTION|TABLE|VIEW)\s+("?[A-Za-z_][A-Za-z0-9_]*"?)(?:\s*\.\s*("?[A-Za-z_][A-Za-z0-9_]*"?))?"#,
     )
     .expect("a fixed pattern");
+    let caps = re.captures(crate::query::strip_leading_comments(statement))?;
+    let kind = caps[1].split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_uppercase();
+    let exact = |raw: &str| match raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        Some(quoted) => quoted.to_string(),
+        None => raw.to_ascii_uppercase(),
+    };
+    Some(match caps.get(3) {
+        Some(name) => (kind, Some(exact(&caps[2])), exact(name.as_str())),
+        None => (kind, None, exact(&caps[2])),
+    })
+}
+
+/// The objects a list of statements creates, as `DROP` will need them.
+pub fn created_objects(statements: &[String]) -> Vec<DbObject> {
     let mut seen = std::collections::HashSet::new();
     statements
         .iter()
-        .filter_map(|s| {
-            let head = crate::query::strip_leading_comments(s);
-            let caps = re.captures(head)?;
-            let kind = caps[1].split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_uppercase();
-            let raw = caps[2].rsplit('.').next().unwrap_or("").trim();
-            let name = match raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
-                Some(exact) => exact.to_string(),
-                None => raw.to_ascii_uppercase(),
-            };
-            seen.insert(format!("{kind} {name}")).then_some(DbObject { kind, name })
-        })
+        .filter_map(|s| create_target(s))
+        .filter_map(|(kind, _, name)| seen.insert(format!("{kind} {name}")).then_some(DbObject { kind, name }))
+        .collect()
+}
+
+/// Statements whose CREATE names a schema other than the chosen one — they
+/// would put objects where removal could not follow them.
+pub fn foreign_targets(statements: &[String], schema: &str) -> Vec<String> {
+    let own = schema.to_ascii_uppercase();
+    statements
+        .iter()
+        .filter_map(|s| create_target(s))
+        .filter_map(|(_, qualifier, name)| qualifier.filter(|q| *q != own).map(|q| format!("{q}.{name}")))
         .collect()
 }
 
 /// A Lua adapter shipped as a file becomes one CREATE statement in the
 /// schema. `row-level-security-dist-1.5.8.lua` → `ROW_LEVEL_SECURITY_ADAPTER`.
-pub fn adapter_statement(schema: &str, file: &str, lua: &str) -> (DbObject, String) {
+/// A file whose name does not make a plain identifier is refused.
+pub fn adapter_statement(schema: &str, file: &str, lua: &str) -> AppResult<(DbObject, String)> {
     let stem = file.rsplit('/').next().unwrap_or(file).trim_end_matches(".lua");
     let base = stem.split("-dist-").next().unwrap_or(stem);
     let name = format!("{}_ADAPTER", base.replace('-', "_").to_ascii_uppercase());
-    let statement = format!("CREATE OR REPLACE LUA ADAPTER SCRIPT {}.{} AS\n{}", quoted(schema), quoted(&name), lua.trim_end());
-    (DbObject { kind: "ADAPTER SCRIPT".into(), name }, statement)
+    if !valid_identifier(&name) {
+        return Err(AppError::Storage(format!("{file:?} does not name an adapter script Studio can create.")));
+    }
+    let statement = format!(
+        "CREATE OR REPLACE LUA ADAPTER SCRIPT {}.{} AS\n{}",
+        quoted(&schema.to_ascii_uppercase()),
+        quoted(&name),
+        lua.trim_end()
+    );
+    Ok((DbObject { kind: "ADAPTER SCRIPT".into(), name }, statement))
 }
 
-/// The first meaningful line of a statement, for the permission screen.
+/// The first meaningful line of a statement, for the review and the log.
 pub fn headline(statement: &str) -> String {
     let line = crate::query::strip_leading_comments(statement).lines().next().unwrap_or("").trim();
     let line = line.split(" AS").next().unwrap_or(line).trim();
@@ -143,44 +181,62 @@ pub fn headline(statement: &str) -> String {
     }
 }
 
-/// What removal runs: every object the install created, then the schema if
-/// the install created it — without CASCADE, so a schema the person has put
+/// A digest over exactly the statements that would run.
+pub fn fingerprint(statements: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    for s in statements {
+        hasher.update(s.as_bytes());
+        hasher.update(b"\n/\n");
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+/// What removal runs: every object the install created, newest first so a
+/// dependent object goes before what it depends on, then the schema if the
+/// install created it — without CASCADE, so a schema the person has put
 /// their own objects into is not emptied behind their back.
 pub fn drop_statements(record: &DbRecord) -> Vec<String> {
+    let schema = quoted(&record.schema);
     let mut out: Vec<String> =
-        record.objects.iter().map(|o| format!("DROP {} {}.{}", o.kind, quoted(&record.schema), quoted(&o.name))).collect();
+        record.objects.iter().rev().map(|o| format!("DROP {} {schema}.{}", o.kind, quoted(&o.name))).collect();
     if record.created_schema {
-        out.push(format!("DROP SCHEMA {}", quoted(&record.schema)));
+        out.push(format!("DROP SCHEMA {schema}"));
     }
     out
 }
 
 /// The statements that would run, in order: `OPEN SCHEMA`, every script file's
-/// statements, every Lua file as an adapter script. Also the objects they create.
-pub fn statements_for(schema: &str, files: &[(String, String)]) -> (Vec<String>, Vec<DbObject>) {
-    let mut statements = vec![format!("OPEN SCHEMA {}", quoted(schema))];
+/// statements, every Lua file as an adapter script — and the objects they
+/// create. Refused when a statement names another schema.
+pub fn statements_for(schema: &str, files: &[(String, String)]) -> AppResult<(Vec<String>, Vec<DbObject>)> {
+    let mut statements = vec![format!("OPEN SCHEMA {}", quoted(&schema.to_ascii_uppercase()))];
     let mut objects = Vec::new();
     for (name, content) in files {
         if name.ends_with(".lua") {
-            let (object, statement) = adapter_statement(schema, name, content);
+            let (object, statement) = adapter_statement(schema, name, content)?;
             statements.push(statement);
             objects.push(object);
         } else {
             let split = split_bundle(content);
+            let foreign = foreign_targets(&split, schema);
+            if !foreign.is_empty() {
+                return Err(AppError::Storage(format!(
+                    "{name} creates objects outside {}: {} — Studio installs only into the schema you chose.",
+                    schema.to_ascii_uppercase(),
+                    foreign.join(", ")
+                )));
+            }
             objects.extend(created_objects(&split));
             statements.extend(split);
         }
     }
-    (statements, objects)
+    Ok((statements, objects))
 }
 
-/// The release's script files, downloaded and verified: `(file name, content)`.
-async fn fetch_files(
-    app: &AppHandle,
-    id: &str,
-    repo: &str,
-    requested: Option<&str>,
-) -> AppResult<(String, Vec<(String, String)>)> {
+/// The release's script files, downloaded and verified against the digest
+/// their publisher provides: `(file name, content)`. A script that will run
+/// inside a database is never taken on trust — no digest, no install.
+async fn fetch_files(app: &AppHandle, id: &str, repo: &str, requested: Option<&str>) -> AppResult<(String, Vec<(String, String)>)> {
     let repo_owned = repo.to_string();
     let tag = requested.map(str::to_string);
     let release = tauri::async_runtime::spawn_blocking(move || match tag {
@@ -194,7 +250,7 @@ async fn fetch_files(
     let scripts: Vec<_> = release
         .assets
         .iter()
-        .filter(|a| (a.name.ends_with(".sql") || a.name.ends_with(".lua")) && !a.name.ends_with(".sha256"))
+        .filter(|a| (a.name.ends_with(".sql") || a.name.ends_with(".lua")) && crate::installers::safe_file_name(&a.name))
         .collect();
     if scripts.is_empty() {
         return Err(AppError::Storage(format!("Release {} of {repo} ships no .sql or .lua file to run.", release.tag)));
@@ -209,39 +265,64 @@ async fn fetch_files(
                 tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&url)).await.ok().flatten()
             }
         };
-        let declared = asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).or(sibling.as_deref());
-        if let Some(expected) = declared {
-            let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
-            if !actual.eq_ignore_ascii_case(expected) {
-                let _ = std::fs::remove_file(&path);
-                return Err(AppError::Storage(format!("{} failed checksum verification — discarded.", asset.name)));
-            }
-        } else {
-            crate::market::emit_log(app, id, format!("No checksum is published for {}; it runs as downloaded.", asset.name), "info");
+        let Some(expected) = asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).or(sibling.as_deref()) else {
+            let _ = std::fs::remove_file(&path);
+            return Err(AppError::Storage(format!(
+                "{repo} publishes no checksum for {}. A script that runs inside your database must be verifiable, so it is not installed.",
+                asset.name
+            )));
+        };
+        let actual = crate::local_runtime::sha256_file(std::path::Path::new(&path))?;
+        if !actual.eq_ignore_ascii_case(expected) {
+            let _ = std::fs::remove_file(&path);
+            return Err(AppError::Storage(format!("{} failed checksum verification — discarded.", asset.name)));
         }
-        let content = std::fs::read_to_string(&path)?;
-        files.push((asset.name.clone(), content));
+        files.push((asset.name.clone(), std::fs::read_to_string(&path)?));
     }
     Ok((release.tag, files))
 }
 
-/// What would run — for the permission screen. Downloads and verifies the
-/// files; runs nothing.
-pub async fn plan(app: &AppHandle, id: &str, repo: &str, requested: Option<&str>, schema: &str) -> AppResult<ScriptPlan> {
-    if !valid_identifier(schema) {
-        return Err(AppError::Storage(format!("{schema:?} is not a schema name Studio will put into a statement.")));
+fn check_schema(schema: &str) -> AppResult<()> {
+    if valid_identifier(schema) {
+        Ok(())
+    } else {
+        Err(AppError::Storage(format!("{schema:?} is not a schema name Studio will put into a statement.")))
     }
+}
+
+/// What would run — for review. Downloads and verifies the files; runs nothing.
+pub async fn plan(app: &AppHandle, id: &str, repo: &str, requested: Option<&str>, schema: &str) -> AppResult<ScriptPlan> {
+    check_schema(schema)?;
     let (version, files) = fetch_files(app, id, repo, requested).await?;
-    let (statements, _) = statements_for(schema, &files);
+    let (statements, _) = statements_for(schema, &files)?;
     Ok(ScriptPlan {
         version,
         files: files.into_iter().map(|(n, _)| n).collect(),
-        statements: statements.iter().map(|s| headline(s)).collect(),
+        fingerprint: fingerprint(&statements),
+        statements: statements.iter().map(|s| Statement { head: headline(s), body: s.clone() }).collect(),
     })
 }
 
-/// Run the release's scripts into `schema` on the chosen connection. Returns
-/// the version installed, the record removal needs, and a note for the card.
+/// What a script library's install would run into `schema` — downloaded and
+/// verified, shown for review, run by nothing here.
+#[tauri::command]
+pub async fn market_db_scripts_plan(
+    app: AppHandle,
+    id: String,
+    repo: String,
+    requested: Option<String>,
+    schema: String,
+) -> AppResult<ScriptPlan> {
+    if !crate::installers::valid_item_id(&id) {
+        return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
+    }
+    let requested = requested.filter(|v| crate::market::valid_version_tag(v));
+    plan(&app, &id, &repo, requested.as_deref(), &schema).await
+}
+
+/// Run the release's scripts into `schema` on the chosen connection — the
+/// exact statements the review showed (`expected` is their fingerprint).
+/// Returns the version installed, the record removal needs, and a note.
 pub async fn install(
     app: &AppHandle,
     id: &str,
@@ -249,37 +330,76 @@ pub async fn install(
     requested: Option<&str>,
     profile_id: &str,
     schema: &str,
+    expected: Option<&str>,
 ) -> AppResult<(String, DbRecord, String)> {
-    if !valid_identifier(schema) {
-        return Err(AppError::Storage(format!("{schema:?} is not a schema name Studio will put into a statement.")));
-    }
+    check_schema(schema)?;
     let state = app.state::<crate::state::AppState>();
     let profile = crate::profiles::find_profile(&state, profile_id)?;
     let (version, files) = fetch_files(app, id, repo, requested).await?;
-    let (statements, objects) = statements_for(schema, &files);
+    let (statements, objects) = statements_for(schema, &files)?;
+    let actual = fingerprint(&statements);
+    if expected.is_some_and(|e| !e.eq_ignore_ascii_case(&actual)) {
+        return Err(AppError::Storage("The release's scripts changed since you reviewed them. Review again before installing.".into()));
+    }
+    let upper = schema.to_ascii_uppercase();
     crate::market::emit_log(app, id, format!("Connecting to {}…", profile.name), "info");
     crate::connection::connect(app.state(), profile_id.to_string()).await?;
     let pool = crate::connection::require_pool(&state, profile_id).await?;
-    let upper = schema.to_ascii_uppercase();
-    let existing = crate::query::fetch_all_rows(&pool, &format!("SELECT SCHEMA_NAME FROM EXA_SCHEMAS WHERE SCHEMA_NAME = '{upper}'")).await?;
+    let existing =
+        crate::query::fetch_all_rows(&pool, &format!("SELECT SCHEMA_NAME FROM SYS.EXA_SCHEMAS WHERE SCHEMA_NAME = '{upper}'")).await?;
     let created_schema = existing.is_empty();
+    if !created_schema && !objects.is_empty() {
+        // CREATE OR REPLACE would silently take over an object the person
+        // already has there — and removal would later drop it as ours.
+        let names = objects.iter().map(|o| format!("'{}'", o.name)).collect::<Vec<_>>().join(", ");
+        let taken = crate::query::fetch_all_rows(
+            &pool,
+            &format!("SELECT OBJECT_NAME FROM SYS.EXA_ALL_OBJECTS WHERE ROOT_NAME = '{upper}' AND OBJECT_NAME IN ({names})"),
+        )
+        .await?;
+        if !taken.is_empty() {
+            let list = taken.iter().filter_map(|r| r.first()?.as_str()).collect::<Vec<_>>().join(", ");
+            return Err(AppError::Storage(format!(
+                "Schema {upper} already holds {list}. Pick another schema, or remove those objects first — Studio does not replace what it did not create."
+            )));
+        }
+    }
     let mut conn = pool.acquire().await.map_err(|e| AppError::Storage(e.to_string()))?;
-    if created_schema {
-        crate::market::emit_log(app, id, format!("Creating schema {upper}…"), "info");
-        run(&mut conn, &format!("CREATE SCHEMA {}", quoted(schema))).await?;
-    }
-    for statement in &statements {
-        crate::market::emit_log(app, id, headline(statement), "cmd");
-        run(&mut conn, statement).await?;
-    }
     let record = DbRecord {
         connection: Connection { id: profile.id.clone(), name: profile.name.clone() },
         schema: upper.clone(),
         created_schema,
-        objects,
+        objects: Vec::new(),
     };
-    let note = format!("Installed in {} — {} object(s) in schema {upper}.", profile.name, record.objects.len());
-    Ok((version, record, note))
+    if created_schema {
+        crate::market::emit_log(app, id, format!("Creating schema {upper}…"), "info");
+        run(&mut conn, &format!("CREATE SCHEMA {}", quoted(&upper))).await?;
+    }
+    // Every statement that ran is recorded as it runs, so a failure midway
+    // rolls back exactly what got in, and nothing is left that Studio could
+    // not name.
+    let mut done = record.clone();
+    for statement in &statements {
+        crate::market::emit_log(app, id, headline(statement), "cmd");
+        if let Err(error) = run(&mut conn, statement).await {
+            let undo = drop_statements(&done);
+            for stmt in &undo {
+                let _ = run(&mut conn, stmt).await;
+            }
+            return Err(AppError::Storage(format!(
+                "{error} Rolled back the {} statement(s) that had run{}.",
+                undo.len(),
+                if created_schema { " and the new schema" } else { "" }
+            )));
+        }
+        if let Some(object) = created_objects(std::slice::from_ref(statement)).pop() {
+            if !done.objects.contains(&object) {
+                done.objects.push(object);
+            }
+        }
+    }
+    let note = format!("Installed in {} — {} object(s) in schema {upper}.", profile.name, done.objects.len());
+    Ok((version, done, note))
 }
 
 /// Undo an install: drop what it created, on the connection it used.
@@ -326,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn created_objects_are_read_from_the_statement_heads() {
+    fn created_objects_are_read_from_the_statement_heads_with_exact_names() {
         let objects = created_objects(&split_bundle(BUNDLE));
         assert_eq!(
             objects,
@@ -337,7 +457,7 @@ mod tests {
             ]
         );
         let more = created_objects(&[
-            "CREATE OR REPLACE LUA ADAPTER SCRIPT \"Rls\".\"MyAdapter\" AS x".into(),
+            "CREATE OR REPLACE LUA ADAPTER SCRIPT \"EXA_RLS\".\"MyAdapter\" AS x".into(),
             "create view v_all as select 1".into(),
             "CREATE OR REPLACE FUNCTION PUBLIC_ROLE_MASK() RETURN DECIMAL(20,0) IS BEGIN RETURN 1; END".into(),
             "SELECT 1".into(),
@@ -355,30 +475,45 @@ mod tests {
     }
 
     #[test]
-    fn a_lua_file_becomes_one_adapter_script_named_after_it() {
-        let (object, statement) = adapter_statement("exa_rls", "row-level-security-dist-1.5.8.lua", "local x = 1\n\n");
-        assert_eq!(object, DbObject { kind: "ADAPTER SCRIPT".into(), name: "ROW_LEVEL_SECURITY_ADAPTER".into() });
-        assert_eq!(statement, "CREATE OR REPLACE LUA ADAPTER SCRIPT \"EXA_RLS\".\"ROW_LEVEL_SECURITY_ADAPTER\" AS\nlocal x = 1");
+    fn a_statement_naming_another_schema_is_refused() {
+        let stmts = vec![
+            "CREATE OR REPLACE SCRIPT \"EXA_RLS\".X AS y".to_string(),
+            "CREATE TABLE OTHER.T(a INT)".to_string(),
+            "CREATE VIEW exa_rls.v AS SELECT 1".to_string(),
+        ];
+        assert_eq!(foreign_targets(&stmts, "exa_rls"), vec!["OTHER.T"]);
+        let files = vec![("s.sql".to_string(), "CREATE TABLE OTHER.T(a INT);".to_string())];
+        assert!(statements_for("EXA_RLS", &files).unwrap_err().to_string().contains("OTHER.T"));
     }
 
     #[test]
-    fn removal_drops_exactly_what_was_created_and_the_schema_only_if_it_was_created() {
+    fn a_lua_file_becomes_one_adapter_script_named_after_it_or_is_refused() {
+        let (object, statement) = adapter_statement("exa_rls", "row-level-security-dist-1.5.8.lua", "local x = 1\n\n").unwrap();
+        assert_eq!(object, DbObject { kind: "ADAPTER SCRIPT".into(), name: "ROW_LEVEL_SECURITY_ADAPTER".into() });
+        assert_eq!(statement, "CREATE OR REPLACE LUA ADAPTER SCRIPT \"EXA_RLS\".\"ROW_LEVEL_SECURITY_ADAPTER\" AS\nlocal x = 1");
+        assert!(adapter_statement("s", "x\"; DROP SCHEMA S; --.lua", "").is_err(), "a name that is not an identifier never reaches SQL");
+        assert!(adapter_statement("s", "9lives.lua", "").is_err());
+    }
+
+    #[test]
+    fn removal_drops_newest_first_exactly_what_was_created_and_the_schema_only_if_created() {
         let record = DbRecord {
             connection: Connection { id: "p1".into(), name: "Prod".into() },
             schema: "EXA_RLS".into(),
             created_schema: true,
             objects: vec![
                 DbObject { kind: "SCRIPT".into(), name: "EXA_RLS_BASE".into() },
-                DbObject { kind: "ADAPTER SCRIPT".into(), name: "ROW_LEVEL_SECURITY_ADAPTER".into() },
+                DbObject { kind: "ADAPTER SCRIPT".into(), name: "MyAdapter".into() },
             ],
         };
         assert_eq!(
             drop_statements(&record),
             vec![
+                "DROP ADAPTER SCRIPT \"EXA_RLS\".\"MyAdapter\"",
                 "DROP SCRIPT \"EXA_RLS\".\"EXA_RLS_BASE\"",
-                "DROP ADAPTER SCRIPT \"EXA_RLS\".\"ROW_LEVEL_SECURITY_ADAPTER\"",
                 "DROP SCHEMA \"EXA_RLS\"",
-            ]
+            ],
+            "reverse order, exact quoting"
         );
         let found = DbRecord { created_schema: false, ..record };
         assert!(!drop_statements(&found).iter().any(|s| s.starts_with("DROP SCHEMA")), "a schema that existed before stays");
@@ -386,15 +521,21 @@ mod tests {
     }
 
     #[test]
-    fn statements_open_the_schema_first_and_headlines_are_short() {
+    fn statements_open_the_schema_first_headlines_are_short_and_the_fingerprint_follows_the_text() {
         let files = vec![("administration-sql-scripts-1.5.8.sql".to_string(), BUNDLE.to_string()), ("row-level-security-dist-1.5.8.lua".to_string(), "x".to_string())];
-        let (statements, objects) = statements_for("exa_rls", &files);
+        let (statements, objects) = statements_for("exa_rls", &files).unwrap();
         assert_eq!(statements[0], "OPEN SCHEMA \"EXA_RLS\"");
         assert_eq!(statements.len(), 5);
         assert_eq!(objects.len(), 4);
         assert_eq!(headline(&statements[1]), "CREATE OR REPLACE SCRIPT EXA_RLS_BASE");
         assert_eq!(headline(&statements[4]), "CREATE OR REPLACE LUA ADAPTER SCRIPT \"EXA_RLS\".\"ROW_LEVEL_SECURITY_ADAPTER\"");
         assert!(headline(&format!("SELECT {}", "x".repeat(300))).ends_with('…'));
+        let fp = fingerprint(&statements);
+        assert_eq!(fp.len(), 64);
+        assert_eq!(fp, fingerprint(&statements), "stable");
+        let mut changed = statements.clone();
+        changed[1].push_str(" -- tampered");
+        assert_ne!(fp, fingerprint(&changed), "any change to any statement changes it");
     }
 
     #[test]

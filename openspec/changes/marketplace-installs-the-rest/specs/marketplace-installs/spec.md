@@ -35,7 +35,7 @@ When a component is installed from a repository release, the artifact SHALL be c
 - **THEN** the component is reported as unavailable for this machine
 
 ### Requirement: Removal undoes what the install did, and nothing else
-Removing a component SHALL delete its own files, remove any executable links it placed on the application's PATH, remove a tool it installed into the Python tool directory, and clear any driver override that pointed into its files — for every driver runtime. For a component installed into a database, removal SHALL undo the database-side change on the connection it was installed on: a staged adapter's files leave BucketFS, a language container leaves BucketFS and only its own alias leaves the language setting, a script library's schema is dropped. For a virtual-machine appliance imported into VirtualBox, removal SHALL power the machine off and delete it with its disks. Every database-side or machine-side removal SHALL first show a confirmation naming what is dropped and where. Removal SHALL NOT touch files or links belonging to another component, including one whose name merely shares a prefix, SHALL NOT delete a downloaded image the person placed themselves, and SHALL refuse an identifier that is not a single plain directory name.
+Removing a component SHALL delete its own files, remove any executable links it placed on the application's PATH, remove a tool it installed into the Python tool directory, and clear any driver override that pointed into its files — for every driver runtime. For a component installed into a database, removal SHALL undo the database-side change on the connection it was installed on: a staged adapter's files leave BucketFS, a language container is removed through the launcher, a script library's recorded objects are dropped and its schema only if the install created it. For a virtual-machine appliance imported into VirtualBox, removal SHALL power the machine off and delete it with its disks. Every database-side or machine-side removal SHALL first show a confirmation naming what is dropped and where. Removal SHALL NOT touch files or links belonging to another component, including one whose name merely shares a prefix, SHALL NOT delete a downloaded image the person placed themselves, and SHALL refuse an identifier that is not a single plain directory name.
 
 #### Scenario: A tool is removed
 - **WHEN** a component installed as a Python tool is removed
@@ -51,11 +51,11 @@ Removing a component SHALL delete its own files, remove any executable links it 
 
 #### Scenario: A language container is removed
 - **WHEN** a language container installed on a connection is removed
-- **THEN** its alias is gone from that database's language setting, every other alias is unchanged, and its file is gone from BucketFS
+- **THEN** the launcher has removed it: its alias is gone from the database's language setting and every other alias is unchanged
 
 #### Scenario: A script library is removed
 - **WHEN** a script library installed into a schema on a connection is removed
-- **THEN** the person is shown the schema and connection names and, on confirming, the schema is dropped with everything in it
+- **THEN** the person is shown the connection and, on confirming, exactly the recorded objects are dropped, newest first, and the schema only if the install created it — never with CASCADE
 
 #### Scenario: A virtual machine is removed
 - **WHEN** a Community Edition machine imported into VirtualBox is removed
@@ -82,16 +82,39 @@ For a component whose artifact is used by another tool the person runs themselve
 - **WHEN** a catalogue entry declares a format the marketplace does not know
 - **THEN** the component is not offered for install and the catalogue check fails
 
-### Requirement: A language container is installed on a chosen connection without displacing others
-Installing a language container SHALL upload the verified container into the chosen connection's BucketFS and SHALL register its alias by appending to the database's language setting. Existing aliases SHALL be preserved. The install record SHALL carry the connection and the alias.
+### Requirement: A language container is installed through the official launcher
+Installing a language container SHALL go through the official Exasol launcher, which owns the containers of the managed local database: install by alias, remove by alias, and the launcher's own listing as the set of choices. The marketplace SHALL NOT upload containers or edit the database's language setting itself. Existing aliases SHALL be preserved, as the launcher preserves them. The install record SHALL carry the alias, and removal SHALL require that record.
 
 #### Scenario: A container is installed next to the defaults
-- **WHEN** a container is installed on a database whose language setting already names Python, Java and R
-- **THEN** the setting afterwards names Python, Java, R and the new alias
+- **WHEN** a container is installed on a local database whose language setting already names Python, Java and R
+- **THEN** the setting afterwards names Python, Java, R and the new alias, and the local database has restarted once
 
-#### Scenario: The same container is installed again
-- **WHEN** a container whose alias is already in the setting is installed again
-- **THEN** the alias appears once and the file in BucketFS is replaced
+#### Scenario: A container item names no alias
+- **WHEN** a container item's coordinate names no alias
+- **THEN** the person picks one from the launcher's own listing, and nothing is installed before a pick
+
+#### Scenario: A container the marketplace did not install
+- **WHEN** the launcher lists a container for which the marketplace holds no install record
+- **THEN** the item shows as on this system and removal is not offered
+
+### Requirement: Scripts that run inside a database are never taken on trust
+For a component whose install runs scripts inside a database, every script file SHALL be verified against a digest its publisher provides; a script file with no published digest SHALL NOT be installed. The statements shown for review SHALL be exactly the statements that run: the install SHALL be pinned to the reviewed release and SHALL refuse to run when the statements' fingerprint differs from the reviewed one. A statement that names a schema other than the chosen one SHALL be refused. A file name from a release SHALL be one plain name before it is written or turned into an identifier.
+
+#### Scenario: A script without a published digest
+- **WHEN** a release ships a script file with neither a per-asset digest nor a checksum file beside it
+- **THEN** the install is refused and says which file could not be verified
+
+#### Scenario: The release changed after review
+- **WHEN** the statements fetched at install time differ from the ones reviewed
+- **THEN** nothing runs and the person is asked to review again
+
+#### Scenario: A failure midway
+- **WHEN** a statement fails after earlier statements have run
+- **THEN** the objects those statements created are dropped again, the schema too if the install created it, and the error says what was rolled back
+
+#### Scenario: An object already exists
+- **WHEN** the chosen schema already holds an object a statement would create or replace
+- **THEN** the install is refused before anything runs and names the object
 
 ### Requirement: Database changes are shown before they run and happen only on the chosen connection
 For a component installed into a database (a script library, a language container, an adapter, a semantic framework), the marketplace SHALL run on a connection the person chose, SHALL show the statements or uploads that will run before anything runs, and SHALL run nothing until they confirm. The install record SHALL name the connection, and the Installed view SHALL show it.

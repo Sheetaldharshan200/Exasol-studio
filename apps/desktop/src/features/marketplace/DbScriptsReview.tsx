@@ -29,7 +29,9 @@ export function DbScriptsReview({
   profiles: Profile[];
   /** The version picked on the card, if any. */
   requested?: string;
-  onConfirm: (profileId: string, schema: string) => void;
+  /** The reviewed plan travels with the confirmation: its version pins the
+   *  release and its fingerprint pins the statements. */
+  onConfirm: (profileId: string, schema: string, plan: { version: string; fingerprint: string }) => void;
   onClose: () => void;
 }) {
   const defaultSchema = item.source?.kind === "db-scripts" ? item.source.schema : "";
@@ -39,13 +41,22 @@ export function DbScriptsReview({
   const schemaOk = validSchema(schema);
 
   // The plan follows the schema: statements name it, so a change re-reads.
+  // Only the newest request may land — an older reply must not show a plan
+  // for a schema that is no longer the one on screen.
   useEffect(() => {
     if (!schemaOk || !item.repo) return;
     setPlan("loading");
+    let live = true;
     const handle = window.setTimeout(() => {
-      ipc.marketDbScriptsPlan(item.id, item.repo!, requested, schema).then(setPlan, (e) => setPlan({ error: errorMessage(e) }));
+      ipc.marketDbScriptsPlan(item.id, item.repo!, requested, schema).then(
+        (p) => live && setPlan(p),
+        (e) => live && setPlan({ error: errorMessage(e) }),
+      );
     }, 400);
-    return () => window.clearTimeout(handle);
+    return () => {
+      live = false;
+      window.clearTimeout(handle);
+    };
   }, [item.id, item.repo, requested, schema, schemaOk]);
 
   const connection = profiles.find((p) => p.id === profileId);
@@ -117,11 +128,16 @@ export function DbScriptsReview({
               <div className="text-[11px] text-muted-foreground">
                 {plan.version} · {plan.files.join(", ")} · {plan.statements.length} statements
               </div>
-              <ol className="max-h-72 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+              <ol className="max-h-80 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
                 {plan.statements.map((s, i) => (
-                  <li key={i} className="flex gap-2 text-foreground">
-                    <span className="w-6 shrink-0 text-right text-muted-foreground">{i + 1}</span>
-                    <span className="truncate" title={s}>{s}</span>
+                  <li key={i} className="text-foreground">
+                    <details>
+                      <summary className="flex cursor-pointer gap-2">
+                        <span className="w-6 shrink-0 text-right text-muted-foreground">{i + 1}</span>
+                        <span className="truncate">{s.head}</span>
+                      </summary>
+                      <pre className="ml-8 mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/40 p-2 text-[10.5px] text-muted-foreground">{s.body}</pre>
+                    </details>
                   </li>
                 ))}
               </ol>
@@ -137,7 +153,7 @@ export function DbScriptsReview({
             Cancel
           </button>
           <button
-            onClick={() => connection && onConfirm(connection.id, schema)}
+            onClick={() => connection && typeof plan === "object" && !("error" in plan) && onConfirm(connection.id, schema, { version: plan.version, fingerprint: plan.fingerprint })}
             disabled={!ready}
             className="cta-glow flex h-8 items-center gap-1.5 rounded-md bg-primary px-3.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
           >

@@ -122,6 +122,8 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
   if (expectsChoice(item.source) && variantsOf(item, assets).length > 1 && pickAssetFor(item, assets, s.env, variant) === null) {
     return { kind: "choose", available: s.latestFor(item.id) };
   }
+  // A container item that names no alias needs the language picked first.
+  if (item.source?.kind === "slc" && !item.source.alias && !variant) return { kind: "choose", available: s.latestFor(item.id) };
   if (needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, s.env, variant) === null) {
     return { kind: "unavailable", platform: s.env?.os === "macos" ? "macOS" : (s.env?.os ?? "this platform") };
   }

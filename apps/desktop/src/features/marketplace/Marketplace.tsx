@@ -500,7 +500,7 @@ export function Marketplace() {
             // download matches exactly the version the user asked for.
             const chosen = verPickRef.current[item.id];
             let release = releases[item.id] ?? null;
-            if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
+            if (chosen && item.repo && needsReleaseAsset(item) && release?.tag !== chosen) {
               release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
             }
             // A variant was picked from the release the card shows; another
@@ -509,11 +509,29 @@ export function Marketplace() {
             const shownTag = releases[item.id]?.tag;
             const variant = picked && chosen && shownTag && chosen !== shownTag ? variantForRelease(picked, shownTag, chosen) : picked;
             const asset = pickAssetFor(item, release?.assets ?? [], env, variant);
-            const version = chosen ?? latestFor(item.id) ?? undefined;
+            // A release file was required and none matches — say so here
+            // rather than sending a request that can only fail.
+            if (needsReleaseAsset(item) && !asset && (release?.assets?.length ?? 0) > 0) {
+              window.dispatchEvent(
+                new CustomEvent("studio:notice", {
+                  detail: {
+                    kind: "warning",
+                    title: item.name,
+                    body: variant
+                      ? `Release ${release?.tag ?? chosen} has no file named ${variant}. Pick the variant again for this version.`
+                      : `Release ${release?.tag ?? chosen} ships no build for this machine.`,
+                  },
+                }),
+              );
+              finish(false);
+              return;
+            }
+            const db = dbTargetRef.current[item.id];
+            // A reviewed script library runs the release that was reviewed.
+            const version = (item.install === "db-scripts" ? db?.version : undefined) ?? chosen ?? latestFor(item.id) ?? undefined;
             un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
               if (e.payload.id === item.id) finish(e.payload.ok);
             });
-            const db = dbTargetRef.current[item.id];
             await ipc.marketInstallRun(
               { id: item.id, install: item.install, repo: item.repo, source: item.source },
               version,
@@ -521,12 +539,14 @@ export function Marketplace() {
               asset?.name,
               item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : db?.profileId,
               // Only the explicit dropdown pick may override a verified pip
-              // pin — the display version above never does.
-              chosen,
+              // pin — the display version above never does. A reviewed
+              // script library pins the version its review showed.
+              item.install === "db-scripts" ? db?.version : chosen,
               db?.schema,
               // A container item without an alias: the launcher alias picked
               // from its catalogue travels the same way a variant does.
               item.source?.kind === "slc" ? variantPickRef.current[item.id] : undefined,
+              db?.fingerprint,
             );
           } catch {
             finish(false);
@@ -546,8 +566,9 @@ export function Marketplace() {
   }, [verPick]);
   // Where a script library goes: the connection and schema confirmed on its
   // review screen, read by the queue when the install runs.
-  const [dbTarget, setDbTarget] = useState<Record<string, { profileId: string; schema: string }>>({});
-  const dbTargetRef = useRef<Record<string, { profileId: string; schema: string }>>({});
+  type DbTarget = { profileId: string; schema: string; version: string; fingerprint: string };
+  const [dbTarget, setDbTarget] = useState<Record<string, DbTarget>>({});
+  const dbTargetRef = useRef<Record<string, DbTarget>>({});
   useEffect(() => {
     dbTargetRef.current = dbTarget;
   }, [dbTarget]);
@@ -989,6 +1010,11 @@ export function Marketplace() {
     if (did) return !driverReady[did] && !driverBusy[did];
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
+    // A script library is reviewed one at a time; a container or a plural
+    // release needs its pick first; an unavailable item cannot run at all.
+    if (item.install === "db-scripts") return false;
+    const st = stateOf(item);
+    if (st.kind === "choose" || st.kind === "unavailable") return false;
     const assets = releases[item.id]?.assets ?? [];
     return !(needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, env, variantPick[item.id]) === null);
   };
@@ -1113,18 +1139,27 @@ export function Marketplace() {
     const needsPick =
       (expectsChoice(item.source) && variants.length > 1 && !variants.some((v) => v.name === variantPick[item.id])) ||
       (picksAlias && !variantPick[item.id]);
-    const noHostBuild =
-      item.install === "binary" &&
-      !inst &&
-      !onSystem &&
-      !did &&
-      !needsPick &&
-      (releases[item.id]?.assets?.length ?? 0) > 0 &&
-      pickAssetFor(item, releases[item.id]?.assets ?? [], env, variantPick[item.id]) === null;
+    // Unavailable for this machine — a binary without a build for it, a
+    // desktop app without one, an image that does not run on this CPU. The
+    // same decision the card and the Updates page use.
+    const itemState = stateOf(item);
+    const noHostBuild = itemState.kind === "unavailable" && !inst && !onSystem && !did;
+    const noHostText =
+      itemState.kind === "unavailable"
+        ? item.source?.kind === "vm-appliance"
+          ? `Not for ${itemState.platform}`
+          : `No ${itemState.platform} build yet`
+        : "";
     // The variant menu of a plural release: the files the pattern matches in
     // the release the card shows, by their own names.
     const aliasMenu = picksAlias ? (
-      <DropdownMenu onOpenChange={(o) => o && slcChoices === null && ipc.marketSlcCatalog().then(setSlcChoices, () => setSlcChoices("error"))}>
+      <DropdownMenu
+        onOpenChange={(o) => {
+          if (!o || (slcChoices !== null && slcChoices !== "error")) return;
+          setSlcChoices(null);
+          ipc.marketSlcCatalog().then(setSlcChoices, () => setSlcChoices("error"));
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <button
             disabled={isInstalling}
@@ -1393,10 +1428,14 @@ export function Marketplace() {
         ) : noHostBuild ? (
           <>
             <span
-              title="The upstream release ships platform-specific builds, but none for this machine."
+              title={
+                item.source?.kind === "vm-appliance"
+                  ? "The publisher ships this image for x86-64 hosts only."
+                  : "The upstream release ships platform-specific builds, but none for this machine."
+              }
               className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground"
             >
-              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> No {env?.os === "macos" ? "macOS" : (env?.os ?? "this-platform")} build yet
+              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> {noHostText}
             </span>
             <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
               Get <ExternalLink className="h-3.5 w-3.5" />
@@ -1577,7 +1616,7 @@ export function Marketplace() {
       case "update":
         return { label: `Update to ${st.available}`, tone: "primary", onClick: () => (CATALOG_TO_COMPONENT[item.id] ? void switchManaged(item, st.available) : startInstall(item)) };
       case "choose":
-        return { label: "Choose a variant", tone: "primary", onClick: () => openDetail(item.id) };
+        return { label: item.source?.kind === "slc" ? "Choose a language" : "Choose a variant", tone: "primary", onClick: () => openDetail(item.id) };
       case "reference":
       case "unavailable":
         return { label: "Get", tone: "outline", onClick: () => openExternal(item.homepage) };
@@ -1666,12 +1705,13 @@ export function Marketplace() {
           profiles={profiles}
           requested={verPick[dbReview.id]}
           onClose={() => setDbReview(null)}
-          onConfirm={(profileId, schema) => {
+          onConfirm={(profileId, schema, plan) => {
             const item = dbReview;
-            setDbTarget((m) => ({ ...m, [item.id]: { profileId, schema } }));
+            const target = { profileId, schema, ...plan };
+            setDbTarget((m) => ({ ...m, [item.id]: target }));
             // The ref the queue reads is updated by effect; hand the queue
             // the value directly so a same-tick start cannot miss it.
-            dbTargetRef.current = { ...dbTargetRef.current, [item.id]: { profileId, schema } };
+            dbTargetRef.current = { ...dbTargetRef.current, [item.id]: target };
             setDbReview(null);
             enqueue([item]);
           }}

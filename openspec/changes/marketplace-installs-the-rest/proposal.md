@@ -17,10 +17,10 @@ real **uninstall**, including the ones that install into a database.
 | Mechanism (new) | Items | Install | Uninstall |
 |---|---|---|---|
 | `gh-asset` **with a variant choice** | `spark-connector` (5 Scala/Spark JARs) | the person picks the variant; download, verify | delete the folder |
-| `deliver` — download, verify, reveal, per-**format** instruction | `driver-lua`, `error-reporting-lua`, `remotelog-lua` (`rockspec` → `luarocks install`); `dbt-exasol-utils` (`dbt-package` → `packages.yml`); `parquet-edml-generator`, `udf-runner-cpp` (`source`); `panorama` (`desktop-app`, platform-picked dmg/AppImage) | file lands in Studio's folder, is revealed, and the format's own install step is stated | delete the folder |
+| `deliver` — download, verify, reveal, per-**format** instruction | `driver-lua`, `error-reporting-lua` (`rockspec` → `luarocks install`); `dbt-exasol-utils` (`dbt-package` → `packages.yml`); `remotelog-lua`, `parquet-edml-generator`, `udf-runner-cpp`, `preprocessor-library`, `lakehouse-engine-rs` (`source`: the tag's archive — each installs through its own tool or script); `panorama` (`desktop-app`, platform-picked dmg/AppImage/msi) | file lands in Studio's folder, is revealed, and the format's own install step is stated | delete the folder |
 | `host-plugin`, new hosts | `power-apps-connector` (`.zip` → Power Apps), `azure-data-factory` (`.zip` → Azure Functions) | as today | as today |
-| `slc` — into the connected database's BucketFS | `script-languages-release` (flavor choice), `language-container-rs`, `lakehouse-engine-rs` | upload the verified container, register its language alias on the chosen connection | remove it from BucketFS, drop the alias |
-| `db-scripts` — SQL/Lua run into a schema | `row-level-security`, `preprocessor-library` | run the release's verified scripts into a dedicated schema on the chosen connection, after the person sees exactly what will run | drop that schema |
+| `slc` — a language container for the managed local database, through the official launcher | `script-languages-release` (a language picked from the launcher's catalogue), `language-container-rs` (`rust`) | `exasol slc install <alias>`: the launcher fetches the container for this machine, registers the alias beside the existing ones and restarts the local database once | `exasol slc remove <alias>` after a confirmation |
+| `db-scripts` — SQL/Lua run into a schema | `row-level-security` | run the release's verified scripts into a schema on the chosen connection, after the person has reviewed the connection, the schema and every statement; the record names the connection, the schema, whether it was created, and every object created | drop exactly those objects, and the schema only if the install created it — never CASCADE |
 | `registry` (exists) | `error-reporting-go` — the resolver never read `go.mod` | Go proxy | delete the folder |
 | `vm-appliance` — a database image into the hypervisor on this machine | `community-edition` (x86-64 `.ova`, VirtualBox or VMware) | detect the hypervisor, find the downloaded image (the download page is sign-up gated, so Studio opens it and waits for the file), import it as a named VM and start it | power the VM off and delete it with its disks, after a confirmation that says so |
 
@@ -52,11 +52,13 @@ have nothing to install and keep saying so.
 Uninstall today deletes an item's folder, unlinks what it put on PATH, removes
 a uv tool and clears driver overrides. It does not touch anything that lives in
 a **database**. This change closes that: a virtual schema adapter can be
-un-staged from BucketFS; a language container can be removed and its alias
-dropped; a script library's schema can be dropped; and the existing
-Semantic Views install — the one in-database mechanism that predates this —
-gets the same. The Installed view names **where** a database-side item lives
-(which connection), and removal asks before it drops anything there.
+un-staged from the local database's bucket; a language container can be
+removed through the launcher; a script library's objects can be dropped on
+the connection they went to; a Community Edition machine can be deleted. The
+Installed view names **where** a database-side item lives (which connection),
+and removal asks before it drops anything there. Semantic Views, the one
+in-database install that predates this, keeps its own lifecycle for now — it
+records no objects, so nothing could be dropped truthfully.
 
 ## Capabilities
 

@@ -8,8 +8,8 @@ mechanism. Nothing below matches an item's id. Three coordinate shapes are new:
 ```ts
 | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean }
 | { kind: "deliver"; format: "rockspec" | "dbt-package" | "source" | "desktop-app"; assetPattern?: string }
-| { kind: "slc"; assetPattern: string; choose?: boolean; alias: string }
-| { kind: "db-scripts"; assetPattern: string; schema: string }
+| { kind: "slc"; alias?: string }
+| { kind: "db-scripts"; schema: string }
 | { kind: "vm-appliance"; imagePattern: string; downloadPage: string; vmName: string }
 ```
 
@@ -34,30 +34,46 @@ source snapshot; `desktop-app` picks the build for this platform and says to
 open it. `host-plugin` becomes `deliver` with `format: "host"` in spirit and
 may be folded in later; it is not renamed in this change.
 
-## `slc` — a language container into BucketFS
+## `slc` — a language container through the launcher
 
-Builds on what the virtual-schema prerequisites already do for the Java
-container. On the chosen connection: upload the verified container to the
-default bucket under `slc/`, then register the alias with
-`ALTER SYSTEM SET SCRIPT_LANGUAGES` **appended**, never replaced — a
-container install must not remove the languages already there. The install
-record carries the connection and the alias.
+The official launcher owns language containers for the managed local
+database: `exasol slc install <alias>` fetches the official container for
+this machine's architecture (and `rust`, which it maps to the newest
+`language-container-rs` release), registers the alias beside the existing
+ones and restarts the database once; `exasol slc remove <alias>` undoes it;
+`exasol slc list --json` says what is offered and installed. Studio wraps
+exactly that and adds nothing of its own — no BucketFS upload, no
+`SCRIPT_LANGUAGES` string editing. A container item that names no alias
+takes the pick from the launcher's list, through the same menu a plural
+release uses. The manifest records the alias; a container the launcher
+already lists shows as *on this system*, whoever installed it.
 
-Uninstall: drop only this alias from `SCRIPT_LANGUAGES`, then delete the
-container from BucketFS. BucketFS gains a `delete` beside `list`, `upload` and
-`download` — the same URL with the DELETE method.
+Containers for a database that is not the managed local one are out of this
+change: the launcher only manages that one, and its scripts for the rest
+(`install.sh` over `exapump`) are the projects' own.
 
 ## `db-scripts` — a script library into a schema
 
-Builds on Semantic Views: resolve the chosen connection (or the managed local
-database), run the release's verified SQL and Lua files into a dedicated
-schema named by the coordinate, record the version **and the connection**.
-Before anything runs, the permission screen shows the statements that will
-run — the person is changing their database and sees exactly how.
+The release's `.sql` and `.lua` files are downloaded and verified (GitHub's
+per-asset digest or the `.sha256` beside the file). A `.sql` file is a
+bundle in Exasol's own convention — each script body ends with a line
+holding only `/`, filler `;` lines between — and is split on that, never on
+the `;` inside a Lua body; a `.lua` file becomes one
+`CREATE OR REPLACE LUA ADAPTER SCRIPT` in the schema, named after the file.
+Before anything runs, a review screen shows the connection (picked there),
+the schema (the coordinate's default, editable — Row-Level Security's
+administration scripts belong in the schema they protect) and every
+statement's head. On confirmation the queue runs them on one connection:
+`CREATE SCHEMA` only if the schema is missing, `OPEN SCHEMA`, then the
+statements. The record carries the connection, the schema, whether the
+install created it, and every object it created — read from the statement
+heads.
 
-Uninstall: `DROP SCHEMA <schema> CASCADE` on that connection, after a
-confirmation that names the schema and the connection. Semantic Views gets the
-same uninstall, since it is the same shape and has none today.
+Uninstall: after a confirmation naming the connection, `DROP <kind> <object>`
+for exactly the recorded objects, then `DROP SCHEMA` only if the install
+created it, and without CASCADE — a schema the person has since put their
+own objects into is left, and the error says so. Semantic Views records no
+objects and keeps its own lifecycle.
 
 ## `vm-appliance` — a database image into the hypervisor
 
@@ -96,17 +112,21 @@ published for it. The mechanism is honest about each.
 
 ## Un-staging a virtual schema adapter
 
-Staging puts a JAR (and a driver) into BucketFS under `vs/`. Un-staging
-removes those files. The adapter *script* in the database, if one was created
-by attaching a schema, is out of scope here — it belongs to the schema that
-uses it and is dropped with it.
+Staging writes a JAR (and a driver) into the managed local database's
+default bucket under `vs/`. Un-staging removes the files the adapter's own
+asset pattern names, matched directly under `vs/` and nowhere else, after a
+confirmation. The adapter *script* in the database, if one was created by
+attaching a schema, belongs to the schema that uses it and is dropped with
+it.
 
 ## Where a database-side item lives
 
-The manifest entry for `slc`, `db-scripts`, `vs-adapter` and Semantic Views
-records `connection` (profile id and name). The Installed view shows it, and
-removal names it in its confirmation. Two connections can hold the same item;
-each is its own record.
+The manifest entry for `db-scripts` records `connection` (profile id and
+name), `slc` the alias, `vm-appliance` the hypervisor and machine name. The
+Installed view shows the connection, and removal names what goes where in
+its confirmation. The manifest holds one record per item, so a library
+installed on a second connection replaces the record of the first — a known
+limit, stated here rather than hidden.
 
 ## Order of work
 
@@ -114,9 +134,8 @@ each is its own record.
    `azure-data-factory` (host-plugin, two new destination texts).
 2. `deliver` with its four formats — seven items become installable.
 3. The variant choice — `spark-connector`.
-4. BucketFS delete + `slc` install/uninstall — three items, plus adapter
-   un-staging.
-5. `db-scripts` install/uninstall, and Semantic Views uninstall.
+4. `slc` through the launcher — two items — plus adapter un-staging.
+5. `db-scripts` install/uninstall with the review screen.
 6. Installed view: connection shown, database-side removal confirms.
 7. `vm-appliance`: hypervisor detection, image lookup, import/start, delete —
    `community-edition` becomes an install on x86-64 hosts.

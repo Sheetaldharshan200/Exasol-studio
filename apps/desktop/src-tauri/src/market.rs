@@ -881,6 +881,11 @@ async fn download_and_place_inner(
     use futures_util::StreamExt;
     use std::io::Write;
 
+    // The name comes from a release or a registry; it must stay one file
+    // inside the item's folder.
+    if !crate::installers::safe_file_name(filename) {
+        return Err(AppError::Storage(format!("{filename:?} is not a file name Studio will write.")));
+    }
     let dir = market_dir(app)?.join(id);
     std::fs::create_dir_all(&dir)?;
     emit_log(app, id, format!("Downloading {filename}…"), "info");
@@ -1248,242 +1253,6 @@ fn ensure_exasol_launcher(app: &AppHandle, id: &str) -> AppResult<()> {
         return Err(AppError::Storage(format!(
             "Launcher install exited with code {code}. See the log above."
         )));
-    }
-    Ok(())
-}
-
-/// The launcher and deployment a language container goes into. Containers
-/// live in the managed local Exasol Personal; the launcher owns them.
-fn slc_launcher(app: &AppHandle) -> AppResult<(String, String)> {
-    let cli = crate::local_runtime::exasol_cli(app)?;
-    let dep = crate::local_runtime::personal_deployment_dir(app)?;
-    if !dep.is_dir() {
-        return Err(AppError::Storage(
-            "Set up the local database first — language containers are installed into Studio's managed Exasol Personal.".into(),
-        ));
-    }
-    Ok((cli.to_string_lossy().into_owned(), dep.to_string_lossy().into_owned()))
-}
-
-/// `exasol slc install <alias>`: the launcher downloads the official container
-/// for this machine, registers the alias and restarts the local database.
-fn install_slc(app: &AppHandle, id: &str, alias: &str, repo: Option<&str>) -> AppResult<(String, String)> {
-    if !crate::installers::valid_alias(alias) {
-        return Err(AppError::Storage(format!("{alias:?} is not a language alias Studio will pass to the launcher.")));
-    }
-    let (cli, dep) = slc_launcher(app)?;
-    emit_log(
-        app,
-        id,
-        format!("Installing the {alias} language container through the official Exasol launcher — the local database restarts once…"),
-        "info",
-    );
-    let code = run_streamed(app, id, &cli, &["--auto-approve", "slc", "install", alias, "--deployment-dir", &dep])?;
-    if code != 0 {
-        return Err(AppError::Storage(format!("`exasol slc install {alias}` exited with code {code}. See the log above.")));
-    }
-    let version = repo.and_then(crate::upstream::latest).map(|r| r.tag).unwrap_or_else(|| "latest".into());
-    Ok((
-        version,
-        format!("{} language container installed in the local database — UDFs in that language run now.", alias.to_ascii_uppercase()),
-    ))
-}
-
-/// `exasol slc remove <alias>`: the launcher drops the alias and the container.
-fn remove_slc(app: &AppHandle, id: &str, alias: &str) -> AppResult<()> {
-    if !crate::installers::valid_alias(alias) {
-        return Err(AppError::Storage(format!("{alias:?} is not a language alias Studio will pass to the launcher.")));
-    }
-    let (cli, dep) = slc_launcher(app)?;
-    emit_log(app, id, format!("Removing the {alias} language container through the official Exasol launcher…"), "info");
-    let code = run_streamed(app, id, &cli, &["--auto-approve", "slc", "remove", alias, "--deployment-dir", &dep])?;
-    if code != 0 {
-        return Err(AppError::Storage(format!("`exasol slc remove {alias}` exited with code {code}. See the log above.")));
-    }
-    Ok(())
-}
-
-/// One container the launcher offers, and whether it is installed.
-#[derive(Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SlcChoice {
-    pub alias: String,
-    pub installed: bool,
-}
-
-/// Pure: the launcher's `slc list --json` as choices, first alias per container.
-pub(crate) fn slc_choices_from(list: &Value) -> Vec<SlcChoice> {
-    list.as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|c| {
-                    let alias = c.get("aliases")?.as_array()?.first()?.as_str()?.to_ascii_uppercase();
-                    Some(SlcChoice { alias, installed: c.get("installed").and_then(Value::as_bool).unwrap_or(false) })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The language containers the official launcher can install into the
-/// managed local database, for the variant menu of a container item that
-/// names no alias.
-#[tauri::command]
-pub async fn market_slc_catalog(app: AppHandle) -> AppResult<Vec<SlcChoice>> {
-    let (cli, dep) = slc_launcher(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let output = Command::new(&cli)
-            .args(["slc", "list", "--json", "--deployment-dir", &dep])
-            .output()
-            .map_err(|e| AppError::Storage(format!("Could not run the Exasol launcher: {e}")))?;
-        let list: Value = serde_json::from_slice(&output.stdout)
-            .map_err(|_| AppError::Storage("The launcher's container list could not be read.".into()))?;
-        Ok(slc_choices_from(&list))
-    })
-    .await
-    .map_err(|e| AppError::Storage(e.to_string()))?
-}
-
-/// What a script library's install would run into `schema` — downloaded and
-/// verified, shown on the permission screen, run by nothing here.
-#[tauri::command]
-pub async fn market_db_scripts_plan(
-    app: AppHandle,
-    id: String,
-    repo: String,
-    requested: Option<String>,
-    schema: String,
-) -> AppResult<crate::db_scripts::ScriptPlan> {
-    if !crate::installers::valid_item_id(&id) {
-        return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
-    }
-    let requested = requested.filter(|v| valid_version_tag(v));
-    crate::db_scripts::plan(&app, &id, &repo, requested.as_deref(), &schema).await
-}
-
-/// A database image into the hypervisor on this machine. The image is the
-/// person's download (the page is sign-up gated), so Studio finds it in
-/// Downloads or opens the page and stops. VirtualBox is driven through
-/// `VBoxManage`; VMware is handed the file and owns the machine from there.
-fn install_vm_appliance(
-    app: &AppHandle,
-    id: &str,
-    image_pattern: &str,
-    download_page: &str,
-    vm_name: &str,
-    repo: Option<&str>,
-) -> AppResult<(String, String, Value)> {
-    use crate::installers::{find_hypervisors, pick_image, valid_vm_name, vbox_import_args, vm_registered, Hypervisor};
-    if std::env::consts::ARCH != "x86_64" {
-        return Err(AppError::Storage(format!(
-            "This image runs on x86-64 hosts only; this machine is {}. Apple Silicon and ARM are not supported by the publisher yet.",
-            std::env::consts::ARCH
-        )));
-    }
-    if !valid_vm_name(vm_name) {
-        return Err(AppError::Storage(format!("{vm_name:?} is not a machine name Studio will hand to a hypervisor.")));
-    }
-    let os = std::env::consts::OS;
-    let found = find_hypervisors(os, |p| std::path::Path::new(p).exists());
-    if found.is_empty() {
-        return Err(AppError::Storage(format!(
-            "No hypervisor found. Install VirtualBox ({}) — or VMware ({}) — then Install again.",
-            Hypervisor::Virtualbox.download_page(),
-            Hypervisor::Vmware.download_page()
-        )));
-    }
-    let downloads = dirs::download_dir().ok_or_else(|| AppError::Storage("Could not resolve the Downloads folder.".into()))?;
-    let files: Vec<String> = std::fs::read_dir(&downloads)
-        .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str().map(str::to_string)).collect())
-        .unwrap_or_default();
-    let pattern = regex::Regex::new(image_pattern).map_err(|e| AppError::Storage(format!("Bad image pattern: {e}")))?;
-    let hypervisors: Vec<Hypervisor> = found.iter().map(|(h, _)| *h).collect();
-    let Some((hv, file)) = pick_image(&files, &pattern, &hypervisors) else {
-        use tauri_plugin_opener::OpenerExt;
-        let _ = app.opener().open_url(download_page, None::<&str>);
-        let flavors = hypervisors.iter().map(|h| format!("{} ({})", h.flavor(), h.label())).collect::<Vec<_>>().join(" or ");
-        return Err(AppError::Storage(format!(
-            "The download page opened. Download the {flavors} image into {} (about 10 GB), then press Install again. Nothing was recorded.",
-            downloads.display()
-        )));
-    };
-    let ova = downloads.join(&file);
-    let ova_s = ova.to_string_lossy().into_owned();
-    emit_log(app, id, format!("Found {file} in Downloads. No checksum is published for this image; it is imported as downloaded."), "info");
-    let version = repo.and_then(crate::upstream::latest).map(|r| r.tag).unwrap_or_else(|| "latest".into());
-    let tool = found.iter().find(|(h, _)| *h == hv).map(|(_, p)| p.clone()).unwrap_or_default();
-    let note = match hv {
-        Hypervisor::Virtualbox => {
-            let listed = Command::new(&tool).args(["list", "vms"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-            if vm_registered(&listed, vm_name) {
-                return Err(AppError::Storage(format!(
-                    "VirtualBox already has a machine named {vm_name}. Start it there, or remove it first, instead of importing a second one."
-                )));
-            }
-            emit_log(app, id, format!("Importing {file} into VirtualBox as \"{vm_name}\" — a few minutes…"), "info");
-            let args = vbox_import_args(&ova_s, vm_name);
-            let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            let code = run_streamed(app, id, &tool, &arg_refs)?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("VBoxManage import exited with code {code}. See the log above.")));
-            }
-            emit_log(app, id, "Starting the machine…", "info");
-            let code = run_streamed(app, id, &tool, &["startvm", vm_name])?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("VBoxManage startvm exited with code {code}. The machine is imported; start it in VirtualBox.")));
-            }
-            format!("Imported into VirtualBox as \"{vm_name}\" and started. The database is ready when its window shows RUNNING; connect to the address shown there on port 8563. The image stays in Downloads.")
-        }
-        Hypervisor::Vmware => {
-            let status = match os {
-                "macos" => Command::new("open").args(["-a", "VMware Fusion", &ova_s]).status(),
-                "windows" => Command::new("cmd").args(["/C", "start", "", &ova_s]).status(),
-                _ => Command::new("xdg-open").arg(&ova_s).status(),
-            };
-            if !status.map(|s| s.success()).unwrap_or(false) {
-                return Err(AppError::Storage(format!("Could not hand {file} to VMware. Open it from {} yourself.", downloads.display())));
-            }
-            format!("Handed {file} to VMware; finish the import in its window. VMware owns the machine from here — remove it there when you no longer need it.")
-        }
-    };
-    Ok((version, note, json!({ "hypervisor": hv, "name": vm_name, "tool": tool })))
-}
-
-/// Undo an appliance import: VirtualBox machines are powered off and deleted
-/// with their disks; a VMware machine is the application's to delete.
-fn remove_vm_appliance(app: &AppHandle, id: &str, vm: &Value) -> AppResult<()> {
-    use crate::installers::{valid_vm_name, Hypervisor};
-    let name = vm.get("name").and_then(Value::as_str).unwrap_or_default();
-    if !valid_vm_name(name) {
-        return Err(AppError::Storage("The record names no machine Studio will hand to a hypervisor.".into()));
-    }
-    let hv: Hypervisor = serde_json::from_value(vm.get("hypervisor").cloned().unwrap_or(Value::Null))
-        .map_err(|_| AppError::Storage("The record names no hypervisor.".into()))?;
-    match hv {
-        Hypervisor::Virtualbox => {
-            let tool = vm
-                .get("tool")
-                .and_then(Value::as_str)
-                .filter(|p| std::path::Path::new(p).exists())
-                .map(str::to_string)
-                .or_else(|| {
-                    crate::installers::find_hypervisors(std::env::consts::OS, |p| std::path::Path::new(p).exists())
-                        .into_iter()
-                        .find(|(h, _)| *h == Hypervisor::Virtualbox)
-                        .map(|(_, p)| p)
-                })
-                .ok_or_else(|| AppError::Storage("VirtualBox is no longer installed; the machine record was removed.".into()))?;
-            emit_log(app, id, format!("Powering off \"{name}\" (if it runs) and deleting it with its disks…"), "info");
-            let _ = Command::new(&tool).args(["controlvm", name, "poweroff"]).output();
-            let code = run_streamed(app, id, &tool, &["unregistervm", name, "--delete"])?;
-            if code != 0 {
-                return Err(AppError::Storage(format!("VBoxManage unregistervm exited with code {code}. See the log above.")));
-            }
-        }
-        Hypervisor::Vmware => {
-            emit_log(app, id, format!("Studio does not reach into VMware: delete \"{name}\" in VMware when you no longer need it. Its record here is removed."), "info");
-        }
     }
     Ok(())
 }
@@ -2542,6 +2311,9 @@ pub async fn market_install_run(
     // coordinate names none.
     schema: Option<String>,
     alias: Option<String>,
+    // The fingerprint of the statements the person reviewed; the install
+    // refuses to run anything else.
+    fingerprint: Option<String>,
 ) -> AppResult<Value> {
     if !crate::installers::valid_item_id(&id) {
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
@@ -2586,11 +2358,11 @@ pub async fn market_install_run(
             deliver_from_source(&app, &id, *format, repo.as_deref(), tag.as_deref(), url, filename).await
         }
         // Scripts into a schema on the connection the person picked — they
-        // saw the statements on the permission screen (market_db_scripts_plan).
+        // reviewed every statement first (db_scripts::plan).
         Some(crate::installers::InstallSource::DbScripts { schema: default_schema }) => {
             let schema = schema.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| default_schema.clone());
             match (repo.as_deref(), profile_id.as_deref().filter(|p| !p.is_empty())) {
-                (Some(repo), Some(profile)) => crate::db_scripts::install(&app, &id, repo, requested.as_deref(), profile, &schema)
+                (Some(repo), Some(profile)) => crate::db_scripts::install(&app, &id, repo, requested.as_deref(), profile, &schema, fingerprint.as_deref())
                     .await
                     .map(|(v, record, note)| {
                         resolved_version = Some(v);
@@ -2604,7 +2376,7 @@ pub async fn market_install_run(
         // A language container for the managed local database, through the
         // official launcher.
         Some(crate::installers::InstallSource::Slc { alias: default_alias }) => match alias.clone().or_else(|| default_alias.clone()) {
-            Some(a) => install_slc(&app, &id, &a, repo.as_deref()).map(|(v, note)| {
+            Some(a) => crate::slc::install(&app, &id, &a, repo.as_deref()).map(|(v, note)| {
                 resolved_version = Some(v);
                 slc_alias = Some(a);
                 note
@@ -2613,7 +2385,7 @@ pub async fn market_install_run(
         },
         // A database image into the hypervisor on this machine.
         Some(crate::installers::InstallSource::VmAppliance { image_pattern, download_page, vm_name }) => {
-            install_vm_appliance(&app, &id, image_pattern, download_page, vm_name, repo.as_deref()).map(|(v, note, vm)| {
+            crate::vm_appliance::install(&app, &id, image_pattern, download_page, vm_name, repo.as_deref()).map(|(v, note, vm)| {
                 resolved_version = Some(v);
                 vm_record = Some(vm);
                 note
@@ -2785,22 +2557,23 @@ pub async fn market_uninstall(
                 .ok_or_else(|| AppError::Storage("No record of where this was installed — nothing was dropped.".into()))?;
             crate::db_scripts::uninstall(&app, &record).await?;
         }
-        Some(InstallSource::Slc { alias }) => {
+        Some(InstallSource::Slc { .. }) => {
+            // Only what Studio installed is removed: a container the launcher
+            // lists but Studio never recorded stays.
             let alias = entry
                 .as_ref()
                 .and_then(|e| e.get("alias"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-                .or_else(|| alias.clone())
-                .ok_or_else(|| AppError::Storage("No record of which language container this installed.".into()))?;
-            remove_slc(&app, &id, &alias)?;
+                .ok_or_else(|| AppError::Storage("No record of which language container this installed — nothing was removed.".into()))?;
+            crate::slc::remove(&app, &id, &alias)?;
         }
         Some(InstallSource::VmAppliance { .. }) => {
             let vm = entry
                 .as_ref()
                 .and_then(|e| e.get("vm").cloned())
                 .ok_or_else(|| AppError::Storage("No record of the imported machine — nothing was deleted.".into()))?;
-            remove_vm_appliance(&app, &id, &vm)?;
+            crate::vm_appliance::remove(&app, &id, &vm)?;
         }
         _ => {}
     }
@@ -3045,25 +2818,8 @@ pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> App
 
 #[cfg(test)]
 mod tests {
-    use super::{fetch_plan, slc_choices_from, stale_repos, FetchPlan, SlcChoice, MAX_SINGLE_FETCH};
+    use super::{fetch_plan, stale_repos, FetchPlan, MAX_SINGLE_FETCH};
     use serde_json::{json, Value};
-
-    #[test]
-    fn the_launcher_listing_becomes_choices_by_first_alias() {
-        let list = json!([
-            { "flavor": "python-3.10", "aliases": ["python3", "PYTHON3_10"], "installed": true },
-            { "flavor": "java-17", "aliases": ["java"], "installed": false },
-            { "flavor": "broken" },
-        ]);
-        assert_eq!(
-            slc_choices_from(&list),
-            vec![
-                SlcChoice { alias: "PYTHON3".into(), installed: true },
-                SlcChoice { alias: "JAVA".into(), installed: false },
-            ]
-        );
-        assert!(slc_choices_from(&json!({})).is_empty(), "not a list → nothing offered");
-    }
 
     fn cache(pairs: &[(&str, Option<u64>)]) -> serde_json::Map<String, Value> {
         let mut m = serde_json::Map::new();
