@@ -1362,6 +1362,132 @@ pub async fn market_db_scripts_plan(
     crate::db_scripts::plan(&app, &id, &repo, requested.as_deref(), &schema).await
 }
 
+/// A database image into the hypervisor on this machine. The image is the
+/// person's download (the page is sign-up gated), so Studio finds it in
+/// Downloads or opens the page and stops. VirtualBox is driven through
+/// `VBoxManage`; VMware is handed the file and owns the machine from there.
+fn install_vm_appliance(
+    app: &AppHandle,
+    id: &str,
+    image_pattern: &str,
+    download_page: &str,
+    vm_name: &str,
+    repo: Option<&str>,
+) -> AppResult<(String, String, Value)> {
+    use crate::installers::{find_hypervisors, pick_image, valid_vm_name, vbox_import_args, vm_registered, Hypervisor};
+    if std::env::consts::ARCH != "x86_64" {
+        return Err(AppError::Storage(format!(
+            "This image runs on x86-64 hosts only; this machine is {}. Apple Silicon and ARM are not supported by the publisher yet.",
+            std::env::consts::ARCH
+        )));
+    }
+    if !valid_vm_name(vm_name) {
+        return Err(AppError::Storage(format!("{vm_name:?} is not a machine name Studio will hand to a hypervisor.")));
+    }
+    let os = std::env::consts::OS;
+    let found = find_hypervisors(os, |p| std::path::Path::new(p).exists());
+    if found.is_empty() {
+        return Err(AppError::Storage(format!(
+            "No hypervisor found. Install VirtualBox ({}) — or VMware ({}) — then Install again.",
+            Hypervisor::Virtualbox.download_page(),
+            Hypervisor::Vmware.download_page()
+        )));
+    }
+    let downloads = dirs::download_dir().ok_or_else(|| AppError::Storage("Could not resolve the Downloads folder.".into()))?;
+    let files: Vec<String> = std::fs::read_dir(&downloads)
+        .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let pattern = regex::Regex::new(image_pattern).map_err(|e| AppError::Storage(format!("Bad image pattern: {e}")))?;
+    let hypervisors: Vec<Hypervisor> = found.iter().map(|(h, _)| *h).collect();
+    let Some((hv, file)) = pick_image(&files, &pattern, &hypervisors) else {
+        use tauri_plugin_opener::OpenerExt;
+        let _ = app.opener().open_url(download_page, None::<&str>);
+        let flavors = hypervisors.iter().map(|h| format!("{} ({})", h.flavor(), h.label())).collect::<Vec<_>>().join(" or ");
+        return Err(AppError::Storage(format!(
+            "The download page opened. Download the {flavors} image into {} (about 10 GB), then press Install again. Nothing was recorded.",
+            downloads.display()
+        )));
+    };
+    let ova = downloads.join(&file);
+    let ova_s = ova.to_string_lossy().into_owned();
+    emit_log(app, id, format!("Found {file} in Downloads. No checksum is published for this image; it is imported as downloaded."), "info");
+    let version = repo.and_then(crate::upstream::latest).map(|r| r.tag).unwrap_or_else(|| "latest".into());
+    let tool = found.iter().find(|(h, _)| *h == hv).map(|(_, p)| p.clone()).unwrap_or_default();
+    let note = match hv {
+        Hypervisor::Virtualbox => {
+            let listed = Command::new(&tool).args(["list", "vms"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            if vm_registered(&listed, vm_name) {
+                return Err(AppError::Storage(format!(
+                    "VirtualBox already has a machine named {vm_name}. Start it there, or remove it first, instead of importing a second one."
+                )));
+            }
+            emit_log(app, id, format!("Importing {file} into VirtualBox as \"{vm_name}\" — a few minutes…"), "info");
+            let args = vbox_import_args(&ova_s, vm_name);
+            let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let code = run_streamed(app, id, &tool, &arg_refs)?;
+            if code != 0 {
+                return Err(AppError::Storage(format!("VBoxManage import exited with code {code}. See the log above.")));
+            }
+            emit_log(app, id, "Starting the machine…", "info");
+            let code = run_streamed(app, id, &tool, &["startvm", vm_name])?;
+            if code != 0 {
+                return Err(AppError::Storage(format!("VBoxManage startvm exited with code {code}. The machine is imported; start it in VirtualBox.")));
+            }
+            format!("Imported into VirtualBox as \"{vm_name}\" and started. The database is ready when its window shows RUNNING; connect to the address shown there on port 8563. The image stays in Downloads.")
+        }
+        Hypervisor::Vmware => {
+            let status = match os {
+                "macos" => Command::new("open").args(["-a", "VMware Fusion", &ova_s]).status(),
+                "windows" => Command::new("cmd").args(["/C", "start", "", &ova_s]).status(),
+                _ => Command::new("xdg-open").arg(&ova_s).status(),
+            };
+            if !status.map(|s| s.success()).unwrap_or(false) {
+                return Err(AppError::Storage(format!("Could not hand {file} to VMware. Open it from {} yourself.", downloads.display())));
+            }
+            format!("Handed {file} to VMware; finish the import in its window. VMware owns the machine from here — remove it there when you no longer need it.")
+        }
+    };
+    Ok((version, note, json!({ "hypervisor": hv, "name": vm_name, "tool": tool })))
+}
+
+/// Undo an appliance import: VirtualBox machines are powered off and deleted
+/// with their disks; a VMware machine is the application's to delete.
+fn remove_vm_appliance(app: &AppHandle, id: &str, vm: &Value) -> AppResult<()> {
+    use crate::installers::{valid_vm_name, Hypervisor};
+    let name = vm.get("name").and_then(Value::as_str).unwrap_or_default();
+    if !valid_vm_name(name) {
+        return Err(AppError::Storage("The record names no machine Studio will hand to a hypervisor.".into()));
+    }
+    let hv: Hypervisor = serde_json::from_value(vm.get("hypervisor").cloned().unwrap_or(Value::Null))
+        .map_err(|_| AppError::Storage("The record names no hypervisor.".into()))?;
+    match hv {
+        Hypervisor::Virtualbox => {
+            let tool = vm
+                .get("tool")
+                .and_then(Value::as_str)
+                .filter(|p| std::path::Path::new(p).exists())
+                .map(str::to_string)
+                .or_else(|| {
+                    crate::installers::find_hypervisors(std::env::consts::OS, |p| std::path::Path::new(p).exists())
+                        .into_iter()
+                        .find(|(h, _)| *h == Hypervisor::Virtualbox)
+                        .map(|(_, p)| p)
+                })
+                .ok_or_else(|| AppError::Storage("VirtualBox is no longer installed; the machine record was removed.".into()))?;
+            emit_log(app, id, format!("Powering off \"{name}\" (if it runs) and deleting it with its disks…"), "info");
+            let _ = Command::new(&tool).args(["controlvm", name, "poweroff"]).output();
+            let code = run_streamed(app, id, &tool, &["unregistervm", name, "--delete"])?;
+            if code != 0 {
+                return Err(AppError::Storage(format!("VBoxManage unregistervm exited with code {code}. See the log above.")));
+            }
+        }
+        Hypervisor::Vmware => {
+            emit_log(app, id, format!("Studio does not reach into VMware: delete \"{name}\" in VMware when you no longer need it. Its record here is removed."), "info");
+        }
+    }
+    Ok(())
+}
+
 /// Local database: Exasol Personal through the official launcher, every platform.
 fn install_personal_local(app: &AppHandle, id: &str) -> AppResult<String> {
     let runtime = crate::local_runtime::ensure_runtime(app, id)?;
@@ -2327,8 +2453,8 @@ async fn install_from_source(
         // Handled by market_install_run, which has the chosen asset's url.
         InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this plugin."))),
         InstallSource::Deliver { .. } => Err(AppError::Storage(format!("{id}: nothing to deliver was chosen."))),
-        InstallSource::Slc { .. } | InstallSource::DbScripts { .. } => {
-            Err(AppError::Storage(format!("{id}: a database-side install is dispatched by market_install_run.")))
+        InstallSource::Slc { .. } | InstallSource::DbScripts { .. } | InstallSource::VmAppliance { .. } => {
+            Err(AppError::Storage(format!("{id}: this mechanism is dispatched by market_install_run.")))
         }
     }
 }
@@ -2421,9 +2547,10 @@ pub async fn market_install_run(
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
     }
     emit_log(&app, &id, "Starting installation…", "info");
-    // What a database-side install must remember for its removal.
+    // What a database-side or machine-side install must remember for its removal.
     let mut db_record: Option<crate::db_scripts::DbRecord> = None;
     let mut slc_alias: Option<String> = None;
+    let mut vm_record: Option<Value> = None;
     // Validated before it can reach a package spec or URL.
     let requested = requested.filter(|v| valid_version_tag(v));
     // Installers that resolve the real version themselves (Maven) report it
@@ -2484,6 +2611,14 @@ pub async fn market_install_run(
             }),
             None => Err(AppError::Storage("Pick which language container to install first.".into())),
         },
+        // A database image into the hypervisor on this machine.
+        Some(crate::installers::InstallSource::VmAppliance { image_pattern, download_page, vm_name }) => {
+            install_vm_appliance(&app, &id, image_pattern, download_page, vm_name, repo.as_deref()).map(|(v, note, vm)| {
+                resolved_version = Some(v);
+                vm_record = Some(vm);
+                note
+            })
+        }
         Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
             .await
             .map(|(v, note)| {
@@ -2536,6 +2671,9 @@ pub async fn market_install_run(
             }
             if let Some(a) = &slc_alias {
                 entry["alias"] = json!(a.to_ascii_uppercase());
+            }
+            if let Some(vm) = &vm_record {
+                entry["vm"] = vm.clone();
             }
             items.push(entry);
             write_manifest(&app, &items)?;
@@ -2656,6 +2794,13 @@ pub async fn market_uninstall(
                 .or_else(|| alias.clone())
                 .ok_or_else(|| AppError::Storage("No record of which language container this installed.".into()))?;
             remove_slc(&app, &id, &alias)?;
+        }
+        Some(InstallSource::VmAppliance { .. }) => {
+            let vm = entry
+                .as_ref()
+                .and_then(|e| e.get("vm").cloned())
+                .ok_or_else(|| AppError::Storage("No record of the imported machine — nothing was deleted.".into()))?;
+            remove_vm_appliance(&app, &id, &vm)?;
         }
         _ => {}
     }
@@ -2817,6 +2962,20 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
 
     // Semantic Views is OPT-IN — installed ONLY when its readiness marker exists.
     map.insert("semantic-views".into(), json!(db::semantic_views_installed(&app)));
+    // Machines registered in VirtualBox, by name, so an appliance already
+    // imported — by Studio or by hand — shows "on this system".
+    if let Some((_, vbox)) = crate::installers::find_hypervisors(std::env::consts::OS, |p| std::path::Path::new(p).exists())
+        .into_iter()
+        .find(|(h, _)| *h == crate::installers::Hypervisor::Virtualbox)
+    {
+        if let Ok(out) = Command::new(&vbox).args(["list", "vms"]).output() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Some(name) = line.trim().strip_prefix('"').and_then(|l| l.split('"').next()) {
+                    map.insert(format!("vm:{name}"), json!(true));
+                }
+            }
+        }
+    }
     // Installed language containers, by alias, so a container item whose
     // coordinate names one shows "on this system" — whoever installed it.
     if let (Ok(cli), Ok(dep)) = (crate::local_runtime::exasol_cli(&app), crate::local_runtime::personal_deployment_dir(&app)) {

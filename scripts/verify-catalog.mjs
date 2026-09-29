@@ -107,6 +107,17 @@ async function coordinateProblem(item) {
       if (!rel) return `${item.repo} has no release to read`;
       return rel.assets.some((n) => /\.(sql|lua)$/.test(n)) ? null : `${rel.tag} of ${item.repo} ships no .sql or .lua file to run`;
     }
+    case "vm-appliance": {
+      // The person downloads the image; the pattern must anchor, the page must be https, the machine needs a name.
+      try {
+        new RegExp(s.imagePattern);
+      } catch {
+        return `image pattern /${s.imagePattern}/ does not compile`;
+      }
+      if (!s.imagePattern.startsWith("^") || !s.imagePattern.endsWith("$")) return "image pattern is not anchored";
+      if (!/^https:\/\//.test(s.downloadPage ?? "")) return "download page is not an https URL";
+      return s.vmName && /^[A-Za-z0-9 _.-]{1,64}$/.test(s.vmName) ? null : `machine name ${JSON.stringify(s.vmName)} is not plain`;
+    }
     case "slc":
       // The official launcher owns these; an alias must be one word it accepts.
       return s.alias === undefined || /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(s.alias) ? null : `alias ${JSON.stringify(s.alias)} is not one word`;

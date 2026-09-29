@@ -56,6 +56,9 @@ export type Install =
   /** SQL and Lua scripts run into a schema on a connection the person chose,
    *  after they have reviewed every statement. */
   | "db-scripts"
+  /** A database image imported into the hypervisor on this machine (x86-64
+   *  only); the person downloads it from the publisher's sign-up page. */
+  | "vm-appliance"
   | "reference";
 
 import type { InstallSource } from "@/lib/ipc";
@@ -199,7 +202,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "saas-cli", repo: "exasol-labs/saas-cli", kind: "cli", install: "binary", labs: true, source: { kind: "gh-asset", onPath: true } },
   { id: "exaplus-lua", repo: "exasol-labs/exaplus-lua", kind: "cli", install: "binary", labs: true, source: { kind: "gh-asset", onPath: true } },
   { id: "starter-kit", repo: "exasol-labs/exasol-personal-local-starterkit", kind: "cli", install: "reference", labs: true },
-  { id: "community-edition", repo: "exasol-labs/exasol-labs-community-edition", kind: "database", install: "reference", labs: true },
+  { id: "community-edition", repo: "exasol-labs/exasol-labs-community-edition", kind: "database", install: "vm-appliance", labs: true, source: { kind: "vm-appliance", imagePattern: "^Exasol_Community_Edition_v8_\\d+_(virtualbox|vmware)\\.ova$", downloadPage: "https://www.exasol.com/free-signup-community-edition/", vmName: "Exasol Community Edition" } },
   // Second pass over the release-bearing repositories: these are deployed or
   // installed by a person, unlike the Maven plugins, pytest fixtures and
   // shared libraries that make up most of what is left.

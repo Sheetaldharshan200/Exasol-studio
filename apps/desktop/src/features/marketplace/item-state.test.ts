@@ -140,3 +140,12 @@ test("database-side items say where they live; a container the launcher lists is
   const any = item({ id: "script-languages-release", install: "slc", source: { kind: "slc" } });
   assert.equal(itemState(any, sources({ detected: { "slc:PYTHON3": true } })).kind, "install", "without an alias nothing is claimed");
 });
+
+test("a virtual-machine image is unavailable on ARM, on this system when VirtualBox lists it, else installable", () => {
+  const ce = item({ id: "community-edition", install: "vm-appliance", kind: "database", source: { kind: "vm-appliance", imagePattern: "^x$", downloadPage: "https://e/", vmName: "Exasol Community Edition" } });
+  assert.deepEqual(itemState(ce, sources()), { kind: "unavailable", platform: "Apple Silicon / ARM" }, "the default test host is an arm64 Mac");
+  const intel = { os: "macos", arch: "x86_64" };
+  assert.equal(itemState(ce, sources({ env: intel })).kind, "install");
+  assert.equal(itemState(ce, sources({ env: intel, detected: { "vm:Exasol Community Edition": true } })).kind, "onSystem");
+  assert.equal(itemState(ce, sources({ env: intel, installed: { "community-edition": { id: "community-edition", version: "2025.2.1", path: "", filename: "", vm: { hypervisor: "virtualbox", name: "Exasol Community Edition" } } } })).kind, "installed");
+});

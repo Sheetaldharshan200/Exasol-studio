@@ -167,6 +167,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Show every statement, the connection and the schema for review",
         "On confirmation, run them on that connection — the record names the connection, so removal undoes exactly this",
       ];
+    case "vm-appliance":
+      return [
+        "Check this machine: an x86-64 host with VirtualBox or VMware (the image does not run on Apple Silicon / ARM)",
+        "Find the image you downloaded from the sign-up page in Downloads — or open that page and stop, recording nothing",
+        "Import it as a named machine and start it (VirtualBox), or hand it to VMware; no checksum is published, so the import is unverified",
+      ];
     case "reference":
       return ["Opens the official download / documentation page"];
     case "personal-local":
@@ -745,9 +751,10 @@ export function Marketplace() {
     }
   }
 
-  /** Whether removing this item changes a database or the local runtime —
-   *  then the first click only asks. */
-  const removesFromDatabase = (item: CatalogItem) => item.source?.kind === "db-scripts" || item.source?.kind === "slc";
+  /** Whether removing this item changes a database, the local runtime or a
+   *  virtual machine — then the first click only asks. */
+  const removesFromDatabase = (item: CatalogItem) =>
+    item.source?.kind === "db-scripts" || item.source?.kind === "slc" || item.source?.kind === "vm-appliance";
 
   async function uninstall(item: CatalogItem) {
     if (removesFromDatabase(item) && !confirmRemove[item.id]) {
@@ -1323,7 +1330,11 @@ export function Marketplace() {
                   confirmRemove[item.id]
                     ? item.source?.kind === "slc"
                       ? `Removes the ${inst.alias ?? "container"} language container from the local database.`
-                      : `Drops what this install created${inst.connection ? ` on ${inst.connection.name}` : ""}; the schema only if it was created here.`
+                      : item.source?.kind === "vm-appliance"
+                        ? inst.vm?.hypervisor === "vmware"
+                          ? `Forgets the record; delete "${inst.vm.name}" in VMware yourself. The image in Downloads stays.`
+                          : `Powers off "${inst.vm?.name ?? "the machine"}" and deletes it with its disks — everything inside is destroyed. The image in Downloads stays.`
+                        : `Drops what this install created${inst.connection ? ` on ${inst.connection.name}` : ""}; the schema only if it was created here.`
                     : undefined
                 }
                 className={cn(
@@ -1337,7 +1348,11 @@ export function Marketplace() {
                 {confirmRemove[item.id]
                   ? item.source?.kind === "slc"
                     ? `Confirm: remove ${inst.alias ?? "container"} from the local database`
-                    : `Confirm: drop from ${inst.connection?.name ?? "the database"}`
+                    : item.source?.kind === "vm-appliance"
+                      ? inst.vm?.hypervisor === "vmware"
+                        ? "Confirm: forget the machine"
+                        : `Confirm: delete "${inst.vm?.name ?? "the machine"}" and its disks`
+                      : `Confirm: drop from ${inst.connection?.name ?? "the database"}`
                   : removesFromDatabase(item)
                     ? "Remove…"
                     : "Uninstall"}

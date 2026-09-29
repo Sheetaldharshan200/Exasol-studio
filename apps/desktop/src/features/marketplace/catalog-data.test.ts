@@ -156,7 +156,7 @@ test("every package-installed item carries its coordinate — none is installed 
   // item. The installer now dispatches on the item's `source`; an item of one
   // of these kinds WITHOUT a source would fail on click with "no coordinate",
   // which is a regression this catches before it ships.
-  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary", "host-plugin", "deliver", "slc", "db-scripts"]);
+  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary", "host-plugin", "deliver", "slc", "db-scripts", "vm-appliance"]);
   for (const item of CATALOG) {
     if (!byCoordinate.has(item.install)) continue;
     assert.ok(item.source, `${item.id} (${item.install}) has no install coordinate`);

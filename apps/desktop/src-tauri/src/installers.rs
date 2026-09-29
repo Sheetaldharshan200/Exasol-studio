@@ -85,6 +85,108 @@ pub enum InstallSource {
     DbScripts {
         schema: String,
     },
+    /// A database image imported into the hypervisor on this machine. The
+    /// publisher fixes the bounds: x86-64 hosts only, downloaded by the person
+    /// from a sign-up page, no digest published.
+    #[serde(rename_all = "camelCase")]
+    VmAppliance {
+        image_pattern: String,
+        download_page: String,
+        vm_name: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Hypervisor {
+    Virtualbox,
+    Vmware,
+}
+
+impl Hypervisor {
+    pub fn label(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "VirtualBox",
+            Hypervisor::Vmware => "VMware",
+        }
+    }
+    /// The word the publisher puts in the image's file name for this hypervisor.
+    pub fn flavor(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "virtualbox",
+            Hypervisor::Vmware => "vmware",
+        }
+    }
+    pub fn download_page(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "https://www.virtualbox.org/wiki/Downloads",
+            Hypervisor::Vmware => "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion",
+        }
+    }
+}
+
+/// Where each hypervisor's command or application lives on an OS, in the
+/// order Studio prefers them: VirtualBox first, because Studio can drive it.
+pub fn hypervisor_candidates(os: &str) -> Vec<(Hypervisor, &'static str)> {
+    match os {
+        "macos" => vec![
+            (Hypervisor::Virtualbox, "/usr/local/bin/VBoxManage"),
+            (Hypervisor::Virtualbox, "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage"),
+            (Hypervisor::Vmware, "/Applications/VMware Fusion.app"),
+        ],
+        "windows" => vec![
+            (Hypervisor::Virtualbox, r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"),
+            (Hypervisor::Vmware, r"C:\Program Files (x86)\VMware\VMware Workstation\vmware.exe"),
+        ],
+        _ => vec![
+            (Hypervisor::Virtualbox, "/usr/bin/VBoxManage"),
+            (Hypervisor::Virtualbox, "/usr/local/bin/VBoxManage"),
+            (Hypervisor::Vmware, "/usr/bin/vmware"),
+        ],
+    }
+}
+
+/// The hypervisors present, each with the first of its candidates that exists.
+pub fn find_hypervisors(os: &str, exists: impl Fn(&str) -> bool) -> Vec<(Hypervisor, String)> {
+    let mut found: Vec<(Hypervisor, String)> = Vec::new();
+    for (hv, path) in hypervisor_candidates(os) {
+        if !found.iter().any(|(h, _)| *h == hv) && exists(path) {
+            found.push((hv, path.to_string()));
+        }
+    }
+    found
+}
+
+/// The downloaded image to import: matches the pattern and names the flavor
+/// of a hypervisor that is present, preferring the hypervisors in the order
+/// given and the newest file name within one.
+pub fn pick_image(files: &[String], pattern: &regex::Regex, hypervisors: &[Hypervisor]) -> Option<(Hypervisor, String)> {
+    for hv in hypervisors {
+        let mut hits: Vec<&String> =
+            files.iter().filter(|f| pattern.is_match(f) && f.to_ascii_lowercase().contains(hv.flavor())).collect();
+        hits.sort();
+        if let Some(newest) = hits.last() {
+            return Some((*hv, (*newest).clone()));
+        }
+    }
+    None
+}
+
+/// A machine name Studio will hand to a hypervisor: printable, no quotes.
+pub fn valid_vm_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-' | '.'))
+}
+
+/// Whether `VBoxManage list vms` already names the machine (`"Name" {uuid}` per line).
+pub fn vm_registered(list_output: &str, vm_name: &str) -> bool {
+    list_output.lines().any(|l| l.trim_start().starts_with(&format!("\"{vm_name}\"")))
+}
+
+/// `VBoxManage import` arguments for an image, as a named machine.
+pub fn vbox_import_args(ova: &str, vm_name: &str) -> Vec<String> {
+    vec!["import".into(), ova.into(), "--vsys".into(), "0".into(), "--vmname".into(), vm_name.into()]
 }
 
 /// A language alias the launcher accepts: one plain word.
@@ -354,6 +456,36 @@ pub fn stale_links<'a>(links: &'a [(String, std::path::PathBuf)], dir: &std::pat
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hypervisors_are_found_in_preference_order_and_images_matched_to_them() {
+        use super::Hypervisor::*;
+        use super::{find_hypervisors, hypervisor_candidates, pick_image, valid_vm_name, vbox_import_args, vm_registered};
+        for os in ["macos", "windows", "linux"] {
+            assert!(hypervisor_candidates(os).iter().any(|(h, _)| *h == Virtualbox), "{os} knows VirtualBox");
+            assert!(hypervisor_candidates(os).iter().any(|(h, _)| *h == Vmware), "{os} knows VMware");
+        }
+        let both = find_hypervisors("macos", |p| p.ends_with("VBoxManage") || p.ends_with("Fusion.app"));
+        assert_eq!(both, vec![(Virtualbox, "/usr/local/bin/VBoxManage".to_string()), (Vmware, "/Applications/VMware Fusion.app".to_string())]);
+        assert!(find_hypervisors("linux", |_| false).is_empty());
+        let only_app = find_hypervisors("macos", |p| p == "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage");
+        assert_eq!(only_app, vec![(Virtualbox, "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage".to_string())]);
+
+        let pattern = regex::Regex::new(r"^Exasol_Community_Edition_v8_\d+_(virtualbox|vmware)\.ova$").unwrap();
+        let files: Vec<String> = ["Exasol_Community_Edition_v8_202501_virtualbox.ova", "Exasol_Community_Edition_v8_202502_virtualbox.ova", "Exasol_Community_Edition_v8_202502_vmware.ova", "Exasol_Community_Edition_v8_202502_virtualbox.ova.part", "notes.txt"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(pick_image(&files, &pattern, &[Virtualbox, Vmware]), Some((Virtualbox, "Exasol_Community_Edition_v8_202502_virtualbox.ova".into())), "VirtualBox first, newest name wins, partial downloads ignored");
+        assert_eq!(pick_image(&files, &pattern, &[Vmware]), Some((Vmware, "Exasol_Community_Edition_v8_202502_vmware.ova".into())));
+        assert_eq!(pick_image(&files[3..], &pattern, &[Virtualbox, Vmware]), None);
+
+        assert!(vm_registered("\"exakit-linux\" {dc4ec131}\n\"Exasol Community Edition\" {aa}\n", "Exasol Community Edition"));
+        assert!(!vm_registered("\"Exasol Community Edition 2\" {aa}\n", "Exasol Community Edition"));
+        assert!(!vm_registered("", "Exasol Community Edition"));
+        assert!(valid_vm_name("Exasol Community Edition") && !valid_vm_name("") && !valid_vm_name("a\"b") && !valid_vm_name("x;rm"));
+        assert_eq!(vbox_import_args("/d/x.ova", "Exasol Community Edition"), vec!["import", "/d/x.ova", "--vsys", "0", "--vmname", "Exasol Community Edition"]);
+        let src: super::InstallSource = serde_json::from_str(r#"{"kind":"vm-appliance","imagePattern":"^x$","downloadPage":"https://e/","vmName":"E"}"#).unwrap();
+        assert_eq!(src, super::InstallSource::VmAppliance { image_pattern: "^x$".into(), download_page: "https://e/".into(), vm_name: "E".into() });
+    }
+
     #[test]
     fn database_side_coordinates_deserialize_and_aliases_are_one_word() {
         let slc: super::InstallSource = serde_json::from_str(r#"{"kind":"slc"}"#).unwrap();

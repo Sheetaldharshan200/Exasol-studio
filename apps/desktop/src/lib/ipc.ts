@@ -328,6 +328,8 @@ export type InstalledItem = {
   connection?: { id: string; name: string };
   /** The language alias a container install registered. */
   alias?: string;
+  /** The machine an appliance import created, and which hypervisor holds it. */
+  vm?: { hypervisor: "virtualbox" | "vmware"; name: string };
 };
 
 export type CatalogEntry = {
@@ -376,7 +378,10 @@ export type InstallSource =
   | { kind: "slc"; alias?: string }
   /** SQL and Lua scripts run into a schema on a chosen connection; `schema`
    *  is the default the person may change. */
-  | { kind: "db-scripts"; schema: string };
+  | { kind: "db-scripts"; schema: string }
+  /** A database image imported into the hypervisor on this machine: x86-64
+   *  only, downloaded by the person from a sign-up page, no digest published. */
+  | { kind: "vm-appliance"; imagePattern: string; downloadPage: string; vmName: string };
 /** What a script library's install would run, for review before it does. */
 export type ScriptPlan = { version: string; files: string[]; statements: string[] };
 /** One language container the launcher offers, and whether it is installed. */

@@ -107,6 +107,12 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
   }
   // A language container registered by whoever: the launcher lists it.
   if (item.source?.kind === "slc" && item.source.alias && s.detected[`slc:${item.source.alias.toUpperCase()}`]) return { kind: "onSystem" };
+  // A virtual-machine image runs on x86-64 hosts only; a machine of its name
+  // that VirtualBox already lists — imported by whoever — is on this system.
+  if (item.source?.kind === "vm-appliance") {
+    if (s.env && s.env.arch !== "x86_64") return { kind: "unavailable", platform: s.env.arch === "aarch64" ? "Apple Silicon / ARM" : s.env.arch };
+    if (s.detected[`vm:${item.source.vmName}`]) return { kind: "onSystem" };
+  }
   if (s.detected[item.id]) {
     if (item.id === "exasol-personal" && s.detected["exasol-personal:running"]) return { kind: "running", installed: null, available: null };
     return { kind: "onSystem" };
