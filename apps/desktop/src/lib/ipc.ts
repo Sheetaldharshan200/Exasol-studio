@@ -359,7 +359,7 @@ export type InstallSource =
   /** Built into one of Studio's own driver runtimes. */
   | { kind: "driver-runtime"; driver: "r" | "odbc" }
   /** A plugin for another application. Studio fetches and verifies it and reveals the folder; it does not write there. */
-  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" };
+  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" | "azure-functions" };
 
 /** What an install needs to know about its item — never just the id. */
 export type InstallTarget = { id: string; install?: string; repo?: string; source?: InstallSource };

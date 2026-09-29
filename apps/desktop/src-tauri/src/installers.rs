@@ -197,6 +197,7 @@ pub fn host_plugin_destination(host: &str, os: &str) -> Option<String> {
         ("tableau", _) => "Copy it to ~/Documents/My Tableau Repository/Connectors and restart Tableau.".into(),
         ("metabase", _) => "Copy it into the plugins/ directory beside your Metabase jar and restart Metabase.".into(),
         ("powerapps", _) => "Upload it in Power Apps: Data → Custom connectors → Import an OpenAPI file.".into(),
+        ("azure-functions", _) => "Deploy the zip to an Azure Functions app: `az functionapp deployment source config-zip -g <group> -n <app> --src <file>`, then reference the functions from your Data Factory pipeline.".into(),
         _ => return None,
     })
 }
@@ -446,7 +447,7 @@ mod tests {
 
     #[test]
     fn every_host_has_a_destination_and_windows_only_hosts_say_so_elsewhere() {
-        for host in ["vscode", "powerbi", "tableau", "metabase", "powerapps"] {
+        for host in ["vscode", "powerbi", "tableau", "metabase", "powerapps", "azure-functions"] {
             for os in ["macos", "windows", "linux"] {
                 assert!(host_plugin_destination(host, os).is_some(), "{host}/{os}");
             }
