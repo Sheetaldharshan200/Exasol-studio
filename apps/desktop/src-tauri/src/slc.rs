@@ -94,6 +94,12 @@ pub async fn market_slc_catalog(app: AppHandle) -> AppResult<Vec<SlcChoice>> {
             .args(["slc", "list", "--json", "--deployment-dir", &dep])
             .output()
             .map_err(|e| AppError::Storage(format!("Could not run the Exasol launcher: {e}")))?;
+        if !output.status.success() {
+            return Err(AppError::Storage(format!(
+                "The launcher could not list containers: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         let list: Value = serde_json::from_slice(&output.stdout)
             .map_err(|_| AppError::Storage("The launcher's container list could not be read.".into()))?;
         Ok(slc_choices_from(&list))

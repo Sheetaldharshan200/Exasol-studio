@@ -65,9 +65,27 @@ pub fn valid_identifier(s: &str) -> bool {
         && s.len() <= 128
 }
 
-/// An exact identifier, quoted. Callers pass names already normalised.
+/// An exact identifier, quoted; a quote inside is doubled, as SQL wants.
 fn quoted(exact: &str) -> String {
-    format!("\"{exact}\"")
+    format!("\"{}\"", exact.replace('"', "\"\""))
+}
+
+/// The object kinds an install may create — and the only words `DROP` will
+/// ever be given.
+const TRACKED_KINDS: [&str; 5] = ["SCRIPT", "ADAPTER SCRIPT", "FUNCTION", "TABLE", "VIEW"];
+
+impl DbRecord {
+    /// A record is read back from a file before its names go into `DROP`
+    /// statements; it is trusted no further than the identifiers it holds.
+    pub fn validate(&self) -> AppResult<()> {
+        let ok = valid_identifier(&self.schema)
+            && self.objects.iter().all(|o| valid_identifier(&o.name) && TRACKED_KINDS.contains(&o.kind.as_str()));
+        if ok {
+            Ok(())
+        } else {
+            Err(AppError::Storage("The install record names objects Studio will not put into a statement — nothing was dropped.".into()))
+        }
+    }
 }
 
 /// Split a bundle of scripts into statements. Exasol's convention for such a
@@ -138,6 +156,13 @@ pub fn created_objects(statements: &[String]) -> Vec<DbObject> {
         .filter_map(|s| create_target(s))
         .filter_map(|(kind, _, name)| seen.insert(format!("{kind} {name}")).then_some(DbObject { kind, name }))
         .collect()
+}
+
+/// Statements an install will not run: anything but `CREATE` of a tracked
+/// kind. A `CREATE SCHEMA`, a `GRANT`, an `ALTER SYSTEM` or a `DROP` would
+/// change the database in a way the record cannot undo.
+pub fn untracked_statements(statements: &[String]) -> Vec<String> {
+    statements.iter().filter(|s| create_target(s).is_none()).map(|s| headline(s)).collect()
 }
 
 /// Statements whose CREATE names a schema other than the chosen one — they
@@ -218,6 +243,13 @@ pub fn statements_for(schema: &str, files: &[(String, String)]) -> AppResult<(Ve
             objects.push(object);
         } else {
             let split = split_bundle(content);
+            let untracked = untracked_statements(&split);
+            if !untracked.is_empty() {
+                return Err(AppError::Storage(format!(
+                    "{name} holds statements Studio will not run into your database (only CREATE of scripts, functions, tables and views is): {}",
+                    untracked.join("; ")
+                )));
+            }
             let foreign = foreign_targets(&split, schema);
             if !foreign.is_empty() {
                 return Err(AppError::Storage(format!(
@@ -383,14 +415,21 @@ pub async fn install(
         crate::market::emit_log(app, id, headline(statement), "cmd");
         if let Err(error) = run(&mut conn, statement).await {
             let undo = drop_statements(&done);
+            let mut left = Vec::new();
             for stmt in &undo {
-                let _ = run(&mut conn, stmt).await;
+                if run(&mut conn, stmt).await.is_err() {
+                    left.push(stmt.clone());
+                }
             }
-            return Err(AppError::Storage(format!(
-                "{error} Rolled back the {} statement(s) that had run{}.",
-                undo.len(),
-                if created_schema { " and the new schema" } else { "" }
-            )));
+            return Err(AppError::Storage(if left.is_empty() {
+                format!(
+                    "{error} Rolled back the {} statement(s) that had run{}.",
+                    undo.len(),
+                    if created_schema { " and the new schema" } else { "" }
+                )
+            } else {
+                format!("{error} Rollback could not undo: {}. Remove these by hand.", left.join("; "))
+            }));
         }
         if let Some(object) = created_objects(std::slice::from_ref(statement)).pop() {
             if !done.objects.contains(&object) {
@@ -404,6 +443,7 @@ pub async fn install(
 
 /// Undo an install: drop what it created, on the connection it used.
 pub async fn uninstall(app: &AppHandle, record: &DbRecord) -> AppResult<()> {
+    record.validate()?;
     let state = app.state::<crate::state::AppState>();
     crate::connection::connect(app.state(), record.connection.id.clone()).await?;
     let pool = crate::connection::require_pool(&state, &record.connection.id).await?;
@@ -536,6 +576,25 @@ mod tests {
         let mut changed = statements.clone();
         changed[1].push_str(" -- tampered");
         assert_ne!(fp, fingerprint(&changed), "any change to any statement changes it");
+    }
+
+    #[test]
+    fn only_tracked_creates_run_and_a_record_is_validated_before_it_drops_anything() {
+        let stmts: Vec<String> = ["CREATE SCHEMA OTHER", "GRANT SELECT ON T TO PUBLIC", "ALTER SYSTEM SET X = 1", "DROP TABLE T", "CREATE OR REPLACE SCRIPT S AS x"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(untracked_statements(&stmts), vec!["CREATE SCHEMA OTHER", "GRANT SELECT ON T TO PUBLIC", "ALTER SYSTEM SET X = 1", "DROP TABLE T"]);
+        let files = vec![("s.sql".to_string(), "CREATE SCHEMA OTHER;\nCREATE TABLE T(a INT);".to_string())];
+        assert!(statements_for("EXA_RLS", &files).unwrap_err().to_string().contains("CREATE SCHEMA OTHER"));
+
+        let good = DbRecord { connection: Connection { id: "p".into(), name: "P".into() }, schema: "EXA_RLS".into(), created_schema: false, objects: vec![DbObject { kind: "SCRIPT".into(), name: "A".into() }] };
+        assert!(good.validate().is_ok());
+        let bad_schema = DbRecord { schema: "X\"; DROP SCHEMA Y; --".into(), ..good.clone() };
+        assert!(bad_schema.validate().is_err());
+        let bad_kind = DbRecord { objects: vec![DbObject { kind: "SCHEMA".into(), name: "A".into() }], ..good.clone() };
+        assert!(bad_kind.validate().is_err());
+        let bad_name = DbRecord { objects: vec![DbObject { kind: "TABLE".into(), name: "a.b".into() }], ..good };
+        assert!(bad_name.validate().is_err());
+        assert_eq!(quoted("a\"b"), "\"a\"\"b\"", "a quote inside an identifier is doubled");
     }
 
     #[test]

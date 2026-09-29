@@ -84,12 +84,10 @@ pub(crate) fn install(
             format!("Imported into VirtualBox as \"{vm_name}\" and started. The database is ready when its window shows RUNNING; connect to the address shown there on port 8563. The image stays in Downloads.")
         }
         Hypervisor::Vmware => {
-            let status = match os {
-                "macos" => Command::new("open").args(["-a", "VMware Fusion", &ova_s]).status(),
-                "windows" => Command::new("cmd").args(["/C", "start", "", &ova_s]).status(),
-                _ => Command::new("xdg-open").arg(&ova_s).status(),
-            };
-            if !status.map(|s| s.success()).unwrap_or(false) {
+            // Opened through the system's file association, shell-free: the
+            // file name never reaches a command line.
+            use tauri_plugin_opener::OpenerExt;
+            if app.opener().open_path(&ova_s, None::<&str>).is_err() {
                 return Err(AppError::Storage(format!("Could not hand {file} to VMware. Open it from {} yourself.", downloads.display())));
             }
             format!("Handed {file} to VMware; finish the import in its window. VMware owns the machine from here — remove it there when you no longer need it.")
