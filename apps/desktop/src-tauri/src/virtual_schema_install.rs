@@ -177,6 +177,34 @@ pub(crate) fn slc_aliases_from(list: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Pure: the staged files an adapter's pattern names — directly under `vs/`
+/// and nowhere else, so a pattern can never reach the rest of the bucket.
+pub(crate) fn staged_matches(bucket_files: &[String], pattern: &regex::Regex) -> Vec<String> {
+    bucket_files
+        .iter()
+        .filter(|f| f.strip_prefix("vs/").map(|name| !name.contains('/') && pattern.is_match(name)).unwrap_or(false))
+        .cloned()
+        .collect()
+}
+
+/// Un-stage an adapter: remove the files its pattern names from the managed
+/// local database's default bucket. Returns what was removed; nothing staged
+/// is not an error. The adapter script in the database, if a schema was
+/// attached with it, belongs to that schema and is dropped with it.
+#[tauri::command]
+pub async fn vs_unstage_adapter(app: AppHandle, asset_pattern: String) -> AppResult<Vec<String>> {
+    let pattern = regex::Regex::new(&asset_pattern).map_err(|e| AppError::Storage(format!("Bad asset pattern: {e}")))?;
+    let bucket = exa_dir(&app)?.join(BUCKET_DIR);
+    if !bucket.is_dir() {
+        return Ok(Vec::new());
+    }
+    let matches = staged_matches(&relative_files(&bucket), &pattern);
+    for file in &matches {
+        std::fs::remove_file(bucket.join(file))?;
+    }
+    Ok(matches)
+}
+
 #[tauri::command]
 pub async fn vs_local_state(app: AppHandle) -> AppResult<LocalState> {
     let Ok(exa) = exa_dir(&app) else {
@@ -522,6 +550,16 @@ mod tests {
         let files = relative_files(&root);
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(files, vec!["top.txt".to_string(), "vs/a.jar".to_string()]);
+        let staged = vec![
+            "vs/postgresql-virtual-schema-dist-12.0.0-postgresql-3.0.0.jar".to_string(),
+            "vs/postgresql-8.0.0.jar".to_string(),
+            "vs/nested/postgresql-virtual-schema-dist-1.jar".to_string(),
+            "slc/postgresql-virtual-schema-dist-1.jar".to_string(),
+            "postgresql-virtual-schema-dist-1.jar".to_string(),
+        ];
+        let pattern = regex::Regex::new(r"^postgresql-virtual-schema-dist-.*\.jar$").unwrap();
+        assert_eq!(staged_matches(&staged, &pattern), vec!["vs/postgresql-virtual-schema-dist-12.0.0-postgresql-3.0.0.jar".to_string()]);
+        assert!(staged_matches(&staged, &regex::Regex::new(r"^nothing$").unwrap()).is_empty());
         assert!(relative_files(Path::new("/definitely/not/here")).is_empty());
     }
 }

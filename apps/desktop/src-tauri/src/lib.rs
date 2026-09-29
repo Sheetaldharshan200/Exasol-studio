@@ -134,6 +134,7 @@ pub fn run() {
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
             virtual_schema_install::vs_stage_adapter,
+            virtual_schema_install::vs_unstage_adapter,
             virtual_schema_install::vs_local_state,
             files::write_text_file,
             print::print_html,

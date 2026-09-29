@@ -634,6 +634,8 @@ export const ipc = {
   vsLocalState: () => call<VsLocalState>("vs_local_state"),
   /** Stage an adapter (and its driver) into the managed local Exasol; installs the Java SLC and restarts once if needed. */
   vsStageAdapter: (req: VsStageRequest) => call<VsStageResult>("vs_stage_adapter", { req }),
+  /** Remove an adapter's staged files from the local database's bucket; returns what went. */
+  vsUnstageAdapter: (assetPattern: string) => call<string[]>("vs_unstage_adapter", { assetPattern }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
 

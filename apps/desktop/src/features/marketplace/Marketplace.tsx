@@ -676,6 +676,29 @@ export function Marketplace() {
     }
   }
 
+  /** Remove an adapter's staged files from the local database's bucket — asks first. */
+  async function unstageVsAdapter(item: CatalogItem) {
+    const adapter = vsAdapterFor(item.id);
+    if (!adapter) return;
+    if (!confirmRemove[item.id]) {
+      setConfirmRemove((m) => ({ ...m, [item.id]: true }));
+      return;
+    }
+    setConfirmRemove(({ [item.id]: _asked, ...rest }) => rest);
+    setVsStaging((m) => ({ ...m, [item.id]: { busy: true, message: null, failed: false } }));
+    try {
+      const removed = await ipc.vsUnstageAdapter(adapter.release.asset);
+      const message = removed.length
+        ? `Removed ${removed.join(", ")} from the database's bucket.`
+        : "Nothing of this adapter was staged in the local database.";
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: false, message } }));
+    } catch (e) {
+      const message = errorMessage(e);
+      console.error(`[marketplace] un-staging ${adapter.repo} failed: ${message}`);
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message } }));
+    }
+  }
+
   // Install every item in a recommended pack, in parallel — skipping what the
   // user already has (explicit per-item Reinstall still bypasses this).
   function installPack(pack: Pack) {
@@ -1019,6 +1042,22 @@ export function Marketplace() {
               {vs?.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {vs?.busy ? "Staging…" : vs?.failed ? "Retry staging" : `Stage${version ? ` ${version}` : ""} into the database`}
             </button>
+            {vsAdapterFor(item.id)?.runtime !== "lua" ? (
+              <button
+                onClick={() => void unstageVsAdapter(item)}
+                disabled={vs?.busy}
+                title="Removes this adapter's files from the local database's bucket. A schema attached with it keeps its own adapter script."
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] disabled:opacity-50",
+                  confirmRemove[item.id]
+                    ? "border-destructive/60 text-destructive hover:bg-destructive/10"
+                    : "border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive",
+                )}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {confirmRemove[item.id] ? "Confirm: remove staged files" : "Remove from the database…"}
+              </button>
+            ) : null}
           </div>
           {vs?.message ? (
             <p className={cn("max-w-[420px] text-[12px] leading-relaxed", vs.failed ? "text-destructive" : "text-muted-foreground")}>
