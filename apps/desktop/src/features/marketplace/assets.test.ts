@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pickAsset, pickAssetFor } from "./assets.ts";
+import { needsReleaseAsset, pickAsset, pickAssetFor } from "./assets.ts";
 import type { MarketEnv, ReleaseAsset } from "@/lib/ipc";
 
 const a = (name: string): ReleaseAsset => ({ name, url: `https://x/${name}`, size: 1 });
@@ -94,4 +94,31 @@ test("a host plugin's pattern picks its file the same way a jar's does", () => {
     pickAssetFor({ source: { kind: "host-plugin", assetPattern: "^exasol-vscode-[\\d.]+\\.vsix$", host: "vscode" } }, assets, mac)?.name,
     "exasol-vscode-1.8.0.vsix",
   );
+});
+
+test("a desktop build is picked by its installer extension (panorama layout)", () => {
+  const assets = [
+    a("Exasol-Panorama_0.2.0_amd64.AppImage"),
+    a("Exasol-Panorama_0.2.0_amd64.AppImage.sig"),
+    a("Exasol-Panorama_0.2.0_amd64.deb"),
+    a("Exasol-Panorama_0.2.0_universal.dmg"),
+    a("Exasol-Panorama_0.2.0_x64_en-US.msi"),
+    a("Exasol-Panorama_0.2.0_x64-setup.exe"),
+    a("exasol-panorama-pwa-0.2.0.zip"),
+    a("exasol-panorama-pwa-0.2.0.zip.sha256"),
+  ];
+  assert.equal(pickAsset(assets, mac)?.name, "Exasol-Panorama_0.2.0_universal.dmg");
+  assert.equal(pickAsset(assets, linux)?.name, "Exasol-Panorama_0.2.0_amd64.AppImage");
+  assert.equal(pickAsset(assets, { os: "windows", arch: "x86_64" } as MarketEnv)?.name, "Exasol-Panorama_0.2.0_x64_en-US.msi");
+  // An ARM Linux host gets no build, not the amd64 one.
+  assert.equal(pickAsset(assets, { os: "linux", arch: "aarch64" } as MarketEnv), null);
+});
+
+test("only formats the release publishes need a release file", () => {
+  assert.equal(needsReleaseAsset({ install: "deliver", source: { kind: "deliver", format: "rockspec", assetPattern: "^x$" } }), true);
+  assert.equal(needsReleaseAsset({ install: "deliver", source: { kind: "deliver", format: "desktop-app" } }), true);
+  assert.equal(needsReleaseAsset({ install: "deliver", source: { kind: "deliver", format: "source" } }), false);
+  assert.equal(needsReleaseAsset({ install: "deliver", source: { kind: "deliver", format: "dbt-package" } }), false);
+  assert.equal(needsReleaseAsset({ install: "binary" }), true);
+  assert.equal(needsReleaseAsset({ install: "package", source: { kind: "repo-snapshot" } }), false);
 });

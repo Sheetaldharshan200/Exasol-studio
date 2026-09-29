@@ -26,6 +26,7 @@ export function versionSource(item: Pick<CatalogItem, "id" | "repo" | "install" 
         return { source: src.registry, reference: src.package };
       case "gh-asset":
       case "host-plugin":
+      case "deliver":
       case "pip-release":
       case "driver-runtime":
         return item.repo ? { source: "github", reference: item.repo } : null;

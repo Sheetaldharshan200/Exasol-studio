@@ -49,7 +49,7 @@ import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
 import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
-import { pickAssetFor } from "@/features/marketplace/assets";
+import { needsReleaseAsset, pickAssetFor } from "@/features/marketplace/assets";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
@@ -147,6 +147,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the plugin file from its newest release",
         "Verify it against the checksum the project publishes",
         "Reveal it in Studio's folder and say where it belongs — Studio does not write into another application's installation",
+      ];
+    case "deliver":
+      return [
+        needsReleaseAsset(item) ? "Download the file from the newest release" : "Download the release's source archive from GitHub",
+        "Verify it against the checksum the project publishes, when it publishes one",
+        "Reveal it in Studio's folder and say what to do with it — Studio does not install it into your own tools",
       ];
     case "reference":
       return ["Opens the official download / documentation page"];
@@ -890,7 +896,7 @@ export function Marketplace() {
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
     const assets = releases[item.id]?.assets ?? [];
-    return !((item.install === "binary" || item.install === "host-plugin") && assets.length > 0 && pickAssetFor(item, assets, env) === null);
+    return !(needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, env) === null);
   };
   // A card is also batch-selectable when it has an UPDATE available — installs
   // and updates are the same gesture ("everything is same"): managed

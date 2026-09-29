@@ -11,9 +11,9 @@ import type { InstallSource, MarketEnv, ReleaseAsset } from "@/lib/ipc";
 const METADATA = /(\.sha256|\.sha1|\.md5|\.asc|\.sig|\.txt|\.json|(^|[^a-z])sha256sums?)$/i;
 
 const OS_TOKENS: Record<string, string[]> = {
-  macos: ["darwin", "macos", "apple", "osx"],
+  macos: ["darwin", "macos", "apple", "osx", ".dmg"],
   windows: ["windows", "win32", "win64", "win-", "win_", ".exe", ".msi"],
-  linux: ["linux"],
+  linux: ["linux", ".appimage", ".deb"],
 };
 const ALL_OS_TOKENS = [...new Set(Object.values(OS_TOKENS).flat())];
 
@@ -60,8 +60,16 @@ export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern
 
 /** The pattern an item's coordinate names, if it names one. */
 export function assetPatternOf(source: InstallSource | undefined): string | undefined {
-  if (source?.kind === "gh-asset" || source?.kind === "host-plugin") return source.assetPattern;
+  if (source?.kind === "gh-asset" || source?.kind === "host-plugin" || source?.kind === "deliver") return source.assetPattern;
   return undefined;
+}
+
+/** Whether an install can only proceed with a file from the release — so a
+ *  release that has files, but none for this host, means "unavailable". A
+ *  delivered source archive or dbt package needs only the tag. */
+export function needsReleaseAsset(item: { install: string; source?: InstallSource }): boolean {
+  if (item.install === "binary" || item.install === "host-plugin") return true;
+  return item.source?.kind === "deliver" && item.source.format !== "source" && item.source.format !== "dbt-package";
 }
 
 /** `pickAsset` for a catalogue item: its own pattern if it has one, else the

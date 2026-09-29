@@ -1916,6 +1916,61 @@ async fn install_from_maven(app: &AppHandle, id: &str, group: &str, artifact: &s
     Ok((v, note))
 }
 
+/// Download a file into the item's folder, check it against the `.sha256`
+/// its publisher put beside it (when there is one), and reveal it. This is
+/// the whole of what Studio does with a file it hands over rather than
+/// installs — host plugins and delivered files share it. Returns the path
+/// and whether a published checksum confirmed the bytes.
+async fn deliver_file(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<(String, bool)> {
+    let path = download_and_place_inner(app, id, url, filename, false).await?;
+    let sibling = {
+        let u = url.to_string();
+        tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&u)).await.ok().flatten()
+    };
+    verify_placed(&path, sibling.as_deref(), false)?;
+    if sibling.is_some() {
+        emit_log(app, id, "Checksum verified against the published .sha256.", "info");
+    } else {
+        emit_log(app, id, "No checksum is published for this file; it is saved exactly as downloaded.", "info");
+    }
+    let _ = reveal_path(path.clone());
+    Ok((path, sibling.is_some()))
+}
+
+fn verified_suffix(verified: bool) -> &'static str {
+    if verified {
+        " and verified"
+    } else {
+        ""
+    }
+}
+
+/// A delivered file: a release asset the frontend chose for formats the
+/// release publishes, else the tag's source archive from github.com.
+async fn deliver_from_source(
+    app: &AppHandle,
+    id: &str,
+    format: crate::installers::DeliverFormat,
+    repo: Option<&str>,
+    tag: Option<&str>,
+    url: Option<String>,
+    filename: Option<String>,
+) -> AppResult<String> {
+    let repo = repo.ok_or_else(|| AppError::Storage(format!("{id} has no repository to deliver from.")))?;
+    let (u, f) = if format.from_release_asset() {
+        match (url, filename) {
+            (Some(u), Some(f)) => (u, f),
+            _ => return Err(AppError::Storage("No release file was found for this platform.".into())),
+        }
+    } else {
+        let tag = tag.ok_or_else(|| AppError::Storage(format!("{repo} has no release tag to archive yet.")))?;
+        crate::installers::source_archive(repo, tag)
+    };
+    let (path, verified) = deliver_file(app, id, &u, &f).await?;
+    let step = crate::installers::deliver_instruction(format, repo, tag.unwrap_or("latest"), &f, std::env::consts::OS);
+    Ok(format!("{f} saved to {path}{}. {step}", verified_suffix(verified)))
+}
+
 /// Check a file that download_and_place wrote against a publisher's digest,
 /// deleting it on a mismatch so nothing unverified stays on disk.
 fn verify_placed(path: &str, expected: Option<&str>, sha1: bool) -> AppResult<()> {
@@ -2161,6 +2216,7 @@ async fn install_from_source(
         InstallSource::GhAsset { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this platform."))),
         // Handled by market_install_run, which has the chosen asset's url.
         InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this plugin."))),
+        InstallSource::Deliver { .. } => Err(AppError::Storage(format!("{id}: nothing to deliver was chosen."))),
     }
 }
 
@@ -2268,22 +2324,19 @@ pub async fn market_install_run(
         // installation (see the change proposal's non-goals).
         Some(crate::installers::InstallSource::HostPlugin { host, .. }) => match (url, filename) {
             (Some(u), Some(f)) => {
-                let path = download_and_place_inner(&app, &id, &u, &f, false).await?;
-                let sibling = {
-                    let u = u.clone();
-                    tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&u)).await.ok().flatten()
-                };
-                verify_placed(&path, sibling.as_deref(), false)?;
-                if sibling.is_some() {
-                    emit_log(&app, &id, "Checksum verified against the published .sha256.", "info");
-                }
-                let _ = reveal_path(path.clone());
+                let (path, verified) = deliver_file(&app, &id, &u, &f).await?;
                 let where_to = crate::installers::host_plugin_destination(host, std::env::consts::OS)
                     .unwrap_or_else(|| "Install it with the application it belongs to.".into());
-                Ok(format!("{f} downloaded to {path} and verified. {where_to}"))
+                Ok(format!("{f} downloaded to {path}{}. {where_to}", verified_suffix(verified)))
             }
             _ => Err(AppError::Storage("No downloadable asset was provided for this plugin.".into())),
         },
+        // A file for one of the person's own tools: the same delivery, with
+        // the next step spelled out from its format.
+        Some(crate::installers::InstallSource::Deliver { format, .. }) => {
+            let tag = requested.clone().or_else(|| version.clone().filter(|v| valid_version_tag(v)));
+            deliver_from_source(&app, &id, *format, repo.as_deref(), tag.as_deref(), url, filename).await
+        }
         Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
             .await
             .map(|(v, note)| {

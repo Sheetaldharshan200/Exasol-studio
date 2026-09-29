@@ -359,7 +359,12 @@ export type InstallSource =
   /** Built into one of Studio's own driver runtimes. */
   | { kind: "driver-runtime"; driver: "r" | "odbc" }
   /** A plugin for another application. Studio fetches and verifies it and reveals the folder; it does not write there. */
-  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" | "azure-functions" };
+  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" | "azure-functions" }
+  | { kind: "deliver"; format: DeliverFormat; assetPattern?: string };
+/** Formats of a delivered file; the next step is stated from the format. A
+ *  rockspec and a desktop build come from the release; the other two are the
+ *  tag's source archive. */
+export type DeliverFormat = "rockspec" | "dbt-package" | "source" | "desktop-app";
 
 /** What an install needs to know about its item — never just the id. */
 export type InstallTarget = { id: string; install?: string; repo?: string; source?: InstallSource };

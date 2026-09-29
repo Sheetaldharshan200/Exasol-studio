@@ -175,7 +175,7 @@ test("the mechanisms that are not a package are dispatched by install kind, and 
 
 test("every asset pattern compiles and anchors, so it cannot match a stray file by accident", () => {
   for (const item of CATALOG) {
-    if ((item.source?.kind !== "gh-asset" && item.source?.kind !== "host-plugin") || !item.source.assetPattern) continue;
+    if ((item.source?.kind !== "gh-asset" && item.source?.kind !== "host-plugin" && item.source?.kind !== "deliver") || !item.source.assetPattern) continue;
     const p = item.source.assetPattern;
     assert.doesNotThrow(() => new RegExp(p), `${item.id}: pattern compiles`);
     assert.ok(p.startsWith("^") && p.endsWith("$"), `${item.id}: pattern is anchored (${p})`);

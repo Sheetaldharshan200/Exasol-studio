@@ -46,6 +46,10 @@ export type Install =
    *  folder and revealed, with where it belongs spelled out. Studio never
    *  writes into another product's installation. */
   | "host-plugin"
+  /** A file for one of the person's own tools (a Lua rock, a dbt package, a
+   *  source archive, a desktop build): fetched and verified into Studio's
+   *  folder and revealed, with the next step stated from its format. */
+  | "deliver"
   | "reference";
 
 import type { InstallSource } from "@/lib/ipc";
@@ -181,8 +185,8 @@ export const CATALOG: CatalogItem[] = [
   { id: "power-apps-connector", repo: "exasol/power-apps-connector", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^power-apps-connector-certified-[\\d.]+\\.zip$", host: "powerapps" } },
   { id: "n8n-nodes", repo: "exasol/n8n-nodes", kind: "bi", install: "package", source: { kind: "registry", registry: "npm", package: "n8n-nodes-exasol" } },
   { id: "azure-data-factory", repo: "exasol/azure-data-factory-functions", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^adffunctions-[\\d.]+\\.zip$", host: "azure-functions" } },
-  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "reference", labs: true },
-  { id: "driver-lua", repo: "exasol/exasol-driver-lua", kind: "driver", install: "reference" },
+  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "deliver", labs: true, source: { kind: "deliver", format: "desktop-app" } },
+  { id: "driver-lua", repo: "exasol/exasol-driver-lua", kind: "driver", install: "deliver", source: { kind: "deliver", format: "rockspec", assetPattern: "^luasql-exasol-[\\d.]+-\\d+\\.rockspec$" } },
   { id: "bucketfs-python", repo: "exasol/bucketfs-python", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-bucketfs" } },
   { id: "saas-api-python", repo: "exasol/saas-api-python", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-saas-api" } },
   { id: "rest-api", repo: "exasol/exasol-rest-api", kind: "server", install: "binary", source: { kind: "gh-asset", onPath: true } },
@@ -198,9 +202,9 @@ export const CATALOG: CatalogItem[] = [
   { id: "cloudwatch-adapter", repo: "exasol/cloudwatch-adapter", kind: "extension", install: "reference" },
   { id: "row-level-security", repo: "exasol/row-level-security-lua", kind: "extension", install: "reference" },
   { id: "udf-api-java", repo: "exasol/udf-api-java", kind: "extension", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "udf-api-java" } },
-  { id: "dbt-exasol-utils", repo: "exasol/dbt-exasol-utils", kind: "extension", install: "reference" },
+  { id: "dbt-exasol-utils", repo: "exasol/dbt-exasol-utils", kind: "extension", install: "deliver", source: { kind: "deliver", format: "dbt-package" } },
   { id: "bucketfs-client", repo: "exasol/bucketfs-client", kind: "cli", install: "binary", source: { kind: "gh-asset", assetPattern: "^bfsc-[\\d.]+\\.jar$" } },
-  { id: "parquet-edml-generator", repo: "exasol/parquet-edml-generator", kind: "cli", install: "reference" },
+  { id: "parquet-edml-generator", repo: "exasol/parquet-edml-generator", kind: "cli", install: "deliver", source: { kind: "deliver", format: "source" } },
   { id: "slc-tool", repo: "exasol/script-languages-container-tool", kind: "cli", install: "uv-pip", source: { kind: "pypi", package: "exasol-script-languages-container-tool" } },
   { id: "bucketfs-java", repo: "exasol/bucketfs-java", kind: "driver", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "bucketfs-java" } },
   // ── Libraries & tooling ────────────────────────────────────────────────
@@ -227,7 +231,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "error-code-model-java", repo: "exasol/error-code-model-java", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "error-code-model-java" } },
   { id: "error-reporting-go", repo: "exasol/error-reporting-go", kind: "library", install: "package", source: { kind: "registry", registry: "goproxy", package: "github.com/exasol/error-reporting-go" } },
   { id: "error-reporting-java", repo: "exasol/error-reporting-java", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "error-reporting-java" } },
-  { id: "error-reporting-lua", repo: "exasol/error-reporting-lua", kind: "library", install: "reference" },
+  { id: "error-reporting-lua", repo: "exasol/error-reporting-lua", kind: "library", install: "deliver", source: { kind: "deliver", format: "rockspec", assetPattern: "^exaerror-[\\d.]+-\\d+\\.rockspec$" } },
   { id: "error-reporting-python", repo: "exasol/error-reporting-python", kind: "library", install: "uv-pip", source: { kind: "pypi", package: "exasol-error-reporting" } },
   { id: "exasol-java-tutorial", repo: "exasol/exasol-java-tutorial", kind: "library", install: "reference" },
   { id: "exasol-local-vm", repo: "exasol/exasol-local-vm", kind: "library", install: "reference" },
@@ -252,7 +256,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "python-extension-common", repo: "exasol/python-extension-common", kind: "library", install: "uv-pip", source: { kind: "pypi", package: "exasol-python-extension-common" } },
   { id: "python-toolbox", repo: "exasol/python-toolbox", kind: "library", install: "uv-pip", source: { kind: "pypi", package: "exasol-toolbox" } },
   { id: "release-droid", repo: "exasol/release-droid", kind: "library", install: "binary", source: { kind: "gh-asset", assetPattern: "^release-droid-[\\d.]+\\.jar$" } },
-  { id: "remotelog-lua", repo: "exasol/remotelog-lua", kind: "library", install: "reference" },
+  { id: "remotelog-lua", repo: "exasol/remotelog-lua", kind: "library", install: "deliver", source: { kind: "deliver", format: "source" } },
   { id: "schemas", repo: "exasol/schemas", kind: "library", install: "reference" },
   { id: "script-languages", repo: "exasol/script-languages", kind: "library", install: "reference" },
   { id: "script-languages-container-ci", repo: "exasol/script-languages-container-ci", kind: "library", install: "uv-pip", source: { kind: "pypi", package: "exasol-script-languages-container-ci" } },
@@ -268,7 +272,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "tutorials", repo: "exasol/tutorials", kind: "library", install: "reference" },
   { id: "udf-debugging-java", repo: "exasol/udf-debugging-java", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "udf-debugging-java" } },
   { id: "udf-mock-python", repo: "exasol/udf-mock-python", kind: "library", install: "uv-pip", source: { kind: "pypi", package: "exasol-udf-mock-python" } },
-  { id: "udf-runner-cpp", repo: "exasol/udf-runner-cpp", kind: "library", install: "reference" },
+  { id: "udf-runner-cpp", repo: "exasol/udf-runner-cpp", kind: "library", install: "deliver", source: { kind: "deliver", format: "source" } },
   { id: "virtual-schema-common-document", repo: "exasol/virtual-schema-common-document", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "virtual-schema-common-document" } },
   { id: "virtual-schema-common-document-files", repo: "exasol/virtual-schema-common-document-files", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "virtual-schema-common-document-files" } },
   { id: "virtual-schema-common-java", repo: "exasol/virtual-schema-common-java", kind: "library", install: "maven", source: { kind: "maven", group: "com.exasol", artifact: "virtual-schema-common-java" } },

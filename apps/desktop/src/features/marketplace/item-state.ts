@@ -1,7 +1,7 @@
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "./updates.ts";
 import type { InstalledItem, ReleaseAsset, MarketEnv } from "@/lib/ipc";
 import type { ResolvedCatalogItem } from "./catalog-data.ts";
-import { pickAssetFor } from "./assets.ts";
+import { needsReleaseAsset, pickAssetFor } from "./assets.ts";
 
 /**
  * What one catalog item IS right now — the single decision the card, the
@@ -102,7 +102,7 @@ export function itemState(item: ItemLike, s: ItemSources): ItemState {
     return { kind: "onSystem" };
   }
   const assets = s.releaseAssets(item.id);
-  if ((item.install === "binary" || item.install === "host-plugin") && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
+  if (needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, s.env) === null) {
     return { kind: "unavailable", platform: s.env?.os === "macos" ? "macOS" : (s.env?.os ?? "this platform") };
   }
   return { kind: "install", available: s.latestFor(item.id) };

@@ -64,6 +64,62 @@ pub enum InstallSource {
         asset_pattern: String,
         host: String,
     },
+    /// A file another tool of the person's consumes (a rock, a dbt package, a
+    /// source archive, a desktop build): fetched, verified and revealed, with
+    /// the next step stated from the FORMAT — never installed into that tool.
+    #[serde(rename_all = "camelCase")]
+    Deliver {
+        format: DeliverFormat,
+        #[serde(default)]
+        asset_pattern: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DeliverFormat {
+    Rockspec,
+    DbtPackage,
+    Source,
+    DesktopApp,
+}
+
+impl DeliverFormat {
+    /// Whether the file is one the release publishes. The other formats are
+    /// the tag's own source archive, which every tagged repository has.
+    pub fn from_release_asset(self) -> bool {
+        matches!(self, DeliverFormat::Rockspec | DeliverFormat::DesktopApp)
+    }
+}
+
+/// The github.com URL of a tag's source archive and a file name for it. It is
+/// served by github.com, not the API, so it never counts against the hourly
+/// allowance.
+pub fn source_archive(repo: &str, tag: &str) -> (String, String) {
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    (
+        format!("https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz"),
+        format!("{name}-{tag}.tar.gz"),
+    )
+}
+
+/// What to do with a delivered file, from its format and the host OS.
+pub fn deliver_instruction(format: DeliverFormat, repo: &str, tag: &str, file: &str, os: &str) -> String {
+    match format {
+        DeliverFormat::Rockspec => format!("Install it into your Lua environment with `luarocks install {file}`."),
+        DeliverFormat::DbtPackage => format!(
+            "Add it to your dbt project's packages.yml as `- git: \"https://github.com/{repo}.git\"` with `revision: \"{tag}\"`, then run `dbt deps`."
+        ),
+        DeliverFormat::Source => {
+            format!("This is the {tag} source archive of {repo}: unpack it and follow the project's README to build or use it.")
+        }
+        DeliverFormat::DesktopApp => match os {
+            "macos" => "Open the disk image and drag the application into Applications.".into(),
+            "windows" => "Run the installer.".into(),
+            _ if file.ends_with(".deb") => "Install it with your package manager: `sudo dpkg -i` on the file.".into(),
+            _ => "Make it executable and run it; an AppImage needs no installation.".into(),
+        },
+    }
 }
 
 /// A value at a path through a JSON reply, as a string.
@@ -280,6 +336,39 @@ pub fn stale_links<'a>(links: &'a [(String, std::path::PathBuf)], dir: &std::pat
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn deliver_formats_split_release_files_from_source_archives() {
+        use super::DeliverFormat::*;
+        assert!(Rockspec.from_release_asset());
+        assert!(DesktopApp.from_release_asset());
+        assert!(!DbtPackage.from_release_asset());
+        assert!(!Source.from_release_asset());
+        let src: super::InstallSource =
+            serde_json::from_str(r#"{"kind":"deliver","format":"dbt-package"}"#).unwrap();
+        assert_eq!(src, super::InstallSource::Deliver { format: DbtPackage, asset_pattern: None });
+        assert!(serde_json::from_str::<super::InstallSource>(r#"{"kind":"deliver","format":"wheel"}"#).is_err());
+    }
+
+    #[test]
+    fn source_archive_is_served_by_github_com_and_named_after_the_repo() {
+        let (url, file) = super::source_archive("exasol/dbt-exasol-utils", "v0.3.0");
+        assert_eq!(url, "https://github.com/exasol/dbt-exasol-utils/archive/refs/tags/v0.3.0.tar.gz");
+        assert_eq!(file, "dbt-exasol-utils-v0.3.0.tar.gz");
+    }
+
+    #[test]
+    fn deliver_instruction_comes_from_the_format_and_the_host() {
+        use super::{deliver_instruction, DeliverFormat::*};
+        assert!(deliver_instruction(Rockspec, "exasol/error-reporting-lua", "2.0.3", "exaerror-2.0.3-1.rockspec", "macos")
+            .contains("luarocks install exaerror-2.0.3-1.rockspec"));
+        let dbt = deliver_instruction(DbtPackage, "exasol/dbt-exasol-utils", "v0.3.0", "x.tar.gz", "linux");
+        assert!(dbt.contains("https://github.com/exasol/dbt-exasol-utils.git") && dbt.contains("v0.3.0") && dbt.contains("dbt deps"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App.dmg", "macos").contains("disk image"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App_amd64.deb", "linux").contains("dpkg"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App.AppImage", "linux").contains("AppImage"));
+        assert!(deliver_instruction(Source, "exasol/udf-runner-cpp", "0.1.0", "f", "linux").contains("0.1.0 source archive"));
+    }
+
     use super::*;
 
     #[test]
