@@ -2348,6 +2348,16 @@ pub async fn market_install_run(
     let result: AppResult<String> = match source.as_ref() {
         // A release asset for this platform is chosen by the frontend, which
         // knows the platform, and arrives as url + filename.
+        // A web build (Panorama): verified against the checksum beside it,
+        // unpacked into the item's folder, and linked nowhere — a tab serves it.
+        Some(crate::installers::InstallSource::GhAsset { .. }) if install.as_deref() == Some("web-app") => match (url, filename) {
+            (Some(u), Some(f)) => {
+                let (path, verified) = deliver_file(&app, &id, &u, &f).await?;
+                auto_extract_and_link(&app, &id, std::path::Path::new(&path));
+                Ok(format!("{f} downloaded{} and unpacked — open it from its tab.", verified_suffix(verified)))
+            }
+            _ => Err(AppError::Storage("No release file was found for this platform.".into())),
+        },
         Some(crate::installers::InstallSource::GhAsset { .. }) => from_asset(url, filename).await,
         // A plugin for another application: fetched and verified into Studio's
         // own folder, never extracted or linked, then revealed — with where it

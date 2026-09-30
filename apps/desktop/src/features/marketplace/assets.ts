@@ -71,7 +71,7 @@ export function assetPatternOf(source: InstallSource | undefined): string | unde
  *  release that has files, but none for this host, means "unavailable". A
  *  delivered source archive or dbt package needs only the tag. */
 export function needsReleaseAsset(item: { install: string; source?: InstallSource }): boolean {
-  if (item.install === "binary" || item.install === "host-plugin") return true;
+  if (item.install === "binary" || item.install === "host-plugin" || item.install === "web-app") return true;
   return item.source?.kind === "deliver" && item.source.format !== "source" && item.source.format !== "dbt-package";
 }
 

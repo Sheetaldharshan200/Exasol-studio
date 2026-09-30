@@ -392,6 +392,8 @@ export type SlcChoice = { alias: string; installed: boolean };
 export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** Panorama as Studio sees it: is the web build installed, and where is the socket proxy. */
+export type PanoramaStatus = { installed: boolean; proxyUrl: string };
 /** One hosted Dash app, from dash-server's own inventory. */
 export type DashApp = { name: string; title: string; route: string; status: string; published: boolean };
 /** A run's answers per row (null where none) and the first failure, if one stopped it. */
@@ -886,6 +888,10 @@ export const ipc = {
   dashServerStart: (profileId: string) => call<DashServerStatus>("dash_server_start", { profileId }),
   dashServerStop: () => call<void>("dash_server_stop"),
   dashServerApps: () => call<DashApp[]>("dash_server_apps"),
+  // ── Panorama: Studio serves its web build and acts as its shell. See panorama.rs.
+  panoramaStatus: () => call<PanoramaStatus>("panorama_status"),
+  panoramaDeployments: () => call<unknown>("panorama_deployments"),
+  panoramaCredentials: (name: string) => call<unknown>("panorama_credentials", { name }),
   // Public sharing tunnel (cloudflared quick tunnel in front of the share server).
   cloudflaredEnsure: () => call<string>("cloudflared_ensure"),
   cloudflaredStart: (port: number) => call<string>("cloudflared_start", { port }),

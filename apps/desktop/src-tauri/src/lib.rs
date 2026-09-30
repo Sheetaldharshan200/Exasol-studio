@@ -28,6 +28,7 @@ mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
 mod dash_server;
+mod panorama;
 mod error;
 mod exapump;
 mod files;
@@ -64,6 +65,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .register_uri_scheme_protocol(print::SCHEME, |ctx, req| print::respond(ctx.app_handle(), req.uri().path()))
+        // Panorama's web build, served to its tab with Studio as its shell.
+        .register_uri_scheme_protocol(panorama::SCHEME, |ctx, req| panorama::respond(ctx.app_handle(), req.uri().path()))
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -150,6 +153,9 @@ pub fn run() {
             dash_server::dash_server_start,
             dash_server::dash_server_stop,
             dash_server::dash_server_apps,
+            panorama::panorama_status,
+            panorama::panorama_deployments,
+            panorama::panorama_credentials,
             cloudflared::cloudflared_ensure,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,
