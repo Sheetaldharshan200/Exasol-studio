@@ -30,8 +30,6 @@ import { SessionStore } from "../src/session.ts";
 import { DbRegistry } from "../src/db.ts";
 import { MemoryStore } from "../src/memory.ts";
 import { KnowledgeGraph } from "../src/kb.ts";
-import { DashboardStore } from "../src/dashboards.ts";
-import { ArtifactStore } from "../src/artifacts.ts";
 import { DocumentStore } from "../src/documents.ts";
 import { SkillStore } from "../src/skills.ts";
 import { runTurn } from "../src/loop.ts";
@@ -150,8 +148,6 @@ async function main() {
   const sessions = new SessionStore(tmp);
   const memory = new MemoryStore(tmp);
   const kb = new KnowledgeGraph(tmp);
-  const dashboards = new DashboardStore(tmp);
-  const artifacts = new ArtifactStore(tmp);
   const documents = new DocumentStore();
   const skills = new SkillStore(tmp);
 
@@ -196,7 +192,7 @@ async function main() {
     try {
       await runTurn({
         session, registry, db, memory, kb,
-        store: sessions, config, dashboards, artifacts, skills, documents,
+        store: sessions, config, skills, documents,
         modelRef: model, userText: c.question, surface: "cli",
         ...(c.attachments ? { attachments: c.attachments } : {}),
       });
@@ -227,7 +223,7 @@ async function main() {
 
   if (record) {
     // Dogfood: results live in the database being evaluated, so the trend is
-    // one SELECT away and the dashboards feature can chart it.
+    // one SELECT away and a dash-server dashboard can chart it.
     try {
       await db.execute(DB_ID, "CREATE SCHEMA IF NOT EXISTS STUDIO_EVALS");
       await db.execute(

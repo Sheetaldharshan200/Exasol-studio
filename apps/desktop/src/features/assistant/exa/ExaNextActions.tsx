@@ -56,7 +56,7 @@ export function ExaNextActions() {
         ask("Chart the table above as a line chart over time.");
         return;
       case "dashboard":
-        ask("Add the result above to a dashboard as a chart widget.");
+        ask("Build a dashboard in dash-server from the result above, with this as its first chart.");
         return;
       case "fix":
         ask("Fix the error above and show the corrected SQL.");

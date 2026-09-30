@@ -1,4 +1,31 @@
-import type { Dashboard } from "@/lib/agent-client";
+/** A built-in dashboard: a titled set of panels, each a query with a viz.
+ *  These types live here because the System dashboards are the only
+ *  dashboards Studio itself defines — everything else is built in dash-server. */
+export type DashPanel = {
+  id: string;
+  title: string;
+  grid: { x: number; y: number; w: number; h: number };
+  /** Absent on markdown text panels. */
+  query?: { sql: string };
+  viz:
+    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "donut" | "hbar" | "scatter" | "heatmap" | "funnel" | "radar" | "treemap" | "gauge"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
+    | { type: "kpi"; valueField?: string; unit?: string }
+    | { type: "table" }
+    | { type: "explore"; config?: Record<string, unknown> }
+    | { type: "markdown"; content: string };
+};
+
+export type Dashboard = {
+  version: 1;
+  id: string;
+  title: string;
+  description: string;
+  /** Optional grouping (e.g. "System"). */
+  group?: string;
+  panels: DashPanel[];
+  /** Auto-refresh cadence in ms (0/undefined = off). */
+  refreshMs?: number;
+};
 
 // The built-in System dashboards — code is the source of truth; the notebook's
 // System button regenerates them on every open. The server-side copies (saved

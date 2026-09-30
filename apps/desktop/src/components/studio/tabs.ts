@@ -28,11 +28,11 @@ export type TabView =
   | "object"
   | "dba"
   | "welcome"
-  | "artifact"
   | "mcpConfig"
   | "git"
   | "notebook"
-  | "dashboard"
+  /** dash-server's hosted apps, rendered inside Studio. */
+  | "dashboards"
   | "skills"
   | "connProps"
   | "plan"
@@ -47,7 +47,7 @@ export type TabView =
 /** Which sub-view the result panel shows for a tab. Per-tab (not global) so an
  *  async profile that finishes after a tab-switch can't flip another tab's
  *  view — and each tab remembers where the user left it. */
-export type ResultView = "results" | "performance" | "dashboard";
+export type ResultView = "results" | "performance";
 
 export type SqlTab = {
   id: string;
@@ -55,8 +55,6 @@ export type SqlTab = {
   view: TabView;
   /** For "docs" tabs — deep link below /docs/studio (e.g. "connections/drivers"). */
   docsPath?: string;
-  /** For "dashboard" tabs — which saved dashboard this tab shows (default "default"). */
-  dashboardId?: string;
   /** Result panel sub-view (defaults to "results" when unset). */
   resultView?: ResultView;
   /** For "connect" tabs — pre-fill the new-connection form (e.g. the bundled
@@ -91,8 +89,6 @@ export type SqlTab = {
    *  `sql` is the exact statement(s) this run executed (may be a selection or
    *  the cursor statement, not the whole buffer) — shown while it runs. */
   runMeta?: { startedAt: number; finishedAt?: number; scope: string; ok?: boolean; sql?: string };
-  /** For artifact tabs — the rendered HTML document. */
-  artifactHtml?: string;
   /** Query Performance — the normalized execution plan for this tab's query. */
   planData?: Plan[];
   /** Why the last profile attempt produced no plan — shown in the empty state. */
@@ -151,10 +147,9 @@ export const TAB_ICON: Record<TabView, IconName> = {
   object: "table",
   connProps: "sliders",
   welcome: "home",
-  artifact: "file",
   git: "git",
   notebook: "notebook",
-  dashboard: "dashboard-grid",
+  dashboards: "dashboard-grid",
   skills: "skills",
   plan: "clock-dashed-half",
   logs: "list",

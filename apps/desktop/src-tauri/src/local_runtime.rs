@@ -851,15 +851,21 @@ fn force_stranded_vm_down(app: &AppHandle, id: &str) -> AppResult<bool> {
     let runtime_dir = state_path.parent().unwrap_or(&state_path).to_path_buf();
     let state = std::fs::read_to_string(&state_path).unwrap_or_default();
     let runtime = std::fs::read_to_string(runtime_dir.join("vm-runtime.json")).unwrap_or_default();
-    let pid = crate::vm_recovery::vm_pid_from_state(&state);
+    // A guest that booted but was never reachable leaves no vm-state.json —
+    // only vm.pid and vm-state-degraded.json — so both records are read.
+    let pid_file = std::fs::read_to_string(runtime_dir.join("vm.pid")).unwrap_or_default();
+    let degraded = std::fs::read_to_string(runtime_dir.join("vm-state-degraded.json")).unwrap_or_default();
+    let pid = crate::vm_recovery::vm_pid_from_records(&state, &pid_file);
     let cmdline = pid.and_then(process_cmdline);
     let port = expected_db_port(app);
     // The guard that matters: if a database is answering inside the guest, the
     // VM is doing its job and `stop` failed for some other reason. Never
-    // signal then — that would pull the power on a running database.
-    let guest_db_reachable = crate::vm_recovery::guest_db_endpoint(&state, &runtime)
-        .map(|(ip, guest_port)| endpoint_ready(&ip, guest_port))
-        .unwrap_or(true);
+    // signal then — that would pull the power on a running database. With no
+    // state file to name the guest, the runner's own degraded verdict decides.
+    let guest_db_reachable = match crate::vm_recovery::guest_db_endpoint(&state, &runtime) {
+        Some((ip, guest_port)) => endpoint_ready(&ip, guest_port),
+        None => !crate::vm_recovery::runner_declared_degraded(&degraded),
+    };
     let check = crate::vm_recovery::StrandedCheck {
         vm_pid: pid,
         cmdline: cmdline.as_deref(),
@@ -1346,20 +1352,28 @@ pub fn restart_personal_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeC
         "The Personal endpoint is not query-ready; restarting the managed deployment once…",
         "info",
     );
-    if run_streamed(app, id, &cli, &["stop", "--deployment-dir", &deployment])? != 0 {
-        // `stop` removes the database container by talking to the VM's guest.
-        // A VM left over from an earlier session outlives its database: the
-        // host process still holds the forwarded port while the guest no
-        // longer answers, so `stop` can never succeed and every retry
-        // reports the same error. Take that VM down from the host side —
-        // there is no database inside it to lose — and carry on to `start`.
-        if !force_stranded_vm_down(app, id)? {
-            return Err(AppError::Storage(
-                "Could not stop Exasol Personal during query-readiness recovery.".into(),
-            ));
-        }
+    let stopped = run_streamed(app, id, &cli, &["stop", "--deployment-dir", &deployment])? == 0;
+    // `stop` removes the database container by talking to the VM's guest. A
+    // VM left over from an earlier session outlives its database: the host
+    // process still holds the forwarded port while the guest no longer
+    // answers. Then `stop` either fails, or — when the launcher already
+    // considers the deployment stopped — succeeds with "already stopped" and
+    // leaves the VM exactly where it was, so `start` fails with "VM is
+    // already running". Either way the stranded VM is taken down from the
+    // host side (there is no database inside it to lose) before `start`.
+    let taken_down = force_stranded_vm_down(app, id)?;
+    if !stopped && !taken_down {
+        return Err(AppError::Storage(
+            "Could not stop Exasol Personal during query-readiness recovery.".into(),
+        ));
     }
-    if run_streamed(app, id, &cli, &host_prep_args(&cli, &["start", "--deployment-dir", &deployment]))? != 0 {
+    let start_args = host_prep_args(&cli, &["start", "--deployment-dir", &deployment]);
+    let mut started = run_streamed(app, id, &cli, &start_args)? == 0;
+    if !started && !taken_down && force_stranded_vm_down(app, id)? {
+        // The VM was not stranded before `stop` ran but is now: one more start.
+        started = run_streamed(app, id, &cli, &start_args)? == 0;
+    }
+    if !started {
         return Err(AppError::Storage(
             "Could not restart Exasol Personal during query-readiness recovery.".into(),
         ));

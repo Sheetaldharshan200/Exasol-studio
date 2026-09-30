@@ -18,7 +18,7 @@ description: Schedule and automate anything — "run this every night", recurrin
 
 | Situation | Mechanism |
 |---|---|
-| "Keep this dashboard fresh" | Studio's built-in dashboard auto-refresh (per-dashboard interval; see `dashboard-builder`) — no external scheduler needed |
+| "Keep this dashboard fresh" | dash-server hosts live Dash apps that re-query on load and on their own callbacks; schedule only the upstream data refresh |
 | Recurring SQL on an ALWAYS-ON host (server, desktop that stays awake) | **exasol-labs/exasol-scheduler** — see below |
 | Recurring SQL/loads on a LAPTOP (sleeps) | macOS `launchd` `StartCalendarInterval` running `exapump sql -p <profile> "<sql>"` — launchd REPLAYS a run missed during sleep; the scheduler daemon does not |
 | Re-import external data on a cadence | The import statement (see `exasol-import`) wrapped in whichever row above matches the host |

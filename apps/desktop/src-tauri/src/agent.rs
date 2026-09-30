@@ -120,6 +120,10 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     if let Some(npx) = crate::market::resolve_bin("npx") {
         cmd.env("EXA_NPX", npx);
     }
+    // dash-server's MCP endpoint: the dashboard host Studio runs for the
+    // Dashboards tab. The sidecar seeds it as a remote server; the engine
+    // connects when the server is up.
+    cmd.env("EXA_DASH_SERVER_MCP", "http://127.0.0.1:5100/mcp");
     if let Some(baseline) = crate::engine::bundled_engine_path(app) {
         let cfg_dir = crate::components_update::component_dir(&state.data_dir, crate::components_update::ComponentId::ExaAgent).join("config");
         let _ = std::fs::create_dir_all(&cfg_dir);

@@ -27,7 +27,7 @@ mod exarrow_exec;
 mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
-mod dashboards;
+mod dash_server;
 mod error;
 mod exapump;
 mod files;
@@ -77,6 +77,7 @@ pub fn run() {
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::decisions::DecisionEngine::default());
+            app.manage(crate::dash_server::DashServer::default());
             app.manage(crate::terminal::TermRegistry::default());
             app.manage(crate::print::PrintJobs::default());
             app.manage(crate::cloudflared::CloudflaredProc::default());
@@ -145,10 +146,10 @@ pub fn run() {
             files::save_attachment,
             files::install_cli,
             files::append_app_log,
-            dashboards::dashboard_read,
-            dashboards::dashboard_write,
-            dashboards::dashboard_delete,
-            dashboards::dashboard_list,
+            dash_server::dash_server_status,
+            dash_server::dash_server_start,
+            dash_server::dash_server_stop,
+            dash_server::dash_server_apps,
             cloudflared::cloudflared_ensure,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,
@@ -266,6 +267,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
                 app.state::<crate::decisions::DecisionEngine>().kill();
+                app.state::<crate::dash_server::DashServer>().kill();
             }
         });
 }

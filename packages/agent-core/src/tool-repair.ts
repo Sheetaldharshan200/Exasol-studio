@@ -53,13 +53,10 @@ const NAME_ALIASES: Record<string, string> = {
   // misc
   connections: "list_connections", listconnection: "list_connections", getconnections: "list_connections",
   profilesql: "profile_query", profilequery: "profile_query", explain: "profile_query", explainquery: "profile_query",
-  savedashboard: "dashboard_save", createdashboard: "dashboard_save",
-  listdashboards: "dashboard_list", getdashboard: "dashboard_get",
   rememberinsight: "remember", savememory: "remember", saveinsight: "remember",
   researcher: "spawn_researcher", spawnagent: "spawn_researcher", research: "spawn_researcher",
   joinpath: "kb_join_path", kbjoin: "kb_join_path", subsystem: "kb_subsystem",
   refreshkb: "kb_refresh", kbrefresh: "kb_refresh",
-  renderartifact: "render_artifact", createartifact: "render_artifact", artifact: "render_artifact",
   loadskill: "load_skill", useskill: "load_skill",
 };
 
@@ -299,60 +296,10 @@ export function zodSchemaish(schema: unknown): { properties: Record<string, { ty
 // ── Text rescue ────────────────────────────────────────────────────────────
 // Small local models sometimes narrate their tool use as PROSE — fake SQL
 // procedure calls (`CALL IMPORT_CSV('id','SCHEMA','table','replace')`,
-// `CALL DASHBOARD_SAVE('{...}')`) or a bare JSON dashboard spec — instead of
-// emitting structured tool calls. Rather than letting a whole fake plan
+// instead of emitting structured tool calls. Rather than letting a whole fake plan
 // become "the answer", extract the recognizable intents into real calls.
 
-/** Balanced-brace JSON scan: parse the object starting at text[start]. */
-function parseJsonAt(text: string, start: number): unknown | null {
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (esc) { esc = false; continue; }
-    if (ch === "\\") { esc = true; continue; }
-    if (ch === '"') inStr = !inStr;
-    if (inStr) continue;
-    if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) {
-        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
-      }
-    }
-  }
-  return null;
-}
 
-type DashboardSpec = { title?: unknown; panels?: unknown } & Record<string, unknown>;
-
-/** Unwrap {dashboard:{...}} and validate the minimum dashboard shape. */
-function asDashboardSpec(v: unknown): Record<string, unknown> | null {
-  if (!v || typeof v !== "object") return null;
-  const outer = v as DashboardSpec;
-  const spec = (outer.dashboard && typeof outer.dashboard === "object" ? outer.dashboard : outer) as DashboardSpec;
-  if (typeof spec.title === "string" && Array.isArray(spec.panels) && spec.panels.length) return spec as Record<string, unknown>;
-  return null;
-}
-
-/** Find a JSON dashboard spec anywhere in prose (fenced or inline). */
-function findDashboardJson(text: string): Record<string, unknown> | null {
-  let from = 0;
-  for (let n = 0; n < 40; n++) {
-    const i = text.indexOf('"panels"', from);
-    if (i < 0) return null;
-    // Walk back to the outermost plausible opening brace for this spec.
-    for (let j = i; j >= 0 && i - j < 4000; j--) {
-      if (text[j] !== "{") continue;
-      const parsed = parseJsonAt(text, j);
-      const spec = asDashboardSpec(parsed);
-      if (spec) return spec;
-    }
-    from = i + 8;
-  }
-  return null;
-}
 
 /**
  * Extract real tool calls from a prose-only model turn. Returns [] when
@@ -385,19 +332,8 @@ export function rescueTextCalls(text: string): { name: string; args: Record<stri
           ...(mode && /replace/i.test(mode) ? { replace: true } : {}),
         });
       }
-    } else if (which.includes("dashboardsave") || which.includes("savedashboard") || which.includes("createdashboard")) {
-      const spec = strings[0] ? asDashboardSpec((() => { try { return JSON.parse(strings[0]); } catch { return null; } })()) : null;
-      if (spec) push("dashboard_save", { dashboard: spec });
-    } else if (which.includes("dashboardlist") || which.includes("listdashboard")) {
-      push("dashboard_list", {});
     }
   }
 
-  // A bare JSON dashboard spec in the prose (the model "showed" the dashboard
-  // instead of saving it).
-  if (!out.some((c) => c.name === "dashboard_save")) {
-    const spec = findDashboardJson(text);
-    if (spec) push("dashboard_save", { dashboard: spec });
-  }
   return out;
 }
