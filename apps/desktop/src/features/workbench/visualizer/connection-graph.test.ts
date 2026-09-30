@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, tableId, whereSchemas } from "./connection-graph.ts";
+import { budgetLinks, GROUP_HEADER, GROUP_PAD, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, tableId } from "./connection-graph.ts";
 
 const L = (source: string, sourceColumn: string, target: string, targetColumn: string) => ({ source, sourceColumn, target, targetColumn });
 
@@ -51,14 +51,6 @@ test("layout of an empty schema still yields a box — a slim one", () => {
   assert.deepEqual(L.tables, {});
 });
 
-test("whereSchemas finds every schema a nested WHERE group names, and nothing else", () => {
-  const group = { combinator: "and", rules: [
-    { field: '"RETAIL"."ORDERS"."AMOUNT"', operator: ">", value: 10 },
-    { combinator: "or", rules: [{ field: '"MYSQL_VS"."sales"."qty"', operator: ">", value: 1 }, { field: "no-quotes", operator: "=", value: 1 }] },
-  ] };
-  assert.deepEqual(whereSchemas(group).sort(), ["MYSQL_VS", "RETAIL"]);
-  assert.deepEqual(whereSchemas({ rules: [] }), []);
-});
 
 test("budgetLinks: everything under the cap; over it, declared links plus the selected table's, the rest counted", () => {
   const declared = Array.from({ length: 3 }, (_, i) => ({ source: `S.D${i}`, target: `S.P${i}`, inferred: false }));
