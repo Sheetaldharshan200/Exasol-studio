@@ -16,19 +16,14 @@ import { useCanvas, useCanvasStore, useZoom, LOD } from "./context.ts";
 import { downloadText, downloadUrl, fileName } from "./download.ts";
 import { byId, compileSql, lineage, type ChartBox as ChartBoxModel } from "./model.ts";
 import type { HaloAction } from "./Halo.tsx";
-import type { Selection } from "./store.ts";
+import { picksFrom, selectionValues } from "./selection.ts";
 
-/** The values of the `by` column at the selected data indices. */
-export function selectionFromIndices(result: StatementResult, field: string | undefined, indices: number[]): Selection | null {
-  const col = field ? result.columns.findIndex((c) => c.name === field) : 0;
-  if (col < 0) return null;
-  const values = indices.map((i) => result.rows[i]?.[col]).filter((v, i, arr) => arr.indexOf(v) === i);
-  return { field: result.columns[col]!.name, values };
-}
-
-function Chart({ chart, viz, result, onSelect, chartRef }: { chart: string; viz: CellViz; result: StatementResult; onSelect: (indices: number[]) => void; chartRef: React.MutableRefObject<import("echarts").ECharts | null> }) {
+function Chart({ chart, viz, result, onSelect, chartRef }: { chart: string; viz: CellViz; result: StatementResult; onSelect: (picks: { dataIndex: number; name?: string }[]) => void; chartRef: React.MutableRefObject<import("echarts").ECharts | null> }) {
   const ref = useRef<HTMLDivElement>(null);
   const [empty, setEmpty] = useState(false);
+  // The latest handler, read at event time: a selection must not rebuild the chart.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   useEffect(() => {
     if (!ref.current) return;
     let disposed = false;
@@ -44,8 +39,9 @@ function Chart({ chart, viz, result, onSelect, chartRef }: { chart: string; viz:
       inst.setOption({ series: ((built.primary.series as unknown[]) ?? []).map(() => ({ selectedMode: "multiple" })) });
       if (built.override) inst.setOption(built.override);
       inst.on("selectchanged", (p: unknown) => {
-        const sel = (p as { selected?: { dataIndex: number[] }[] }).selected ?? [];
-        onSelect([...new Set(sel.flatMap((s) => s.dataIndex))]);
+        const sel = (p as { selected?: { seriesIndex: number; dataIndex: number[] }[] }).selected ?? [];
+        const series = (inst.getOption() as { series?: { data?: unknown[] }[] }).series ?? [];
+        onSelectRef.current(picksFrom(sel, series.map((s) => s.data)));
       });
     });
     const ro = new ResizeObserver(() => chartRef.current?.resize());
@@ -56,9 +52,15 @@ function Chart({ chart, viz, result, onSelect, chartRef }: { chart: string; viz:
       chartRef.current?.dispose();
       chartRef.current = null;
     };
-  }, [chart, viz, result, onSelect, chartRef]);
-  if (empty) return <p className="px-3 py-6 text-center text-[12px] text-muted-foreground">No rows to chart yet.</p>;
-  return <div ref={ref} className="h-full w-full" />;
+  }, [chart, viz, result, chartRef]);
+  // The drawing surface stays mounted through an empty result, so rows that
+  // arrive later have somewhere to be drawn.
+  return (
+    <div className="relative h-full w-full">
+      <div ref={ref} className="h-full w-full" />
+      {empty ? <p className="absolute inset-0 flex items-center justify-center px-3 text-center text-[12px] text-muted-foreground">No rows to chart yet.</p> : null}
+    </div>
+  );
 }
 
 export const ChartBoxNode = memo(function ChartBoxNode({ id, selected }: NodeProps) {
@@ -111,7 +113,7 @@ export const ChartBoxNode = memo(function ChartBoxNode({ id, selected }: NodePro
   }, [box, id, store, result, pane, sel]);
   if (!box) return null;
   const columns = result?.columns ?? [];
-  const onSelect = (indices: number[]) => result && store.getState().setSelection(id, selectionFromIndices(result, box.viz.xField, indices));
+  const onSelect = (picks: { dataIndex: number; name?: string }[]) => result && store.getState().setSelection(id, selectionValues(result, box.viz.xField, picks));
   const editorHidden = zoom < LOD.editor;
   return (
     <BoxFrame id={id} title={box.name} icon={BarChart3} accent="#f59e0b" selected={!!selected} actions={actions} run={run} idleText="Waiting for its source's rows" onRename={(n) => store.getState().setName(id, n)}>

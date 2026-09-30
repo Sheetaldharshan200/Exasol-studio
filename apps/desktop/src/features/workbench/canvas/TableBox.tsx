@@ -22,7 +22,18 @@ export function RowsBody({ id }: { id: string }) {
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="h-3 rounded bg-muted/40" style={{ width: `${90 - i * 9}%` }} />
         ))}
-        <p className="mt-1 text-[11px] text-muted-foreground">{run?.status === "running" ? "Fetching rows…" : "Rows arrive when this box runs."}</p>
+        <p className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+          {run?.status === "running" ? (
+            "Fetching rows…"
+          ) : (
+            <>
+              Rows arrive when this box runs.
+              <button onClick={() => void store.getState().run(id)} className="rounded-md border border-border px-2 py-0.5 text-foreground hover:bg-secondary">
+                Run
+              </button>
+            </>
+          )}
+        </p>
       </div>
     );
   }

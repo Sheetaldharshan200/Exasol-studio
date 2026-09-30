@@ -15,7 +15,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import { Eraser, Maximize2, Plus, Redo2, Undo2 } from "lucide-react";
+import { Eraser, Maximize2, Play, Plus, Redo2, Undo2 } from "lucide-react";
 import { AgentMark } from "@/components/studio/AgentMark";
 import { askExa } from "@/features/assistant/exa/ask-exa";
 import type { CanvasPlan } from "@/features/assistant/exa/canvas-plan.ts";
@@ -84,6 +84,8 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
   const conn = useCanvas((s) => s.conn);
   const canUndo = useCanvas((s) => s.past.length > 0);
   const canRedo = useCanvas((s) => s.future.length > 0);
+  // Boxes with no rows yet — a restored canvas starts this way.
+  const unrun = useCanvas((s) => s.doc.boxes.filter((b) => b.kind !== "chart" && (!s.runs[b.id] || s.runs[b.id]?.status === "idle")).length);
   const [nodes, setNodes] = useState<Node[]>(() => reconcileNodes([], doc.boxes));
   const flow = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
@@ -144,6 +146,12 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
     const onApply = (e: Event) => {
       const plan = (e as CustomEvent<{ plan: CanvasPlan; profileId?: string }>).detail?.plan;
       if (plan) {
+        // Taken now: the copy left for a canvas that was not open is not needed.
+        try {
+          sessionStorage.removeItem(CANVAS_PENDING_KEY);
+        } catch {
+          /* nothing to clear */
+        }
         const errors = applyPlan(plan);
         if (errors.length) window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "warning", title: "Some boxes could not be added", body: errors.join(" ") } }));
       }
@@ -215,6 +223,7 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
       <div className="pointer-events-none absolute left-3 right-3 top-3 flex items-start gap-2">
         <div className="pointer-events-auto flex items-center gap-1.5">
           {button("Ask Exa about this canvas", ask, false, <><AgentMark className="h-3.5 w-3.5" /> Ask</>)}
+          {unrun ? button(`Run the ${unrun} box${unrun === 1 ? "" : "es"} without rows`, () => void store.getState().runAll(), false, <><Play className="h-3.5 w-3.5" /> Run all</>) : null}
           {button("Fit everything in view", () => void flow.fitView({ duration: 400, padding: 0.15 }), !doc.boxes.length, <Maximize2 className="h-3.5 w-3.5" />)}
           {button("Undo", () => store.getState().undo(), !canUndo, <Undo2 className="h-3.5 w-3.5" />)}
           {button("Redo", () => store.getState().redo(), !canRedo, <Redo2 className="h-3.5 w-3.5" />)}

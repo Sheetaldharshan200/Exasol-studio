@@ -69,6 +69,8 @@ export type CanvasState = {
   undo: () => void;
   redo: () => void;
   run: (id: string) => Promise<void>;
+  /** Every table and step that has no rows yet, e.g. after a restart. */
+  runAll: () => Promise<void>;
   loadMore: (id: string) => Promise<void>;
   setSelection: (id: string, sel: Selection | null) => void;
   /** The rows behind a chart's selection, as a new step arrowed from the chart. */
@@ -100,6 +102,9 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         saveDoc(conn.profileId, next);
       }
     };
+    // Typing in a step is one undo step: the document before the first
+    // keystroke is remembered once, until the step runs or something else commits.
+    const editing = new Set<string>();
     const markStale = (ids: string[]) =>
       set((s) => ({ runs: Object.fromEntries(Object.entries(s.runs).map(([k, v]) => [k, ids.includes(k) ? { ...v, stale: true } : v])) }));
 
@@ -118,8 +123,11 @@ export function createCanvasStore(conn: Conn): CanvasStore {
       const prev = state.runs[id];
       set((s) => ({ runs: { ...s.runs, [id]: { ...(offset > 0 && prev ? prev : { loaded: 0, more: false }), status: "running", progressId, stale: false } } }));
       const started = performance.now();
+      // A run started later wins: an older answer arriving afterwards is dropped.
+      const current = () => get().runs[id]?.progressId === progressId;
       try {
         const res = await ipc.executeSql(box.profileId, box.connectionName, sql, PAGE, false, false, progressId);
+        if (!current()) return;
         const r = res.results[0];
         if (!r) throw new Error("The database returned nothing.");
         if (r.error) throw new Error(r.error);
@@ -132,8 +140,25 @@ export function createCanvasStore(conn: Conn): CanvasStore {
           },
         }));
       } catch (e) {
+        if (!current()) return;
         set((s) => ({ runs: { ...s.runs, [id]: { ...(s.runs[id] ?? { loaded: 0, more: false }), status: "error", error: e instanceof Error ? e.message : String(e) } } }));
       }
+    };
+    /** Charts built on `id` read its rows again; steps built on it are marked stale. */
+    const readThrough = (id: string) => {
+      const doc = get().doc;
+      const boxes = byId(doc);
+      const below = dependantsOf(doc, id);
+      const src = get().runs[id];
+      set((s) => ({
+        runs: Object.fromEntries(
+          Object.entries(s.runs).map(([k, v]) => {
+            if (!below.includes(k)) return [k, v];
+            const b = boxes.get(k);
+            return b?.kind === "chart" && src ? [k, { ...src, stale: false }] : [k, { ...v, stale: true }];
+          }),
+        ),
+      }));
     };
 
     return {
@@ -195,11 +220,22 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         return id;
       },
 
-      setSql: (id, sql) => patchBox(id, (b) => (b.kind === "query" ? { ...b, sql } : b), false),
+      setSql: (id, sql) => {
+        if (!editing.has(id)) {
+          editing.add(id);
+          const { doc, past } = get();
+          set({ past: [...past.slice(-(HISTORY - 1)), doc], future: [] });
+        }
+        patchBox(id, (b) => (b.kind === "query" ? { ...b, sql } : b), false);
+      },
       setName: (id, name) => patchBox(id, (b) => (b.kind === "table" ? b : { ...b, name })),
       setViz: (id, chart, viz) => patchBox(id, (b) => (b.kind === "chart" ? { ...b, chart, viz } : b)),
-      moveBox: (id, x, y) => patchBox(id, (b) => ({ ...b, rect: { ...b.rect, x, y } }), false),
-      resizeBox: (id, w, h) => patchBox(id, (b) => ({ ...b, rect: { ...b.rect, w: Math.max(240, w), h: Math.max(160, h) } }), false),
+      moveBox: (id, x, y) => {
+        const b = byId(get().doc).get(id);
+        if (b && b.rect.x === x && b.rect.y === y) return;
+        patchBox(id, (b) => ({ ...b, rect: { ...b.rect, x, y } }));
+      },
+      resizeBox: (id, w, h) => patchBox(id, (b) => ({ ...b, rect: { ...b.rect, w: Math.max(240, w), h: Math.max(160, h) } })),
 
       removeBox: (id) => {
         const doc = get().doc;
@@ -230,6 +266,7 @@ export function createCanvasStore(conn: Conn): CanvasStore {
       },
 
       run: async (id) => {
+        editing.delete(id);
         const doc = get().doc;
         const box = byId(doc).get(id);
         if (!box) return;
@@ -254,10 +291,17 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         }
       },
 
+      runAll: async () => {
+        const { doc, runs } = get();
+        const pending = doc.boxes.filter((b) => b.kind !== "chart" && (!runs[b.id] || runs[b.id]?.status === "idle"));
+        await Promise.all(pending.map((b) => get().run(b.id)));
+      },
+
       loadMore: async (id) => {
         const run = get().runs[id];
         if (!run || run.status === "running" || !run.more) return;
         await fetchPage(id, run.loaded);
+        readThrough(id);
       },
 
       setSelection: (id, sel) =>

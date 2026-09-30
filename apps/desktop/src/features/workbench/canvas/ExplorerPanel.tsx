@@ -1,7 +1,7 @@
 // The explorer beside the canvas: a connection, its schemas, and on a click
 // the schema's tables and views. Clicking a table puts it on the canvas.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Database, Loader2, Search, Table2, Eye } from "lucide-react";
 import { errorMessage, ipc, type ConnectionProfile, type SchemaObjects, type SchemaSummary } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,8 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
   const [objects, setObjects] = useState<Record<string, Objects | "loading" | { error: string }>>({});
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
 
   // The other open connections, so a canvas can read from more than one.
   useEffect(() => {
@@ -50,9 +52,12 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
     setExpanded(next);
     if (next && !objects[next]) {
       setObjects((m) => ({ ...m, [next]: "loading" }));
-      ipc.listSchemaObjects(source.profileId, next)
-        .then((o) => setObjects((m) => ({ ...m, [next]: { tables: o.tables, views: o.views } })))
-        .catch((e) => setObjects((m) => ({ ...m, [next]: { error: errorMessage(e) } })));
+      const asked = source.profileId;
+      // An answer for a connection no longer shown is dropped, not filed under the new one.
+      const stillShown = () => sourceRef.current.profileId === asked;
+      ipc.listSchemaObjects(asked, next)
+        .then((o) => stillShown() && setObjects((m) => ({ ...m, [next]: { tables: o.tables, views: o.views } })))
+        .catch((e) => stillShown() && setObjects((m) => ({ ...m, [next]: { error: errorMessage(e) } })));
     }
   };
 

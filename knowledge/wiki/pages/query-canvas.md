@@ -61,7 +61,22 @@ one. Change: `openspec/changes/canvas-builder`.
 
 - A ReactFlow node inside a custom scheme cannot take props: the store goes
   through context (`useCanvas`), Monaco setup through `EditorSetupContext`.
-- `derived_table` replacement is a word-boundary regex over the step's SQL —
-  a column literally named `derived_table` would be rewritten too; accepted.
+- `derived_table` replacement is SQL-aware (`replaceIdentifier`): string
+  literals, quoted identifiers and comments are left alone; only a bare
+  identifier token is rewritten. Codex caught the earlier regex version.
 - react-querybuilder left with the form builder; `build-sql.ts` stays for the
   object context menu.
+
+# Codex review (2026-09-30), all fixed
+
+Rows behind a chart of a *table* read the table (the step's source is the
+chart; `dataSourceOf` reads through); a stale run cannot overwrite a newer one
+(`progressId` checked before commit); a step on sources from two connections
+is refused by name; selecting marks no longer rebuilds the chart (handler in a
+ref) and sorted series (pie, funnel) report the drawn *name*, not the index;
+the by-field matches case-insensitively; an empty chart keeps its surface so
+later rows draw; loading a page reads through to charts and marks steps
+stale; the trail dims arrows too; typing in a step is one undo step, moves
+and resizes are remembered; a restored canvas offers Run / Run all; a plan
+taken live is not replayed; explorer answers for a switched connection are
+dropped.

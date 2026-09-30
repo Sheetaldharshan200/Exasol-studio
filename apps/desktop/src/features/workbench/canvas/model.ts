@@ -174,8 +174,52 @@ function cteName(id: string): string {
   return `cte_${id.replace(/[^A-Za-z0-9_]/g, "_")}`;
 }
 
-function replaceWord(sql: string, word: string, by: string): string {
-  return sql.replace(new RegExp(`\\b${word}\\b`, "gi"), by);
+/**
+ * Replace a bare identifier in SQL text, leaving string literals, quoted
+ * identifiers and comments alone — `SELECT 'derived_table' FROM derived_table`
+ * rewrites only the table reference.
+ */
+export function replaceIdentifier(sql: string, word: string, by: string): string {
+  let out = "";
+  let i = 0;
+  const lower = word.toLowerCase();
+  const isWordChar = (c: string) => /[A-Za-z0-9_$]/.test(c);
+  while (i < sql.length) {
+    const c = sql[i];
+    const two = sql.slice(i, i + 2);
+    if (c === "'" || c === '"') {
+      // A literal or a quoted identifier runs to its closing quote; doubled quotes escape.
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === c) {
+          if (sql[j + 1] === c) j += 2;
+          else break;
+        } else j++;
+      }
+      out += sql.slice(i, j + 1);
+      i = j + 1;
+    } else if (two === "--") {
+      const j = sql.indexOf("\n", i);
+      const end = j < 0 ? sql.length : j;
+      out += sql.slice(i, end);
+      i = end;
+    } else if (two === "/*") {
+      const j = sql.indexOf("*/", i + 2);
+      const end = j < 0 ? sql.length : j + 2;
+      out += sql.slice(i, end);
+      i = end;
+    } else if (isWordChar(c) && (i === 0 || !isWordChar(sql[i - 1]))) {
+      let j = i;
+      while (j < sql.length && isWordChar(sql[j])) j++;
+      const token = sql.slice(i, j);
+      out += token.toLowerCase() === lower ? by : token;
+      i = j;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
 
 /**
@@ -218,13 +262,15 @@ export function compileParts(box: Box, boxes: Map<string, Box>): { ctes: string;
       const src = boxes.get(sid);
       if (!src) throw new Error(`Source ${i + 1} of "${q.name}" is gone.`);
       const placeholder = sourcePlaceholder(i, q.sources.length);
-      if (src.kind === "table") {
-        sql = replaceWord(sql, placeholder, qualified(src.schema, src.table));
+      if (src.profileId !== q.profileId) throw new Error(`Source ${i + 1} of "${q.name}" is on another connection; one step reads one database.`);
+      // A chart has no rows of its own: the step reads what the chart drew.
+      const data = dataSourceOf(src, boxes);
+      if (!data) throw new Error(`Source ${i + 1} of "${q.name}" has no rows.`);
+      if (data.kind === "table") {
+        sql = replaceIdentifier(sql, placeholder, qualified(data.schema, data.table));
       } else {
-        const step = src.kind === "query" ? src : dataSourceOf(src, boxes);
-        if (!step || step.kind !== "query") throw new Error(`Source ${i + 1} of "${q.name}" has no rows.`);
-        visit(step);
-        sql = replaceWord(sql, placeholder, cteName(step.id));
+        visit(data);
+        sql = replaceIdentifier(sql, placeholder, cteName(data.id));
       }
     });
     return sql;

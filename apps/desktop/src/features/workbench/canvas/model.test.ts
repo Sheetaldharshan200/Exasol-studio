@@ -8,6 +8,7 @@ import {
   overlaps,
   compilePagedSql,
   dependantsOf,
+  replaceIdentifier,
   upstreamOf,
   placeBox,
   rowsBehindSql,
@@ -67,6 +68,27 @@ test("several sources are source_1, source_2; a missing source and a cycle are n
   assert.throws(() => compileSql(loop.get("x")!, loop), /built on itself/);
   assert.equal(seedSql(1), "SELECT * FROM derived_table");
   assert.match(seedSql(2), /source_1[\s\S]*source_2/);
+});
+
+test("placeholders are replaced only where they are identifiers", () => {
+  const sql = `SELECT 'derived_table' AS label, "derived_table", x -- derived_table here\nFROM derived_table /* derived_table */ JOIN Derived_Table d ON d.id = derived_table_id`;
+  assert.equal(
+    replaceIdentifier(sql, "derived_table", "T"),
+    `SELECT 'derived_table' AS label, "derived_table", x -- derived_table here\nFROM T /* derived_table */ JOIN T d ON d.id = derived_table_id`,
+  );
+  assert.equal(replaceIdentifier("select * from source_1 where s='it''s source_1'", "source_1", "A"), "select * from A where s='it''s source_1'");
+});
+
+test("the rows behind a chart of a TABLE read the table; sources on two connections are refused", () => {
+  const doc: CanvasDoc = {
+    version: 1,
+    boxes: [table("a"), chart("c", "a"), query("r", ["c"], 'SELECT * FROM derived_table WHERE "REGION" IN (\'EMEA\')', { rowsBehind: true })],
+  };
+  const boxes = byId(doc);
+  assert.equal(compileSql(boxes.get("r")!, boxes), `SELECT * FROM "RETAIL"."T_A" WHERE "REGION" IN ('EMEA')`);
+  const other: Box = { ...table("b"), profileId: "p2", connectionName: "Other" };
+  const mixed = byId({ version: 1, boxes: [table("a"), other, query("j", ["a", "b"], "SELECT * FROM source_1, source_2")] });
+  assert.throws(() => compileSql(mixed.get("j")!, mixed), /another connection/);
 });
 
 test("arrows are derived from sources and carry their kind", () => {
