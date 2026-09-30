@@ -352,14 +352,12 @@ export function Marketplace() {
   // without blocking the first render.
   const refreshReleases = useCallback(() => {
     setLoadingReleases(true);
+    // Each label fills in as its own answer arrives: Rust answers a few
+    // repositories at a time, so waiting for the last one would leave every
+    // card blank for the whole sweep.
     Promise.allSettled(
-      CATALOG.filter((c) => c.repo).map((c) => ipc.marketRelease(c.repo!).then((r) => [c.id, r] as const)),
+      CATALOG.filter((c) => c.repo).map((c) => ipc.marketRelease(c.repo!).then((r) => setReleases((m) => ({ ...m, [c.id]: r })))),
     )
-      .then((results) => {
-        const map: Record<string, Release> = {};
-        for (const res of results) if (res.status === "fulfilled") map[res.value[0]] = res.value[1];
-        setReleases(map);
-      })
       .finally(() => {
         setLoadingReleases(false);
         // "Checked" means the slowest source answered too, not that we asked.

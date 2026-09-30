@@ -1,6 +1,7 @@
 mod agent;
 mod github_auth;
 mod installers;
+mod limits;
 mod semantic_sync;
 mod backup;
 pub mod confd;
@@ -58,6 +59,7 @@ pub fn run() {
     // the automatic process-level lookup exarrow uses would panic instead of
     // picking one. See exarrow_exec::install_crypto_provider.
     crate::exarrow_exec::install_crypto_provider();
+    crate::limits::raise_open_files();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

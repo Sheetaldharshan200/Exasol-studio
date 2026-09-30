@@ -7,6 +7,7 @@
 //! and an asset without a digest is refused, never installed unverified.
 
 use serde::Serialize;
+use std::sync::OnceLock;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -72,10 +73,34 @@ pub(crate) fn classify_failure(status: u16, remaining: Option<&str>, reset_epoch
     ReleaseError::Unavailable(format!("HTTP {status}"))
 }
 
+/// The one blocking HTTP client every synchronous fetch in the app shares.
+///
+/// A blocking client owns a thread, a runtime and its kqueue/epoll handle,
+/// and a `Client::new()` that cannot get them panics — which, with
+/// `panic = "abort"`, is the process gone. Opening the Marketplace used to
+/// build one client per catalog repository at once (well over a hundred),
+/// and under launchd's 256-open-files default that ran out and aborted the
+/// app on the spot. One client, built once, also pools connections.
+pub(crate) fn http() -> Option<&'static reqwest::blocking::Client> {
+    static HTTP: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    if let Some(client) = HTTP.get() {
+        return Some(client);
+    }
+    // Only a client that was built is kept: a build that failed under
+    // resource pressure is tried again next time rather than remembered.
+    let built = reqwest::blocking::Client::builder().build().ok()?;
+    Some(HTTP.get_or_init(|| built))
+}
+
+fn no_client() -> ReleaseError {
+    ReleaseError::Unavailable("the HTTP client could not be created".into())
+}
+
 fn fetch_release_detailed(repo: &str, release_path: &str) -> Result<UpstreamRelease, ReleaseError> {
     let url = format!("https://api.github.com/repos/{repo}/releases/{release_path}");
     let response = crate::github_auth::authorize(
-        reqwest::blocking::Client::new()
+        http()
+            .ok_or_else(no_client)?
             .get(&url)
             .header("User-Agent", "exasol-studio")
             .header("Accept", "application/vnd.github+json")
@@ -178,7 +203,8 @@ fn assets_without_api(repo: &str, tag: &str) -> Result<UpstreamRelease, ReleaseE
 
 /// One github.com page as text. Not the API, so not rate limited.
 fn github_page(url: String) -> Result<String, ReleaseError> {
-    let r = reqwest::blocking::Client::new()
+    let r = http()
+        .ok_or_else(no_client)?
         .get(&url)
         .header("User-Agent", "exasol-studio")
         .timeout(Duration::from_secs(20))
@@ -199,7 +225,7 @@ fn github_page(url: String) -> Result<String, ReleaseError> {
 /// github.com, so it costs nothing against the API allowance — which is what
 /// lets an install stay verified when the API itself is unreachable.
 pub fn sha256_sibling(asset_url: &str) -> Option<String> {
-    let body = reqwest::blocking::Client::new()
+    let body = http()?
         .get(format!("{asset_url}.sha256"))
         .header("User-Agent", "exasol-studio")
         .timeout(Duration::from_secs(20))
@@ -337,7 +363,7 @@ fn mirror_upstream(catalog: &Value, missing: &[&str]) -> Vec<UpstreamInfo> {
 }
 
 fn fetch_mirror_catalog() -> Option<Value> {
-    reqwest::blocking::Client::new()
+    http()?
         .get("https://raw.githubusercontent.com/Sheetaldharshan200/Exasol-studio/main/marketplace/catalog.json")
         .header("User-Agent", "exasol-studio")
         .timeout(Duration::from_secs(6))
@@ -431,7 +457,7 @@ pub fn fetch_source_tree(repo: &str, destination: &std::path::Path) -> AppResult
 /// rate-limited), resolving the default branch's commit from the repo's
 /// commits atom feed (also not rate-limited).
 fn fetch_source_tarball(repo: &str) -> AppResult<Vec<u8>> {
-    let client = reqwest::blocking::Client::new();
+    let client = http().ok_or_else(|| AppError::Storage(no_client().to_string()))?;
     let api = client
         .get(format!("https://api.github.com/repos/{repo}/tarball"))
         .header("User-Agent", "exasol-studio")

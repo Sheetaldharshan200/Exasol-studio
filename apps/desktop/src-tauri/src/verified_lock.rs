@@ -143,7 +143,9 @@ pub fn resolve_override(baked: &RuntimeComponents, data_dir: &Path) -> Option<Ru
 /// newly-cached lock takes effect on the next launch (component_lock resolves
 /// the override at startup) — never a hot swap mid-run.
 pub fn refresh(baked: &RuntimeComponents, data_dir: &Path) -> AppResult<bool> {
-    let client = reqwest::blocking::Client::new();
+    let Some(client) = crate::upstream::http() else {
+        return Ok(false);
+    };
     let get = |url: String| {
         client
             .get(url)

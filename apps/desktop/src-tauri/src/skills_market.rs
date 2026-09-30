@@ -349,7 +349,7 @@ fn fetch_official_skill(skill_id: &str) -> AppResult<PersonaSkill> {
     let url = format!(
         "https://raw.githubusercontent.com/{SKILLS_REPO}/main/plugins/exasol/skills/{dir}/SKILL.md"
     );
-    let client = reqwest::blocking::Client::new();
+    let client = crate::upstream::http().ok_or_else(|| AppError::Storage("The HTTP client could not be created.".into()))?;
     let resp = client
         .get(&url)
         .header("User-Agent", "exasol-studio")

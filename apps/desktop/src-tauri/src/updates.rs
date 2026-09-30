@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter};
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(45);
 
 fn latest_release_tag(repo: &str) -> Option<String> {
-    let response = reqwest::blocking::Client::new()
+    let response = crate::upstream::http()?
         .get(format!("https://api.github.com/repos/{repo}/releases/latest"))
         .header("User-Agent", "exasol-studio")
         .header("Accept", "application/vnd.github+json")
