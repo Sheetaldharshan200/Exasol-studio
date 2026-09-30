@@ -40,6 +40,7 @@ import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDe
 import { GitPanel } from "@/features/workbench/GitPanel";
 import { NotebookTab } from "@/features/workbench/NotebookTab";
 import { DashServerTab } from "@/features/dashserver/DashServerTab";
+import { PanoramaTab } from "@/features/panorama/PanoramaTab";
 import { Icon } from "@/components/ui/icon";
 import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite } from "@/lib/favorites";
@@ -1395,6 +1396,11 @@ export function ExasolStudio({
             setSidebarOpen(false);
             openDashboards();
             break;
+          case "panorama":
+            sidebarPanelRef.current?.collapse();
+            setSidebarOpen(false);
+            openPanorama();
+            break;
           case "bi":
             openNotebook();
             break;
@@ -2023,7 +2029,7 @@ export function ExasolStudio({
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills" | "dashboards", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills" | "dashboards" | "panorama", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -2046,6 +2052,8 @@ export function ExasolStudio({
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
   /** Open (or focus) the Dashboards tab — dash-server's hosted apps, inside Studio. */
   const openDashboards = () => openSingletonTab("dashboards", "Dashboards", "dash");
+  /** Open (or focus) Panorama — the exploration canvas, with Studio as its shell. */
+  const openPanorama = () => openSingletonTab("panorama", "Panorama", "pano");
   // Clicking a notification navigates to what it's about (studio:navigate).
   const navigateRef = useRef<(to: string) => void>(() => undefined);
   navigateRef.current = (to: string) => {
@@ -2058,6 +2066,7 @@ export function ExasolStudio({
     else if (to === "skills") openSkills();
     else if (to === "bi") openNotebook();
     else if (to === "anomalies") openAnomalies();
+    else if (to === "panorama") openPanorama();
     else if (to.startsWith("marketplace")) {
       openMarketplace();
       if (to === "marketplace:updates")
@@ -2900,6 +2909,12 @@ export function ExasolStudio({
               openDashboards();
               return;
             }
+            if (id === "panorama") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+              openPanorama();
+              return;
+            }
             if (id === "guides") {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -3145,6 +3160,7 @@ export function ExasolStudio({
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
           activeTab.view !== "dashboards" &&
+          activeTab.view !== "panorama" &&
           // The Exa tab is a full chat surface — no editor toolbar row (its
           // own header carries the brand; the agent works across ALL
           // connected databases via the MCP gateway, so a per-tab connection
@@ -3505,6 +3521,10 @@ export function ExasolStudio({
           ) : activeTab.view === "dashboards" ? (
             <div className="min-h-0 flex-1">
               <DashServerTab connection={connection ? { profileId: connection.profile.id, connectionName: connection.profile.name } : null} />
+            </div>
+          ) : activeTab.view === "panorama" ? (
+            <div className="min-h-0 flex-1">
+              <PanoramaTab />
             </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">

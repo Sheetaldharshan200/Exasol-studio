@@ -33,6 +33,8 @@ export type TabView =
   | "notebook"
   /** dash-server's hosted apps, rendered inside Studio. */
   | "dashboards"
+  /** Panorama's canvas, served by Studio acting as its shell. */
+  | "panorama"
   | "skills"
   | "connProps"
   | "plan"
@@ -150,6 +152,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   git: "git",
   notebook: "notebook",
   dashboards: "dashboard-grid",
+  panorama: "grid",
   skills: "skills",
   plan: "clock-dashed-half",
   logs: "list",
