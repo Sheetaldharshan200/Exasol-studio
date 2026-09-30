@@ -172,3 +172,30 @@ coordinate, nothing dispatches on an id.
   all fixed except two deliberate policies (the OVA import without a
   publisher digest, and forgetting a VMware machine's record on removal since
   Studio never reaches into VMware).
+
+# Anomalies tab: typed decisions over rows through Ollaya (2026-09-30)
+
+The tab answers fraud/discrepancy-style questions about every row of a
+SELECT on this machine. Engine: **Ollaya** (`ollaya serve` on
+`127.0.0.1:11435`, one binary, Apache-2.0) running the **Laya** decision
+models (Apache-2.0, Convai Innovations; default `laya:typed-decisions`).
+Marketplace item `ollaya` — a `gh-asset` with `perPlatform: true`: the
+pattern matches one file per platform and the host picks (Linux ships
+`.tar.zst`, which Studio does not extract, so Linux says "no build").
+
+- `decisions.rs`: resolves the binary (Studio bin dir, then PATH), adopts a
+  daemon only if `/api/tags` answers with a `models` array, else spawns
+  `ollaya serve` (killed on exit), pulls via `ollaya pull` streamed under job
+  `anomaly`, decides four rows in flight through `/api/decide`
+  (`{model, state, questions, keep_alive}`), returns answers per row plus the
+  first failure — earlier answers are kept.
+- `features/anomaly/decisions.ts` (pure, tested): presets, `rowState` (null
+  prototype, duplicate columns suffixed), `isReadOnlyQuery` (one SELECT/WITH,
+  no second statement — the tab's "writes nothing" is enforced here),
+  `decodeAnswer`, `flagValue` (noul → p; score → level/(n−1); choice →
+  1 − P(first option)), `rankRows`, `toCsv` (formula-leading text prefixed
+  with `'`).
+- Results are frozen per run (rows, questions, model) with a run id, so
+  edits or a late finish cannot mislabel answers.
+- Codex: 10 findings, all fixed. Not verified live on this Mac yet: the
+  `/api/decide` reply nesting (`answers_of` accepts nested or flat).

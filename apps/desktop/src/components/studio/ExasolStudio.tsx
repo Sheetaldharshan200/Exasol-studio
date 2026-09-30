@@ -16,6 +16,7 @@ import { DbaDashboard } from "@/features/workbench/DbaDashboard";
 import { FilePreviewPanel } from "@/features/workbench/FilePreviewPanel";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { Marketplace } from "@/features/marketplace/Marketplace";
+import { AnomalyTab } from "@/features/anomaly/AnomalyTab";
 import { readMetaSnapshot, resolveCatalog } from "@/features/marketplace/catalog-data";
 import { Docs } from "@/features/marketplace/Docs";
 import { ArtifactTab } from "@/features/artifact/ArtifactTab";
@@ -1409,6 +1410,11 @@ export function ExasolStudio({
             setSidebarOpen(false);
             openMarketplace();
             break;
+          case "anomalies":
+            sidebarPanelRef.current?.collapse();
+            setSidebarOpen(false);
+            openAnomalies();
+            break;
           case "guides":
             sidebarPanelRef.current?.collapse();
             setSidebarOpen(false);
@@ -1930,6 +1936,27 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Open (or focus) the Anomalies tab — typed decisions over rows, full tab.
+  function openAnomalies() {
+    const list = tabsFor(connKey);
+    const existing = list.find((t) => t.view === "anomalies");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    tabCounter.current += 1;
+    const tab: SqlTab = {
+      id: `tab-anom-${Date.now()}-${tabCounter.current}`,
+      title: "Anomalies",
+      view: "anomalies",
+      sql: "",
+      response: null,
+      execError: null,
+    };
+    updateTabs(connKey, (l) => [...l, tab]);
+    setActiveTabId(tab.id);
+  }
+
   // Open (or focus) an object-detail tab for a schema/table/view.
   function openObjectDetails(
     profileId: string,
@@ -2077,6 +2104,7 @@ export function ExasolStudio({
     else if (to === "notebook") openNotebook();
     else if (to === "skills") openSkills();
     else if (to === "bi") openNotebook();
+    else if (to === "anomalies") openAnomalies();
     else if (to.startsWith("marketplace")) {
       openMarketplace();
       if (to === "marketplace:updates")
@@ -2907,6 +2935,12 @@ export function ExasolStudio({
               openMarketplace();
               return;
             }
+            if (id === "anomalies") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+              openAnomalies();
+              return;
+            }
             if (id === "guides") {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -3143,6 +3177,7 @@ export function ExasolStudio({
           activeTab.view !== "visualizer" &&
           activeTab.view !== "filePreview" &&
           activeTab.view !== "marketplace" &&
+          activeTab.view !== "anomalies" &&
           activeTab.view !== "guides" &&
           activeTab.view !== "docs" &&
           activeTab.view !== "welcome" &&
@@ -3476,6 +3511,10 @@ export function ExasolStudio({
           ) : activeTab.view === "marketplace" ? (
             <div className="min-h-0 flex-1">
               <Marketplace />
+            </div>
+          ) : activeTab.view === "anomalies" ? (
+            <div className="min-h-0 flex-1">
+              <AnomalyTab connection={connection ? { profileId: connection.profile.id, connectionName: connection.profile.name } : null} />
             </div>
           ) : activeTab.view === "guides" ? (
             <div className="min-h-0 flex-1">
