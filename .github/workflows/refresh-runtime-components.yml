@@ -70,9 +70,12 @@ jobs:
             label: macOS Apple Silicon
           - os: macos-15-intel
             label: macOS Intel
-          - os: ubuntu-22.04
+          # 24.04: its podman prints an image reference the Exasol launcher can
+          # read after `podman load`; 22.04's stock podman does not, and every
+          # Linux validation since 2026-09-22 failed on exactly that.
+          - os: ubuntu-24.04
             label: Linux x64
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             label: Linux ARM64
           - os: windows-latest
             label: Windows x64
