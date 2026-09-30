@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": ".github/scripts/refresh_runtime_components.py",
-  "generatedAt": "2026-09-21T17:33:53Z",
+  "generatedAt": "2026-09-30T06:19:59Z",
   "personal": {
     "repository": "exasol/exasol-personal",
     "version": "v2.3.0",
@@ -40,43 +40,43 @@
   },
   "uv": {
     "repository": "astral-sh/uv",
-    "version": "0.12.17",
+    "version": "0.12.21",
     "artifacts": {
       "linux-aarch64": {
         "name": "uv-aarch64-unknown-linux-gnu.tar.gz",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-aarch64-unknown-linux-gnu.tar.gz",
-        "sha256": "d636d1b678e9e7f367ecb22b46bd1cabbed234d6bc3b4d96365d2b507f72f86c",
-        "executableSha256": "4d1158be7c22f0dc44cdfb90eaf1bd77d99ba0b87d9f281a474e33f280b82b7f"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51",
+        "executableSha256": "c1fd7d7e0d9b90a3109256bd84496896d0230722e7704085b1375b8bf5aa091a"
       },
       "linux-x86_64": {
         "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-unknown-linux-gnu.tar.gz",
-        "sha256": "fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63",
-        "executableSha256": "553a67a24d306a803d5c45678b7c54ed0c8b698d9fe3835d54905811348ccf2a"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0",
+        "executableSha256": "e8a4e7b4fd6283892fccfc4f335fb16cdf01064bb135172e4e2e73b478eb2076"
       },
       "macos-aarch64": {
         "name": "uv-aarch64-apple-darwin.tar.gz",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-aarch64-apple-darwin.tar.gz",
-        "sha256": "85f00cbdc6dd3e97eba4c31b4d014375a9fdfe8f570023b84e5102fc3456896b",
-        "executableSha256": "0d7e9f718697816408bba1bc0a915d60e1f82ef23bf339ce88f00b9d2f26e0ad"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "b88bda573e566ef9bced66b155fe0408626fbbc053aee1c30ba686f0728c9447",
+        "executableSha256": "39ff60b06ac8c7bd0444726feace6279c1a971e84e71469c9355cfc5aa685d9e"
       },
       "macos-x86_64": {
         "name": "uv-x86_64-apple-darwin.tar.gz",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-apple-darwin.tar.gz",
-        "sha256": "8dcf05a8c809bb3c471d2b614788ba27a6e41298fc8c31ac84b5f4339fd468e5",
-        "executableSha256": "e9e5f69456ee070dfa1a2979c90a87e724ff64c8a00f8db8892fb4b3ada59bf7"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "2b336763b396ec6afa20c5a8b083538ca7402445b868311979d740a4344c17d8",
+        "executableSha256": "3a78dfd4404df1b638e7fb5e51c7f8ab37c7256fab61a499019805ad1b2d88d6"
       },
       "windows-aarch64": {
         "name": "uv-aarch64-pc-windows-msvc.zip",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-aarch64-pc-windows-msvc.zip",
-        "sha256": "3e1aa6849d77f0e00dc865e4afab5c5b32de053e21fe35bf5ad5cec3734ec976",
-        "executableSha256": "92e3a7af84b7da8925997eb5b856595e1c36a4b3591fbccee7d143e69f1c8656"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-aarch64-pc-windows-msvc.zip",
+        "sha256": "93ed53b94e9cec000cacdfd18ca67bc4cb2b6a5f5ec041edd7f2a3dae365ce79",
+        "executableSha256": "5d12f46c4bfe183d6eea457040714dab53f63a125e6312c88afa28bd9087b036"
       },
       "windows-x86_64": {
         "name": "uv-x86_64-pc-windows-msvc.zip",
-        "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-pc-windows-msvc.zip",
-        "sha256": "a252121d5b59398fcb137c6ea448176459a44010f33f67e0072305a637119ca7",
-        "executableSha256": "2019cdf564cb8f749262f5f021cedc75a99abb1c6081227ca340bbcda972611d"
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "5d223efa0bf00208c3853246af09420419dfbd352536aa6bb8163d6170e23890",
+        "executableSha256": "15523ea73d7a313f214a1fa2a2c1f0e5d93c0d762b52fb6ddecfcc33c3003401"
       }
     }
   },
@@ -84,7 +84,7 @@
     "pythonVersion": "3.12",
     "pyexasolVersion": "1.3.0",
     "mcpServerVersion": "2.2.0",
-    "lockSha256": "e6d66e1b220e921e142f2bef362071de639d34103e16801d281c9af7f0b6bad2"
+    "lockSha256": "2a5216c3ac4a4bdf4454dd3436e5421739a44d2479247ef5036a23fae34849a4"
   },
   "exapump": {
     "repository": "exasol-labs/exapump",
