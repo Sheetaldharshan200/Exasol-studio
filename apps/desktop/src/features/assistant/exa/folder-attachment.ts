@@ -5,9 +5,59 @@
 // (folder name + per-file path/size), so nothing large rides in the composer.
 
 export const FOLDER_MIME = "application/x-exasol-folder";
+/** A single file the OS picker already copied to disk: the chip carries only
+ *  its name, size and saved path — nothing is uploaded on send. */
+export const SAVED_FILE_MIME = "application/x-exasol-saved-file";
 
-export type FolderEntry = { path: string; size: number };
-export type FolderManifest = { groupId: string; folder: string; count: number; entries: FolderEntry[] };
+/** `savedPath` is set when the file is already on disk (OS picker); then send
+ *  writes nothing and only builds the note. */
+export type FolderEntry = { path: string; size: number; savedPath?: string };
+/** `skipped`/`capped` come from the OS-picker walk: how many entries were
+ *  left out, and whether the file cap stopped it. */
+export type FolderManifest = { groupId: string; folder: string; count: number; entries: FolderEntry[]; skipped?: number; capped?: boolean };
+
+export type SavedFile = { name: string; size: number; path: string };
+
+/** A picked folder whose files the OS picker already copied: one chip, no
+ *  in-memory File objects, the note is built from the saved paths. */
+export function makeSavedFolderAttachment(folder: string, items: SavedFile[], left: { skipped: number; capped: boolean } = { skipped: 0, capped: false }): File {
+  const manifest: FolderManifest = {
+    groupId: "saved",
+    folder,
+    count: items.length,
+    entries: items.map((it) => ({ path: it.name, size: it.size, savedPath: it.path })),
+    skipped: left.skipped,
+    capped: left.capped,
+  };
+  return new File([JSON.stringify(manifest)], folder, { type: FOLDER_MIME });
+}
+
+/** A single picked file already on disk, as the composer's attachment. */
+export function makeSavedFileAttachment(item: SavedFile): File {
+  return new File([JSON.stringify(item)], item.name, { type: SAVED_FILE_MIME });
+}
+
+export function isSavedFileAttachment(file?: File | null): boolean {
+  return !!file && file.type === SAVED_FILE_MIME;
+}
+
+export async function readSavedFile(file: File): Promise<SavedFile | null> {
+  try {
+    const v = JSON.parse(await file.text()) as SavedFile;
+    return v && typeof v.path === "string" && typeof v.name === "string" ? { name: v.name, size: Number(v.size) || 0, path: v.path } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A real File rebuilt from bytes the picker returned inline (images, PDFs,
+ *  short text), so the stock inline path renders it as before. */
+export function fileFromInline(name: string, mime: string, base64: string): File {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: mime || "application/octet-stream" });
+}
 
 type Group = { id: string; folder: string; files: File[] };
 const groups = new Map<string, Group>();
@@ -57,7 +107,7 @@ export async function readFolderManifest(file: File): Promise<FolderManifest | n
     const m = JSON.parse(await file.text()) as FolderManifest;
     if (!m || !Array.isArray(m.entries)) return null;
     // Keep only well-formed entries so consumers can rely on `path` being a string.
-    m.entries = m.entries.filter((e): e is FolderEntry => !!e && typeof e.path === "string");
+    m.entries = m.entries.filter((e): e is FolderEntry => !!e && typeof e.path === "string" && (e.savedPath === undefined || typeof e.savedPath === "string"));
     return m;
   } catch {
     return null;

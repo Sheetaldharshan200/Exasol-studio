@@ -392,6 +392,17 @@ export type SlcChoice = { alias: string; installed: boolean };
 export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** One file picked through the OS dialog and copied into the attachments folder. */
+export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
+export type AttachmentPicks = {
+  kind: "files" | "folder" | "none";
+  folder?: string;
+  items: PickedAttachment[];
+  /** Folder entries left out: hidden, dependency trees, symlinks, unreadable. */
+  skipped: number;
+  /** The folder had more files than the cap; the walk stopped there. */
+  capped: boolean;
+};
 /** Panorama as Studio sees it: is the web build installed, and where is the socket proxy. */
 export type PanoramaStatus = { installed: boolean; proxyUrl: string };
 /** One hosted Dash app, from dash-server's own inventory. */
@@ -841,6 +852,9 @@ export const ipc = {
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),
   saveAttachment: (name: string, base64Data: string) =>
     call<string>("save_attachment", { name, base64Data }),
+  /** Open the OS picker for files or a folder; the picks are copied into the
+   *  attachments folder (subfolders kept) and described for the composer. */
+  attachmentPick: (kind: "files" | "folder") => call<AttachmentPicks>("attachment_pick", { kind }),
   installCli: () => call<string>("install_cli"),
   fsListDir: (path: string) => call<FsEntry[]>("fs_list_dir", { path }),
   fsReadText: (path: string) => call<string>("fs_read_text", { path }),

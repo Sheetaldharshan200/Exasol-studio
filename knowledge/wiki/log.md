@@ -231,3 +231,10 @@ Ollaya not laya: Ollaya is the runtime (daemon + API), Laya the model it serves.
 
 ## [2026-09-30] architecture | panorama-shell — Panorama tab with Studio as its shell (scheme server + shim + loopback socket proxy); web-app install kind
 Also today: local-database recovery now takes down a VM the launcher forgot (vm.pid + degraded state, no vm-state.json, stop says "already stopped", start says "VM is already running"); GitHub access became a floating icon. Stack: PR 164 → 165 → 166 (dash-server + recovery fix) → 167 (panorama).
+
+## [2026-09-30] gotcha | marketplace-open-files-abort — Marketplace open aborted the app: 123 blocking HTTP clients under launchd's 256 open files, panic = abort
+Root cause and the five-part fix on page marketplace-open-files-abort (shared blocking client, 6-permit release gate, RLIMIT_NOFILE raised at startup, GitHub commands async, progressive release labels). Codex: cache only a built client (a failed build retried), connect/disconnect under one operation lock, the gate as a tested function.
+
+## [2026-09-30] feature | ai-panel-native-attachments — attach files/folders through the OS dialog; Rust copies by path, chips record what is on disk
+Why the old way failed and the design: openspec/changes/ai-panel-native-attachments. Codex found the real folder bug: assistant-ui matches a file against the adapter's `accept` (extension or exact MIME) BEFORE add() runs, and the synthetic folder chip's MIME was never listed — every folder was rejected silently. Also: never follow symlinks in a folder walk, stop at the cap during the walk, de-duplicate cleaned names, name the chip after the saved copy.
+

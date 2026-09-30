@@ -28,6 +28,7 @@ mod exarrow_exec;
 mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
+mod attachments;
 mod dash_server;
 mod panorama;
 mod error;
@@ -158,6 +159,7 @@ pub fn run() {
             panorama::panorama_status,
             panorama::panorama_deployments,
             panorama::panorama_credentials,
+            attachments::attachment_pick,
             cloudflared::cloudflared_ensure,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,

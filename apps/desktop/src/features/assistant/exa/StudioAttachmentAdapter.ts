@@ -2,7 +2,7 @@ import { generateId, type AttachmentAdapter, type CompleteAttachment, type Pendi
 import { OpenCodeAttachmentAdapter } from "@assistant-ui/react-opencode";
 import { ipc } from "@/lib/ipc";
 import { buildDataFileNote, buildFolderNote, routeAttachment } from "./attachment-routing";
-import { FOLDER_MIME, folderFiles, isFolderAttachment, readFolderManifest, releaseFolder } from "./folder-attachment";
+import { FOLDER_MIME, SAVED_FILE_MIME, folderFiles, isFolderAttachment, isSavedFileAttachment, readFolderManifest, readSavedFile, releaseFolder } from "./folder-attachment";
 import { wrapMachineContext } from "./context";
 
 /**
@@ -14,8 +14,12 @@ import { wrapMachineContext } from "./context";
  */
 export class StudioAttachmentAdapter implements AttachmentAdapter {
   private base = new OpenCodeAttachmentAdapter();
-  // The stock accept list has no binary table formats — add them.
-  accept = `${this.base.accept},.parquet,.xlsx,.xls,.jsonl,.ndjson`;
+  // The runtime matches a file against this list BEFORE calling add(), by
+  // extension or exact MIME type. The stock list has no binary table
+  // formats, and the two synthetic chips (a folder, a file already on disk)
+  // carry their own MIME types and no telling extension — without them here
+  // the runtime rejected every folder before add() ever saw it.
+  accept = [this.base.accept, ".parquet,.xlsx,.xls,.jsonl,.ndjson", FOLDER_MIME, SAVED_FILE_MIME].join(",");
 
   async add(state: { file: File }): Promise<PendingAttachment> {
     // A whole folder rides as one synthetic attachment → one chip.
@@ -25,6 +29,18 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
         type: "file",
         name: state.file.name,
         contentType: FOLDER_MIME,
+        file: state.file,
+        status: { type: "requires-action", reason: "composer-send" },
+      };
+    }
+    // A file the OS picker already copied to disk: the chip shows its name;
+    // send only writes the note.
+    if (isSavedFileAttachment(state.file)) {
+      return {
+        id: generateId(),
+        type: "file",
+        name: state.file.name,
+        contentType: SAVED_FILE_MIME,
         file: state.file,
         status: { type: "requires-action", reason: "composer-send" },
       };
@@ -50,6 +66,13 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
     // subfolder in the name so nothing collides) and emit ONE note listing them.
     if (isFolderAttachment(attachment.file)) {
       const manifest = await readFolderManifest(attachment.file);
+      // Picked through the OS dialog: every file is on disk already.
+      const saved = (manifest?.entries ?? []).filter((e) => e.savedPath);
+      if (manifest && saved.length === manifest.entries.length && saved.length > 0) {
+        const items = saved.map((e) => ({ name: e.path, size: e.size, path: e.savedPath as string }));
+        const note = wrapMachineContext(buildFolderNote(manifest.folder, items));
+        return { ...attachment, status: { type: "complete" }, content: [{ type: "text", text: note }] };
+      }
       const files = manifest ? folderFiles(manifest.groupId) : [];
       const items: { name: string; size: number; path: string }[] = [];
       try {
@@ -65,6 +88,16 @@ export class StudioAttachmentAdapter implements AttachmentAdapter {
       }
       const folder = manifest?.folder ?? attachment.name;
       const note = wrapMachineContext(buildFolderNote(folder, items));
+      return { ...attachment, status: { type: "complete" }, content: [{ type: "text", text: note }] };
+    }
+    if (isSavedFileAttachment(attachment.file)) {
+      const saved = await readSavedFile(attachment.file);
+      if (!saved) throw new Error("The attached file's record could not be read.");
+      const textLike = /\.(csv|tsv|jsonl|ndjson)$/i.test(saved.name);
+      // A header preview for small text-like data, read from the saved copy.
+      const firstLines =
+        textLike && saved.size <= 64 * 1024 ? (await ipc.fsReadText(saved.path).catch(() => "")).split(/\r?\n/).slice(0, 3) : undefined;
+      const note = wrapMachineContext(buildDataFileNote(saved.path, saved.name, saved.size, firstLines));
       return { ...attachment, status: { type: "complete" }, content: [{ type: "text", text: note }] };
     }
     if (routeAttachment(attachment.file.name, attachment.file.size) !== "disk") {
