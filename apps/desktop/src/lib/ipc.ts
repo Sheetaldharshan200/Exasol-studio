@@ -390,6 +390,10 @@ export type ScriptPlan = { version: string; files: string[]; statements: { head:
 export type SlcChoice = { alias: string; installed: boolean };
 /** The decision engine: installed? answering? which models it holds. */
 export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
+/** dash-server as Studio sees it: installed? answering? for which connection? */
+export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null };
+/** One hosted Dash app, from dash-server's own inventory. */
+export type DashApp = { name: string; title: string; route: string; status: string; published: boolean };
 /** A run's answers per row (null where none) and the first failure, if one stopped it. */
 export type DecideOutcome = { answers: unknown[]; failedRow: number | null; error: string | null };
 /** Formats of a delivered file; the next step is stated from the format. A
@@ -876,12 +880,12 @@ export const ipc = {
     call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
-  // ── Dashboards: one JSON file per dashboard under <data>/dashboards. The
-  //    document shape lives in features/dashboard/store.ts; Rust only does I/O.
-  dashboardRead: (id: string) => call<string | null>("dashboard_read", { id }),
-  dashboardWrite: (id: string, json: string) => call<void>("dashboard_write", { id, json }),
-  dashboardDelete: (id: string) => call<void>("dashboard_delete", { id }),
-  dashboardList: () => call<Array<{ id: string; title: string }>>("dashboard_list"),
+  // ── dash-server: the ecosystem's dashboard host, run by Studio for a
+  //    connection and rendered inside a tab. See dash_server.rs.
+  dashServerStatus: () => call<DashServerStatus>("dash_server_status"),
+  dashServerStart: (profileId: string) => call<DashServerStatus>("dash_server_start", { profileId }),
+  dashServerStop: () => call<void>("dash_server_stop"),
+  dashServerApps: () => call<DashApp[]>("dash_server_apps"),
   // Public sharing tunnel (cloudflared quick tunnel in front of the share server).
   cloudflaredEnsure: () => call<string>("cloudflared_ensure"),
   cloudflaredStart: (port: number) => call<string>("cloudflared_start", { port }),

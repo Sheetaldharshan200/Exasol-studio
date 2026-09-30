@@ -6,18 +6,9 @@
 
 import { ipc } from "@/lib/ipc";
 import { CATALOG } from "@/features/marketplace/catalog-data";
-import { dashboardBus } from "@/features/dashboard/dashboard-bus";
-import type { Op } from "@/features/dashboard/model";
 
 import { STUDIO_ACTIONS, isStudioAction, type StudioActionName } from "./studio-action-names";
 export { STUDIO_ACTIONS, isStudioAction, type StudioActionName };
-
-/** Apply a dashboard op through the bus, mapping the ApplyResult to an action result. */
-function dashboardOp(op: Op): StudioActionResult {
-  const res = dashboardBus.apply(op);
-  if (res.error) return { ok: false, error: res.error };
-  return { ok: true, data: { widgets: res.doc.widgets.map((w) => ({ id: w.id, type: w.type })), params: res.doc.params.map((p) => p.name) } };
-}
 
 export type StudioActionResult = { ok: boolean; data?: unknown; error?: string };
 
@@ -149,51 +140,6 @@ export async function executeStudioAction(name: string, rawArgs: unknown): Promi
       case "disconnect": {
         window.dispatchEvent(new CustomEvent("studio:disconnect", { detail: { name: str(args.name) || undefined } }));
         return { ok: true, data: "Disconnected." };
-      }
-      case "dashboard_open": {
-        window.dispatchEvent(new Event("studio:open-dashboard"));
-        return { ok: true, data: "Opened the dashboard." };
-      }
-      case "dashboard_get": {
-        const doc = dashboardBus.getDoc();
-        if (!doc) return { ok: false, error: "No dashboard is open. Call dashboard_open first." };
-        return { ok: true, data: { title: doc.title, widgets: doc.widgets, params: doc.params } };
-      }
-      case "dashboard_add_widget": {
-        const type = str(args.type);
-        if (!type) return { ok: false, error: "dashboard_add_widget needs a widget 'type' (chart, kpi, table, markdown, filter, search)." };
-        const widget: Record<string, unknown> = { type };
-        if (str(args.id)) widget.id = str(args.id);
-        if (str(args.query)) widget.query = str(args.query);
-        if (args.props && typeof args.props === "object") widget.props = args.props;
-        if (args.layout && typeof args.layout === "object") widget.layout = args.layout;
-        return dashboardOp({ op: "add_widget", widget } as Op);
-      }
-      case "dashboard_update_widget": {
-        const id = str(args.id);
-        if (!id) return { ok: false, error: "dashboard_update_widget needs the widget 'id'." };
-        const patch = (args.patch && typeof args.patch === "object" ? args.patch : args) as Record<string, unknown>;
-        return dashboardOp({ op: "update_widget", id, patch } as Op);
-      }
-      case "dashboard_set_layout": {
-        const id = str(args.id);
-        const layout = (args.layout && typeof args.layout === "object" ? args.layout : args) as Record<string, unknown>;
-        if (!id) return { ok: false, error: "dashboard_set_layout needs the widget 'id'." };
-        return dashboardOp({ op: "set_layout", id, layout } as Op);
-      }
-      case "dashboard_remove_widget": {
-        const id = str(args.id);
-        if (!id) return { ok: false, error: "dashboard_remove_widget needs the widget 'id'." };
-        return dashboardOp({ op: "remove_widget", id });
-      }
-      case "dashboard_set_param": {
-        const pname = str(args.name);
-        if (!pname) return { ok: false, error: "dashboard_set_param needs a param 'name'." };
-        return dashboardOp({ op: "set_param", param: { ...args, name: pname } } as Op);
-      }
-      case "dashboard_restyle": {
-        const style = (args.style && typeof args.style === "object" ? args.style : {}) as Record<string, string | number>;
-        return dashboardOp(str(args.id) ? { op: "restyle", id: str(args.id), style } : { op: "restyle", style });
       }
       default:
         return { ok: false, error: `Unknown action "${name}". One of: ${STUDIO_ACTIONS.join(", ")}.` };

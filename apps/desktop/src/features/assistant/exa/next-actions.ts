@@ -9,7 +9,7 @@ export type NextAction =
   | { kind: "explain-plan"; label: "Explain the plan"; sql: string }
   | { kind: "visualize"; label: "Visualize these"; tables: string[] }
   | { kind: "chart"; label: "Chart it" }
-  | { kind: "dashboard"; label: "Add to a dashboard" }
+  | { kind: "dashboard"; label: "Build a dashboard" }
   | { kind: "fix"; label: "Fix it" };
 
 export type ReplyContext = {
@@ -36,7 +36,7 @@ export function suggestNextActions(reply: string, ctx: ReplyContext): NextAction
   // A markdown table whose first column looks like time → chart / dashboard.
   const table = firstMarkdownTable(reply);
   if (table && table.rows.length >= 2 && table.rows.every((r) => DATE_LIKE.test(r[0]))) {
-    out.push({ kind: "chart", label: "Chart it" }, { kind: "dashboard", label: "Add to a dashboard" });
+    out.push({ kind: "chart", label: "Chart it" }, { kind: "dashboard", label: "Build a dashboard" });
   }
   // Table references the catalog knows → visualize them together.
   const mentioned = ctx.tables.filter((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(reply));

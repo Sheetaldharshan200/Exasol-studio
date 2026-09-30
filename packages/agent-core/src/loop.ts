@@ -3,8 +3,6 @@ import { runLoop, type ToolSet } from "./llm.ts";
 import { z } from "zod";
 import type { ProviderRegistry } from "./providers.ts";
 import type { ConfigStore } from "./config.ts";
-import type { DashboardStore } from "./dashboards.ts";
-import type { ArtifactStore } from "./artifacts.ts";
 import type { Session, SessionStore } from "./session.ts";
 import type { DbRegistry } from "./db.ts";
 import type { MemoryStore } from "./memory.ts";
@@ -45,7 +43,7 @@ EVIDENCE RULES — these are absolute:
 - NEVER display example, placeholder, or illustrative data values as if they were the user's data. Every cell, row, and number you show must come verbatim from a tool result in THIS conversation. After loading a file, do NOT print "sample rows" from memory — if a preview is useful, query the table first and show what the query returned.
 - COMPLETENESS CHECK before finishing: every schema/table/number in your answer must trace to a tool result from THIS turn. If the question spans several objects, cover ALL of them — never describe an object you did not query, and never drop one you did. If anything is missing, call the tool instead of finishing.
 
-Your toolset is LEAN by design: you start each turn with the core tools for the task. If a capability is missing (export, profiling, dashboards, UI, researchers…), call request_tools with the tool names you need — its description lists everything available — then use them on your next step.
+Your toolset is LEAN by design: you start each turn with the core tools for the task. If a capability is missing (export, profiling, UI, researchers…), call request_tools with the tool names you need — its description lists everything available — then use them on your next step.
 
 ACT, DON'T NARRATE — this is how you work:
 - You do tasks by CALLING TOOLS, not by describing them. If a tool can do it, CALL THE TOOL — do not answer with a plan, a numbered list of steps, or a block of SQL "to run".
@@ -54,11 +52,7 @@ ACT, DON'T NARRATE — this is how you work:
 - NEVER invent a command, function, SQL syntax, or system table to make a task look done (there is no EXA_PUMP statement; there is no SYS.EXA_ATTACHED_FILES). If no available tool can do what's asked, say that in one plain sentence — don't fabricate a mechanism.
 - A turn that only describes what could be done, without calling the tools that do it, is a failed turn.
 
-Choosing dashboard vs artifact: if the user types /dashboard (or clearly asks for a dashboard / live charts), build a DASHBOARD with dashboard_save. If they type /artifact (or ask for a report/HTML/insight page), build an ARTIFACT with render_artifact. Honor the explicit choice — never substitute one for the other. Always give dashboard panels a clear title.
-
-Artifacts: for anything richer than a couple of sentences, call load_skill('artifact-builder') then render_artifact({title, html}) — a self-contained HTML page opens as a tab in the app — use it for rich insights, reports, or small interactive views that a chat message can't express (styled summaries, diagrams, an HTML table of findings). The html must be ONE complete document with inline CSS/JS (no external URLs). Prefer this over long text when the user wants a visual insight; use dashboards for live SQL-backed charts.
-
-Dashboards: you can BUILD live dashboards with dashboard_save (validated JSON spec: panels with SQL + bar/line/area/pie/scatter charts, KPI cards, tables, 'explore' panels — an interactive pivot/chart studio the user can reshape — and MARKDOWN text panels ({viz:{type:"markdown",content}}, no query) for narrative, all on a 12-column grid). For report-style dashboards, open with a full-width markdown summary panel (what the data shows, in 2-4 sentences) and add short markdown insight notes next to key charts — imported notebooks export as Markdown/HTML/PDF reports, and the narrative is what makes them readable. When the user asks for a dashboard: find the tables (kb_search), verify columns, test each panel's SQL with run_sql, then save — the user renders it in the app's Notebook (Import menu → the dashboard; its panels become auto-running cells). For dashboards with 3+ panels, FAN OUT: issue MULTIPLE spawn_researcher calls in ONE turn — one per panel/metric area, each tasked "find the right table and columns for X, then write AND test the exact SELECT" — they run in PARALLEL and report back tested SQL; assemble the spec from their reports and call dashboard_save once. Panel SQL MUST use fully schema-qualified names (SCHEMA.TABLE_NAME, never a bare table name) — panels run without a default schema. It MUST aggregate in the database (GROUP BY / LIMIT): Exasol crunches millions of rows server-side and a chart needs at most a few hundred — never chart raw row dumps. NEVER tell the user a dashboard exists unless dashboard_save returned ok:true with an id — on ok:false, read the hint, fix the spec, retry once, or report the failure honestly. For charts beyond the basic five, put a full ECharts option in viz.option with your own series (any ECharts series type) — the panel injects the query result as dataset.source (first row = column names).
+Dashboards and artifacts are built in dash-server, the ecosystem's dashboard host: when the user asks for a dashboard, a report page, live charts, an artifact or an HTML page, use the dash-server MCP tools — app_create_exasol_dashboard or app_scaffold_from_schema to start, app_create_from_files / app_patch_file to refine, app_run_healthcheck, then app_promote_revision — and tell the user it opens in Studio's Dashboards tab. TEST every panel's SQL with run_sql first. If no dash-server tools are available, say so in one sentence and ask the user to open the Dashboards tab and start dash-server; never build a dashboard or an HTML page any other way.
 
 Working method:
 - START data questions with kb_search — it returns the relevant tables, columns, and join conditions from the schema knowledge graph in one call.
@@ -156,8 +150,6 @@ export async function runTurn(opts: {
   kb: KnowledgeGraph;
   store: SessionStore;
   config: ConfigStore;
-  dashboards: DashboardStore;
-  artifacts: ArtifactStore;
   skills: SkillStore;
   documents: DocumentStore;
   mcp?: import("./mcp.ts").McpManager;
@@ -170,7 +162,7 @@ export async function runTurn(opts: {
   /** Where this turn runs: the desktop app (default) or the terminal CLI. */
   surface?: "app" | "cli";
 }): Promise<void> {
-  const { session, registry, db, memory, kb, store, config, dashboards, artifacts, skills: skillStore, documents, mcp, modelRef, userText, context, attachments, surface = "app" } = opts;
+  const { session, registry, db, memory, kb, store, config, skills: skillStore, documents, mcp, modelRef, userText, context, attachments, surface = "app" } = opts;
   const settings = config.settings();
   if (session.running) throw new Error("Session is already generating");
 
@@ -359,8 +351,6 @@ export async function runTurn(opts: {
     kb,
     model,
     settings,
-    dashboards,
-    artifacts,
     skills: skillList,
     documents,
     semanticViewsReady,
@@ -1071,8 +1061,7 @@ function selectTools(all: ToolSet, opts: { text: string; connected: boolean; has
   want(/join|relation|related|connect|link|between|subsystem|\barea\b|star schema|foreign key|how do .* relate/, "kb_join_path", "kb_subsystem");
   want(/refresh|re-?crawl|reload|changed schema|new table|just created|after creating/, "kb_refresh");
   // Dashboards get the researcher too: panel discovery/SQL-testing fans out.
-  want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card|report/, "dashboard_save", "dashboard_list", "dashboard_get", "spawn_researcher", "run_sql_batch");
-  want(/artifact|report|infographic|render|html page|write.?up/, "render_artifact");
+  want(/dashboard|chart|graph|visuali|plot|\bkpi\b|\bbi\b|metric card|report|artifact|infographic|html page/, "spawn_researcher", "run_sql_batch");
   want(/connect|open (the|a|my|up)|click|go to|navigat|panel|marketplace|settings|switch to|show me the/, "ui_connect", "ui_open", "ui_editor_insert", "app_ui_locate");
   want(
     /everything|all (the )?tables|explore|overview|\bmap\b|understand the (db|database|schema)|whole (db|database|schema)|what.?s in|compare|versus|\bvs\b|across|breakdown|\btrends?\b|each of|both |multiple|analy|profile (these|the)|summar/,
@@ -1151,7 +1140,7 @@ export function looksLikeUnacted(text: string): boolean {
   // Tool call emitted as TEXT instead of invoked (chat-template misfires on
   // small models): <tool_call> wrappers, or a JSON object naming our tools.
   if (/<tool_call>|<function_call>|<\|tool_call\|>|\[TOOL_(CALL|REQUEST)\]|"tool_calls?"\s*:/i.test(text)) return true;
-  if (/\{\s*"(name|tool|function)"\s*:\s*"(run_sql|list_schemas|list_tables|describe_table|kb_search|kb_join_path|kb_subsystem|import_csv|get_table_sample|list_connections|search_documents|read_document|spawn_researcher|dashboard_\w+|render_artifact|profile_query|remember|load_skill|ui_\w+)"/.test(text))
+  if (/\{\s*"(name|tool|function)"\s*:\s*"(run_sql|list_schemas|list_tables|describe_table|kb_search|kb_join_path|kb_subsystem|import_csv|get_table_sample|list_connections|search_documents|read_document|spawn_researcher|profile_query|remember|load_skill|ui_\w+)"/.test(text))
     return true;
   const hasSql = /```sql|CREATE\s+(SCHEMA|TABLE)\b|INSERT\s+INTO\b|IMPORT\s+INTO\b|\bSELECT\b[\s\S]*\bFROM\b/i.test(text);
   const hasPlanLanguage =
