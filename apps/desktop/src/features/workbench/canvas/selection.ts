@@ -14,12 +14,22 @@ export function selectionValues(result: StatementResult, field: string | undefin
   const wanted = (field ?? result.columns[0]?.name ?? "").toLowerCase();
   const col = result.columns.findIndex((c) => c.name.toLowerCase() === wanted);
   if (col < 0) return null;
-  const values = picks.map((p) => (p.name !== undefined ? p.name : result.rows[p.dataIndex]?.[col])).filter((v, i, arr) => arr.indexOf(v) === i);
+  // A drawn name is the category as text ("" for NULL); the row it came from
+  // gives back the real value, so a NULL slice filters IS NULL, not = ''.
+  const rowValue = (name: string) => {
+    const row = result.rows.find((r) => String(r[col] ?? "") === name);
+    return row ? row[col] : name;
+  };
+  const values = picks.map((p) => (p.name !== undefined ? rowValue(p.name) : result.rows[p.dataIndex]?.[col])).filter((v, i, arr) => arr.indexOf(v) === i);
   return { field: result.columns[col]!.name, values };
 }
 
 /** The picks behind an ECharts `selectchanged` event, with names where the series has them. */
-export function picksFrom(selected: { seriesIndex: number; dataIndex: number[] }[], seriesData: (unknown[] | undefined)[]): { dataIndex: number; name?: string }[] {
+/** Charts whose drawn order differs from the rows: only their picks are read by name. */
+export const NAMED_CHARTS = new Set(["pie", "donut", "funnel"]);
+
+export function picksFrom(selected: { seriesIndex: number; dataIndex: number[] }[], seriesData: (unknown[] | undefined)[], chart = "pie"): { dataIndex: number; name?: string }[] {
+  if (!NAMED_CHARTS.has(chart)) return selected.flatMap((s) => s.dataIndex.map((dataIndex) => ({ dataIndex })));
   const out: { dataIndex: number; name?: string }[] = [];
   for (const s of selected) {
     const data = seriesData[s.seriesIndex];

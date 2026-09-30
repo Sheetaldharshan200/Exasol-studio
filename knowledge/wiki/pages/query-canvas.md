@@ -80,3 +80,14 @@ stale; the trail dims arrows too; typing in a step is one undo step, moves
 and resizes are remembered; a restored canvas offers Run / Run all; a plan
 taken live is not replayed; explorer answers for a switched connection are
 dropped.
+
+# Second Codex pass (2026-09-30), all fixed
+
+Run tokens carry a sequence number (two runs in one millisecond were
+indistinguishable); a superseded run no longer re-runs the boxes below it;
+paging reads through to each chart's *own* source; the shared chart builder
+matches field names case-insensitively (a quoted lower-case column fell back
+to the first column); a NULL pie slice filters `IS NULL`, and only pie, donut
+and funnel picks are read by name; Undo and Redo end a typing session; the
+explorer keeps only the latest request per schema.
+

@@ -59,11 +59,17 @@ export function buildChartOption(
     return seen > 0;
   };
   // X axis = the explicit field, else the first NON-numeric column, else col 0.
+  // Field names match the catalog case-insensitively: Exasol folds unquoted
+  // names to upper case, but a quoted "region" stays lower case.
+  const colIndex = (f: string) => {
+    const exact = cols.indexOf(f);
+    return exact >= 0 ? exact : cols.findIndex((c) => c.toLowerCase() === f.toLowerCase());
+  };
   const xIdx = viz.xField
-    ? Math.max(cols.indexOf(viz.xField.toUpperCase()), 0)
+    ? Math.max(colIndex(viz.xField), 0)
     : Math.max(cols.findIndex((_, i) => !isNumCol(i)), 0);
   const yIdxs = viz.yFields?.length
-    ? viz.yFields.map((f) => cols.indexOf(f.toUpperCase())).filter((i) => i >= 0)
+    ? viz.yFields.map(colIndex).filter((i) => i >= 0)
     : cols.map((_, i) => i).filter((i) => i !== xIdx && isNumCol(i));
   // Nothing detected numeric? Plot every non-x column so it's never blank.
   // A single-column result plots that column against row numbers.

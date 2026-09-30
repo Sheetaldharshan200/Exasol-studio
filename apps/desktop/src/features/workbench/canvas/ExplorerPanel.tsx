@@ -21,6 +21,8 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
   const [error, setError] = useState<string | null>(null);
   const sourceRef = useRef(source);
   sourceRef.current = source;
+  const requestSeq = useRef(0);
+  const latest = useRef<Record<string, number>>({});
 
   // The other open connections, so a canvas can read from more than one.
   useEffect(() => {
@@ -52,9 +54,12 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
     setExpanded(next);
     if (next && !objects[next]) {
       setObjects((m) => ({ ...m, [next]: "loading" }));
+      // Only the latest request for this schema may fill it: an answer for a
+      // connection no longer shown, or overtaken by a newer ask, is dropped.
       const asked = source.profileId;
-      // An answer for a connection no longer shown is dropped, not filed under the new one.
-      const stillShown = () => sourceRef.current.profileId === asked;
+      const token = ++requestSeq.current;
+      latest.current[next] = token;
+      const stillShown = () => sourceRef.current.profileId === asked && latest.current[next] === token;
       ipc.listSchemaObjects(asked, next)
         .then((o) => stillShown() && setObjects((m) => ({ ...m, [next]: { tables: o.tables, views: o.views } })))
         .catch((e) => stillShown() && setObjects((m) => ({ ...m, [next]: { error: errorMessage(e) } })));

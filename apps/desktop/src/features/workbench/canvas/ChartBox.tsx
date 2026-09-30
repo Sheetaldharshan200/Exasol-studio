@@ -41,7 +41,7 @@ function Chart({ chart, viz, result, onSelect, chartRef }: { chart: string; viz:
       inst.on("selectchanged", (p: unknown) => {
         const sel = (p as { selected?: { seriesIndex: number; dataIndex: number[] }[] }).selected ?? [];
         const series = (inst.getOption() as { series?: { data?: unknown[] }[] }).series ?? [];
-        onSelectRef.current(picksFrom(sel, series.map((s) => s.data)));
+        onSelectRef.current(picksFrom(sel, series.map((s) => s.data), chart));
       });
     });
     const ro = new ResizeObserver(() => chartRef.current?.resize());

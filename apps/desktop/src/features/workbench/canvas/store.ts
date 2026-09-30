@@ -87,11 +87,15 @@ function nextName(doc: CanvasDoc, base: string): string {
 
 export function createCanvasStore(conn: Conn): CanvasStore {
   return createStore<CanvasState>()((set, get) => {
+    // Typing in a step is one undo step: the document before the first
+    // keystroke is remembered once, until the step runs or something else commits.
+    const editing = new Set<string>();
     /** A structural change: remembered for undo, saved, and redo forgotten. */
     const commit = (next: CanvasDoc) => {
       const { doc, past } = get();
       set({ doc: next, past: [...past.slice(-(HISTORY - 1)), doc], future: [] });
       saveDoc(conn.profileId, next);
+      editing.clear();
     };
     const patchBox = (id: string, patch: (b: Box) => Box, remember = true) => {
       const doc = get().doc;
@@ -102,24 +106,24 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         saveDoc(conn.profileId, next);
       }
     };
-    // Typing in a step is one undo step: the document before the first
-    // keystroke is remembered once, until the step runs or something else commits.
-    const editing = new Set<string>();
+
     const markStale = (ids: string[]) =>
       set((s) => ({ runs: Object.fromEntries(Object.entries(s.runs).map(([k, v]) => [k, ids.includes(k) ? { ...v, stale: true } : v])) }));
 
-    const fetchPage = async (id: string, offset: number) => {
+    let runSeq = 0;
+    /** Fetch one page; false when there was nothing to run or a newer run superseded this one. */
+    const fetchPage = async (id: string, offset: number): Promise<boolean> => {
       const state = get();
       const box = byId(state.doc).get(id);
-      if (!box) return;
+      if (!box) return false;
       let sql: string;
       try {
         sql = compilePagedSql(box, byId(state.doc), PAGE, offset);
       } catch (e) {
         set((s) => ({ runs: { ...s.runs, [id]: { status: "error", error: e instanceof Error ? e.message : String(e), loaded: 0, more: false } } }));
-        return;
+        return true;
       }
-      const progressId = `canvas-${id}-${Date.now()}`;
+      const progressId = `canvas-${id}-${Date.now()}-${++runSeq}`;
       const prev = state.runs[id];
       set((s) => ({ runs: { ...s.runs, [id]: { ...(offset > 0 && prev ? prev : { loaded: 0, more: false }), status: "running", progressId, stale: false } } }));
       const started = performance.now();
@@ -127,7 +131,7 @@ export function createCanvasStore(conn: Conn): CanvasStore {
       const current = () => get().runs[id]?.progressId === progressId;
       try {
         const res = await ipc.executeSql(box.profileId, box.connectionName, sql, PAGE, false, false, progressId);
-        if (!current()) return;
+        if (!current()) return false;
         const r = res.results[0];
         if (!r) throw new Error("The database returned nothing.");
         if (r.error) throw new Error(r.error);
@@ -139,26 +143,30 @@ export function createCanvasStore(conn: Conn): CanvasStore {
             [id]: { status: "ok", result: merged, loaded: offset + rows.length, more: rows.length >= PAGE, elapsedMs: Math.round(performance.now() - started), stale: false },
           },
         }));
+        return true;
       } catch (e) {
-        if (!current()) return;
+        if (!current()) return false;
         set((s) => ({ runs: { ...s.runs, [id]: { ...(s.runs[id] ?? { loaded: 0, more: false }), status: "error", error: e instanceof Error ? e.message : String(e) } } }));
+        return true;
       }
     };
     /** Charts built on `id` read its rows again; steps built on it are marked stale. */
     const readThrough = (id: string) => {
       const doc = get().doc;
       const boxes = byId(doc);
-      const below = dependantsOf(doc, id);
-      const src = get().runs[id];
-      set((s) => ({
-        runs: Object.fromEntries(
-          Object.entries(s.runs).map(([k, v]) => {
-            if (!below.includes(k)) return [k, v];
-            const b = boxes.get(k);
-            return b?.kind === "chart" && src ? [k, { ...src, stale: false }] : [k, { ...v, stale: true }];
-          }),
-        ),
-      }));
+      // Nearest first, so a chart on a step below sees that step's rows, not the paged box's.
+      for (const k of dependantsOf(doc, id)) {
+        const b = boxes.get(k);
+        if (!b) continue;
+        set((s) => {
+          const cur = s.runs[k];
+          if (b.kind === "chart") {
+            const src = s.runs[b.source];
+            return src ? { runs: { ...s.runs, [k]: { ...src, stale: !!src.stale } } } : {};
+          }
+          return cur ? { runs: { ...s.runs, [k]: { ...cur, stale: true } } } : {};
+        });
+      }
     };
 
     return {
@@ -254,6 +262,7 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         const { past, doc, future } = get();
         const prev = past[past.length - 1];
         if (!prev) return;
+        editing.clear();
         set({ doc: prev, past: past.slice(0, -1), future: [doc, ...future] });
         saveDoc(conn.profileId, prev);
       },
@@ -261,6 +270,7 @@ export function createCanvasStore(conn: Conn): CanvasStore {
         const { past, doc, future } = get();
         const next = future[0];
         if (!next) return;
+        editing.clear();
         set({ doc: next, past: [...past, doc], future: future.slice(1) });
         saveDoc(conn.profileId, next);
       },
@@ -277,7 +287,8 @@ export function createCanvasStore(conn: Conn): CanvasStore {
           if (src) set((s) => ({ runs: { ...s.runs, [id]: { ...src, stale: false } } }));
           return;
         }
-        await fetchPage(id, 0);
+        // A superseded run leaves the boxes below to the run that replaced it.
+        if (!(await fetchPage(id, 0))) return;
         const below = dependantsOf(doc, id);
         markStale(below);
         // Steps below re-run on their own; charts read through their source.
@@ -300,8 +311,7 @@ export function createCanvasStore(conn: Conn): CanvasStore {
       loadMore: async (id) => {
         const run = get().runs[id];
         if (!run || run.status === "running" || !run.more) return;
-        await fetchPage(id, run.loaded);
-        readThrough(id);
+        if (await fetchPage(id, run.loaded)) readThrough(id);
       },
 
       setSelection: (id, sel) =>
