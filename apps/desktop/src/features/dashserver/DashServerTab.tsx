@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { errorMessage, ipc, type DashApp, type DashServerStatus } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { appUrl } from "./apps";
 
 type Conn = { profileId: string; connectionName: string } | null;
 type Profile = { id: string; name: string };
@@ -23,6 +24,7 @@ export function DashServerTab({ connection }: { connection: Conn }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState(connection?.profileId ?? "");
   const [apps, setApps] = useState<DashApp[] | null>(null);
+  const [appsError, setAppsError] = useState<string | null>(null);
   const [app, setApp] = useState<string | null>(null);
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,12 +36,20 @@ export function DashServerTab({ connection }: { connection: Conn }) {
     if (!live.current) return;
     setStatus(s);
     if (s?.serving) {
-      const list = await ipc.dashServerApps().catch(() => []);
-      if (!live.current) return;
-      setApps(list);
-      setApp((cur) => cur && list.some((a) => a.name === cur) ? cur : (list.find((a) => a.published)?.name ?? list[0]?.name ?? null));
+      try {
+        const list = await ipc.dashServerApps();
+        if (!live.current) return;
+        setApps(list);
+        setAppsError(null);
+        setApp((cur) => (cur && list.some((a) => a.name === cur) ? cur : (list.find((a) => a.published)?.name ?? list[0]?.name ?? null)));
+      } catch (e) {
+        if (!live.current) return;
+        setApps([]);
+        setAppsError(errorMessage(e));
+      }
     } else {
       setApps(null);
+      setAppsError(null);
     }
   }, []);
 
@@ -89,7 +99,11 @@ export function DashServerTab({ connection }: { connection: Conn }) {
   }
 
   const current = apps?.find((a) => a.name === app) ?? null;
-  const frameUrl = status?.serving && current ? `${status.url}${current.route}` : null;
+  // The route is inventory data: framed only on the server's own origin.
+  const frameUrl = status?.serving && current ? appUrl(status.url, current.route) : null;
+  // A server answering on the port counts, installed here or not; one Studio
+  // did not start is used but never stopped from here.
+  const external = Boolean(status?.serving && !status.startedByStudio);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
@@ -98,7 +112,7 @@ export function DashServerTab({ connection }: { connection: Conn }) {
         <span className="font-semibold text-foreground">Dashboards</span>
         <span className="text-muted-foreground">dash-server, inside Studio</span>
         <span className="mx-1 h-4 w-px bg-border" />
-        {status && !status.installed ? (
+        {status && !status.installed && !status.serving ? (
           <>
             <span className="text-foreground">dash-server is not installed on this machine.</span>
             <button onClick={openMarketplaceItem} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 font-medium text-primary-foreground hover:bg-primary/85">
@@ -130,6 +144,7 @@ export function DashServerTab({ connection }: { connection: Conn }) {
               <>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="h-2 w-2 rounded-full bg-primary" /> answering on {status.url.replace("http://", "")}
+                  {external ? <span className="rounded-full border border-border px-1.5 text-[10px]">started outside Studio</span> : null}
                 </span>
                 {status.profileId ? (
                   <button onClick={() => void stop()} disabled={busy !== null} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-foreground hover:bg-secondary disabled:opacity-50">
@@ -173,7 +188,12 @@ export function DashServerTab({ connection }: { connection: Conn }) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : status?.serving ? (
-              <span className="ml-auto text-muted-foreground">No apps yet — ask Exa for a dashboard.</span>
+              <span className={cn("ml-auto", appsError ? "text-destructive" : "text-muted-foreground")}>{appsError ? `Could not list the apps: ${appsError}` : "No apps yet — ask Exa for a dashboard."}</span>
+            ) : null}
+            {status?.serving ? (
+              <button onClick={() => void refresh()} title="Refresh the app list" aria-label="Refresh the app list" className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
+                <RefreshCcw className="h-3.5 w-3.5" />
+              </button>
             ) : null}
             {frameUrl ? (
               <>
@@ -191,7 +211,16 @@ export function DashServerTab({ connection }: { connection: Conn }) {
       </div>
       <div className="min-h-0 flex-1">
         {frameUrl ? (
-          <iframe key={`${frameUrl}-${frameKey}`} src={frameUrl} title={current?.title ?? "Dashboard"} className="h-full w-full border-0 bg-background" />
+          <iframe
+            key={`${frameUrl}-${frameKey}`}
+            src={frameUrl}
+            title={current?.title ?? "Dashboard"}
+            // The app is another program's UI: scripts and forms it needs,
+            // no navigating the Studio window, no popups, no referrer.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+            referrerPolicy="no-referrer"
+            className="h-full w-full border-0 bg-background"
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center text-[12px] text-muted-foreground">
             <div className="max-w-md">

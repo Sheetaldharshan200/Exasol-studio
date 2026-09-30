@@ -31,9 +31,45 @@ impl DashServer {
             }
         }
     }
+    /// A child that has exited is forgotten first, so a listener that later
+    /// takes the port is never mistaken for the one Studio started.
     fn started_for(&self) -> Option<(String, String)> {
-        self.child.lock().ok().and_then(|g| g.as_ref().map(|(_, id, name)| (id.clone(), name.clone())))
+        let mut guard = self.child.lock().ok()?;
+        if let Some((child, _, _)) = guard.as_mut() {
+            if matches!(child.try_wait(), Ok(Some(_)) | Err(_)) {
+                *guard = None;
+            }
+        }
+        guard.as_ref().map(|(_, id, name)| (id.clone(), name.clone()))
     }
+}
+
+/// Whether a connection's TLS mode verifies the server certificate — the
+/// `verify_ca` and `verify_identity` modes do; `preferred`, `required` and
+/// `disabled` encrypt without verifying.
+pub fn verifies_certificate(ssl_mode: &str) -> bool {
+    ssl_mode.starts_with("verify")
+}
+
+/// The dash-server profile name for a connection: readable, and unique per
+/// connection id so two connections named alike never share one.
+pub fn server_profile_name(name: &str, id: &str) -> String {
+    let tail: String = id.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect::<String>().to_ascii_lowercase();
+    let slug = profile_slug(name);
+    if tail.is_empty() {
+        slug
+    } else {
+        format!("{}-{tail}", slug.chars().take(38).collect::<String>().trim_end_matches('-'))
+    }
+}
+
+/// A hosted app's route must stay on the server: `/apps/…` or `/preview/…`,
+/// one path, nothing that could re-point the frame elsewhere.
+pub fn valid_route(route: &str) -> bool {
+    (route.starts_with("/apps/") || route.starts_with("/preview/"))
+        && !route.contains("//")
+        && !route.contains("..")
+        && route.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
 }
 
 fn base() -> String {
@@ -74,7 +110,7 @@ pub fn bootstrap_env(
         ("DASH_SERVER_HOST".into(), "127.0.0.1".into()),
         ("DASH_SERVER_PORT".into(), PORT.to_string()),
         ("DASH_SERVER_INSTANCE_PATH".into(), instance_dir.into()),
-        ("DASH_SERVER_EXASOL_PROFILE_NAME".into(), profile_slug(profile_name)),
+        ("DASH_SERVER_EXASOL_PROFILE_NAME".into(), profile_name.into()),
         ("DASH_SERVER_EXASOL_DESCRIPTION".into(), format!("{profile_name} (Exasol Studio connection)")),
         ("DASH_SERVER_EXASOL_DSN".into(), format!("{host}:{port}")),
         ("DASH_SERVER_EXASOL_USER".into(), user.into()),
@@ -99,8 +135,12 @@ pub fn apps_from(inventory: &Value) -> Vec<DashApp> {
             apps.iter()
                 .filter_map(|a| {
                     let name = a.get("name")?.as_str()?.to_string();
+                    let route = a.get("route").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("/apps/{name}"));
+                    if !valid_route(&route) {
+                        return None;
+                    }
                     Some(DashApp {
-                        route: a.get("route").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("/apps/{name}")),
+                        route,
                         title: a.get("title").and_then(Value::as_str).unwrap_or(&name).to_string(),
                         status: a.get("status").and_then(Value::as_str).unwrap_or("unknown").to_string(),
                         published: a.get("published").and_then(Value::as_bool).unwrap_or(false),
@@ -130,17 +170,18 @@ pub struct DashServerStatus {
     pub url: String,
     pub profile_id: Option<String>,
     pub profile_name: Option<String>,
+    /// False when something else serves the port: Studio uses it but did not
+    /// start it and will not stop it.
+    pub started_by_studio: bool,
 }
 
-/// The dash-server command: the Marketplace install's environment first,
-/// then one on PATH (installed by hand counts).
+/// The dash-server command — only the Marketplace install's own environment.
+/// The process receives a connection's password, so a `dash-server` that
+/// merely sits on PATH (which anything can shadow) is never the one started.
 fn dash_server_bin(app: &AppHandle) -> Option<PathBuf> {
     let venv = crate::market::market_dir(app).ok()?.join("dash-server").join("venv");
     let ours = if cfg!(windows) { venv.join("Scripts").join("dash-server.exe") } else { venv.join("bin").join("dash-server") };
-    if ours.is_file() {
-        return Some(ours);
-    }
-    crate::market::resolve_bin("dash-server")
+    ours.is_file().then_some(ours)
 }
 
 /// One JSON-RPC call to the server's MCP endpoint.
@@ -176,9 +217,18 @@ pub async fn dash_server_status(app: AppHandle) -> AppResult<DashServerStatus> {
         installed,
         serving,
         url: base(),
+        started_by_studio: started.is_some(),
         profile_id: started.as_ref().map(|(id, _)| id.clone()),
         profile_name: started.map(|(_, name)| name),
     })
+}
+
+/// Tell the agent sidecar the server is (re)started, so its own MCP
+/// connector and the engine's remote server reconnect and the tools appear.
+/// Best effort: the agent may not be running yet.
+async fn notify_agent(app: &AppHandle) {
+    let _ = crate::agent::agent_api(app.clone(), "/mcp/dash-server/reconnect".into(), "POST".into(), None).await;
+    let _ = crate::agent::agent_api(app.clone(), "/engine/mcp/dash-server/connect".into(), "POST".into(), Some(json!({}))).await;
 }
 
 /// Start dash-server for a connection. A server Studio started for another
@@ -203,8 +253,16 @@ pub async fn dash_server_start(app: AppHandle, profile_id: String) -> AppResult<
     }
     let instance = state.data_dir.join("dash-server");
     std::fs::create_dir_all(&instance)?;
-    let verify_tls = profile.ssl_mode == "verify-full" || profile.ssl_mode == "verify-ca";
-    let env = bootstrap_env(&instance.to_string_lossy(), &profile.name, &profile.host, profile.port, &profile.username, &password, verify_tls);
+    let verify_tls = verifies_certificate(&profile.ssl_mode);
+    let env = bootstrap_env(
+        &instance.to_string_lossy(),
+        &server_profile_name(&profile.name, &profile.id),
+        &profile.host,
+        profile.port,
+        &profile.username,
+        &password,
+        verify_tls,
+    );
     let mut cmd = Command::new(&bin);
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
     for (k, v) in &env {
@@ -218,6 +276,7 @@ pub async fn dash_server_start(app: AppHandle, profile_id: String) -> AppResult<
     let deadline = Instant::now() + Duration::from_secs(40);
     while Instant::now() < deadline {
         if inventory(&client).await.is_some() {
+            notify_agent(&app).await;
             return dash_server_status(app.clone()).await;
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -260,7 +319,7 @@ mod tests {
         let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.as_str());
         assert_eq!(get("DASH_SERVER_PORT"), Some("5100"));
         assert_eq!(get("DASH_SERVER_INSTANCE_PATH"), Some("/data/dash"));
-        assert_eq!(get("DASH_SERVER_EXASOL_PROFILE_NAME"), Some("prod-warehouse"));
+        assert_eq!(get("DASH_SERVER_EXASOL_PROFILE_NAME"), Some("Prod warehouse"), "the caller passes the server profile name it derived");
         assert_eq!(get("DASH_SERVER_EXASOL_DSN"), Some("db.internal:8563"));
         assert_eq!(get("DASH_SERVER_EXASOL_USER"), Some("analyst"));
         assert_eq!(get("DASH_SERVER_EXASOL_SECRET_ENV_VAR"), Some("EXA_PASSWORD"));
@@ -269,6 +328,36 @@ mod tests {
         assert_eq!(get("DASH_SERVER_EXASOL_TLS_VERIFY"), None, "verification stays on when the profile verifies");
         let relaxed = bootstrap_env("/d", "p", "h", 1, "u", "pw", false);
         assert_eq!(relaxed.iter().find(|(k, _)| k == "DASH_SERVER_EXASOL_TLS_VERIFY").map(|(_, v)| v.as_str()), Some("false"));
+    }
+
+    #[test]
+    fn tls_modes_that_verify_are_the_verify_ones() {
+        for m in ["verify_ca", "verify_identity", "verify-full"] {
+            assert!(verifies_certificate(m), "{m}");
+        }
+        for m in ["preferred", "required", "disabled", ""] {
+            assert!(!verifies_certificate(m), "{m}");
+        }
+    }
+
+    #[test]
+    fn server_profile_names_are_readable_and_unique_per_connection() {
+        assert_eq!(server_profile_name("Prod warehouse", "ab12cd34-ef56"), "prod-warehouse-ab12cd34");
+        assert_ne!(server_profile_name("Prod", "id-one"), server_profile_name("Prod", "id-two"));
+        assert_eq!(server_profile_name("Prod", ""), "prod");
+        assert!(server_profile_name(&"x".repeat(80), "12345678").len() <= 48);
+    }
+
+    #[test]
+    fn routes_stay_on_the_server() {
+        for ok in ["/apps/demo", "/apps/sales_2026", "/preview/demo/3"] {
+            assert!(valid_route(ok), "{ok}");
+        }
+        for bad in ["//attacker.example/apps/x", "/apps/../mcp", "http://x/apps/demo", "/mcp", "/apps/a b", "@evil/apps/x"] {
+            assert!(!valid_route(bad), "{bad:?} must be refused");
+        }
+        let inv = json!({"apps": [{"name": "evil", "route": "//attacker.example/apps/evil"}, {"name": "ok", "route": "/apps/ok"}]});
+        assert_eq!(apps_from(&inv).iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), vec!["ok"]);
     }
 
     #[test]

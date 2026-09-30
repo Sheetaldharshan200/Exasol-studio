@@ -36,6 +36,13 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const memory = new MemoryStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
   const mcp = new McpManager(config.dataDir);
+  // dash-server's MCP (the dashboard host Studio runs): registered once so the
+  // sidecar's own tool set has it; Studio asks for a reconnect when the
+  // server starts, and the connect simply fails until then.
+  const dashMcp = process.env.EXA_DASH_SERVER_MCP?.trim();
+  if (dashMcp && !mcp.list().some((s) => s.id === "dash-server")) {
+    void mcp.add({ name: "dash-server", transport: "http", url: dashMcp }).catch(() => undefined);
+  }
   void mcp.connectAll();
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
