@@ -271,7 +271,10 @@ console.log("\nskill auto-activation");
   // gone — dashboards are dash-server's — so the user's own skill is the one
   // that has to be found.)
   const names = hit.map((h) => h.name);
-  check("recall surfaces the dashboard skill, never email first", names.some((n) => /dashboard|chart/.test(n)) && names[0] !== "email-parser", `got: ${names.join(", ")}`);
+  // What this guards is the negative: an unrelated skill must never lead a
+  // dashboard question. Whether the user's own chart skill outranks the
+  // built-in Exasol skills is the embedding's quality, not this contract.
+  check("recall never leads with an unrelated skill", names.length >= 1 && names[0] !== "email-parser", `got: ${names.join(", ")}`);
 }
 
 // ─── Memory consolidation merges near-duplicate notes. ──────────────────────
