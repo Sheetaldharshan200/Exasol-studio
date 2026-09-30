@@ -388,8 +388,6 @@ export type InstallSource =
 export type ScriptPlan = { version: string; files: string[]; statements: { head: string; body: string }[]; fingerprint: string };
 /** One language container the launcher offers, and whether it is installed. */
 export type SlcChoice = { alias: string; installed: boolean };
-/** The decision engine: installed? answering? which models it holds. */
-export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
 /** One file picked through the OS dialog and copied into the attachments folder. */
@@ -407,8 +405,6 @@ export type AttachmentPicks = {
 export type PanoramaStatus = { installed: boolean; proxyUrl: string };
 /** One hosted Dash app, from dash-server's own inventory. */
 export type DashApp = { name: string; title: string; route: string; status: string; published: boolean };
-/** A run's answers per row (null where none) and the first failure, if one stopped it. */
-export type DecideOutcome = { answers: unknown[]; failedRow: number | null; error: string | null };
 /** Formats of a delivered file; the next step is stated from the format. A
  *  rockspec and a desktop build come from the release; the other two are the
  *  tag's source archive. */
@@ -731,12 +727,6 @@ export const ipc = {
     call<ScriptPlan>("market_db_scripts_plan", { id, repo, requested, schema }),
   /** The language containers the official launcher can install locally. */
   marketSlcCatalog: () => call<SlcChoice[]>("market_slc_catalog"),
-  // ── Decisions (Anomalies tab): a local decision-model daemon the
-  //    Marketplace installs; Studio starts it, pulls models, sends rows.
-  decisionsStatus: () => call<DecisionStatus>("decisions_status"),
-  decisionsPull: (model: string) => call<void>("decisions_pull", { model }),
-  decisionsDecide: (model: string, states: Record<string, unknown>[], questions: Record<string, unknown>) =>
-    call<DecideOutcome>("decisions_decide", { model, states, questions }),
   /** Remove an install — by its coordinate, since what "remove" means depends
    *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
   marketUninstall: (target: InstallTarget) =>

@@ -238,3 +238,6 @@ Root cause and the five-part fix on page marketplace-open-files-abort (shared bl
 ## [2026-09-30] feature | ai-panel-native-attachments — attach files/folders through the OS dialog; Rust copies by path, chips record what is on disk
 Why the old way failed and the design: openspec/changes/ai-panel-native-attachments. Codex found the real folder bug: assistant-ui matches a file against the adapter's `accept` (extension or exact MIME) BEFORE add() runs, and the synthetic folder chip's MIME was never listed — every folder was rejected silently. Also: never follow symlinks in a folder walk, stop at the cap during the walk, de-duplicate cleaned names, name the chip after the saved copy.
 
+## [2026-09-30] decision | remove-anomaly-tab — Anomalies tab, decision engine and the ollaya item removed; anomaly detection becomes its own repo and app
+Studio stays the database client and the shell for ecosystem components. Kept: the `perPlatform` release mechanism (generic, tested). One catalog line re-adds Ollaya if ever wanted.
+

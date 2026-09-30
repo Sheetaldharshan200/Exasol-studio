@@ -105,9 +105,7 @@ test("every repo is a well-formed owner/name in an official org", () => {
     if (!item.repo) continue;
     assert.match(item.repo, /^[\w.-]+\/[\w.-]+$/, `${item.id}: repo shape`);
     const owner = item.repo.split("/")[0];
-    // ollaya-dev: the one third-party engine Studio drives itself (the
-    // Anomalies tab's decision models) — installed and managed like ours.
-    assert.ok(["exasol", "exasol-labs", "Sheetaldharshan200", "ollaya-dev"].includes(owner), `${item.id}: unofficial owner ${owner}`);
+    assert.ok(["exasol", "exasol-labs", "Sheetaldharshan200"].includes(owner), `${item.id}: unofficial owner ${owner}`);
   }
 });
 

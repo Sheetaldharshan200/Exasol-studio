@@ -175,6 +175,11 @@ coordinate, nothing dispatches on an id.
 
 # Anomalies tab: typed decisions over rows through Ollaya (2026-09-30)
 
+> **Removed the same day** (change `remove-anomaly-tab`): fraud and
+> discrepancy detection becomes its own repository and application; Studio
+> keeps only the generic `perPlatform` release mechanism this work added. The
+> section below is kept as the record of what was built and why.
+
 The tab answers fraud/discrepancy-style questions about every row of a
 SELECT on this machine. Engine: **Ollaya** (`ollaya serve` on
 `127.0.0.1:11435`, one binary, Apache-2.0) running the **Laya** decision

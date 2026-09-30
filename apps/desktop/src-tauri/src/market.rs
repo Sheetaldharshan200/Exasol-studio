@@ -2763,7 +2763,6 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
         ),
     );
     map.insert("exasol-cloud".into(), json!(bin_present("exasol")));
-    map.insert("ollaya".into(), json!(bin_present("ollaya")));
 
     // ExaPump: prebundled/installed at the managed path, or verified in the
     // manifest. (It lives in personal-local/bin, never on the user's PATH.)
