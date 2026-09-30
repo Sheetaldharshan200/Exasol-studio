@@ -59,6 +59,9 @@ export type Install =
   /** A database image imported into the hypervisor on this machine (x86-64
    *  only); the person downloads it from the publisher's sign-up page. */
   | "vm-appliance"
+  /** A component's web build, verified and unpacked into Studio's folder,
+   *  served to its own tab by Studio (Panorama). */
+  | "web-app"
   | "reference";
 
 import type { InstallSource } from "@/lib/ipc";
@@ -198,7 +201,7 @@ export const CATALOG: CatalogItem[] = [
   { id: "power-apps-connector", repo: "exasol/power-apps-connector", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^power-apps-connector-certified-[\\d.]+\\.zip$", host: "powerapps" } },
   { id: "n8n-nodes", repo: "exasol/n8n-nodes", kind: "bi", install: "package", source: { kind: "registry", registry: "npm", package: "n8n-nodes-exasol" } },
   { id: "azure-data-factory", repo: "exasol/azure-data-factory-functions", kind: "bi", install: "host-plugin", source: { kind: "host-plugin", assetPattern: "^adffunctions-[\\d.]+\\.zip$", host: "azure-functions" } },
-  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "deliver", labs: true, source: { kind: "deliver", format: "desktop-app" } },
+  { id: "panorama", repo: "exasol-labs/exasol-panorama", kind: "bi", install: "web-app", labs: true, source: { kind: "gh-asset", assetPattern: "^exasol-panorama-pwa-[\\d.]+\\.zip$" } },
   { id: "driver-lua", repo: "exasol/exasol-driver-lua", kind: "driver", install: "deliver", source: { kind: "deliver", format: "rockspec", assetPattern: "^luasql-exasol-[\\d.]+-\\d+\\.rockspec$" } },
   { id: "bucketfs-python", repo: "exasol/bucketfs-python", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-bucketfs" } },
   { id: "saas-api-python", repo: "exasol/saas-api-python", kind: "driver", install: "uv-pip", source: { kind: "pypi", package: "exasol-saas-api" } },

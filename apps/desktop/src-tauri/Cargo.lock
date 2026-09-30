@@ -512,6 +512,7 @@ dependencies = [
  "futures-util",
  "log",
  "pin-project-lite",
+ "tokio",
  "tungstenite",
 ]
 
@@ -1803,6 +1804,7 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "arrow",
+ "async-tungstenite",
  "base64 0.22.1",
  "chrono",
  "csv",
@@ -1818,6 +1820,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rust_decimal",
  "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "sha1",
@@ -1834,6 +1837,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls",
  "zeroize",
  "zip 0.6.6",
 ]
