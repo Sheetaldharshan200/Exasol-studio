@@ -623,10 +623,43 @@ pub(crate) fn persist_personal_password(app: &AppHandle, password: &str) -> AppR
     write_secret(&path, &serde_json::to_string_pretty(&secrets)?)
 }
 
-/// When our deployment dir is gone but the port is still held by OUR OWN
-/// orphaned runtime daemon (e.g. the data dir was cleared while the DB ran),
-/// kill that process so setup can proceed. Only kills processes whose command
-/// path points inside Studio's managed runtime dir — never a foreign server.
+/// A deployment dir an interrupted setup left behind: the launcher has
+/// recorded state, but the finished deployment (`deployment.json`) was never
+/// written.
+pub(crate) fn half_initialized(dir: &Path) -> bool {
+    !dir.join("deployment.json").is_file() && dir.join(".exasolLauncherState.json").is_file()
+}
+
+/// Whether a process listening on Studio's port is Studio's OWN database
+/// daemon. Two layouts exist: older runtimes ran from Studio's managed runtime
+/// dir; the current launcher runs every deployment's daemon from the shared
+/// runner cache (`~/Library/Caches/.exasol/personal/runtime-artifacts/…/launcher`)
+/// — the same executable another deployment (e.g. the starter kit on 8563)
+/// uses. So a cache daemon counts as ours only when its port mapping puts the
+/// database on OUR host port (`db:<guest>:<port>`).
+pub(crate) fn is_studio_daemon(command: &str, runtime_marker: &str, port: u16) -> bool {
+    // The managed runtime dir sits under "Application Support": it has a
+    // space, so it is matched on the whole command line, not a split token.
+    if !runtime_marker.is_empty() && command.starts_with(runtime_marker) {
+        return true;
+    }
+    let mut parts = command.split_whitespace();
+    let exe = parts.next().unwrap_or("");
+    let cache_launcher = exe.contains("/.exasol/personal/runtime-artifacts/") && exe.ends_with("/launcher");
+    let args: Vec<&str> = parts.collect();
+    let daemon = args.first() == Some(&"__daemon__");
+    let ours = args.iter().any(|a| {
+        let mut f = a.split(':');
+        matches!((f.next(), f.next(), f.next(), f.next()), (Some("db"), Some(_), Some(host), None) if host == port.to_string())
+    });
+    cache_launcher && daemon && ours
+}
+
+/// When our deployment dir is gone, or its daemon was orphaned by a failed
+/// first boot, but the port is still held by OUR OWN database daemon, stop that
+/// process so setup can proceed. Never touches a foreign server. The daemon
+/// supervises a VM child and ignores a bare TERM while it is booting, so the
+/// children go first, then the daemon, then KILL for a survivor.
 /// Returns true if it freed the port. Unix only (Windows uses containers).
 #[cfg(unix)]
 fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
@@ -638,7 +671,7 @@ fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
     else {
         return false;
     };
-    let mut killed = false;
+    let mut ours = Vec::new();
     for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
         let cmd = crate::process::command("ps")
             .args(["-p", pid, "-o", "command="])
@@ -660,11 +693,21 @@ fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
             killed = true;
         }
     }
-    if killed {
-        std::thread::sleep(Duration::from_millis(1500));
-        return !port_ready(port);
+    if ours.is_empty() {
+        return false;
     }
-    false
+    for pid in &ours {
+        emit_log(app, id, format!("Reclaiming port {port} from an orphaned Studio database process (pid {pid})…"), "info");
+        let _ = Command::new("pkill").args(["-TERM", "-P", pid]).output();
+        let _ = Command::new("kill").args(["-TERM", pid]).output();
+    }
+    if wait_for_port_closed(port, Duration::from_secs(15)) {
+        return true;
+    }
+    for pid in &ours {
+        let _ = Command::new("kill").args(["-KILL", pid]).output();
+    }
+    wait_for_port_closed(port, Duration::from_secs(5))
 }
 
 #[cfg(not(unix))]
@@ -678,6 +721,15 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     let dir = personal_deployment_dir(app)?;
     let ddir = dir.to_string_lossy().to_string();
     let deployment_exists = dir.join("deployment.json").is_file();
+    // An interrupted first setup (the app quit, the daemon was stopped) leaves
+    // the launcher's state behind without the finished deployment: `install`
+    // then refuses ("the deployment may already have resources"). The
+    // deployment never held data, so the launcher's own recovery — destroy —
+    // is safe, and a clean install follows.
+    if half_initialized(&dir) {
+        emit_log(app, id, "An earlier setup was interrupted before it finished; clearing its leftovers and starting again…", "info");
+        let _ = run_streamed(app, id, &cli, &["destroy", "--deployment-dir", &ddir, "--auto-approve", "--remove"]);
+    }
     if !deployment_exists {
         if legacy_deployment_dir().is_some_and(|d| d.join("deployment.json").is_file()) {
             emit_log(
@@ -1409,6 +1461,31 @@ pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_deployment_left_by_an_interrupted_setup_is_recognised() {
+        let dir = std::env::temp_dir().join(format!("studio-half-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!super::half_initialized(&dir), "an empty dir is a fresh start");
+        std::fs::write(dir.join(".exasolLauncherState.json"), "{}").unwrap();
+        assert!(super::half_initialized(&dir), "state without the finished deployment");
+        std::fs::write(dir.join("deployment.json"), "{}").unwrap();
+        assert!(!super::half_initialized(&dir), "a finished deployment is left alone");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn studio_daemon_is_recognised_by_its_port_not_just_its_executable() {
+        let cache = "/Users/x/Library/Caches/.exasol/personal/runtime-artifacts/artifacts/exasol-local-runner/darwin/arm64/abc/unpack/launcher";
+        let marker = "/Users/x/Library/Application Support/com.exasol.studio/personal-local/deployment/local/runtime";
+        assert!(super::is_studio_daemon(&format!("{cache} __daemon__ 2 12288 db:8563:8565 ssh:22:2224"), marker, 8565));
+        assert!(!super::is_studio_daemon(&format!("{cache} __daemon__ 2 12288 db:8563:8563"), marker, 8565), "the starter kit's daemon, same executable, other port");
+        assert!(!super::is_studio_daemon(&format!("{cache} run db:8563:8565"), marker, 8565), "not a daemon");
+        assert!(!super::is_studio_daemon("/usr/bin/nc -l db:8563:8565", marker, 8565), "a foreign program naming our port");
+        assert!(super::is_studio_daemon(&format!("{marker}/mac-runner-aarch64 __daemon__"), marker, 8565), "the older layout");
+        assert!(!super::is_studio_daemon(&format!("{cache} __daemon__ db:8563:85650"), marker, 8565));
+    }
+
     use super::*;
 
     #[test]
