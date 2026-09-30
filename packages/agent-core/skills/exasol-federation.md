@@ -79,7 +79,7 @@ import+join only if the user declines the install.
 2. Write the join, sanity-check it (row counts, a LIMIT preview), show the
    answer.
 3. Offer the natural next step: a saved query, a dashboard
-   (`dashboard-builder`), or — for a snapshot — a scheduled refresh
+   (a dash-server dashboard), or — for a snapshot — a scheduled refresh
    (`exasol-scheduling`).
 
 Never claim a live-federated view when what you built is an imported

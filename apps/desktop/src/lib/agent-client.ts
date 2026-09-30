@@ -49,8 +49,6 @@ export type AgentEvent =
   | { type: "permission-result"; id: string; allow: boolean }
   | { type: "title-changed"; title: string }
   | { type: "user-message"; text: string }
-  | { type: "dashboard-saved"; id: string; title: string }
-  | { type: "artifact-created"; id: string; title: string }
   | { type: "compacted"; folded: number }
   | { type: "ui-request"; id: string; action: string; params: Record<string, unknown> }
   | { type: "ui-result"; id: string; ok: boolean; detail?: string }
@@ -491,37 +489,6 @@ export const llm = {
     listen<LlmProgress>("llm-progress", (e) => cb(e.payload)),
 };
 
-// ── Dashboards (agent-built, JSON specs stored in agent-core) ──
-
-export type DashPanel = {
-  id: string;
-  title: string;
-  grid: { x: number; y: number; w: number; h: number };
-  /** Absent on markdown text panels. */
-  query?: { sql: string };
-  viz:
-    | { type: "echarts"; chart: "bar" | "line" | "area" | "pie" | "donut" | "hbar" | "scatter" | "heatmap" | "funnel" | "radar" | "treemap" | "gauge"; xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> }
-    | { type: "kpi"; valueField?: string; unit?: string }
-    | { type: "table" }
-    | { type: "explore"; config?: Record<string, unknown> }
-    | { type: "markdown"; content: string };
-};
-
-export type Dashboard = {
-  version: 1;
-  id: string;
-  title: string;
-  description: string;
-  /** Optional grouping in the dashboards list (e.g. "System"). */
-  group?: string;
-  panels: DashPanel[];
-  /** Auto-refresh cadence in ms (0/undefined = off). Makes the dashboard live:
-   *  every panel re-runs its query on this interval. */
-  refreshMs?: number;
-};
-
-export type DashboardMeta = { id: string; title: string; description: string; group?: string; panels: number; updatedAt: number };
-
 export type Skill = { name: string; description: string; body: string; source: "builtin" | "user" };
 
 export const skills = {
@@ -537,45 +504,3 @@ export const skills = {
   },
 };
 
-export const artifacts = {
-  async list(): Promise<{ id: string; title: string; createdAt: number }[]> {
-    const { artifacts: a } = await api<{ artifacts: { id: string; title: string; createdAt: number }[] }>("/artifacts");
-    return a;
-  },
-  async get(id: string): Promise<{ id: string; title: string; html: string }> {
-    const { artifact } = await api<{ artifact: { id: string; title: string; html: string } }>(`/artifacts/${encodeURIComponent(id)}`);
-    return artifact;
-  },
-};
-
-export const dashboards = {
-  async list(): Promise<DashboardMeta[]> {
-    const { dashboards: d } = await api<{ dashboards: DashboardMeta[] }>("/dashboards");
-    return d;
-  },
-  async get(id: string): Promise<Dashboard> {
-    const { dashboard } = await api<{ dashboard: Dashboard }>(`/dashboards/${encodeURIComponent(id)}`);
-    return dashboard;
-  },
-  async save(d: Dashboard): Promise<Dashboard> {
-    const { dashboard } = await api<{ dashboard: Dashboard }>("/dashboards", "PUT", d);
-    return dashboard;
-  },
-  async remove(id: string): Promise<void> {
-    await api(`/dashboards/${encodeURIComponent(id)}`, "DELETE");
-  },
-  async history(id: string): Promise<{ index: number; updatedAt: number; title: string; panels: number }[]> {
-    const { history } = await api<{ history: { index: number; updatedAt: number; title: string; panels: number }[] }>(
-      `/dashboards/${encodeURIComponent(id)}/history`,
-    );
-    return history;
-  },
-  async rollback(id: string, index: number): Promise<Dashboard> {
-    const { dashboard } = await api<{ dashboard: Dashboard }>(
-      `/dashboards/${encodeURIComponent(id)}/rollback`,
-      "POST",
-      { index },
-    );
-    return dashboard;
-  },
-};

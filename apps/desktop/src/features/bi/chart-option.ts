@@ -1,4 +1,4 @@
-import type { DashPanel } from "@/lib/agent-client";
+import type { DashPanel } from "./system-dashboards";
 import type { StatementResult } from "@/lib/ipc";
 
 // Pure ECharts option builder for query results — extracted from the retired

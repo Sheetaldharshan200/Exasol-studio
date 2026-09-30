@@ -27,8 +27,6 @@ import { SessionStore, type Session } from "./session.ts";
 import { DbRegistry } from "./db.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
-import { DashboardStore } from "./dashboards.ts";
-import { ArtifactStore } from "./artifacts.ts";
 import { DocumentStore } from "./documents.ts";
 import { SkillStore } from "./skills.ts";
 import { runTurn, type Attachment } from "./loop.ts";
@@ -137,8 +135,6 @@ async function interactive(dataDir: string, args: string[]): Promise<void> {
   const db = new DbRegistry();
   const memory = new MemoryStore(dataDir);
   const kb = new KnowledgeGraph(dataDir);
-  const dashboards = new DashboardStore(dataDir);
-  const artifacts = new ArtifactStore(dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(dataDir);
 
@@ -624,7 +620,7 @@ async function interactive(dataDir: string, args: string[]): Promise<void> {
     try {
       await runTurn({
         session, registry, db, memory, kb,
-        store: sessions, config, dashboards, artifacts, skills, documents,
+        store: sessions, config, skills, documents,
         modelRef: model,
         userText: line,
         attachments: sending.length ? sending : undefined,

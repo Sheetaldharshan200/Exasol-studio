@@ -58,7 +58,7 @@ test("excludes ephemeral views (connect, welcome, marketplace, artifact)", () =>
         tab({ id: "keep", view: "sql" }),
         tab({ id: "drop1", view: "connect" }),
         tab({ id: "drop2", view: "welcome" }),
-        tab({ id: "drop3", view: "artifact" }),
+        tab({ id: "drop3", view: "artifact" as unknown as SqlTab["view"] }),
       ],
     },
     groupsByConn: {},

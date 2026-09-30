@@ -44,7 +44,7 @@ really just a fresh chart. dbt runs are scheduled OUTSIDE the scheduler daemon
 
 ## Monitor
 - Scheduler history table → a status query, or a small Studio dashboard over it
-  (`dashboard-builder`): last run, failures, durations.
+  (a dash-server dashboard): last run, failures, durations.
 - After every build/backfill, report REAL row counts from tool results.
 
 ## Ground rules

@@ -89,7 +89,7 @@ export function ResultsPanel({
   onOpenPlanTab: (plan: Plan, title: string) => void;
 }) {
   // The dashboard view was removed (issue #45) — tabs persisted on it land on Results.
-  const view: ResultView = viewProp === "dashboard" ? "results" : viewProp;
+  const view: ResultView = viewProp;
   const busy = Boolean(runMeta && !runMeta.finishedAt);
   // A run in flight is announced HERE — spinner on the Results tab plus a live
   // clock — not on the Run button (issue #157), which just stays disabled.

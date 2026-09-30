@@ -19,9 +19,6 @@ import { Marketplace } from "@/features/marketplace/Marketplace";
 import { AnomalyTab } from "@/features/anomaly/AnomalyTab";
 import { readMetaSnapshot, resolveCatalog } from "@/features/marketplace/catalog-data";
 import { Docs } from "@/features/marketplace/Docs";
-import { ArtifactTab } from "@/features/artifact/ArtifactTab";
-import { artifacts as artifactClient } from "@/lib/agent-client";
-import { dashboards as dashClient, type Dashboard as DashDoc, type DashPanel as DashPanelDoc } from "@/lib/agent-client";
 import { AgentCursor, type AgentCursorHandle, type CursorMode } from "@/components/studio/AgentCursor";
 import { UiGraph } from "@/lib/ui-graph";
 import { addLearnedEdges, initTraceRecorder, recordTransition } from "@/lib/ui-trace";
@@ -42,7 +39,7 @@ import { ObjectContextMenu, ObjectActionDialog, type ObjectAction } from "@/feat
 import { ObjectDetailPanel, type ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import { GitPanel } from "@/features/workbench/GitPanel";
 import { NotebookTab } from "@/features/workbench/NotebookTab";
-import { DashboardTab } from "@/features/dashboard/DashboardTab";
+import { DashServerTab } from "@/features/dashserver/DashServerTab";
 import { Icon } from "@/components/ui/icon";
 import { SkillsTab } from "@/features/workbench/SkillsTab";
 import { addFavorite } from "@/lib/favorites";
@@ -570,7 +567,7 @@ export function ExasolStudio({
       { id: "act-query", kind: "action", label: "New query", keywords: "sql editor", run: () => void openBuiltSql("", false) },
       { id: "act-connect", kind: "action", label: "Connect a database…", keywords: "add connection", run: () => openConnect() },
       { id: "act-notebook", kind: "action", label: "Open the Notebook", keywords: "cells charts dashboards artifact", run: () => openNotebook() },
-      { id: "act-dashboard", kind: "action", label: "Open a Dashboard", keywords: "dashboard canvas widgets charts kpi tiles visualize", run: () => openDashboard() },
+      { id: "act-dashboard", kind: "action", label: "Open Dashboards", keywords: "dashboard dash-server charts kpi apps", run: () => openDashboards() },
       { id: "act-market", kind: "action", label: "Open the Marketplace", keywords: "extensions install components", run: () => openMarketplace() },
       { id: "act-skills", kind: "action", label: "Open Skills", keywords: "agent skills claude codex", run: () => openSkills() },
       { id: "act-assistant", kind: "action", label: "Toggle the AI assistant", keywords: "exa chat panel", run: () => toggleAi() },
@@ -647,10 +644,7 @@ export function ExasolStudio({
     const onDocs = (e: Event) => openDocsTab((e as CustomEvent<{ path?: string }>).detail?.path);
     // The chat's "Create notebook" card lands the user in the new notebook.
     const onNotebook = () => openNotebook();
-    const onDashboard = (e: Event) => {
-      const d = (e as CustomEvent<{ id?: string; title?: string }>).detail;
-      openDashboard(d?.id ?? "default", d?.title ?? "Dashboard");
-    };
+    const onDashboard = () => openDashboards();
     window.addEventListener("studio:open-docs", onDocs);
     window.addEventListener("studio:open-notebook", onNotebook);
     window.addEventListener("studio:open-dashboard", onDashboard);
@@ -1193,30 +1187,6 @@ export function ExasolStudio({
   // Plain functions (redefined each render) so they always see the CURRENT
   // connection/tabs — a useCallback([]) here froze them at the disconnected
   // first render and opened tabs in the wrong bucket.
-  async function openArtifact(id: string, title: string) {
-      const a = await artifactClient.get(id).catch(() => null);
-      if (!a) return;
-      // Focus an already-open tab for this artifact; otherwise open a NEW one
-      // (no limit — many artifacts can be open at once).
-      const existing = tabsFor(connKey).find((t) => t.view === "artifact" && t.id.startsWith(`tab-artifact-${id}-`));
-      if (existing) {
-        setActiveTabId(existing.id);
-        return;
-      }
-      tabCounter.current += 1;
-      const tab: SqlTab = {
-        id: `tab-artifact-${id}-${tabCounter.current}`,
-        title: title || a.title || "Artifact",
-        view: "artifact",
-        sql: "",
-        response: null,
-        execError: null,
-        artifactHtml: a.html,
-      };
-      updateTabs(connKey, (l) => [...l, tab]);
-      setActiveTabId(tab.id);
-  }
-
   /** Fill a React-controlled input the way a real keystroke would. */
   function fillAnchor(anchor: string, value: string): boolean {
     const el = document.querySelector(`[data-agent-id="${anchor}"]`) as HTMLInputElement | null;
@@ -1260,7 +1230,7 @@ export function ExasolStudio({
     const mode = "cursor" as CursorMode;
 
     const target = String(params.target ?? "");
-    const railId = target === "dashboards" ? "notebook" : target;
+    const railId = target;
     const anchorSel =
       action === "connect"
         ? '[data-agent-id="titlebar.connect"]'
@@ -1419,6 +1389,11 @@ export function ExasolStudio({
             sidebarPanelRef.current?.collapse();
             setSidebarOpen(false);
             openGuides();
+            break;
+          case "dashboards":
+            sidebarPanelRef.current?.collapse();
+            setSidebarOpen(false);
+            openDashboards();
             break;
           case "bi":
             openNotebook();
@@ -2048,7 +2023,7 @@ export function ExasolStudio({
   }, []);
 
   // Open (or focus) a full-page tab by a simple single-instance view.
-  function openSingletonTab(view: "notebook" | "skills" | "dashboard", title: string, idPrefix: string) {
+  function openSingletonTab(view: "notebook" | "skills" | "dashboards", title: string, idPrefix: string) {
     const list = tabsFor(connKey);
     const existing = list.find((t) => t.view === view);
     if (existing) {
@@ -2069,30 +2044,8 @@ export function ExasolStudio({
   }
   const openNotebook = () => openSingletonTab("notebook", "Notebook", "nb");
   const openSkills = () => openSingletonTab("skills", "Skills", "sk");
-  /** Open (or focus) a dashboard tab for a specific saved dashboard id. */
-  function openDashboard(id = "default", title = "Dashboard") {
-    const list = tabsFor(connKey);
-    const existing = list.find((t) => t.view === "dashboard" && (t.dashboardId ?? "default") === id);
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
-    tabCounter.current += 1;
-    const tab: SqlTab = {
-      id: `tab-dash-${Date.now()}-${tabCounter.current}`,
-      title,
-      view: "dashboard",
-      dashboardId: id,
-      sql: "",
-      response: null,
-      execError: null,
-    };
-    updateTabs(connKey, (l) => [...l, tab]);
-    setActiveTabId(tab.id);
-  }
-
-
-
+  /** Open (or focus) the Dashboards tab — dash-server's hosted apps, inside Studio. */
+  const openDashboards = () => openSingletonTab("dashboards", "Dashboards", "dash");
   // Clicking a notification navigates to what it's about (studio:navigate).
   const navigateRef = useRef<(to: string) => void>(() => undefined);
   navigateRef.current = (to: string) => {
@@ -2941,6 +2894,12 @@ export function ExasolStudio({
               openAnomalies();
               return;
             }
+            if (id === "dashboards") {
+              sidebarPanelRef.current?.collapse();
+              setSidebarOpen(false);
+              openDashboards();
+              return;
+            }
             if (id === "guides") {
               sidebarPanelRef.current?.collapse();
               setSidebarOpen(false);
@@ -3185,7 +3144,7 @@ export function ExasolStudio({
           activeTab.view !== "git" &&
           activeTab.view !== "notebook" &&
           activeTab.view !== "skills" &&
-          activeTab.view !== "artifact" &&
+          activeTab.view !== "dashboards" &&
           // The Exa tab is a full chat surface — no editor toolbar row (its
           // own header carries the brand; the agent works across ALL
           // connected databases via the MCP gateway, so a per-tab connection
@@ -3543,14 +3502,9 @@ export function ExasolStudio({
                 </div>
               )}
             </div>
-          ) : activeTab.view === "dashboard" ? (
+          ) : activeTab.view === "dashboards" ? (
             <div className="min-h-0 flex-1">
-              <DashboardTab
-                key={activeTab.dashboardId ?? "default"}
-                dashboardId={activeTab.dashboardId ?? "default"}
-                profileId={connection?.profile.id ?? null}
-                connectionName={connection?.profile.name ?? ""}
-              />
+              <DashServerTab connection={connection ? { profileId: connection.profile.id, connectionName: connection.profile.name } : null} />
             </div>
           ) : activeTab.view === "notebook" ? (
             <div className="min-h-0 flex-1">
@@ -3584,10 +3538,6 @@ export function ExasolStudio({
           ) : activeTab.view === "skills" ? (
             <div className="min-h-0 flex-1">
               <SkillsTab />
-            </div>
-          ) : activeTab.view === "artifact" ? (
-            <div className="min-h-0 flex-1">
-              <ArtifactTab title={activeTab.title} html={activeTab.artifactHtml ?? ""} onOpen={openArtifact} />
             </div>
           ) : activeTab.view === "docs" ? (
             <div className="min-h-0 flex-1">

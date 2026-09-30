@@ -31,7 +31,7 @@ import { ShadcnChartPanel } from "@/features/bi/ShadcnChartPanel";
 import { ChartKindPicker, EchartsCell, KpiCell } from "@/features/workbench/cell-viz";
 import { cellRenderer, resolveCellConnection, type CellViz } from "@/features/workbench/notebook-cell";
 import { SYSTEM_DASHBOARDS } from "@/features/bi/system-dashboards";
-import type { Dashboard } from "@/lib/agent-client";
+import type { Dashboard } from "@/features/bi/system-dashboards";
 import { MarkdownEditor } from "@/features/workbench/MarkdownEditor";
 import {
   Select,
@@ -49,12 +49,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { dashboards } from "@/lib/agent-client";
 import { Icon } from "@/components/ui/icon";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { buildNotebookMarkdown, buildNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
-import { dashboardDocFromCells } from "@/features/dashboard/notebook-to-dashboard";
-import { newFile, serialize } from "@/features/dashboard/store";
 import { cn } from "@/lib/utils";
 
 type CellType = "sql" | "markdown" | "mermaid";
@@ -443,26 +440,6 @@ export function NotebookTab({
   // Export the whole notebook — notes, SQL + result tables, and diagrams — as
   // one document (Markdown / self-contained HTML / PDF via the print dialog).
   const [exportInc, setExportInc] = useState<ExportInclude>({ ...EXPORT_ALL });
-  // Open the current notebook's cells as a NEW linked dashboard: SQL cells become
-  // chart/kpi/table widgets, markdown → text. The notebook is left untouched.
-  async function openAsDashboard() {
-    // Stable id per notebook so re-opening syncs the SAME dashboard, and the
-    // dashboard is a synced child (sourceNotebook = this notebook).
-    const id = `nbdash-${activeBook.id}`;
-    const title = activeBook.title || "Dashboard";
-    const doc = dashboardDocFromCells(id, title, cells.map((c) => ({ type: c.type, src: c.src, chart: c.chart, viz: c.viz })), activeBook.id);
-    if (!doc.widgets.length) {
-      notify("warning", "Nothing to convert", "Add some SQL or text cells first, then open as a dashboard.");
-      return;
-    }
-    try {
-      await ipc.dashboardWrite(id, serialize(newFile(doc)));
-    } catch {
-      /* persistence may be unavailable (web) — the tab still opens from memory */
-    }
-    window.dispatchEvent(new CustomEvent("studio:open-dashboard", { detail: { id, title } }));
-  }
-
   async function doExport(kind: "markdown" | "html" | "pdf") {
     const exportCells: ExportCell[] = filterExportCells(
       cells.map((c) => ({ type: c.type, src: c.src, result: c.result })),
@@ -504,18 +481,6 @@ export function NotebookTab({
     }
   }
 
-  // Import a dashboard's panels as cells: markdown panels → markdown cells,
-  // query panels → SQL cells (titled with a comment). Ecosystem glue between
-  // Dashboards and the Notebook.
-  const [dashList, setDashList] = useState<{ id: string; title: string; panels: number }[] | null>(null);
-  async function loadDashList() {
-    try {
-      const list = await dashboards.list();
-      setDashList(list.map((d) => ({ id: d.id, title: d.title, panels: d.panels })));
-    } catch {
-      setDashList([]);
-    }
-  }
   /** Convert dashboard panels to notebook cells (markdown → markdown, query → SQL+chart). */
   function cellsFromDashboard(dash: Dashboard): Cell[] {
     const imported: Cell[] = [];
@@ -566,46 +531,6 @@ export function NotebookTab({
     }
   }
 
-  async function importDashboard(id: string) {
-    try {
-      const dash = await dashboards.get(id);
-      const imported: Cell[] = [];
-      imported.push(mkCell("markdown", `## ${dash.title}\n\n${dash.description || ""}`.trim()));
-      for (const p of dash.panels) {
-        if (p.viz.type === "markdown") {
-          imported.push(mkCell("markdown", p.viz.content));
-        } else if (p.query?.sql?.trim()) {
-          // Carry the panel's visualization, so the cell renders the CHART,
-          // not just the query text.
-          const chart =
-            p.viz.type === "echarts" ? ((p.viz as { chart?: string }).chart ?? "bar") : p.viz.type === "kpi" ? "kpi" : "table";
-          const cell = mkCell("sql", `-- ${p.title || "Panel"} (from dashboard “${dash.title}”)\n${p.query.sql.trim()}`, chart);
-          if (p.viz.type === "echarts") {
-            const e = p.viz as { xField?: string; yFields?: string[]; stacked?: boolean; option?: Record<string, unknown> };
-            if (e.xField || e.yFields || e.stacked || e.option) cell.viz = { xField: e.xField, yFields: e.yFields, stacked: e.stacked, option: e.option };
-          }
-          imported.push(cell);
-        }
-      }
-      if (imported.length <= 1) {
-        notify("warning", "Nothing to import", "That dashboard has no markdown or SQL panels.");
-        return;
-      }
-      setCells((cs) => [...cs, ...imported]);
-      // Run the imported panels right away so the charts appear — the point of
-      // importing is the visuals, not the SQL.
-      if (profileId) {
-        const ids = imported.filter((c) => c.type === "sql").map((c) => c.id);
-        setTimeout(() => { void (async () => { for (const cid of ids) await runCell(cid); })(); }, 50);
-        notify("success", "Dashboard imported", `${imported.length - 1} panel${imported.length === 2 ? "" : "s"} from “${dash.title}” rendering now.`);
-      } else {
-        notify("warning", "Dashboard imported", "Connect to a database and press Run all to render the panels.");
-      }
-    } catch (e) {
-      notify("warning", "Import failed", errorMessage(e));
-    }
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
@@ -648,36 +573,6 @@ export function NotebookTab({
         )}
         <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground lg:block">SQL, Markdown, Mermaid &amp; charts in one canvas</span>
         <div className="ml-auto flex items-center gap-1.5">
-          <button
-            title="Open these cells as a linked dashboard"
-            onClick={() => void openAsDashboard()}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <Icon name="dashboard-grid" className="h-3.5 w-3.5" /> Open as dashboard
-          </button>
-          <DropdownMenu onOpenChange={(open) => { if (open) void loadDashList(); }}>
-            <DropdownMenuTrigger asChild>
-              <button title="Import dashboard panels as cells" className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                <Icon name="dashboards" className="h-3.5 w-3.5" /> Import <ChevronDown className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuLabel>From dashboard</DropdownMenuLabel>
-              {dashList === null ? (
-                <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
-              ) : dashList.length === 0 ? (
-                <DropdownMenuItem disabled>No dashboards yet</DropdownMenuItem>
-              ) : (
-                dashList.map((d) => (
-                  <DropdownMenuItem key={d.id} onClick={() => void importDashboard(d.id)}>
-                    <Icon name="dashboards" className="h-3.5 w-3.5" />
-                    <span className="flex-1 truncate">{d.title}</span>
-                    <span className="text-[10px] text-muted-foreground">{d.panels}</span>
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <button onClick={() => setCells((cs) => [...cs, mkCell("sql")])} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
             <Plus className="h-3.5 w-3.5" /> Cell
           </button>

@@ -16,9 +16,7 @@ import { SEMANTIC_READONLY_SCRIPTS } from "./semantic.ts";
 import { PlanStore } from "./plans-store.ts";
 import { MemoryStore } from "./memory.ts";
 import { KnowledgeGraph } from "./kb.ts";
-import { DashboardStore } from "./dashboards.ts";
 import { McpManager } from "./mcp.ts";
-import { ArtifactStore } from "./artifacts.ts";
 import { DocumentStore } from "./documents.ts";
 import type { Attachment } from "./loop.ts";
 import { SkillStore } from "./skills.ts";
@@ -26,7 +24,6 @@ import { runTurn } from "./loop.ts";
 import { log } from "./log.ts";
 import { EngineService } from "./engine/engine-service.ts";
 import { localBaseURL } from "./providers.ts";
-import { startShare, publishShare, stopShare, rotateShare, shareStatus } from "./share-server.ts";
 
 // Minimal localhost HTTP + SSE server. No framework by design: six routes,
 // token auth, and Server-Sent Events — node:http covers all of it.
@@ -38,10 +35,8 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
   const db = new DbRegistry();
   const memory = new MemoryStore(config.dataDir);
   const kb = new KnowledgeGraph(config.dataDir);
-  const dashboards = new DashboardStore(config.dataDir);
   const mcp = new McpManager(config.dataDir);
   void mcp.connectAll();
-  const artifacts = new ArtifactStore(config.dataDir);
   const documents = new DocumentStore();
   const skills = new SkillStore(config.dataDir);
 
@@ -497,7 +492,7 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
             exposed: exposure[c.id] !== false,
             caps: { sql: caps[c.id]?.sql !== false, nl2sql: caps[c.id]?.nl2sql !== false },
           })),
-          services: [{ id: "dashboards", exposed: exposure["service:dashboards"] !== false }],
+          services: [],
         });
       }
       // PUT /v1/gateway/databases/:id {exposed?, caps?} — flip a connection's
@@ -824,36 +819,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         return json(res, 200, { ok: true });
       }
 
-      // Dashboard live-share control (webview-driven; the shared page is served
-      // by the SEPARATE isolated share server, never this gateway port).
-      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "start") {
-        const body = await readBody<{ id?: string; html?: string; host?: string }>(req);
-        if (!body.id || typeof body.html !== "string") return json(res, 400, { error: "id and html required" });
-        const { port, token } = await startShare(body.id, body.html, body.host);
-        return json(res, 200, { ok: true, port, token });
-      }
-      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "publish") {
-        const body = await readBody<{ id?: string; html?: string }>(req);
-        if (!body.id || typeof body.html !== "string") return json(res, 400, { error: "id and html required" });
-        return json(res, 200, { ok: publishShare(body.id, body.html) });
-      }
-      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "rotate") {
-        const body = await readBody<{ id?: string }>(req);
-        if (!body.id) return json(res, 400, { error: "id required" });
-        const token = rotateShare(body.id);
-        return json(res, 200, { ok: Boolean(token), token });
-      }
-      if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "stop") {
-        const body = await readBody<{ id?: string }>(req);
-        if (!body.id) return json(res, 400, { error: "id required" });
-        stopShare(body.id);
-        return json(res, 200, { ok: true });
-      }
-      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "share" && parts[3] === "status") {
-        const id = new URL(req.url ?? "/", "http://x").searchParams.get("id") ?? "";
-        return json(res, 200, shareStatus(id));
-      }
-
       if (req.method === "POST" && parts[1] === "gateway" && parts[2] === "nl2sql") {
         const body = await readBody<{ database?: string; question?: string }>(req);
         const wanted = (body.database ?? "").trim();
@@ -937,20 +902,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         }
         return json(res, 404, { error: "not found" });
       }
-      // Dashboards service: Studio's saved dashboards (their panels carry the
-      // SQL), exposed on the bus when the service toggle is on.
-      if (req.method === "GET" && parts[1] === "gateway" && parts[2] === "dashboards") {
-        if ((config.get().gatewayExposure ?? {})["service:dashboards"] === false) {
-          return json(res, 403, { error: "The Dashboards service is turned off on the Studio gateway — enable it under Marketplace → AI clients." });
-        }
-        if (parts[3]) {
-          const d = dashboards.get(decodeURIComponent(parts[3]));
-          if (!d) return json(res, 404, { error: "No dashboard with that id." });
-          return json(res, 200, { dashboard: d });
-        }
-        return json(res, 200, { dashboards: dashboards.list() });
-      }
-
       // Audit: GET the tail of the MCP tool-denial audit log
       if (parts[1] === "audit") {
         const limit = Number(new URL(req.url ?? "/", "http://x").searchParams.get("limit") ?? 100);
@@ -978,34 +929,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           return json(res, 200, { ok: true });
         }
       }
-      // Dashboards: GET list / GET one / GET history / POST rollback / PUT save / DELETE
-      if (parts[1] === "dashboards") {
-        if (req.method === "GET" && !parts[2]) return json(res, 200, { dashboards: dashboards.list() });
-        if (req.method === "GET" && parts[2] && parts[3] === "history") {
-          return json(res, 200, { history: dashboards.history(decodeURIComponent(parts[2])) });
-        }
-        if (req.method === "POST" && parts[2] && parts[3] === "rollback") {
-          const body = (await readBody(req)) as { index?: number };
-          const d = dashboards.rollback(decodeURIComponent(parts[2]), body.index ?? 0);
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "no such revision" });
-        }
-        if (req.method === "GET" && parts[2]) {
-          const d = dashboards.get(decodeURIComponent(parts[2]));
-          return d ? json(res, 200, { dashboard: d }) : json(res, 404, { error: "not found" });
-        }
-        if (req.method === "PUT") {
-          try {
-            const d = dashboards.save(await readBody(req));
-            return json(res, 200, { dashboard: d });
-          } catch (e) {
-            return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
-          }
-        }
-        if (req.method === "DELETE" && parts[2]) {
-          return json(res, dashboards.delete(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
-        }
-      }
-
       // Skills: list / save / delete
       if (parts[1] === "skills") {
         if (req.method === "GET" && !parts[2]) return json(res, 200, { skills: skills.list() });
@@ -1017,17 +940,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
         if (req.method === "DELETE" && parts[2]) {
           return json(res, skills.remove(decodeURIComponent(parts[2])) ? 200 : 404, { ok: true });
         }
-      }
-
-      // GET /v1/artifacts — list (newest first)
-      if (req.method === "GET" && parts[1] === "artifacts" && !parts[2]) {
-        return json(res, 200, { artifacts: artifacts.list() });
-      }
-
-      // GET /v1/artifacts/:id
-      if (req.method === "GET" && parts[1] === "artifacts" && parts[2]) {
-        const a = artifacts.get(decodeURIComponent(parts[2]));
-        return a ? json(res, 200, { artifact: a }) : json(res, 404, { error: "not found" });
       }
 
       // POST /v1/sessions
@@ -1104,8 +1016,6 @@ export async function startServer(config: ConfigStore): Promise<{ port: number; 
           kb,
           store: sessions,
           config,
-          dashboards,
-          artifacts,
           skills,
           documents,
           modelRef: body.model,

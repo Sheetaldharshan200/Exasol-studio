@@ -384,43 +384,6 @@ describe("rescueTextCalls", () => {
     assert.deepEqual(rescueTextCalls("CALL IMPORT_CSV()"), []);
   });
 
-  test("rescues a narrated dashboard save with a valid spec", () => {
-    const spec = { title: "Sales", panels: [{ kind: "bar" }] };
-    const got = rescueTextCalls(`CALL DASHBOARD_SAVE('${JSON.stringify(spec)}')`);
-    assert.deepEqual(got, [{ name: "dashboard_save", args: { dashboard: spec } }]);
-  });
-
-  test("ignores a dashboard call whose payload is not a valid spec", () => {
-    assert.deepEqual(rescueTextCalls("CALL DASHBOARD_SAVE('not json')"), []);
-    // Missing panels.
-    assert.deepEqual(rescueTextCalls(`CALL DASHBOARD_SAVE('{"title":"X"}')`), []);
-    // Empty panels array is not a dashboard.
-    assert.deepEqual(rescueTextCalls(`CALL DASHBOARD_SAVE('{"title":"X","panels":[]}')`), []);
-  });
-
-  test("rescues a narrated dashboard list", () => {
-    assert.deepEqual(rescueTextCalls("CALL DASHBOARD_LIST()"), [{ name: "dashboard_list", args: {} }]);
-  });
-
-  test("finds a bare dashboard spec the model printed instead of saving", () => {
-    const text = 'Here is your dashboard:\n```json\n{"title":"Rev","panels":[{"kind":"line"}]}\n```';
-    assert.deepEqual(rescueTextCalls(text), [
-      { name: "dashboard_save", args: { dashboard: { title: "Rev", panels: [{ kind: "line" }] } } },
-    ]);
-  });
-
-  test("unwraps a {dashboard:{...}} envelope", () => {
-    const text = '{"dashboard":{"title":"Rev","panels":[{"k":1}]}}';
-    assert.deepEqual(rescueTextCalls(text), [
-      { name: "dashboard_save", args: { dashboard: { title: "Rev", panels: [{ k: 1 }] } } },
-    ]);
-  });
-
-  test("does not add a bare spec when an explicit save was already rescued", () => {
-    const spec = { title: "S", panels: [{ k: 1 }] };
-    const got = rescueTextCalls(`CALL DASHBOARD_SAVE('${JSON.stringify(spec)}') ${JSON.stringify(spec)}`);
-    assert.equal(got.filter((c) => c.name === "dashboard_save").length, 1);
-  });
 
   test("deduplicates identical rescued calls", () => {
     const one = "CALL IMPORT_CSV('d','S','T')";

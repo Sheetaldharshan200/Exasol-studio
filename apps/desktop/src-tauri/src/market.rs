@@ -306,7 +306,7 @@ pub fn market_env() -> MarketEnv {
     }
 }
 
-fn market_dir(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) fn market_dir(app: &AppHandle) -> AppResult<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
