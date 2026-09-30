@@ -97,6 +97,15 @@ release is automatically signed + notarized (Gatekeeper-clean):
 `APPLE_ID`, `APPLE_PASSWORD` (app-specific password), `APPLE_TEAM_ID`.
 Until then builds are unsigned (users right-click → Open once).
 
+Signing is also what keeps macOS **Local Network** permission across updates.
+Studio's local database runs in a VM on a host-only network, and macOS 15+
+asks before an app may connect there. An unsigned (ad-hoc) build has a new
+code identity every release, so macOS forgets the permission on each update
+and setup stalls until the person allows it again. A Developer ID identity
+with a fixed Team ID is stable across releases: one prompt, ever. Until the
+secrets exist, Studio detects the block during setup and points the person
+to Privacy & Security → Local Network (`local_network.rs`).
+
 **Windows Authenticode (needs your cert).** Set
 `tauri.conf.json > bundle.windows.certificateThumbprint` (or a `signCommand`)
 with your code-signing certificate to avoid SmartScreen warnings.

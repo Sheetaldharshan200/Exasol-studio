@@ -33,6 +33,24 @@ fi
 # Key was generated with an empty passphrase; allow override.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
+# macOS code identity. An ad-hoc signature changes with every build, so macOS
+# treats each local build as a NEW app: another "exasol-studio" row in
+# Privacy & Security → Local Network, the permission asked for again, and the
+# local database blocked until it is. Signing every build with one stable
+# certificate makes them the same app. Uses $APPLE_SIGNING_IDENTITY when set
+# (a Developer ID), else the local "Exasol Studio Local Signing" certificate
+# if it is in the keychain (see docs/local-signing.md), else stays ad-hoc.
+LOCAL_SIGNING_NAME="Exasol Studio Local Signing"
+if [ "$(uname)" = "Darwin" ] && [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  if security find-identity -p codesigning 2>/dev/null | grep -q "\"$LOCAL_SIGNING_NAME\""; then
+    export APPLE_SIGNING_IDENTITY="$LOCAL_SIGNING_NAME"
+    echo "› Code signing with the stable local identity: $LOCAL_SIGNING_NAME"
+  else
+    echo "⚠  Ad-hoc code signature: macOS will see this build as a new app (Local Network asks again)." >&2
+    echo "   One-time fix: docs/local-signing.md" >&2
+  fi
+fi
+
 # Prebundle the platform runtime (Node + llama.cpp + Exa engine baseline) and
 # the locked runtime artifacts (Exasol Personal, ExaPump) so a fresh install
 # works offline with ZERO downloads — the same layout CI release builds ship.

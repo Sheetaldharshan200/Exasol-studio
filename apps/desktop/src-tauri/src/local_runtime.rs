@@ -719,6 +719,8 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     let cli = ensure_personal_launcher(app, id)?;
     let cli = cli.to_string_lossy().to_string();
     let dir = personal_deployment_dir(app)?;
+    // macOS may deny Studio the VM's host-only network; say so instead of waiting in silence.
+    let _local_network = crate::local_network::watch(app, id, &dir.join("local/runtime/vm.log"));
     let ddir = dir.to_string_lossy().to_string();
     let deployment_exists = dir.join("deployment.json").is_file();
     // An interrupted first setup (the app quit, the daemon was stopped) leaves

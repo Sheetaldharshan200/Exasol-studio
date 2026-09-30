@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the bundle's Info.plist by Tauri. Exasol Personal runs in a
+       small VM on a host-only network; macOS asks before an app may connect
+       there, and shows this text in that prompt. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Exasol Studio runs your local Exasol database in a small virtual machine on this Mac and connects to it over a private host-only network.</string>
+</dict>
+</plist>
