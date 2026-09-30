@@ -223,7 +223,7 @@ async function main() {
 
   if (record) {
     // Dogfood: results live in the database being evaluated, so the trend is
-    // one SELECT away and the dashboards feature can chart it.
+    // one SELECT away and a dash-server dashboard can chart it.
     try {
       await db.execute(DB_ID, "CREATE SCHEMA IF NOT EXISTS STUDIO_EVALS");
       await db.execute(
