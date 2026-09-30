@@ -64,3 +64,13 @@ export function frameUrl(userAgent: string): string {
 export function frameOrigin(userAgent: string): string {
   return frameUrl(userAgent).replace(/\/$/, "");
 }
+
+/** ⌘/Ctrl with = or + zooms in (1), with - zooms out (-1); anything else is 0.
+ *  Alt is left alone — it types characters on some layouts. The frame's shim
+ *  applies the same rule to keys typed inside Panorama. */
+export function zoomStepFromKey(e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean; key: string }): 1 | -1 | 0 {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return 0;
+  if (e.key === "=" || e.key === "+") return 1;
+  if (e.key === "-" || e.key === "_") return -1;
+  return 0;
+}

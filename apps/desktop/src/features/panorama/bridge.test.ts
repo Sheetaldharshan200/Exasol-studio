@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { answer, frameOrigin, frameUrl, parseRequest } from "./bridge.ts";
+import { answer, frameOrigin, frameUrl, parseRequest, zoomStepFromKey } from "./bridge.ts";
 
 const s = {
   proxyUrl: () => "ws://127.0.0.1:7000/database?token=t",
@@ -33,4 +33,15 @@ test("the frame URL follows the platform's spelling of a custom scheme", () => {
   assert.equal(frameUrl("Mozilla/5.0 (Macintosh)"), "panorama://localhost/");
   assert.equal(frameUrl("Mozilla/5.0 (Windows NT 10.0)"), "http://panorama.localhost/");
   assert.equal(frameOrigin("Mozilla/5.0 (Macintosh)"), "panorama://localhost");
+});
+
+test("zoom keys: modifier plus = or + zooms in, minus zooms out, anything else is nothing", () => {
+  const k = (key: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean }> = {}) => ({ metaKey: false, ctrlKey: false, altKey: false, key, ...mods });
+  assert.equal(zoomStepFromKey(k("=", { metaKey: true })), 1);
+  assert.equal(zoomStepFromKey(k("+", { ctrlKey: true })), 1);
+  assert.equal(zoomStepFromKey(k("-", { metaKey: true })), -1);
+  assert.equal(zoomStepFromKey(k("_", { ctrlKey: true })), -1);
+  assert.equal(zoomStepFromKey(k("=")), 0, "no modifier types a character");
+  assert.equal(zoomStepFromKey(k("=", { metaKey: true, altKey: true })), 0, "alt combinations are left to the layout");
+  assert.equal(zoomStepFromKey(k("0", { metaKey: true })), 0);
 });

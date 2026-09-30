@@ -387,7 +387,7 @@ pub fn install_official(app: &AppHandle, target_id: &str, skill_ids: &[String]) 
         .unwrap_or_else(|| program.to_string());
     // Capture the CLI's output so a failure carries its REAL reason (streamed
     // logs had no visible console) — and persist it for diagnosis.
-    let output = std::process::Command::new(&resolved)
+    let output = crate::process::command(&resolved)
         .args(&args)
         .env("PATH", crate::market::augmented_path())
         .stdin(std::process::Stdio::null())

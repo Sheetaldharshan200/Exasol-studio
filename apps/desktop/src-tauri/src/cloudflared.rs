@@ -7,7 +7,7 @@
 
 use crate::error::{AppError, AppResult};
 use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -68,7 +68,7 @@ fn download_cloudflared(bin_dir: &std::path::Path) -> AppResult<std::path::PathB
     if asset.ends_with(".tgz") {
         let tgz = bin_dir.join("cloudflared.tgz");
         std::fs::write(&tgz, &bytes)?;
-        let status = Command::new("tar").arg("xzf").arg(&tgz).arg("-C").arg(bin_dir).status();
+        let status = crate::process::command("tar").arg("xzf").arg(&tgz).arg("-C").arg(bin_dir).status();
         let _ = std::fs::remove_file(&tgz);
         if !status.map(|s| s.success()).unwrap_or(false) {
             return Err(AppError::Storage("failed to extract cloudflared archive".into()));
@@ -128,7 +128,7 @@ pub async fn cloudflared_start(app: tauri::AppHandle, port: u16) -> AppResult<St
     // Replace any prior tunnel.
     let _ = stop_inner(&app);
 
-    let mut child = Command::new(&bin)
+    let mut child = crate::process::command(&bin)
         .args([
             "tunnel",
             "--url",

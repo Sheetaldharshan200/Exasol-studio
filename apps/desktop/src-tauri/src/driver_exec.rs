@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -600,7 +600,7 @@ fn extract_archive(archive: &std::path::Path, dest: &std::path::Path) -> AppResu
     } else {
         vec!["-xzf", &a, "-C", &d]
     };
-    let status = Command::new("tar")
+    let status = crate::process::command("tar")
         .args(&args)
         .status()
         .map_err(|e| AppError::Storage(format!("could not run tar: {e}")))?;
@@ -719,7 +719,7 @@ fn execute_bridge(
         "expectRows": expect_rows(statements),
     });
 
-    let mut cmd = Command::new(&runtime_bin);
+    let mut cmd = crate::process::command(&runtime_bin);
     if let Some(script) = &script {
         cmd.arg(script);
     }
@@ -840,7 +840,6 @@ mod driver_support_tests {
             "a bridge that reads this wrong either loses rows or double-runs a statement"
         );
     }
-
 
     #[test]
     fn only_drivers_with_a_real_implementation_are_allowed() {

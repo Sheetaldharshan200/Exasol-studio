@@ -40,7 +40,7 @@ pub(crate) fn run_streamed_env(
     envs: &[(&str, &str)],
 ) -> AppResult<i32> {
     emit_log(app, id, format!("$ {program} {}", args.join(" ")), "cmd");
-    let mut cmd = Command::new(program);
+    let mut cmd = crate::process::command(program);
     cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
     for (k, v) in envs {
         cmd.env(k, v);
@@ -170,7 +170,7 @@ pub(crate) fn ensure_uv(app: &AppHandle, id: &str) -> AppResult<String> {
     if let Ok(dir) = market_dir(app) {
         if let Some(path) = find_named_file(&dir.join("uv"), managed_name) {
             let expected = format!("uv {version} ");
-            let valid = Command::new(&path)
+            let valid = crate::process::command(&path)
                 .arg("--version")
                 .output()
                 .map(|output| {
@@ -291,7 +291,7 @@ pub(crate) fn has_binary(bin: &str) -> bool {
     let prog = resolve_bin(bin)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| bin.to_string());
-    let mut c = Command::new(prog);
+    let mut c = crate::process::command(prog);
     c.arg("--version");
     with_path(&mut c);
     c.output().map(|o| o.status.success()).unwrap_or(false)
@@ -642,19 +642,19 @@ pub fn reveal_path(path: String) -> AppResult<()> {
     }
     #[cfg(target_os = "macos")]
     let mut cmd = {
-        let mut c = Command::new("open");
+        let mut c = crate::process::command("open");
         c.arg("-R").arg(&path);
         c
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = Command::new("explorer");
+        let mut c = crate::process::command("explorer");
         c.arg(format!("/select,{path}"));
         c
     };
     #[cfg(all(unix, not(target_os = "macos")))]
     let mut cmd = {
-        let mut c = Command::new("xdg-open");
+        let mut c = crate::process::command("xdg-open");
         c.arg(p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_else(|| path.clone()));
         c
     };
@@ -674,19 +674,19 @@ pub fn open_external(url: String) -> AppResult<()> {
     }
     #[cfg(target_os = "macos")]
     let mut cmd = {
-        let mut c = Command::new("open");
+        let mut c = crate::process::command("open");
         c.arg(&url);
         c
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = Command::new("cmd");
+        let mut c = crate::process::command("cmd");
         c.args(["/C", "start", "", url.as_str()]);
         c
     };
     #[cfg(all(unix, not(target_os = "macos")))]
     let mut cmd = {
-        let mut c = Command::new("xdg-open");
+        let mut c = crate::process::command("xdg-open");
         c.arg(&url);
         c
     };
@@ -1229,14 +1229,14 @@ fn cmd_exists_unix(bin: &str) -> bool {
     if resolve_bin(bin).is_some() {
         return true;
     }
-    let mut c = Command::new("sh");
+    let mut c = crate::process::command("sh");
     c.args(["-c", &format!("command -v {bin}")]);
     with_path(&mut c);
     c.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 fn cmd_exists_win(bin: &str) -> bool {
-    Command::new("powershell")
+    crate::process::command("powershell")
         .args(["-Command", &format!("if (Get-Command {bin} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}")])
         .output()
         .map(|o| o.status.success())
@@ -2635,7 +2635,7 @@ pub async fn market_uninstall(
     if let Some(InstallSource::Pypi { package, tool: true }) = &source {
         if valid_package_name(package) {
             if let Ok(uv) = ensure_uv(&app, &id) {
-                let _ = std::process::Command::new(uv).args(["tool", "uninstall", "--", package]).status();
+                let _ = crate::process::command(uv).args(["tool", "uninstall", "--", package]).status();
             }
         }
     }
@@ -2703,7 +2703,7 @@ fn python_import_ok(module: &str) -> bool {
         let prog = resolve_bin(py)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| py.to_string());
-        let mut c = Command::new(prog);
+        let mut c = crate::process::command(prog);
         c.args(["-c", &format!("import {module}")]);
         with_path(&mut c);
         c.output().map(|o| o.status.success()).unwrap_or(false)
@@ -2791,7 +2791,7 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
         .into_iter()
         .find(|(h, _)| *h == crate::installers::Hypervisor::Virtualbox)
     {
-        if let Ok(out) = Command::new(&vbox).args(["list", "vms"]).output() {
+        if let Ok(out) = crate::process::command(&vbox).args(["list", "vms"]).output() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
                 if let Some(name) = line.trim().strip_prefix('"').and_then(|l| l.split('"').next()) {
                     map.insert(format!("vm:{name}"), json!(true));

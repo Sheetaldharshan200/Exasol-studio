@@ -835,7 +835,7 @@ fn ensure_python_stack(app: &AppHandle, data_dir: &Path) -> AppResult<PathBuf> {
         stack.pyexasol_version, stack.mcp_server_version
     );
     let valid = python.is_file()
-        && std::process::Command::new(&python)
+        && crate::process::command(&python)
             .args(["-c", &version_probe])
             .status()
             .map(|status| status.success())
