@@ -80,8 +80,7 @@ export type AgentConfig = {
   /** Per-connection MCP exposure on the Studio gateway bus (profileId →
    *  exposed). Missing entry = exposed; false = the database stays connected
    *  in Studio but external MCP clients cannot see or query it. Keys with a
-   *  "service:" prefix flip bus-level Studio services (e.g.
-   *  "service:dashboards"). */
+   *  "service:" prefix flip bus-level Studio services. */
   gatewayExposure?: Record<string, boolean>;
   /** Per-connection capability selection on the gateway bus (profileId →
    *  {sql, nl2sql}). A connection can carry several MCP services; missing

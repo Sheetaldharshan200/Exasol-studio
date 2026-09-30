@@ -391,7 +391,7 @@ export type SlcChoice = { alias: string; installed: boolean };
 /** The decision engine: installed? answering? which models it holds. */
 export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
-export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null };
+export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
 /** One hosted Dash app, from dash-server's own inventory. */
 export type DashApp = { name: string; title: string; route: string; status: string; published: boolean };
 /** A run's answers per row (null where none) and the first failure, if one stopped it. */

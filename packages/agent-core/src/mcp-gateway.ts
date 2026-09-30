@@ -195,32 +195,6 @@ server.tool(
 );
 
 server.tool(
-  "list_dashboards",
-  "Dashboards service: list the BI dashboards saved in Exasol Studio (id, title, group, panel count).",
-  {},
-  async () => {
-    try {
-      return text(await studio("/gateway/dashboards"));
-    } catch (e) {
-      return errText(e);
-    }
-  },
-);
-
-server.tool(
-  "get_dashboard",
-  "Dashboards service: fetch one Studio dashboard definition — its panels carry the SQL each chart runs, which you can inspect or reuse with run_query.",
-  { id: z.string().describe("Dashboard id from list_dashboards.") },
-  async ({ id }) => {
-    try {
-      return text(await studio(`/gateway/dashboards/${encodeURIComponent(id)}`));
-    } catch (e) {
-      return errText(e);
-    }
-  },
-);
-
-server.tool(
   "list_schemas",
   "List the schemas in one connected database.",
   { database: DB_ARG },

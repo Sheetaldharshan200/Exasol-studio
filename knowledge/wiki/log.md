@@ -225,3 +225,6 @@ Codex: 13+9 findings first pass, 6 second pass — fixed (see page marketplace-i
 ## [2026-09-30] anomalies | Anomalies tab — Ollaya + Laya typed decisions over rows (change anomaly-tab)
 Branch feat/anomaly-tab (on top of feat/marketplace-installs-the-rest). New view "anomalies" (full tab like Marketplace), decisions.rs engine module, features/anomaly/*, marketplace item ollaya with the new perPlatform gh-asset rule.
 Ollaya not laya: Ollaya is the runtime (daemon + API), Laya the model it serves. Codex 10 findings fixed (read-only guard, partial results, frozen results, controlled criteria, listener safety, readiness gating, null-proto row state, answer decoding, CSV formula neutralisation, engine adoption check).
+
+## [2026-09-30] architecture | dash-server-tab — Studio's dashboard + artifact engines removed; dash-server hosted in a Dashboards tab; agent builds dashboards there
+95 files, −5,250 lines: features/dashboard, features/artifact, dashboards.rs, agent-core dashboards/artifacts/share-server, assistant dashboard actions, notebook Open-as-dashboard + Import. New dash_server.rs + features/dashserver. Query Performance kept; Panorama tab is the next change (panorama-shell) — Studio must be Panorama's shell for self-signed local DBs. See page components-inside-studio-tabs.
