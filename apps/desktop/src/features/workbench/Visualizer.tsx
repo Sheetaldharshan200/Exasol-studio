@@ -114,6 +114,8 @@ export function Visualizer({
   // The canvas opens first when a plan from the assistant is waiting for it;
   // the shell can also ask for a mode (the "Add to canvas" card does).
   const [mode, setMode] = useState<Mode>(() => (sessionStorage.getItem(CANVAS_PENDING_KEY) ? "build" : "diagram"));
+  // Where the canvas renders its controls: the header's own slot.
+  const [canvasBar, setCanvasBar] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const onMode = (e: Event) => {
       const m = (e as CustomEvent<{ mode?: Mode }>).detail?.mode;
@@ -701,6 +703,11 @@ export function Visualizer({
             ) : null}
           </button>
         </div>
+        {/* Build mode: the canvas puts its connection picker, actions and
+            status here, so the tab has ONE top bar, not a bar plus a toolbar. */}
+        {mode === "build" ? <div ref={setCanvasBar} className="flex min-w-0 flex-1 items-center gap-1.5" /> : null}
+        {mode === "diagram" ? (
+        <>
         <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -783,9 +790,13 @@ export function Visualizer({
             selection: sel ? (sel.column ? `${splitTableId(sel.table).table}.${sel.column}` : splitTableId(sel.table).table) : null,
           })}
         </span>
+        </>
+        ) : null}
       </header>
 
-      <div ref={paneRef} className="relative min-h-0 flex-1">
+      {/* The diagram stays mounted (its viewport and caches survive a trip to
+          Build) but only one surface is on screen at a time. */}
+      <div ref={paneRef} className={cn("relative min-h-0 flex-1", mode === "build" && "hidden")}>
         {loadingNow ? (
           <div
             className="pointer-events-none absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover/95 px-3 py-1.5 font-mono text-[11px] text-muted-foreground shadow-lg"
@@ -1082,7 +1093,7 @@ export function Visualizer({
 
       {mode === "build" ? (
         <div className="min-h-0 flex-1">
-          <Canvas conn={{ profileId, connectionName }} editor={editor} pickedTables={pickedTables} onPickedOpened={() => setPicked(new Set())} />
+          <Canvas conn={{ profileId, connectionName }} editor={editor} pickedTables={pickedTables} onPickedOpened={() => setPicked(new Set())} toolbar={canvasBar} />
         </div>
       ) : null}
     </div>

@@ -2,6 +2,7 @@
 // at its side. Selecting a box lights up the trail it was built from.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Background,
   BackgroundVariant,
@@ -23,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { ChartBoxNode } from "./ChartBox.tsx";
 import { CanvasStoreContext, EditorSetupContext, useCanvas, useCanvasStore, type EditorSetup } from "./context.ts";
 import { lineageText } from "./Evidence.tsx";
-import { ExplorerPanel } from "./ExplorerPanel.tsx";
+import { ConnectionPicker, ExplorerPanel } from "./ExplorerPanel.tsx";
 import { PROVENANCE_EDGE, ProvenanceEdge } from "./ProvenanceEdge.tsx";
 import { QueryBoxNode } from "./QueryBox.tsx";
 import { TableBoxNode } from "./TableBox.tsx";
@@ -63,15 +64,36 @@ export function edgesFor(doc: CanvasDoc, trail: Set<string> | null): Edge[] {
   });
 }
 
-export function Canvas({ conn, editor, pickedTables, onPickedOpened }: { conn: Conn; editor: EditorSetup; pickedTables?: { schema: string; table: string }[]; onPickedOpened?: () => void }) {
+export function Canvas({
+  conn,
+  editor,
+  pickedTables,
+  onPickedOpened,
+  toolbar,
+}: {
+  conn: Conn;
+  editor: EditorSetup;
+  pickedTables?: { schema: string; table: string }[];
+  onPickedOpened?: () => void;
+  /** Where the canvas puts its controls — the tab's top bar. Floats over the canvas when absent. */
+  toolbar?: HTMLElement | null;
+}) {
   const store = useMemo(() => createCanvasStore(conn), [conn.profileId, conn.connectionName]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The connection the explorer reads from; the canvas itself belongs to `conn`.
+  const [source, setSource] = useState<Conn>(conn);
   return (
     <CanvasStoreContext.Provider value={store}>
       <EditorSetupContext.Provider value={editor}>
         <ReactFlowProvider>
           <div className="flex h-full min-h-0">
-            <ExplorerPanel conn={conn} />
-            <Board store={store} pickedTables={pickedTables} onPickedOpened={onPickedOpened} />
+            <ExplorerPanel source={source} />
+            <Board
+              store={store}
+              pickedTables={pickedTables}
+              onPickedOpened={onPickedOpened}
+              toolbar={toolbar}
+              connection={<ConnectionPicker conn={conn} value={source} onChange={setSource} />}
+            />
           </div>
         </ReactFlowProvider>
       </EditorSetupContext.Provider>
@@ -79,7 +101,19 @@ export function Canvas({ conn, editor, pickedTables, onPickedOpened }: { conn: C
   );
 }
 
-function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pickedTables?: { schema: string; table: string }[]; onPickedOpened?: () => void }) {
+function Board({
+  store,
+  pickedTables,
+  onPickedOpened,
+  toolbar,
+  connection,
+}: {
+  store: CanvasStore;
+  pickedTables?: { schema: string; table: string }[];
+  onPickedOpened?: () => void;
+  toolbar?: HTMLElement | null;
+  connection: React.ReactNode;
+}) {
   const doc = useCanvas((s) => s.doc);
   const conn = useCanvas((s) => s.conn);
   const canUndo = useCanvas((s) => s.past.length > 0);
@@ -189,9 +223,23 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
   };
 
   const button = (label: string, onClick: () => void, disabled: boolean, child: React.ReactNode) => (
-    <button key={label} onClick={onClick} disabled={disabled} title={label} aria-label={label} className="flex h-7 items-center gap-1 rounded-md border border-border bg-panel px-2 text-[11px] text-foreground shadow-sm hover:bg-secondary disabled:opacity-40">
+    <button key={label} onClick={onClick} disabled={disabled} title={label} aria-label={label} className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-panel px-2 text-[11px] text-foreground hover:bg-secondary disabled:opacity-40">
       {child}
     </button>
+  );
+
+  const status = trail ? `Trail: ${trail.size} box${trail.size === 1 ? "" : "es"} behind the selection` : `${doc.boxes.length} box${doc.boxes.length === 1 ? "" : "es"} · drag to pan · ⌘/Ctrl + wheel to zoom`;
+  const controls = (
+    <>
+      {connection}
+      {button("Ask Exa about this canvas", ask, false, <><AgentMark className="h-3.5 w-3.5" /> Ask</>)}
+      {unrun ? button(`Run the ${unrun} box${unrun === 1 ? "" : "es"} without rows`, () => void store.getState().runAll(), false, <><Play className="h-3.5 w-3.5" /> Run all</>) : null}
+      {button("Fit everything in view", () => void flow.fitView({ duration: 400, padding: 0.15 }), !doc.boxes.length, <Maximize2 className="h-3.5 w-3.5" />)}
+      {button("Undo", () => store.getState().undo(), !canUndo, <Undo2 className="h-3.5 w-3.5" />)}
+      {button("Redo", () => store.getState().redo(), !canRedo, <Redo2 className="h-3.5 w-3.5" />)}
+      {button("Clear the canvas", () => window.confirm("Remove every box from this canvas? Undo brings them back.") && store.getState().clear(), !doc.boxes.length, <Eraser className="h-3.5 w-3.5" />)}
+      <span className={cn("ml-auto shrink-0 truncate font-mono text-[11px] text-muted-foreground", trail && "text-primary")}>{status}</span>
+    </>
   );
 
   return (
@@ -220,19 +268,7 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
         <Background variant={BackgroundVariant.Dots} gap={28} size={1.2} color="color-mix(in srgb, var(--border) 70%, transparent)" />
         <Controls showInteractive={false} className="!bottom-3 !left-3" />
       </ReactFlow>
-      <div className="pointer-events-none absolute left-3 right-3 top-3 flex items-start gap-2">
-        <div className="pointer-events-auto flex items-center gap-1.5">
-          {button("Ask Exa about this canvas", ask, false, <><AgentMark className="h-3.5 w-3.5" /> Ask</>)}
-          {unrun ? button(`Run the ${unrun} box${unrun === 1 ? "" : "es"} without rows`, () => void store.getState().runAll(), false, <><Play className="h-3.5 w-3.5" /> Run all</>) : null}
-          {button("Fit everything in view", () => void flow.fitView({ duration: 400, padding: 0.15 }), !doc.boxes.length, <Maximize2 className="h-3.5 w-3.5" />)}
-          {button("Undo", () => store.getState().undo(), !canUndo, <Undo2 className="h-3.5 w-3.5" />)}
-          {button("Redo", () => store.getState().redo(), !canRedo, <Redo2 className="h-3.5 w-3.5" />)}
-          {button("Clear the canvas", () => window.confirm("Remove every box from this canvas? Undo brings them back.") && store.getState().clear(), !doc.boxes.length, <Eraser className="h-3.5 w-3.5" />)}
-        </div>
-        <div className={cn("pointer-events-none ml-auto rounded-md border border-border bg-panel/80 px-2 py-1 text-[10.5px] text-muted-foreground shadow-sm", trail && "border-primary/50 text-primary")}>
-          {trail ? `Trail: ${trail.size} box${trail.size === 1 ? "" : "es"} behind the selection` : `${doc.boxes.length} box${doc.boxes.length === 1 ? "" : "es"} · drag to pan · ⌘/Ctrl + wheel to zoom`}
-        </div>
-      </div>
+      {toolbar ? null : <div className="absolute left-3 right-3 top-3 z-10 flex items-center gap-1.5">{controls}</div>}
       {!doc.boxes.length ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="max-w-md rounded-xl border border-dashed border-border bg-panel/70 p-6 text-center text-[12.5px] text-muted-foreground">
@@ -242,6 +278,7 @@ function Board({ store, pickedTables, onPickedOpened }: { store: CanvasStore; pi
           </div>
         </div>
       ) : null}
+      {toolbar ? createPortal(controls, toolbar) : null}
     </div>
   );
 }

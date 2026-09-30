@@ -2,7 +2,8 @@
 // the schema's tables and views. Clicking a table puts it on the canvas.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Database, Loader2, Search, Table2, Eye } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Database, Loader2, Search, Table2, Eye } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { errorMessage, ipc, type ConnectionProfile, type SchemaObjects, type SchemaSummary } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { useCanvasStore } from "./context.ts";
@@ -10,10 +11,44 @@ import type { Conn } from "./store.ts";
 
 type Objects = { tables: SchemaObjects["tables"]; views: SchemaObjects["views"] };
 
-export function ExplorerPanel({ conn }: { conn: Conn }) {
-  const store = useCanvasStore();
-  const [source, setSource] = useState<Conn>(conn);
+/** The open connections a canvas can read from, as a dropdown for the top bar. */
+export function ConnectionPicker({ conn, value, onChange }: { conn: Conn; value: Conn; onChange: (c: Conn) => void }) {
   const [open, setOpen] = useState<ConnectionProfile[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([ipc.listOpenConnections(), ipc.listConnectionProfiles()])
+      .then(([ids, profiles]) => alive && setOpen(profiles.filter((p) => ids.includes(p.id))))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [conn.profileId]);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          title="The connection the explorer reads from"
+          className="flex h-7 max-w-[220px] shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[11.5px] text-foreground hover:bg-secondary"
+        >
+          <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="truncate">{value.connectionName}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[220px]">
+        {(open.length ? open : [{ id: conn.profileId, name: conn.connectionName } as ConnectionProfile]).map((p) => (
+          <DropdownMenuItem key={p.id} onClick={() => onChange({ profileId: p.id, connectionName: p.name })} className="text-[12px]">
+            {p.id === value.profileId ? <Check className="h-3.5 w-3.5" /> : <span className="w-3.5" />}
+            {p.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function ExplorerPanel({ source }: { source: Conn }) {
+  const store = useCanvasStore();
   const [schemas, setSchemas] = useState<SchemaSummary[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [objects, setObjects] = useState<Record<string, Objects | "loading" | { error: string }>>({});
@@ -23,17 +58,6 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
   sourceRef.current = source;
   const requestSeq = useRef(0);
   const latest = useRef<Record<string, number>>({});
-
-  // The other open connections, so a canvas can read from more than one.
-  useEffect(() => {
-    let alive = true;
-    void Promise.all([ipc.listOpenConnections(), ipc.listConnectionProfiles()]).then(([ids, profiles]) => {
-      if (alive) setOpen(profiles.filter((p) => ids.includes(p.id)));
-    }).catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [conn.profileId]);
 
   useEffect(() => {
     let alive = true;
@@ -71,28 +95,6 @@ export function ExplorerPanel({ conn }: { conn: Conn }) {
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-panel text-[12px]">
-      <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
-        <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
-        {open.length > 1 ? (
-          <select
-            aria-label="Connection"
-            value={source.profileId}
-            onChange={(e) => {
-              const p = open.find((x) => x.id === e.target.value);
-              if (p) setSource({ profileId: p.id, connectionName: p.name });
-            }}
-            className="min-w-0 flex-1 truncate bg-transparent font-semibold text-foreground outline-none"
-          >
-            {open.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{source.connectionName}</span>
-        )}
-      </div>
       <label className="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground">
         <Search className="h-3.5 w-3.5 shrink-0" />
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter schemas and tables" className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground/70" />
