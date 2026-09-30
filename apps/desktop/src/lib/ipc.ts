@@ -363,7 +363,7 @@ export type InstallSource =
   /** A JAR from Maven Central. Its versions come from Maven's own metadata, never a release tag. */
   | { kind: "maven"; group: string; artifact: string }
   /** A file from the repository's newest release. Without `assetPattern` the build for this platform is picked. */
-  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean }
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean; perPlatform?: boolean }
   /** A native registry or Exasol's downloads portal; `driverRuntime` wires the result into a Studio driver runtime. */
   | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string; driverRuntime?: "odbc" }
   /** The repository's current tarball, for a project with no releases. */
@@ -388,6 +388,10 @@ export type InstallSource =
 export type ScriptPlan = { version: string; files: string[]; statements: { head: string; body: string }[]; fingerprint: string };
 /** One language container the launcher offers, and whether it is installed. */
 export type SlcChoice = { alias: string; installed: boolean };
+/** The decision engine: installed? answering? which models it holds. */
+export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
+/** A run's answers per row (null where none) and the first failure, if one stopped it. */
+export type DecideOutcome = { answers: unknown[]; failedRow: number | null; error: string | null };
 /** Formats of a delivered file; the next step is stated from the format. A
  *  rockspec and a desktop build come from the release; the other two are the
  *  tag's source archive. */
@@ -710,6 +714,12 @@ export const ipc = {
     call<ScriptPlan>("market_db_scripts_plan", { id, repo, requested, schema }),
   /** The language containers the official launcher can install locally. */
   marketSlcCatalog: () => call<SlcChoice[]>("market_slc_catalog"),
+  // ── Decisions (Anomalies tab): a local decision-model daemon the
+  //    Marketplace installs; Studio starts it, pulls models, sends rows.
+  decisionsStatus: () => call<DecisionStatus>("decisions_status"),
+  decisionsPull: (model: string) => call<void>("decisions_pull", { model }),
+  decisionsDecide: (model: string, states: Record<string, unknown>[], questions: Record<string, unknown>) =>
+    call<DecideOutcome>("decisions_decide", { model, states, questions }),
   /** Remove an install — by its coordinate, since what "remove" means depends
    *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
   marketUninstall: (target: InstallTarget) =>

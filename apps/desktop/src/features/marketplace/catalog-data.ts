@@ -163,6 +163,10 @@ export const CATALOG: CatalogItem[] = [
   { id: "tableau-connector", repo: "exasol/tableau-connector", kind: "bi", install: "binary", source: { kind: "gh-asset", onPath: true } },
   { id: "terraform-provider", repo: "exasol-labs/terraform-provider-exasol", kind: "cli", install: "binary", labs: true, source: { kind: "gh-asset", onPath: true } },
   { id: "postgres-interface", repo: "exasol-labs/exa-postgres-interface", kind: "server", install: "binary", labs: true, source: { kind: "gh-asset", onPath: true } },
+  // The decision-model daemon behind the Anomalies tab: one binary, one file
+  // per platform in its release (Linux ships .tar.zst, which Studio does not
+  // extract, so Linux is told there is no build).
+  { id: "ollaya", repo: "ollaya-dev/ollaya", kind: "server", install: "binary", source: { kind: "gh-asset", assetPattern: "^ollaya-(darwin-arm64|windows-amd64)\\.(tgz|zip)$", onPath: true, perPlatform: true } },
   { id: "more-functions", repo: "exasol-labs/more-functions", kind: "extension", install: "package", labs: true, source: { kind: "repo-snapshot" } },
   // AI Lab ships only as a container image (JupyterLab). Studio does not drive a
   // container engine, so this links to the project instead of installing it.

@@ -11,6 +11,7 @@ mod updates;
 mod upstream;
 mod bucketfs;
 mod db_scripts;
+mod decisions;
 mod slc;
 mod vm_appliance;
 mod catalog;
@@ -75,6 +76,7 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
+            app.manage(crate::decisions::DecisionEngine::default());
             app.manage(crate::terminal::TermRegistry::default());
             app.manage(crate::print::PrintJobs::default());
             app.manage(crate::cloudflared::CloudflaredProc::default());
@@ -176,6 +178,9 @@ pub fn run() {
             market::market_install_run,
             market::market_uninstall,
             db_scripts::market_db_scripts_plan,
+            decisions::decisions_status,
+            decisions::decisions_pull,
+            decisions::decisions_decide,
             slc::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
@@ -260,6 +265,7 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
+                app.state::<crate::decisions::DecisionEngine>().kill();
             }
         });
 }

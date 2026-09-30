@@ -21,6 +21,7 @@ export type ActivityId =
   | "dashboard"
   | "skills"
   | "marketplace"
+  | "anomalies"
   | "guides"
   | "exaEngine"
   | "mcp";
@@ -31,6 +32,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
   { id: "databases", label: "Databases", icon: "database" },
   { id: "files", label: "Files", icon: "files" },
   { id: "marketplace", label: "Marketplace", icon: "extension" },
+  { id: "anomalies", label: "Anomalies", icon: "alert" },
   { id: "skills", label: "Skills", icon: "skills" },
   { id: "notebook", label: "Notebook", icon: "notebook" },
   { id: "dashboard", label: "Dashboards", icon: "dashboard-grid" },
@@ -42,7 +44,7 @@ export const ACTIVITIES: { id: ActivityId; label: string; icon: IconName }[] = [
 // Items that open a full-screen tab (highlighted by the active tab's view,
 // not the sidebar panel). "bi" launches an external tool, so it's an action —
 // never a persistent selection. Everything else is a sidebar panel.
-const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "guides", "git", "skills", "exaEngine"]);
+const FULL_TAB_VIEWS = new Set<ActivityId>(["visualizer", "marketplace", "anomalies", "guides", "git", "skills", "exaEngine"]);
 const SIDEBAR_PANELS = new Set<ActivityId>(["databases", "files", "favorites", "mcp", "notebook", "dashboard"]);
 
 export function ActivityRail({

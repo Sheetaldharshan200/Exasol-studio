@@ -21,6 +21,8 @@ export type TabView =
   | "visualizer"
   | "filePreview"
   | "marketplace"
+  /** Typed decisions over rows through the local decision engine. */
+  | "anomalies"
   | "guides"
   | "docs"
   | "object"
@@ -143,6 +145,7 @@ export const TAB_ICON: Record<TabView, IconName> = {
   filePreview: "table",
   mcpConfig: "mcp",
   marketplace: "extension",
+  anomalies: "alert",
   guides: "guides",
   docs: "guides",
   object: "table",
