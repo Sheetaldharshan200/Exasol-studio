@@ -23,7 +23,8 @@ use crate::error::{AppError, AppResult};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -60,14 +61,17 @@ pub fn safe_path(request_path: &str) -> Option<PathBuf> {
     Some(out)
 }
 
-fn percent_decode(s: &str) -> String {
+/// Percent-decoding over bytes, so a stray `%` before multibyte text cannot
+/// split a character and panic the scheme handler.
+pub fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() + 0 && i + 2 <= bytes.len() - 1 {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = |b: u8| (b as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((h * 16 + l) as u8);
                 i += 3;
                 continue;
             }
@@ -152,7 +156,10 @@ impl Proxy {
     }
 }
 
-static PROXY: OnceLock<Arc<Proxy>> = OnceLock::new();
+static PROXY: tokio::sync::OnceCell<Arc<Proxy>> = tokio::sync::OnceCell::const_new();
+/// How many page sockets may be open at once, and how long a handshake may take.
+const MAX_SOCKETS: usize = 32;
+const HANDSHAKE: Duration = Duration::from_secs(15);
 
 /// Origins the proxy answers: the tab's frame (the `panorama` scheme as each
 /// platform spells it) and Studio's own page.
@@ -201,9 +208,18 @@ pub fn parse_target(target: &str) -> Option<(bool, String, u16)> {
     (!host.is_empty()).then(|| (tls, host.to_string(), port))
 }
 
-/// Whether a saved connection has this address — and, if so, whether it
-/// verifies certificates. The proxy connects nowhere else.
-pub fn known_connection(profiles: &[(String, u16, String)], host: &str, port: u16) -> Option<bool> {
+/// How a saved connection at this address wants its transport: `None` when
+/// no saved connection has the address (the proxy connects nowhere else),
+/// else whether TLS is on (`disabled` mode is the only plain one) and, when
+/// on, whether the certificate is verified. The frame does not get to pick:
+/// asking for `ws://` where the connection encrypts is refused.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Transport {
+    pub tls: bool,
+    pub verify: bool,
+}
+
+pub fn known_connection(profiles: &[(String, u16, String)], host: &str, port: u16) -> Option<Transport> {
     let same_host = |a: &str, b: &str| {
         let norm = |h: &str| match h {
             "localhost" => "127.0.0.1".to_string(),
@@ -211,7 +227,10 @@ pub fn known_connection(profiles: &[(String, u16, String)], host: &str, port: u1
         };
         norm(a) == norm(b)
     };
-    profiles.iter().find(|(h, p, _)| *p == port && same_host(h, host)).map(|(_, _, mode)| mode.starts_with("verify"))
+    profiles.iter().find(|(h, p, _)| *p == port && same_host(h, host)).map(|(_, _, mode)| Transport {
+        tls: mode != "disabled",
+        verify: mode.starts_with("verify"),
+    })
 }
 
 fn saved_addresses(app: &AppHandle) -> Vec<(String, u16, String)> {
@@ -299,7 +318,7 @@ async fn serve_one(app: AppHandle, stream: TcpStream, token: String) {
     use async_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
     let asked: Arc<std::sync::Mutex<Option<Asked>>> = Arc::new(std::sync::Mutex::new(None));
     let seen = Arc::clone(&asked);
-    let accepted = async_tungstenite::tokio::accept_hdr_async(stream, move |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
+    let accepted = tokio::time::timeout(HANDSHAKE, async_tungstenite::tokio::accept_hdr_async(stream, move |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
         let origin = request.headers().get("origin").and_then(|v| v.to_str().ok());
         if !origin_allowed(origin) {
             let mut refusal = ErrorResponse::new(Some("This endpoint does not answer other origins.".to_string()));
@@ -308,9 +327,9 @@ async fn serve_one(app: AppHandle, stream: TcpStream, token: String) {
         }
         *seen.lock().expect("asked") = parse_asked(&request.uri().to_string());
         Ok(response)
-    })
+    }))
     .await;
-    let Ok(page) = accepted else { return };
+    let Ok(Ok(page)) = accepted else { return };
     let close = |mut page: async_tungstenite::WebSocketStream<async_tungstenite::tokio::TokioAdapter<TcpStream>>, reason: String| async move {
         let _ = page
             .send(async_tungstenite::tungstenite::Message::Close(Some(async_tungstenite::tungstenite::protocol::CloseFrame {
@@ -331,14 +350,22 @@ async fn serve_one(app: AppHandle, stream: TcpStream, token: String) {
         close(page, "A database URL has to be ws:// or wss:// with a host and port.".into()).await;
         return;
     };
-    let Some(verify) = known_connection(&saved_addresses(&app), &host, port) else {
+    let Some(transport) = known_connection(&saved_addresses(&app), &host, port) else {
         close(page, format!("{host}:{port} is not one of Studio's saved connections; add it there first.")).await;
         return;
     };
-    let upstream = match open_upstream(&asked.target, tls, &host, port, verify).await {
-        Ok(s) => s,
-        Err(why) => {
+    if tls != transport.tls {
+        close(page, format!("{host}:{port} is reached over {} in Studio; the requested scheme does not match.", if transport.tls { "wss" } else { "ws" })).await;
+        return;
+    }
+    let upstream = match tokio::time::timeout(HANDSHAKE, open_upstream(&asked.target, tls, &host, port, transport.verify)).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(why)) => {
             close(page, why).await;
+            return;
+        }
+        Err(_) => {
+            close(page, format!("{host}:{port} did not complete the handshake in time.")).await;
             return;
         }
     };
@@ -361,26 +388,39 @@ async fn serve_one(app: AppHandle, stream: TcpStream, token: String) {
     tokio::select! { _ = outward => {}, _ = inward => {} }
 }
 
-/// The proxy for this run — started on first use, one per app.
+/// The proxy for this run — started on first use, exactly once: concurrent
+/// first callers wait for the one initialisation rather than each binding a
+/// listener of their own.
 async fn ensure_proxy(app: &AppHandle) -> AppResult<Arc<Proxy>> {
-    if let Some(p) = PROXY.get() {
-        return Ok(Arc::clone(p));
-    }
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|e| AppError::Storage(format!("Could not open the database proxy: {e}")))?;
-    let port = listener.local_addr().map_err(|e| AppError::Storage(e.to_string()))?.port();
-    let token: String = {
-        use rand::Rng;
-        rand::thread_rng().sample_iter(rand::distributions::Alphanumeric).take(40).map(char::from).collect()
-    };
-    let proxy = Arc::new(Proxy { port, token: token.clone() });
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else { break };
-            tauri::async_runtime::spawn(serve_one(app2.clone(), stream, token.clone()));
-        }
-    });
-    Ok(Arc::clone(PROXY.get_or_init(|| proxy)))
+    let app = app.clone();
+    PROXY
+        .get_or_try_init(|| async move {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|e| AppError::Storage(format!("Could not open the database proxy: {e}")))?;
+            let port = listener.local_addr().map_err(|e| AppError::Storage(e.to_string()))?.port();
+            let token: String = {
+                use rand::Rng;
+                rand::thread_rng().sample_iter(rand::distributions::Alphanumeric).take(40).map(char::from).collect()
+            };
+            let proxy = Arc::new(Proxy { port, token: token.clone() });
+            let sockets = Arc::new(tokio::sync::Semaphore::new(MAX_SOCKETS));
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let Ok((stream, _)) = listener.accept().await else { break };
+                    // Over the limit, the connection is dropped at once rather
+                    // than queued: a page that wants more sockets is not one.
+                    let Ok(permit) = Arc::clone(&sockets).try_acquire_owned() else { continue };
+                    let app = app.clone();
+                    let token = token.clone();
+                    tauri::async_runtime::spawn(async move {
+                        serve_one(app, stream, token).await;
+                        drop(permit);
+                    });
+                }
+            });
+            Ok::<Arc<Proxy>, AppError>(proxy)
+        })
+        .await
+        .map(Arc::clone)
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -417,29 +457,76 @@ pub struct Deployments {
     pub deployments: Vec<Deployment>,
 }
 
+/// One saved connection as the shell sees it: id, display name, address,
+/// user and TLS mode. Studio's internal identities are not connections a
+/// person opens and are left out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Saved {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub ssl_mode: String,
+}
+
+const INTERNAL_PREFIX: &str = "STUDIO_MCP_";
+
+pub fn person_connections(profiles: impl IntoIterator<Item = Saved>) -> Vec<Saved> {
+    profiles.into_iter().filter(|p| !p.username.starts_with(INTERNAL_PREFIX) && !p.name.starts_with(INTERNAL_PREFIX)).collect()
+}
+
+/// The name Panorama lists a connection under: its display name, made unique
+/// when two connections share one, since Panorama hands the name back to ask
+/// for credentials.
+pub fn listed_names(saved: &[Saved]) -> Vec<String> {
+    let mut seen = std::collections::HashMap::<String, usize>::new();
+    saved
+        .iter()
+        .map(|p| {
+            let n = seen.entry(p.name.clone()).or_insert(0);
+            *n += 1;
+            if *n == 1 { p.name.clone() } else { format!("{} ({})", p.name, n) }
+        })
+        .collect()
+}
+
 /// Studio's connections in Panorama's shape: every saved connection is a
-/// deployment Panorama can open, `wss://` to its address.
-pub fn deployments_from(profiles: &[(String, String, u16, String)]) -> Deployments {
+/// deployment Panorama can open, at its address over the transport Studio
+/// itself uses for it.
+pub fn deployments_from(saved: &[Saved]) -> Deployments {
+    let names = listed_names(saved);
     Deployments {
         installed: true,
-        deployments: profiles
+        deployments: saved
             .iter()
-            .map(|(name, host, port, user)| Deployment {
-                name: name.clone(),
+            .zip(names)
+            .map(|(p, name)| Deployment {
+                name,
                 status: "saved in Studio".into(),
-                infrastructure: if host == "localhost" || host == "127.0.0.1" { "local".into() } else { "remote".into() },
-                url: format!("wss://{host}:{port}"),
-                username: user.clone(),
+                infrastructure: if p.host == "localhost" || p.host == "127.0.0.1" { "local".into() } else { "remote".into() },
+                url: format!("{}://{}:{}", if p.ssl_mode == "disabled" { "ws" } else { "wss" }, p.host, p.port),
+                username: p.username.clone(),
             })
             .collect(),
     }
 }
 
+fn saved_connections(app: &AppHandle) -> AppResult<Vec<Saved>> {
+    let state = app.state::<crate::state::AppState>();
+    Ok(person_connections(crate::profiles::load_profiles(&state)?.into_iter().map(|p| Saved {
+        id: p.id,
+        name: p.name,
+        host: p.host,
+        port: p.port,
+        username: p.username,
+        ssl_mode: p.ssl_mode,
+    })))
+}
+
 #[tauri::command]
 pub async fn panorama_deployments(app: AppHandle) -> AppResult<Deployments> {
-    let state = app.state::<crate::state::AppState>();
-    let profiles = crate::profiles::load_profiles(&state)?;
-    Ok(deployments_from(&profiles.into_iter().map(|p| (p.name, p.host, p.port, p.username)).collect::<Vec<_>>()))
+    Ok(deployments_from(&saved_connections(&app)?))
 }
 
 #[derive(Debug, Serialize)]
@@ -450,20 +537,27 @@ pub struct Credentials {
     pub password: String,
 }
 
-/// The credential for one saved connection, read at the click and handed to
-/// the page, which encrypts it to the database and never shows it.
+/// The credential for one listed connection, read at the click and handed to
+/// the page, which encrypts it to the database and never shows it. The listed
+/// name maps back to the connection id; `find_profile` decrypts the stored
+/// password (a raw profile carries it encrypted).
 #[tauri::command]
 pub async fn panorama_credentials(app: AppHandle, name: String) -> AppResult<Credentials> {
-    let state = app.state::<crate::state::AppState>();
-    let profile = crate::profiles::load_profiles(&state)?
+    let saved = saved_connections(&app)?;
+    let id = listed_names(&saved)
         .into_iter()
-        .find(|p| p.name == name)
+        .zip(&saved)
+        .find(|(listed, _)| *listed == name)
+        .map(|(_, p)| p.id.clone())
         .ok_or_else(|| AppError::Storage(format!("No saved connection named {name:?}.")))?;
+    let state = app.state::<crate::state::AppState>();
+    let profile = crate::profiles::find_profile(&state, &id)?;
     let password = if profile.password.is_empty() { crate::shared_registry::read_credential(&profile.id).unwrap_or_default() } else { profile.password.clone() };
     if password.is_empty() {
         return Err(AppError::Storage(format!("No stored password for \"{}\" — open the connection once so its credential is saved.", profile.name)));
     }
-    Ok(Credentials { url: format!("wss://{}:{}", profile.host, profile.port), username: profile.username, password })
+    let scheme = if profile.ssl_mode == "disabled" { "ws" } else { "wss" };
+    Ok(Credentials { url: format!("{scheme}://{}:{}", profile.host, profile.port), username: profile.username, password })
 }
 
 #[cfg(test)]
@@ -512,20 +606,41 @@ mod tests {
         assert_eq!(parse_target("ws://127.0.0.1:8565/x"), Some((false, "127.0.0.1".into(), 8565)));
         assert_eq!(parse_target("https://x:1"), None);
         assert_eq!(parse_target("wss://:1"), None);
-        let saved = vec![("127.0.0.1".to_string(), 8563u16, "preferred".to_string()), ("db.internal".to_string(), 8563, "verify_ca".to_string())];
-        assert_eq!(known_connection(&saved, "localhost", 8563), Some(false), "localhost is this machine; a preferred mode does not verify");
-        assert_eq!(known_connection(&saved, "DB.internal", 8563), Some(true), "a verifying mode verifies");
+        let saved = vec![
+            ("127.0.0.1".to_string(), 8563u16, "preferred".to_string()),
+            ("db.internal".to_string(), 8563, "verify_ca".to_string()),
+            ("plain.internal".to_string(), 8563, "disabled".to_string()),
+        ];
+        assert_eq!(known_connection(&saved, "localhost", 8563), Some(Transport { tls: true, verify: false }), "localhost is this machine; a preferred mode encrypts without verifying");
+        assert_eq!(known_connection(&saved, "DB.internal", 8563), Some(Transport { tls: true, verify: true }), "a verifying mode verifies");
+        assert_eq!(known_connection(&saved, "plain.internal", 8563), Some(Transport { tls: false, verify: false }), "only a disabled mode is plain — a ws:// request anywhere else is refused");
         assert_eq!(known_connection(&saved, "127.0.0.1", 8565), None, "another port is another database");
         assert_eq!(known_connection(&saved, "evil.example", 8563), None);
+        assert_eq!(percent_decode("/%aé.js"), "/%aé.js", "a stray percent before multibyte text is left alone, never sliced");
+        assert_eq!(percent_decode("a%20b%2Fc"), "a b/c");
+    }
+
+    fn saved(id: &str, name: &str, host: &str, user: &str, mode: &str) -> Saved {
+        Saved { id: id.into(), name: name.into(), host: host.into(), port: 8563, username: user.into(), ssl_mode: mode.into() }
     }
 
     #[test]
-    fn saved_connections_become_deployments() {
-        let d = deployments_from(&[("Local".into(), "127.0.0.1".into(), 8563, "sys".into()), ("Prod".into(), "db.internal".into(), 8563, "analyst".into())]);
+    fn saved_connections_become_deployments_with_unique_names_and_studios_transport() {
+        let list = person_connections(vec![
+            saved("a", "Local", "127.0.0.1", "sys", "preferred"),
+            saved("b", "Prod", "db.internal", "analyst", "verify_ca"),
+            saved("c", "Prod", "db2.internal", "analyst", "disabled"),
+            saved("d", "STUDIO_MCP_x", "127.0.0.1", "STUDIO_MCP_x", "preferred"),
+        ]);
+        assert_eq!(list.len(), 3, "internal identities are not connections a person opens");
+        assert_eq!(listed_names(&list), vec!["Local", "Prod", "Prod (2)"]);
+        let d = deployments_from(&list);
         assert!(d.installed);
         assert_eq!(d.deployments[0].url, "wss://127.0.0.1:8563");
         assert_eq!(d.deployments[0].infrastructure, "local");
         assert_eq!(d.deployments[1].infrastructure, "remote");
         assert_eq!(d.deployments[1].username, "analyst");
+        assert_eq!(d.deployments[2].url, "ws://db2.internal:8563", "a disabled TLS mode is advertised as plain, as Studio itself connects");
+        assert_eq!(d.deployments[2].name, "Prod (2)");
     }
 }

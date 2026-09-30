@@ -61,3 +61,38 @@ Codex: 13 findings, 12 fixed; kept: adopting a listener that answers the
 inventory (same rule as the decision engine; the agent points at the port
 regardless) and the plain JSON-RPC probe without MCP `initialize` (dash-server
 answers it; verified live).
+
+# Panorama with Studio as its shell (2026-09-30, change `panorama-shell`)
+
+Panorama's web build (`exasol-panorama-pwa-<v>.zip`, `.sha256` beside it) is
+installed by the Marketplace as `web-app` (verified, unpacked into
+`<market>/panorama/unpacked`, nothing linked; **fails closed** without a
+checksum). `panorama.rs` serves it on the `panorama` URI scheme
+(`panorama://localhost/` on macOS/Linux, `http://panorama.localhost/` on
+Windows) with `panorama-shim.js` inserted before the first `<script>`.
+
+**Why a shim.** Panorama's `shellBridge()` looks for `__TAURI__.core.invoke`
+and `__TAURI__.event.listen`; `inDesktopShell()` checks `__TAURI_INTERNALS__`.
+The shim defines both and relays `invoke` to the hosting tab by
+`postMessage` (`{panoramaShell:1,id,cmd,args}` → `{panoramaShellReply:1,…}`).
+The tab (`features/panorama/bridge.ts`, pure + tested) answers only:
+`database_proxy` (proxy URL), `exasol_deployments` (Studio's saved
+connections as `{installed, deployments:[{name,status,infrastructure,url,username}]}`,
+internal `STUDIO_MCP_` identities filtered, duplicate names suffixed `(2)`),
+`exasol_deployment_credentials` (via `find_profile` — **`load_profiles`
+returns encrypted passwords**, only `find_profile` decrypts),
+`update_status`/`report_timing`/`agent_*`/`claude_*` → null/{}; anything else
+is rejected.
+
+**The proxy.** Loopback `TcpListener` on an ephemeral port, 40-char token per
+run, `tokio::sync::OnceCell` (concurrent first callers share one), 32-socket
+semaphore, 15 s handshake timeouts. Origin allow-list: `panorama://localhost`,
+`http://panorama.localhost`, `tauri://localhost`, `http://tauri.localhost`.
+Target must equal a saved connection's `host:port`; the frame does not pick
+the transport — `ws://` is refused unless that connection's mode is
+`disabled`; TLS via rustls verifies against native roots only when the mode
+`starts_with("verify")`, otherwise accepts the certificate (Studio's own rule
+for that database). Frames are copied, never decoded.
+
+Crates added: `async-tungstenite` (tokio-runtime), `tokio-rustls`,
+`rustls-native-certs`. Codex: 10 findings, all addressed.
