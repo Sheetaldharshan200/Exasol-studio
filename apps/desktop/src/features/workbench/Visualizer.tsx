@@ -13,11 +13,6 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  formatQuery,
-  type Field,
-  type RuleGroupType,
-} from "react-querybuilder";
-import {
   Check,
   ChevronDown,
   Columns3,
@@ -38,9 +33,7 @@ import { focusBounds } from "./visualizer-focus.ts";
 import { inferLinks } from "./infer-links.ts";
 import { formatClock, formatElapsed } from "@/lib/elapsed";
 import { useElapsedMs } from "@/lib/use-elapsed-ms";
-import { buildSql, type Aggregate, type JoinType } from "./build-sql.ts";
-import { BuilderPane } from "./visualizer/BuilderPane";
-import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, whereSchemas, type ConnGraph } from "./visualizer/connection-graph";
+import { budgetLinks, colKey, layoutSchemas, linkSummary, linksForSelection, mergeSchemaGraphs, splitColKey, splitTableId, type ConnGraph } from "./visualizer/connection-graph";
 import { createViewportMemory, isUserMove } from "./visualizer/viewport-memory";
 import { showSchemaTab, tabFontLimit, tabLabelChars, zoomVar } from "./visualizer/schema-tab";
 import {
@@ -62,11 +55,12 @@ import {
   type Selection,
   type TableNodeData,
 } from "./visualizer/diagram";
-import { RQB_CLASSNAMES, RQB_TRANSLATIONS } from "./visualizer/query-builder-style";
 import { fuzzyScore } from "./visualizer/search";
 import { errorMessage, ipc, type GraphLink, type SchemaGraph } from "@/lib/ipc";
 import { DiagramStateContext, TABLE_PAGE, type DiagramState, type SchemaGroupData } from "./visualizer/diagram";
 import { cn } from "@/lib/utils";
+import { CANVAS_PENDING_KEY, Canvas } from "./canvas/Canvas.tsx";
+import type { EditorSetup } from "./canvas/context.ts";
 
 const graphCache = new Map<string, SchemaGraph>();
 /** A schema in the picker: virtual ones carry the source they federate. */
@@ -88,6 +82,7 @@ export function Visualizer({
   onOpenSql,
   onNewVs,
   instanceId,
+  editor,
 }: {
   profileId: string;
   connectionName: string;
@@ -96,6 +91,8 @@ export function Visualizer({
   /** Unique per Visualizer tab — scopes the "which schema" memory so a new
    *  tab starts independent of previous tabs. Defaults to the profile. */
   instanceId?: string;
+  /** Monaco theme + completion for the canvas's SQL steps, and how to open one in a query tab. */
+  editor: EditorSetup;
 }) {
   // Per-tab schema memory (independent tabs); the heavier graph/schema-list
   // caches stay keyed by profile since they're the same database.
@@ -114,7 +111,17 @@ export function Visualizer({
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sel, setSel] = useState<Selection>(null);
-  const [mode, setMode] = useState<Mode>("diagram");
+  // The canvas opens first when a plan from the assistant is waiting for it;
+  // the shell can also ask for a mode (the "Add to canvas" card does).
+  const [mode, setMode] = useState<Mode>(() => (sessionStorage.getItem(CANVAS_PENDING_KEY) ? "build" : "diagram"));
+  useEffect(() => {
+    const onMode = (e: Event) => {
+      const m = (e as CustomEvent<{ mode?: Mode }>).detail?.mode;
+      if (m === "diagram" || m === "build") setMode(m);
+    };
+    window.addEventListener("studio:visualizer-mode", onMode);
+    return () => window.removeEventListener("studio:visualizer-mode", onMode);
+  }, []);
   const [showInferred, setShowInferred] = useState(true);
   // Inferred links below this confidence stay hidden (see infer-links.ts).
   const [minScore, setMinScore] = useState(0.6);
@@ -221,12 +228,6 @@ export function Visualizer({
 
   // Query builder state
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [where, setWhere] = useState<RuleGroupType>({ combinator: "and", rules: [] });
-  const [orderKey, setOrderKey] = useState<string | null>(null);
-  const [orderDir, setOrderDir] = useState<"ASC" | "DESC">("ASC");
-  const [limit, setLimit] = useState<number>(1000);
-  const [aggregates, setAggregates] = useState<Record<string, Aggregate>>({});
-  const [joinTypes, setJoinTypes] = useState<Record<string, JoinType>>({});
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -399,13 +400,9 @@ export function Visualizer({
     // Only a choice made with the list in hand is worth remembering — before
     // the schemas arrive the selection is empty for a different reason.
     if (schemas.length) lastSelection.set(schemaKey, selectedList);
-    // 3. Everything the builder holds about a hidden schema goes with it: picks,
-    //    aggregates, join types, and the WHERE group if any rule named it.
+    // 3. Picks of a hidden schema go with it.
     const keep = (key: string) => selected.has(splitTableId(splitColKey(key).table).schema);
     setPicked((prev) => new Set([...prev].filter(keep)));
-    setAggregates((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => keep(k))));
-    setJoinTypes((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => { const [src, dst] = k.split(">"); return keep(src) && keep(dst); })));
-    setWhere((prev) => (whereSchemas(prev).every((sc) => selected.has(sc)) ? prev : { combinator: "and", rules: [] }));
     const missing = selectedList.filter((name) => !graphCache.has(`${profileId}:${name}`));
     if (missing.length === 0) {
       setGraphs(Object.fromEntries(selectedList.map((name) => [name, graphCache.get(`${profileId}:${name}`)!])));
@@ -659,45 +656,8 @@ export function Visualizer({
   const counts = useMemo(() => ({ tables: nodes.filter((n) => n.type === "table").length, edges: edges.length }), [nodes, edges]);
   const edgeRender = useMemo(() => ({ ...edgeStyle, dense: edges.length > DENSE_EDGES }), [edgeStyle, edges.length]);
 
-  // react-querybuilder fields from involved (picked) tables, else all tables.
-  const fields: Field[] = useMemo(() => {
-    if (!graph) return [];
-    const involved = new Set([...picked].map((k) => splitColKey(k).table));
-    const tables = involved.size ? graph.tables.filter((t) => involved.has(t.id)) : graph.tables;
-    return tables.flatMap((t) =>
-      t.columns.map((c) => ({ name: `"${t.schema}"."${t.name}"."${c.name}"`, label: `${t.id}.${c.name}` })),
-    );
-  }, [graph, picked]);
-
-  const generatedSql = useMemo(() => {
-    if (!graph) return "";
-    const whereSql = where.rules.length
-      ? formatQuery(where, { format: "sql", quoteFieldNamesWith: ["", ""] as [string, string] })
-      : "";
-    return buildSql({ picked: [...picked], links: graph.links, whereSql, orderKey, orderDir, limit, aggregates, joinTypes });
-  }, [graph, picked, where, orderKey, orderDir, limit, aggregates, joinTypes]);
-  // The SQL pane follows the WHERE builder a beat behind the keystrokes.
-  const [debouncedSql, setDebouncedSql] = useState(generatedSql);
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSql(generatedSql), 150);
-    return () => window.clearTimeout(t);
-  }, [generatedSql]);
-  // An ORDER BY on a column that is no longer picked would name a table that
-  // is not in FROM any more — drop it with the pick.
-  useEffect(() => {
-    if (orderKey && !picked.has(orderKey)) setOrderKey(null);
-  }, [picked, orderKey]);
-  // Links between the picked tables — the joins the SQL will use.
-  const joinLinks = useMemo(() => {
-    if (!graph) return [];
-    const involved = new Set([...picked].map((k) => splitColKey(k).table));
-    return graph.links.filter((l) => involved.has(l.source) && involved.has(l.target));
-  }, [graph, picked]);
-
-  const pickedFields: Field[] = useMemo(
-    () => [...picked].map((k) => ({ name: k, label: k })),
-    [picked],
-  );
+  // Tables picked in the diagram open as boxes when the canvas is shown.
+  const pickedTables = useMemo(() => [...new Set([...picked].map((k) => splitColKey(k).table))].map(splitTableId), [picked]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-editor">
@@ -721,7 +681,7 @@ export function Visualizer({
           </button>
           <button
             onClick={() => setMode("build")}
-            title="Build a query visually — pick columns, filters and joins, no SQL typing"
+            title="The query canvas — tables, SQL steps and charts as boxes; every arrow says where a result came from"
             className={cn(
               "relative flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
               mode === "build"
@@ -1121,36 +1081,9 @@ export function Visualizer({
       </div>
 
       {mode === "build" ? (
-        <BuilderPane
-          profileId={profileId}
-          connectionName={connectionName}
-          picked={picked}
-          onUnpick={(k) => {
-            const { table, column } = splitColKey(k);
-            onPick(table, column);
-          }}
-          onClear={() => setPicked(new Set())}
-          aggregates={aggregates}
-          onAggregates={setAggregates}
-          joinLinks={joinLinks}
-          joinTypes={joinTypes}
-          onJoinTypes={setJoinTypes}
-          fields={fields}
-          pickedFields={pickedFields}
-          where={where}
-          onWhere={setWhere}
-          orderKey={orderKey}
-          onOrderKey={setOrderKey}
-          orderDir={orderDir}
-          onOrderDir={setOrderDir}
-          limit={limit}
-          onLimit={setLimit}
-          sql={generatedSql}
-          displaySql={debouncedSql}
-          onOpenSql={onOpenSql}
-          rqbClassnames={RQB_CLASSNAMES}
-          rqbTranslations={RQB_TRANSLATIONS}
-        />
+        <div className="min-h-0 flex-1">
+          <Canvas conn={{ profileId, connectionName }} editor={editor} pickedTables={pickedTables} onPickedOpened={() => setPicked(new Set())} />
+        </div>
       ) : null}
     </div>
   );

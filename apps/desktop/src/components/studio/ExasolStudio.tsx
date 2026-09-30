@@ -3593,6 +3593,14 @@ export function ExasolStudio({
                   connectionName={connection.profile.name}
                   onOpenSql={openBuiltSql}
                   onNewVs={() => openAddSource(connection.profile.id)}
+                  editor={{
+                    editorTheme,
+                    beforeMount: (m) => {
+                      applyMonacoThemes(m);
+                      registerExasolCompletion(m, () => sqlCatalogRef.current);
+                    },
+                    openSql: (sql, title) => void openBuiltSql(sql, false, title),
+                  }}
                 />
               )}
             </div>

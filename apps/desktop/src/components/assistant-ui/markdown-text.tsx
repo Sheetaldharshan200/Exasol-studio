@@ -14,6 +14,7 @@ import { CheckIcon, CopyIcon, FileInputIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { NotebookPlanBlock } from "@/components/assistant-ui/notebook-plan-card";
+import { CanvasPlanBlock } from "@/components/assistant-ui/canvas-plan-card";
 import { lastLocateFence } from "@/features/assistant/exa/sql-fence";
 import { CrosshairIcon } from "lucide-react";
 
@@ -52,6 +53,12 @@ const MarkdownTextImpl = () => {
         notebook: {
           CodeHeader: () => null,
           SyntaxHighlighter: ({ code }) => <NotebookPlanBlock code={code} />,
+        },
+        // ```canvas fences carry boxes for the query canvas; they render as
+        // the one-click "Add to canvas" card.
+        canvas: {
+          CodeHeader: () => null,
+          SyntaxHighlighter: ({ code }) => <CanvasPlanBlock code={code} />,
         },
         // ```locate fences drive the visualizer highlight; in the chat they
         // render as a small pointer pill instead of raw JSON.

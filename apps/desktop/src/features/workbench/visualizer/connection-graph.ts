@@ -113,26 +113,6 @@ export function layoutSchemas(
   return { groups, tables, absolute };
 }
 
-/**
- * The schemas a react-querybuilder group refers to, from field names shaped
- * `"SCHEMA"."TABLE"."COLUMN"` (the builder's field ids). Used to drop a WHERE
- * that names a schema the user just hid.
- */
-export function whereSchemas(group: { rules: unknown[] }): string[] {
-  const out = new Set<string>();
-  const walk = (rules: unknown[]) => {
-    for (const r of rules) {
-      const rule = r as { field?: unknown; rules?: unknown[] };
-      if (Array.isArray(rule.rules)) walk(rule.rules);
-      else if (typeof rule.field === "string") {
-        const m = /^"([^"]+)"\."/.exec(rule.field);
-        if (m) out.add(m[1]);
-      }
-    }
-  };
-  walk(group.rules);
-  return [...out];
-}
 
 /** Above this many links the canvas draws only what the user can read. */
 export const MAX_EDGES = 400;
