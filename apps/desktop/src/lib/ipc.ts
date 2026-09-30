@@ -798,6 +798,8 @@ export const ipc = {
   aiClientsReady: () => call<{ ready: boolean; reason?: string | null }>("ai_clients_ready"),
   marketDocFile: (repo: string, path: string) => call<string | null>("market_doc_file", { repo, path }),
   openExternal: (url: string) => call<null>("open_external", { url }),
+  /** System Settings → Privacy & Security → Local Network (macOS). */
+  openLocalNetworkSettings: () => call<null>("open_local_network_settings"),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),

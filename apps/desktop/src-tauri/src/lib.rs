@@ -38,6 +38,7 @@ mod git;
 mod history;
 mod local_database;
 mod local_llm;
+mod local_network;
 mod local_runtime;
 mod market;
 mod metadata;
@@ -190,6 +191,7 @@ pub fn run() {
             slc::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
+            local_network::open_local_network_settings,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
