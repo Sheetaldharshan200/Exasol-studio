@@ -7,7 +7,6 @@
 use crate::error::{AppError, AppResult};
 use crate::market::{emit_log, run_streamed};
 use serde_json::{json, Value};
-use std::process::Command;
 use tauri::AppHandle;
 
 /// A database image into the hypervisor on this machine. The image is the
@@ -63,7 +62,7 @@ pub(crate) fn install(
     let tool = found.iter().find(|(h, _)| *h == hv).map(|(_, p)| p.clone()).unwrap_or_default();
     let note = match hv {
         Hypervisor::Virtualbox => {
-            let listed = Command::new(&tool).args(["list", "vms"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            let listed = crate::process::command(&tool).args(["list", "vms"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
             if vm_registered(&listed, vm_name) {
                 return Err(AppError::Storage(format!(
                     "VirtualBox already has a machine named {vm_name}. Start it there, or remove it first, instead of importing a second one."
@@ -125,7 +124,7 @@ pub(crate) fn remove(app: &AppHandle, id: &str, vm: &Value) -> AppResult<()> {
                 return Ok(());
             };
             emit_log(app, id, format!("Powering off \"{name}\" (if it runs) and deleting it with its disks…"), "info");
-            let _ = Command::new(&tool).args(["controlvm", name, "poweroff"]).output();
+            let _ = crate::process::command(&tool).args(["controlvm", name, "poweroff"]).output();
             let code = run_streamed(app, id, &tool, &["unregistervm", name, "--delete"])?;
             if code != 0 {
                 return Err(AppError::Storage(format!("VBoxManage unregistervm exited with code {code}. See the log above.")));

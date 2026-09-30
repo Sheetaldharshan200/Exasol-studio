@@ -6,7 +6,6 @@
 use crate::error::{AppError, AppResult};
 use crate::market::{emit_log, run_streamed};
 use serde_json::Value;
-use std::process::Command;
 use tauri::AppHandle;
 
 /// The launcher and deployment a language container goes into. Containers
@@ -90,7 +89,7 @@ pub(crate) fn slc_choices_from(list: &Value) -> Vec<SlcChoice> {
 pub async fn market_slc_catalog(app: AppHandle) -> AppResult<Vec<SlcChoice>> {
     let (cli, dep) = slc_launcher(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let output = Command::new(&cli)
+        let output = crate::process::command(&cli)
             .args(["slc", "list", "--json", "--deployment-dir", &dep])
             .output()
             .map_err(|e| AppError::Storage(format!("Could not run the Exasol launcher: {e}")))?;
@@ -107,7 +106,6 @@ pub async fn market_slc_catalog(app: AppHandle) -> AppResult<Vec<SlcChoice>> {
     .await
     .map_err(|e| AppError::Storage(e.to_string()))?
 }
-
 
 #[cfg(test)]
 mod tests {

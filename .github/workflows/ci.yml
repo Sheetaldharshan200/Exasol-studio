@@ -90,3 +90,39 @@ jobs:
 
       - name: cargo test
         run: cargo test --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+
+  # Windows is a release target nobody on the team runs day to day. This job
+  # compiles the Rust crate for it on every PR, so a cfg(windows) branch that
+  # no longer builds is caught here, not on release day. `cargo check` only:
+  # linking and bundling belong to the release workflow.
+  windows-check:
+    name: Rust compiles on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      # Same stand-ins as the Linux job: build.rs checks the paths exist.
+      - name: Stub frontend dist and bundle resources
+        shell: bash
+        run: |
+          mkdir -p apps/desktop/dist && touch apps/desktop/dist/index.html
+          mkdir -p packages/agent-core/dist/skills
+          touch packages/agent-core/dist/agent-core.cjs \
+                packages/agent-core/dist/mcp-gateway.cjs \
+                packages/agent-core/dist/exa-agent.cjs \
+                packages/agent-core/dist/driver-bridge.cjs
+          mkdir -p apps/desktop/src-tauri/resources/runtime \
+                   apps/desktop/src-tauri/resources/python-stack \
+                   apps/desktop/src-tauri/resources/bridges
+          mkdir -p packages/driver-bridges/r && touch packages/driver-bridges/r/bridge.R
+          touch apps/desktop/src-tauri/resources/runtime-components.lock.json
+
+      - name: cargo check (tests included)
+        run: cargo check --tests --manifest-path ./apps/desktop/src-tauri/Cargo.toml

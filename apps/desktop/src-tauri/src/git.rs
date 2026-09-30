@@ -6,7 +6,6 @@ use crate::error::{AppError, AppResult};
 use crate::market::{augmented_path, resolve_bin};
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::Command;
 
 fn workspace() -> AppResult<PathBuf> {
     let home = std::env::var("HOME")
@@ -26,7 +25,7 @@ fn git_bin() -> String {
 /// Run `git` in the workspace, returning (exit_ok, stdout, stderr).
 fn run(args: &[&str]) -> AppResult<(bool, String, String)> {
     let dir = workspace()?;
-    let mut cmd = Command::new(git_bin());
+    let mut cmd = crate::process::command(git_bin());
     cmd.args(args).current_dir(&dir);
     if std::env::consts::OS != "windows" {
         cmd.env("PATH", augmented_path());

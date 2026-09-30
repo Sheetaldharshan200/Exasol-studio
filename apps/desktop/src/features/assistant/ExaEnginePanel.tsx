@@ -14,6 +14,7 @@ import { buildChipMarkers, buildPrompt, neutralizeSentinels, resolveContext, wra
 import { ExaThread, SQL_OPS_NONE, type ChatMode, type SqlOps } from "./exa/ExaThread";
 import { engineClientFor, engineReachable } from "./exa/engine-client";
 import type { PickedModel } from "./exa/ExaModelSelector";
+import { CANVAS_FENCE_DIRECTIVE } from "@/features/assistant/exa/canvas-plan";
 
 /**
  * Exa engine (v2, opencode) chat panel. Chat itself runs on the official
@@ -685,7 +686,7 @@ export function ExaEnginePanel({
     // Persona + personalization (Settings → AI): read at send time so an edit
     // in Settings shapes the very next message, no reload anywhere.
     const personaDirective = styleDirective(persona, loadAiStyle());
-    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, capabilityDirective, dashboardDirective, netDirective, personaDirective]
+    const directive = [MODE_DIRECTIVE[mode], opsDirective, dataDirective, insightDirective, CANVAS_FENCE_DIRECTIVE, capabilityDirective, dashboardDirective, netDirective, personaDirective]
       .filter(Boolean)
       .join(" ");
     // Machine additions (directives + chip context) ride inside the sentinel

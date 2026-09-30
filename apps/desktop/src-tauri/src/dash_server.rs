@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -263,7 +263,7 @@ pub async fn dash_server_start(app: AppHandle, profile_id: String) -> AppResult<
         &password,
         verify_tls,
     );
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::process::command(&bin);
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
     for (k, v) in &env {
         cmd.env(k, v);

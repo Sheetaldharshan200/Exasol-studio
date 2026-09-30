@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -99,9 +99,9 @@ fn kill_port_orphans() {
     #[cfg(unix)]
     {
         for port in [BUILTIN_PORT, EMBED_PORT] {
-            if let Ok(out) = Command::new("lsof").args(["-ti", &format!(":{port}")]).output() {
+            if let Ok(out) = crate::process::command("lsof").args(["-ti", &format!(":{port}")]).output() {
                 for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
-                    let _ = Command::new("kill").args(["-9", pid]).status();
+                    let _ = crate::process::command("kill").args(["-9", pid]).status();
                 }
             }
         }
@@ -384,7 +384,7 @@ pub async fn llm_engine_install(app: AppHandle, state: State<'_, AppState>) -> A
 
     emit(&app, "engine", None, "Extracting…");
     let ok = if name.ends_with(".zip") {
-        Command::new(if cfg!(windows) { "tar" } else { "unzip" })
+        crate::process::command(if cfg!(windows) { "tar" } else { "unzip" })
             .args(if cfg!(windows) {
                 vec!["-xf", archive.to_str().unwrap_or(""), "-C", dir.to_str().unwrap_or("")]
             } else {
@@ -394,7 +394,7 @@ pub async fn llm_engine_install(app: AppHandle, state: State<'_, AppState>) -> A
             .map(|s| s.success())
             .unwrap_or(false)
     } else {
-        Command::new("tar")
+        crate::process::command("tar")
             .args(["-xzf", archive.to_str().unwrap_or(""), "-C", dir.to_str().unwrap_or("")])
             .status()
             .map(|s| s.success())
@@ -471,7 +471,7 @@ pub async fn start_model(app: &AppHandle, model_id: &str) -> AppResult<()> {
     engine.kill();
 
     emit(app, "start", None, &format!("Loading {}…", model.name));
-    let child = Command::new(&server)
+    let child = crate::process::command(&server)
         .args([
             "-m",
             gguf.to_str().unwrap_or(""),
@@ -676,7 +676,7 @@ pub async fn ensure_embedder(app: &AppHandle) -> AppResult<()> {
         let server = find_server(app, &state).ok_or_else(|| AppError::Assistant("engine not installed".into()))?;
         (server, gguf)
     };
-    let child = Command::new(&server)
+    let child = crate::process::command(&server)
         .args([
             "-m", gguf.to_str().unwrap_or(""),
             "--host", "127.0.0.1",

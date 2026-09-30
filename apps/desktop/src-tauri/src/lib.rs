@@ -42,6 +42,7 @@ mod local_runtime;
 mod market;
 mod metadata;
 mod print;
+mod process;
 mod profiles;
 mod shared_registry;
 mod query;

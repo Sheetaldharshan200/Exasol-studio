@@ -162,7 +162,7 @@ pub fn remove(id: &str) -> AppResult<()> {
         }
     }
     if let Some(cmd) = secret_delete_command(id) {
-        let _ = std::process::Command::new(&cmd[0])
+        let _ = crate::process::command(&cmd[0])
             .args(&cmd[1..])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -236,7 +236,7 @@ fn secret_write_command(id: &str, secret: &str) -> Option<Vec<String>> {
 /// Read a shared secret: the OS credential store first, then the legacy file.
 pub fn read_credential(id: &str) -> Option<String> {
     if let Some(cmd) = secret_read_command(id) {
-        if let Ok(output) = std::process::Command::new(&cmd[0]).args(&cmd[1..]).output() {
+        if let Ok(output) = crate::process::command(&cmd[0]).args(&cmd[1..]).output() {
             if output.status.success() {
                 let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !value.is_empty() {
@@ -256,7 +256,7 @@ fn write_credential(id: &str, secret: &str) -> bool {
         use std::io::Write;
         use std::process::Stdio;
         let needs_stdin = std::env::consts::OS == "linux";
-        let spawned = std::process::Command::new(&cmd[0])
+        let spawned = crate::process::command(&cmd[0])
             .args(&cmd[1..])
             .stdin(if needs_stdin { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::null())

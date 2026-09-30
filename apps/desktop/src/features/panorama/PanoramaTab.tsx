@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, RefreshCcw } from "lucide-react";
 import { Icon as BxIcon } from "@/components/ui/icon";
 import { errorMessage, ipc, type PanoramaStatus } from "@/lib/ipc";
-import { answer, frameOrigin, frameUrl, parseRequest } from "./bridge";
+import { answer, frameOrigin, frameUrl, parseRequest, zoomStepFromKey } from "./bridge";
 
 export function PanoramaTab() {
   const [status, setStatus] = useState<PanoramaStatus | null | { error: string }>(null);
@@ -54,6 +54,20 @@ export function PanoramaTab() {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [status]);
+
+  // ⌘/Ctrl + = / - typed outside the frame still zooms Panorama's canvas:
+  // the frame's shim turns the step into the wheel gesture Panorama reads.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const step = zoomStepFromKey(e);
+      const win = frame.current?.contentWindow;
+      if (!step || !win) return;
+      e.preventDefault();
+      win.postMessage({ panoramaShellZoom: 1, step }, frameOrigin(navigator.userAgent));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function openMarketplaceItem() {
     window.dispatchEvent(new CustomEvent("studio:navigate", { detail: { to: "marketplace" } }));
