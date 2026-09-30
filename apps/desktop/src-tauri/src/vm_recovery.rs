@@ -29,6 +29,32 @@ pub fn vm_pid_from_state(json: &str) -> Option<u32> {
     (parsed > 1).then_some(parsed)
 }
 
+/// The VM's pid from the runner's plain `vm.pid` file — what the runner
+/// writes when it never got far enough to write `vm-state.json` (a guest that
+/// booted but was never reachable leaves `vm.pid` and a degraded-state file
+/// and nothing else).
+pub fn vm_pid_from_pid_file(text: &str) -> Option<u32> {
+    let parsed = text.trim().parse::<u32>().ok()?;
+    (parsed > 1).then_some(parsed)
+}
+
+/// The VM's pid from whichever record the runner left: the state file first,
+/// the plain pid file otherwise.
+pub fn vm_pid_from_records(state_json: &str, pid_file: &str) -> Option<u32> {
+    vm_pid_from_state(state_json).or_else(|| vm_pid_from_pid_file(pid_file))
+}
+
+/// Whether the runner itself declared the guest unreachable: it writes
+/// `vm-state-degraded.json` with an `error` when SSH or the database forward
+/// never came up. That verdict stands in for a probe when there is no state
+/// file to name a guest endpoint at all.
+pub fn runner_declared_degraded(degraded_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(degraded_json)
+        .ok()
+        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(|e| !e.trim().is_empty()))
+        .unwrap_or(false)
+}
+
 /// Is the process at a recorded pid still the local runner?
 ///
 /// A pid recorded hours ago may have been recycled by the OS onto something
@@ -108,6 +134,24 @@ mod tests {
       "vm_name": "exasol-local-vm"
     }"#;
     const RUNTIME: &str = r#"{ "vm_ip": "192.168.64.169" }"#;
+
+    #[test]
+    fn the_pid_comes_from_the_state_file_or_the_plain_pid_file() {
+        assert_eq!(vm_pid_from_pid_file("29245\n"), Some(29245));
+        assert_eq!(vm_pid_from_pid_file("1"), None);
+        assert_eq!(vm_pid_from_pid_file("garbage"), None);
+        assert_eq!(vm_pid_from_records(STATE, "29245"), Some(76029), "the state file wins when present");
+        assert_eq!(vm_pid_from_records("", "29245"), Some(29245), "no state file → the pid file");
+        assert_eq!(vm_pid_from_records("", ""), None);
+    }
+
+    #[test]
+    fn a_degraded_state_file_with_an_error_means_the_guest_is_unreachable() {
+        assert!(runner_declared_degraded(r#"{"error": "timed out waiting for SSH service at 192.168.64.172:22"}"#));
+        assert!(!runner_declared_degraded(r#"{"error": ""}"#));
+        assert!(!runner_declared_degraded(""));
+        assert!(!runner_declared_degraded(r#"{"ok": true}"#));
+    }
     const RUNNER: &str =
         "/Users/x/Library/Caches/.exasol/personal/runtime-artifacts/artifacts/exasol-local-runner/darwin/arm64/abc/unpack/launcher run";
 

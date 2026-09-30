@@ -1694,11 +1694,9 @@ export function Marketplace() {
           onNavigate={goto}
           onRefresh={refreshAll}
         />
-        {/* Shown only when the allowance is spent or a token is connected —
-            nobody is asked to authenticate merely to browse. */}
-        <div className="mt-4 empty:mt-0">
-          <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
-        </div>
+        {/* GitHub access lives behind one floating icon; a dot on it says the
+            allowance is spent or a token is connected. */}
+        <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
         {dbReview ? (
         <DbScriptsReview
           item={dbReview}
