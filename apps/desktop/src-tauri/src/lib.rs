@@ -11,6 +11,7 @@ mod updates;
 mod upstream;
 mod bucketfs;
 mod db_scripts;
+mod decisions;
 mod slc;
 mod vm_appliance;
 mod catalog;
@@ -26,7 +27,8 @@ mod exarrow_exec;
 mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
-mod dashboards;
+mod dash_server;
+mod panorama;
 mod error;
 mod exapump;
 mod files;
@@ -63,6 +65,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .register_uri_scheme_protocol(print::SCHEME, |ctx, req| print::respond(ctx.app_handle(), req.uri().path()))
+        // Panorama's web build, served to its tab with Studio as its shell.
+        .register_uri_scheme_protocol(panorama::SCHEME, |ctx, req| panorama::respond(ctx.app_handle(), req.uri().path()))
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -75,6 +79,8 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
+            app.manage(crate::decisions::DecisionEngine::default());
+            app.manage(crate::dash_server::DashServer::default());
             app.manage(crate::terminal::TermRegistry::default());
             app.manage(crate::print::PrintJobs::default());
             app.manage(crate::cloudflared::CloudflaredProc::default());
@@ -143,10 +149,13 @@ pub fn run() {
             files::save_attachment,
             files::install_cli,
             files::append_app_log,
-            dashboards::dashboard_read,
-            dashboards::dashboard_write,
-            dashboards::dashboard_delete,
-            dashboards::dashboard_list,
+            dash_server::dash_server_status,
+            dash_server::dash_server_start,
+            dash_server::dash_server_stop,
+            dash_server::dash_server_apps,
+            panorama::panorama_status,
+            panorama::panorama_deployments,
+            panorama::panorama_credentials,
             cloudflared::cloudflared_ensure,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,
@@ -176,6 +185,9 @@ pub fn run() {
             market::market_install_run,
             market::market_uninstall,
             db_scripts::market_db_scripts_plan,
+            decisions::decisions_status,
+            decisions::decisions_pull,
+            decisions::decisions_decide,
             slc::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
@@ -260,6 +272,8 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
+                app.state::<crate::decisions::DecisionEngine>().kill();
+                app.state::<crate::dash_server::DashServer>().kill();
             }
         });
 }

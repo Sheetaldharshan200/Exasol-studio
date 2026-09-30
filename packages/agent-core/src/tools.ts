@@ -10,8 +10,6 @@ import type { MemoryStore } from "./memory.ts";
 import type { DocumentStore } from "./documents.ts";
 import type { SessionStore } from "./session.ts";
 import type { KnowledgeGraph } from "./kb.ts";
-import { PanelSchema, type DashboardStore } from "./dashboards.ts";
-import type { ArtifactStore } from "./artifacts.ts";
 import type { Skill } from "./skills.ts";
 import { parseCsv, buildPlan, buildInsert, typeToSql, objectsToTable, type CsvTable } from "./csv-import.ts";
 import { TaskManager } from "./a2a.ts";
@@ -107,8 +105,6 @@ export function buildTools(ctx: {
   store?: SessionStore;
   kb?: KnowledgeGraph;
   settings?: AgentSettings;
-  dashboards?: DashboardStore;
-  artifacts?: ArtifactStore;
   /** Model for sub-agents; omitting disables spawn_researcher. */
   model?: BaseChatModel;
   /** Read-only mode (sub-agents): writes fail instead of asking. */
@@ -549,80 +545,6 @@ export function buildTools(ctx: {
       },
     }),
 
-    ...(ctx.artifacts && !ctx.readOnly
-      ? {
-          render_artifact: tool({
-            description:
-              "Render a self-contained HTML page as a tab in Exasol Studio — for rich insights, reports, or small interactive views. " +
-              "html must be ONE complete document with inline CSS/JS and NO external URLs.",
-            inputSchema: z.object({
-              title: z.string(),
-              html: z.string().min(1),
-            }),
-            execute: async ({ title, html }) => {
-              const a = ctx.artifacts!.save(title, html);
-              session.record({ kind: "artifact.created", id: a.id, title });
-              session.emit({ type: "artifact-created", id: a.id, title });
-              return { ok: true, id: a.id, note: "Rendered and opened as a tab for the user." };
-            },
-          }),
-        }
-      : {}),
-
-    ...(ctx.dashboards && !ctx.readOnly
-      ? {
-          dashboard_list: tool({
-            description: "List saved dashboards (id, title, panel count).",
-            inputSchema: z.object({}),
-            execute: async () => ({ dashboards: ctx.dashboards!.list() }),
-          }),
-
-          dashboard_get: tool({
-            description: "Fetch a dashboard's full JSON spec for editing.",
-            inputSchema: z.object({ id: z.string() }),
-            execute: async ({ id }) => {
-              const d = ctx.dashboards!.get(id);
-              return d ? { dashboard: d } : { error: "not found" };
-            },
-          }),
-
-          dashboard_save: tool({
-            description:
-              "Create or update a dashboard. Panels live on a 12-column grid; each has SQL and a viz " +
-              "(echarts bar/line/area/pie/scatter with xField/yFields, kpi with valueField, or table). " +
-              'Markdown text panels — {viz:{type:"markdown",content:"…"}, NO query} — add narrative: a summary up top, insight notes beside charts. Use them to make report-style dashboards. ' +
-              "TEST each panel's SQL with run_sql before saving. Omit id to create.",
-            inputSchema: z.object({
-              dashboard: z.object({
-                id: z.string().optional().describe("Omit to create a new dashboard"),
-                title: z.string(),
-                description: z.string().optional(),
-                panels: z
-                  .array(PanelSchema)
-                  .min(1)
-                  .max(24)
-                  .describe(
-                    'Each panel: {id, title, grid:{x(0-11),y,w(2-12),h(2-24)}, query:{sql}, viz:{type:"echarts",chart:"bar|line|area|pie|scatter",xField?,yFields?} | {type:"kpi",valueField?,unit?} | {type:"table"} | {type:"markdown",content} (markdown panels take NO query)}',
-                  ),
-              }),
-            }),
-            execute: async ({ dashboard }) => {
-              try {
-                const saved = ctx.dashboards!.save({ version: 1, description: "", ...dashboard });
-                session.record({ kind: "dashboard.saved", id: saved.id, title: saved.title, panels: saved.panels.length });
-                session.emit({ type: "dashboard-saved", id: saved.id, title: saved.title });
-                return { ok: true, id: saved.id, note: "Saved. The user renders it in the Notebook: Import menu → this dashboard (panels become auto-running cells)." };
-              } catch (e) {
-                return {
-                  ok: false,
-                  error: e instanceof Error ? e.message : String(e),
-                  hint: 'Match this working example exactly: {"id":"p1","title":"Revenue by segment","grid":{"x":0,"y":0,"w":6,"h":8},"query":{"sql":"SELECT C_MKTSEGMENT, SUM(O_TOTALPRICE) AS REVENUE FROM TPCH.ORDERS o JOIN TPCH.CUSTOMER c ON o.O_CUSTKEY=c.C_CUSTKEY GROUP BY C_MKTSEGMENT"},"viz":{"type":"echarts","chart":"bar"}}. Avoid reserved words (VALUE) as column aliases.',
-                };
-              }
-            },
-          }),
-        }
-      : {}),
 
     ...(!ctx.readOnly && ctx.settings?.enableUiTools
       ? {
@@ -661,7 +583,7 @@ export function buildTools(ctx: {
           ui_open: tool({
             description:
               "Open a part of the Exasol Studio UI for the user (pet/cursor drives it): " +
-              "databases, files, favorites, visualizer, git, marketplace, guides, dashboards, settings, or a new query tab ('query').",
+              "databases, files, favorites, visualizer, git, marketplace, guides, dashboards (dash-server's hosted apps), settings, or a new query tab ('query').",
             inputSchema: z.object({
               target: z.enum([
                 "databases",
@@ -1434,7 +1356,7 @@ export function buildTools(ctx: {
     run_pipeline: tool({
       description:
         "Compose a MULTI-STAGE plan into one orchestrated run: stages execute in order, each stage is either a parallel research fan-out (`research`: list of questions) or an agent step (`instruction`: e.g. 'run the SELECTs the research suggests via run_sql_batch', 'render an artifact from the gathered data'). " +
-        "Each stage sees a digest of everything earlier stages produced. Use for jobs like research → batch-query → render artifact/dashboard, done end-to-end in one call.",
+        "Each stage sees a digest of everything earlier stages produced. Use for jobs like research → batch-query → build a dash-server dashboard, done end-to-end in one call.",
       inputSchema: z.object({
         goal: z.string().describe("What the whole pipeline should accomplish"),
         stages: z
@@ -1482,7 +1404,7 @@ export function buildTools(ctx: {
               const res = await generateText({
                 model: ctx.model!,
                 system:
-                  "You are ONE STAGE of a data pipeline inside Exasol Studio. Do your stage's job with tools invoked natively (prefer batch tools like run_sql_batch/profile_tables for many statements; render_artifact/dashboard_save for outputs), then finish with a short factual summary of what you produced. " +
+                  "You are ONE STAGE of a data pipeline inside Exasol Studio. Do your stage's job with tools invoked natively (prefer batch tools like run_sql_batch/profile_tables for many statements; the dash-server MCP tools for dashboards and report pages), then finish with a short factual summary of what you produced. " +
                   "Exasol dialect: LIMIT n, UPPERCASE identifiers, schema-qualified names. Never print tool calls as text.",
                 prompt: `Pipeline goal: ${goal}\n${cap(context, 9000)}\n\nYOUR STAGE (${i + 1}/${stages.length} — ${stage.title}): ${stage.instruction}`,
                 tools: stageTools,

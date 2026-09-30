@@ -65,7 +65,7 @@ const DEPTH_TEXT: Record<AiStyle["depth"], string> = {
 };
 const OUTPUT_TEXT: Record<AiStyle["output"], string> = {
   tables: "Prefer tables when presenting data.",
-  charts: "Prefer charts and dashboards when presenting data (use your dashboard/artifact tools).",
+  charts: "Prefer charts and dashboards when presenting data (build them in dash-server through its tools).",
   sql: "Lead with the SQL; show the statement before its results.",
   prose: "Prefer clear prose; use tables only when structure demands it.",
 };

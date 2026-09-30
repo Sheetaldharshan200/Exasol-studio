@@ -39,7 +39,7 @@ Personal (it is driver + SQL — nothing BucketFS-bound).
 4. **Build**: `dbt run` / `dbt test` / `dbt build`; report actual model
    counts + failures from the output.
 5. **Close the loop**: results are ordinary Exasol tables/views — offer to
-   query them, chart them (`dashboard-builder`), or schedule the run
+   query them, chart them (a dash-server dashboard through its MCP tools), or schedule the run
    (`exasol-scheduling`; note the scheduler daemon cannot execute dbt itself —
    schedule dbt with launchd/cron/CI, or materialize the logic as SQL the
    scheduler can run).

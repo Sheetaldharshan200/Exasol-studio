@@ -363,7 +363,7 @@ export type InstallSource =
   /** A JAR from Maven Central. Its versions come from Maven's own metadata, never a release tag. */
   | { kind: "maven"; group: string; artifact: string }
   /** A file from the repository's newest release. Without `assetPattern` the build for this platform is picked. */
-  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean }
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean; perPlatform?: boolean }
   /** A native registry or Exasol's downloads portal; `driverRuntime` wires the result into a Studio driver runtime. */
   | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string; driverRuntime?: "odbc" }
   /** The repository's current tarball, for a project with no releases. */
@@ -388,6 +388,16 @@ export type InstallSource =
 export type ScriptPlan = { version: string; files: string[]; statements: { head: string; body: string }[]; fingerprint: string };
 /** One language container the launcher offers, and whether it is installed. */
 export type SlcChoice = { alias: string; installed: boolean };
+/** The decision engine: installed? answering? which models it holds. */
+export type DecisionStatus = { installed: boolean; serving: boolean; models: string[] };
+/** dash-server as Studio sees it: installed? answering? for which connection? */
+export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** Panorama as Studio sees it: is the web build installed, and where is the socket proxy. */
+export type PanoramaStatus = { installed: boolean; proxyUrl: string };
+/** One hosted Dash app, from dash-server's own inventory. */
+export type DashApp = { name: string; title: string; route: string; status: string; published: boolean };
+/** A run's answers per row (null where none) and the first failure, if one stopped it. */
+export type DecideOutcome = { answers: unknown[]; failedRow: number | null; error: string | null };
 /** Formats of a delivered file; the next step is stated from the format. A
  *  rockspec and a desktop build come from the release; the other two are the
  *  tag's source archive. */
@@ -710,6 +720,12 @@ export const ipc = {
     call<ScriptPlan>("market_db_scripts_plan", { id, repo, requested, schema }),
   /** The language containers the official launcher can install locally. */
   marketSlcCatalog: () => call<SlcChoice[]>("market_slc_catalog"),
+  // ── Decisions (Anomalies tab): a local decision-model daemon the
+  //    Marketplace installs; Studio starts it, pulls models, sends rows.
+  decisionsStatus: () => call<DecisionStatus>("decisions_status"),
+  decisionsPull: (model: string) => call<void>("decisions_pull", { model }),
+  decisionsDecide: (model: string, states: Record<string, unknown>[], questions: Record<string, unknown>) =>
+    call<DecideOutcome>("decisions_decide", { model, states, questions }),
   /** Remove an install — by its coordinate, since what "remove" means depends
    *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
   marketUninstall: (target: InstallTarget) =>
@@ -866,12 +882,16 @@ export const ipc = {
     call<unknown>("connection_settings_set", { profileId, settings }),
   sqlHistoryList: () => call<HistoryEntry[]>("sql_history_list"),
   sqlHistoryClear: () => call<void>("sql_history_clear"),
-  // ── Dashboards: one JSON file per dashboard under <data>/dashboards. The
-  //    document shape lives in features/dashboard/store.ts; Rust only does I/O.
-  dashboardRead: (id: string) => call<string | null>("dashboard_read", { id }),
-  dashboardWrite: (id: string, json: string) => call<void>("dashboard_write", { id, json }),
-  dashboardDelete: (id: string) => call<void>("dashboard_delete", { id }),
-  dashboardList: () => call<Array<{ id: string; title: string }>>("dashboard_list"),
+  // ── dash-server: the ecosystem's dashboard host, run by Studio for a
+  //    connection and rendered inside a tab. See dash_server.rs.
+  dashServerStatus: () => call<DashServerStatus>("dash_server_status"),
+  dashServerStart: (profileId: string) => call<DashServerStatus>("dash_server_start", { profileId }),
+  dashServerStop: () => call<void>("dash_server_stop"),
+  dashServerApps: () => call<DashApp[]>("dash_server_apps"),
+  // ── Panorama: Studio serves its web build and acts as its shell. See panorama.rs.
+  panoramaStatus: () => call<PanoramaStatus>("panorama_status"),
+  panoramaDeployments: () => call<unknown>("panorama_deployments"),
+  panoramaCredentials: (name: string) => call<unknown>("panorama_credentials", { name }),
   // Public sharing tunnel (cloudflared quick tunnel in front of the share server).
   cloudflaredEnsure: () => call<string>("cloudflared_ensure"),
   cloudflaredStart: (port: number) => call<string>("cloudflared_start", { port }),

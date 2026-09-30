@@ -221,3 +221,13 @@ v2026.10.0 released from 4a9e425 (21 assets); STUDIO_REF -> v2026.10.0.
 Branch feat/marketplace-installs-the-rest. 149 items: 135 installable, 14 links left (docs/spec/tutorial repos, grafana-datasource, starter-kit, ai-lab, cloudwatch-adapter, exasol-local-vm). 103 coordinates confirmed live.
 New Rust modules db_scripts.rs / slc.rs / vm_appliance.rs; slc goes through the official launcher (`exasol slc install|remove|list --json`), not BucketFS. Row-Level Security = reviewed slash-terminated bundle into a chosen schema, fingerprint-pinned, fail-closed on digests, rollback midway, drop exactly what was created.
 Codex: 13+9 findings first pass, 6 second pass — fixed (see page marketplace-installs-by-coordinate). Community Edition VM install is x86-64 only; untestable end-to-end on the arm64 dev Mac.
+
+## [2026-09-30] anomalies | Anomalies tab — Ollaya + Laya typed decisions over rows (change anomaly-tab)
+Branch feat/anomaly-tab (on top of feat/marketplace-installs-the-rest). New view "anomalies" (full tab like Marketplace), decisions.rs engine module, features/anomaly/*, marketplace item ollaya with the new perPlatform gh-asset rule.
+Ollaya not laya: Ollaya is the runtime (daemon + API), Laya the model it serves. Codex 10 findings fixed (read-only guard, partial results, frozen results, controlled criteria, listener safety, readiness gating, null-proto row state, answer decoding, CSV formula neutralisation, engine adoption check).
+
+## [2026-09-30] architecture | dash-server-tab — Studio's dashboard + artifact engines removed; dash-server hosted in a Dashboards tab; agent builds dashboards there
+95 files, −5,250 lines: features/dashboard, features/artifact, dashboards.rs, agent-core dashboards/artifacts/share-server, assistant dashboard actions, notebook Open-as-dashboard + Import. New dash_server.rs + features/dashserver. Query Performance kept; Panorama tab is the next change (panorama-shell) — Studio must be Panorama's shell for self-signed local DBs. See page components-inside-studio-tabs.
+
+## [2026-09-30] architecture | panorama-shell — Panorama tab with Studio as its shell (scheme server + shim + loopback socket proxy); web-app install kind
+Also today: local-database recovery now takes down a VM the launcher forgot (vm.pid + degraded state, no vm-state.json, stop says "already stopped", start says "VM is already running"); GitHub access became a floating icon. Stack: PR 164 → 165 → 166 (dash-server + recovery fix) → 167 (panorama).

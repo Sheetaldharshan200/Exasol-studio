@@ -167,6 +167,12 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Show every statement, the connection and the schema for review",
         "On confirmation, run them on that connection — the record names the connection, so removal undoes exactly this",
       ];
+    case "web-app":
+      return [
+        "Download the web build from the newest release and verify it against the checksum published beside it",
+        "Unpack it into Studio's folder — nothing is linked or installed anywhere else",
+        "Studio serves it in its own tab and acts as its shell (Panorama)",
+      ];
     case "vm-appliance":
       return [
         "Check this machine: an x86-64 host with VirtualBox or VMware (the image does not run on Apple Silicon / ARM)",
@@ -1694,11 +1700,9 @@ export function Marketplace() {
           onNavigate={goto}
           onRefresh={refreshAll}
         />
-        {/* Shown only when the allowance is spent or a token is connected —
-            nobody is asked to authenticate merely to browse. */}
-        <div className="mt-4 empty:mt-0">
-          <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
-        </div>
+        {/* GitHub access lives behind one floating icon; a dot on it says the
+            allowance is spent or a token is connected. */}
+        <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
         {dbReview ? (
         <DbScriptsReview
           item={dbReview}

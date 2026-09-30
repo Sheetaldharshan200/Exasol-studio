@@ -105,7 +105,9 @@ test("every repo is a well-formed owner/name in an official org", () => {
     if (!item.repo) continue;
     assert.match(item.repo, /^[\w.-]+\/[\w.-]+$/, `${item.id}: repo shape`);
     const owner = item.repo.split("/")[0];
-    assert.ok(["exasol", "exasol-labs", "Sheetaldharshan200"].includes(owner), `${item.id}: unofficial owner ${owner}`);
+    // ollaya-dev: the one third-party engine Studio drives itself (the
+    // Anomalies tab's decision models) — installed and managed like ours.
+    assert.ok(["exasol", "exasol-labs", "Sheetaldharshan200", "ollaya-dev"].includes(owner), `${item.id}: unofficial owner ${owner}`);
   }
 });
 
@@ -156,7 +158,7 @@ test("every package-installed item carries its coordinate — none is installed 
   // item. The installer now dispatches on the item's `source`; an item of one
   // of these kinds WITHOUT a source would fail on click with "no coordinate",
   // which is a regression this catches before it ships.
-  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary", "host-plugin", "deliver", "slc", "db-scripts", "vm-appliance"]);
+  const byCoordinate = new Set(["uv-pip", "uv-tool", "package", "maven", "binary", "host-plugin", "deliver", "slc", "db-scripts", "vm-appliance", "web-app"]);
   for (const item of CATALOG) {
     if (!byCoordinate.has(item.install)) continue;
     assert.ok(item.source, `${item.id} (${item.install}) has no install coordinate`);

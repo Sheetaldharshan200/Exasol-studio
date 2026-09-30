@@ -21,8 +21,6 @@ import { SessionStore } from "../src/session.ts";
 import { DbRegistry } from "../src/db.ts";
 import { MemoryStore } from "../src/memory.ts";
 import { KnowledgeGraph } from "../src/kb.ts";
-import { DashboardStore } from "../src/dashboards.ts";
-import { ArtifactStore } from "../src/artifacts.ts";
 import { DocumentStore } from "../src/documents.ts";
 import { SkillStore } from "../src/skills.ts";
 import { runTurn, type Attachment } from "../src/loop.ts";
@@ -59,8 +57,6 @@ async function main() {
   const db = new DbRegistry();
   const memory = new MemoryStore(tmp);
   const kb = new KnowledgeGraph(tmp);
-  const dashboards = new DashboardStore(tmp);
-  const artifacts = new ArtifactStore(tmp);
   const documents = new DocumentStore();
   const skills = new SkillStore(tmp);
 
@@ -83,7 +79,7 @@ async function main() {
     try {
       await runTurn({
         session, registry, db, memory, kb,
-        store: sessions, config, dashboards, artifacts, skills, documents,
+        store: sessions, config, skills, documents,
         modelRef: model!,
         userText,
         attachments,

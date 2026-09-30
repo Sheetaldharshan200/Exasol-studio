@@ -33,7 +33,7 @@ const SUMMARY_PROMPT = `Summarize this database-assistant conversation for conte
 
 1. Goal — what the user is working on overall.
 2. Verified facts — schemas, tables, columns, join keys, row counts CONFIRMED by tool results (be precise; these must survive).
-3. Work done — queries run, changes made (with approval outcomes), dashboards or artifacts produced.
+3. Work done — queries run, changes made (with approval outcomes), dashboards built in dash-server.
 4. Open threads — what was in progress or promised next.
 
 Be dense and factual. Do not invent anything not in the transcript.`;

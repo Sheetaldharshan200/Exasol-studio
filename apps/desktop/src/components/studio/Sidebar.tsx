@@ -45,7 +45,6 @@ import { FavoritesPanel } from "@/features/workbench/FavoritesPanel";
 import { FileExplorer } from "@/features/workbench/FileExplorer";
 import { GitPanel } from "@/features/workbench/GitPanel";
 import { NotebooksPanel } from "@/features/workbench/NotebooksPanel";
-import { DashboardsPanel } from "@/features/dashboard/DashboardsPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { Visualizer } from "@/features/workbench/Visualizer";
 import { buildConnectionNodes, type TreeNode } from "@/features/workbench/tree-model";
@@ -614,9 +613,7 @@ export function Sidebar({
             ? "MCP Servers"
             : activity === "notebook"
               ? "Notebooks"
-              : activity === "dashboard"
-                ? "Dashboards"
-                : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
+              : PLACEHOLDERS[activity as "favorites" | "git" | "marketplace"].title;
 
   if (activity !== "databases") {
     return (
@@ -639,8 +636,6 @@ export function Sidebar({
           <GitPanel />
         ) : activity === "notebook" ? (
           <NotebooksPanel />
-        ) : activity === "dashboard" ? (
-          <DashboardsPanel />
         ) : activity === "visualizer" ? (
           <VisualizerPanel
             tabs={visualizerTabs}

@@ -48,7 +48,6 @@ test("the master scenario skillset is present", () => {
       "exasol-dbt",
       "exasol-etl-orchestration",
       "data-loading-playbook",
-      "dashboard-builder",
     ]) {
       assert.ok(s.get(name), `missing builtin skill: ${name}`);
     }
