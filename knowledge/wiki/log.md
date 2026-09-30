@@ -241,3 +241,9 @@ Why the old way failed and the design: openspec/changes/ai-panel-native-attachme
 ## [2026-09-30] decision | remove-anomaly-tab — Anomalies tab, decision engine and the ollaya item removed; anomaly detection becomes its own repo and app
 Studio stays the database client and the shell for ecosystem components. Kept: the `perPlatform` release mechanism (generic, tested). One catalog line re-adds Ollaya if ever wanted.
 
+## [2026-09-30] gotcha | Panorama zoom inside Studio — WebKit reports a pinch as gesture events, Panorama reads ctrl+wheel
+Panorama zooms its canvas on ctrl/⌘ + wheel (Chromium reports a trackpad pinch that way). WKWebView reports a pinch as `gesturestart/gesturechange` and Tauri's webview does nothing with them, so inside Studio's Panorama tab a pinch did nothing. The shim Studio injects now turns gesture events into synthetic ctrl+wheel events on Panorama's own curve (factor = exp(-pixelsY × 0.0025)), and ⌘/Ctrl + = / - zoom in steps from inside the frame or from the tab around it (`zoomStepFromKey`, tested). On WebView2 the pinch already arrives as ctrl+wheel.
+
+## [2026-09-30] windows | every child process through `process::command` (CREATE_NO_WINDOW); CI compiles the crate on windows-latest
+A GUI app on Windows flashes a console window for every console child — `VBoxManage list vms`, `exasol slc list`, `python -c`, and a lasting one per sidecar (node, dash-server, llama-server, cloudflared). All 52 `Command::new` sites now go through one constructor that sets `CREATE_NO_WINDOW` on Windows. Cross-checking from macOS is not possible (aws-lc-sys and zstd-sys need a Windows C toolchain), so CI gained a `windows-check` job: `cargo check --tests` on windows-latest with the same stubbed dist as the Linux job.
+

@@ -11,7 +11,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
@@ -47,7 +46,7 @@ pub(crate) fn runtime_dir(app: &AppHandle) -> AppResult<PathBuf> {
 }
 
 fn command_ok(program: &str, args: &[&str]) -> bool {
-    Command::new(program)
+    crate::process::command(program)
         .args(args)
         .output()
         .map(|out| out.status.success())
@@ -292,7 +291,7 @@ fn write_secret(path: &Path, value: &str) -> AppResult<()> {
 
 #[cfg(windows)]
 fn restrict_windows_secret(path: &Path) -> AppResult<()> {
-    let who = Command::new("whoami")
+    let who = crate::process::command("whoami")
         .args(["/user", "/fo", "csv", "/nh"])
         .output()
         .map_err(|e| AppError::Storage(format!("could not resolve the Windows user SID: {e}")))?;
@@ -304,7 +303,7 @@ fn restrict_windows_secret(path: &Path) -> AppResult<()> {
         .filter(|value| value.starts_with("S-"))
         .ok_or_else(|| AppError::Storage("could not parse the current Windows user SID".into()))?;
     let grant = format!("*{sid}:F");
-    let status = Command::new("icacls")
+    let status = crate::process::command("icacls")
         .arg(path)
         .args(["/inheritance:r", "/grant:r", &grant])
         .status()
@@ -396,7 +395,7 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
         && !installed_version.trim().is_empty()
         && crate::components_update::is_newer(installed_version.trim(), &component.version)
     {
-        if let Ok(output) = Command::new(&managed).args(["install", "--help"]).output() {
+        if let Ok(output) = crate::process::command(&managed).args(["install", "--help"]).output() {
             if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local") {
                 return Ok(managed);
             }
@@ -409,7 +408,7 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
     if let Some(release) = crate::upstream::latest(&component.repository) {
         let installed = installed_version.trim();
         if installed == release.tag && managed.is_file() {
-            if let Ok(output) = Command::new(&managed).args(["install", "--help"]).output() {
+            if let Ok(output) = crate::process::command(&managed).args(["install", "--help"]).output() {
                 if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local") {
                     return Ok(managed);
                 }
@@ -440,7 +439,7 @@ fn ensure_personal_launcher(app: &AppHandle, id: &str) -> AppResult<PathBuf> {
         });
     if installed_version.trim() == component.version && checksum_valid {
         let path = managed;
-        if let Ok(output) = Command::new(&path).args(["install", "--help"]).output() {
+        if let Ok(output) = crate::process::command(&path).args(["install", "--help"]).output() {
             if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("local")
             {
                 return Ok(path);
@@ -633,7 +632,7 @@ pub(crate) fn persist_personal_password(app: &AppHandle, password: &str) -> AppR
 fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
     let Ok(runtime) = runtime_dir(app) else { return false };
     let marker = runtime.to_string_lossy().to_string();
-    let Ok(out) = Command::new("lsof")
+    let Ok(out) = crate::process::command("lsof")
         .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
         .output()
     else {
@@ -641,7 +640,7 @@ fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
     };
     let mut killed = false;
     for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
-        let cmd = Command::new("ps")
+        let cmd = crate::process::command("ps")
             .args(["-p", pid, "-o", "command="])
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -657,7 +656,7 @@ fn reclaim_orphaned_port(app: &AppHandle, id: &str, port: u16) -> bool {
                 format!("Reclaiming port {port} from an orphaned Studio database process (pid {pid})…"),
                 "info",
             );
-            let _ = Command::new("kill").arg(pid).output();
+            let _ = crate::process::command("kill").arg(pid).output();
             killed = true;
         }
     }
@@ -769,7 +768,7 @@ fn endpoint_ready(ip: &str, port: u16) -> bool {
 /// launcher recorded is the one actually holding THIS deployment's port.
 #[cfg(unix)]
 fn listeners_on_port(port: u16) -> Vec<u32> {
-    Command::new("lsof")
+    crate::process::command("lsof")
         .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
         .output()
         .ok()
@@ -808,7 +807,7 @@ fn wait_for_runner_exit(pid: u32, timeout: Duration) -> bool {
 /// The command line of a running process, or None if it is not running.
 #[cfg(unix)]
 fn process_cmdline(pid: u32) -> Option<String> {
-    let out = Command::new("ps")
+    let out = crate::process::command("ps")
         .args(["-p", &pid.to_string(), "-o", "command="])
         .output()
         .ok()?;
@@ -826,7 +825,7 @@ fn process_cmdline(_pid: u32) -> Option<String> {
 
 #[cfg(unix)]
 fn signal_process(pid: u32, signal: &str) -> bool {
-    Command::new("kill")
+    crate::process::command("kill")
         .args([signal, &pid.to_string()])
         .status()
         .map(|s| s.success())
@@ -1188,17 +1187,6 @@ pub(crate) fn update_personal_engine(
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
 /// A local database already registered in the shared registry and answering
 /// on its port.
 ///
@@ -1317,7 +1305,7 @@ pub fn start_runtime(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> 
 /// accepts instead of assuming a version (the same `--help` probe used to
 /// validate a launcher binary above).
 fn approves_host_prep(cli: &str) -> bool {
-    Command::new(cli)
+    crate::process::command(cli)
         .args(["install", "--help"])
         .output()
         .ok()

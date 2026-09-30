@@ -4,7 +4,7 @@
 
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -138,7 +138,7 @@ pub async fn exapump_upload(
     );
     emit(&app, format!("$ exapump {}", args.join(" ")), "cmd");
 
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::process::command(&bin);
     cmd.args(&args)
         .env("EXAPUMP_DSN", &dsn)
         .stdout(Stdio::piped())

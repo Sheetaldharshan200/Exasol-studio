@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -90,7 +90,7 @@ fn spawn_sidecar(app: &AppHandle, state: &AppState) -> AppResult<(Child, AgentIn
     let script = script_path(app)?;
     let data_dir = state.data_dir.join("agent");
 
-    let mut cmd = Command::new(node);
+    let mut cmd = crate::process::command(node);
     cmd.arg(&script)
         .arg("--data-dir")
         .arg(&data_dir)
@@ -262,10 +262,10 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         let exapump = state.data_dir.join("personal-local").join("bin").join("exapump");
         if exapump.exists() {
             // Re-grant refreshes: drop any previous "studio" profile first.
-            let _ = std::process::Command::new(&exapump)
+            let _ = crate::process::command(&exapump)
                 .args(["profile", "remove", "studio"])
                 .output();
-            let _ = std::process::Command::new(&exapump)
+            let _ = crate::process::command(&exapump)
                 .args([
                     "profile",
                     "add",

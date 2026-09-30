@@ -17,7 +17,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
@@ -148,7 +147,7 @@ fn relative_files(dir: &Path) -> Vec<String> {
 
 /// Installed SLC aliases from `exasol slc list --json`.
 pub(crate) fn installed_slc_aliases(cli: &Path, deployment: &Path) -> Vec<String> {
-    let Ok(output) = Command::new(cli)
+    let Ok(output) = crate::process::command(cli)
         .args(["slc", "list", "--json", "--deployment-dir"])
         .arg(deployment)
         .output()
