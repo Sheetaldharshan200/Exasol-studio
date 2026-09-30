@@ -159,3 +159,21 @@ test("a variant picked from one release is named for another by its tag", () => 
   assert.equal(variantForRelease("Tool_1.2.0.jar", "v1.2.0", "v1.3.0"), "Tool_1.3.0.jar", "a leading v on the tag is not in the file name");
   assert.equal(variantForRelease("plain.jar", "1.0", "2.0"), "plain.jar", "a name without the tag is unchanged");
 });
+
+test("one file per platform: the pattern's matches are narrowed by the host (ollaya layout)", () => {
+  const assets = [
+    a("ollaya-darwin-arm64-mlx.tgz"),
+    a("ollaya-darwin-arm64.tgz"),
+    a("ollaya-darwin-arm64.tar.zst"),
+    a("ollaya-linux-amd64.tar.zst"),
+    a("ollaya-windows-amd64.zip"),
+    a("ollaya-windows-amd64.sha256"),
+    a("Ollaya-macos-arm64.dmg"),
+  ];
+  const ollaya = { source: { kind: "gh-asset", assetPattern: "^ollaya-(darwin-arm64|windows-amd64)\\.(tgz|zip)$", onPath: true, perPlatform: true } as const };
+  assert.equal(pickAssetFor(ollaya, assets, mac)?.name, "ollaya-darwin-arm64.tgz");
+  assert.equal(pickAssetFor(ollaya, assets, { os: "windows", arch: "x86_64" } as MarketEnv)?.name, "ollaya-windows-amd64.zip");
+  assert.equal(pickAssetFor(ollaya, assets, linux), null, "no extractable Linux file → unavailable, not a guess");
+  const plain = { source: { kind: "gh-asset", assetPattern: "^ollaya-(darwin-arm64|windows-amd64)\\.(tgz|zip)$" } as const };
+  assert.equal(pickAssetFor(plain, assets, mac), null, "without the flag several matches stay ambiguous");
+});

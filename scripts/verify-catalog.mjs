@@ -152,7 +152,7 @@ async function releaseAssetProblem(item, pattern) {
   if (!pattern) return null;
   const hits = rel.assets.filter((n) => new RegExp(pattern).test(n));
   // A plural release is the point of a choosing item: any match will do.
-  if (item.source.choose) return hits.length > 0 ? null : `pattern /${pattern}/ matched nothing in ${rel.tag}`;
+  if (item.source.choose || item.source.perPlatform) return hits.length > 0 ? null : `pattern /${pattern}/ matched nothing in ${rel.tag}`;
   return hits.length === 1
     ? null
     : `pattern /${pattern}/ matched ${hits.length} of ${rel.assets.length} assets in ${rel.tag}: ${rel.assets.join(", ")}`;

@@ -762,35 +762,35 @@ pub async fn market_release(app: AppHandle, repo: String, tag: Option<String>) -
         cache.insert(cache_key.clone(), json!({ "at": now, "value": value }));
         let _ = std::fs::write(&cache_path, serde_json::to_string(cache).unwrap_or_default());
     };
-    let url = match &tag {
-        Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
-        None => format!("https://api.github.com/repos/{repo}/releases/latest"),
-    };
-    let client = reqwest::Client::new();
-    let resp = match client
-        .get(&url)
-        .header("User-Agent", "exasol-studio")
-        .header("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(8))
-        .send()
-        .await
-    {
+    // The release comes through upstream::latest_detailed / by_tag, which
+    // read the API while the allowance lasts and github.com (releases.atom +
+    // expanded_assets, uncounted) once it is spent — an install must not fail
+    // because the hour's sixty requests went to browsing. A repository with
+    // no release is a real answer and is cached as null; any other failure
+    // serves the last-known value.
+    let repo_owned = repo.clone();
+    let tag_owned = tag.clone();
+    let fetched = tauri::async_runtime::spawn_blocking(move || match tag_owned {
+        Some(t) => crate::upstream::by_tag(&repo_owned, &t).ok_or(crate::upstream::ReleaseError::NotFound),
+        None => crate::upstream::latest_detailed(&repo_owned),
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?;
+    let release = match fetched {
         Ok(r) => r,
-        Err(_) => return Ok(cached_value.unwrap_or(Value::Null)),
-    };
-    if !resp.status().is_success() {
-        // 404 = repo has no releases (a real answer — cache it as null);
-        // 403 = rate limit (serve the last-known value, don't overwrite).
-        if resp.status().as_u16() == 404 {
+        Err(crate::upstream::ReleaseError::NotFound) => {
             store(&mut cache, &Value::Null);
             return Ok(Value::Null);
         }
-        return Ok(cached_value.unwrap_or(Value::Null));
-    }
-    let json: Value = match resp.json().await {
-        Ok(v) => v,
         Err(_) => return Ok(cached_value.unwrap_or(Value::Null)),
     };
+    let json = json!({
+        "tag_name": release.tag,
+        "name": Value::Null,
+        "published_at": Value::Null,
+        "html_url": format!("https://github.com/{repo}/releases/tag/{}", release.tag),
+        "assets": release.assets.iter().map(|a| json!({ "name": a.name, "browser_download_url": a.url, "size": Value::Null })).collect::<Vec<_>>(),
+    });
     let assets = json
         .get("assets")
         .and_then(|a| a.as_array())
@@ -1962,17 +1962,32 @@ async fn deliver_from_source(
     filename: Option<String>,
 ) -> AppResult<String> {
     let repo = repo.ok_or_else(|| AppError::Storage(format!("{id} has no repository to deliver from.")))?;
+    let mut resolved_tag: Option<String> = tag.map(str::to_string);
     let (u, f) = if format.from_release_asset() {
         match (url, filename) {
             (Some(u), Some(f)) => (u, f),
             _ => return Err(AppError::Storage("No release file was found for this platform.".into())),
         }
     } else {
-        let tag = tag.ok_or_else(|| AppError::Storage(format!("{repo} has no release tag to archive yet.")))?;
-        crate::installers::source_archive(repo, tag)
+        // The frontend knows the tag when the release list loaded; when it did
+        // not (the allowance was spent), resolve it here — latest_detailed
+        // reads github.com once the API refuses.
+        let tag = match tag {
+            Some(t) => t.to_string(),
+            None => {
+                let repo_owned = repo.to_string();
+                tauri::async_runtime::spawn_blocking(move || crate::upstream::latest_detailed(&repo_owned))
+                    .await
+                    .map_err(|e| AppError::Storage(e.to_string()))?
+                    .map_err(|e| AppError::Storage(format!("{repo} has no release tag to archive yet. {e}")))?
+                    .tag
+            }
+        };
+        resolved_tag = Some(tag.clone());
+        crate::installers::source_archive(repo, &tag)
     };
     let (path, verified) = deliver_file(app, id, &u, &f).await?;
-    let step = crate::installers::deliver_instruction(format, repo, tag.unwrap_or("latest"), &f, std::env::consts::OS);
+    let step = crate::installers::deliver_instruction(format, repo, resolved_tag.as_deref().unwrap_or("latest"), &f, std::env::consts::OS);
     Ok(format!("{f} saved to {path}{}. {step}", verified_suffix(verified)))
 }
 
@@ -2194,13 +2209,9 @@ async fn install_from_source(
             // A project with no releases: the current tarball is what there is.
             let repo = need_repo()?;
             let name = repo.rsplit('/').next().unwrap_or(repo);
-            let path = download_and_place(
-                app,
-                id,
-                &format!("https://api.github.com/repos/{repo}/tarball"),
-                &format!("{name}-snapshot.tar.gz"),
-            )
-            .await?;
+            // github.com serves the snapshot uncounted; the API's tarball
+            // endpoint failed every install once the hour's allowance was spent.
+            let path = download_and_place(app, id, &format!("https://github.com/{repo}/archive/HEAD.tar.gz"), &format!("{name}-snapshot.tar.gz")).await?;
             Ok(("snapshot".into(), format!("Current snapshot of {repo} downloaded to {path} — unpack it to use its contents.")))
         }
         InstallSource::DriverRuntime { driver } => {
@@ -2713,6 +2724,7 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
         ),
     );
     map.insert("exasol-cloud".into(), json!(bin_present("exasol")));
+    map.insert("ollaya".into(), json!(bin_present("ollaya")));
 
     // ExaPump: prebundled/installed at the managed path, or verified in the
     // manifest. (It lives in personal-local/bin, never on the user's PATH.)

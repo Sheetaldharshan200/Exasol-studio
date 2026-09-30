@@ -25,7 +25,7 @@ const ALL_OS_TOKENS = [...new Set(Object.values(OS_TOKENS).flat())];
  *  both return null so the card says "unavailable" rather than guessing.
  *  Without a pattern, platform rules apply, and null means the release is
  *  platform-specific but ships no build for this host. */
-export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern?: string): ReleaseAsset | null {
+export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern?: string, perPlatform = false): ReleaseAsset | null {
   const artifacts = assets.filter((a) => !METADATA.test(a.name.toLowerCase()));
   if (!artifacts.length) return null;
   if (pattern) {
@@ -36,7 +36,10 @@ export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern
       return null;
     }
     const hits = artifacts.filter((a) => re.test(a.name));
-    return hits.length === 1 ? hits[0] : null;
+    if (hits.length === 1) return hits[0];
+    // Declared as one file per platform: the platform rules pick among the
+    // matches, and a host with no match is told so.
+    return hits.length > 1 && perPlatform ? pickAsset(hits, env) : null;
   }
   if (!env) return artifacts[0];
   const osTokens = OS_TOKENS[env.os] ?? OS_TOKENS.linux;
@@ -108,5 +111,5 @@ export function pickAssetFor(item: { source?: InstallSource }, assets: ReleaseAs
     if (hits.length === 1) return hits[0];
     return hits.find((a) => a.name === variant) ?? null;
   }
-  return pickAsset(assets, env, assetPatternOf(item.source));
+  return pickAsset(assets, env, assetPatternOf(item.source), item.source?.kind === "gh-asset" && item.source.perPlatform === true);
 }
