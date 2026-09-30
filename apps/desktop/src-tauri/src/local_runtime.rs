@@ -624,6 +624,13 @@ pub(crate) fn persist_personal_password(app: &AppHandle, password: &str) -> AppR
     write_secret(&path, &serde_json::to_string_pretty(&secrets)?)
 }
 
+/// A deployment dir an interrupted setup left behind: the launcher has
+/// recorded state, but the finished deployment (`deployment.json`) was never
+/// written.
+pub(crate) fn half_initialized(dir: &Path) -> bool {
+    !dir.join("deployment.json").is_file() && dir.join(".exasolLauncherState.json").is_file()
+}
+
 /// Whether a process listening on Studio's port is Studio's OWN database
 /// daemon. Two layouts exist: older runtimes ran from Studio's managed runtime
 /// dir; the current launcher runs every deployment's daemon from the shared
@@ -703,6 +710,15 @@ fn ensure_personal(app: &AppHandle, id: &str) -> AppResult<RuntimeConnection> {
     let dir = personal_deployment_dir(app)?;
     let ddir = dir.to_string_lossy().to_string();
     let deployment_exists = dir.join("deployment.json").is_file();
+    // An interrupted first setup (the app quit, the daemon was stopped) leaves
+    // the launcher's state behind without the finished deployment: `install`
+    // then refuses ("the deployment may already have resources"). The
+    // deployment never held data, so the launcher's own recovery — destroy —
+    // is safe, and a clean install follows.
+    if half_initialized(&dir) {
+        emit_log(app, id, "An earlier setup was interrupted before it finished; clearing its leftovers and starting again…", "info");
+        let _ = run_streamed(app, id, &cli, &["destroy", "--deployment-dir", &ddir, "--auto-approve", "--remove"]);
+    }
     if !deployment_exists {
         if legacy_deployment_dir().is_some_and(|d| d.join("deployment.json").is_file()) {
             emit_log(
@@ -1445,6 +1461,19 @@ pub fn control_runtime(app: &AppHandle, id: &str, action: &str) -> AppResult<i32
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_deployment_left_by_an_interrupted_setup_is_recognised() {
+        let dir = std::env::temp_dir().join(format!("studio-half-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!super::half_initialized(&dir), "an empty dir is a fresh start");
+        std::fs::write(dir.join(".exasolLauncherState.json"), "{}").unwrap();
+        assert!(super::half_initialized(&dir), "state without the finished deployment");
+        std::fs::write(dir.join("deployment.json"), "{}").unwrap();
+        assert!(!super::half_initialized(&dir), "a finished deployment is left alone");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn studio_daemon_is_recognised_by_its_port_not_just_its_executable() {
         let cache = "/Users/x/Library/Caches/.exasol/personal/runtime-artifacts/artifacts/exasol-local-runner/darwin/arm64/abc/unpack/launcher";
