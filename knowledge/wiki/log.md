@@ -228,3 +228,6 @@ Ollaya not laya: Ollaya is the runtime (daemon + API), Laya the model it serves.
 
 ## [2026-09-30] architecture | dash-server-tab — Studio's dashboard + artifact engines removed; dash-server hosted in a Dashboards tab; agent builds dashboards there
 95 files, −5,250 lines: features/dashboard, features/artifact, dashboards.rs, agent-core dashboards/artifacts/share-server, assistant dashboard actions, notebook Open-as-dashboard + Import. New dash_server.rs + features/dashserver. Query Performance kept; Panorama tab is the next change (panorama-shell) — Studio must be Panorama's shell for self-signed local DBs. See page components-inside-studio-tabs.
+
+## [2026-09-30] architecture | panorama-shell — Panorama tab with Studio as its shell (scheme server + shim + loopback socket proxy); web-app install kind
+Also today: local-database recovery now takes down a VM the launcher forgot (vm.pid + degraded state, no vm-state.json, stop says "already stopped", start says "VM is already running"); GitHub access became a floating icon. Stack: PR 164 → 165 → 166 (dash-server + recovery fix) → 167 (panorama).
