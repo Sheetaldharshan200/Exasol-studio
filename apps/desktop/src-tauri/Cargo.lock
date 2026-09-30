@@ -1813,6 +1813,7 @@ dependencies = [
  "exarrow-rs",
  "flate2",
  "futures-util",
+ "libc",
  "parquet 53.4.0",
  "portable-pty",
  "rand 0.8.6",

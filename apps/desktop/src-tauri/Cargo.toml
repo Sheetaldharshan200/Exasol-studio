@@ -19,6 +19,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+libc = "0.2"
 sqlx-exasol = { version = "0.9.2", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls-ring-webpki",

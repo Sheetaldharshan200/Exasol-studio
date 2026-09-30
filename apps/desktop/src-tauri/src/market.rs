@@ -722,6 +722,21 @@ pub fn market_doc_forget(app: AppHandle, id: String) -> AppResult<()> {
     Ok(())
 }
 
+/// How many release lookups run at once.
+const RELEASE_FANOUT: usize = 6;
+
+fn release_gate() -> &'static tokio::sync::Semaphore {
+    static GATE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    GATE.get_or_init(|| tokio::sync::Semaphore::new(RELEASE_FANOUT))
+}
+
+/// Run one blocking release lookup when a turn is free. The turn is held for
+/// exactly the lookup and given back whether it succeeded or not.
+async fn with_release_turn<T: Send + 'static>(gate: &tokio::sync::Semaphore, work: impl FnOnce() -> T + Send + 'static) -> AppResult<T> {
+    let _turn = gate.acquire().await.map_err(|e| AppError::Storage(e.to_string()))?;
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| AppError::Storage(e.to_string()))
+}
+
 /// Latest GitHub release for a repo ("owner/name") — or, with `tag`, that
 /// specific release (so any version can be installed, not just the newest);
 /// null when none exist.
@@ -770,12 +785,15 @@ pub async fn market_release(app: AppHandle, repo: String, tag: Option<String>) -
     // serves the last-known value.
     let repo_owned = repo.clone();
     let tag_owned = tag.clone();
-    let fetched = tauri::async_runtime::spawn_blocking(move || match tag_owned {
+    // The Marketplace asks for every catalog repository at once — well over a
+    // hundred. A few at a time keeps the machine's sockets, threads and CPU
+    // for everything else (the version menus answer while these run), and
+    // each label still fills in as its own answer arrives.
+    let fetched = with_release_turn(release_gate(), move || match tag_owned {
         Some(t) => crate::upstream::by_tag(&repo_owned, &t).ok_or(crate::upstream::ReleaseError::NotFound),
         None => crate::upstream::latest_detailed(&repo_owned),
     })
-    .await
-    .map_err(|e| AppError::Storage(e.to_string()))?;
+    .await?;
     let release = match fetched {
         Ok(r) => r,
         Err(crate::upstream::ReleaseError::NotFound) => {
@@ -2745,7 +2763,6 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
         ),
     );
     map.insert("exasol-cloud".into(), json!(bin_present("exasol")));
-    map.insert("ollaya".into(), json!(bin_present("ollaya")));
 
     // ExaPump: prebundled/installed at the managed path, or verified in the
     // manifest. (It lives in personal-local/bin, never on the user's PATH.)
@@ -2851,6 +2868,33 @@ pub fn market_use_downloaded(app: AppHandle, id: String, version: String) -> App
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn release_lookups_take_turns_and_give_them_back_after_failures() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let gate = Arc::new(tokio::sync::Semaphore::new(3));
+        let running = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let mut jobs = Vec::new();
+        for i in 0..20u32 {
+            let (gate, running, peak) = (gate.clone(), running.clone(), peak.clone());
+            jobs.push(tokio::spawn(async move {
+                super::with_release_turn(&gate, move || {
+                    let now = running.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(15));
+                    running.fetch_sub(1, Ordering::SeqCst);
+                    if i % 2 == 0 { Err(format!("lookup {i} failed")) } else { Ok(i) }
+                })
+                .await
+            }));
+        }
+        let results: Vec<_> = futures_util::future::join_all(jobs).await;
+        assert!(results.iter().all(|r| r.is_ok()), "every lookup ran to completion");
+        assert!(peak.load(Ordering::SeqCst) <= 3, "at most three at once, saw {}", peak.load(Ordering::SeqCst));
+        assert_eq!(gate.available_permits(), 3, "every turn came back, including after failures");
+    }
+
     use super::{fetch_plan, stale_repos, FetchPlan, MAX_SINGLE_FETCH};
     use serde_json::{json, Value};
 

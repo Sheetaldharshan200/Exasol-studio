@@ -1,6 +1,7 @@
 mod agent;
 mod github_auth;
 mod installers;
+mod limits;
 mod semantic_sync;
 mod backup;
 pub mod confd;
@@ -11,7 +12,6 @@ mod updates;
 mod upstream;
 mod bucketfs;
 mod db_scripts;
-mod decisions;
 mod slc;
 mod vm_appliance;
 mod catalog;
@@ -27,6 +27,7 @@ mod exarrow_exec;
 mod virtual_schema_install;
 mod drivers;
 mod cloudflared;
+mod attachments;
 mod dash_server;
 mod panorama;
 mod error;
@@ -58,6 +59,7 @@ pub fn run() {
     // the automatic process-level lookup exarrow uses would panic instead of
     // picking one. See exarrow_exec::install_crypto_provider.
     crate::exarrow_exec::install_crypto_provider();
+    crate::limits::raise_open_files();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -79,7 +81,6 @@ pub fn run() {
             app.manage(AppState::new(data_dir));
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
-            app.manage(crate::decisions::DecisionEngine::default());
             app.manage(crate::dash_server::DashServer::default());
             app.manage(crate::terminal::TermRegistry::default());
             app.manage(crate::print::PrintJobs::default());
@@ -156,6 +157,7 @@ pub fn run() {
             panorama::panorama_status,
             panorama::panorama_deployments,
             panorama::panorama_credentials,
+            attachments::attachment_pick,
             cloudflared::cloudflared_ensure,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,
@@ -185,9 +187,6 @@ pub fn run() {
             market::market_install_run,
             market::market_uninstall,
             db_scripts::market_db_scripts_plan,
-            decisions::decisions_status,
-            decisions::decisions_pull,
-            decisions::decisions_decide,
             slc::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
@@ -272,7 +271,6 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
-                app.state::<crate::decisions::DecisionEngine>().kill();
                 app.state::<crate::dash_server::DashServer>().kill();
             }
         });

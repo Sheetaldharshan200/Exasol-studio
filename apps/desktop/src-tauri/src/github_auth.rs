@@ -102,7 +102,7 @@ pub struct GithubStatus {
 /// Ask GitHub for the allowance. `/rate_limit` does not itself consume one,
 /// so this is safe to call even when everything else is refusing.
 fn query_rate_limit(token: Option<&str>) -> Option<(u64, u64, u64)> {
-    let mut req = reqwest::blocking::Client::new()
+    let mut req = crate::upstream::http()?
         .get("https://api.github.com/rate_limit")
         .header("User-Agent", "exasol-studio")
         .header("Accept", "application/vnd.github+json")
@@ -127,16 +127,30 @@ fn query_rate_limit(token: Option<&str>) -> Option<(u64, u64, u64)> {
 const TOKEN_URL: &str = "https://github.com/settings/tokens/new?description=Exasol%20Studio&scopes=";
 
 /// The allowance right now, and whether a token is in use.
+///
+/// The network part runs off the main thread: a synchronous command blocks
+/// the window's event loop, and every other command's reply, while it waits.
 #[tauri::command]
-pub fn github_status(app: AppHandle, state: tauri::State<'_, AppState>) -> AppResult<GithubStatus> {
+pub async fn github_status(app: AppHandle, state: tauri::State<'_, AppState>) -> AppResult<GithubStatus> {
     ensure_loaded(&app, &state);
-    status_now()
+    off_thread(status_now).await
+}
+
+async fn off_thread<T: Send + 'static>(work: impl FnOnce() -> AppResult<T> + Send + 'static) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| AppError::Storage(e.to_string()))?
+}
+
+/// Connect and disconnect run whole, one at a time: a connect whose probe
+/// finishes after a later disconnect must not put the token back.
+fn operation() -> &'static tokio::sync::Mutex<()> {
+    static OP: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    OP.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 fn status_now() -> AppResult<GithubStatus> {
     let tok = token();
     let login = tok.as_deref().and_then(|t| {
-        let body: serde_json::Value = reqwest::blocking::Client::new()
+        let body: serde_json::Value = crate::upstream::http()?
             .get("https://api.github.com/user")
             .header("User-Agent", "exasol-studio")
             .header("Authorization", format!("Bearer {t}"))
@@ -167,7 +181,7 @@ fn status_now() -> AppResult<GithubStatus> {
 /// saved — silently keeping a dead one would look identical to being rate
 /// limited, which is the very confusion this feature exists to end.
 #[tauri::command]
-pub fn github_connect(
+pub async fn github_connect(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
@@ -176,8 +190,13 @@ pub fn github_connect(
     if token.is_empty() {
         return Err(AppError::Storage("Paste the token you created on GitHub.".into()));
     }
-    let (limit, ..) = query_rate_limit(Some(&token))
-        .ok_or_else(|| AppError::Storage("GitHub did not accept that token. Create a new one and paste it again — it needs no scopes.".into()))?;
+    let _one_at_a_time = operation().lock().await;
+    let probe = token.clone();
+    let (limit, ..) = off_thread(move || {
+        query_rate_limit(Some(&probe))
+            .ok_or_else(|| AppError::Storage("GitHub did not accept that token. Create a new one and paste it again — it needs no scopes.".into()))
+    })
+    .await?;
     if limit <= 60 {
         return Err(AppError::Storage(
             "GitHub still reports the signed-out allowance for that token, so it would change nothing. Check it was copied whole.".into(),
@@ -191,15 +210,21 @@ pub fn github_connect(
         std::fs::write(token_path(&app)?, security::encrypt_secret(key.as_ref(), &token))?;
         *slot = Some(token);
     }
-    status_now()
+    off_thread(status_now).await
 }
 
 /// Forget the token. The app drops back to the signed-out allowance.
 #[tauri::command]
-pub fn github_disconnect(app: AppHandle) -> AppResult<GithubStatus> {
-    *cache().lock().unwrap() = None;
-    if let Ok(path) = token_path(&app) {
-        let _ = std::fs::remove_file(path);
+pub async fn github_disconnect(app: AppHandle) -> AppResult<GithubStatus> {
+    let _one_at_a_time = operation().lock().await;
+    // Memory and disk change under the one cache lock, so a status call
+    // landing in between cannot reload the token from the file about to go.
+    {
+        let mut slot = cache().lock().unwrap();
+        if let Ok(path) = token_path(&app) {
+            let _ = std::fs::remove_file(path);
+        }
+        *slot = None;
     }
-    status_now()
+    off_thread(status_now).await
 }

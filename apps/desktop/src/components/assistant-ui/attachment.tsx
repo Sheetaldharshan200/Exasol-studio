@@ -18,7 +18,17 @@ import {
   Loader2Icon,
   AlertCircleIcon,
 } from "lucide-react";
-import { FOLDER_MIME, isFolderAttachment, makeFolderAttachment, readFolderManifest, type FolderEntry } from "@/features/assistant/exa/folder-attachment";
+import {
+  FOLDER_MIME,
+  fileFromInline,
+  isFolderAttachment,
+  makeFolderAttachment,
+  makeSavedFileAttachment,
+  makeSavedFolderAttachment,
+  readFolderManifest,
+  type FolderEntry,
+} from "@/features/assistant/exa/folder-attachment";
+import { ipc, isTauri } from "@/lib/ipc";
 import { extractDataFileNotes } from "@/features/assistant/exa/attachment-routing";
 import {
   DropdownMenu,
@@ -271,15 +281,30 @@ const AttachmentUI: FC = () => {
 /** One chip for a whole attached folder: a folder icon, the folder name, the
  *  file count, and a chevron that expands the list of files inside. Removing it
  *  removes the whole folder. */
+/** "3 left out", "stopped at 200 files", both, or null when the folder is whole. */
+export function describeLeftOut(skipped: number, capped: boolean): string | null {
+  const parts: string[] = [];
+  if (skipped > 0) parts.push(`${skipped} left out`);
+  if (capped) parts.push(`stopped at ${FOLDER_FILE_CAP} files`);
+  return parts.length ? parts.join(", ") : null;
+}
+
 const FolderChip: FC<{ name?: string; file?: File; noteText?: string; isComposer: boolean }> = ({ name, file, noteText, isComposer }) => {
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<FolderEntry[] | null>(null);
+  // What the OS-picker walk left out, so the chip never claims a folder is
+  // whole when it is not.
+  const [left, setLeft] = useState<string | null>(null);
   useEffect(() => {
     // Composer: read the manifest from the synthetic File. Sent message: the File
     // is gone, so rebuild the list from the note's per-file "saved to" lines.
     if (file) {
       let alive = true;
-      void readFolderManifest(file).then((m) => alive && setEntries(m?.entries ?? []));
+      void readFolderManifest(file).then((m) => {
+        if (!alive) return;
+        setEntries(m?.entries ?? []);
+        setLeft(describeLeftOut(m?.skipped ?? 0, m?.capped ?? false));
+      });
       return () => {
         alive = false;
       };
@@ -300,7 +325,10 @@ const FolderChip: FC<{ name?: string; file?: File; noteText?: string; isComposer
             {open ? <FolderOpen className="size-4 shrink-0 text-primary" /> : <Folder className="size-4 shrink-0 text-primary" />}
             <div className="min-w-0">
               <div className="truncate text-[13px] font-medium text-foreground">{name}</div>
-              <div className="text-[11px] text-muted-foreground">{entries == null ? "Folder" : `${count} file${count === 1 ? "" : "s"}`}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {entries == null ? "Folder" : `${count} file${count === 1 ? "" : "s"}`}
+                {left ? ` · ${left}` : ""}
+              </div>
             </div>
           </button>
           {isComposer ? (
@@ -355,6 +383,32 @@ export const ComposerAddAttachment: FC = () => {
   const aui = useAui();
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+
+  // The desktop app asks the OS: one dialog for many files, one for a whole
+  // folder. Rust copies the picks into the attachments folder (subfolders
+  // kept) and describes them; nothing streams through the page. A file input
+  // inside the webview flattened folder picks and choked on large sets.
+  const pickNative = async (kind: "files" | "folder") => {
+    let picks;
+    try {
+      picks = await ipc.attachmentPick(kind);
+    } catch {
+      return;
+    }
+    if (picks.kind === "none" || !picks.items.length) return;
+    if (picks.kind === "folder") {
+      void Promise.resolve(
+        aui.composer().addAttachment(makeSavedFolderAttachment(picks.folder ?? "folder", picks.items, { skipped: picks.skipped, capped: picks.capped })),
+      ).catch(() => {});
+      return;
+    }
+    for (const it of picks.items) {
+      const file = it.inline !== undefined ? fileFromInline(it.name, it.mime, it.inline) : makeSavedFileAttachment(it);
+      void Promise.resolve(aui.composer().addAttachment(file)).catch(() => {
+        /* adapter rejected the type — the rest still attach */
+      });
+    }
+  };
 
   const addAll = (list: FileList | null, fromFolder: boolean) => {
     let files = Array.from(list ?? []);
@@ -412,10 +466,10 @@ export const ComposerAddAttachment: FC = () => {
           </TooltipIconButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-52">
-          <DropdownMenuItem onClick={() => fileRef.current?.click()}>
+          <DropdownMenuItem onClick={() => (isTauri() ? void pickNative("files") : fileRef.current?.click())}>
             <FileText className="size-3.5" /> Files or photos
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => folderRef.current?.click()}>
+          <DropdownMenuItem onClick={() => (isTauri() ? void pickNative("folder") : folderRef.current?.click())}>
             <FolderOpen className="size-3.5" /> Folder
             <span className="ml-auto text-[10px] text-muted-foreground">up to {FOLDER_FILE_CAP} files</span>
           </DropdownMenuItem>
