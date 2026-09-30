@@ -11,9 +11,9 @@ import type { InstallSource, MarketEnv, ReleaseAsset } from "@/lib/ipc";
 const METADATA = /(\.sha256|\.sha1|\.md5|\.asc|\.sig|\.txt|\.json|(^|[^a-z])sha256sums?)$/i;
 
 const OS_TOKENS: Record<string, string[]> = {
-  macos: ["darwin", "macos", "apple", "osx"],
+  macos: ["darwin", "macos", "apple", "osx", ".dmg"],
   windows: ["windows", "win32", "win64", "win-", "win_", ".exe", ".msi"],
-  linux: ["linux"],
+  linux: ["linux", ".appimage", ".deb"],
 };
 const ALL_OS_TOKENS = [...new Set(Object.values(OS_TOKENS).flat())];
 
@@ -60,13 +60,53 @@ export function pickAsset(assets: ReleaseAsset[], env: MarketEnv | null, pattern
 
 /** The pattern an item's coordinate names, if it names one. */
 export function assetPatternOf(source: InstallSource | undefined): string | undefined {
-  if (source?.kind === "gh-asset" || source?.kind === "host-plugin") return source.assetPattern;
+  if (source?.kind === "gh-asset" || source?.kind === "host-plugin" || source?.kind === "deliver") return source.assetPattern;
   return undefined;
+}
+
+/** Whether an install can only proceed with a file from the release — so a
+ *  release that has files, but none for this host, means "unavailable". A
+ *  delivered source archive or dbt package needs only the tag. */
+export function needsReleaseAsset(item: { install: string; source?: InstallSource }): boolean {
+  if (item.install === "binary" || item.install === "host-plugin") return true;
+  return item.source?.kind === "deliver" && item.source.format !== "source" && item.source.format !== "dbt-package";
+}
+
+/** Whether the item's pattern is EXPECTED to match several files, one of which
+ *  the person picks (spark-connector ships one jar per Scala × Spark version). */
+export function expectsChoice(source: InstallSource | undefined): boolean {
+  return source?.kind === "gh-asset" && source.choose === true;
+}
+
+/** The artifacts an item's pattern matches — the variants a choosing item offers. */
+export function variantsOf(item: { source?: InstallSource }, assets: ReleaseAsset[]): ReleaseAsset[] {
+  const pattern = assetPatternOf(item.source);
+  if (!pattern) return [];
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern);
+  } catch {
+    return [];
+  }
+  return assets.filter((a) => !METADATA.test(a.name.toLowerCase()) && re.test(a.name));
+}
+
+/** A variant picked from one release, named for another: the release tag is
+ *  the only part of the file name that changes between versions. */
+export function variantForRelease(variant: string, fromTag: string, toTag: string): string {
+  const strip = (t: string) => t.replace(/^v/, "");
+  return variant.split(strip(fromTag)).join(strip(toTag));
 }
 
 /** `pickAsset` for a catalogue item: its own pattern if it has one, else the
  *  platform rules. Every caller goes through this so an item cannot be picked
- *  for by platform when its coordinate said which file. */
-export function pickAssetFor(item: { source?: InstallSource }, assets: ReleaseAsset[], env: MarketEnv | null): ReleaseAsset | null {
+ *  for by platform when its coordinate said which file. An item that expects
+ *  a choice yields the one match, or the picked variant, or nothing. */
+export function pickAssetFor(item: { source?: InstallSource }, assets: ReleaseAsset[], env: MarketEnv | null, variant?: string): ReleaseAsset | null {
+  if (expectsChoice(item.source)) {
+    const hits = variantsOf(item, assets);
+    if (hits.length === 1) return hits[0];
+    return hits.find((a) => a.name === variant) ?? null;
+  }
   return pickAsset(assets, env, assetPatternOf(item.source));
 }

@@ -10,6 +10,9 @@ mod terminal;
 mod updates;
 mod upstream;
 mod bucketfs;
+mod db_scripts;
+mod slc;
+mod vm_appliance;
 mod catalog;
 mod connection;
 mod connection_settings;
@@ -133,6 +136,7 @@ pub fn run() {
             catalog::get_schema_graph,
             catalog::list_vs_prereqs,
             virtual_schema_install::vs_stage_adapter,
+            virtual_schema_install::vs_unstage_adapter,
             virtual_schema_install::vs_local_state,
             files::write_text_file,
             print::print_html,
@@ -171,6 +175,8 @@ pub fn run() {
             market::market_install,
             market::market_install_run,
             market::market_uninstall,
+            db_scripts::market_db_scripts_plan,
+            slc::market_slc_catalog,
             market::market_doc_file,
             market::open_external,
             market::reveal_path,

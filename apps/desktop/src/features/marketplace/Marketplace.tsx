@@ -23,6 +23,7 @@ import {
   isTauri,
   type ComponentInfo,
   type InstalledItem,
+  type SlcChoice,
   type MarketCatalog,
   type MarketEnv,
   type Release,
@@ -49,7 +50,8 @@ import type { ResolvedCatalogItem } from "@/features/marketplace/catalog-data";
 import { vsAdapterFor } from "@/features/marketplace/vs-catalog";
 import { GithubLimitNotice } from "@/features/marketplace/GithubLimitNotice";
 import { CATALOG_TO_COMPONENT, isNewerVersion } from "@/features/marketplace/updates";
-import { pickAssetFor } from "@/features/marketplace/assets";
+import { expectsChoice, needsReleaseAsset, pickAssetFor, variantForRelease, variantsOf } from "@/features/marketplace/assets";
+import { DbScriptsReview } from "@/features/marketplace/DbScriptsReview";
 import { versionSource } from "@/features/marketplace/versions";
 import { StudioUpdateCard } from "@/features/marketplace/StudioUpdateCard";
 import { itemState, managedIsPresent, type ItemSources } from "@/features/marketplace/item-state";
@@ -147,6 +149,29 @@ function planFor(item: CatalogItem, env: MarketEnv | null, asset: ReleaseAsset |
         "Download the plugin file from its newest release",
         "Verify it against the checksum the project publishes",
         "Reveal it in Studio's folder and say where it belongs — Studio does not write into another application's installation",
+      ];
+    case "deliver":
+      return [
+        needsReleaseAsset(item) ? "Download the file from the newest release" : "Download the release's source archive from GitHub",
+        "Verify it against the checksum the project publishes, when it publishes one",
+        "Reveal it in Studio's folder and say what to do with it — Studio does not install it into your own tools",
+      ];
+    case "slc":
+      return [
+        "Ask the official Exasol launcher to install the language container into the managed local database",
+        "The launcher downloads the container for this machine, registers its alias and restarts the local database once",
+      ];
+    case "db-scripts":
+      return [
+        "Download the release's SQL and Lua scripts and verify them against the digests the project publishes",
+        "Show every statement, the connection and the schema for review",
+        "On confirmation, run them on that connection — the record names the connection, so removal undoes exactly this",
+      ];
+    case "vm-appliance":
+      return [
+        "Check this machine: an x86-64 host with VirtualBox or VMware (the image does not run on Apple Silicon / ARM)",
+        "Find the image you downloaded from the sign-up page in Downloads — or open that page and stop, recording nothing",
+        "Import it as a named machine and start it (VirtualBox), or hand it to VMware; no checksum is published, so the import is unverified",
       ];
     case "reference":
       return ["Opens the official download / documentation page"];
@@ -475,11 +500,35 @@ export function Marketplace() {
             // download matches exactly the version the user asked for.
             const chosen = verPickRef.current[item.id];
             let release = releases[item.id] ?? null;
-            if (chosen && item.repo && item.install === "binary" && release?.tag !== chosen) {
+            if (chosen && item.repo && needsReleaseAsset(item) && release?.tag !== chosen) {
               release = await ipc.marketRelease(item.repo, chosen).catch(() => null);
             }
-            const asset = pickAssetFor(item, release?.assets ?? [], env);
-            const version = chosen ?? latestFor(item.id) ?? undefined;
+            // A variant was picked from the release the card shows; another
+            // chosen release names the same file with its own tag.
+            const picked = variantPickRef.current[item.id];
+            const shownTag = releases[item.id]?.tag;
+            const variant = picked && chosen && shownTag && chosen !== shownTag ? variantForRelease(picked, shownTag, chosen) : picked;
+            const asset = pickAssetFor(item, release?.assets ?? [], env, variant);
+            // A release file was required and none matches — say so here
+            // rather than sending a request that can only fail.
+            if (needsReleaseAsset(item) && !asset && (release?.assets?.length ?? 0) > 0) {
+              window.dispatchEvent(
+                new CustomEvent("studio:notice", {
+                  detail: {
+                    kind: "warning",
+                    title: item.name,
+                    body: variant
+                      ? `Release ${release?.tag ?? chosen} has no file named ${variant}. Pick the variant again for this version.`
+                      : `Release ${release?.tag ?? chosen} ships no build for this machine.`,
+                  },
+                }),
+              );
+              finish(false);
+              return;
+            }
+            const db = dbTargetRef.current[item.id];
+            // A reviewed script library runs the release that was reviewed.
+            const version = (item.install === "db-scripts" ? db?.version : undefined) ?? chosen ?? latestFor(item.id) ?? undefined;
             un = await listen<{ id: string; ok: boolean }>("market:done", (e) => {
               if (e.payload.id === item.id) finish(e.payload.ok);
             });
@@ -488,10 +537,16 @@ export function Marketplace() {
               version,
               asset?.url,
               asset?.name,
-              item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : undefined,
+              item.id === "semantic-views" && semanticTargetRef.current ? semanticTargetRef.current : db?.profileId,
               // Only the explicit dropdown pick may override a verified pip
-              // pin — the display version above never does.
-              chosen,
+              // pin — the display version above never does. A reviewed
+              // script library pins the version its review showed.
+              item.install === "db-scripts" ? db?.version : chosen,
+              db?.schema,
+              // A container item without an alias: the launcher alias picked
+              // from its catalogue travels the same way a variant does.
+              item.source?.kind === "slc" ? variantPickRef.current[item.id] : undefined,
+              db?.fingerprint,
             );
           } catch {
             finish(false);
@@ -509,6 +564,26 @@ export function Marketplace() {
   useEffect(() => {
     verPickRef.current = verPick;
   }, [verPick]);
+  // Where a script library goes: the connection and schema confirmed on its
+  // review screen, read by the queue when the install runs.
+  type DbTarget = { profileId: string; schema: string; version: string; fingerprint: string };
+  const [dbTarget, setDbTarget] = useState<Record<string, DbTarget>>({});
+  const dbTargetRef = useRef<Record<string, DbTarget>>({});
+  useEffect(() => {
+    dbTargetRef.current = dbTarget;
+  }, [dbTarget]);
+  const [dbReview, setDbReview] = useState<CatalogItem | null>(null);
+  // A database-side removal asks first: the button becomes "Confirm removal".
+  const [confirmRemove, setConfirmRemove] = useState<Record<string, boolean>>({});
+  // The launcher's container catalogue, for a container item that names no alias.
+  const [slcChoices, setSlcChoices] = useState<SlcChoice[] | null | "error">(null);
+  // The variant picked for an item whose release is plural (one file per
+  // Scala × Spark version); the asset chosen at install time is that file.
+  const [variantPick, setVariantPick] = useState<Record<string, string>>({});
+  const variantPickRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    variantPickRef.current = variantPick;
+  }, [variantPick]);
   // undefined = not fetched, null = loading, "error" = fetch failed (rate
   // limit / offline — NOT the same as "this project has no versions").
   const [verLists, setVerLists] = useState<Record<string, string[] | null | "error" | undefined>>({});
@@ -583,6 +658,13 @@ export function Marketplace() {
       void stageVsAdapter(item);
       return;
     }
+    // Scripts into a database: the connection, the schema and every statement
+    // are reviewed first; the queue runs only what was confirmed.
+    if (item.install === "db-scripts") {
+      refreshTargets();
+      setDbReview(item);
+      return;
+    }
     enqueue([item]);
   }
 
@@ -617,6 +699,29 @@ export function Marketplace() {
       // Also to the log: a message on a card is gone as soon as the page is,
       // and this is the kind of failure someone reports afterwards.
       console.error(`[marketplace] staging ${adapter.repo} failed: ${message}`);
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message } }));
+    }
+  }
+
+  /** Remove an adapter's staged files from the local database's bucket — asks first. */
+  async function unstageVsAdapter(item: CatalogItem) {
+    const adapter = vsAdapterFor(item.id);
+    if (!adapter) return;
+    if (!confirmRemove[item.id]) {
+      setConfirmRemove((m) => ({ ...m, [item.id]: true }));
+      return;
+    }
+    setConfirmRemove(({ [item.id]: _asked, ...rest }) => rest);
+    setVsStaging((m) => ({ ...m, [item.id]: { busy: true, message: null, failed: false } }));
+    try {
+      const removed = await ipc.vsUnstageAdapter(adapter.release.asset);
+      const message = removed.length
+        ? `Removed ${removed.join(", ")} from the database's bucket.`
+        : "Nothing of this adapter was staged in the local database.";
+      setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: false, message } }));
+    } catch (e) {
+      const message = errorMessage(e);
+      console.error(`[marketplace] un-staging ${adapter.repo} failed: ${message}`);
       setVsStaging((m) => ({ ...m, [item.id]: { busy: false, failed: true, message } }));
     }
   }
@@ -667,11 +772,26 @@ export function Marketplace() {
     }
   }
 
+  /** Whether removing this item changes a database, the local runtime or a
+   *  virtual machine — then the first click only asks. */
+  const removesFromDatabase = (item: CatalogItem) =>
+    item.source?.kind === "db-scripts" || item.source?.kind === "slc" || item.source?.kind === "vm-appliance";
+
   async function uninstall(item: CatalogItem) {
+    if (removesFromDatabase(item) && !confirmRemove[item.id]) {
+      setConfirmRemove((m) => ({ ...m, [item.id]: true }));
+      return;
+    }
+    setConfirmRemove(({ [item.id]: _asked, ...rest }) => rest);
     setBusy((b) => ({ ...b, [item.id]: true }));
     try {
       await ipc.marketUninstall({ id: item.id, source: item.source });
       refreshInstalled();
+      ipc.marketDetect().then(setDetected).catch(() => undefined);
+    } catch (e) {
+      window.dispatchEvent(
+        new CustomEvent("studio:notice", { detail: { kind: "warning", title: `${item.name} removal`, body: errorMessage(e) } }),
+      );
     } finally {
       setBusy((b) => ({ ...b, [item.id]: false }));
     }
@@ -774,10 +894,11 @@ export function Marketplace() {
         releaseAssets: (id) => releases[id]?.assets ?? [],
         env,
         driverRuntime: did ? { id: did, ready: Boolean(driverReady[did]), busy: Boolean(driverBusy[did]) } : undefined,
+        variantPick: (id) => variantPick[id],
       };
       return itemState(item, sources);
     },
-    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy],
+    [installedMap, componentUpstream, detected, installingIds, latestFor, releases, env, driverReady, driverBusy, variantPick],
   );
   const updateItems = useMemo(() => CATALOG.filter((i) => stateOf(i).kind === "update"), [CATALOG, stateOf]);
   // The header count IS the Updates page's length — one decision, one number.
@@ -889,8 +1010,13 @@ export function Marketplace() {
     if (did) return !driverReady[did] && !driverBusy[did];
     if (installedMap[item.id] || detected[item.id]) return false;
     if (installingIds.has(item.id)) return false;
+    // A script library is reviewed one at a time; a container or a plural
+    // release needs its pick first; an unavailable item cannot run at all.
+    if (item.install === "db-scripts") return false;
+    const st = stateOf(item);
+    if (st.kind === "choose" || st.kind === "unavailable") return false;
     const assets = releases[item.id]?.assets ?? [];
-    return !((item.install === "binary" || item.install === "host-plugin") && assets.length > 0 && pickAssetFor(item, assets, env) === null);
+    return !(needsReleaseAsset(item) && assets.length > 0 && pickAssetFor(item, assets, env, variantPick[item.id]) === null);
   };
   // A card is also batch-selectable when it has an UPDATE available — installs
   // and updates are the same gesture ("everything is same"): managed
@@ -949,6 +1075,22 @@ export function Marketplace() {
               {vs?.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {vs?.busy ? "Staging…" : vs?.failed ? "Retry staging" : `Stage${version ? ` ${version}` : ""} into the database`}
             </button>
+            {vsAdapterFor(item.id)?.runtime !== "lua" ? (
+              <button
+                onClick={() => void unstageVsAdapter(item)}
+                disabled={vs?.busy}
+                title="Removes this adapter's files from the local database's bucket. A schema attached with it keeps its own adapter script."
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] disabled:opacity-50",
+                  confirmRemove[item.id]
+                    ? "border-destructive/60 text-destructive hover:bg-destructive/10"
+                    : "border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive",
+                )}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {confirmRemove[item.id] ? "Confirm: remove staged files" : "Remove from the database…"}
+              </button>
+            ) : null}
           </div>
           {vs?.message ? (
             <p className={cn("max-w-[420px] text-[12px] leading-relaxed", vs.failed ? "text-destructive" : "text-muted-foreground")}>
@@ -990,13 +1132,90 @@ export function Marketplace() {
     // A binary release that ships builds — but none for THIS host (e.g. the
     // linux-only exa-postgres-interface on macOS) — gets an honest state
     // instead of an Install button that can only fail.
-    const noHostBuild =
-      item.install === "binary" &&
-      !inst &&
-      !onSystem &&
-      !did &&
-      (releases[item.id]?.assets?.length ?? 0) > 0 &&
-      pickAssetFor(item, releases[item.id]?.assets ?? [], env) === null;
+    const variants = variantsOf(item, releases[item.id]?.assets ?? []);
+    // A container item that names no alias picks one from the launcher's
+    // catalogue — the same menu, filled from the launcher instead of a release.
+    const picksAlias = item.source?.kind === "slc" && !item.source.alias;
+    const needsPick =
+      (expectsChoice(item.source) && variants.length > 1 && !variants.some((v) => v.name === variantPick[item.id])) ||
+      (picksAlias && !variantPick[item.id]);
+    // Unavailable for this machine — a binary without a build for it, a
+    // desktop app without one, an image that does not run on this CPU. The
+    // same decision the card and the Updates page use.
+    const itemState = stateOf(item);
+    const noHostBuild = itemState.kind === "unavailable" && !inst && !onSystem && !did;
+    const noHostText =
+      itemState.kind === "unavailable"
+        ? item.source?.kind === "vm-appliance"
+          ? `Not for ${itemState.platform}`
+          : `No ${itemState.platform} build yet`
+        : "";
+    // The variant menu of a plural release: the files the pattern matches in
+    // the release the card shows, by their own names.
+    const aliasMenu = picksAlias ? (
+      <DropdownMenu
+        onOpenChange={(o) => {
+          if (!o || (slcChoices !== null && slcChoices !== "error")) return;
+          setSlcChoices(null);
+          ipc.marketSlcCatalog().then(setSlcChoices, () => setSlcChoices("error"));
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            disabled={isInstalling}
+            aria-label={`${item.name} language to install`}
+            className="flex h-7 max-w-[220px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+          >
+            <span className="truncate">{variantPick[item.id] ?? "Choose a language"}</span>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+          {slcChoices === null ? (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Asking the launcher…
+            </div>
+          ) : slcChoices === "error" ? (
+            <div className="max-w-64 px-2 py-1.5 text-[11px] text-muted-foreground">
+              The launcher's container list could not be read — set up the local database first.
+            </div>
+          ) : slcChoices.length === 0 ? (
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">The launcher offers no containers.</div>
+          ) : (
+            slcChoices.map((c) => (
+              <DropdownMenuItem key={c.alias} onClick={() => setVariantPick((m) => ({ ...m, [item.id]: c.alias }))} className="font-mono text-[12px]">
+                {c.alias}
+                {c.installed ? <span className="ml-2 text-[10px] text-muted-foreground">installed</span> : null}
+                {variantPick[item.id] === c.alias ? <Check className="ml-auto h-3 w-3" /> : null}
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null;
+    const variantMenu =
+      expectsChoice(item.source) && variants.length > 1 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              disabled={isInstalling}
+              aria-label={`${item.name} variant to install`}
+              className="flex h-7 max-w-[260px] items-center gap-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+            >
+              <span className="truncate">{variantPick[item.id] ?? "Choose a variant"}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            {variants.map((v) => (
+              <DropdownMenuItem key={v.name} onClick={() => setVariantPick((m) => ({ ...m, [item.id]: v.name }))} className="font-mono text-[12px]">
+                {v.name}
+                {variantPick[item.id] === v.name ? <Check className="ml-auto h-3 w-3" /> : null}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null;
 
     // Live any-version picker: list fetched on first open (GitHub tags / PyPI
     // versions / Maven Central), newest first. Shared by the
@@ -1139,8 +1358,39 @@ export function Marketplace() {
                 panel, the engine's baseline) — a marketplace-folder uninstall
                 would be meaningless there. */}
             {!managedCompId ? (
-              <button onClick={() => uninstall(item)} disabled={isBusy} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
-                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Uninstall
+              <button
+                onClick={() => uninstall(item)}
+                disabled={isBusy}
+                title={
+                  confirmRemove[item.id]
+                    ? item.source?.kind === "slc"
+                      ? `Removes the ${inst.alias ?? "container"} language container from the local database.`
+                      : item.source?.kind === "vm-appliance"
+                        ? inst.vm?.hypervisor === "vmware"
+                          ? `Forgets the record; delete "${inst.vm.name}" in VMware yourself. The image in Downloads stays.`
+                          : `Powers off "${inst.vm?.name ?? "the machine"}" and deletes it with its disks — everything inside is destroyed. The image in Downloads stays.`
+                        : `Drops what this install created${inst.connection ? ` on ${inst.connection.name}` : ""}; the schema only if it was created here.`
+                    : undefined
+                }
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] disabled:opacity-50",
+                  confirmRemove[item.id]
+                    ? "border-destructive/60 text-destructive hover:bg-destructive/10"
+                    : "border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive",
+                )}
+              >
+                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {confirmRemove[item.id]
+                  ? item.source?.kind === "slc"
+                    ? `Confirm: remove ${inst.alias ?? "container"} from the local database`
+                    : item.source?.kind === "vm-appliance"
+                      ? inst.vm?.hypervisor === "vmware"
+                        ? "Confirm: forget the machine"
+                        : `Confirm: delete "${inst.vm?.name ?? "the machine"}" and its disks`
+                      : `Confirm: drop from ${inst.connection?.name ?? "the database"}`
+                  : removesFromDatabase(item)
+                    ? "Remove…"
+                    : "Uninstall"}
               </button>
             ) : null}
           </>
@@ -1178,10 +1428,14 @@ export function Marketplace() {
         ) : noHostBuild ? (
           <>
             <span
-              title="The upstream release ships platform-specific builds, but none for this machine."
+              title={
+                item.source?.kind === "vm-appliance"
+                  ? "The publisher ships this image for x86-64 hosts only."
+                  : "The upstream release ships platform-specific builds, but none for this machine."
+              }
               className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground"
             >
-              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> No {env?.os === "macos" ? "macOS" : (env?.os ?? "this-platform")} build yet
+              <TriangleAlert className="h-3.5 w-3.5 text-warning" /> {noHostText}
             </span>
             <button onClick={() => openExternal(item.homepage)} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-foreground hover:bg-secondary">
               Get <ExternalLink className="h-3.5 w-3.5" />
@@ -1222,11 +1476,24 @@ export function Marketplace() {
               </DropdownMenu>
             ) : null}
             {versionMenu}
-            <button onClick={() => startInstall(item)} disabled={isInstalling} className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60">
+            {variantMenu}
+            {aliasMenu}
+            <button
+              onClick={() => startInstall(item)}
+              disabled={isInstalling || needsPick}
+              title={needsPick ? (picksAlias ? "Pick which language to install first." : "Pick which variant to install first.") : undefined}
+              className="cta-glow flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-60"
+            >
               {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BxIcon name="arrow-to-bottom" className="h-3.5 w-3.5" />}
               {isInstalling
                 ? "Installing…"
-                : item.id === "semantic-views"
+                : needsPick
+                  ? picksAlias
+                    ? "Choose a language"
+                    : "Choose a variant"
+                  : item.install === "db-scripts"
+                    ? "Review and install…"
+                    : item.id === "semantic-views"
                   ? `Install in ${semanticTarget ? (profiles.find((p) => p.id === semanticTarget)?.name ?? "database") : "local database"}`
                   : verPick[item.id]
                     ? `Install ${verPick[item.id]}`
@@ -1348,6 +1615,8 @@ export function Marketplace() {
         return { label: st.available ? `Install ${st.available}` : "Install", tone: "primary", onClick: () => (did ? void installDriverAndUse(item, did) : startInstall(item)) };
       case "update":
         return { label: `Update to ${st.available}`, tone: "primary", onClick: () => (CATALOG_TO_COMPONENT[item.id] ? void switchManaged(item, st.available) : startInstall(item)) };
+      case "choose":
+        return { label: item.source?.kind === "slc" ? "Choose a language" : "Choose a variant", tone: "primary", onClick: () => openDetail(item.id) };
       case "reference":
       case "unavailable":
         return { label: "Get", tone: "outline", onClick: () => openExternal(item.homepage) };
@@ -1430,9 +1699,27 @@ export function Marketplace() {
         <div className="mt-4 empty:mt-0">
           <GithubLimitNotice status={githubStatus} onChange={setGithubStatus} onOpenExternal={openExternal} />
         </div>
+        {dbReview ? (
+        <DbScriptsReview
+          item={dbReview}
+          profiles={profiles}
+          requested={verPick[dbReview.id]}
+          onClose={() => setDbReview(null)}
+          onConfirm={(profileId, schema, plan) => {
+            const item = dbReview;
+            const target = { profileId, schema, ...plan };
+            setDbTarget((m) => ({ ...m, [item.id]: target }));
+            // The ref the queue reads is updated by effect; hand the queue
+            // the value directly so a same-tick start cannot miss it.
+            dbTargetRef.current = { ...dbTargetRef.current, [item.id]: target };
+            setDbReview(null);
+            enqueue([item]);
+          }}
+        />
+      ) : null}
         <div ref={contentRef} className={cn("pt-6 transition-opacity", navPending && "opacity-60")}>
           {page === "detail" && detailItem ? (
-            <HubDetail
+          <HubDetail
               key={detailItem.id}
               item={detailItem}
               state={stateOf(detailItem)}

@@ -318,7 +318,19 @@ export type Release = {
   htmlUrl: string | null;
   assets: ReleaseAsset[];
 } | null;
-export type InstalledItem = { id: string; version: string; path: string; filename: string; note?: string };
+export type InstalledItem = {
+  id: string;
+  version: string;
+  path: string;
+  filename: string;
+  note?: string;
+  /** Where a database-side item lives. */
+  connection?: { id: string; name: string };
+  /** The language alias a container install registered. */
+  alias?: string;
+  /** The machine an appliance import created, and which hypervisor holds it. */
+  vm?: { hypervisor: "virtualbox" | "vmware"; name: string };
+};
 
 export type CatalogEntry = {
   repo: string;
@@ -351,7 +363,7 @@ export type InstallSource =
   /** A JAR from Maven Central. Its versions come from Maven's own metadata, never a release tag. */
   | { kind: "maven"; group: string; artifact: string }
   /** A file from the repository's newest release. Without `assetPattern` the build for this platform is picked. */
-  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean }
+  | { kind: "gh-asset"; assetPattern?: string; onPath?: boolean; choose?: boolean }
   /** A native registry or Exasol's downloads portal; `driverRuntime` wires the result into a Studio driver runtime. */
   | { kind: "registry"; registry: "npm" | "goproxy" | "crates" | "exasol-downloads"; package: string; driverRuntime?: "odbc" }
   /** The repository's current tarball, for a project with no releases. */
@@ -359,7 +371,27 @@ export type InstallSource =
   /** Built into one of Studio's own driver runtimes. */
   | { kind: "driver-runtime"; driver: "r" | "odbc" }
   /** A plugin for another application. Studio fetches and verifies it and reveals the folder; it does not write there. */
-  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" };
+  | { kind: "host-plugin"; assetPattern: string; host: "powerbi" | "tableau" | "metabase" | "vscode" | "powerapps" | "azure-functions" }
+  | { kind: "deliver"; format: DeliverFormat; assetPattern?: string }
+  /** A script language container for the managed local database, through the
+   *  official launcher; without an alias the person picks one it offers. */
+  | { kind: "slc"; alias?: string }
+  /** SQL and Lua scripts run into a schema on a chosen connection; `schema`
+   *  is the default the person may change. */
+  | { kind: "db-scripts"; schema: string }
+  /** A database image imported into the hypervisor on this machine: x86-64
+   *  only, downloaded by the person from a sign-up page, no digest published. */
+  | { kind: "vm-appliance"; imagePattern: string; downloadPage: string; vmName: string };
+/** What a script library's install would run, for review before it does: each
+ *  statement's head and whole body, and a fingerprint over all of them that
+ *  the install refuses to deviate from. */
+export type ScriptPlan = { version: string; files: string[]; statements: { head: string; body: string }[]; fingerprint: string };
+/** One language container the launcher offers, and whether it is installed. */
+export type SlcChoice = { alias: string; installed: boolean };
+/** Formats of a delivered file; the next step is stated from the format. A
+ *  rockspec and a desktop build come from the release; the other two are the
+ *  tag's source archive. */
+export type DeliverFormat = "rockspec" | "dbt-package" | "source" | "desktop-app";
 
 /** What an install needs to know about its item — never just the id. */
 export type InstallTarget = { id: string; install?: string; repo?: string; source?: InstallSource };
@@ -609,6 +641,8 @@ export const ipc = {
   vsLocalState: () => call<VsLocalState>("vs_local_state"),
   /** Stage an adapter (and its driver) into the managed local Exasol; installs the Java SLC and restarts once if needed. */
   vsStageAdapter: (req: VsStageRequest) => call<VsStageResult>("vs_stage_adapter", { req }),
+  /** Remove an adapter's staged files from the local database's bucket; returns what went. */
+  vsUnstageAdapter: (assetPattern: string) => call<string[]>("vs_unstage_adapter", { assetPattern }),
   marketEnv: () => call<MarketEnv>("market_env"),
   marketCatalog: () => call<MarketCatalog | null>("market_catalog"),
 
@@ -650,6 +684,12 @@ export const ipc = {
     // display/manifest value (often the catalog latest) and must never
     // override a verified pip pin — `requested` is what does that, on purpose.
     requested?: string,
+    // The schema a script library goes into and the alias picked for a
+    // language container, when the person chose them.
+    schema?: string,
+    alias?: string,
+    // The fingerprint of the statements reviewed; the install runs nothing else.
+    fingerprint?: string,
   ) =>
     call<{ ok: boolean }>("market_install_run", {
       id: target.id,
@@ -661,7 +701,15 @@ export const ipc = {
       filename,
       profileId,
       requested,
+      schema,
+      alias,
+      fingerprint,
     }),
+  /** What a script library would run into `schema` — read and verified, run by nothing. */
+  marketDbScriptsPlan: (id: string, repo: string, requested: string | undefined, schema: string) =>
+    call<ScriptPlan>("market_db_scripts_plan", { id, repo, requested, schema }),
+  /** The language containers the official launcher can install locally. */
+  marketSlcCatalog: () => call<SlcChoice[]>("market_slc_catalog"),
   /** Remove an install — by its coordinate, since what "remove" means depends
    *  on the mechanism (a uv tool lives in uv's own directory, not the item's). */
   marketUninstall: (target: InstallTarget) =>

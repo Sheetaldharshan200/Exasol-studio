@@ -881,6 +881,11 @@ async fn download_and_place_inner(
     use futures_util::StreamExt;
     use std::io::Write;
 
+    // The name comes from a release or a registry; it must stay one file
+    // inside the item's folder.
+    if !crate::installers::safe_file_name(filename) {
+        return Err(AppError::Storage(format!("{filename:?} is not a file name Studio will write.")));
+    }
     let dir = market_dir(app)?.join(id);
     std::fs::create_dir_all(&dir)?;
     emit_log(app, id, format!("Downloading {filename}…"), "info");
@@ -1916,6 +1921,61 @@ async fn install_from_maven(app: &AppHandle, id: &str, group: &str, artifact: &s
     Ok((v, note))
 }
 
+/// Download a file into the item's folder, check it against the `.sha256`
+/// its publisher put beside it (when there is one), and reveal it. This is
+/// the whole of what Studio does with a file it hands over rather than
+/// installs — host plugins and delivered files share it. Returns the path
+/// and whether a published checksum confirmed the bytes.
+async fn deliver_file(app: &AppHandle, id: &str, url: &str, filename: &str) -> AppResult<(String, bool)> {
+    let path = download_and_place_inner(app, id, url, filename, false).await?;
+    let sibling = {
+        let u = url.to_string();
+        tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&u)).await.ok().flatten()
+    };
+    verify_placed(&path, sibling.as_deref(), false)?;
+    if sibling.is_some() {
+        emit_log(app, id, "Checksum verified against the published .sha256.", "info");
+    } else {
+        emit_log(app, id, "No checksum is published for this file; it is saved exactly as downloaded.", "info");
+    }
+    let _ = reveal_path(path.clone());
+    Ok((path, sibling.is_some()))
+}
+
+fn verified_suffix(verified: bool) -> &'static str {
+    if verified {
+        " and verified"
+    } else {
+        ""
+    }
+}
+
+/// A delivered file: a release asset the frontend chose for formats the
+/// release publishes, else the tag's source archive from github.com.
+async fn deliver_from_source(
+    app: &AppHandle,
+    id: &str,
+    format: crate::installers::DeliverFormat,
+    repo: Option<&str>,
+    tag: Option<&str>,
+    url: Option<String>,
+    filename: Option<String>,
+) -> AppResult<String> {
+    let repo = repo.ok_or_else(|| AppError::Storage(format!("{id} has no repository to deliver from.")))?;
+    let (u, f) = if format.from_release_asset() {
+        match (url, filename) {
+            (Some(u), Some(f)) => (u, f),
+            _ => return Err(AppError::Storage("No release file was found for this platform.".into())),
+        }
+    } else {
+        let tag = tag.ok_or_else(|| AppError::Storage(format!("{repo} has no release tag to archive yet.")))?;
+        crate::installers::source_archive(repo, tag)
+    };
+    let (path, verified) = deliver_file(app, id, &u, &f).await?;
+    let step = crate::installers::deliver_instruction(format, repo, tag.unwrap_or("latest"), &f, std::env::consts::OS);
+    Ok(format!("{f} saved to {path}{}. {step}", verified_suffix(verified)))
+}
+
 /// Check a file that download_and_place wrote against a publisher's digest,
 /// deleting it on a mismatch so nothing unverified stays on disk.
 fn verify_placed(path: &str, expected: Option<&str>, sha1: bool) -> AppResult<()> {
@@ -2161,6 +2221,10 @@ async fn install_from_source(
         InstallSource::GhAsset { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this platform."))),
         // Handled by market_install_run, which has the chosen asset's url.
         InstallSource::HostPlugin { .. } => Err(AppError::Storage(format!("{id}: no release asset was chosen for this plugin."))),
+        InstallSource::Deliver { .. } => Err(AppError::Storage(format!("{id}: nothing to deliver was chosen."))),
+        InstallSource::Slc { .. } | InstallSource::DbScripts { .. } | InstallSource::VmAppliance { .. } => {
+            Err(AppError::Storage(format!("{id}: this mechanism is dispatched by market_install_run.")))
+        }
     }
 }
 
@@ -2242,11 +2306,23 @@ pub async fn market_install_run(
     // on, in place of the item's name.
     repo: Option<String>,
     source: Option<crate::installers::InstallSource>,
+    // The schema a script library goes into, when the person changed the
+    // coordinate's default; the alias picked for a language container whose
+    // coordinate names none.
+    schema: Option<String>,
+    alias: Option<String>,
+    // The fingerprint of the statements the person reviewed; the install
+    // refuses to run anything else.
+    fingerprint: Option<String>,
 ) -> AppResult<Value> {
     if !crate::installers::valid_item_id(&id) {
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
     }
     emit_log(&app, &id, "Starting installation…", "info");
+    // What a database-side or machine-side install must remember for its removal.
+    let mut db_record: Option<crate::db_scripts::DbRecord> = None;
+    let mut slc_alias: Option<String> = None;
+    let mut vm_record: Option<Value> = None;
     // Validated before it can reach a package spec or URL.
     let requested = requested.filter(|v| valid_version_tag(v));
     // Installers that resolve the real version themselves (Maven) report it
@@ -2268,22 +2344,53 @@ pub async fn market_install_run(
         // installation (see the change proposal's non-goals).
         Some(crate::installers::InstallSource::HostPlugin { host, .. }) => match (url, filename) {
             (Some(u), Some(f)) => {
-                let path = download_and_place_inner(&app, &id, &u, &f, false).await?;
-                let sibling = {
-                    let u = u.clone();
-                    tauri::async_runtime::spawn_blocking(move || crate::upstream::sha256_sibling(&u)).await.ok().flatten()
-                };
-                verify_placed(&path, sibling.as_deref(), false)?;
-                if sibling.is_some() {
-                    emit_log(&app, &id, "Checksum verified against the published .sha256.", "info");
-                }
-                let _ = reveal_path(path.clone());
+                let (path, verified) = deliver_file(&app, &id, &u, &f).await?;
                 let where_to = crate::installers::host_plugin_destination(host, std::env::consts::OS)
                     .unwrap_or_else(|| "Install it with the application it belongs to.".into());
-                Ok(format!("{f} downloaded to {path} and verified. {where_to}"))
+                Ok(format!("{f} downloaded to {path}{}. {where_to}", verified_suffix(verified)))
             }
             _ => Err(AppError::Storage("No downloadable asset was provided for this plugin.".into())),
         },
+        // A file for one of the person's own tools: the same delivery, with
+        // the next step spelled out from its format.
+        Some(crate::installers::InstallSource::Deliver { format, .. }) => {
+            let tag = requested.clone().or_else(|| version.clone().filter(|v| valid_version_tag(v)));
+            deliver_from_source(&app, &id, *format, repo.as_deref(), tag.as_deref(), url, filename).await
+        }
+        // Scripts into a schema on the connection the person picked — they
+        // reviewed every statement first (db_scripts::plan).
+        Some(crate::installers::InstallSource::DbScripts { schema: default_schema }) => {
+            let schema = schema.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| default_schema.clone());
+            match (repo.as_deref(), profile_id.as_deref().filter(|p| !p.is_empty())) {
+                (Some(repo), Some(profile)) => crate::db_scripts::install(&app, &id, repo, requested.as_deref(), profile, &schema, fingerprint.as_deref())
+                    .await
+                    .map(|(v, record, note)| {
+                        resolved_version = Some(v);
+                        db_record = Some(record);
+                        note
+                    }),
+                (None, _) => Err(AppError::Storage(format!("{id} has no repository to install from."))),
+                (_, None) => Err(AppError::Storage("Pick the connection to install into first.".into())),
+            }
+        }
+        // A language container for the managed local database, through the
+        // official launcher.
+        Some(crate::installers::InstallSource::Slc { alias: default_alias }) => match alias.clone().or_else(|| default_alias.clone()) {
+            Some(a) => crate::slc::install(&app, &id, &a, repo.as_deref()).map(|(v, note)| {
+                resolved_version = Some(v);
+                slc_alias = Some(a);
+                note
+            }),
+            None => Err(AppError::Storage("Pick which language container to install first.".into())),
+        },
+        // A database image into the hypervisor on this machine.
+        Some(crate::installers::InstallSource::VmAppliance { image_pattern, download_page, vm_name }) => {
+            crate::vm_appliance::install(&app, &id, image_pattern, download_page, vm_name, repo.as_deref()).map(|(v, note, vm)| {
+                resolved_version = Some(v);
+                vm_record = Some(vm);
+                note
+            })
+        }
         Some(src) => install_from_source(&app, &id, repo.as_deref(), src, requested.as_deref())
             .await
             .map(|(v, note)| {
@@ -2316,7 +2423,7 @@ pub async fn market_install_run(
         Ok(note) => {
             let mut items = read_manifest(&app);
             items.retain(|it| it.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
-            items.push(json!({
+            let mut entry = json!({
                 "id": id,
                 // Record only what was actually installed: installer-resolved
                 // first, then the validated pick, then the display version IF
@@ -2326,7 +2433,21 @@ pub async fn market_install_run(
                     .or(version.filter(|v| valid_version_tag(v)))
                     .unwrap_or_else(|| "latest".into()),
                 "note": note,
-            }));
+            });
+            // Where a database-side item lives — what its removal needs and
+            // what the Installed view shows.
+            if let Some(record) = &db_record {
+                let json_err = |e: serde_json::Error| AppError::Storage(e.to_string());
+                entry["db"] = serde_json::to_value(record).map_err(json_err)?;
+                entry["connection"] = serde_json::to_value(&record.connection).map_err(json_err)?;
+            }
+            if let Some(a) = &slc_alias {
+                entry["alias"] = json!(a.to_ascii_uppercase());
+            }
+            if let Some(vm) = &vm_record {
+                entry["vm"] = vm.clone();
+            }
+            items.push(entry);
             write_manifest(&app, &items)?;
             emit_log(&app, &id, "✓ Installation complete.", "success");
             let _ = app.emit("market:done", json!({ "id": id, "ok": true }));
@@ -2408,7 +2529,7 @@ pub async fn exasol_local_ctl(app: AppHandle, action: String) -> AppResult<Value
 
 /// Remove an installed item's files and manifest entry.
 #[tauri::command]
-pub fn market_uninstall(
+pub async fn market_uninstall(
     app: AppHandle,
     id: String,
     // The item's coordinate: what "remove" means depends on the mechanism.
@@ -2422,6 +2543,40 @@ pub fn market_uninstall(
         return Err(AppError::Storage(format!("{id:?} is not a marketplace item id.")));
     }
     let dir = market_dir(&app)?.join(&id);
+
+    // What lives in a database is undone first, from the install's own
+    // record, on the connection it named. Without a record nothing is
+    // guessed — and nothing is dropped.
+    let entry = read_manifest(&app).into_iter().find(|it| it.get("id").and_then(|v| v.as_str()) == Some(id.as_str()));
+    match &source {
+        Some(InstallSource::DbScripts { .. }) => {
+            let record = entry
+                .as_ref()
+                .and_then(|e| e.get("db").cloned())
+                .and_then(|v| serde_json::from_value::<crate::db_scripts::DbRecord>(v).ok())
+                .ok_or_else(|| AppError::Storage("No record of where this was installed — nothing was dropped.".into()))?;
+            crate::db_scripts::uninstall(&app, &record).await?;
+        }
+        Some(InstallSource::Slc { .. }) => {
+            // Only what Studio installed is removed: a container the launcher
+            // lists but Studio never recorded stays.
+            let alias = entry
+                .as_ref()
+                .and_then(|e| e.get("alias"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .ok_or_else(|| AppError::Storage("No record of which language container this installed — nothing was removed.".into()))?;
+            crate::slc::remove(&app, &id, &alias)?;
+        }
+        Some(InstallSource::VmAppliance { .. }) => {
+            let vm = entry
+                .as_ref()
+                .and_then(|e| e.get("vm").cloned())
+                .ok_or_else(|| AppError::Storage("No record of the imported machine — nothing was deleted.".into()))?;
+            crate::vm_appliance::remove(&app, &id, &vm)?;
+        }
+        _ => {}
+    }
 
     // A uv tool lives in uv's own tool directory, not under the item's, so
     // deleting the folder would leave the command on PATH pointing at nothing.
@@ -2580,6 +2735,29 @@ fn market_detect_blocking(app: AppHandle) -> AppResult<Value> {
 
     // Semantic Views is OPT-IN — installed ONLY when its readiness marker exists.
     map.insert("semantic-views".into(), json!(db::semantic_views_installed(&app)));
+    // Machines registered in VirtualBox, by name, so an appliance already
+    // imported — by Studio or by hand — shows "on this system".
+    if let Some((_, vbox)) = crate::installers::find_hypervisors(std::env::consts::OS, |p| std::path::Path::new(p).exists())
+        .into_iter()
+        .find(|(h, _)| *h == crate::installers::Hypervisor::Virtualbox)
+    {
+        if let Ok(out) = Command::new(&vbox).args(["list", "vms"]).output() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Some(name) = line.trim().strip_prefix('"').and_then(|l| l.split('"').next()) {
+                    map.insert(format!("vm:{name}"), json!(true));
+                }
+            }
+        }
+    }
+    // Installed language containers, by alias, so a container item whose
+    // coordinate names one shows "on this system" — whoever installed it.
+    if let (Ok(cli), Ok(dep)) = (crate::local_runtime::exasol_cli(&app), crate::local_runtime::personal_deployment_dir(&app)) {
+        if dep.is_dir() {
+            for alias in crate::virtual_schema_install::installed_slc_aliases(&cli, &dep) {
+                map.insert(format!("slc:{alias}"), json!(true));
+            }
+        }
+    }
 
     // Bundled agent skills are always present in the app; the manifest confirms.
     map.insert(

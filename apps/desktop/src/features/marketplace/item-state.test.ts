@@ -116,3 +116,37 @@ test("no version from list_components means not installed, bundled or not", () =
   assert.equal(managedIsPresent("bundled", true, undefined), false);
   assert.equal(managedIsPresent("binary", true, ""), false);
 });
+
+test("a plural release is 'choose a variant' until one is picked, then installable — never unavailable", () => {
+  const spark = item({ id: "spark-connector", install: "binary", source: { kind: "gh-asset", assetPattern: "^sc-.*-assembly\\.jar$", choose: true } });
+  const assets = ["sc-2.12-assembly.jar", "sc-2.13-assembly.jar", "sc-2.13.jar"].map((name) => ({ name, url: `https://x/${name}`, size: 1 }));
+  const base = sources({ releaseAssets: () => assets, latestFor: () => "2.2.1" });
+  assert.deepEqual(itemState(spark, base), { kind: "choose", available: "2.2.1" });
+  assert.equal(stateLabel({ kind: "choose", available: "2.2.1" }), "Choose a variant");
+  assert.deepEqual(itemState(spark, { ...base, variantPick: () => "sc-2.13-assembly.jar" }), { kind: "install", available: "2.2.1" });
+  assert.equal(itemState(spark, { ...base, variantPick: () => "elsewhere.jar" }).kind, "choose", "a stale pick is a missing pick");
+  assert.equal(itemState(spark, sources({ releaseAssets: () => [assets[0], assets[2]] })).kind, "install", "one match needs no choice");
+  assert.equal(itemState(spark, sources({ installed: present("spark-connector", "2.2.1") })).kind, "installed", "installed outranks the choice");
+});
+
+test("database-side items say where they live; a container the launcher lists is on this system", () => {
+  const rls = item({ id: "row-level-security", install: "db-scripts", source: { kind: "db-scripts", schema: "EXA_RLS" } });
+  const withRecord = sources({ installed: { "row-level-security": { id: "row-level-security", version: "1.5.8", path: "", filename: "", connection: { id: "p1", name: "Prod warehouse" } } } });
+  assert.deepEqual(itemState(rls, withRecord), { kind: "installed", installed: "1.5.8", available: null, where: "Prod warehouse" });
+  assert.equal(stateLabel(itemState(rls, withRecord)), "Installed in Prod warehouse");
+  const rust = item({ id: "language-container-rs", install: "slc", source: { kind: "slc", alias: "rust" } });
+  assert.equal(itemState(rust, sources({ detected: { "slc:RUST": true } })).kind, "onSystem");
+  assert.equal(itemState(rust, sources()).kind, "install");
+  const any = item({ id: "script-languages-release", install: "slc", source: { kind: "slc" } });
+  assert.equal(itemState(any, sources({ detected: { "slc:PYTHON3": true } })).kind, "choose", "without an alias nothing is claimed and a language must be picked");
+  assert.equal(itemState(any, sources({ variantPick: () => "JAVA" })).kind, "install", "a picked language makes it installable");
+});
+
+test("a virtual-machine image is unavailable on ARM, on this system when VirtualBox lists it, else installable", () => {
+  const ce = item({ id: "community-edition", install: "vm-appliance", kind: "database", source: { kind: "vm-appliance", imagePattern: "^x$", downloadPage: "https://e/", vmName: "Exasol Community Edition" } });
+  assert.deepEqual(itemState(ce, sources()), { kind: "unavailable", platform: "Apple Silicon / ARM" }, "the default test host is an arm64 Mac");
+  const intel = { os: "macos", arch: "x86_64" };
+  assert.equal(itemState(ce, sources({ env: intel })).kind, "install");
+  assert.equal(itemState(ce, sources({ env: intel, detected: { "vm:Exasol Community Edition": true } })).kind, "onSystem");
+  assert.equal(itemState(ce, sources({ env: intel, installed: { "community-edition": { id: "community-edition", version: "2025.2.1", path: "", filename: "", vm: { hypervisor: "virtualbox", name: "Exasol Community Edition" } } } })).kind, "installed");
+});

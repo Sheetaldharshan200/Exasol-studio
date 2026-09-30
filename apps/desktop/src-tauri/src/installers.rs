@@ -64,6 +64,188 @@ pub enum InstallSource {
         asset_pattern: String,
         host: String,
     },
+    /// A file another tool of the person's consumes (a rock, a dbt package, a
+    /// source archive, a desktop build): fetched, verified and revealed, with
+    /// the next step stated from the FORMAT — never installed into that tool.
+    #[serde(rename_all = "camelCase")]
+    Deliver {
+        format: DeliverFormat,
+        #[serde(default)]
+        asset_pattern: Option<String>,
+    },
+    /// A script language container for the managed local database, installed
+    /// and removed through the official launcher, which owns them. Without an
+    /// alias the person picks one from the launcher's own catalogue.
+    Slc {
+        #[serde(default)]
+        alias: Option<String>,
+    },
+    /// SQL and Lua scripts run into a schema on a connection the person
+    /// chose; `schema` is the default they may change.
+    DbScripts {
+        schema: String,
+    },
+    /// A database image imported into the hypervisor on this machine. The
+    /// publisher fixes the bounds: x86-64 hosts only, downloaded by the person
+    /// from a sign-up page, no digest published.
+    #[serde(rename_all = "camelCase")]
+    VmAppliance {
+        image_pattern: String,
+        download_page: String,
+        vm_name: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Hypervisor {
+    Virtualbox,
+    Vmware,
+}
+
+impl Hypervisor {
+    pub fn label(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "VirtualBox",
+            Hypervisor::Vmware => "VMware",
+        }
+    }
+    /// The word the publisher puts in the image's file name for this hypervisor.
+    pub fn flavor(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "virtualbox",
+            Hypervisor::Vmware => "vmware",
+        }
+    }
+    pub fn download_page(self) -> &'static str {
+        match self {
+            Hypervisor::Virtualbox => "https://www.virtualbox.org/wiki/Downloads",
+            Hypervisor::Vmware => "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion",
+        }
+    }
+}
+
+/// Where each hypervisor's command or application lives on an OS, in the
+/// order Studio prefers them: VirtualBox first, because Studio can drive it.
+pub fn hypervisor_candidates(os: &str) -> Vec<(Hypervisor, &'static str)> {
+    match os {
+        "macos" => vec![
+            (Hypervisor::Virtualbox, "/usr/local/bin/VBoxManage"),
+            (Hypervisor::Virtualbox, "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage"),
+            (Hypervisor::Vmware, "/Applications/VMware Fusion.app"),
+        ],
+        "windows" => vec![
+            (Hypervisor::Virtualbox, r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"),
+            (Hypervisor::Vmware, r"C:\Program Files (x86)\VMware\VMware Workstation\vmware.exe"),
+        ],
+        _ => vec![
+            (Hypervisor::Virtualbox, "/usr/bin/VBoxManage"),
+            (Hypervisor::Virtualbox, "/usr/local/bin/VBoxManage"),
+            (Hypervisor::Vmware, "/usr/bin/vmware"),
+        ],
+    }
+}
+
+/// The hypervisors present, each with the first of its candidates that exists.
+pub fn find_hypervisors(os: &str, exists: impl Fn(&str) -> bool) -> Vec<(Hypervisor, String)> {
+    let mut found: Vec<(Hypervisor, String)> = Vec::new();
+    for (hv, path) in hypervisor_candidates(os) {
+        if !found.iter().any(|(h, _)| *h == hv) && exists(path) {
+            found.push((hv, path.to_string()));
+        }
+    }
+    found
+}
+
+/// The downloaded image to import: matches the pattern and names the flavor
+/// of a hypervisor that is present, preferring the hypervisors in the order
+/// given and the newest file name within one.
+pub fn pick_image(files: &[String], pattern: &regex::Regex, hypervisors: &[Hypervisor]) -> Option<(Hypervisor, String)> {
+    for hv in hypervisors {
+        let mut hits: Vec<&String> =
+            files.iter().filter(|f| pattern.is_match(f) && f.to_ascii_lowercase().contains(hv.flavor())).collect();
+        hits.sort();
+        if let Some(newest) = hits.last() {
+            return Some((*hv, (*newest).clone()));
+        }
+    }
+    None
+}
+
+/// A machine name Studio will hand to a hypervisor: printable, no quotes.
+pub fn valid_vm_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-' | '.'))
+}
+
+/// Whether `VBoxManage list vms` already names the machine (`"Name" {uuid}` per line).
+pub fn vm_registered(list_output: &str, vm_name: &str) -> bool {
+    list_output.lines().any(|l| l.trim_start().starts_with(&format!("\"{vm_name}\"")))
+}
+
+/// `VBoxManage import` arguments for an image, as a named machine.
+pub fn vbox_import_args(ova: &str, vm_name: &str) -> Vec<String> {
+    vec!["import".into(), ova.into(), "--vsys".into(), "0".into(), "--vmname".into(), vm_name.into()]
+}
+
+/// A file name Studio will write into an item's folder: one plain name, no
+/// path separators, not a dot entry — wherever the name came from.
+pub fn safe_file_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0']) && name.len() <= 255
+}
+
+/// A language alias the launcher accepts: one plain word.
+pub fn valid_alias(alias: &str) -> bool {
+    let mut chars = alias.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_') && alias.len() <= 32
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DeliverFormat {
+    Rockspec,
+    DbtPackage,
+    Source,
+    DesktopApp,
+}
+
+impl DeliverFormat {
+    /// Whether the file is one the release publishes. The other formats are
+    /// the tag's own source archive, which every tagged repository has.
+    pub fn from_release_asset(self) -> bool {
+        matches!(self, DeliverFormat::Rockspec | DeliverFormat::DesktopApp)
+    }
+}
+
+/// The github.com URL of a tag's source archive and a file name for it. It is
+/// served by github.com, not the API, so it never counts against the hourly
+/// allowance.
+pub fn source_archive(repo: &str, tag: &str) -> (String, String) {
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    (
+        format!("https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz"),
+        format!("{name}-{tag}.tar.gz"),
+    )
+}
+
+/// What to do with a delivered file, from its format and the host OS.
+pub fn deliver_instruction(format: DeliverFormat, repo: &str, tag: &str, file: &str, os: &str) -> String {
+    match format {
+        DeliverFormat::Rockspec => format!("Install it into your Lua environment with `luarocks install {file}`."),
+        DeliverFormat::DbtPackage => format!(
+            "Add it to your dbt project's packages.yml as `- git: \"https://github.com/{repo}.git\"` with `revision: \"{tag}\"`, then run `dbt deps`."
+        ),
+        DeliverFormat::Source => {
+            format!("This is the {tag} source archive of {repo}: unpack it and follow the project's README to build or use it.")
+        }
+        DeliverFormat::DesktopApp => match os {
+            "macos" => "Open the disk image and drag the application into Applications.".into(),
+            "windows" => "Run the installer.".into(),
+            _ if file.ends_with(".deb") => "Install it with your package manager: `sudo dpkg -i` on the file.".into(),
+            _ => "Make it executable and run it; an AppImage needs no installation.".into(),
+        },
+    }
 }
 
 /// A value at a path through a JSON reply, as a string.
@@ -197,6 +379,7 @@ pub fn host_plugin_destination(host: &str, os: &str) -> Option<String> {
         ("tableau", _) => "Copy it to ~/Documents/My Tableau Repository/Connectors and restart Tableau.".into(),
         ("metabase", _) => "Copy it into the plugins/ directory beside your Metabase jar and restart Metabase.".into(),
         ("powerapps", _) => "Upload it in Power Apps: Data → Custom connectors → Import an OpenAPI file.".into(),
+        ("azure-functions", _) => "Deploy the zip to an Azure Functions app: `az functionapp deployment source config-zip -g <group> -n <app> --src <file>`, then reference the functions from your Data Factory pipeline.".into(),
         _ => return None,
     })
 }
@@ -279,6 +462,85 @@ pub fn stale_links<'a>(links: &'a [(String, std::path::PathBuf)], dir: &std::pat
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hypervisors_are_found_in_preference_order_and_images_matched_to_them() {
+        use super::Hypervisor::*;
+        use super::{find_hypervisors, hypervisor_candidates, pick_image, valid_vm_name, vbox_import_args, vm_registered};
+        for os in ["macos", "windows", "linux"] {
+            assert!(hypervisor_candidates(os).iter().any(|(h, _)| *h == Virtualbox), "{os} knows VirtualBox");
+            assert!(hypervisor_candidates(os).iter().any(|(h, _)| *h == Vmware), "{os} knows VMware");
+        }
+        let both = find_hypervisors("macos", |p| p.ends_with("VBoxManage") || p.ends_with("Fusion.app"));
+        assert_eq!(both, vec![(Virtualbox, "/usr/local/bin/VBoxManage".to_string()), (Vmware, "/Applications/VMware Fusion.app".to_string())]);
+        assert!(find_hypervisors("linux", |_| false).is_empty());
+        let only_app = find_hypervisors("macos", |p| p == "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage");
+        assert_eq!(only_app, vec![(Virtualbox, "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage".to_string())]);
+
+        let pattern = regex::Regex::new(r"^Exasol_Community_Edition_v8_\d+_(virtualbox|vmware)\.ova$").unwrap();
+        let files: Vec<String> = ["Exasol_Community_Edition_v8_202501_virtualbox.ova", "Exasol_Community_Edition_v8_202502_virtualbox.ova", "Exasol_Community_Edition_v8_202502_vmware.ova", "Exasol_Community_Edition_v8_202502_virtualbox.ova.part", "notes.txt"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(pick_image(&files, &pattern, &[Virtualbox, Vmware]), Some((Virtualbox, "Exasol_Community_Edition_v8_202502_virtualbox.ova".into())), "VirtualBox first, newest name wins, partial downloads ignored");
+        assert_eq!(pick_image(&files, &pattern, &[Vmware]), Some((Vmware, "Exasol_Community_Edition_v8_202502_vmware.ova".into())));
+        assert_eq!(pick_image(&files[3..], &pattern, &[Virtualbox, Vmware]), None);
+
+        assert!(vm_registered("\"exakit-linux\" {dc4ec131}\n\"Exasol Community Edition\" {aa}\n", "Exasol Community Edition"));
+        assert!(!vm_registered("\"Exasol Community Edition 2\" {aa}\n", "Exasol Community Edition"));
+        assert!(!vm_registered("", "Exasol Community Edition"));
+        assert!(valid_vm_name("Exasol Community Edition") && !valid_vm_name("") && !valid_vm_name("a\"b") && !valid_vm_name("x;rm"));
+        assert_eq!(vbox_import_args("/d/x.ova", "Exasol Community Edition"), vec!["import", "/d/x.ova", "--vsys", "0", "--vmname", "Exasol Community Edition"]);
+        let src: super::InstallSource = serde_json::from_str(r#"{"kind":"vm-appliance","imagePattern":"^x$","downloadPage":"https://e/","vmName":"E"}"#).unwrap();
+        assert_eq!(src, super::InstallSource::VmAppliance { image_pattern: "^x$".into(), download_page: "https://e/".into(), vm_name: "E".into() });
+    }
+
+    #[test]
+    fn database_side_coordinates_deserialize_and_aliases_are_one_word() {
+        let slc: super::InstallSource = serde_json::from_str(r#"{"kind":"slc"}"#).unwrap();
+        assert_eq!(slc, super::InstallSource::Slc { alias: None });
+        let rust: super::InstallSource = serde_json::from_str(r#"{"kind":"slc","alias":"rust"}"#).unwrap();
+        assert_eq!(rust, super::InstallSource::Slc { alias: Some("rust".into()) });
+        let db: super::InstallSource = serde_json::from_str(r#"{"kind":"db-scripts","schema":"EXA_RLS"}"#).unwrap();
+        assert_eq!(db, super::InstallSource::DbScripts { schema: "EXA_RLS".into() });
+        assert!(super::valid_alias("rust") && super::valid_alias("PYTHON3") && super::valid_alias("java_17"));
+        assert!(super::safe_file_name("exaerror-2.0.3-1.rockspec") && super::safe_file_name("Exasol-Panorama_0.2.0_universal.dmg"));
+        for bad in ["", ".", "..", "../x.sql", "a/b.sql", "a\\b.sql", "x\0y"] {
+            assert!(!super::safe_file_name(bad), "{bad:?} must be refused");
+        }
+        assert!(!super::valid_alias("") && !super::valid_alias("3py") && !super::valid_alias("py thon") && !super::valid_alias("--all"));
+    }
+
+    #[test]
+    fn deliver_formats_split_release_files_from_source_archives() {
+        use super::DeliverFormat::*;
+        assert!(Rockspec.from_release_asset());
+        assert!(DesktopApp.from_release_asset());
+        assert!(!DbtPackage.from_release_asset());
+        assert!(!Source.from_release_asset());
+        let src: super::InstallSource =
+            serde_json::from_str(r#"{"kind":"deliver","format":"dbt-package"}"#).unwrap();
+        assert_eq!(src, super::InstallSource::Deliver { format: DbtPackage, asset_pattern: None });
+        assert!(serde_json::from_str::<super::InstallSource>(r#"{"kind":"deliver","format":"wheel"}"#).is_err());
+    }
+
+    #[test]
+    fn source_archive_is_served_by_github_com_and_named_after_the_repo() {
+        let (url, file) = super::source_archive("exasol/dbt-exasol-utils", "v0.3.0");
+        assert_eq!(url, "https://github.com/exasol/dbt-exasol-utils/archive/refs/tags/v0.3.0.tar.gz");
+        assert_eq!(file, "dbt-exasol-utils-v0.3.0.tar.gz");
+    }
+
+    #[test]
+    fn deliver_instruction_comes_from_the_format_and_the_host() {
+        use super::{deliver_instruction, DeliverFormat::*};
+        assert!(deliver_instruction(Rockspec, "exasol/error-reporting-lua", "2.0.3", "exaerror-2.0.3-1.rockspec", "macos")
+            .contains("luarocks install exaerror-2.0.3-1.rockspec"));
+        let dbt = deliver_instruction(DbtPackage, "exasol/dbt-exasol-utils", "v0.3.0", "x.tar.gz", "linux");
+        assert!(dbt.contains("https://github.com/exasol/dbt-exasol-utils.git") && dbt.contains("v0.3.0") && dbt.contains("dbt deps"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App.dmg", "macos").contains("disk image"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App_amd64.deb", "linux").contains("dpkg"));
+        assert!(deliver_instruction(DesktopApp, "r", "t", "App.AppImage", "linux").contains("AppImage"));
+        assert!(deliver_instruction(Source, "exasol/udf-runner-cpp", "0.1.0", "f", "linux").contains("0.1.0 source archive"));
+    }
+
     use super::*;
 
     #[test]
@@ -446,7 +708,7 @@ mod tests {
 
     #[test]
     fn every_host_has_a_destination_and_windows_only_hosts_say_so_elsewhere() {
-        for host in ["vscode", "powerbi", "tableau", "metabase", "powerapps"] {
+        for host in ["vscode", "powerbi", "tableau", "metabase", "powerapps", "azure-functions"] {
             for os in ["macos", "windows", "linux"] {
                 assert!(host_plugin_destination(host, os).is_some(), "{host}/{os}");
             }
