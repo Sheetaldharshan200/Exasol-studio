@@ -366,8 +366,9 @@ pub fn save_profile(
             } else {
                 profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
             }
-            if let Some(n) = &mut profile.network {
-                crate::network::seal(key.as_ref(), &profile.id, n, profiles[idx].network.as_ref());
+            match &mut profile.network {
+                Some(n) => crate::network::seal(key.as_ref(), &profile.id, n, profiles[idx].network.as_ref()),
+                None => crate::network::forget_dropped(&profile.id, None, profiles[idx].network.as_ref()),
             }
             profile.created_at = profiles[idx].created_at.clone();
             profiles[idx] = profile.clone();

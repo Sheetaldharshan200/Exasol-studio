@@ -39,7 +39,7 @@ pub struct AppState {
     pub recent_schemas: std::sync::Mutex<HashMap<String, String>>,
     /// What carries each open connection (pin tunnel, SSH tunnel, proxy
     /// relay), by profile id; dropped with the connection.
-    pub carriers: std::sync::Mutex<HashMap<String, crate::connection::Carrier>>,
+    pub carriers: std::sync::Mutex<HashMap<String, crate::carrier::Carrier>>,
 }
 
 impl AppState {
