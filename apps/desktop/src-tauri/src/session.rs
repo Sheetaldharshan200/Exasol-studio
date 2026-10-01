@@ -145,10 +145,16 @@ pub fn counts_as_change(statement: &str) -> bool {
 /// Whether an error means the connection itself is gone (not a SQL error).
 pub fn is_connection_lost(error: &str) -> bool {
     let e = error.to_ascii_lowercase();
-    ["connection closed", "connection reset", "broken pipe", "websocket", "connection refused", "timed out while", "os error 54", "os error 32", "unexpected eof", "peer closed connection", "error communicating with database", "session does not exist", "session has been killed"]
-        .iter()
-        .any(|p| e.contains(p))
+    LOST_CONNECTION_PATTERNS.iter().any(|p| e.contains(p))
 }
+
+/// Lower-case fragments of an error that means the connection is gone. Sent
+/// to the driver bridges too, so every driver ends a script on the same ones.
+pub const LOST_CONNECTION_PATTERNS: &[&str] = &[
+    "connection closed", "connection reset", "broken pipe", "websocket", "connection refused", "timed out while",
+    "os error 54", "os error 32", "unexpected eof", "peer closed connection", "error communicating with database",
+    "session does not exist", "session has been killed",
+];
 
 /// `OPEN SCHEMA` for a catalog name, quoted exactly.
 pub fn open_schema_sql(schema: &str) -> String {
@@ -596,6 +602,7 @@ mod tests {
         assert!(is_connection_lost("WebSocket protocol error: Connection closed normally"));
         assert!(!is_connection_lost("[42000] object TABLE_X not found [line 1, column 15]"));
         assert!(!is_connection_lost("[22002] data exception - numeric value out of range"));
+        assert!(LOST_CONNECTION_PATTERNS.iter().all(|p| *p == p.to_ascii_lowercase()), "bridges match lower-cased errors");
     }
 
     #[test]

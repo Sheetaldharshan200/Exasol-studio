@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/exasol/exasol-driver-go"
@@ -47,10 +48,18 @@ type request struct {
 	// after an empty result where Studio asked (StopIfEmpty, per statement).
 	StopOnError *bool  `json:"stopOnError"`
 	StopIfEmpty []bool `json:"stopIfEmpty"`
+	// Lower-case error fragments meaning the connection is gone: always stop.
+	LostPatterns []string `json:"lostPatterns"`
 }
 
 func halts(req request, i int, e entry) bool {
 	if e.Error != nil {
+		msg := strings.ToLower(*e.Error)
+		for _, p := range req.LostPatterns {
+			if strings.Contains(msg, p) {
+				return true
+			}
+		}
 		return req.StopOnError == nil || *req.StopOnError
 	}
 	empty := i < len(req.StopIfEmpty) && req.StopIfEmpty[i]

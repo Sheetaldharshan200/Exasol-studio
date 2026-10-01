@@ -2,7 +2,7 @@
 // Error Position / Statement Markers). Exasol reports the place as
 // "[line L, column C]" relative to the statement it ran.
 
-import { splitStatements } from "./sql-text.ts";
+import { splitStatements, stripSqlComments } from "./sql-text.ts";
 
 export type ErrorMarker = { start: number; end: number; message: string };
 
@@ -30,18 +30,24 @@ export type RunPlace = {
   split: boolean;
   /** Index of the failed statement among the run's results. */
   index: number;
+  /** Comments were stripped before sending: `runText` is the unstripped
+   *  buffer slice, and the server's line/column refer to the stripped text. */
+  stripped?: boolean;
 };
 
-/** Where the failed statement starts in the buffer: by its index in the run,
- *  else its occurrence nearest the run. -1 when it is not there as sent. */
-function statementStart(buffer: string, stmt: string, place: RunPlace): number {
+/** Where the failed statement is in the buffer: by its index in the run,
+ *  else its occurrence nearest the run. `exact` says the buffer text is what
+ *  the server saw, so its line/column apply. Null when it is not there. */
+function locate(buffer: string, stmt: string, place: RunPlace): { at: number; length: number; exact: boolean } | null {
   const parts = place.split ? splitStatements(place.runText) : [{ text: place.runText.trim(), start: 0, end: place.runText.length }];
   const part = parts[place.index];
-  if (part && part.text === stmt) {
+  const sent = part && (place.stripped ? stripSqlComments(part.text).trim() : part.text);
+  if (part && sent === stmt) {
     const at = place.runStart + place.runText.indexOf(part.text, part.start);
-    if (buffer.slice(at, at + stmt.length) === stmt) return at;
+    if (buffer.slice(at, at + part.text.length) === part.text) return { at, length: part.text.length, exact: part.text === stmt };
   }
-  return closest(buffer, stmt, place.runStart);
+  const at = closest(buffer, stmt, place.runStart);
+  return at < 0 ? null : { at, length: stmt.length, exact: true };
 }
 
 /**
@@ -58,10 +64,11 @@ export function errorMarker(
 ): ErrorMarker | null {
   const stmt = statement.trim();
   if (!stmt || (!opts.position && !opts.statement)) return null;
-  const at = statementStart(buffer, stmt, opts.place);
-  if (at < 0) return null;
+  const found = locate(buffer, stmt, opts.place);
+  if (!found) return null;
+  const { at, length, exact } = found;
   const message = error.trim();
-  const pos = opts.position ? errorPosition(error) : null;
+  const pos = opts.position && exact ? errorPosition(error) : null;
   if (pos) {
     const lines = stmt.split("\n");
     if (pos.line >= 1 && pos.line <= lines.length) {
@@ -72,7 +79,9 @@ export function errorMarker(
       return { start, end: start + Math.max(word?.[0].length ?? 0, 1), message };
     }
   }
-  return opts.statement ? { start: at, end: at + stmt.length, message } : null;
+  // A stripped statement gets the statement marker: the reported column
+  // refers to text the buffer no longer has in that shape.
+  return opts.statement || !exact ? { start: at, end: at + length, message } : null;
 }
 
 /** Where the run's SQL starts in the buffer: the selection if one was run,
