@@ -39,7 +39,29 @@ export type ConnectionProfile = {
   sslCa?: string | null;
   /** password | access_token | refresh_token; a token sits in `password`. */
   authMethod?: string;
+  /** An SSH tunnel or a proxy to reach the database. */
+  network?: NetworkSettings | null;
 };
+
+export type SshSettings = {
+  /** A host name, or a Host alias from ~/.ssh/config. */
+  host: string;
+  port?: number | null;
+  user?: string | null;
+  /** agent | key | password */
+  auth: string;
+  keyPath?: string | null;
+  /** A jump host, e.g. user@bastion:22. */
+  jump?: string | null;
+  /** strict | accept_new | ask */
+  hostKey: string;
+  keepaliveSecs: number;
+  /** Typed to set or replace; never read back (blank keeps the stored one). */
+  secret: string;
+};
+
+export type ProxySettings = { kind: "socks5" | "http"; host: string; port: number; user?: string | null; secret: string };
+export type NetworkSettings = { ssh?: SshSettings | null; proxy?: ProxySettings | null };
 
 export type PingResult = {
   reachable: boolean;
@@ -678,6 +700,10 @@ export const ipc = {
     call<void>("delete_connection_profile", { profileId }),
   /** The SHA-256 fingerprint of the certificate the server presents now. */
   serverCertificate: (host: string, port: number) => call<string>("server_certificate", { host, port }),
+  /** Choose an SSH private key file; its full path, or null when cancelled. */
+  pickSshKey: () => call<string | null>("pick_ssh_key"),
+  /** Trust the SSH host key the person was shown (exactly those fingerprints). */
+  sshTrustHostKey: (ssh: SshSettings, fingerprint: string) => call<null>("ssh_trust_host_key", { ssh, fingerprint }),
   /** Choose a CA certificate file; its full path, or null when cancelled. */
   pickCaFile: () => call<string | null>("pick_ca_file"),
   /** Whether a connected profile still runs a query (not just an open port). */

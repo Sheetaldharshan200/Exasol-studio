@@ -461,7 +461,8 @@ export function Sidebar({
       [
         ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port, connected: true })),
         ...profiles
-          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_"))
+          // A connection behind an SSH tunnel or proxy cannot be pinged directly.
+          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_") && !p.network)
           .map((p) => ({ id: p.id, host: p.host, port: p.port, connected: false })),
       ],
     [connections, profiles],

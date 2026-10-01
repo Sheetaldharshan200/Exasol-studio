@@ -221,6 +221,7 @@ pub fn run() {
             connection::server_certificate,
             connection::pick_ca_file,
             ssh_tunnel::ssh_trust_host_key,
+            connection::pick_ssh_key,
             session_cmd::session_set_autocommit,
             session_cmd::session_commit,
             session_cmd::session_rollback,

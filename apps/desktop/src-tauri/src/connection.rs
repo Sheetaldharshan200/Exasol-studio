@@ -285,6 +285,23 @@ pub async fn pick_ca_file(app: tauri::AppHandle) -> AppResult<Option<String>> {
     Ok(picked.and_then(|p| p.into_path().ok()).map(|p| p.to_string_lossy().into_owned()))
 }
 
+/// Choose an SSH private key file in the system dialog; its full path.
+#[tauri::command]
+pub async fn pick_ssh_key(app: tauri::AppHandle) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let start = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".ssh"));
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = app.dialog().file().set_title("SSH private key");
+        if let Some(dir) = start.filter(|d| d.is_dir()) {
+            d = d.set_directory(dir);
+        }
+        d.blocking_pick_file()
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?;
+    Ok(picked.and_then(|p| p.into_path().ok()).map(|p| p.to_string_lossy().into_owned()))
+}
+
 /// The SHA-256 fingerprint of the certificate a server presents now — for the
 /// form's "Read from server", and to compare with what an administrator says.
 #[tauri::command]
