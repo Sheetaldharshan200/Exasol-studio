@@ -64,7 +64,8 @@ pub fn is_write(statement: &str) -> bool {
     let second = words.next().unwrap_or("");
     let session_only = first == "ALTER" && second == "SESSION";
     let into = b.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == "INTO");
-    !((READ_FIRST.contains(&first) || session_only) && !into)
+    // EXPLAIN describes a statement without running it, whatever it is.
+    first != "EXPLAIN" && !((READ_FIRST.contains(&first) || session_only) && !into)
 }
 
 /// Why a read-only connection refuses these statements, or None.
@@ -72,6 +73,20 @@ pub fn read_only_refusal<S: AsRef<str>>(statements: &[S], name: &str) -> Option<
     let w = statements.iter().map(AsRef::as_ref).find(|s| is_write(s))?;
     let shown: String = w.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(90).collect();
     Some(format!("\"{name}\" is read-only. This changes data or objects: {shown}"))
+}
+
+/// On a read-only connection, the statements of a hook that may run, and a
+/// note for each one left out. Elsewhere all of them run.
+pub fn hooks_allowed(statements: Vec<String>, read_only: bool) -> (Vec<String>, Vec<String>) {
+    if !read_only {
+        return (statements, Vec::new());
+    }
+    let (writes, reads): (Vec<String>, Vec<String>) = statements.into_iter().partition(|s| is_write(s));
+    let skipped = writes
+        .iter()
+        .map(|s| format!("{} — not run: the connection is read-only", s.chars().take(80).collect::<String>()))
+        .collect();
+    (reads, skipped)
 }
 
 /// Properties → Safety → Read-only connection.
@@ -94,6 +109,7 @@ mod tests {
         }
         assert!(!is_write("SELECT 'INSERT INTO x', \"INTO\" FROM t"), "words in strings and quoted names do not count");
         assert!(!is_write("SELECT 'it''s INTO' FROM t"), "an escaped quote stays inside the string");
+        assert!(!is_write("EXPLAIN VIRTUAL INSERT INTO t SELECT * FROM v"), "EXPLAIN does not run it");
     }
 
     #[test]
@@ -106,6 +122,15 @@ mod tests {
         assert!(read_only(&state, "p1"));
         assert!(!read_only(&state, "p2"), "per connection");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_read_only_connection_runs_only_the_reading_hooks() {
+        let hooks = vec!["ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY'".to_string(), "DELETE FROM audit".to_string()];
+        let (run, skipped) = hooks_allowed(hooks.clone(), true);
+        assert_eq!(run, vec![hooks[0].clone()]);
+        assert_eq!(skipped, vec!["DELETE FROM audit — not run: the connection is read-only".to_string()]);
+        assert_eq!(hooks_allowed(hooks.clone(), false), (hooks, Vec::new()));
     }
 
     #[test]

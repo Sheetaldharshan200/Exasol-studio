@@ -631,6 +631,13 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return mockInvoke(command, args) as Promise<T>;
 }
 
+type RunGuard = (req: { profileId: string; connectionName: string; sql: string; split: boolean }) => Promise<void>;
+let runGuard: RunGuard | null = null;
+/** Production safety before every executeSql (lib/run-guard.ts): throws to refuse. */
+export function setRunGuard(fn: RunGuard | null) {
+  runGuard = fn;
+}
+
 export type SecretAnswer = { secret: string; remember: boolean };
 type SecretPrompt = (req: { profileId: string }) => Promise<SecretAnswer | null>;
 let secretPrompt: SecretPrompt | null = null;
@@ -936,13 +943,11 @@ export const ipc = {
     call<FsEntry[]>("fs_search", { root, query, limit }),
   fsDelete: (path: string) => call<void>("fs_delete", { path }),
   exapumpAvailable: () => call<boolean>("exapump_available"),
+  /** Load a file with ExaPump into a saved connection (credentials and
+   *  certificate trust are resolved in Rust from the profile). */
   exapumpUpload: (args: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
+    profileId: string;
     schema?: string;
-    tls: boolean;
     file: string;
     table: string;
     delimiter?: string;
@@ -961,7 +966,7 @@ export const ipc = {
     /** Execution options; the backend stops on errors and goes on after empty results by default. */
     stop?: { onError?: boolean; onNoRows?: boolean },
   ) =>
-    call<ExecuteResponse>("execute_sql", {
+    (runGuard ? runGuard({ profileId, connectionName, sql, split }) : Promise.resolve()).then(() => call<ExecuteResponse>("execute_sql", {
       profileId,
       connectionName,
       sql,
@@ -972,7 +977,7 @@ export const ipc = {
       tabId,
       stopOnError: stop?.onError,
       stopOnNoRows: stop?.onNoRows,
-    }),
+    })),
   // ── The SQL tab's own session (session.rs) ──
   /** Never opens a session: looking at a tab does not connect it. */
   sessionInfo: (tabId: string, profileId?: string) => call<SessionInfo>("session_info", { tabId, profileId }),

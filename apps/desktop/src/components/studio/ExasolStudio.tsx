@@ -75,8 +75,8 @@ import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
 import { useConnSettings } from "./use-conn-settings";
 import { EnvBadge, envOf } from "./EnvBadge";
-import { DEFAULT_CONN_SETTINGS, ENVIRONMENTS, confirmsDanger } from "@/lib/conn-settings";
-import { classifyScript, dangerQuestion, editsQuestion, readOnlyRefusal } from "@/lib/sql-classify";
+import { DEFAULT_CONN_SETTINGS } from "@/lib/conn-settings";
+import { editsQuestion } from "@/lib/sql-classify";
 import { errorMarker, runStartIn } from "@/lib/error-markers";
 import { importNotice } from "@/lib/connect-flow";
 import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
@@ -1725,29 +1725,6 @@ export function ExasolStudio({
   }, []);
 
   // Open (and optionally run) a query built in the visual query builder.
-  /**
-   * Production safety before a run (Properties → Environment and Safety): a
-   * read-only connection refuses writes (the backend refuses them too), and
-   * statements that destroy data ask first — always on Prod. False: do not run.
-   */
-  function safeToRun(sql: string, split: boolean): boolean {
-    if (!connection) return true;
-    const stmts = classifyScript(sql, split);
-    if (safety.readOnly) {
-      const why = readOnlyRefusal(stmts, connection.profile.name);
-      if (why) {
-        pushNotification("warning", "Read-only connection", why);
-        return false;
-      }
-    }
-    if (confirmsDanger(safety)) {
-      const env = ENVIRONMENTS.find((e) => e.value === safety.env && e.value !== "none");
-      const q = dangerQuestion(stmts, env ? `${connection.profile.name} (${env.label})` : connection.profile.name);
-      if (q && !window.confirm(q)) return false;
-    }
-    return true;
-  }
-
   async function openBuiltSql(sql: string, runNow: boolean, title?: string) {
     const key = connKey;
     tabCounter.current += 1;
@@ -1762,7 +1739,6 @@ export function ExasolStudio({
     updateTabs(key, (list) => [...list, tab]);
     setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
     if (runNow && connection) {
-      if (!safeToRun(sql, splitsFor("script", execSettings.splitStatements))) return;
       if (!acquireRun(connection.profile.id)) {
         // The tab still opens with its SQL — it just waits for the session.
         patchTab(tab.id, { execError: "Another statement is running on this connection. Press Run when it finishes.", resultView: "results" });
@@ -2325,7 +2301,6 @@ export function ExasolStudio({
       // splitting is off (Settings → Execution, or the toolbar).
       const split = splitsFor(scope, execSettings.splitStatements);
       const stop = { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows };
-      if (!safeToRun(sqlToRun, split)) return;
 
       if (!acquireRun(connection.profile.id)) return;
       // The marker belongs to THIS tab's model, even if the tab changes mid-run.
@@ -2432,7 +2407,7 @@ export function ExasolStudio({
         releaseRun();
       }
     },
-    [connection, running, activeTab, maxRows, loadHistory, execSettings, safety],
+    [connection, running, activeTab, maxRows, loadHistory, execSettings],
   );
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).

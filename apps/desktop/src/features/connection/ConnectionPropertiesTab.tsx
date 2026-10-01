@@ -33,6 +33,7 @@ import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { DriversSection, DRIVER_ICON, type DriverReadiness } from "@/features/connection/DriversSection";
 import { EV_TRUSTED, openConnectWindow, type TrustedCertificate } from "@/lib/connect-window";
+import { agent as agentClient } from "@/lib/agent-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -470,6 +471,9 @@ export function ConnectionPropertiesTab({
         setProfileSnapshot(JSON.stringify(draft));
       }
       await ipc.connectionSettingsSet(profileId, settings);
+      // The assistant's copy of a connection follows its safety settings
+      // before "Applied" shows (App also re-grants on the event).
+      if (connectedLive) await agentClient.grantConnection(profileId).catch(() => undefined);
       setSavedSnapshot(JSON.stringify(settings));
       window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
       onSaved?.();
@@ -671,7 +675,7 @@ export function ConnectionPropertiesTab({
                 onChange={(v) => patch((n) => { n.safety.env = v as Environment; })}
               />
             </SectionCard>
-            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant.">
+            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts, data loads and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant. A query can still call a UDF that writes elsewhere: for a guarantee, sign in with a database user that has only SELECT privileges.">
               <CheckRow label="Read-only connection" checked={s.safety.readOnly} onChange={(v) => patch((n) => { n.safety.readOnly = v; })} />
             </SectionCard>
             <SectionCard title="Confirm destructive statements" description="Ask before running DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause. Always on for Prod.">

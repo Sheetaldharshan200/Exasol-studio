@@ -367,6 +367,7 @@ pub async fn install(
     check_schema(schema)?;
     let state = app.state::<crate::state::AppState>();
     let profile = crate::profiles::find_profile(&state, profile_id)?;
+    refuse_read_only(&state, profile_id, &profile.name)?;
     let (version, files) = fetch_files(app, id, repo, requested).await?;
     let (statements, objects) = statements_for(schema, &files)?;
     let actual = fingerprint(&statements);
@@ -442,9 +443,18 @@ pub async fn install(
 }
 
 /// Undo an install: drop what it created, on the connection it used.
+/// Installing or removing database objects writes: not on a read-only connection.
+fn refuse_read_only(state: &crate::state::AppState, profile_id: &str, name: &str) -> AppResult<()> {
+    if crate::safety::read_only(state, profile_id) {
+        return Err(AppError::InvalidSettings(format!("\"{name}\" is read-only: scripts cannot be installed into or removed from it.")));
+    }
+    Ok(())
+}
+
 pub async fn uninstall(app: &AppHandle, record: &DbRecord) -> AppResult<()> {
     record.validate()?;
     let state = app.state::<crate::state::AppState>();
+    refuse_read_only(&state, &record.connection.id, &record.connection.id)?;
     crate::connection::connect(app.state(), record.connection.id.clone()).await?;
     let pool = crate::connection::require_pool(&state, &record.connection.id).await?;
     let mut conn = pool.acquire().await.map_err(|e| AppError::Storage(e.to_string()))?;

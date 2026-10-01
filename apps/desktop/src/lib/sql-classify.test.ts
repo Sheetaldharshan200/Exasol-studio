@@ -16,6 +16,7 @@ test("writes, wherever they hide", () => {
     assert.equal(k(s), "write", s);
   }
   assert.equal(k("SELECT 'INSERT INTO x' FROM t"), "read", "words inside strings do not count");
+  assert.equal(k("EXPLAIN VIRTUAL INSERT INTO t SELECT * FROM v"), "read", "EXPLAIN does not run the statement");
   assert.equal(k('SELECT "INTO" FROM t'), "read", "nor in quoted names");
 });
 
