@@ -1,9 +1,9 @@
 //! TLS trust for database connections: certificate pinning and trust on
-//! first use. The driver cannot pin a fingerprint, so a pinned certificate is
-//! kept as a file and given to the driver as its CA, in verify-identity mode:
-//! the very connection that signs in must present a certificate signed by the
-//! pinned one's key, for this host. (A separate "check, then connect without
-//! verifying" would let a man in the middle pass the check and take the login.)
+//! first use. The driver cannot pin a fingerprint, and its CA option only
+//! ADDS to its built-in public roots, so a pinned connection does not use the
+//! driver's TLS at all: it goes through a loopback tunnel (pin_tunnel.rs)
+//! whose TLS to the server is verified by `PinVerifier` — the leaf
+//! certificate must be exactly the pinned one, on every connection.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -110,54 +110,101 @@ pub fn is_untrusted_certificate(error: &str) -> bool {
         .any(|p| e.contains(p))
 }
 
-/// The first host of an Exasol host range (`db1..4.example.com` → `db1.example.com`):
-/// the nodes of a cluster present the same certificate.
+/// The first host of an Exasol host range (`db1..4.example.com` → `db1.example.com`).
 pub fn first_host(host: &str) -> String {
-    let b = host.as_bytes();
-    // The last "..", as the driver reads a range.
+    expand_hosts(host).swap_remove(0)
+}
+
+/// The nodes of an Exasol host range, as the driver reads it (the last ".."
+/// between digits, ascending): `db1..3.x` → db1.x, db2.x, db3.x.
+pub fn expand_hosts(host: &str) -> Vec<String> {
     if let Some(i) = host.rfind("..") {
-        let digit_before = i > 0 && b[i - 1].is_ascii_digit();
-        let end = host[i + 2..].find(|c: char| !c.is_ascii_digit()).map_or(host.len(), |n| i + 2 + n);
-        if digit_before && end > i + 2 {
-            return format!("{}{}", &host[..i], &host[end..]);
+        let before = &host[..i];
+        let after = &host[i + 2..];
+        let digits_before = before.len() - before.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+        let digits_after = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if digits_before > 0 && digits_after > 0 {
+            let prefix = &before[..before.len() - digits_before];
+            let start_s = &before[before.len() - digits_before..];
+            let suffix = &after[digits_after..];
+            if let (Ok(start), Ok(end)) = (start_s.parse::<usize>(), after[..digits_after].parse::<usize>()) {
+                if start < end && end - start < 64 {
+                    let width = if start_s.len() > start.to_string().len() { start_s.len() } else { 0 };
+                    return (start..=end).map(|n| format!("{prefix}{n:0width$}{suffix}")).collect();
+                }
+            }
         }
     }
-    host.to_string()
+    vec![host.to_string()]
 }
 
-/// PEM for one DER certificate.
-pub fn pem_of(der: &[u8]) -> String {
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(der);
-    let lines: Vec<&str> = b64.as_bytes().chunks(64).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect();
-    format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", lines.join("\n"))
+/// Accepts exactly the pinned certificate: its SHA-256 must match, and the
+/// handshake signature (checked by the provider) proves the server holds its
+/// key. Anything else fails the handshake — nothing is relayed.
+#[derive(Debug)]
+pub(crate) struct PinVerifier {
+    pin: String,
+    provider: rustls::crypto::CryptoProvider,
 }
 
-/// The fingerprint of the first certificate in a PEM file's text.
-pub fn pem_fingerprint(pem: &str) -> Option<String> {
-    use base64::Engine;
-    let body: String = pem.lines().skip_while(|l| !l.starts_with("-----BEGIN CERTIFICATE")).skip(1).take_while(|l| !l.starts_with("-----END")).collect();
-    let der = base64::engine::general_purpose::STANDARD.decode(body.trim()).ok().filter(|d| !d.is_empty())?;
-    Some(fingerprint_of(&der))
-}
-
-/// The pinned certificate as a CA file the driver can use: kept under
-/// `<data>/pins/<FINGERPRINT>.pem`. Written from the server's certificate the
-/// first time, and only if it has exactly the pinned fingerprint; a different
-/// certificate is reported as changed.
-pub async fn pin_file(data_dir: &std::path::Path, host: &str, port: u16, pin: &str, timeout: Duration) -> crate::error::AppResult<std::path::PathBuf> {
-    let path = data_dir.join("pins").join(format!("{pin}.pem"));
-    if std::fs::read_to_string(&path).ok().and_then(|t| pem_fingerprint(&t)).as_deref() == Some(pin) {
-        return Ok(path);
+impl rustls::client::danger::ServerCertVerifier for PinVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        if fingerprint_of(end_entity.as_ref()) == self.pin {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General("the server's certificate is not the pinned one".into()))
+        }
     }
-    let der = server_certificate(&first_host(host), port, timeout).await.map_err(crate::error::AppError::Database)?;
-    let actual = fingerprint_of(&der);
-    if actual != pin {
-        return Err(crate::error::AppError::CertificateChanged { expected: pin.to_string(), actual });
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
     }
-    std::fs::create_dir_all(path.parent().expect("pins dir"))?;
-    crate::storage::write_private(&path, pem_of(&der).as_bytes())?;
-    Ok(path)
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+    }
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// A TLS client that trusts only the pinned certificate.
+pub(crate) fn pinned_client(pin: &str) -> Result<Arc<rustls::ClientConfig>, String> {
+    let provider = rustls::crypto::ring::default_provider();
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(provider.clone()))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| e.to_string())?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinVerifier { pin: pin.to_string(), provider }))
+        .with_no_client_auth();
+    Ok(Arc::new(config))
+}
+
+/// For a clear message before connecting: Ok, or the certificate the server
+/// presents instead. (Not the protection — that is `PinVerifier` on every
+/// tunnelled connection.)
+pub async fn check_pin(host: &str, port: u16, pin: &str, timeout: Duration) -> crate::error::AppResult<()> {
+    let actual = server_fingerprint(&first_host(host), port, timeout).await.map_err(crate::error::AppError::Database)?;
+    if actual == pin {
+        Ok(())
+    } else {
+        Err(crate::error::AppError::CertificateChanged { expected: pin.to_string(), actual })
+    }
 }
 
 /// (encrypt, verify the CA chain) for drivers that take two switches. Always
@@ -182,15 +229,17 @@ pub fn bridge_unsupported(ssl_ca: Option<&str>, auth_method: &str, pinned: bool)
     None
 }
 
-/// The encryption mode the driver gets. A pinned certificate is checked as
-/// the CA with the host name (`verify_identity`). "disabled" and "preferred"
+/// The internal mode of a driver URL that points at a pin tunnel.
+pub const LOOPBACK_TUNNEL: &str = "loopback-tunnel";
+
+/// The encryption mode the driver gets. "disabled" and "preferred"
 /// (which falls back to plaintext when TLS fails — a downgrade a man in the
 /// middle can force) are read as "required": always encrypted.
-pub fn effective_ssl_mode(ssl_mode: &str, pinned: bool) -> &str {
-    if pinned {
-        return "verify_identity";
-    }
+pub fn effective_ssl_mode(ssl_mode: &str) -> &str {
     match ssl_mode {
+        // Only a pinned connection's own loopback tunnel (pin_tunnel.rs),
+        // which carries the TLS itself; never a saved mode.
+        LOOPBACK_TUNNEL => "disabled",
         "verify_ca" => "verify_ca",
         "verify_identity" => "verify_identity",
         _ => "required",
@@ -241,13 +290,12 @@ mod tests {
     }
 
     #[test]
-    fn a_pinned_certificate_round_trips_through_its_pem_file() {
-        let der: Vec<u8> = (0u8..=200).collect();
-        let pem = pem_of(&der);
-        assert!(pem.starts_with("-----BEGIN CERTIFICATE-----\n") && pem.ends_with("-----END CERTIFICATE-----\n"));
-        assert!(pem.lines().all(|l| l.len() <= 64));
-        assert_eq!(pem_fingerprint(&pem), Some(fingerprint_of(&der)));
-        assert_eq!(pem_fingerprint("not a certificate"), None);
+    fn a_host_range_expands_to_its_nodes() {
+        assert_eq!(expand_hosts("db1..3.example.com"), vec!["db1.example.com", "db2.example.com", "db3.example.com"]);
+        assert_eq!(expand_hosts("n08..10"), vec!["n08", "n09", "n10"]);
+        assert_eq!(expand_hosts("db.example.com"), vec!["db.example.com"]);
+        assert_eq!(expand_hosts("db4..1"), vec!["db4..1"], "not ascending: as it is");
+        assert_eq!(expand_hosts("::1"), vec!["::1"]);
     }
 
     #[test]
@@ -260,10 +308,10 @@ mod tests {
 
     #[test]
     fn a_pin_or_a_retired_mode_decides_what_the_driver_gets() {
-        assert_eq!(effective_ssl_mode("required", true), "verify_identity", "the pin is checked on the connection itself");
-        assert_eq!(effective_ssl_mode("disabled", false), "required");
-        assert_eq!(effective_ssl_mode("", false), "required");
-        assert_eq!(effective_ssl_mode("preferred", false), "required", "no plaintext fallback");
-        assert_eq!(effective_ssl_mode("verify_ca", false), "verify_ca");
+        assert_eq!(effective_ssl_mode("disabled"), "required");
+        assert_eq!(effective_ssl_mode(""), "required");
+        assert_eq!(effective_ssl_mode("preferred"), "required", "no plaintext fallback");
+        assert_eq!(effective_ssl_mode("verify_ca"), "verify_ca");
+        assert_eq!(effective_ssl_mode(LOOPBACK_TUNNEL), "disabled", "the tunnel carries the TLS");
     }
 }

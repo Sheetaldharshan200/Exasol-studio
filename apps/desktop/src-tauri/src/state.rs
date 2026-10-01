@@ -37,6 +37,8 @@ pub struct AppState {
     /// The schema last used per connection (SQL Editor → initial schema
     /// "Most Recently Used"); memory only.
     pub recent_schemas: std::sync::Mutex<HashMap<String, String>>,
+    /// Pinned connections' loopback tunnels, by profile id (pin_tunnel.rs).
+    pub pin_tunnels: std::sync::Mutex<HashMap<String, crate::pin_tunnel::PinTunnel>>,
 }
 
 impl AppState {
@@ -52,6 +54,7 @@ impl AppState {
             admin_sessions: std::sync::Mutex::new(HashMap::new()),
             app_settings: std::sync::RwLock::new(serde_json::Value::Null),
             recent_schemas: std::sync::Mutex::new(HashMap::new()),
+            pin_tunnels: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }

@@ -47,6 +47,7 @@ mod print;
 mod process;
 mod profile_check;
 mod profile_io;
+mod pin_tunnel;
 mod profile_secret;
 mod profiles;
 mod shared_registry;
