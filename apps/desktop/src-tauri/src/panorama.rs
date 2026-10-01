@@ -240,43 +240,6 @@ fn saved_addresses(app: &AppHandle) -> Vec<(String, u16, String)> {
         .unwrap_or_default()
 }
 
-/// A certificate verifier that accepts what it is shown: the browser's refusal
-/// is what this shell exists to replace, for a database the person saved.
-#[derive(Debug)]
-struct AcceptAny(rustls::crypto::CryptoProvider);
-
-impl rustls::client::danger::ServerCertVerifier for AcceptAny {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.0.signature_verification_algorithms)
-    }
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.0.signature_verification_algorithms)
-    }
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
-}
-
 fn tls_config(verify: bool) -> Result<Arc<rustls::ClientConfig>, String> {
     let provider = rustls::crypto::ring::default_provider();
     let builder = rustls::ClientConfig::builder_with_provider(Arc::new(provider.clone()))
@@ -289,7 +252,7 @@ fn tls_config(verify: bool) -> Result<Arc<rustls::ClientConfig>, String> {
         }
         builder.with_root_certificates(roots).with_no_client_auth()
     } else {
-        builder.dangerous().with_custom_certificate_verifier(Arc::new(AcceptAny(provider))).with_no_client_auth()
+        builder.dangerous().with_custom_certificate_verifier(Arc::new(crate::tls_trust::AcceptAny(provider))).with_no_client_auth()
     };
     Ok(Arc::new(config))
 }

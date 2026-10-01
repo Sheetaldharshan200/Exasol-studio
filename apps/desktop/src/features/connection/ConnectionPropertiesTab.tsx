@@ -23,13 +23,15 @@ import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, ty
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
 import { connectionUrl } from "@/lib/connection-url";
+import { AUTH_METHODS } from "@/lib/connect-flow";
+import { ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
 import { DEFAULT_CONN_SETTINGS, withConnDefaults, type ConnSettings } from "@/lib/conn-settings";
 export { DEFAULT_CONN_SETTINGS, type ConnSettings };
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { DriversSection, DRIVER_ICON, type DriverReadiness } from "@/features/connection/DriversSection";
-import { openConnectWindow } from "@/lib/connect-window";
+import { EV_TRUSTED, openConnectWindow, type TrustedCertificate } from "@/lib/connect-window";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +46,6 @@ export async function loadConnSettings(profileId: string): Promise<ConnSettings>
 
 export const ACCENT_PRESETS = ["#e11d48", "#f97316", "#eab308", "#10b981", "#0ea5e9", "#6366f1", "#a855f7", "#64748b"];
 
-const SSL_MODES = ["preferred", "required", "verify_ca", "verify_identity", "disabled"];
 
 /* ── shared building blocks (info-page design language) ─────────────────── */
 
@@ -140,29 +141,6 @@ function InputRow({ label, value, onChange, type = "text", mono = true, width = 
   );
 }
 
-function PickerRow({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
-      <span className="w-56 shrink-0 text-[12px] text-muted-foreground">{label}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex h-8 min-w-44 items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2.5 text-[12.5px] text-foreground hover:border-muted-foreground">
-            {value}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-          {options.map((o) => (
-            <DropdownMenuItem key={o} onClick={() => onChange(o)}>
-              {o === value ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="w-3.5" />} {o}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
 /* ── Properties categories ──────────────────────────────────────────────── */
 
 type CategoryId =
@@ -220,7 +198,7 @@ export function ConnectionPropertiesTab({
   profileId: string | null;
   /** New-connection mode: pre-fill these fields over the defaults (e.g. the
    *  bundled Exasol Personal profile when a direct connect couldn't proceed). */
-  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>;
   initialSection?: ConnectionSection;
   /** Bumped when the host tab is re-targeted at a section while open. */
   sectionNonce?: number;
@@ -241,7 +219,7 @@ export function ConnectionPropertiesTab({
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");
   const isNew = profileId === null;
-  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol" });
+  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "verify_identity", compression: false, driverId: "sqlx-exasol", fingerprint: "", sslCa: "", authMethod: "password" });
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
   const [driverReady, setDriverReady] = useState<Record<string, DriverReadiness>>({});
   const [testState, setTestState] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
@@ -287,6 +265,25 @@ export function ConnectionPropertiesTab({
     };
   }, [drivers]);
 
+  // A certificate trusted in the connect window is pinned in this form too
+  // (after a Test it is kept by Apply / Save).
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: UnlistenFn | undefined;
+    let alive = true;
+    void listen<TrustedCertificate>(EV_TRUSTED, ({ payload }) => {
+      setProfileDraft((d) =>
+        d.host.trim() === payload.host.trim() && String(d.port) === String(payload.port) ? { ...d, fingerprint: payload.fingerprint } : d,
+      );
+    })
+      .then((u) => (alive ? (un = u) : u()))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      un?.();
+    };
+  }, []);
+
   const [cat, setCat] = useState<CategoryId>("authentication");
   const [query, setQuery] = useState("");
   const [exasolOpen, setExasolOpen] = useState(true);
@@ -317,7 +314,7 @@ export function ConnectionPropertiesTab({
         // caller arg (e.g. a click event) must not pollute the draft, which
         // would blow up the JSON.stringify snapshots below and black-screen the
         // form. Password is never pre-filled.
-        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>;
         const draft = {
           name: typeof d.name === "string" ? d.name : "New Connection",
           notes: typeof d.notes === "string" ? d.notes : "",
@@ -326,9 +323,14 @@ export function ConnectionPropertiesTab({
           schema: typeof d.schema === "string" ? d.schema : "",
           username: typeof d.username === "string" ? d.username : "sys",
           password: "",
-          sslMode: typeof d.sslMode === "string" ? d.sslMode : "required",
+          // New connections verify the certificate; Exasol's self-signed one
+          // is offered for trust (pinning) on the first connect.
+          sslMode: typeof d.sslMode === "string" ? d.sslMode : "verify_identity",
           compression: typeof d.compression === "boolean" ? d.compression : false,
           driverId: typeof d.driverId === "string" ? d.driverId : "sqlx-exasol",
+          fingerprint: typeof d.fingerprint === "string" ? d.fingerprint : "",
+          sslCa: typeof d.sslCa === "string" ? d.sslCa : "",
+          authMethod: typeof d.authMethod === "string" ? d.authMethod : "password",
         };
         if (dead) return;
         setProfile(null);
@@ -348,6 +350,7 @@ export function ConnectionPropertiesTab({
         name: p?.name ?? "", notes: p?.notes ?? "", host: p?.host ?? "", port: String(p?.port ?? 8563),
         schema: p?.schema ?? "", username: p?.username ?? "", password: "",
         sslMode: p?.sslMode ?? "preferred", compression: p?.compression ?? false, driverId: p?.driverId ?? "sqlx-exasol",
+        fingerprint: p?.fingerprint ?? "", sslCa: p?.sslCa ?? "", authMethod: p?.authMethod ?? "password",
       };
       setProfileDraft(draft);
       setProfileSnapshot(JSON.stringify(draft));
@@ -383,6 +386,9 @@ export function ConnectionPropertiesTab({
       sslMode: profileDraft.sslMode,
       compression: profileDraft.compression,
       driverId: profileDraft.driverId,
+      fingerprint: profileDraft.fingerprint?.trim() || null,
+      sslCa: profileDraft.sslCa?.trim() || null,
+      authMethod: profileDraft.authMethod || "password",
     };
   }
 
@@ -441,6 +447,9 @@ export function ConnectionPropertiesTab({
           sslMode: profileDraft.sslMode,
           compression: profileDraft.compression,
           driverId: profileDraft.driverId,
+          fingerprint: profileDraft.fingerprint?.trim() || null,
+          sslCa: profileDraft.sslCa?.trim() || null,
+          authMethod: profileDraft.authMethod || "password",
           // Blank keeps the stored password (server-side rule).
           password: settings.auth.passwordPolicy === "session" ? "" : profileDraft.password,
         });
@@ -676,6 +685,20 @@ export function ConnectionPropertiesTab({
     }
   })();
 
+  const trustDraft: TrustDraft = {
+    host: profileDraft.host,
+    port: profileDraft.port,
+    sslMode: profileDraft.sslMode,
+    fingerprint: profileDraft.fingerprint ?? "",
+    sslCa: profileDraft.sslCa ?? "",
+    authMethod: profileDraft.authMethod ?? "password",
+  };
+  const patchTrust = (patch: Partial<TrustDraft>) => setProfileDraft((d) => ({ ...d, ...patch }));
+  const usesToken = (profileDraft.authMethod ?? "password") !== "password";
+  const secretLabel = AUTH_METHODS.find((m) => m.value === (profileDraft.authMethod ?? "password"))?.secret ?? "Password";
+  // What a test or connect needs before it can start.
+  const canTry = !!profileDraft.host.trim() && (usesToken || !!profileDraft.username.trim());
+
   const editRow = (
     label: string,
     key: "name" | "notes" | "host" | "port" | "schema" | "username" | "password",
@@ -828,10 +851,11 @@ export function ConnectionPropertiesTab({
               </div>
             </SectionCard>
             <SectionCard title="Authentication">
-              {editRow("Database Userid", "username")}
+              <SignInMethodRow draft={trustDraft} onChange={patchTrust} />
+              {editRow(usesToken ? "Database Userid (not sent with a token)" : "Database Userid", "username")}
               <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
                 <span className="flex w-56 shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-                  Database Password
+                  {secretLabel}
                   {/* The two setups people actually hit — spelled out on hover. */}
                   <span
                     className="inline-flex cursor-help"
@@ -843,7 +867,7 @@ export function ConnectionPropertiesTab({
                 <input
                   type={showPw ? "text" : "password"}
                   value={profileDraft.password}
-                  placeholder={isNew ? "Password" : "Unchanged — type to replace"}
+                  placeholder={isNew ? secretLabel : "Unchanged — type to replace"}
                   onChange={(e) => setProfileDraft((d) => ({ ...d, password: e.target.value }))}
                   className="h-8 w-full max-w-md rounded-md border border-border bg-secondary/30 px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/60"
                 />
@@ -921,7 +945,7 @@ export function ConnectionPropertiesTab({
                   <span className="text-[11px] text-warning">Runtime not installed — install it in the Drivers tab.</span>
                 ) : null}
               </div>
-              <PickerRow label="Encryption" value={profileDraft.sslMode} options={SSL_MODES} onChange={(v) => setProfileDraft((x) => ({ ...x, sslMode: v }))} />
+              <ConnectionTrustFields draft={trustDraft} onChange={patchTrust} />
               <CheckRow label="Compression" checked={profileDraft.compression} onChange={(v) => setProfileDraft((x) => ({ ...x, compression: v }))} />
             </SectionCard>
           </div>
@@ -973,7 +997,7 @@ export function ConnectionPropertiesTab({
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={() => void testConnection()}
-              disabled={testState.busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+              disabled={testState.busy || !canTry}
               className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               {testState.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
@@ -986,7 +1010,7 @@ export function ConnectionPropertiesTab({
           </div>
           <button
             onClick={() => void saveAndConnect()}
-            disabled={busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+            disabled={busy || !canTry}
             className="cta-glow flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-40"
           >
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : savedTick ? <Check className="h-3 w-3" /> : null}
@@ -1003,7 +1027,19 @@ export function ConnectionPropertiesTab({
             <RotateCcw className="h-3 w-3" /> Defaults…
           </button>
         ) : (
-          <span className="text-[11.5px] text-muted-foreground">Server-side changes apply on the next connect.</span>
+          <div className="flex min-w-0 items-center gap-2">
+            {/* The draft as edited, with the stored secret if none was typed. */}
+            <button
+              onClick={() => void testConnection()}
+              disabled={testState.busy || !canTry}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+            >
+              {testState.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
+            </button>
+            <span className={cn("min-w-0 truncate text-[11.5px]", testState.message ? (testState.ok ? "text-primary" : "text-destructive") : "text-muted-foreground")} title={testState.message}>
+              {testState.message ? (testState.ok ? `Reachable — ${testState.message}` : testState.message) : "Server-side changes apply on the next connect."}
+            </span>
+          </div>
         )}
         <button
           onClick={() => void apply()}
