@@ -12,6 +12,21 @@ use crate::state::AppState;
 const FORMAT: &str = "exasol-studio-connections";
 const VERSION: u64 = 1;
 
+/// The settings a connections file carries: everything except SQL that runs
+/// on its own — connect/disconnect hooks and the keep-alive statement. Such
+/// SQL may hold secrets, and a file from someone else must not run SQL under
+/// the importer's login without review.
+pub fn portable_settings(settings: &Value) -> Value {
+    let mut v = settings.clone();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("hooks");
+        if let Some(p) = o.get_mut("physical").and_then(Value::as_object_mut) {
+            p.remove("validationSql");
+        }
+    }
+    v
+}
+
 /// The export document: every profile without its secret, with its settings.
 pub fn build_export(profiles: &[(ConnectionProfile, Value)]) -> Value {
     let connections: Vec<Value> = profiles
@@ -23,7 +38,7 @@ pub fn build_export(profiles: &[(ConnectionProfile, Value)]) -> Value {
                     o.remove(k);
                 }
                 if !settings.is_null() {
-                    o.insert("settings".into(), settings.clone());
+                    o.insert("settings".into(), portable_settings(settings));
                 }
             }
             v
@@ -48,7 +63,7 @@ pub fn parse_import(text: &str) -> AppResult<Vec<(ConnectionProfile, Value)>> {
         .enumerate()
         .map(|(i, c)| {
             let mut c = c.clone();
-            let settings = c.as_object_mut().and_then(|o| o.remove("settings")).unwrap_or(Value::Null);
+            let settings = c.as_object_mut().and_then(|o| o.remove("settings")).map(|s| portable_settings(&s)).unwrap_or(Value::Null);
             if let Some(o) = c.as_object_mut() {
                 o.insert("id".into(), json!(""));
                 o.insert("password".into(), json!(""));
@@ -151,6 +166,26 @@ mod tests {
         assert_eq!(p.fingerprint.as_deref(), Some("AB".repeat(32).as_str()), "the pin travels");
         assert!(p.id.is_empty() && p.password.is_empty());
         assert_eq!(settings["transaction"]["autoCommit"], json!(false));
+    }
+
+    #[test]
+    fn sql_that_runs_on_its_own_never_travels_in_the_file() {
+        let settings = json!({
+            "hooks": { "connectEnabled": true, "connectSql": "GRANT DBA TO attacker" },
+            "physical": { "keepAlive": true, "validationSql": "DROP TABLE t", "idleSeconds": 60 },
+            "color": { "accent": "#e11d48" }
+        });
+        let text = build_export(&[(profile("P"), settings.clone())]).to_string();
+        assert!(!text.contains("GRANT") && !text.contains("DROP"), "{text}");
+        assert!(text.contains("#e11d48") && text.contains("idleSeconds"));
+        // A hand-made file with hooks: they are dropped on import too.
+        let doc = json!({ "format": FORMAT, "version": 1, "connections": [
+            { "name": "X", "host": "h", "port": 8563, "username": "u", "settings": settings }
+        ]});
+        let (_, imported) = parse_import(&doc.to_string()).unwrap().remove(0);
+        assert!(imported.get("hooks").is_none());
+        assert!(imported["physical"].get("validationSql").is_none());
+        assert_eq!(imported["physical"]["keepAlive"], json!(true));
     }
 
     #[test]

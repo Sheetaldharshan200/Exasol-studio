@@ -535,12 +535,11 @@ pub async fn execute_sql(
     let profile = crate::profiles::find_profile(&state, &profile_id)?;
     let native = !crate::exarrow_exec::is_exarrow(&profile.driver_id) && !crate::driver_exec::is_bridge_driver(&profile.driver_id);
     if !native {
-        // These drivers connect on their own for each run: the pin is checked
-        // here, and what only the native driver supports is said plainly.
-        if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method) {
+        // These drivers connect on their own for each run: what only the
+        // native driver applies (pin, CA file, tokens) is refused plainly.
+        if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method, profile.fingerprint.is_some()) {
             return Err(crate::error::AppError::InvalidSettings(why));
         }
-        crate::tls_trust::check_pin(&profile.host, profile.port, profile.fingerprint.as_deref(), crate::connection::connect_timeout(&state)).await?;
     }
     let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
         // exarrow is compiled in, so it runs on this runtime — no child

@@ -348,6 +348,11 @@ pub fn save_profile(
                 let _ = crate::shared_registry::remove(&old);
             }
             if profile.password.is_empty() {
+                if !crate::profile_check::may_reuse_secret(&profiles[idx], &profile) {
+                    return Err(AppError::InvalidSettings(
+                        "Enter the password or token again: the server, user or sign-in method changed, and the saved one is not sent anywhere else.".into(),
+                    ));
+                }
                 profile.password = profiles[idx].password.clone();
             } else {
                 profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
@@ -372,7 +377,9 @@ pub fn save_profile(
     // Publish outward so the `exa` CLI sees this database too. Best effort:
     // a shared-registry problem must never fail saving a connection here.
     // Internal AI identities never publish — not even transiently on create.
-    if is_mcp_identity(&profile.username) {
+    // The shared exa registry knows user + password only: a token sign-in is
+    // not published there (it would be read back as a password).
+    if is_mcp_identity(&profile.username) || profile.auth_method != "password" {
         profile.password = String::new();
         return Ok(profile);
     }
@@ -426,6 +433,11 @@ pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
             if known {
                 let _ = crate::shared_registry::remove(&id);
             }
+            continue;
+        }
+        // A token sign-in is not a password: not published (an entry with
+        // the same address may belong to another, password, connection).
+        if profile.auth_method != "password" {
             continue;
         }
         let credential_present = crate::shared_registry::read_credential(&id).is_some();

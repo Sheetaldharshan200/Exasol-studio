@@ -16,9 +16,12 @@ export function ConnectPasswordDialog() {
   const [secret, setSecret] = useState("");
   const [remember, setRemember] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  // One question at a time; two connects to the same profile share one.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const asking = useRef(new Map<string, Promise<SecretAnswer | null>>());
 
   useEffect(() => {
-    setSecretPrompt(async ({ profileId }) => {
+    const askOne = async ({ profileId }: { profileId: string }) => {
       const [profiles, settings] = await Promise.all([ipc.listConnectionProfiles().catch(() => []), loadConnSettings(profileId)]);
       const p = profiles.find((x) => x.id === profileId);
       const label = AUTH_METHODS.find((m) => m.value === (p?.authMethod ?? "password"))?.secret ?? "Password";
@@ -27,6 +30,15 @@ export function ConnectPasswordDialog() {
         setRemember(false);
         setAsk({ name: p?.name ?? "this connection", label, canRemember: settings.auth.passwordPolicy === "save", resolve });
       });
+    };
+    setSecretPrompt((req) => {
+      const pending = asking.current.get(req.profileId);
+      if (pending) return pending;
+      const next = queue.current.then(() => askOne(req));
+      queue.current = next.catch(() => undefined);
+      asking.current.set(req.profileId, next);
+      void next.finally(() => asking.current.delete(req.profileId));
+      return next;
     });
     return () => setSecretPrompt(null);
   }, []);

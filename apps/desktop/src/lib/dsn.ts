@@ -49,8 +49,10 @@ export type DsnFields = {
   sslMode?: string;
 };
 
-/** host[/FINGERPRINT][:port] */
+/** host[/FINGERPRINT][:port], or [IPv6][:port] */
 function hostPart(s: string): DsnFields {
+  const v6 = /^\[([0-9A-Fa-f:.]+)\](?::(\d+))?$/.exec(s.trim());
+  if (v6) return { host: v6[1], ...(v6[2] ? { port: v6[2] } : {}) };
   // A pin is plain hex or 32 colon-separated byte pairs; then ":port".
   const m = /^([^/:]+)(?:\/((?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]+))?(?::(\d+))?$/.exec(s.trim());
   if (!m) return { host: s.trim() };
@@ -98,7 +100,7 @@ export function parseDsn(text: string): DsnFields | null {
   // pyexasol DSN: one host (or range), an optional pin, and a port.
   if (/[:/]/.test(t)) {
     const out = hostPart(t);
-    if (/^[\w.-]+$/.test(out.host) && (out.port || out.fingerprint)) return out;
+    if ((/^[\w.-]+$/.test(out.host) || t.startsWith("[")) && (out.port || out.fingerprint)) return out;
   }
   return null;
 }

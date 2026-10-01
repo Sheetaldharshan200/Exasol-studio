@@ -1,8 +1,9 @@
-//! TLS trust for database connections: certificate fingerprint pinning and
-//! trust-on-first-use. The driver verifies a CA chain (verify_ca /
-//! verify_identity) but cannot pin a fingerprint, so a pinned profile's
-//! server certificate is read and compared here before every connect, and
-//! the connection then runs encrypted without the CA check the pin replaces.
+//! TLS trust for database connections: certificate pinning and trust on
+//! first use. The driver cannot pin a fingerprint, so a pinned certificate is
+//! kept as a file and given to the driver as its CA, in verify-identity mode:
+//! the very connection that signs in must present a certificate signed by the
+//! pinned one's key, for this host. (A separate "check, then connect without
+//! verifying" would let a man in the middle pass the check and take the login.)
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,9 +12,9 @@ use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
 /// A certificate verifier that accepts what it is shown. Used to READ a
-/// server's certificate (its fingerprint is then compared or shown), and by
-/// Panorama's shell for a database the person saved. Never on its own as
-/// "trust".
+/// server's certificate (to show or pin it), and by Panorama's proxy for a
+/// connection set to "encrypt without verifying" — or a pinned one, whose
+/// fingerprint it then checks on that same connection.
 #[derive(Debug)]
 pub(crate) struct AcceptAny(pub(crate) rustls::crypto::CryptoProvider);
 
@@ -72,6 +73,12 @@ pub fn display_fingerprint(fp: &str) -> String {
 
 /// The fingerprint of the certificate the server presents now.
 pub async fn server_fingerprint(host: &str, port: u16, timeout: Duration) -> Result<String, String> {
+    server_certificate(host, port, timeout).await.map(|der| fingerprint_of(&der))
+}
+
+/// The DER of the certificate the server presents now (read only — never a
+/// trust decision by itself).
+pub async fn server_certificate(host: &str, port: u16, timeout: Duration) -> Result<Vec<u8>, String> {
     let provider = rustls::crypto::ring::default_provider();
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(provider.clone()))
         .with_safe_default_protocol_versions()
@@ -89,7 +96,7 @@ pub async fn server_fingerprint(host: &str, port: u16, timeout: Duration) -> Res
             .map_err(|e| format!("TLS to {host}:{port} failed: {e}"))?;
         let (_, conn) = tls.get_ref();
         let leaf = conn.peer_certificates().and_then(|c| c.first()).ok_or_else(|| "the server sent no certificate".to_string())?;
-        Ok(fingerprint_of(leaf.as_ref()))
+        Ok(leaf.as_ref().to_vec())
     };
     tokio::time::timeout(timeout, handshake).await.map_err(|_| format!("{host}:{port} did not answer the TLS handshake in time"))?
 }
@@ -118,46 +125,75 @@ pub fn first_host(host: &str) -> String {
     host.to_string()
 }
 
-/// Check a pinned certificate before connecting: Ok when nothing is pinned
-/// or the server presents exactly the pinned one.
-pub async fn check_pin(host: &str, port: u16, pin: Option<&str>, timeout: Duration) -> crate::error::AppResult<()> {
-    let Some(expected) = pin else { return Ok(()) };
-    let actual = server_fingerprint(&first_host(host), port, timeout).await.map_err(crate::error::AppError::Database)?;
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(crate::error::AppError::CertificateChanged { expected: expected.to_string(), actual })
+/// PEM for one DER certificate.
+pub fn pem_of(der: &[u8]) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(der);
+    let lines: Vec<&str> = b64.as_bytes().chunks(64).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect();
+    format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", lines.join("\n"))
+}
+
+/// The fingerprint of the first certificate in a PEM file's text.
+pub fn pem_fingerprint(pem: &str) -> Option<String> {
+    use base64::Engine;
+    let body: String = pem.lines().skip_while(|l| !l.starts_with("-----BEGIN CERTIFICATE")).skip(1).take_while(|l| !l.starts_with("-----END")).collect();
+    let der = base64::engine::general_purpose::STANDARD.decode(body.trim()).ok().filter(|d| !d.is_empty())?;
+    Some(fingerprint_of(&der))
+}
+
+/// The pinned certificate as a CA file the driver can use: kept under
+/// `<data>/pins/<FINGERPRINT>.pem`. Written from the server's certificate the
+/// first time, and only if it has exactly the pinned fingerprint; a different
+/// certificate is reported as changed.
+pub async fn pin_file(data_dir: &std::path::Path, host: &str, port: u16, pin: &str, timeout: Duration) -> crate::error::AppResult<std::path::PathBuf> {
+    let path = data_dir.join("pins").join(format!("{pin}.pem"));
+    if std::fs::read_to_string(&path).ok().and_then(|t| pem_fingerprint(&t)).as_deref() == Some(pin) {
+        return Ok(path);
     }
+    let der = server_certificate(&first_host(host), port, timeout).await.map_err(crate::error::AppError::Database)?;
+    let actual = fingerprint_of(&der);
+    if actual != pin {
+        return Err(crate::error::AppError::CertificateChanged { expected: pin.to_string(), actual });
+    }
+    std::fs::create_dir_all(path.parent().expect("pins dir"))?;
+    crate::storage::write_private(&path, pem_of(&der).as_bytes())?;
+    Ok(path)
 }
 
 /// (encrypt, verify the CA chain) for drivers that take two switches. Always
-/// encrypted; a pin replaces the CA check.
-pub fn driver_tls(ssl_mode: &str, pinned: bool) -> (bool, bool) {
-    (true, !pinned && matches!(ssl_mode, "verify_ca" | "verify_identity"))
+/// encrypted.
+pub fn driver_tls(ssl_mode: &str) -> (bool, bool) {
+    (true, matches!(ssl_mode, "verify_ca" | "verify_identity"))
 }
 
-/// Why a non-native driver cannot run this profile, if it cannot: a custom
-/// CA file and token sign-in reach only the native driver.
-pub fn bridge_unsupported(ssl_ca: Option<&str>, auth_method: &str) -> Option<String> {
+/// Why a non-native driver cannot run this profile, if it cannot: a pinned
+/// certificate, a custom CA file and token sign-in are applied only by the
+/// native driver, so the others refuse rather than connect less safely.
+pub fn bridge_unsupported(ssl_ca: Option<&str>, auth_method: &str, pinned: bool) -> Option<String> {
     if auth_method != "password" {
         return Some("Token sign-in works with the native Exasol driver. Switch this connection's driver to Native, or sign in with a password.".into());
     }
+    if pinned {
+        return Some("A pinned certificate is verified by the native Exasol driver. Switch this connection's driver to Native, or remove the pin.".into());
+    }
     if ssl_ca.is_some() {
-        return Some("A custom CA file works with the native Exasol driver. Pin the server's certificate instead, or switch the driver to Native.".into());
+        return Some("A custom CA file works with the native Exasol driver. Switch the driver to Native, or remove the CA file.".into());
     }
     None
 }
 
-/// The encryption mode the driver gets. A pinned certificate replaces the CA
-/// check (the pin is checked separately); "disabled" is no longer offered —
-/// Exasol 8.19+ refuses unencrypted connections — and is read as "required".
-pub fn effective_ssl_mode<'a>(ssl_mode: &'a str, pinned: bool) -> &'a str {
+/// The encryption mode the driver gets. A pinned certificate is checked as
+/// the CA with the host name (`verify_identity`). "disabled" and "preferred"
+/// (which falls back to plaintext when TLS fails — a downgrade a man in the
+/// middle can force) are read as "required": always encrypted.
+pub fn effective_ssl_mode(ssl_mode: &str, pinned: bool) -> &str {
     if pinned {
-        return "required";
+        return "verify_identity";
     }
     match ssl_mode {
-        "disabled" | "" => "required",
-        other => other,
+        "verify_ca" => "verify_ca",
+        "verify_identity" => "verify_identity",
+        _ => "required",
     }
 }
 
@@ -196,12 +232,22 @@ mod tests {
 
     #[test]
     fn other_drivers_always_encrypt_and_say_what_they_cannot_do() {
-        assert_eq!(driver_tls("verify_identity", false), (true, true));
-        assert_eq!(driver_tls("verify_identity", true), (true, false), "pinned: no CA check");
-        assert_eq!(driver_tls("disabled", false), (true, false));
-        assert!(bridge_unsupported(None, "password").is_none());
-        assert!(bridge_unsupported(Some("/ca.pem"), "password").unwrap().contains("CA file"));
-        assert!(bridge_unsupported(None, "access_token").unwrap().contains("Token"));
+        assert_eq!(driver_tls("verify_identity"), (true, true));
+        assert_eq!(driver_tls("disabled"), (true, false));
+        assert!(bridge_unsupported(None, "password", false).is_none());
+        assert!(bridge_unsupported(Some("/ca.pem"), "password", false).unwrap().contains("CA file"));
+        assert!(bridge_unsupported(None, "access_token", false).unwrap().contains("Token"));
+        assert!(bridge_unsupported(None, "password", true).unwrap().contains("pinned"));
+    }
+
+    #[test]
+    fn a_pinned_certificate_round_trips_through_its_pem_file() {
+        let der: Vec<u8> = (0u8..=200).collect();
+        let pem = pem_of(&der);
+        assert!(pem.starts_with("-----BEGIN CERTIFICATE-----\n") && pem.ends_with("-----END CERTIFICATE-----\n"));
+        assert!(pem.lines().all(|l| l.len() <= 64));
+        assert_eq!(pem_fingerprint(&pem), Some(fingerprint_of(&der)));
+        assert_eq!(pem_fingerprint("not a certificate"), None);
     }
 
     #[test]
@@ -214,10 +260,10 @@ mod tests {
 
     #[test]
     fn a_pin_or_a_retired_mode_decides_what_the_driver_gets() {
-        assert_eq!(effective_ssl_mode("verify_identity", true), "required", "the pin replaces the CA check");
+        assert_eq!(effective_ssl_mode("required", true), "verify_identity", "the pin is checked on the connection itself");
         assert_eq!(effective_ssl_mode("disabled", false), "required");
         assert_eq!(effective_ssl_mode("", false), "required");
+        assert_eq!(effective_ssl_mode("preferred", false), "required", "no plaintext fallback");
         assert_eq!(effective_ssl_mode("verify_ca", false), "verify_ca");
-        assert_eq!(effective_ssl_mode("preferred", false), "preferred");
     }
 }
