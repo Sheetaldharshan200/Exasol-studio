@@ -90,10 +90,10 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 
 ## Phase 5 — Production safety
 
-- [ ] 5.1 Environment tag per connection: Dev / Test / Prod (+ colour), shown on tabs and the title bar (`ConnSettings.env`).
-- [ ] 5.2 Read-only connection: client-side guard for write statements (`lib/sql-classify.ts`; test: `sql-classify.test.ts`).
-- [ ] 5.3 Confirm before DROP, TRUNCATE, DELETE/UPDATE without WHERE; always on Prod, configurable elsewhere (`lib/sql-classify.ts`; test: same).
-- [ ] 5.4 Confirm grid data changes on Prod.
+- [x] 5.1 Environment tag per connection: Dev / Test / Prod (+ colour), shown on tabs and the title bar (`ConnSettings.env`). `ConnSettings.safety.env`; badge in the title bar and on SQL tabs, tab edge in the environment colour unless an accent is set (`EnvBadge.tsx`).
+- [x] 5.2 Read-only connection: client-side guard for write statements (`lib/sql-classify.ts`; test: `sql-classify.test.ts`). Enforced in the backend for every app path (`safety.rs`: execute_sql, grid edits) and in agent-core's write paths; the client guard (`lib/sql-classify.ts`) explains it first.
+- [x] 5.3 Confirm before DROP, TRUNCATE, DELETE/UPDATE without WHERE; always on Prod, configurable elsewhere (`lib/sql-classify.ts`; test: same). DROP, TRUNCATE, DELETE/UPDATE without a top-level WHERE; Prod always, "Confirm destructive statements" elsewhere.
+- [x] 5.4 Confirm grid data changes on Prod. `editsQuestion`; declining keeps the edits in the grid.
 
 ## Phase 6 — Network
 

@@ -252,6 +252,7 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         "verify": verify,
         "fingerprint": profile.fingerprint,
         "schema": profile.schema,
+        "readOnly": crate::safety::read_only(&app.state::<AppState>(), &profile.id),
     });
     let client = reqwest::Client::new();
     let res = client

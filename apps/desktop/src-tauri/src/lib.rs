@@ -49,6 +49,7 @@ mod profile_check;
 mod profile_io;
 mod pin_tunnel;
 mod profile_secret;
+mod safety;
 mod profiles;
 mod shared_registry;
 mod query;

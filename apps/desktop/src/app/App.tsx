@@ -129,6 +129,17 @@ function MainApp() {
       void agentClient.grantConnection(c.profile.id).catch(() => grantedRef.current.delete(c.profile.id));
     }
   }, [connections]);
+  // A connection's Safety settings changed (say, read-only switched on): the
+  // agent's copy of the grant must follow at once.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const regrant = (e: Event) => {
+      const id = (e as CustomEvent<{ profileId?: string }>).detail?.profileId;
+      if (id && grantedRef.current.has(id)) void agentClient.grantConnection(id).catch(() => undefined);
+    };
+    window.addEventListener("studio:conn-settings-changed", regrant);
+    return () => window.removeEventListener("studio:conn-settings-changed", regrant);
+  }, []);
 
   // Kick off the guided tour once, shortly after the studio first mounts.
   useEffect(() => {
