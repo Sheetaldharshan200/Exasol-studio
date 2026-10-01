@@ -58,7 +58,7 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
 
 /// Write a file only its owner can read (0600 on Unix). Studio's JSON files
 /// hold connection details and, sealed or not, are nobody else's business.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write;

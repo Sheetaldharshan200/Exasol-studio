@@ -1,6 +1,7 @@
 import { ipc } from "@/lib/ipc";
 import { NODE_ICON, scriptKind, type NodeKind } from "@/features/workbench/icons";
 import { adapterForScript } from "@/features/connection/virtual-schemas/adapters/index.ts";
+import { visibleFolders, type TreeFolder, type TreeOptions } from "./tree-folders";
 
 /** Object identity for right-click actions (generate SQL, DDL, …). */
 export type NodeCtx = {
@@ -49,19 +50,15 @@ export type TreeNode = {
 
 export const iconFor = (kind: NodeKind) => NODE_ICON[kind];
 
+
 /** Root of the live tree: server node with schemas, system schemas, and DBA. */
-export function buildRoot(profileId: string, serverLabel: string): TreeNode {
+export function buildRoot(profileId: string, serverLabel: string, opts: TreeOptions = {}): TreeNode {
   return {
     id: "server",
     label: serverLabel,
     kind: "server",
     expandable: true,
-    load: async () => [
-      schemasFolder(profileId),
-      virtualSchemasFolder(profileId),
-      systemSchemasFolder(profileId),
-      dbaFolder(profileId),
-    ],
+    load: async () => buildConnectionNodes(profileId, opts),
   };
 }
 
@@ -70,13 +67,14 @@ export function buildRoot(profileId: string, serverLabel: string): TreeNode {
  * rendered directly under a connection header instead of a wrapper "server"
  * node so several connections can stack in the navigator.
  */
-export function buildConnectionNodes(profileId: string): TreeNode[] {
-  return [
-    schemasFolder(profileId),
-    virtualSchemasFolder(profileId),
-    systemSchemasFolder(profileId),
-    dbaFolder(profileId),
-  ];
+export function buildConnectionNodes(profileId: string, opts: TreeOptions = {}): TreeNode[] {
+  const build: Record<TreeFolder, (id: string) => TreeNode> = {
+    schemas: schemasFolder,
+    virtual: virtualSchemasFolder,
+    system: systemSchemasFolder,
+    dba: dbaFolder,
+  };
+  return visibleFolders(opts).map((f) => build[f](profileId));
 }
 
 function schemasFolder(profileId: string): TreeNode {

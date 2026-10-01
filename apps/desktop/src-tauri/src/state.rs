@@ -31,6 +31,9 @@ pub struct AppState {
     /// live ONLY here, for this app session — never returned to the frontend
     /// and never persisted (admin-api-parity spec).
     pub admin_sessions: std::sync::Mutex<HashMap<String, crate::confd::AdminSession>>,
+    /// The app settings as last read or saved (settings.rs), for backend
+    /// readers such as history and connect.
+    pub app_settings: std::sync::RwLock<serde_json::Value>,
 }
 
 impl AppState {
@@ -44,6 +47,7 @@ impl AppState {
             session_passwords: std::sync::Mutex::new(HashMap::new()),
             sessions: crate::session::TabSessions::default(),
             admin_sessions: std::sync::Mutex::new(HashMap::new()),
+            app_settings: std::sync::RwLock::new(serde_json::Value::Null),
         }
     }
 }

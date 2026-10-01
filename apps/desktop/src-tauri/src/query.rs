@@ -459,6 +459,29 @@ async fn run_statement(
     }
 }
 
+/// When a script stops early (the run's execution options).
+#[derive(Clone, Copy)]
+pub struct StopPolicy {
+    pub on_error: bool,
+    /// After a query that returns no rows, or a DML statement that touches none.
+    pub on_no_rows: bool,
+}
+
+impl StopPolicy {
+    pub fn halts_after(&self, r: &StatementResult) -> bool {
+        if r.error.is_some() {
+            // A lost connection ends the script whatever the setting says.
+            return self.on_error || r.error.as_deref().is_some_and(crate::session::is_connection_lost);
+        }
+        self.on_no_rows && r.row_count == 0 && (r.kind == "resultSet" || is_dml(&r.statement))
+    }
+}
+
+fn is_dml(statement: &str) -> bool {
+    let head = strip_leading_comments(statement).trim_start().to_ascii_uppercase();
+    matches!(head.split_whitespace().next(), Some("INSERT" | "UPDATE" | "DELETE" | "MERGE"))
+}
+
 #[tauri::command]
 pub async fn execute_sql(
     app: tauri::AppHandle,
@@ -471,7 +494,10 @@ pub async fn execute_sql(
     add_history: Option<bool>,
     progress_id: Option<String>,
     tab_id: Option<String>,
+    stop_on_error: Option<bool>,
+    stop_on_no_rows: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
+    let stop = StopPolicy { on_error: stop_on_error.unwrap_or(true), on_no_rows: stop_on_no_rows.unwrap_or(false) };
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
     let statements = if split.unwrap_or(true) {
@@ -625,11 +651,13 @@ pub async fn execute_sql(
                     result.error = Some(format!("Could not restart manual commit ({e}); the remaining statements were not run."));
                 }
             }
-            let failed = result.error.is_some();
-            results.push(result);
-            if failed {
+            if result.error.is_some() {
                 success = false;
-                break; // stop the script at the first failing statement
+            }
+            let halt = stop.halts_after(&result);
+            results.push(result);
+            if halt {
+                break;
             }
         }
         done.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -815,6 +843,41 @@ mod live_decode {
 
 #[cfg(test)]
 mod tests {
+    fn result(statement: &str, kind: &str, rows: u64, error: Option<&str>) -> super::StatementResult {
+        super::StatementResult {
+            statement: statement.into(),
+            kind: kind.into(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            row_count: rows,
+            truncated: false,
+            elapsed_ms: 0,
+            exec_ms: 0,
+            fetch_ms: 0,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_script_stops_where_the_execution_options_say() {
+        use super::StopPolicy;
+        let default = StopPolicy { on_error: true, on_no_rows: false };
+        let keep_going = StopPolicy { on_error: false, on_no_rows: false };
+        let no_rows = StopPolicy { on_error: true, on_no_rows: true };
+        let err = result("SELECT * FROM NOPE", "resultSet", 0, Some("[42000] object NOPE not found"));
+        assert!(default.halts_after(&err));
+        assert!(!keep_going.halts_after(&err), "stop on error off: go on");
+        let lost = result("SELECT 1", "resultSet", 0, Some("WebSocket protocol error: Connection closed normally"));
+        assert!(keep_going.halts_after(&lost), "a lost connection always ends the script");
+        let empty = result("SELECT * FROM T WHERE 1=0", "resultSet", 0, None);
+        assert!(!default.halts_after(&empty));
+        assert!(no_rows.halts_after(&empty));
+        assert!(no_rows.halts_after(&result("-- fix\nUPDATE T SET A = 1 WHERE 1=0", "rowCount", 0, None)));
+        assert!(!no_rows.halts_after(&result("CREATE TABLE X (A INT)", "rowCount", 0, None)), "DDL touches no rows by nature");
+        assert!(!no_rows.halts_after(&result("SELECT 1", "resultSet", 1, None)));
+        assert!(!no_rows.halts_after(&result("DELETE FROM T", "rowCount", 3, None)));
+    }
+
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
     use super::{exact_text_type, history_row_total, integer_json};
 

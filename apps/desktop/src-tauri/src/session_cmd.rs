@@ -13,9 +13,14 @@ use crate::session::{info_of, open_schema_sql, Fence, PendingTab, SessionInfo};
 use crate::state::AppState;
 
 #[tauri::command]
-pub async fn session_info(state: State<'_, AppState>, tab_id: String) -> AppResult<SessionInfo> {
-    // Never opens a session: looking at a tab must not move it anywhere.
-    Ok(state.sessions.peek(&tab_id).await)
+pub async fn session_info(state: State<'_, AppState>, tab_id: String, profile_id: Option<String>) -> AppResult<SessionInfo> {
+    // Never opens a session: looking at a tab must not move it anywhere. A tab
+    // without one shows the mode its first run will start in.
+    let mut info = state.sessions.peek(&tab_id).await;
+    if let (false, Some(p)) = (info.open, profile_id.as_deref()) {
+        info.autocommit = crate::session::autocommit_default(&state, p);
+    }
+    Ok(info)
 }
 
 /// Switch a tab between autocommit and manual commit. Leaving manual mode
