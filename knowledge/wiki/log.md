@@ -272,3 +272,13 @@ Gotchas worth keeping:
 - A session killed on the server (`KILL SESSION`) surfaces in sqlx-exasol as `error communicating with database: peer closed connection without sending TLS close_notify … #unexpected-eof`. `is_connection_lost` did not match it, so dead sessions were never detected. It now matches "peer closed connection" and "error communicating with database" (sqlx's transport-error prefix). Live-tested.
 - The keep-alive drops a session only on a closed connection, never on a timeout: dropping closes the socket and the server rolls back the open transaction, so a slow answer would destroy live work. The ping does not touch `last_used`, so the idle-transaction warning still fires.
 - The health dot for a connected profile is `connection_alive` (pool acquire + `SELECT 1`, 5s each). All connections busy counts as alive.
+
+## [2026-10-01] decision | workbench-hardening phase 3 — every setting applied or removed
+- **Inventory test**: `lib/settings-inventory.test.ts` lists the reader of every app setting (`lib/app-settings.ts`) and every per-connection setting (`lib/conn-settings.ts`) and checks the file really reads it. Adding a toggle without behaviour now fails CI.
+- **Retired** ~20 app settings and ~25 connection settings that only stored a value (density, metadata cache, isolation, charset, fetch size, qualifiers, delimiters, SQL templates, query builder, …). `settings.rs` scrubs retired app keys from disk — one was a plaintext `aiApiKey` nothing read. Retired connection keys are dropped on load (`withConnDefaults` keeps only known keys).
+- **`write_private` gotcha**: `OpenOptions::mode(0o600)` applies only when the file is created; an existing 0644 file stayed world-readable. It now calls `set_permissions` on every write.
+- **Fetch size** in sqlx-exasol is a byte budget for the websocket fetch, not a row count — a "rows" setting for it was misleading; max rows already caps a run.
+- **Stop options across drivers**: the native and exarrow loops use `query.rs::StopPolicy`; the bridges (Python, Node, Go, R) get `stopOnError`, a per-statement `stopIfEmpty` list and `lostPatterns` from Rust, so the rule lives in one place. "Executed" results (R reports no write count) never count as "no rows". A lost connection always ends a script.
+- **Error markers**: Exasol reports `[line L, column C]` relative to the statement as sent. The failed statement is located by its index in the run (identical statements are common in scripts); with comments stripped only the whole statement is marked.
+- **Go bridge** was compiled only by the release workflow; CI now vets and builds it on every PR.
+- Two Codex passes (7 + 3 findings), all fixed.
