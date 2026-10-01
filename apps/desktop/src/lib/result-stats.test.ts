@@ -136,3 +136,18 @@ test("rowTotal keeps unknown counts visible instead of folding them in as zero",
 
   assert.deepEqual(rowTotal([]), { rows: 0, withoutCount: 0 });
 });
+
+test("toCsv keeps NULL and empty string apart", () => {
+  assert.equal(toCsv(cols, [[1, ""], [2, null]]), 'ID,NAME\r\n1,""\r\n2,');
+});
+
+test("toCsv defuses spreadsheet formulas in text, never in numbers", () => {
+  const out = toCsv(cols, [[-5, "=HYPERLINK(1)"], [1, "+1"], [2, "-total"], [3, "-12.5"], [4, "@x"]]);
+  assert.equal(out, "ID,NAME\r\n-5,'=HYPERLINK(1)\r\n1,'+1\r\n2,'-total\r\n3,-12.5\r\n4,'@x");
+  assert.equal(toCsv(cols, [[1, "=1+1"]], { guardFormulas: false }), "ID,NAME\r\n1,=1+1");
+});
+
+test("toCsv adds a byte order mark only when asked", () => {
+  assert.ok(toCsv(cols, [], { bom: true }).startsWith("\uFEFFID"));
+  assert.ok(!toCsv(cols, []).startsWith("\uFEFF"));
+});

@@ -1,8 +1,9 @@
 // Server-side result paging for single-SELECT tabs.
 //
-// Page 0 is the plain run (its `truncated` flag means "there is a next page");
-// later pages wrap the query with ORDER BY 1 + LIMIT/OFFSET, because Exasol
-// needs a deterministic order for OFFSET. Visited pages are cached per tab and
+// The run shows first (its `truncated` flag means "there is a next page").
+// Every page, page 0 included once the user pages, is fetched under one
+// deterministic order (lib/result-pages.ts), so page n continues page n-1.
+// Visited pages are cached per tab and
 // the next one is prefetched, so stepping through results is instant. The
 // cache is stamped with the SQL that produced it, so a re-run or an edit
 // invalidates it rather than mixing two queries' rows.
@@ -11,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { splitStatements } from "../../lib/sql-text.ts";
+import { pagePlan, pageSql, type PagePlan } from "../../lib/result-pages.ts";
 import type { ExecuteResponse } from "../../lib/ipc.ts";
 
 /** How many cached pages a tab keeps; the farthest from the current one goes. */
@@ -24,17 +26,20 @@ export function pageBase(sql: string): string | null {
   return /^select|^with/i.test(base) ? base : null;
 }
 
-/** Page 0 is the query itself; every later page is wrapped and offset. */
-export function pagedSql(base: string, page: number, maxRows: number): string {
-  return page === 0 ? base : `SELECT * FROM (\n${base}\n) ORDER BY 1 LIMIT ${maxRows + 1} OFFSET ${page * maxRows}`;
-}
-
 /** Which cached page to drop when a tab holds more than it should. */
 export function farthestPage(pages: readonly number[], current: number): number {
   return pages.reduce((a, b) => (Math.abs(a - current) >= Math.abs(b - current) ? a : b));
 }
 
-export type TabPages = { sql: string; pages: Map<number, ExecuteResponse> };
+/** The plan for paging a run, from its statement and its first result's columns. */
+export function planFor(sql: string, res: ExecuteResponse | null | undefined): PagePlan | null {
+  const base = pageBase(sql);
+  const cols = res?.results[0]?.columns?.map((c) => c.name) ?? [];
+  return base ? pagePlan(base, cols) : null;
+}
+
+/** `run` is the response the user's own run produced: shown first, never a page. */
+export type TabPages = { sql: string; plan: PagePlan; run: ExecuteResponse | null; pages: Map<number, ExecuteResponse> };
 
 /** Keep a page, then drop whatever is farthest from it until the tab is back
  *  within the cap. Every path that caches a page goes through here — a page
@@ -72,7 +77,7 @@ export function useResultPaging(opts: {
 }) {
   const { connection, activeTab, maxRows, execIfCurrent, genOf, patchTab, onError } = opts;
   const [paging, setPaging] = useState(false);
-  const cache = useRef(new Map<string, { sql: string; pages: Map<number, ExecuteResponse> }>());
+  const cache = useRef(new Map<string, TabPages>());
   const inFlight = useRef(new Set<string>());
   // Latest values for the callbacks, which are not re-created per render.
   const ctx = useRef(opts);
@@ -88,7 +93,7 @@ export function useResultPaging(opts: {
     try {
       const pid = conn.profile.id;
       const at = gen(pid);
-      const res = await exec(at, pid, conn.profile.name, pagedSql(base, page, rows), rows);
+      const res = await exec(at, pid, conn.profile.name, pageSql(entry.plan, page, rows), rows);
       const cur = cache.current.get(tabId);
       if (res && gen(pid) === at && res.success && cur && cur.sql === base) cachePage(cur, page, res);
     } catch {
@@ -103,11 +108,14 @@ export function useResultPaging(opts: {
   useEffect(() => {
     const res = activeTab.response;
     if (!res || (activeTab.resultPage ?? 0) !== 0 || !res.success) return;
-    const base = pageBase(activeTab.runMeta?.sql ?? activeTab.sql);
-    if (!base) return;
+    const sql = activeTab.runMeta?.sql ?? activeTab.sql;
+    const base = pageBase(sql);
+    const plan = planFor(sql, res);
+    if (!base || !plan) return;
     const entry = cache.current.get(activeTab.id);
-    if (entry && entry.sql === base && entry.pages.get(0) === res) return; // cache-served, not a new run
-    cache.current.set(activeTab.id, { sql: base, pages: new Map([[0, res]]) });
+    // A page served from the cache, or the run itself again: not a new run.
+    if (entry && entry.sql === base && (entry.run === res || [...entry.pages.values()].includes(res))) return;
+    cache.current.set(activeTab.id, { sql: base, plan, run: res, pages: new Map() });
     if (res.results[0]?.truncated) void prefetch(activeTab.id, base, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.id, activeTab.response, activeTab.resultPage]);
@@ -118,9 +126,9 @@ export function useResultPaging(opts: {
       // Page 2 must come from the statement that produced page 1, even if the
       // editor has moved on since.
       const base = pageBase(activeTab.runMeta?.sql ?? activeTab.sql);
-      if (!base) return;
       const entry = cache.current.get(activeTab.id);
-      const cached = entry && entry.sql === base ? entry.pages.get(page) : undefined;
+      if (!base || !entry || entry.sql !== base) return;
+      const cached = entry.pages.get(page);
       if (cached) {
         patchTab(activeTab.id, { response: cached, execError: null, resultPage: page });
         if (cached.results[0]?.truncated) void prefetch(activeTab.id, base, page + 1);
@@ -134,7 +142,7 @@ export function useResultPaging(opts: {
         // stay out of the execution log; the original run is already in it.
         const pid = connection.profile.id;
         const at = genOf(pid);
-        const res = await execIfCurrent(at, pid, connection.profile.name, pagedSql(base, page, maxRows), maxRows);
+        const res = await execIfCurrent(at, pid, connection.profile.name, pageSql(entry.plan, page, maxRows), maxRows);
         // A run started while this page was queued or in flight: its rows own
         // the tab now, and this answer is dropped (or was never fetched).
         if (!res || genOf(pid) !== at) return;

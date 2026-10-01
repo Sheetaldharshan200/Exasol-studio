@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cachePage, farthestPage, pageBase, pagedSql, type TabPages } from "./use-result-paging.ts";
+import { cachePage, farthestPage, pageBase, planFor, type TabPages } from "./use-result-paging.ts";
 
 const res = (n: number) => ({ id: n }) as unknown as Parameters<typeof cachePage>[2];
-const entry = (pages: number[]): TabPages => ({ sql: "SELECT 1", pages: new Map(pages.map((p) => [p, res(p)])) });
+const entry = (pages: number[]): TabPages => ({
+  sql: "SELECT 1",
+  plan: { kind: "columns", base: "SELECT 1", columnCount: 1 },
+  run: null,
+  pages: new Map(pages.map((p) => [p, res(p)])),
+});
 
 test("only a single SELECT or WITH can be paged", () => {
   assert.equal(pageBase("SELECT * FROM T"), "SELECT * FROM T");
@@ -13,18 +18,13 @@ test("only a single SELECT or WITH can be paged", () => {
   assert.equal(pageBase(""), null);
 });
 
-test("page 0 is the query itself, untouched", () => {
-  assert.equal(pagedSql("SELECT * FROM T", 0, 100), "SELECT * FROM T");
-});
-
-test("later pages are ordered and offset, because OFFSET needs an order", () => {
-  const sql = pagedSql("SELECT * FROM T", 2, 100);
-  assert.match(sql, /ORDER BY 1 LIMIT 101 OFFSET 200/);
-  assert.match(sql, /SELECT \* FROM \(\nSELECT \* FROM T\n\)/);
-});
-
-test("one extra row is fetched, which is how the next page is detected", () => {
-  assert.match(pagedSql("SELECT 1", 1, 50), /LIMIT 51 /);
+test("a run is paged by a plan made from its statement and its columns", () => {
+  const run = (cols: string[]) => ({ results: [{ columns: cols.map((name) => ({ name, typeName: "DECIMAL(18,0)" })) }] }) as unknown as Parameters<typeof planFor>[1];
+  assert.equal(planFor("SELECT a, b FROM t", run(["A", "B"]))?.kind, "columns");
+  assert.equal(planFor("SELECT a FROM t ORDER BY a DESC", run(["A"]))?.kind, "ordered");
+  assert.equal(planFor("SELECT a FROM t LIMIT 5", run(["A"])), null, "its own LIMIT is the rows asked for");
+  assert.equal(planFor("SELECT 1; SELECT 2", run(["X"])), null, "only one statement pages");
+  assert.equal(planFor("SELECT a FROM t", null), null, "no columns yet, no plan");
 });
 
 test("the page dropped from the cache is the one farthest from where you are", () => {
