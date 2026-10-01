@@ -126,3 +126,23 @@ jobs:
 
       - name: cargo check (tests included)
         run: cargo check --tests --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+
+  go-bridge:
+    # The Go driver bridge is otherwise first compiled by a release; a mistake
+    # in it must fail the pull request, not the release.
+    name: Go driver bridge builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/driver-bridges/go/go.mod
+          cache-dependency-path: packages/driver-bridges/go/go.sum
+
+      - name: go vet and build
+        working-directory: packages/driver-bridges/go
+        run: |
+          go vet ./...
+          go build -o /tmp/exasol-bridge-go .

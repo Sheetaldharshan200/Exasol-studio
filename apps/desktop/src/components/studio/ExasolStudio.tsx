@@ -73,7 +73,7 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
-import { errorMarker } from "@/lib/error-markers";
+import { errorMarker, runStartIn } from "@/lib/error-markers";
 import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
 import { openableSource, sourceQuery, sourceTitle } from "@/lib/script-source";
 import { QueryPlanView } from "./QueryPlanView";
@@ -1758,7 +1758,19 @@ export function ExasolStudio({
       const scope = "script";
       patchTab(tab.id, { resultView: "results", planData: undefined, runMeta: { startedAt, scope, sql } });
       try {
-        const result = await execSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
+        // On the new tab's own session, with the same execution options as Run.
+        const result = await execSql(
+          connection.profile.id,
+          connection.profile.name,
+          sql,
+          maxRows,
+          splitsFor(scope, execSettings.splitStatements),
+          true,
+          undefined,
+          tab.id,
+          { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows },
+        );
+        void tabSession.refresh(tab.id);
         updateTabs(key, (list) =>
           list.map((t) =>
             t.id === tab.id
@@ -2284,6 +2296,7 @@ export function ExasolStudio({
       const pos = editor?.getPosition();
       const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
       let sqlToRun = pickRunSql(scope, full, selection, cursorOffset);
+      const selectionStart = sel && model && selection.trim() ? model.getOffsetAt(sel.getStartPosition()) : null;
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;
@@ -2351,12 +2364,14 @@ export function ExasolStudio({
           }
         }
         if (!result.success) {
-          const failed = result.results.find((r) => r.error);
+          const failedIndex = result.results.findIndex((r) => r.error);
+          const failed = failedIndex >= 0 ? result.results[failedIndex] : undefined;
           if (failed?.error && runModel && !runModel.isDisposed()) {
-            const marker = errorMarker(runModel.getValue(), failed.statement, failed.error, {
+            const buffer = runModel.getValue();
+            const marker = errorMarker(buffer, failed.statement, failed.error, {
               position: execSettings.showErrorPos,
               statement: execSettings.showErrorStmt,
-              near: cursorOffset,
+              place: { runText: sqlToRun, runStart: runStartIn(buffer, sqlToRun, selectionStart, cursorOffset), split, index: failedIndex },
             });
             markRunError(runModel, monacoRef.current, marker);
           }

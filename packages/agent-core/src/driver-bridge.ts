@@ -28,7 +28,17 @@ type Request = {
   verify?: boolean;
   maxRows?: number;
   statements?: string[];
+  /** Stop after an error (default true). */
+  stopOnError?: boolean;
+  /** Per statement: stop after it when it returns or touches no rows. */
+  stopIfEmpty?: boolean[];
 };
+
+/** Whether the script stops after this statement's entry. */
+export function halts(req: Pick<Request, "stopOnError" | "stopIfEmpty">, i: number, e: Pick<Entry, "error" | "kind" | "rowCount">): boolean {
+  if (e.error) return req.stopOnError !== false;
+  return !!req.stopIfEmpty?.[i] && (e.kind === "resultSet" || e.kind === "rowCount") && e.rowCount === 0;
+}
 
 type Entry = {
   statement: string;
@@ -164,7 +174,7 @@ async function main(): Promise<void> {
   const results: Entry[] = [];
   try {
     await driver.connect();
-    for (const statement of req.statements ?? []) {
+    for (const [i, statement] of (req.statements ?? []).entries()) {
       const started = Date.now();
       const entry: Entry = {
         statement,
@@ -186,7 +196,7 @@ async function main(): Promise<void> {
       }
       entry.elapsedMs = Date.now() - started;
       results.push(entry);
-      if (entry.error) break;
+      if (halts(req, i, entry)) break;
     }
   } catch (e) {
     process.stdout.write(JSON.stringify({ fatal: errorText(e) }));

@@ -67,6 +67,10 @@ max_rows <- if (is.null(req$maxRows)) 1000L else as.integer(req$maxRows)
 if (is.na(max_rows) || max_rows <= 0L) max_rows <- 1000L
 statements <- if (is.null(req$statements)) list() else req$statements
 expect_rows <- if (is.null(req$expectRows)) list() else req$expectRows
+# Where the script stops: after an error unless stopOnError is false, or
+# after an empty result where Studio asked (stopIfEmpty, per statement).
+stop_on_error <- !isFALSE(req$stopOnError)
+stop_if_empty <- if (is.null(req$stopIfEmpty)) list() else req$stopIfEmpty
 
 # `exasol` connects through ODBC. Studio passes the driver library it manages,
 # so no system-wide odbcinst registration is ever required.
@@ -165,7 +169,12 @@ for (i in seq_along(statements)) {
   if (!is.null(out)) e$error <- out
   e$elapsedMs <- as.integer(as.numeric(difftime(Sys.time(), started, units = "secs")) * 1000)
   results[[length(results) + 1L]] <- e
-  if (!is.null(e$error)) break # stop the script at the first failing statement
+  if (!is.null(e$error)) {
+    if (stop_on_error) break
+  } else if (i <= length(stop_if_empty) && isTRUE(stop_if_empty[[i]]) &&
+             e$kind %in% c("resultSet", "rowCount") && e$rowCount == 0) {
+    break
+  }
 }
 
 try(DBI::dbDisconnect(conn), silent = TRUE)

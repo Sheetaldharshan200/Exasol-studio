@@ -43,6 +43,18 @@ type request struct {
 	MaxRows    int      `json:"maxRows"`
 	Statements []string `json:"statements"`
 	ExpectRows []bool   `json:"expectRows"`
+	// Where the script stops: after an error unless StopOnError is false, or
+	// after an empty result where Studio asked (StopIfEmpty, per statement).
+	StopOnError *bool  `json:"stopOnError"`
+	StopIfEmpty []bool `json:"stopIfEmpty"`
+}
+
+func halts(req request, i int, e entry) bool {
+	if e.Error != nil {
+		return req.StopOnError == nil || *req.StopOnError
+	}
+	empty := i < len(req.StopIfEmpty) && req.StopIfEmpty[i]
+	return empty && (e.Kind == "resultSet" || e.Kind == "rowCount") && e.RowCount == 0
 }
 
 type column struct {
@@ -131,8 +143,8 @@ func main() {
 		}
 		e.ElapsedMs = time.Since(started).Milliseconds()
 		results = append(results, e)
-		if e.Error != nil {
-			break // stop the script at the first failing statement
+		if halts(req, i, e) {
+			break
 		}
 	}
 
